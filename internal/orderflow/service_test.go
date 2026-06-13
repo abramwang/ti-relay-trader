@@ -137,6 +137,155 @@ func TestSubmitOrderRejectsInvalidRequestBeforeWrites(t *testing.T) {
 	}
 }
 
+func TestQueryServiceCanStartWithoutPublisher(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		listedOrders: []trading.Order{{AccountID: "acct-1", GatewayOrderID: "gateway-1"}},
+	}
+	service, err := New(Options{
+		Config: testConfig(true, true),
+		Ledger: ledgerWriter,
+		Clock:  fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListOrders(context.Background(), trading.OrderQuery{AccountID: "acct-1"})
+	if err != nil {
+		t.Fatalf("ListOrders() error = %v", err)
+	}
+	if result.Count != 1 {
+		t.Fatalf("count = %d", result.Count)
+	}
+
+	_, err = service.SubmitOrder(context.Background(), validSubmitRequest(), SubmitOptions{})
+	if !errors.Is(err, ErrMissingPublisher) {
+		t.Fatalf("SubmitOrder() error = %v, want ErrMissingPublisher", err)
+	}
+}
+
+func TestCancelOrderPublishesCommandAndArchives(t *testing.T) {
+	cfg := testConfig(true, true)
+	ledgerWriter := &fakeLedger{
+		order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-1",
+			Symbol:         "600000",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideBuy,
+			BusinessType:   trading.BusinessTypeStock,
+			LimitPrice:     9.54,
+			OrderQty:       100,
+			LeavesQty:      100,
+			Status:         trading.OrderStatusWorking,
+			GatewayStatus:  trading.GatewayStatusWorking,
+		},
+	}
+	publisher := &fakePublisher{streamID: "1777100000100-0"}
+	service, err := New(Options{
+		Config:    cfg,
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"cancel-1", "msg-cancel-1", "req-unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CancelOrder(context.Background(), trading.CancelOrderRequest{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+	}, CancelOptions{RequestID: "req-http-cancel"})
+	if err != nil {
+		t.Fatalf("CancelOrder() error = %v", err)
+	}
+
+	if result.CancelID != "cancel-1" || result.MessageID != "msg-cancel-1" {
+		t.Fatalf("cancel ids = %#v", result)
+	}
+	if result.StreamKey != "relay:prod:v1:huaxin:gw-1:cmd.trade" {
+		t.Fatalf("stream = %s", result.StreamKey)
+	}
+	if len(publisher.commands) != 1 {
+		t.Fatalf("commands = %#v", publisher.commands)
+	}
+	command := publisher.commands[0]
+	if command.envelope.Action != redisstream.ActionOrderCancel {
+		t.Fatalf("action = %s", command.envelope.Action)
+	}
+	if len(ledgerWriter.raw) != 1 {
+		t.Fatalf("raw archive = %#v", ledgerWriter.raw)
+	}
+	raw := ledgerWriter.raw[0]
+	if raw.Action != redisstream.ActionOrderCancel || raw.GatewayOrderID != "gateway-1" {
+		t.Fatalf("raw = %#v", raw)
+	}
+}
+
+func TestCancelOrderRejectsTerminalOrder(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-1",
+			OrderQty:       100,
+			Status:         trading.OrderStatusFilled,
+			IsTerminal:     true,
+		},
+	}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"cancel-1"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = service.CancelOrder(context.Background(), trading.CancelOrderRequest{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+	}, CancelOptions{})
+	if !errors.Is(err, ErrOrderTerminalNotCancelable) {
+		t.Fatalf("CancelOrder() error = %v, want terminal error", err)
+	}
+	if len(publisher.commands) != 0 {
+		t.Fatalf("terminal order should not publish commands: %#v", publisher.commands)
+	}
+}
+
+func TestListOrdersNormalizesQueryLimit(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		listedOrders: []trading.Order{{AccountID: "acct-1", GatewayOrderID: "gateway-1"}},
+	}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: &fakePublisher{},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		Limit:     1000,
+	})
+	if err != nil {
+		t.Fatalf("ListOrders() error = %v", err)
+	}
+	if result.Query.Limit != 500 || ledgerWriter.lastOrderQuery.Limit != 500 {
+		t.Fatalf("limit = result %d ledger %d", result.Query.Limit, ledgerWriter.lastOrderQuery.Limit)
+	}
+	if result.Count != 1 {
+		t.Fatalf("count = %d", result.Count)
+	}
+}
+
 func validSubmitRequest() trading.SubmitOrderRequest {
 	return trading.SubmitOrderRequest{
 		AccountID:    "acct-1",
@@ -166,9 +315,15 @@ func testConfig(enabled, tradingEnabled bool) config.Config {
 }
 
 type fakeLedger struct {
-	accounts []trading.Account
-	orders   []trading.Order
-	raw      []ledger.RawStreamMessage
+	accounts       []trading.Account
+	orders         []trading.Order
+	order          trading.Order
+	getOrderErr    error
+	listedOrders   []trading.Order
+	listedFills    []trading.Fill
+	lastOrderQuery trading.OrderQuery
+	lastFillQuery  trading.FillQuery
+	raw            []ledger.RawStreamMessage
 }
 
 func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -179,6 +334,26 @@ func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Accou
 func (writer *fakeLedger) UpsertOrder(_ context.Context, order trading.Order) error {
 	writer.orders = append(writer.orders, order)
 	return nil
+}
+
+func (writer *fakeLedger) GetOrder(_ context.Context, accountID string, gatewayOrderID string) (trading.Order, error) {
+	if writer.getOrderErr != nil {
+		return trading.Order{}, writer.getOrderErr
+	}
+	if writer.order.AccountID == accountID && writer.order.GatewayOrderID == gatewayOrderID {
+		return writer.order, nil
+	}
+	return trading.Order{}, ledger.ErrOrderNotFound
+}
+
+func (writer *fakeLedger) ListOrders(_ context.Context, query trading.OrderQuery) ([]trading.Order, error) {
+	writer.lastOrderQuery = query
+	return writer.listedOrders, nil
+}
+
+func (writer *fakeLedger) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
+	writer.lastFillQuery = query
+	return writer.listedFills, nil
 }
 
 func (writer *fakeLedger) ArchiveRawStreamMessage(_ context.Context, message ledger.RawStreamMessage) error {

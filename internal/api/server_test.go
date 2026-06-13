@@ -185,6 +185,28 @@ func TestSubmitOrderTradingDisabled(t *testing.T) {
 	}
 }
 
+func TestSubmitOrderMissingPublisherUnavailable(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{err: orderflow.ErrMissingPublisher},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{
+		"account_id":"acct-1",
+		"symbol":"600000",
+		"exchange":"SH",
+		"trade_side":"B",
+		"business_type":"S",
+		"price":9.67,
+		"qty":100
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
 func TestSubmitOrderBadJSON(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: &fakeOrderSubmitter{},
@@ -199,11 +221,152 @@ func TestSubmitOrderBadJSON(t *testing.T) {
 	}
 }
 
+func TestCancelOrderAccepted(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		cancelResult: orderflow.CancelOrderResult{
+			Order: trading.Order{
+				AccountID:      "acct-1",
+				GatewayOrderID: "gateway-1",
+				Status:         trading.OrderStatusWorking,
+			},
+			CancelID:       "cancel-1",
+			MessageID:      "msg-cancel-1",
+			StreamKey:      "relay:prod:v1:huaxin:gw-1:cmd.trade",
+			StreamID:       "2-0",
+			IdempotencyKey: "idem-cancel-1",
+			Published: redisstream.CommandPublishResult{
+				StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.trade",
+				StreamID:  "2-0",
+				BodyBytes: 123,
+			},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/gateway-1/cancel", strings.NewReader(`{
+		"account_id":"acct-1",
+		"gateway_order_id":"gateway-1"
+	}`))
+	req.Header.Set("X-Request-ID", "req-cancel")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.cancelReq.GatewayOrderID != "gateway-1" || service.cancelRequestID != "req-cancel" {
+		t.Fatalf("cancel request = %#v request_id=%s", service.cancelReq, service.cancelRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), "msg-cancel-1") {
+		t.Fatalf("response missing result: %s", rec.Body.String())
+	}
+}
+
+func TestCancelOrderPathBodyMismatch(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/gateway-1/cancel", strings.NewReader(`{
+		"account_id":"acct-1",
+		"gateway_order_id":"gateway-2"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestCancelOrderTerminalConflict(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{cancelErr: orderflow.ErrOrderTerminalNotCancelable},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/gateway-1/cancel", strings.NewReader(`{
+		"account_id":"acct-1",
+		"gateway_order_id":"gateway-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestListOrders(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{
+			Orders: []trading.Order{{AccountID: "acct-1", GatewayOrderID: "gateway-1"}},
+			Query:  trading.OrderQuery{AccountID: "acct-1", Limit: 5},
+			Count:  1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&status=working&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.orderQuery.AccountID != "acct-1" || service.orderQuery.Status != trading.OrderStatusWorking || service.orderQuery.Limit != 5 {
+		t.Fatalf("query = %#v", service.orderQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"count":1`) {
+		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestListFills(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{{FillID: "fill-1", AccountID: "acct-1", GatewayOrderID: "gateway-1"}},
+			Query: trading.FillQuery{AccountID: "acct-1", Limit: 5},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/fills?account_id=acct-1&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.fillQuery.AccountID != "acct-1" || service.fillQuery.Limit != 5 {
+		t.Fatalf("query = %#v", service.fillQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"count":1`) {
+		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
 type fakeOrderSubmitter struct {
-	req       trading.SubmitOrderRequest
-	requestID string
-	result    orderflow.SubmitOrderResult
-	err       error
+	req              trading.SubmitOrderRequest
+	requestID        string
+	result           orderflow.SubmitOrderResult
+	err              error
+	cancelReq        trading.CancelOrderRequest
+	cancelRequestID  string
+	cancelResult     orderflow.CancelOrderResult
+	cancelErr        error
+	orderQuery       trading.OrderQuery
+	listOrdersResult orderflow.ListOrdersResult
+	listOrdersErr    error
+	fillQuery        trading.FillQuery
+	listFillsResult  orderflow.ListFillsResult
+	listFillsErr     error
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {
@@ -216,4 +379,32 @@ func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.
 		return orderflow.SubmitOrderResult{}, errors.New("missing fake result")
 	}
 	return submitter.result, nil
+}
+
+func (submitter *fakeOrderSubmitter) CancelOrder(_ context.Context, req trading.CancelOrderRequest, opts orderflow.CancelOptions) (orderflow.CancelOrderResult, error) {
+	submitter.cancelReq = req
+	submitter.cancelRequestID = opts.RequestID
+	if submitter.cancelErr != nil {
+		return orderflow.CancelOrderResult{}, submitter.cancelErr
+	}
+	if submitter.cancelResult.MessageID == "" {
+		return orderflow.CancelOrderResult{}, errors.New("missing fake cancel result")
+	}
+	return submitter.cancelResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) ListOrders(_ context.Context, query trading.OrderQuery) (orderflow.ListOrdersResult, error) {
+	submitter.orderQuery = query
+	if submitter.listOrdersErr != nil {
+		return orderflow.ListOrdersResult{}, submitter.listOrdersErr
+	}
+	return submitter.listOrdersResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) ListFills(_ context.Context, query trading.FillQuery) (orderflow.ListFillsResult, error) {
+	submitter.fillQuery = query
+	if submitter.listFillsErr != nil {
+		return orderflow.ListFillsResult{}, submitter.listFillsErr
+	}
+	return submitter.listFillsResult, nil
 }

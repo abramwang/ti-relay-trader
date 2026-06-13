@@ -155,6 +155,52 @@ UPDATE orders SET
 WHERE account_id = $1 AND gateway_order_id = $2
 `
 
+const orderSelectColumns = `
+SELECT
+    account_id,
+    client_order_id,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    symbol,
+    name,
+    exchange,
+    trade_side,
+    business_type,
+    offset_type,
+    limit_price,
+    order_qty,
+    submitted_qty,
+    cum_filled_qty,
+    leaves_qty,
+    cancelled_qty,
+    invalid_qty,
+    avg_fill_price,
+    fee,
+    status,
+    gateway_status,
+    adapter_status_code,
+    adapter_status_name,
+    is_terminal,
+    reject_code,
+    reject_message,
+    origin_message_id,
+    request_id,
+    idempotency_key,
+    shareholder_id,
+    created_at,
+    accepted_at,
+    inserted_at,
+    last_updated_at,
+    terminal_at,
+    adapter_context
+FROM orders
+`
+
+const getOrderSQL = orderSelectColumns + `
+WHERE account_id = $1 AND gateway_order_id = $2
+`
+
 const insertFillSQL = `
 INSERT INTO fills (
     account_id,
@@ -185,6 +231,28 @@ INSERT INTO fills (
     $21, $22
 )
 ON CONFLICT DO NOTHING
+`
+
+const fillSelectColumns = `
+SELECT
+    fill_id,
+    account_id,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    symbol,
+    name,
+    exchange,
+    trade_side,
+    price,
+    qty,
+    fee,
+    trade_date::text,
+    match_timestamp,
+    matched_at,
+    shareholder_id,
+    adapter_context
+FROM fills
 `
 
 const archiveRawStreamMessageSQL = `

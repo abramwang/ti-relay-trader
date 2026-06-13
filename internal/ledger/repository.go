@@ -19,6 +19,10 @@ type Executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+type Queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 type Repository struct {
 	exec Executor
 	now  func() time.Time
@@ -249,6 +253,106 @@ func (repo *Repository) UpdateOrderStatus(ctx context.Context, event trading.Ord
 	return nil
 }
 
+func (repo *Repository) GetOrder(ctx context.Context, accountID string, gatewayOrderID string) (trading.Order, error) {
+	if repo == nil || repo.exec == nil {
+		return trading.Order{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	gatewayOrderID = strings.TrimSpace(gatewayOrderID)
+	if accountID == "" {
+		return trading.Order{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if gatewayOrderID == "" {
+		return trading.Order{}, fmt.Errorf("%w: gateway_order_id is required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return trading.Order{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, getOrderSQL, accountID, gatewayOrderID)
+	if err != nil {
+		return trading.Order{}, fmt.Errorf("get order %s/%s: %w", accountID, gatewayOrderID, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return trading.Order{}, fmt.Errorf("get order %s/%s: %w", accountID, gatewayOrderID, err)
+		}
+		return trading.Order{}, fmt.Errorf("%w: %s/%s", ErrOrderNotFound, accountID, gatewayOrderID)
+	}
+	order, err := scanOrder(rows)
+	if err != nil {
+		return trading.Order{}, fmt.Errorf("scan order %s/%s: %w", accountID, gatewayOrderID, err)
+	}
+	return order, nil
+}
+
+func (repo *Repository) ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeOrderQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListOrdersSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list orders: %w", err)
+	}
+	defer rows.Close()
+
+	orders := make([]trading.Order, 0, normalized.Limit)
+	for rows.Next() {
+		order, err := scanOrder(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan order: %w", err)
+		}
+		orders = append(orders, order)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list orders rows: %w", err)
+	}
+	return orders, nil
+}
+
+func (repo *Repository) ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeFillQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListFillsSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list fills: %w", err)
+	}
+	defer rows.Close()
+
+	fills := make([]trading.Fill, 0, normalized.Limit)
+	for rows.Next() {
+		fill, err := scanFill(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan fill: %w", err)
+		}
+		fills = append(fills, fill)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list fills rows: %w", err)
+	}
+	return fills, nil
+}
+
 func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, stream StreamRef, source SourceRef) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -347,6 +451,266 @@ func (repo *Repository) ArchiveRawStreamMessage(ctx context.Context, message Raw
 		return fmt.Errorf("archive raw stream message %s/%s: %w", message.StreamRef.Key, message.StreamRef.ID, err)
 	}
 	return nil
+}
+
+func (repo *Repository) queryer() (Queryer, error) {
+	queryer, ok := repo.exec.(Queryer)
+	if !ok {
+		return nil, fmt.Errorf("%w: repository executor does not support queries", ErrInvalidLedgerInput)
+	}
+	return queryer, nil
+}
+
+func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
+	query.ClientOrderID = strings.TrimSpace(query.ClientOrderID)
+	query.Symbol = strings.TrimSpace(query.Symbol)
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	if query.Exchange != "" && !query.Exchange.Valid() {
+		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if query.Status != "" && !query.Status.Valid() {
+		return query, fmt.Errorf("%w: status is invalid", ErrInvalidLedgerInput)
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 500 {
+		query.Limit = 500
+	}
+	return query, nil
+}
+
+func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
+	query.Symbol = strings.TrimSpace(query.Symbol)
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	if query.Exchange != "" && !query.Exchange.Valid() {
+		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 500 {
+		query.Limit = 500
+	}
+	return query, nil
+}
+
+func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	if query.AccountID != "" {
+		appendFilter("account_id", query.AccountID)
+	}
+	if query.GatewayOrderID != "" {
+		appendFilter("gateway_order_id", query.GatewayOrderID)
+	}
+	if query.ClientOrderID != "" {
+		appendFilter("client_order_id", query.ClientOrderID)
+	}
+	if query.Symbol != "" {
+		appendFilter("symbol", query.Symbol)
+	}
+	if query.Exchange != "" {
+		appendFilter("exchange", query.Exchange)
+	}
+	if query.Status != "" {
+		appendFilter("status", query.Status)
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(orderSelectColumns)
+	if len(where) > 0 {
+		builder.WriteString("WHERE ")
+		builder.WriteString(strings.Join(where, " AND "))
+		builder.WriteString("\n")
+	}
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(last_updated_at, created_at) DESC, gateway_order_id DESC LIMIT $%d", len(args)))
+	return builder.String(), args
+}
+
+func buildListFillsSQL(query trading.FillQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	if query.AccountID != "" {
+		appendFilter("account_id", query.AccountID)
+	}
+	if query.GatewayOrderID != "" {
+		appendFilter("gateway_order_id", query.GatewayOrderID)
+	}
+	if query.Symbol != "" {
+		appendFilter("symbol", query.Symbol)
+	}
+	if query.Exchange != "" {
+		appendFilter("exchange", query.Exchange)
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(fillSelectColumns)
+	if len(where) > 0 {
+		builder.WriteString("WHERE ")
+		builder.WriteString(strings.Join(where, " AND "))
+		builder.WriteString("\n")
+	}
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(matched_at, created_at) DESC, fill_pk DESC LIMIT $%d", len(args)))
+	return builder.String(), args
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanOrder(row rowScanner) (trading.Order, error) {
+	var order trading.Order
+	var clientOrderID sql.NullString
+	var orderID sql.NullInt64
+	var orderStreamID sql.NullString
+	var offsetType sql.NullString
+	var avgFillPrice sql.NullFloat64
+	var adapterStatusCode sql.NullInt64
+	var adapterStatusName sql.NullString
+	var rejectCode sql.NullString
+	var rejectMessage sql.NullString
+	var originMessageID sql.NullString
+	var requestID sql.NullString
+	var idempotencyKey sql.NullString
+	var shareholderID sql.NullString
+	var createdAt sql.NullTime
+	var acceptedAt sql.NullTime
+	var insertedAt sql.NullTime
+	var lastUpdatedAt sql.NullTime
+	var terminalAt sql.NullTime
+	var adapterContext []byte
+
+	err := row.Scan(
+		&order.AccountID,
+		&clientOrderID,
+		&order.GatewayOrderID,
+		&orderID,
+		&orderStreamID,
+		&order.Symbol,
+		&order.Name,
+		&order.Exchange,
+		&order.TradeSide,
+		&order.BusinessType,
+		&offsetType,
+		&order.LimitPrice,
+		&order.OrderQty,
+		&order.SubmittedQty,
+		&order.CumFilledQty,
+		&order.LeavesQty,
+		&order.CancelledQty,
+		&order.InvalidQty,
+		&avgFillPrice,
+		&order.Fee,
+		&order.Status,
+		&order.GatewayStatus,
+		&adapterStatusCode,
+		&adapterStatusName,
+		&order.IsTerminal,
+		&rejectCode,
+		&rejectMessage,
+		&originMessageID,
+		&requestID,
+		&idempotencyKey,
+		&shareholderID,
+		&createdAt,
+		&acceptedAt,
+		&insertedAt,
+		&lastUpdatedAt,
+		&terminalAt,
+		&adapterContext,
+	)
+	if err != nil {
+		return trading.Order{}, err
+	}
+	order.ClientOrderID = clientOrderID.String
+	order.OrderID = orderID.Int64
+	order.OrderStreamID = orderStreamID.String
+	order.OffsetType = trading.OffsetType(offsetType.String)
+	order.AvgFillPrice = avgFillPrice.Float64
+	order.AdapterStatusCode = int(adapterStatusCode.Int64)
+	order.AdapterStatusName = adapterStatusName.String
+	order.RejectCode = trading.ErrorCode(rejectCode.String)
+	order.RejectMessage = rejectMessage.String
+	order.OriginMessageID = originMessageID.String
+	order.RequestID = requestID.String
+	order.IdempotencyKey = idempotencyKey.String
+	order.ShareholderID = shareholderID.String
+	order.CreatedAt = createdAt.Time
+	order.AcceptedAt = acceptedAt.Time
+	order.InsertedAt = insertedAt.Time
+	order.LastUpdatedAt = lastUpdatedAt.Time
+	order.TerminalAt = terminalAt.Time
+	order.AdapterContext = map[string]any{}
+	if len(adapterContext) > 0 {
+		if err := json.Unmarshal(adapterContext, &order.AdapterContext); err != nil {
+			return trading.Order{}, err
+		}
+	}
+	return order, nil
+}
+
+func scanFill(row rowScanner) (trading.Fill, error) {
+	var fill trading.Fill
+	var fillID sql.NullString
+	var orderID sql.NullInt64
+	var orderStreamID sql.NullString
+	var tradeDate sql.NullString
+	var matchTimestamp sql.NullInt64
+	var matchedAt sql.NullTime
+	var shareholderID sql.NullString
+	var adapterContext []byte
+
+	err := row.Scan(
+		&fillID,
+		&fill.AccountID,
+		&fill.GatewayOrderID,
+		&orderID,
+		&orderStreamID,
+		&fill.Symbol,
+		&fill.Name,
+		&fill.Exchange,
+		&fill.TradeSide,
+		&fill.Price,
+		&fill.Qty,
+		&fill.Fee,
+		&tradeDate,
+		&matchTimestamp,
+		&matchedAt,
+		&shareholderID,
+		&adapterContext,
+	)
+	if err != nil {
+		return trading.Fill{}, err
+	}
+	fill.FillID = fillID.String
+	fill.OrderID = orderID.Int64
+	fill.OrderStreamID = orderStreamID.String
+	fill.TradeDate = tradeDate.String
+	fill.MatchTimestamp = matchTimestamp.Int64
+	fill.MatchedAt = matchedAt.Time
+	fill.ShareholderID = shareholderID.String
+	fill.AdapterContext = map[string]any{}
+	if len(adapterContext) > 0 {
+		if err := json.Unmarshal(adapterContext, &fill.AdapterContext); err != nil {
+			return trading.Fill{}, err
+		}
+	}
+	return fill, nil
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {

@@ -232,6 +232,56 @@ func TestArchiveRawStreamMessageBuildsAuditWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[15], `"gateway_order_id":"gateway-1"`)
 }
 
+func TestListOrdersBuildsFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		Symbol:    "600000",
+		Exchange:  trading.ExchangeSH,
+		Status:    trading.OrderStatusWorking,
+		Limit:     25,
+	})
+	if err == nil {
+		t.Fatal("ListOrders() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM orders")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "symbol = $2")
+	requireQueryContains(t, exec.query, "exchange = $3")
+	requireQueryContains(t, exec.query, "status = $4")
+	requireQueryContains(t, exec.query, "LIMIT $5")
+	requireArgLen(t, exec.args, 5)
+	if exec.args[4] != 25 {
+		t.Fatalf("limit arg = %#v", exec.args[4])
+	}
+}
+
+func TestListFillsBuildsFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListFills(context.Background(), trading.FillQuery{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		Limit:          5,
+	})
+	if err == nil {
+		t.Fatal("ListFills() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM fills")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "gateway_order_id = $2")
+	requireQueryContains(t, exec.query, "LIMIT $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[2] != 5 {
+		t.Fatalf("limit arg = %#v", exec.args[2])
+	}
+}
+
 func TestRepositoryValidation(t *testing.T) {
 	repo := NewRepository(&recordingExecutor{})
 
@@ -244,6 +294,11 @@ func TestRepositoryValidation(t *testing.T) {
 	if !errors.Is(err, ErrInvalidLedgerInput) {
 		t.Fatalf("ArchiveRawStreamMessage() error = %v, want ErrInvalidLedgerInput", err)
 	}
+
+	_, err = repo.ListOrders(context.Background(), trading.OrderQuery{})
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("ListOrders() error = %v, want ErrInvalidLedgerInput", err)
+	}
 }
 
 type recordingExecutor struct {
@@ -253,6 +308,17 @@ type recordingExecutor struct {
 }
 
 func (exec *recordingExecutor) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
+	exec.query = query
+	exec.args = append([]any(nil), args...)
+	return nil, exec.err
+}
+
+type recordingQueryExecutor struct {
+	recordingExecutor
+	err error
+}
+
+func (exec *recordingQueryExecutor) QueryContext(_ context.Context, query string, args ...any) (*sql.Rows, error) {
 	exec.query = query
 	exec.args = append([]any(nil), args...)
 	return nil, exec.err

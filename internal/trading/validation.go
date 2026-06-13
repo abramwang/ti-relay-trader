@@ -65,6 +65,21 @@ func (status OrderStatus) Terminal() bool {
 	}
 }
 
+func (status OrderStatus) Valid() bool {
+	switch status {
+	case OrderStatusCreated,
+		OrderStatusAccepted,
+		OrderStatusWorking,
+		OrderStatusPartiallyFilled,
+		OrderStatusFilled,
+		OrderStatusCancelled,
+		OrderStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 func (status GatewayStatus) Terminal() bool {
 	switch status {
 	case GatewayStatusFilled, GatewayStatusCancelled, GatewayStatusRejected:

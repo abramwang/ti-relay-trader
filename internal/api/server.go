@@ -6,27 +6,34 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/httpx"
+	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/trading"
 )
 
 type Dependencies struct {
-	Orders OrderSubmitter
+	Orders OrderService
 }
 
-type OrderSubmitter interface {
+type OrderService interface {
 	SubmitOrder(ctx context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error)
+	CancelOrder(ctx context.Context, req trading.CancelOrderRequest, opts orderflow.CancelOptions) (orderflow.CancelOrderResult, error)
+	ListOrders(ctx context.Context, query trading.OrderQuery) (orderflow.ListOrdersResult, error)
+	ListFills(ctx context.Context, query trading.FillQuery) (orderflow.ListFillsResult, error)
 }
 
 type Server struct {
 	cfg     config.Config
 	logger  *slog.Logger
 	started time.Time
-	orders  OrderSubmitter
+	orders  OrderService
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -51,6 +58,8 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/schema", server.handleSchema)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
+	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
+	mux.HandleFunc("/v1/fills", server.handleFills)
 	mux.HandleFunc("/", server.handleNotFound)
 
 	return httpx.RequestLogger(logger)(mux)
@@ -112,10 +121,31 @@ func (s *Server) handleOrders(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		s.handleSubmitOrder(w, r)
 	case http.MethodGet:
-		httpx.WriteError(w, r, http.StatusNotImplemented, httpx.CodeNotImplemented, "order query is not implemented yet", nil)
+		s.handleListOrders(w, r)
 	default:
 		httpx.WriteMethodNotAllowed(w, r, "GET, POST")
 	}
+}
+
+func (s *Server) handleOrderPath(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/orders/")
+	path = strings.Trim(path, "/")
+	if path == "batch" {
+		httpx.WriteError(w, r, http.StatusNotImplemented, httpx.CodeNotImplemented, "batch order submit is not implemented yet", nil)
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[1] == "cancel" {
+		if r.Method != http.MethodPost {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.handleCancelOrder(w, r, parts[0])
+		return
+	}
+
+	httpx.WriteNotFound(w, r)
 }
 
 func (s *Server) handleSubmitOrder(w http.ResponseWriter, r *http.Request) {
@@ -144,18 +174,151 @@ func (s *Server) handleSubmitOrder(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteOK(w, r, http.StatusAccepted, result)
 }
 
+func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request, gatewayOrderID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+
+	decodedGatewayOrderID, err := url.PathUnescape(gatewayOrderID)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid gateway_order_id path", err.Error())
+		return
+	}
+
+	defer r.Body.Close()
+	var req trading.CancelOrderRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid request body", err.Error())
+			return
+		}
+	}
+	if req.GatewayOrderID == "" {
+		req.GatewayOrderID = decodedGatewayOrderID
+	} else if req.GatewayOrderID != decodedGatewayOrderID {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "gateway_order_id path and body mismatch", nil)
+		return
+	}
+
+	result, err := s.orders.CancelOrder(r.Context(), req, orderflow.CancelOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parseOrderQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid order query", err.Error())
+		return
+	}
+	result, err := s.orders.ListOrders(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parseFillQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fill query", err.Error())
+		return
+	}
+	result, err := s.orders.ListFills(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
 func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, trading.ErrInvalidSchema):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid order request", err.Error())
+	case errors.Is(err, ledger.ErrOrderNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "order not found", err.Error())
 	case errors.Is(err, orderflow.ErrRouteNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", err.Error())
 	case errors.Is(err, orderflow.ErrAccountDisabled), errors.Is(err, orderflow.ErrTradingDisabled):
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "account is not enabled for trading", err.Error())
+	case errors.Is(err, orderflow.ErrMissingPublisher):
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "redis command publisher is unavailable", err.Error())
+	case errors.Is(err, orderflow.ErrOrderTerminalNotCancelable), errors.Is(err, orderflow.ErrOrderWithoutLeavesNotCancelable):
+		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeConflict, "order cannot be cancelled", err.Error())
 	default:
-		s.logger.Error("submit_order_failed", "error", err)
-		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "submit order failed", nil)
+		s.logger.Error("order_request_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "order request failed", nil)
 	}
+}
+
+func parseOrderQuery(values url.Values) (trading.OrderQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return trading.OrderQuery{}, err
+	}
+	return trading.OrderQuery{
+		AccountID:      values.Get("account_id"),
+		GatewayOrderID: values.Get("gateway_order_id"),
+		ClientOrderID:  values.Get("client_order_id"),
+		Symbol:         values.Get("symbol"),
+		Exchange:       trading.Exchange(values.Get("exchange")),
+		Status:         trading.OrderStatus(values.Get("status")),
+		Limit:          limit,
+		Cursor:         values.Get("cursor"),
+	}, nil
+}
+
+func parseFillQuery(values url.Values) (trading.FillQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return trading.FillQuery{}, err
+	}
+	return trading.FillQuery{
+		AccountID:      values.Get("account_id"),
+		GatewayOrderID: values.Get("gateway_order_id"),
+		Symbol:         values.Get("symbol"),
+		Exchange:       trading.Exchange(values.Get("exchange")),
+		Limit:          limit,
+		Cursor:         values.Get("cursor"),
+	}, nil
+}
+
+func parseLimit(value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	limit, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, err
+	}
+	if limit < 0 {
+		return 0, errors.New("limit must be non-negative")
+	}
+	return limit, nil
 }
 
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {

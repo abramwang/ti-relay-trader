@@ -236,12 +236,8 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 
 func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Dependencies, func(), error) {
 	cleanup := func() {}
-	if strings.TrimSpace(cfg.Database.DSN) == "" || strings.TrimSpace(cfg.Redis.URL) == "" {
-		logger.Warn("relay_api_order_service_unavailable",
-			"reason", "database.dsn and redis.url are required",
-			"has_database_dsn", strings.TrimSpace(cfg.Database.DSN) != "",
-			"has_redis_url", strings.TrimSpace(cfg.Redis.URL) != "",
-		)
+	if strings.TrimSpace(cfg.Database.DSN) == "" {
+		logger.Warn("relay_api_order_service_unavailable", "reason", "database.dsn is required")
 		return api.Dependencies{}, cleanup, nil
 	}
 
@@ -262,15 +258,21 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		return api.Dependencies{}, func() {}, err
 	}
 
-	publisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
-	if err != nil {
-		cleanup()
-		return api.Dependencies{}, func() {}, err
-	}
-	previousCleanup := cleanup
-	cleanup = func() {
-		_ = publisher.Close()
-		previousCleanup()
+	var publisher orderflow.CommandPublisher
+	if strings.TrimSpace(cfg.Redis.URL) == "" {
+		logger.Warn("relay_api_trade_commands_unavailable", "reason", "redis.url is required")
+	} else {
+		redisPublisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
+		if err != nil {
+			cleanup()
+			return api.Dependencies{}, func() {}, err
+		}
+		publisher = redisPublisher
+		previousCleanup := cleanup
+		cleanup = func() {
+			_ = redisPublisher.Close()
+			previousCleanup()
+		}
 	}
 
 	orders, err := orderflow.New(orderflow.Options{
@@ -408,11 +410,11 @@ const endpoints = [
   { group: "账户", method: "GET", path: "/v1/accounts", status: "api-mode", body: "" },
   { group: "账户", method: "GET", path: "/v1/accounts/{account_id}/asset", status: "planned", body: "" },
   { group: "账户", method: "GET", path: "/v1/accounts/{account_id}/positions", status: "planned", body: "" },
-  { group: "交易", method: "POST", path: "/v1/orders", status: "api-mode", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.54, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
+  { group: "交易", method: "POST", path: "/v1/orders", status: "api-mode", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
   { group: "交易", method: "POST", path: "/v1/orders/batch", status: "planned", body: JSON.stringify({account_id:"00030484", orders:[]}, null, 2) },
-  { group: "交易", method: "POST", path: "/v1/orders/{gateway_order_id}/cancel", status: "planned", body: JSON.stringify({account_id:"00030484", gateway_order_id:"gw-demo-0001"}, null, 2) },
-  { group: "查询", method: "GET", path: "/v1/orders", status: "planned", body: "" },
-  { group: "查询", method: "GET", path: "/v1/fills", status: "planned", body: "" },
+  { group: "交易", method: "POST", path: "/v1/orders/relay-api-console-demo/cancel", status: "api-mode", body: JSON.stringify({account_id:"00030484", gateway_order_id:"relay-api-console-demo", cancel_id:"relay-cancel-console-demo", idempotency_key:"relay-cancel-console-demo"}, null, 2) },
+  { group: "查询", method: "GET", path: "/v1/orders", status: "api-mode", query: "account_id=00030484\nlimit=20", body: "" },
+  { group: "查询", method: "GET", path: "/v1/fills", status: "api-mode", query: "account_id=00030484\nlimit=20", body: "" },
   { group: "事件", method: "GET", path: "/v1/events/stream", status: "planned", body: "" }
 ];
 
@@ -468,7 +470,7 @@ function selectEndpoint(endpoint) {
   methodSelect.value = endpoint.method;
   pathInput.value = endpoint.path;
   bodyInput.value = endpoint.body || "";
-  queryInput.value = "";
+  queryInput.value = endpoint.query || "";
   headersInput.value = endpoint.method === "GET" ? "" : "Content-Type: application/json";
   sendButton.disabled = endpoint.status === "planned";
   renderEndpointList();

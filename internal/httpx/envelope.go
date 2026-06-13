@@ -10,6 +10,7 @@ type ErrorCode string
 
 const (
 	CodeBadRequest       ErrorCode = "BAD_REQUEST"
+	CodeConflict         ErrorCode = "CONFLICT"
 	CodeForbidden        ErrorCode = "FORBIDDEN"
 	CodeMethodNotAllowed ErrorCode = "METHOD_NOT_ALLOWED"
 	CodeNotFound         ErrorCode = "NOT_FOUND"

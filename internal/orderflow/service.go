@@ -16,16 +16,21 @@ import (
 )
 
 var (
-	ErrRouteNotFound    = errors.New("account route not found")
-	ErrAccountDisabled  = errors.New("account is disabled")
-	ErrTradingDisabled  = errors.New("account trading is disabled")
-	ErrMissingLedger    = errors.New("ledger writer is required")
-	ErrMissingPublisher = errors.New("command publisher is required")
+	ErrRouteNotFound                   = errors.New("account route not found")
+	ErrAccountDisabled                 = errors.New("account is disabled")
+	ErrTradingDisabled                 = errors.New("account trading is disabled")
+	ErrOrderTerminalNotCancelable      = errors.New("order is terminal and cannot be cancelled")
+	ErrOrderWithoutLeavesNotCancelable = errors.New("order has no leaves quantity and cannot be cancelled")
+	ErrMissingLedger                   = errors.New("ledger writer is required")
+	ErrMissingPublisher                = errors.New("command publisher is required")
 )
 
 type LedgerWriter interface {
 	UpsertAccount(ctx context.Context, account trading.Account) error
 	UpsertOrder(ctx context.Context, order trading.Order) error
+	GetOrder(ctx context.Context, accountID string, gatewayOrderID string) (trading.Order, error)
+	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
+	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 }
 
@@ -61,6 +66,10 @@ type SubmitOptions struct {
 	RequestID string
 }
 
+type CancelOptions struct {
+	RequestID string
+}
+
 type SubmitOrderResult struct {
 	Order          trading.Order                    `json:"order"`
 	MessageID      string                           `json:"message_id"`
@@ -71,12 +80,32 @@ type SubmitOrderResult struct {
 	Published      redisstream.CommandPublishResult `json:"published"`
 }
 
+type CancelOrderResult struct {
+	Order          trading.Order                    `json:"order"`
+	CancelID       string                           `json:"cancel_id"`
+	MessageID      string                           `json:"message_id"`
+	StreamKey      string                           `json:"stream_key"`
+	StreamID       string                           `json:"stream_id"`
+	IdempotencyKey string                           `json:"idempotency_key"`
+	RequestID      string                           `json:"request_id,omitempty"`
+	Published      redisstream.CommandPublishResult `json:"published"`
+}
+
+type ListOrdersResult struct {
+	Orders []trading.Order    `json:"orders"`
+	Query  trading.OrderQuery `json:"query"`
+	Count  int                `json:"count"`
+}
+
+type ListFillsResult struct {
+	Fills []trading.Fill    `json:"fills"`
+	Query trading.FillQuery `json:"query"`
+	Count int               `json:"count"`
+}
+
 func New(opts Options) (*Service, error) {
 	if opts.Ledger == nil {
 		return nil, ErrMissingLedger
-	}
-	if opts.Publisher == nil {
-		return nil, ErrMissingPublisher
 	}
 	if opts.IDs == nil {
 		opts.IDs = defaultIDGenerator{}
@@ -101,6 +130,9 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	if err != nil {
 		return SubmitOrderResult{}, err
 	}
+	if service.publisher == nil {
+		return SubmitOrderResult{}, ErrMissingPublisher
+	}
 
 	normalized := req
 	if strings.TrimSpace(normalized.GatewayOrderID) == "" {
@@ -115,7 +147,10 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 
 	now := service.clock.Now().UTC()
 	messageID := service.ids.NewID("msg-order-submit")
-	requestID := firstNonEmpty(opts.RequestID, service.ids.NewID("req-order-submit"))
+	requestID := strings.TrimSpace(opts.RequestID)
+	if requestID == "" {
+		requestID = service.ids.NewID("req-order-submit")
+	}
 	order := draftOrderFromRequest(normalized, now)
 	order.OriginMessageID = messageID
 	order.RequestID = requestID
@@ -158,7 +193,7 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	if err != nil {
 		return SubmitOrderResult{}, err
 	}
-	if err := service.archiveCommand(ctx, published, envelope, order); err != nil {
+	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, normalized.GatewayOrderID); err != nil {
 		return SubmitOrderResult{}, err
 	}
 
@@ -170,6 +205,108 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 		IdempotencyKey: normalized.IdempotencyKey,
 		RequestID:      requestID,
 		Published:      published,
+	}, nil
+}
+
+func (service *Service) CancelOrder(ctx context.Context, req trading.CancelOrderRequest, opts CancelOptions) (CancelOrderResult, error) {
+	if err := req.Validate(); err != nil {
+		return CancelOrderResult{}, err
+	}
+	route, err := service.routeForAccount(req.AccountID)
+	if err != nil {
+		return CancelOrderResult{}, err
+	}
+	if service.publisher == nil {
+		return CancelOrderResult{}, ErrMissingPublisher
+	}
+
+	order, err := service.ledger.GetOrder(ctx, req.AccountID, req.GatewayOrderID)
+	if err != nil {
+		return CancelOrderResult{}, err
+	}
+	if order.IsTerminal || order.Status.Terminal() {
+		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s status=%s", ErrOrderTerminalNotCancelable, req.AccountID, req.GatewayOrderID, order.Status)
+	}
+	if order.OrderQty > 0 && order.LeavesQty <= 0 {
+		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s", ErrOrderWithoutLeavesNotCancelable, req.AccountID, req.GatewayOrderID)
+	}
+
+	normalized := req
+	if strings.TrimSpace(normalized.CancelID) == "" {
+		normalized.CancelID = service.ids.NewID("cancel")
+	}
+	if strings.TrimSpace(normalized.IdempotencyKey) == "" {
+		normalized.IdempotencyKey = "cancel:" + normalized.AccountID + ":" + normalized.GatewayOrderID + ":" + normalized.CancelID
+	}
+
+	now := service.clock.Now().UTC()
+	messageID := service.ids.NewID("msg-order-cancel")
+	requestID := strings.TrimSpace(opts.RequestID)
+	if requestID == "" {
+		requestID = service.ids.NewID("req-order-cancel")
+	}
+	streamKey, err := redisstream.CommandStreamForAction(redisstream.NewStreams(route.StreamPrefix), redisstream.ActionOrderCancel)
+	if err != nil {
+		return CancelOrderResult{}, err
+	}
+	envelope := redisstream.NewCommandEnvelope(
+		redisstream.ActionOrderCancel,
+		messageID,
+		requestID,
+		requestID,
+		normalized.IdempotencyKey,
+		normalized,
+		now,
+	)
+	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	if err != nil {
+		return CancelOrderResult{}, err
+	}
+	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, normalized.GatewayOrderID); err != nil {
+		return CancelOrderResult{}, err
+	}
+
+	return CancelOrderResult{
+		Order:          order,
+		CancelID:       normalized.CancelID,
+		MessageID:      messageID,
+		StreamKey:      published.StreamKey,
+		StreamID:       published.StreamID,
+		IdempotencyKey: normalized.IdempotencyKey,
+		RequestID:      requestID,
+		Published:      published,
+	}, nil
+}
+
+func (service *Service) ListOrders(ctx context.Context, query trading.OrderQuery) (ListOrdersResult, error) {
+	normalized, err := normalizeOrderQuery(query)
+	if err != nil {
+		return ListOrdersResult{}, err
+	}
+	orders, err := service.ledger.ListOrders(ctx, normalized)
+	if err != nil {
+		return ListOrdersResult{}, err
+	}
+	return ListOrdersResult{
+		Orders: orders,
+		Query:  normalized,
+		Count:  len(orders),
+	}, nil
+}
+
+func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) (ListFillsResult, error) {
+	normalized, err := normalizeFillQuery(query)
+	if err != nil {
+		return ListFillsResult{}, err
+	}
+	fills, err := service.ledger.ListFills(ctx, normalized)
+	if err != nil {
+		return ListFillsResult{}, err
+	}
+	return ListFillsResult{
+		Fills: fills,
+		Query: normalized,
+		Count: len(fills),
 	}, nil
 }
 
@@ -187,7 +324,7 @@ func (service *Service) routeForAccount(accountID string) (config.AccountRouteCo
 	return route, nil
 }
 
-func (service *Service) archiveCommand(ctx context.Context, published redisstream.CommandPublishResult, envelope redisstream.CommandEnvelope, order trading.Order) error {
+func (service *Service) archiveCommand(ctx context.Context, published redisstream.CommandPublishResult, envelope redisstream.CommandEnvelope, role string, accountID string, gatewayOrderID string) error {
 	body, err := json.Marshal(envelope)
 	if err != nil {
 		return err
@@ -204,15 +341,55 @@ func (service *Service) archiveCommand(ctx context.Context, published redisstrea
 			IdempotencyKey:  envelope.IdempotencyKey,
 		},
 		Direction:      "in",
-		Role:           redisstream.SuffixCmdTrade,
+		Role:           role,
 		MessageType:    envelope.MessageType,
 		Action:         envelope.Action,
-		AccountID:      order.AccountID,
-		GatewayOrderID: order.GatewayOrderID,
+		AccountID:      accountID,
+		GatewayOrderID: gatewayOrderID,
 		Body:           json.RawMessage(body),
 		BodyText:       string(body),
 		ReceivedAt:     service.clock.Now().UTC(),
 	})
+}
+
+func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
+	normalized := query
+	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
+	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
+	normalized.ClientOrderID = strings.TrimSpace(normalized.ClientOrderID)
+	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
+	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
+		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
+	}
+	if normalized.Status != "" && !normalized.Status.Valid() {
+		return normalized, fmt.Errorf("%w: status is invalid", trading.ErrInvalidSchema)
+	}
+	if normalized.Limit <= 0 {
+		normalized.Limit = 100
+	}
+	if normalized.Limit > 500 {
+		normalized.Limit = 500
+	}
+	return normalized, nil
+}
+
+func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
+	normalized := query
+	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
+	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
+	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
+	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
+		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
+	}
+	if normalized.Limit <= 0 {
+		normalized.Limit = 100
+	}
+	if normalized.Limit > 500 {
+		normalized.Limit = 500
+	}
+	return normalized, nil
 }
 
 func draftOrderFromRequest(req trading.SubmitOrderRequest, now time.Time) trading.Order {
