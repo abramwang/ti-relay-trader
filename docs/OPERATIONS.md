@@ -76,6 +76,16 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 3. HTTP 请求日志包含 `request_id`、method、path、status、bytes、duration_ms、remote_addr。
 4. API 模式统一返回 JSON envelope，包含 `ok`、`data` 或 `error`、`request_id`、`time`。
 
+## 接口测试台
+
+文档门户提供 Apifox 风格接口测试台：
+
+```text
+http://relay-trader.quantstage.com/api-console
+```
+
+当前测试台用于 API 联调页面骨架和只读接口测试。交易写接口在正式 handler、权限边界、幂等键和测试账户确认前保持 `planned` 状态，不会发送未实现请求。
+
 ## 前置测试环境
 
 当前用户已启动前置程序测试环境。后续进入 Redis Stream 对接阶段时，可以基于可见 stream 做以下联调：

@@ -104,6 +104,7 @@
 - [x] `GET /healthz` 正式服务健康检查骨架。
 - [x] `GET /v1/status` 服务状态骨架。
 - [x] `GET /v1/accounts` 配置态账户列表骨架。
+- [x] 增加 Apifox 风格接口测试台骨架 `/api-console`。
 - [ ] `GET /v1/accounts/{account_id}/asset`。
 - [ ] `GET /v1/accounts/{account_id}/positions`。
 - [ ] `POST /v1/orders`。
@@ -120,6 +121,16 @@
 - [ ] 实现 SDK 事件订阅和 `wait_order_terminal`。
 - [ ] 增加 SDK mock API 单元测试和集成测试。
 - [ ] 增加 SDK 打包脚本和 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
+
+### P6.1 接口测试台
+
+- [x] 左侧接口集合。
+- [x] 中间请求编辑区：method、base URL、path、query、headers、body。
+- [x] 右侧响应查看区：HTTP 状态、耗时、响应 JSON。
+- [x] 未实现交易写接口默认禁用发送。
+- [ ] API handler 完成后自动同步 endpoint 状态。
+- [ ] 增加请求样例保存和导出。
+- [ ] 增加响应断言和冒烟测试集合。
 
 ### P7 盘后对账任务
 
