@@ -56,6 +56,12 @@ var (
 			Description: "Go + Python 分工、服务边界、多账户模型、持久化和实施顺序。",
 		},
 		{
+			Slug:        "roadmap",
+			Title:       "开发路线图",
+			Path:        "docs/ROADMAP.md",
+			Description: "整体开发步骤、阶段状态、当前优先级和里程碑任务。",
+		},
+		{
 			Slug:        "third-party-integration",
 			Title:       "前置服务对接手册",
 			Path:        "docs/THIRD_PARTY_INTEGRATION_GUIDE.md",
@@ -116,6 +122,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <p>最终服务口径：<a href="` + publicURL + `">` + publicURL + `</a></p>
   <div class="actions">
     <a href="/docs">查看文档</a>
+    <a href="/docs/roadmap">开发路线图</a>
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
     <a href="/healthz">健康检查</a>
@@ -124,9 +131,16 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 <section class="grid">
   <a class="card" href="/docs/readme"><strong>README</strong><span>恢复卡片、状态、待办</span></a>
   <a class="card" href="/docs/architecture"><strong>架构草案</strong><span>Go + Python 服务边界</span></a>
+  <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
   <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
 </section>`
+
+	if roadmap, err := s.readProjectFile("docs/ROADMAP.md"); err == nil {
+		content += `<section class="panel roadmap">` + renderMarkdown(string(roadmap)) + `</section>`
+	} else {
+		content += `<section class="panel"><h2>开发路线图</h2><p>docs/ROADMAP.md 暂不可读。</p></section>`
+	}
 
 	s.render(w, pageData{
 		Title:      "relay 文档门户",
