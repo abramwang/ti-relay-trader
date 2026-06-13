@@ -157,12 +157,6 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
 </section>`
 
-	if roadmap, err := s.readProjectFile("docs/ROADMAP.md"); err == nil {
-		content += `<section class="panel roadmap">` + renderMarkdown(string(roadmap)) + `</section>`
-	} else {
-		content += `<section class="panel"><h2>开发路线图</h2><p>docs/ROADMAP.md 暂不可读。</p></section>`
-	}
-
 	s.render(w, pageData{
 		Title:      "relay 文档门户",
 		Active:     "home",

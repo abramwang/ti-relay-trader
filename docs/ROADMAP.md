@@ -43,7 +43,7 @@
 - [x] 建立 `docs/ARCHITECTURE.md`。
 - [x] 启动 9092 文档门户。
 - [x] 固化最终服务口径 `http://relay-trader.quantstage.com`。
-- [x] 在首页展示开发路线图。
+- [x] 在首页提供开发路线图入口。
 
 ### P1 工程化底座
 
