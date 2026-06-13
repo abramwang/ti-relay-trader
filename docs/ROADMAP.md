@@ -18,7 +18,7 @@
 | P2 标准交易接口设计 | doing | 定义统一 A 股交易 API 和 schema | 账户、资金、持仓、下单、撤单、订单、成交、事件 schema |
 | P3 多账户路由 | todo | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验 |
 | P4 Redis Stream 前置对接 | todo | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
-| P5 交易账表持久化 | todo | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
+| P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | todo | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
 | P7 盘后对账任务 | todo | 对账柜台、Redis 事件和内部账表 | Python jobs、对账批次、差异表、修复入口 |
 | P8 历史数据与盈亏统计 | todo | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
@@ -28,7 +28,7 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
+2. 增加数据库连接和 migration runner。
 3. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
 4. 基于已启动的前置测试环境做 Redis Stream 只读探测和查询联调。
 5. 规划 Redis Stream client 的命令写入和事件消费边界。
@@ -91,13 +91,16 @@
 
 - [x] 明确 PostgreSQL 为最终账本候选，Redis 不作为最终账本。
 - [x] 建立数据模型和字段映射设计文档。
-- [ ] 选择 migration 工具。
-- [ ] 建立 `accounts`、`gateways`。
-- [ ] 建立 `orders`、`order_events`。
-- [ ] 建立 `fills`。
-- [ ] 建立 `positions`、`position_snapshots`。
-- [ ] 建立 `cash_ledger`、`asset_snapshots`。
-- [ ] 建立 `reconciliation_runs`、`reconciliation_breaks`。
+- [x] 选择 migration 文件口径：工具无关 SQL，兼容 `psql`、`golang-migrate`、`goose`。
+- [x] 建立 `accounts`、`gateways`、`account_gateway_routes`。
+- [x] 建立 `orders`、`order_events`。
+- [x] 建立 `fills`。
+- [x] 建立 `raw_stream_messages`。
+- [x] 建立 `positions`、`position_snapshots`。
+- [x] 建立 `cash_ledger`、`asset_snapshots`。
+- [x] 建立 `reconciliation_runs`、`reconciliation_inputs`、`reconciliation_breaks`。
+- [ ] 增加数据库连接和 migration runner。
+- [ ] 增加基于临时 PostgreSQL 的集成测试。
 
 ### P6 9092 正式交易 API 与 SDK
 

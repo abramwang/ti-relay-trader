@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS reconciliation_breaks;
+DROP TABLE IF EXISTS reconciliation_inputs;
+DROP TABLE IF EXISTS reconciliation_runs;
+DROP TABLE IF EXISTS cash_ledger;
+DROP TABLE IF EXISTS asset_snapshots;
+DROP TABLE IF EXISTS position_snapshots;
+DROP TABLE IF EXISTS positions;
+DROP TABLE IF EXISTS raw_stream_messages;
+DROP TABLE IF EXISTS fills;
+DROP TABLE IF EXISTS order_events;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS account_gateway_routes;
+DROP TABLE IF EXISTS accounts;
+DROP TABLE IF EXISTS gateways;

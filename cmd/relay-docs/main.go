@@ -78,6 +78,12 @@ var (
 			Description: "PostgreSQL 落盘口径、C++ 结构体参考、标准字段映射和账表建议。",
 		},
 		{
+			Slug:        "migrations",
+			Title:       "PostgreSQL Migration",
+			Path:        "docs/MIGRATIONS.md",
+			Description: "首批交易账本 migration、表清单、关键约束和执行方式。",
+		},
+		{
 			Slug:        "trading-api-schema",
 			Title:       "交易接口 Schema",
 			Path:        "docs/TRADING_API_SCHEMA.md",
@@ -258,6 +264,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/architecture"><strong>架构草案</strong><span>Go + Python 服务边界</span></a>
   <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
   <a class="card" href="/docs/data-model"><strong>数据模型</strong><span>落盘与字段映射</span></a>
+  <a class="card" href="/docs/migrations"><strong>PostgreSQL Migration</strong><span>交易账本首版 DDL</span></a>
   <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
   <a class="card" href="/api-console"><strong>接口测试台</strong><span>Apifox 风格联调页面</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>

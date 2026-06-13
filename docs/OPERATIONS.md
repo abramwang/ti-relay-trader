@@ -86,6 +86,16 @@ http://relay-trader.quantstage.com/api-console
 
 当前测试台用于 API 联调页面骨架和只读接口测试。交易写接口在正式 handler、权限边界、幂等键和测试账户确认前保持 `planned` 状态，不会发送未实现请求。
 
+## PostgreSQL Migration
+
+首版交易账本 DDL 位于：
+
+```text
+migrations/postgres/000001_init_ledger.up.sql
+```
+
+当前仅提交 SQL migration 和静态测试，尚未连接真实 PostgreSQL。真实 DSN 仍放在部署机本地配置或安全渠道。
+
 ## 前置测试环境
 
 当前用户已启动前置程序测试环境。后续进入 Redis Stream 对接阶段时，可以基于可见 stream 做以下联调：
