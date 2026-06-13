@@ -1,0 +1,22 @@
+# Local runtime configuration may contain credentials.
+config/*.yaml
+config/*.yml
+!config/*.example.yaml
+!config/*.example.yml
+
+# Build and runtime artifacts.
+bin/
+dist/
+build/
+*.log
+*.pid
+
+# Python cache and local environments.
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+
+# OS/editor files.
+.DS_Store
+*.swp

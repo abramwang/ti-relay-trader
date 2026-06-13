@@ -1,0 +1,44 @@
+# relay example configuration.
+# Copy this file to config/relay.local.yaml or config/relay.prod.yaml on the
+# deployment host, then fill in real credentials there. Local config files are
+# intentionally ignored by git.
+
+service:
+  public_url: "http://relay-trader.quantstage.com"
+  docs_addr: "0.0.0.0:9092"
+  api_addr: "0.0.0.0:9092"
+  mode: "docs"
+
+database:
+  driver: "postgres"
+  # Use a real DSN only in an untracked local config file.
+  dsn: "postgres://<user>:<password>@<host>:5432/<database>?sslmode=disable"
+  max_open_conns: 16
+  max_idle_conns: 4
+
+redis:
+  # Use a real Redis URL only in an untracked local config file.
+  url: "redis://:<password>@<host>:6379/0"
+  env: "prod"
+  broker_id: "huaxin"
+  gateway_id: "<gateway_id>"
+
+accounts:
+  - account_id: "<account_id>"
+    broker_id: "huaxin"
+    gateway_id: "<gateway_id>"
+    stream_prefix: "relay:prod:v1:huaxin:<gateway_id>"
+    enabled: true
+    trading_enabled: false
+    simulated: false
+
+jobs:
+  reconcile:
+    enabled: true
+    schedule: "30 16 * * 1-5"
+  asset_snapshot:
+    enabled: true
+    schedule: "45 15 * * 1-5"
+  pnl:
+    enabled: true
+    schedule: "10 17 * * 1-5"

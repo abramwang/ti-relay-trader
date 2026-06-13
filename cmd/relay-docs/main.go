@@ -68,6 +68,12 @@ var (
 			Description: "PostgreSQL 落盘口径、C++ 结构体参考、标准字段映射和账表建议。",
 		},
 		{
+			Slug:        "operations",
+			Title:       "运行配置与任务管理",
+			Path:        "docs/OPERATIONS.md",
+			Description: "本地配置文件、凭据管理、cron 后台任务和部署运行约定。",
+		},
+		{
 			Slug:        "third-party-integration",
 			Title:       "前置服务对接手册",
 			Path:        "docs/THIRD_PARTY_INTEGRATION_GUIDE.md",
@@ -139,6 +145,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/architecture"><strong>架构草案</strong><span>Go + Python 服务边界</span></a>
   <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
   <a class="card" href="/docs/data-model"><strong>数据模型</strong><span>落盘与字段映射</span></a>
+  <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
   <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
 </section>`

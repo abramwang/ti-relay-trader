@@ -122,6 +122,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构草案 |
 | `http://relay-trader.quantstage.com/docs/roadmap` | 开发路线图 |
 | `http://relay-trader.quantstage.com/docs/data-model` | 数据模型与落盘设计 |
+| `http://relay-trader.quantstage.com/docs/operations` | 运行配置与任务管理 |
 | `http://relay-trader.quantstage.com/docs/third-party-integration` | 前置服务 Redis Stream 对接手册 |
 | `http://relay-trader.quantstage.com/tests` | 测试目录索引和测试目录树 |
 | `http://relay-trader.quantstage.com/tree` | 项目结构 |
@@ -145,6 +146,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 实现 9092 文档门户模式，可通过 Web 查看项目框架、文档和测试目录。
 - [x] 在首页展示整体开发路线图和阶段进度。
 - [x] 明确账户交易数据、订单数据、成交数据最终需要落盘，PostgreSQL 作为优先候选。
+- [x] 明确真实凭据可放在部署机本地配置文件，后台批处理可采用 cron 管理。
 - [ ] 定义标准交易柜台接口 schema。
 - [ ] 设计模拟柜台账表 schema。
 - [ ] 实现正式交易服务模式下的 9092 健康检查接口。
@@ -185,3 +187,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-13`: 确认域名映射完成，将 `http://relay-trader.quantstage.com` 记录为最终服务口径。
 - `2026-06-13`: 新增 `docs/ROADMAP.md`，并在文档门户首页展示整体开发步骤和阶段进度。
 - `2026-06-13`: 新增 `docs/DATA_MODEL.md`，记录 PostgreSQL 落盘口径、C++ 结构体参考源、标准字段映射和首批账表建议。
+- `2026-06-13`: 新增 `docs/OPERATIONS.md` 和 `config/relay.example.yaml`，记录本地配置文件、凭据管理和 cron 后台任务口径。
