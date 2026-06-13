@@ -31,7 +31,7 @@
 2. 拆分文档门户模式和正式交易服务模式，避免 9092 入口职责混淆。
 3. 定义账户、gateway、Redis stream prefix 的多账户路由配置。
 4. 定义第一版统一交易接口 schema。
-5. 设计 PostgreSQL 交易账表 migration。
+5. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
 
 ## 里程碑细化
 
@@ -54,6 +54,7 @@
 
 ### P2 标准交易接口设计
 
+- [x] 明确接口体参考源：Redis Stream 对接文档和 `/home/Titans/resource/include` C++ 头文件。
 - [ ] 定义账户模型。
 - [ ] 定义资金模型。
 - [ ] 定义持仓模型，覆盖 A 股 T+1 可卖数量。
@@ -80,6 +81,8 @@
 
 ### P5 交易账表持久化
 
+- [x] 明确 PostgreSQL 为最终账本候选，Redis 不作为最终账本。
+- [x] 建立数据模型和字段映射设计文档。
 - [ ] 选择 migration 工具。
 - [ ] 建立 `accounts`、`gateways`。
 - [ ] 建立 `orders`、`order_events`。
