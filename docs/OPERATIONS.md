@@ -86,6 +86,8 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 
 联调必须继续遵守凭据管理约定：Redis 密码、账号密码、柜台地址等只放本地未提交配置或安全渠道。
 
+只读探测入口见 [docs/REDIS_STREAM_PROBE.md](/home/ti-relay-trader/docs/REDIS_STREAM_PROBE.md:1)。
+
 ## Cron 任务管理
 
 后台批处理可以优先采用 cron 管理，适合以下任务：

@@ -96,6 +96,12 @@ var (
 			Description: "本地配置文件、凭据管理、cron 后台任务和部署运行约定。",
 		},
 		{
+			Slug:        "redis-stream-probe",
+			Title:       "Redis Stream 探测",
+			Path:        "docs/REDIS_STREAM_PROBE.md",
+			Description: "前置测试环境 Redis Stream 只读探测命令、输出和联调顺序。",
+		},
+		{
 			Slug:        "third-party-integration",
 			Title:       "前置服务对接手册",
 			Path:        "docs/THIRD_PARTY_INTEGRATION_GUIDE.md",
@@ -247,6 +253,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
+  <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
   <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
 </section>`

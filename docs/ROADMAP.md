@@ -30,8 +30,8 @@
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
 3. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-4. 规划 Redis Stream client 的命令写入和事件消费边界。
-5. 基于已启动的前置测试环境做 Redis Stream 只读探测和查询联调。
+4. 基于已启动的前置测试环境做 Redis Stream 只读探测和查询联调。
+5. 规划 Redis Stream client 的命令写入和事件消费边界。
 
 ## 里程碑细化
 
@@ -75,6 +75,10 @@
 
 ### P4 Redis Stream 前置对接
 
+- [x] 记录前置测试环境已启动。
+- [x] 实现只读探测命令 `relayctl redis-probe`。
+- [x] 定义 stream prefix、`cmd.trade/cmd.query/reply/event/hb/dlq` 命名辅助。
+- [x] 定义 Redis Stream `body` 消息摘要解析，不打印完整 body。
 - [ ] 实现命令写入 `cmd.trade` 和 `cmd.query`。
 - [ ] 消费 `reply`。
 - [ ] 消费 `event`。
