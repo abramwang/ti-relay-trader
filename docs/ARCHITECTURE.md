@@ -62,6 +62,7 @@ relay Python jobs
 | `internal/logging` | 结构化日志初始化，默认 JSON 输出 |
 | `internal/httpx` | HTTP request_id、中间件、统一 JSON envelope 和标准错误码骨架 |
 | `internal/api` | API 模式服务骨架，当前提供 `/healthz`、`/v1/status`、`/v1/accounts` |
+| `internal/trading` | 统一交易接口 schema、枚举、基础校验、状态机语义和 `/v1/schema` 目录 |
 | `internal/worker` | worker 模式常驻进程骨架，后续承接 Redis 消费和后台任务 |
 
 ## Python SDK 职责

@@ -7,6 +7,7 @@ import (
 
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/httpx"
+	"ti-relay-trader/internal/trading"
 )
 
 type Server struct {
@@ -29,6 +30,7 @@ func New(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/v1/status", server.handleStatus)
+	mux.HandleFunc("/v1/schema", server.handleSchema)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/", server.handleNotFound)
 
@@ -51,6 +53,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteOK(w, r, http.StatusOK, s.statusPayload("ok"))
+}
+
+func (s *Server) handleSchema(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+
+	httpx.WriteOK(w, r, http.StatusOK, trading.Catalog())
 }
 
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {

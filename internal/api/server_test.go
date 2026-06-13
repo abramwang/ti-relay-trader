@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ti-relay-trader/internal/config"
@@ -61,6 +62,24 @@ func TestAccountsFromConfig(t *testing.T) {
 	}
 	if !json.Valid(rec.Body.Bytes()) {
 		t.Fatalf("response is not json: %s", rec.Body.String())
+	}
+}
+
+func TestSchemaDiscovery(t *testing.T) {
+	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest(http.MethodGet, "/v1/schema", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("response is not json: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "relay.trading.v1alpha1") {
+		t.Fatalf("response missing schema version: %s", rec.Body.String())
 	}
 }
 

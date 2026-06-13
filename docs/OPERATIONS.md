@@ -76,6 +76,16 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 3. HTTP 请求日志包含 `request_id`、method、path、status、bytes、duration_ms、remote_addr。
 4. API 模式统一返回 JSON envelope，包含 `ok`、`data` 或 `error`、`request_id`、`time`。
 
+## 前置测试环境
+
+当前用户已启动前置程序测试环境。后续进入 Redis Stream 对接阶段时，可以基于可见 stream 做以下联调：
+
+1. 只读探测 `reply`、`event`、`hb`、`dlq` stream。
+2. 查询类命令联调：资金、持仓、订单、成交。
+3. 小流量交易类命令联调：下单、批量下单、撤单。
+
+联调必须继续遵守凭据管理约定：Redis 密码、账号密码、柜台地址等只放本地未提交配置或安全渠道。
+
 ## Cron 任务管理
 
 后台批处理可以优先采用 cron 管理，适合以下任务：

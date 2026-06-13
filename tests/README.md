@@ -11,13 +11,14 @@
 
 - 已创建测试目录骨架。
 - 已增加 Go 配置加载、结构化日志、HTTP envelope 和 API 健康检查骨架的单元测试。
+- 已增加统一交易 schema 的基础校验和状态机单元测试。
 - 暂无交易核心测试用例。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 
 ## 后续计划
 
-1. 增加 API schema 测试。
-2. 增加 Redis Stream envelope schema 测试。
+1. 增加 Redis Stream envelope schema 测试。
+2. 增加 API handler 请求解析和校验测试。
 3. 增加订单状态机和成交去重测试。
 4. 增加 PostgreSQL migration 测试。
 5. 增加盘后对账样例数据测试。

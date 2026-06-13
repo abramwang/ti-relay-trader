@@ -78,6 +78,12 @@ var (
 			Description: "PostgreSQL 落盘口径、C++ 结构体参考、标准字段映射和账表建议。",
 		},
 		{
+			Slug:        "trading-api-schema",
+			Title:       "交易接口 Schema",
+			Path:        "docs/TRADING_API_SCHEMA.md",
+			Description: "统一 A 股交易接口对象、枚举、校验、状态机和 Redis 映射。",
+		},
+		{
 			Slug:        "python-sdk",
 			Title:       "Python SDK",
 			Path:        "docs/PYTHON_SDK.md",
@@ -238,6 +244,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/architecture"><strong>架构草案</strong><span>Go + Python 服务边界</span></a>
   <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
   <a class="card" href="/docs/data-model"><strong>数据模型</strong><span>落盘与字段映射</span></a>
+  <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
