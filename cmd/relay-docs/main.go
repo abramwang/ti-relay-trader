@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	relayconfig "ti-relay-trader/internal/config"
 )
 
 type docPage struct {
@@ -39,6 +41,7 @@ type pageData struct {
 var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
 	rootDir = flag.String("root", ".", "project root directory")
+	cfgPath = flag.String("config", os.Getenv(relayconfig.EnvPath), "optional relay config file path")
 
 	publicURL = "http://relay-trader.quantstage.com"
 
@@ -99,10 +102,27 @@ var (
 
 func main() {
 	flag.Parse()
+	addrWasSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "addr" {
+			addrWasSet = true
+		}
+	})
 
 	absRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
 		log.Fatalf("resolve project root: %v", err)
+	}
+
+	cfg, err := loadPortalConfig(*cfgPath)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	if cfg.Service.PublicURL != "" {
+		publicURL = cfg.Service.PublicURL
+	}
+	if !addrWasSet && cfg.Service.DocsAddr != "" {
+		*addr = cfg.Service.DocsAddr
 	}
 
 	mux := http.NewServeMux()
@@ -120,6 +140,14 @@ func main() {
 	if err := http.ListenAndServe(*addr, logRequest(mux)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func loadPortalConfig(path string) (*relayconfig.Config, error) {
+	if strings.TrimSpace(path) == "" {
+		cfg := relayconfig.Default()
+		return &cfg, nil
+	}
+	return relayconfig.Load(path)
 }
 
 type portalServer struct {

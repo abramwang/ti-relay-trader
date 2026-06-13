@@ -40,6 +40,14 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 
 真实 PostgreSQL、Redis 等访问方式查阅 `http://doc.quantstage.com`。
 
+当前实现：
+
+1. Go 配置包位于 `internal/config`。
+2. 支持 `docs`、`api`、`worker` 三种服务运行模式。
+3. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
+4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
+5. 已校验服务模式、数据库连接池参数和重复账户路由。
+
 ## Cron 任务管理
 
 后台批处理可以优先采用 cron 管理，适合以下任务：
@@ -83,8 +91,7 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
 
 后续需要补齐：
 
-1. `config` 加载模块。
-2. 配置校验和敏感字段脱敏日志。
-3. Python jobs 入口。
-4. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
-5. 任务运行状态、最近成功时间和失败原因落盘。
+1. 敏感字段脱敏日志。
+2. Python jobs 入口。
+3. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
+4. 任务运行状态、最近成功时间和失败原因落盘。
