@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/trading"
@@ -39,6 +40,54 @@ func TestProcessLedgerEntryArchivesReplyOnly(t *testing.T) {
 	}
 	if len(writer.orders) != 0 || len(writer.fills) != 0 {
 		t.Fatalf("reply should not write orders/fills")
+	}
+}
+
+func TestProcessLedgerEntryWritesAssetReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-asset-1",
+			"action":"account.asset.query",
+			"result_type":"asset_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-06-13T10:00:00Z",
+			"payload":{"account":{"account_id":"00030484","cash_available":900000,"cash_total":1000000,"net_asset":1200000,"market_value":200000}}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Assets != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.assets) != 1 || writer.assets[0].asset.CashAvailable != 900000 {
+		t.Fatalf("assets = %#v", writer.assets)
+	}
+}
+
+func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-2", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-position-1",
+			"action":"account.positions.query",
+			"result_type":"position_page",
+			"status":"partial",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-06-13T10:00:01Z",
+			"payload":{"items":[{"account_id":"00030484","symbol":"600000","exchange":"SH","quantity":100,"sellable_qty":80,"avg_cost":9.54,"market_value":954,"shareholder_id":"A00030484"}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Positions != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.positions) != 1 || writer.positions[0].position.Symbol != "600000" {
+		t.Fatalf("positions = %#v", writer.positions)
 	}
 }
 
@@ -204,6 +253,8 @@ type fakeLedgerWriter struct {
 	orderUpdates []trading.OrderEvent
 	orderEvents  []recordedOrderEvent
 	fills        []recordedFill
+	assets       []recordedAsset
+	positions    []recordedPosition
 	raw          []ledger.RawStreamMessage
 }
 
@@ -217,6 +268,17 @@ type recordedFill struct {
 	fill   trading.Fill
 	stream ledger.StreamRef
 	source ledger.SourceRef
+}
+
+type recordedAsset struct {
+	asset        trading.Asset
+	snapshotType string
+	source       string
+}
+
+type recordedPosition struct {
+	position trading.Position
+	source   string
 }
 
 func (writer *fakeLedgerWriter) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -241,6 +303,16 @@ func (writer *fakeLedgerWriter) AppendOrderEvent(_ context.Context, event tradin
 
 func (writer *fakeLedgerWriter) InsertFill(_ context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error {
 	writer.fills = append(writer.fills, recordedFill{fill: fill, stream: stream, source: source})
+	return nil
+}
+
+func (writer *fakeLedgerWriter) UpsertAssetSnapshot(_ context.Context, asset trading.Asset, snapshotType string, source string, _ any, _ time.Time) error {
+	writer.assets = append(writer.assets, recordedAsset{asset: asset, snapshotType: snapshotType, source: source})
+	return nil
+}
+
+func (writer *fakeLedgerWriter) UpsertPosition(_ context.Context, position trading.Position, source string, _ any, _ time.Time) error {
+	writer.positions = append(writer.positions, recordedPosition{position: position, source: source})
 	return nil
 }
 

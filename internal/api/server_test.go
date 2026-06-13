@@ -126,6 +126,66 @@ func TestAccountPositions(t *testing.T) {
 	}
 }
 
+func TestRefreshAccountAsset(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		refreshAssetResult: orderflow.RefreshQueryResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionAccountAsset,
+			MessageID: "msg-asset-1",
+			StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.query",
+			StreamID:  "1-0",
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/asset/refresh", nil)
+	req.Header.Set("X-Request-ID", "req-refresh-asset")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.refreshAssetAccountID != "acct-1" || service.refreshAssetRequestID != "req-refresh-asset" {
+		t.Fatalf("refresh asset call = %q/%q", service.refreshAssetAccountID, service.refreshAssetRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), redisstream.ActionAccountAsset) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
+func TestRefreshAccountPositions(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		refreshPositionsResult: orderflow.RefreshQueryResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionAccountPositions,
+			MessageID: "msg-positions-1",
+			StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.query",
+			StreamID:  "1-0",
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/positions/refresh", nil)
+	req.Header.Set("X-Request-ID", "req-refresh-positions")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.refreshPositionsAccountID != "acct-1" || service.refreshPositionsRequestID != "req-refresh-positions" {
+		t.Fatalf("refresh positions call = %q/%q", service.refreshPositionsAccountID, service.refreshPositionsRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), redisstream.ActionAccountPositions) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
 func TestSchemaDiscovery(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodGet, "/v1/schema", nil)
@@ -454,30 +514,38 @@ func TestListFills(t *testing.T) {
 }
 
 type fakeOrderSubmitter struct {
-	req              trading.SubmitOrderRequest
-	requestID        string
-	result           orderflow.SubmitOrderResult
-	err              error
-	batchReq         trading.BatchSubmitOrderRequest
-	batchRequestID   string
-	batchResult      orderflow.BatchSubmitOrderResult
-	batchErr         error
-	cancelReq        trading.CancelOrderRequest
-	cancelRequestID  string
-	cancelResult     orderflow.CancelOrderResult
-	cancelErr        error
-	orderQuery       trading.OrderQuery
-	listOrdersResult orderflow.ListOrdersResult
-	listOrdersErr    error
-	fillQuery        trading.FillQuery
-	listFillsResult  orderflow.ListFillsResult
-	listFillsErr     error
-	assetAccountID   string
-	assetResult      orderflow.GetAssetResult
-	assetErr         error
-	positionQuery    trading.PositionQuery
-	positionsResult  orderflow.ListPositionsResult
-	positionsErr     error
+	req                       trading.SubmitOrderRequest
+	requestID                 string
+	result                    orderflow.SubmitOrderResult
+	err                       error
+	batchReq                  trading.BatchSubmitOrderRequest
+	batchRequestID            string
+	batchResult               orderflow.BatchSubmitOrderResult
+	batchErr                  error
+	cancelReq                 trading.CancelOrderRequest
+	cancelRequestID           string
+	cancelResult              orderflow.CancelOrderResult
+	cancelErr                 error
+	orderQuery                trading.OrderQuery
+	listOrdersResult          orderflow.ListOrdersResult
+	listOrdersErr             error
+	fillQuery                 trading.FillQuery
+	listFillsResult           orderflow.ListFillsResult
+	listFillsErr              error
+	assetAccountID            string
+	assetResult               orderflow.GetAssetResult
+	assetErr                  error
+	positionQuery             trading.PositionQuery
+	positionsResult           orderflow.ListPositionsResult
+	positionsErr              error
+	refreshAssetAccountID     string
+	refreshAssetRequestID     string
+	refreshAssetResult        orderflow.RefreshQueryResult
+	refreshAssetErr           error
+	refreshPositionsAccountID string
+	refreshPositionsRequestID string
+	refreshPositionsResult    orderflow.RefreshQueryResult
+	refreshPositionsErr       error
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {
@@ -546,4 +614,22 @@ func (submitter *fakeOrderSubmitter) ListPositions(_ context.Context, query trad
 		return orderflow.ListPositionsResult{}, submitter.positionsErr
 	}
 	return submitter.positionsResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) RefreshAsset(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
+	submitter.refreshAssetAccountID = accountID
+	submitter.refreshAssetRequestID = opts.RequestID
+	if submitter.refreshAssetErr != nil {
+		return orderflow.RefreshQueryResult{}, submitter.refreshAssetErr
+	}
+	return submitter.refreshAssetResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) RefreshPositions(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
+	submitter.refreshPositionsAccountID = accountID
+	submitter.refreshPositionsRequestID = opts.RequestID
+	if submitter.refreshPositionsErr != nil {
+		return orderflow.RefreshQueryResult{}, submitter.refreshPositionsErr
+	}
+	return submitter.refreshPositionsResult, nil
 }

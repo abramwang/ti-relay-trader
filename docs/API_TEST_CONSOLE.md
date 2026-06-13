@@ -38,7 +38,9 @@ http://relay-trader.quantstage.com/api-console
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/v1/accounts/{account_id}/asset` | 从 PostgreSQL 最新资金快照读取 |
+| `POST` | `/v1/accounts/{account_id}/asset/refresh` | 向前置发送 `account.asset.query`，后续由同步任务合并 reply |
 | `GET` | `/v1/accounts/{account_id}/positions` | 从 PostgreSQL 当前持仓表读取 |
+| `POST` | `/v1/accounts/{account_id}/positions/refresh` | 向前置发送 `account.positions.query`，后续由同步任务合并 reply |
 | `POST` | `/v1/orders` | 单笔下单，返回 `202 Accepted`，表示订单草稿已落盘且命令已写入 Redis |
 | `POST` | `/v1/orders/batch` | 批量下单，写入多笔订单草稿并发布 Redis `order.batch.submit` |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | 撤单，先校验本地订单非终态，再写入 Redis `order.cancel` |
@@ -66,7 +68,7 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 3. `planned` 接口默认禁用发送按钮。
 4. 交易写接口仅在启动配置包含 PostgreSQL、测试 Redis 和账户路由时可用，且账户配置必须 `enabled=true`、`trading_enabled=true`。
 5. 实盘账户会使用另一套 Redis 连接方式，测试 Redis 与实盘 Redis 不混用。
-6. 资金/持仓查询当前只读本地 PostgreSQL 账表，不主动刷新前置柜台数据。
+6. 资金/持仓查询默认只读本地 PostgreSQL 账表；刷新接口会发送测试前置 `cmd.query`，需要 `ledger-sync` 或后续 worker 合并 reply 后才能在查询接口看到最新数据。
 7. 若 9092 以纯文档配置启动，测试台仍可发送 `/v1/status`、`/v1/schema` 和 `/v1/accounts`，交易和账本接口会返回明确的不可用或空结果。
 
 ## 后续工作
@@ -75,4 +77,4 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 2. 将 endpoint 状态由手写清单改成自动读取 `/v1/schema`。
 3. 增加请求样例保存和导出。
 4. 增加响应断言，用于冒烟测试。
-5. 增加前置查询刷新模板。
+5. 增加订单和成交前置查询刷新模板。

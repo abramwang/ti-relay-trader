@@ -21,6 +21,8 @@ type LedgerWriter interface {
 	UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
+	UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
+	UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 }
 
@@ -65,6 +67,8 @@ type LedgerProcessResult struct {
 	Orders         int      `json:"orders"`
 	OrderEvents    int      `json:"order_events"`
 	Fills          int      `json:"fills"`
+	Assets         int      `json:"assets"`
+	Positions      int      `json:"positions"`
 	Replies        int      `json:"replies"`
 	Skipped        int      `json:"skipped"`
 	SkipReasons    []string `json:"skip_reasons,omitempty"`
@@ -180,7 +184,7 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 	switch envelope.MessageType {
 	case "reply":
 		result.Replies++
-		return result
+		return processReplyEnvelope(ctx, writer, envelope, result)
 	case "event":
 		return processEventEnvelope(ctx, writer, envelope, result)
 	default:
@@ -190,6 +194,67 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 		result.Unsupported++
 		result.Skipped++
 		result.SkipReasons = append(result.SkipReasons, "unsupported message_type "+envelope.MessageType)
+		return result
+	}
+}
+
+func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
+	if envelope.Status == string(trading.ReplyStatusRejected) || envelope.Status == string(trading.ReplyStatusFailed) {
+		return result
+	}
+
+	switch {
+	case envelope.Action == ActionAccountAsset || envelope.ResultType == "asset_page":
+		asset, raw, err := assetFromReplyEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, asset.AccountID)); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		result.Accounts++
+		capturedAt := envelope.ProducedAt
+		if err := writer.UpsertAssetSnapshot(ctx, asset, "intraday", "query", raw, capturedAt); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		result.Assets++
+		return result
+	case envelope.Action == ActionAccountPositions || envelope.ResultType == "position_page":
+		positions, raws, err := positionsFromReplyEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		accountID := envelope.Routing.AccountID
+		if len(positions) > 0 {
+			accountID = positions[0].AccountID
+		}
+		if accountID != "" {
+			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Accounts++
+		}
+		updatedAt := envelope.ProducedAt
+		for i, position := range positions {
+			if err := writer.UpsertPosition(ctx, position, "query", raws[i], updatedAt); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Positions++
+		}
+		return result
+	default:
 		return result
 	}
 }
@@ -400,6 +465,77 @@ func fillFromEnvelope(envelope EntryEnvelope) (trading.Fill, error) {
 	}, nil
 }
 
+func assetFromReplyEnvelope(envelope EntryEnvelope) (trading.Asset, any, error) {
+	var payload assetPagePayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return trading.Asset{}, nil, fmt.Errorf("decode asset_page payload: %w", err)
+	}
+	if payload.Account.AccountID == "" {
+		payload.Account.AccountID = envelope.Routing.AccountID
+	}
+	if strings.TrimSpace(payload.Account.AccountID) == "" {
+		return trading.Asset{}, nil, fmt.Errorf("asset_page payload incomplete for ledger write: missing account_id")
+	}
+	asset := trading.Asset{
+		AccountID:      payload.Account.AccountID,
+		CashAvailable:  payload.Account.CashAvailable,
+		CashTotal:      payload.Account.CashTotal,
+		NetAsset:       payload.Account.NetAsset,
+		MarketValue:    payload.Account.MarketValue,
+		StockValue:     payload.Account.StockValue,
+		FundValue:      payload.Account.FundValue,
+		Commission:     payload.Account.Commission,
+		DayProfit:      payload.Account.DayProfit,
+		PositionProfit: payload.Account.PositionProfit,
+		CloseProfit:    payload.Account.CloseProfit,
+		Credit:         payload.Account.Credit,
+		UpdatedAt:      envelope.ProducedAt,
+	}
+	return asset, payload.Account, nil
+}
+
+func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []any, error) {
+	var payload positionPagePayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return nil, nil, fmt.Errorf("decode position_page payload: %w", err)
+	}
+	positions := make([]trading.Position, 0, len(payload.Items))
+	raws := make([]any, 0, len(payload.Items))
+	for _, item := range payload.Items {
+		if item.AccountID == "" {
+			item.AccountID = envelope.Routing.AccountID
+		}
+		if strings.TrimSpace(item.AccountID) == "" {
+			return nil, nil, fmt.Errorf("position_page payload incomplete for ledger write: missing account_id")
+		}
+		if strings.TrimSpace(item.Symbol) == "" {
+			return nil, nil, fmt.Errorf("position_page payload incomplete for ledger write: missing symbol")
+		}
+		if strings.TrimSpace(item.Exchange) == "" {
+			return nil, nil, fmt.Errorf("position_page payload incomplete for ledger write: missing exchange")
+		}
+		positions = append(positions, trading.Position{
+			AccountID:     item.AccountID,
+			Symbol:        item.Symbol,
+			Name:          item.Name,
+			Exchange:      trading.Exchange(item.Exchange),
+			Quantity:      item.Quantity,
+			SellableQty:   item.SellableQty,
+			InitialQty:    item.InitialQty,
+			TodayQty:      item.TodayQty,
+			AvgCost:       item.AvgCost,
+			LastPrice:     item.LastPrice,
+			MarketValue:   item.MarketValue,
+			UnrealizedPnL: item.UnrealizedPnL,
+			SettledProfit: item.SettledProfit,
+			ShareholderID: item.ShareholderID,
+			UpdatedAt:     envelope.ProducedAt,
+		})
+		raws = append(raws, item)
+	}
+	return positions, raws, nil
+}
+
 type orderPayload struct {
 	AccountID         string  `json:"account_id"`
 	ClientOrderID     string  `json:"client_order_id"`
@@ -455,6 +591,46 @@ type fillPayload struct {
 	MatchTimestamp int64   `json:"match_timestamp"`
 	MatchedAt      string  `json:"matched_at"`
 	ShareholderID  string  `json:"shareholder_id"`
+}
+
+type assetPagePayload struct {
+	Account assetPayload `json:"account"`
+}
+
+type assetPayload struct {
+	AccountID      string  `json:"account_id"`
+	CashAvailable  float64 `json:"cash_available"`
+	CashTotal      float64 `json:"cash_total"`
+	NetAsset       float64 `json:"net_asset"`
+	MarketValue    float64 `json:"market_value"`
+	StockValue     float64 `json:"stock_value"`
+	FundValue      float64 `json:"fund_value"`
+	Commission     float64 `json:"commission"`
+	DayProfit      float64 `json:"day_profit"`
+	PositionProfit float64 `json:"position_profit"`
+	CloseProfit    float64 `json:"close_profit"`
+	Credit         float64 `json:"credit"`
+}
+
+type positionPagePayload struct {
+	Items []positionPayload `json:"items"`
+}
+
+type positionPayload struct {
+	AccountID     string  `json:"account_id"`
+	Symbol        string  `json:"symbol"`
+	Name          string  `json:"name"`
+	Exchange      string  `json:"exchange"`
+	Quantity      int64   `json:"quantity"`
+	SellableQty   int64   `json:"sellable_qty"`
+	InitialQty    int64   `json:"initial_qty"`
+	TodayQty      int64   `json:"today_qty"`
+	AvgCost       float64 `json:"avg_cost"`
+	LastPrice     float64 `json:"last_price"`
+	MarketValue   float64 `json:"market_value"`
+	UnrealizedPnL float64 `json:"unrealized_pnl"`
+	SettledProfit float64 `json:"settled_profit"`
+	ShareholderID string  `json:"shareholder_id"`
 }
 
 func mergeEnvelopeFields(payload *orderPayload, envelope EntryEnvelope) {
@@ -788,6 +964,8 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.Orders += other.Orders
 	result.OrderEvents += other.OrderEvents
 	result.Fills += other.Fills
+	result.Assets += other.Assets
+	result.Positions += other.Positions
 	result.Replies += other.Replies
 	result.Skipped += other.Skipped
 	result.ParseErrors += other.ParseErrors

@@ -16,6 +16,8 @@ const (
 	ActionOrderSubmit      = "order.submit"
 	ActionOrderBatchSubmit = "order.batch.submit"
 	ActionOrderCancel      = "order.cancel"
+	ActionAccountAsset     = "account.asset.query"
+	ActionAccountPositions = "account.positions.query"
 )
 
 type CommandEnvelope struct {
@@ -107,7 +109,7 @@ func CommandStreamForAction(streams Streams, action string) (string, error) {
 	switch action {
 	case ActionOrderSubmit, ActionOrderBatchSubmit, ActionOrderCancel:
 		return streams.CmdTrade, nil
-	case "account.asset.query", "account.positions.query", "order.list.query", "fill.list.query":
+	case ActionAccountAsset, ActionAccountPositions, "order.list.query", "fill.list.query":
 		return streams.CmdQuery, nil
 	default:
 		return "", fmt.Errorf("unsupported redis command action %q", action)

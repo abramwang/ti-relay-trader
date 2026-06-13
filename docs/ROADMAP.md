@@ -29,7 +29,7 @@
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-3. 增加前置查询刷新命令：资金、持仓、订单和成交 `cmd.query` 写入及 reply 合并。
+3. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
 4. 补充数据库状态检查到 `/v1/status`。
 5. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
 
@@ -85,7 +85,8 @@
 - [x] 实现 Redis command envelope 和 `cmd.trade` 单笔下单写入。
 - [x] 实现撤单命令写入 `cmd.trade`。
 - [x] 实现批量下单命令写入 `cmd.trade`。
-- [ ] 实现账户查询命令写入 `cmd.query`。
+- [x] 实现账户资金/持仓查询命令写入 `cmd.query`。
+- [ ] 实现订单/成交查询命令写入 `cmd.query`。
 - [x] 消费 `reply` 并归档 raw。
 - [x] 消费 `event` 并归档 raw。
 - [ ] 将字段完整的 `order.event/fill.event` 持续消费接入 worker 位点。
@@ -129,7 +130,9 @@
 - [x] 使用测试 Redis 完成一次单笔下单 API 冒烟，订单回流后落盘到 `filled`。
 - [x] 测试下单参考 Meridian `2026-06-12` 分钟线，示例 `600000.SH` `15:00` close 为 `9.67`。
 - [x] `GET /v1/accounts/{account_id}/asset`。
+- [x] `POST /v1/accounts/{account_id}/asset/refresh`。
 - [x] `GET /v1/accounts/{account_id}/positions`。
+- [x] `POST /v1/accounts/{account_id}/positions/refresh`。
 - [x] `POST /v1/orders/batch`。
 - [x] `POST /v1/orders/{gateway_order_id}/cancel`。
 - [x] `GET /v1/orders`。

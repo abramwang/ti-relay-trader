@@ -76,6 +76,10 @@ type CancelOptions struct {
 	RequestID string
 }
 
+type RefreshOptions struct {
+	RequestID string
+}
+
 type SubmitOrderResult struct {
 	Order          trading.Order                    `json:"order"`
 	MessageID      string                           `json:"message_id"`
@@ -99,6 +103,17 @@ type CancelOrderResult struct {
 
 type BatchSubmitOrderResult struct {
 	Orders         []trading.Order                  `json:"orders"`
+	MessageID      string                           `json:"message_id"`
+	StreamKey      string                           `json:"stream_key"`
+	StreamID       string                           `json:"stream_id"`
+	IdempotencyKey string                           `json:"idempotency_key"`
+	RequestID      string                           `json:"request_id,omitempty"`
+	Published      redisstream.CommandPublishResult `json:"published"`
+}
+
+type RefreshQueryResult struct {
+	AccountID      string                           `json:"account_id"`
+	Action         string                           `json:"action"`
 	MessageID      string                           `json:"message_id"`
 	StreamKey      string                           `json:"stream_key"`
 	StreamID       string                           `json:"stream_id"`
@@ -437,6 +452,14 @@ func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) 
 	}, nil
 }
 
+func (service *Service) RefreshAsset(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
+	return service.publishAccountQuery(ctx, accountID, redisstream.ActionAccountAsset, "asset", opts)
+}
+
+func (service *Service) RefreshPositions(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
+	return service.publishAccountQuery(ctx, accountID, redisstream.ActionAccountPositions, "positions", opts)
+}
+
 func (service *Service) GetAsset(ctx context.Context, accountID string) (GetAssetResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	if _, err := service.routeForConfiguredAccount(accountID); err != nil {
@@ -468,10 +491,91 @@ func (service *Service) ListPositions(ctx context.Context, query trading.Positio
 	}, nil
 }
 
+func (service *Service) publishAccountQuery(ctx context.Context, accountID string, action string, kind string, opts RefreshOptions) (RefreshQueryResult, error) {
+	accountID = strings.TrimSpace(accountID)
+	route, err := service.routeForEnabledAccount(accountID)
+	if err != nil {
+		return RefreshQueryResult{}, err
+	}
+	if service.publisher == nil {
+		return RefreshQueryResult{}, ErrMissingPublisher
+	}
+
+	now := service.clock.Now().UTC()
+	messageID := service.ids.NewID("msg-" + kind + "-query")
+	requestID := strings.TrimSpace(opts.RequestID)
+	if requestID == "" {
+		requestID = service.ids.NewID("req-" + kind + "-query")
+	}
+	idempotencyKey := kind + ":query:" + accountID + ":" + requestID
+
+	account := trading.Account{
+		AccountID:      route.AccountID,
+		BrokerID:       route.BrokerID,
+		GatewayID:      route.GatewayID,
+		StreamPrefix:   route.StreamPrefix,
+		Status:         trading.AccountStatusEnabled,
+		Enabled:        route.Enabled,
+		TradingEnabled: route.TradingEnabled,
+		Simulated:      route.Simulated,
+		Tags: map[string]string{
+			"source": "config",
+		},
+		UpdatedAt: now,
+	}
+	if err := service.ledger.UpsertAccount(ctx, account); err != nil {
+		return RefreshQueryResult{}, err
+	}
+
+	payload := map[string]string{"account_id": accountID}
+	streamKey, err := redisstream.CommandStreamForAction(redisstream.NewStreams(route.StreamPrefix), action)
+	if err != nil {
+		return RefreshQueryResult{}, err
+	}
+	envelope := redisstream.NewCommandEnvelope(
+		action,
+		messageID,
+		requestID,
+		requestID,
+		idempotencyKey,
+		payload,
+		now,
+	)
+	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	if err != nil {
+		return RefreshQueryResult{}, err
+	}
+	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdQuery, accountID, ""); err != nil {
+		return RefreshQueryResult{}, err
+	}
+
+	return RefreshQueryResult{
+		AccountID:      accountID,
+		Action:         action,
+		MessageID:      messageID,
+		StreamKey:      published.StreamKey,
+		StreamID:       published.StreamID,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		Published:      published,
+	}, nil
+}
+
 func (service *Service) routeForConfiguredAccount(accountID string) (config.AccountRouteConfig, error) {
 	route, ok := service.cfg.AccountRoute(strings.TrimSpace(accountID))
 	if !ok {
 		return config.AccountRouteConfig{}, fmt.Errorf("%w: %s", ErrRouteNotFound, accountID)
+	}
+	return route, nil
+}
+
+func (service *Service) routeForEnabledAccount(accountID string) (config.AccountRouteConfig, error) {
+	route, err := service.routeForConfiguredAccount(accountID)
+	if err != nil {
+		return config.AccountRouteConfig{}, err
+	}
+	if !route.Enabled {
+		return config.AccountRouteConfig{}, fmt.Errorf("%w: %s", ErrAccountDisabled, accountID)
 	}
 	return route, nil
 }

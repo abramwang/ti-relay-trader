@@ -276,6 +276,46 @@ ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
 LIMIT 1
 `
 
+const upsertAssetSnapshotSQL = `
+INSERT INTO asset_snapshots (
+    trade_date,
+    account_id,
+    snapshot_type,
+    cash_available,
+    cash_total,
+    net_asset,
+    market_value,
+    stock_value,
+    fund_value,
+    commission,
+    day_profit,
+    position_profit,
+    close_profit,
+    credit,
+    source,
+    raw_payload,
+    captured_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17
+)
+ON CONFLICT (trade_date, account_id, snapshot_type) DO UPDATE SET
+    cash_available = EXCLUDED.cash_available,
+    cash_total = EXCLUDED.cash_total,
+    net_asset = EXCLUDED.net_asset,
+    market_value = EXCLUDED.market_value,
+    stock_value = EXCLUDED.stock_value,
+    fund_value = EXCLUDED.fund_value,
+    commission = EXCLUDED.commission,
+    day_profit = EXCLUDED.day_profit,
+    position_profit = EXCLUDED.position_profit,
+    close_profit = EXCLUDED.close_profit,
+    credit = EXCLUDED.credit,
+    source = EXCLUDED.source,
+    raw_payload = EXCLUDED.raw_payload,
+    captured_at = EXCLUDED.captured_at
+`
+
 const positionSelectColumns = `
 SELECT
     account_id,
@@ -294,6 +334,46 @@ SELECT
     shareholder_id,
     updated_at
 FROM positions
+`
+
+const upsertPositionSQL = `
+INSERT INTO positions (
+    account_id,
+    symbol,
+    name,
+    exchange,
+    quantity,
+    sellable_qty,
+    initial_qty,
+    today_qty,
+    avg_cost,
+    last_price,
+    market_value,
+    unrealized_pnl,
+    settled_profit,
+    shareholder_id,
+    source,
+    raw_payload,
+    updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17
+)
+ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
+    name = EXCLUDED.name,
+    quantity = EXCLUDED.quantity,
+    sellable_qty = EXCLUDED.sellable_qty,
+    initial_qty = EXCLUDED.initial_qty,
+    today_qty = EXCLUDED.today_qty,
+    avg_cost = EXCLUDED.avg_cost,
+    last_price = EXCLUDED.last_price,
+    market_value = EXCLUDED.market_value,
+    unrealized_pnl = EXCLUDED.unrealized_pnl,
+    settled_profit = EXCLUDED.settled_profit,
+    shareholder_id = EXCLUDED.shareholder_id,
+    source = EXCLUDED.source,
+    raw_payload = EXCLUDED.raw_payload,
+    updated_at = EXCLUDED.updated_at
 `
 
 const archiveRawStreamMessageSQL = `

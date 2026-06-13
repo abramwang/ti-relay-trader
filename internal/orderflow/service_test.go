@@ -391,6 +391,49 @@ func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	}
 }
 
+func TestRefreshAssetAndPositionsPublishQueryCommands(t *testing.T) {
+	ledgerWriter := &fakeLedger{}
+	publisher := &fakePublisher{streamID: "1777100000300-0"}
+	service, err := New(Options{
+		Config:    testConfig(true, false),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"msg-asset-1", "msg-positions-1"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	assetResult, err := service.RefreshAsset(context.Background(), "acct-1", RefreshOptions{RequestID: "req-asset"})
+	if err != nil {
+		t.Fatalf("RefreshAsset() error = %v", err)
+	}
+	positionsResult, err := service.RefreshPositions(context.Background(), "acct-1", RefreshOptions{RequestID: "req-positions"})
+	if err != nil {
+		t.Fatalf("RefreshPositions() error = %v", err)
+	}
+
+	if assetResult.Action != redisstream.ActionAccountAsset || positionsResult.Action != redisstream.ActionAccountPositions {
+		t.Fatalf("actions = %s/%s", assetResult.Action, positionsResult.Action)
+	}
+	if len(publisher.commands) != 2 {
+		t.Fatalf("commands = %#v", publisher.commands)
+	}
+	for _, command := range publisher.commands {
+		if command.streamKey != "relay:prod:v1:huaxin:gw-1:cmd.query" {
+			t.Fatalf("stream = %s", command.streamKey)
+		}
+		payload, ok := command.envelope.Payload.(map[string]string)
+		if !ok || payload["account_id"] != "acct-1" {
+			t.Fatalf("payload = %#v", command.envelope.Payload)
+		}
+	}
+	if len(ledgerWriter.raw) != 2 || ledgerWriter.raw[0].Role != redisstream.SuffixCmdQuery {
+		t.Fatalf("raw archives = %#v", ledgerWriter.raw)
+	}
+}
+
 func validSubmitRequest() trading.SubmitOrderRequest {
 	return trading.SubmitOrderRequest{
 		AccountID:    "acct-1",

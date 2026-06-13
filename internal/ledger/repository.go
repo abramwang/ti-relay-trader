@@ -384,6 +384,58 @@ func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (t
 	return asset, nil
 }
 
+func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeAsset(asset)
+	if err != nil {
+		return err
+	}
+	snapshotType = strings.TrimSpace(snapshotType)
+	if snapshotType == "" {
+		snapshotType = "intraday"
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "query"
+	}
+	if capturedAt.IsZero() {
+		capturedAt = repo.now()
+	}
+	if normalized.UpdatedAt.IsZero() {
+		normalized.UpdatedAt = capturedAt
+	}
+	body, err := marshalJSONObject(rawPayload)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.exec.ExecContext(ctx, upsertAssetSnapshotSQL,
+		capturedAt.Format("2006-01-02"),
+		normalized.AccountID,
+		snapshotType,
+		normalized.CashAvailable,
+		normalized.CashTotal,
+		normalized.NetAsset,
+		normalized.MarketValue,
+		normalized.StockValue,
+		normalized.FundValue,
+		normalized.Commission,
+		normalized.DayProfit,
+		normalized.PositionProfit,
+		normalized.CloseProfit,
+		normalized.Credit,
+		source,
+		body,
+		capturedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert asset snapshot %s: %w", normalized.AccountID, err)
+	}
+	return nil
+}
+
 func (repo *Repository) ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error) {
 	if repo == nil || repo.exec == nil {
 		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -415,6 +467,54 @@ func (repo *Repository) ListPositions(ctx context.Context, query trading.Positio
 		return nil, fmt.Errorf("list positions rows: %w", err)
 	}
 	return positions, nil
+}
+
+func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePosition(position)
+	if err != nil {
+		return err
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "query"
+	}
+	if updatedAt.IsZero() {
+		updatedAt = repo.now()
+	}
+	if normalized.UpdatedAt.IsZero() {
+		normalized.UpdatedAt = updatedAt
+	}
+	body, err := marshalJSONObject(rawPayload)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.exec.ExecContext(ctx, upsertPositionSQL,
+		normalized.AccountID,
+		normalized.Symbol,
+		normalized.Name,
+		normalized.Exchange,
+		normalized.Quantity,
+		normalized.SellableQty,
+		normalized.InitialQty,
+		normalized.TodayQty,
+		normalized.AvgCost,
+		nullFloat64(normalized.LastPrice),
+		normalized.MarketValue,
+		normalized.UnrealizedPnL,
+		normalized.SettledProfit,
+		nullString(normalized.ShareholderID),
+		source,
+		body,
+		updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert position %s/%s.%s: %w", normalized.AccountID, normalized.Symbol, normalized.Exchange, err)
+	}
+	return nil
 }
 
 func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, stream StreamRef, source SourceRef) error {
@@ -580,6 +680,32 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 		query.Limit = 2000
 	}
 	return query, nil
+}
+
+func normalizeAsset(asset trading.Asset) (trading.Asset, error) {
+	asset.AccountID = strings.TrimSpace(asset.AccountID)
+	if asset.AccountID == "" {
+		return asset, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	return asset, nil
+}
+
+func normalizePosition(position trading.Position) (trading.Position, error) {
+	position.AccountID = strings.TrimSpace(position.AccountID)
+	position.Symbol = strings.TrimSpace(position.Symbol)
+	if position.AccountID == "" {
+		return position, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if position.Symbol == "" {
+		return position, fmt.Errorf("%w: symbol is required", ErrInvalidLedgerInput)
+	}
+	if !position.Exchange.Valid() {
+		return position, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if position.SellableQty == 0 && position.Quantity > 0 {
+		position.SellableQty = position.Quantity
+	}
+	return position, nil
 }
 
 func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {

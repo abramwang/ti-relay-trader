@@ -30,6 +30,8 @@ type OrderService interface {
 	ListFills(ctx context.Context, query trading.FillQuery) (orderflow.ListFillsResult, error)
 	GetAsset(ctx context.Context, accountID string) (orderflow.GetAssetResult, error)
 	ListPositions(ctx context.Context, query trading.PositionQuery) (orderflow.ListPositionsResult, error)
+	RefreshAsset(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
+	RefreshPositions(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 }
 
 type Server struct {
@@ -124,7 +126,7 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/accounts/")
 	path = strings.Trim(path, "/")
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 {
+	if len(parts) != 2 && len(parts) != 3 {
 		httpx.WriteNotFound(w, r)
 		return
 	}
@@ -135,12 +137,36 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 	}
 	switch parts[1] {
 	case "asset":
+		if len(parts) == 3 {
+			if parts[2] != "refresh" {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+				return
+			}
+			s.handleRefreshAsset(w, r, accountID)
+			return
+		}
 		if r.Method != http.MethodGet {
 			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 			return
 		}
 		s.handleAccountAsset(w, r, accountID)
 	case "positions":
+		if len(parts) == 3 {
+			if parts[2] != "refresh" {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+				return
+			}
+			s.handleRefreshPositions(w, r, accountID)
+			return
+		}
 		if r.Method != http.MethodGet {
 			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 			return
@@ -326,6 +352,36 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleRefreshAsset(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	result, err := s.orders.RefreshAsset(r.Context(), accountID, orderflow.RefreshOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleRefreshPositions(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	result, err := s.orders.RefreshPositions(r.Context(), accountID, orderflow.RefreshOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
 }
 
 func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {

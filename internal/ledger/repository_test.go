@@ -300,6 +300,31 @@ func TestGetLatestAssetBuildsRead(t *testing.T) {
 	}
 }
 
+func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	capturedAt := time.Date(2026, 6, 13, 10, 30, 0, 0, time.UTC)
+
+	err := repo.UpsertAssetSnapshot(context.Background(), trading.Asset{
+		AccountID:     "acct-1",
+		CashAvailable: 900000,
+		CashTotal:     1000000,
+		NetAsset:      1200000,
+		MarketValue:   200000,
+	}, "intraday", "query", map[string]any{"source": "front"}, capturedAt)
+	if err != nil {
+		t.Fatalf("UpsertAssetSnapshot() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO asset_snapshots")
+	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, snapshot_type)")
+	requireArgLen(t, exec.args, 17)
+	if exec.args[0] != "2026-06-13" || exec.args[1] != "acct-1" || exec.args[2] != "intraday" {
+		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[2])
+	}
+	assertJSONContains(t, exec.args[15], `"source":"front"`)
+}
+
 func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -323,6 +348,34 @@ func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	if exec.args[3] != 20 {
 		t.Fatalf("limit arg = %#v", exec.args[3])
 	}
+}
+
+func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	updatedAt := time.Date(2026, 6, 13, 10, 31, 0, 0, time.UTC)
+
+	err := repo.UpsertPosition(context.Background(), trading.Position{
+		AccountID:     "acct-1",
+		Symbol:        "600000",
+		Exchange:      trading.ExchangeSH,
+		Quantity:      100,
+		SellableQty:   80,
+		AvgCost:       9.54,
+		MarketValue:   954,
+		ShareholderID: "A0001",
+	}, "query", map[string]any{"source": "front"}, updatedAt)
+	if err != nil {
+		t.Fatalf("UpsertPosition() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO positions")
+	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, symbol, exchange)")
+	requireArgLen(t, exec.args, 17)
+	if exec.args[0] != "acct-1" || exec.args[1] != "600000" || exec.args[3] != trading.ExchangeSH {
+		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[3])
+	}
+	assertJSONContains(t, exec.args[15], `"source":"front"`)
 }
 
 func TestRepositoryValidation(t *testing.T) {
