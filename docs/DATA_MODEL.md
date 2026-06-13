@@ -100,6 +100,14 @@ migrations/postgres/000001_init_ledger.down.sql
 
 执行说明见 [docs/MIGRATIONS.md](/home/ti-relay-trader/docs/MIGRATIONS.md:1)。
 
+当前已在 `internal/ledger` 增加首批 Go repository，作为 Redis Stream 消费、API 写入和后续对账任务进入 PostgreSQL 的统一边界。已覆盖：
+
+1. `accounts` 的账户 upsert。
+2. `orders` 的订单 upsert。
+3. `order_events` 的事件追加和重复事件幂等处理。
+4. `fills` 的成交写入和重复成交幂等处理。
+5. `raw_stream_messages` 的原始 Redis 消息归档与重放审计。
+
 ### 配置与路由
 
 | 表 | 说明 |

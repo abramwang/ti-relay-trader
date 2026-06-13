@@ -28,10 +28,10 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 使用真实 PostgreSQL DSN 执行 migration 并补充数据库状态检查。
-3. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-4. 基于已启动的前置测试环境做 Redis Stream 只读探测和查询联调。
-5. 规划 Redis Stream client 的命令写入和事件消费边界。
+2. 将 Redis Stream `reply/event` 消费接入 PostgreSQL 账本 repository。
+3. 补充数据库状态检查到 `/v1/status`。
+4. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+5. 基于已启动的前置测试环境做 Redis Stream 查询联调和命令写入边界设计。
 
 ## 里程碑细化
 
@@ -102,8 +102,11 @@
 - [x] 安装 PostgreSQL client。
 - [x] 增加数据库连接和 migration runner。
 - [x] 增加 `relayctl migrate status/up/down`。
-- [ ] 使用真实 PostgreSQL DSN 执行首版 migration。
-- [ ] 增加基于临时 PostgreSQL 的集成测试。
+- [x] 使用真实 PostgreSQL DSN 执行首版 migration。
+- [x] 增加账本 repository 骨架，覆盖账户、订单、订单事件、成交和原始 stream 消息写入。
+- [x] 增加账本 repository 单元测试，不依赖真实数据库即可验证 SQL 参数和 JSON payload。
+- [x] 增加可选 PostgreSQL 账本集成测试，可通过 `RELAY_LEDGER_TEST_DATABASE_URL` 启用真实写库验证。
+- [ ] 增加基于临时 PostgreSQL 的 CI 集成测试。
 
 ### P6 9092 正式交易 API 与 SDK
 

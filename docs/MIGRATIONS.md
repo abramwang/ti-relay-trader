@@ -15,6 +15,12 @@ migrations/postgres/000001_init_ledger.down.sql
 
 当前仓库不保存真实 PostgreSQL DSN。连接方式仍从部署机本地配置或 `http://doc.quantstage.com` 获取。
 
+已在内网 PostgreSQL 上创建专用数据库 `relay_trader`，并通过 `relayctl migrate status/up/status` 验证首版 migration 已应用。验证结果：
+
+1. `000001_init_ledger` 已应用。
+2. `relay_schema_migrations` 已记录版本 `1:init_ledger`。
+3. 当前 public schema 下共有 15 张基础表。
+
 当前环境已安装 PostgreSQL client：
 
 ```bash
@@ -30,6 +36,30 @@ go run ./cmd/relayctl migrate down -steps 1
 ```
 
 runner 会创建 `relay_schema_migrations` 表记录已应用版本。真实 DSN 可通过 `-database-url`、`RELAY_DATABASE_URL` 或 `config.database.dsn` 提供。
+
+当前也已新增 Go 账本写入 repository：
+
+```text
+internal/ledger
+```
+
+首批覆盖：
+
+1. `UpsertAccount`
+2. `UpsertOrder`
+3. `AppendOrderEvent`
+4. `InsertFill`
+5. `ArchiveRawStreamMessage`
+
+这些入口会把标准交易结构体、stream key、stream id、source/correlation 信息和原始 payload 写入 PostgreSQL。重复消费场景使用唯一约束和 `ON CONFLICT` 做幂等处理。
+
+可选集成测试：
+
+```bash
+RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -run TestRepositoryWritesToPostgres -count=1 -v
+```
+
+该测试默认跳过；设置测试库 DSN 后会写入一组临时账户、订单、事件、成交和原始 stream 消息，并在测试清理阶段删除。
 
 ## 覆盖表
 
@@ -97,8 +127,7 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 
 ## 后续工作
 
-1. 用真实部署机 PostgreSQL DSN 跑 `relayctl migrate status/up`。
-2. 将 `config.database.dsn` 接入 API 模式启动检查。
-3. 增加 `GET /v1/status` 的数据库状态。
-4. 增加订单、成交、事件写入 repository。
-5. 增加基于临时 PostgreSQL 的集成测试。
+1. 将 `config.database.dsn` 接入 API 模式启动检查。
+2. 增加 `GET /v1/status` 的数据库状态。
+3. 将 Redis Stream `reply/event` 消费接入 `internal/ledger` repository。
+4. 增加基于临时 PostgreSQL 的 CI 集成测试。
