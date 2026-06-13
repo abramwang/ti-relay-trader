@@ -6,7 +6,7 @@
 
 第一版 schema 已落在 Go 包 `internal/trading`，版本号为 `relay.trading.v1alpha1`。
 
-该 schema 只定义对象、枚举、基础校验和状态机语义，不连接 Redis、数据库或实盘柜台。
+该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将 `POST /v1/orders` 接入 PostgreSQL 订单草稿和 Redis `cmd.trade` 测试链路。
 
 ## 参考来源
 
@@ -256,7 +256,7 @@ rejected
 | `GET` | `/v1/accounts` | - | `[]Account` | 已有配置态骨架 |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 待实现 |
 | `GET` | `/v1/accounts/{account_id}/positions` | - | `[]Position` | 待实现 |
-| `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 待实现 |
+| `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 待实现 |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 待实现 |
 | `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 待实现 |
@@ -277,9 +277,11 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 | `GET /v1/orders` | `order.list.query` | `cmd.query` |
 | `GET /v1/fills` | `fill.list.query` | `cmd.query` |
 
+`POST /v1/orders` 的 `202 Accepted` 仅表示 relay 已接受请求、写入订单草稿并向 Redis `cmd.trade` 写入 `order.submit`，不表示交易所接单或成交。最终状态以 `order.event` 和 `fill.event` 回流为准。
+
 ## 后续工作
 
-1. 将 `internal/trading` schema 接入 API handler 的请求解析和响应类型。
-2. 增加 Redis Stream client，将 HTTP 请求转换为前置 command envelope。
-3. 增加 PostgreSQL migration，保证订单、成交、资金、持仓和事件可审计落盘。
+1. 实现撤单 API，将 `CancelOrderRequest` 转换为 `order.cancel`。
+2. 实现订单和成交查询 API，从 PostgreSQL 账本读取。
+3. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
 4. 初始化 Python SDK，直接复用本 schema 文档和 `/v1/schema`。

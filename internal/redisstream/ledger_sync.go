@@ -18,6 +18,7 @@ import (
 type LedgerWriter interface {
 	UpsertAccount(ctx context.Context, account trading.Account) error
 	UpsertOrder(ctx context.Context, order trading.Order) error
+	UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
@@ -196,24 +197,33 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
 	switch envelope.EventType {
 	case "order.event":
-		event, err := orderEventFromEnvelope(envelope)
+		event, complete, err := orderEventFromEnvelope(envelope)
 		if err != nil {
 			result.Skipped++
 			result.SkipReasons = append(result.SkipReasons, err.Error())
 			return result
 		}
-		if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, event.AccountID)); err != nil {
-			result.LedgerErrors++
-			result.SkipReasons = append(result.SkipReasons, err.Error())
-			return result
+		if complete {
+			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, event.AccountID)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Accounts++
+			if err := writer.UpsertOrder(ctx, event.Order); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Orders++
+		} else {
+			if err := writer.UpdateOrderStatus(ctx, event); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Orders++
 		}
-		result.Accounts++
-		if err := writer.UpsertOrder(ctx, event.Order); err != nil {
-			result.LedgerErrors++
-			result.SkipReasons = append(result.SkipReasons, err.Error())
-			return result
-		}
-		result.Orders++
 		if err := writer.AppendOrderEvent(ctx, event, streamRef(envelope), sourceRef(envelope)); err != nil {
 			result.LedgerErrors++
 			result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -322,17 +332,18 @@ func rawMessageFromEnvelope(envelope EntryEnvelope) ledger.RawStreamMessage {
 	}
 }
 
-func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, error) {
+func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, bool, error) {
 	var payload orderPayload
 	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
-		return trading.OrderEvent{}, fmt.Errorf("decode order.event payload: %w", err)
+		return trading.OrderEvent{}, false, fmt.Errorf("decode order.event payload: %w", err)
 	}
 	mergeEnvelopeFields(&payload, envelope)
-	if err := payload.validateOrderLedgerFields(); err != nil {
-		return trading.OrderEvent{}, err
+	if err := payload.validateOrderEventFields(); err != nil {
+		return trading.OrderEvent{}, false, err
 	}
 
 	order := payload.toOrder(envelope)
+	complete := payload.completeOrderLedgerFields()
 	event := trading.OrderEvent{
 		EventID:        envelope.MessageID,
 		EventType:      trading.EventTypeOrder,
@@ -345,7 +356,7 @@ func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, error) 
 		ProducedAt:     envelope.ProducedAt,
 		AdapterContext: envelope.AdapterContext,
 	}
-	return event, nil
+	return event, complete, nil
 }
 
 func fillFromEnvelope(envelope EntryEnvelope) (trading.Fill, error) {
@@ -470,7 +481,7 @@ func mergeEnvelopeFields(payload *orderPayload, envelope EntryEnvelope) {
 	}
 }
 
-func (payload orderPayload) validateOrderLedgerFields() error {
+func (payload orderPayload) validateOrderEventFields() error {
 	missing := make([]string, 0)
 	if strings.TrimSpace(payload.AccountID) == "" {
 		missing = append(missing, "account_id")
@@ -478,28 +489,32 @@ func (payload orderPayload) validateOrderLedgerFields() error {
 	if strings.TrimSpace(payload.GatewayOrderID) == "" {
 		missing = append(missing, "gateway_order_id")
 	}
-	if strings.TrimSpace(payload.Symbol) == "" {
-		missing = append(missing, "symbol")
-	}
-	if strings.TrimSpace(payload.Exchange) == "" {
-		missing = append(missing, "exchange")
-	}
-	if strings.TrimSpace(payload.TradeSide) == "" {
-		missing = append(missing, "trade_side")
-	}
-	if strings.TrimSpace(payload.BusinessType) == "" {
-		missing = append(missing, "business_type")
-	}
-	if firstPositive(payload.LimitPrice, payload.Price) <= 0 {
-		missing = append(missing, "limit_price")
-	}
-	if firstPositiveInt(payload.OrderQty, payload.Qty) <= 0 {
-		missing = append(missing, "order_qty")
-	}
 	if len(missing) > 0 {
 		return fmt.Errorf("order.event payload incomplete for ledger write: missing %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func (payload orderPayload) completeOrderLedgerFields() bool {
+	if strings.TrimSpace(payload.Symbol) == "" {
+		return false
+	}
+	if strings.TrimSpace(payload.Exchange) == "" {
+		return false
+	}
+	if strings.TrimSpace(payload.TradeSide) == "" {
+		return false
+	}
+	if strings.TrimSpace(payload.BusinessType) == "" {
+		return false
+	}
+	if firstPositive(payload.LimitPrice, payload.Price) <= 0 {
+		return false
+	}
+	if firstPositiveInt(payload.OrderQty, payload.Qty) <= 0 {
+		return false
+	}
+	return true
 }
 
 func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {

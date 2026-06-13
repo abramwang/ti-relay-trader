@@ -10,10 +10,12 @@ type ErrorCode string
 
 const (
 	CodeBadRequest       ErrorCode = "BAD_REQUEST"
+	CodeForbidden        ErrorCode = "FORBIDDEN"
 	CodeMethodNotAllowed ErrorCode = "METHOD_NOT_ALLOWED"
 	CodeNotFound         ErrorCode = "NOT_FOUND"
 	CodeInternal         ErrorCode = "INTERNAL"
 	CodeNotImplemented   ErrorCode = "NOT_IMPLEMENTED"
+	CodeUnavailable      ErrorCode = "UNAVAILABLE"
 )
 
 type Envelope struct {

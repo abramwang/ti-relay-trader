@@ -65,14 +65,15 @@ go run ./cmd/relayctl ledger-sync -config config/relay.local.yaml -count 20
 | `ledger_errors` | PostgreSQL 写入失败数 |
 | `unsupported` | 暂不支持的消息类型数 |
 
-## 本轮真实联调结果
+## 真实联调结果
 
-已使用内网 Redis 和 PostgreSQL 跑通一批真实 `reply/event` 同步：
+已使用内网 Redis 和 PostgreSQL 跑通真实同步：
 
 1. 从 `relay:prod:v1:huaxin:00030484:reply` 读取 10 条并归档。
 2. 从 `relay:prod:v1:huaxin:00030484:event` 读取 10 条并归档。
 3. PostgreSQL `raw_stream_messages` 当前可看到 `reply` 和 `event` 归档记录。
-4. 本批 `order.event` 未写入 `orders/order_events`，原因是事件 payload 缺少 `trade_side` 和 `business_type`，无法满足订单主表的非空和枚举约束。
+4. 通过 API 模式 `POST /v1/orders` 发送一笔测试单后，回流同步读取到 1 条 reply、3 条 order.event 和 1 条 fill.event。
+5. 该测试单已从订单草稿更新到 `filled/filled`，并落盘 3 条订单事件、1 条成交和 6 条原始 stream 消息。
 
 ## 字段缺口
 
@@ -96,7 +97,7 @@ go run ./cmd/relayctl ledger-sync -config config/relay.local.yaml -count 20
 
 建议前置程序在 `order.event.payload` 中补充这两个字段。这样 relay 可以在没有本地订单草稿的情况下，仅凭事件流重建订单账本。
 
-同时，后续 relay 的正式下单 API 会在写入 Redis `cmd.trade` 前先写入订单草稿；当事件回流时，即使前置事件字段不全，也可以基于本地草稿完成状态更新。
+relay 的正式下单 API 已在写入 Redis `cmd.trade` 前先写入订单草稿；当事件回流时，即使前置事件字段不全，也可以基于本地草稿完成状态更新并追加 `order_events`。历史无草稿事件仍需要前置补字段后才能单独重建订单主表。
 
 ## 幂等策略
 
@@ -109,7 +110,7 @@ go run ./cmd/relayctl ledger-sync -config config/relay.local.yaml -count 20
 
 ## 后续工作
 
-1. 让前置 `order.event.payload` 补齐 `trade_side` 和 `business_type`。
-2. 将下单 API 接入订单草稿写入，再写 Redis `cmd.trade`。
-3. 增加 worker 常驻模式，持续消费 `reply/event/hb/dlq`。
-4. 引入消费位点表或 consumer group，避免每次从 `0` 回放。
+1. 实现撤单 API，写入 `order.cancel` 并归档命令。
+2. 增加 worker 常驻模式，持续消费 `reply/event/hb/dlq`。
+3. 引入消费位点表或 consumer group，避免每次从 `0` 回放。
+4. 让前置 `order.event.payload` 补齐 `trade_side` 和 `business_type`，支持历史事件重建。

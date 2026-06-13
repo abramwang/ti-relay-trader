@@ -116,6 +116,40 @@ func TestAppendOrderEventIsIdempotentByEventOrStream(t *testing.T) {
 	}
 }
 
+func TestUpdateOrderStatusBuildsPartialStatusUpdate(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.UpdateOrderStatus(context.Background(), trading.OrderEvent{
+		EventID:        "event-1",
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		Status:         trading.OrderStatusWorking,
+		GatewayStatus:  trading.GatewayStatusWorking,
+		Order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-1",
+			OrderID:        1680001,
+			OrderStreamID:  "order-stream-1",
+			CumFilledQty:   50,
+			LeavesQty:      50,
+		},
+		ProducedAt:     time.Unix(1700000001, 0).UTC(),
+		AdapterContext: map[string]any{"order_status_name": "queued"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateOrderStatus() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "UPDATE orders SET")
+	requireQueryContains(t, exec.query, "WHERE account_id = $1 AND gateway_order_id = $2")
+	requireArgLen(t, exec.args, 19)
+	if exec.args[0] != "acct-1" || exec.args[1] != "gateway-1" {
+		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[1])
+	}
+	assertJSONContains(t, exec.args[18], `"order_status_name":"queued"`)
+}
+
 func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

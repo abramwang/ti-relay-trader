@@ -13,6 +13,7 @@ import (
 )
 
 var ErrInvalidLedgerInput = errors.New("invalid ledger input")
+var ErrOrderNotFound = errors.New("order not found")
 
 type Executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -198,6 +199,52 @@ func (repo *Repository) AppendOrderEvent(ctx context.Context, event trading.Orde
 	)
 	if err != nil {
 		return fmt.Errorf("append order event %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+	}
+	return nil
+}
+
+func (repo *Repository) UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeOrderEvent(event)
+	if err != nil {
+		return err
+	}
+	adapterContext, err := marshalJSONObject(normalized.AdapterContext)
+	if err != nil {
+		return err
+	}
+
+	result, err := repo.exec.ExecContext(ctx, updateOrderStatusSQL,
+		normalized.AccountID,
+		normalized.GatewayOrderID,
+		nullInt64(normalized.Order.OrderID),
+		nullString(normalized.Order.OrderStreamID),
+		normalized.Order.SubmittedQty,
+		normalized.Order.CumFilledQty,
+		normalized.Order.LeavesQty,
+		normalized.Order.CancelledQty,
+		normalized.Order.InvalidQty,
+		nullFloat64(normalized.Order.AvgFillPrice),
+		normalized.Order.Fee,
+		normalized.Status,
+		normalized.GatewayStatus,
+		normalized.IsTerminal,
+		nullString(string(normalized.Order.RejectCode)),
+		nullString(normalized.Order.RejectMessage),
+		nullTime(normalized.ProducedAt),
+		nullTime(normalized.Order.TerminalAt),
+		adapterContext,
+	)
+	if err != nil {
+		return fmt.Errorf("update order status %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+	}
+	if result != nil {
+		rows, err := result.RowsAffected()
+		if err == nil && rows == 0 {
+			return fmt.Errorf("%w: %s/%s", ErrOrderNotFound, normalized.AccountID, normalized.GatewayOrderID)
+		}
 	}
 	return nil
 }

@@ -96,7 +96,7 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 }
 
-func TestProcessLedgerEntrySkipsIncompleteOrderEvent(t *testing.T) {
+func TestProcessLedgerEntryUpdatesDraftForIncompleteOrderEvent(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "3-0", map[string]any{
 		"body": `{
@@ -109,16 +109,36 @@ func TestProcessLedgerEntrySkipsIncompleteOrderEvent(t *testing.T) {
 		}`,
 	})
 
-	if result.Archived != 1 || result.Skipped != 1 {
+	if result.Archived != 1 || result.Orders != 1 || result.OrderEvents != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(writer.raw) != 1 {
 		t.Fatalf("raw writes = %d, want 1", len(writer.raw))
 	}
-	if len(writer.orders) != 0 || len(writer.orderEvents) != 0 {
-		t.Fatalf("incomplete event should not write order ledger")
+	if len(writer.orderUpdates) != 1 || len(writer.orderEvents) != 1 {
+		t.Fatalf("incomplete event should update draft and append event: updates=%#v events=%#v", writer.orderUpdates, writer.orderEvents)
 	}
-	if !strings.Contains(strings.Join(result.SkipReasons, ";"), "missing exchange") {
+}
+
+func TestProcessLedgerEntrySkipsUnidentifiableOrderEvent(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "3-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-3",
+			"event_type":"order.event",
+			"payload":{"symbol":"600000"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Skipped != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
+		t.Fatalf("unidentifiable event should not write order ledger")
+	}
+	if !strings.Contains(strings.Join(result.SkipReasons, ";"), "missing account_id") {
 		t.Fatalf("skip reasons = %#v", result.SkipReasons)
 	}
 }
@@ -179,11 +199,12 @@ func TestProcessLedgerEntryArchivesParseError(t *testing.T) {
 }
 
 type fakeLedgerWriter struct {
-	accounts    []trading.Account
-	orders      []trading.Order
-	orderEvents []recordedOrderEvent
-	fills       []recordedFill
-	raw         []ledger.RawStreamMessage
+	accounts     []trading.Account
+	orders       []trading.Order
+	orderUpdates []trading.OrderEvent
+	orderEvents  []recordedOrderEvent
+	fills        []recordedFill
+	raw          []ledger.RawStreamMessage
 }
 
 type recordedOrderEvent struct {
@@ -205,6 +226,11 @@ func (writer *fakeLedgerWriter) UpsertAccount(_ context.Context, account trading
 
 func (writer *fakeLedgerWriter) UpsertOrder(_ context.Context, order trading.Order) error {
 	writer.orders = append(writer.orders, order)
+	return nil
+}
+
+func (writer *fakeLedgerWriter) UpdateOrderStatus(_ context.Context, event trading.OrderEvent) error {
+	writer.orderUpdates = append(writer.orderUpdates, event)
 	return nil
 }
 

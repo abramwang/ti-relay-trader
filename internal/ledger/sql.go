@@ -132,6 +132,29 @@ INSERT INTO order_events (
 ON CONFLICT DO NOTHING
 `
 
+const updateOrderStatusSQL = `
+UPDATE orders SET
+    order_id = COALESCE($3, order_id),
+    order_stream_id = COALESCE($4, order_stream_id),
+    submitted_qty = GREATEST(submitted_qty, $5),
+    cum_filled_qty = GREATEST(cum_filled_qty, $6),
+    leaves_qty = CASE WHEN $7 > 0 OR $14 = TRUE THEN $7 ELSE leaves_qty END,
+    cancelled_qty = GREATEST(cancelled_qty, $8),
+    invalid_qty = GREATEST(invalid_qty, $9),
+    avg_fill_price = COALESCE($10, avg_fill_price),
+    fee = GREATEST(fee, $11),
+    status = $12,
+    gateway_status = $13,
+    is_terminal = $14,
+    reject_code = COALESCE($15, reject_code),
+    reject_message = COALESCE($16, reject_message),
+    last_updated_at = COALESCE($17, now()),
+    terminal_at = CASE WHEN $14 = TRUE THEN COALESCE($18, $17, terminal_at, now()) ELSE terminal_at END,
+    adapter_context = adapter_context || $19::jsonb,
+    updated_at = now()
+WHERE account_id = $1 AND gateway_order_id = $2
+`
+
 const insertFillSQL = `
 INSERT INTO fills (
     account_id,

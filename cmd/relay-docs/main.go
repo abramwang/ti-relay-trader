@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,10 +21,15 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"ti-relay-trader/internal/api"
 	relayconfig "ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/httpx"
+	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/logging"
+	"ti-relay-trader/internal/orderflow"
+	"ti-relay-trader/internal/redisstream"
 	"ti-relay-trader/internal/worker"
 )
 
@@ -207,17 +213,77 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 }
 
 func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logger *slog.Logger) error {
+	cfg = redisstream.ApplyProbeEnv(cfg)
 	listenAddr := cfg.Service.APIAddr
 	if addrWasSet {
 		listenAddr = flagAddr
 	}
 
+	deps, cleanup, err := buildAPIDependencies(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
 	logger.Info("relay_service_listening",
 		"mode", cfg.Service.Mode,
 		"addr", listenAddr,
 		"public_url", cfg.Service.PublicURL,
+		"order_service_enabled", deps.Orders != nil,
 	)
-	return http.ListenAndServe(listenAddr, api.New(cfg, logger))
+	return http.ListenAndServe(listenAddr, api.NewWithDependencies(cfg, logger, deps))
+}
+
+func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Dependencies, func(), error) {
+	cleanup := func() {}
+	if strings.TrimSpace(cfg.Database.DSN) == "" || strings.TrimSpace(cfg.Redis.URL) == "" {
+		logger.Warn("relay_api_order_service_unavailable",
+			"reason", "database.dsn and redis.url are required",
+			"has_database_dsn", strings.TrimSpace(cfg.Database.DSN) != "",
+			"has_redis_url", strings.TrimSpace(cfg.Redis.URL) != "",
+		)
+		return api.Dependencies{}, cleanup, nil
+	}
+
+	db, err := sql.Open("pgx", cfg.Database.DSN)
+	if err != nil {
+		return api.Dependencies{}, cleanup, err
+	}
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	cleanup = func() {
+		_ = db.Close()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		cleanup()
+		return api.Dependencies{}, func() {}, err
+	}
+
+	publisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
+	if err != nil {
+		cleanup()
+		return api.Dependencies{}, func() {}, err
+	}
+	previousCleanup := cleanup
+	cleanup = func() {
+		_ = publisher.Close()
+		previousCleanup()
+	}
+
+	orders, err := orderflow.New(orderflow.Options{
+		Config:    cfg,
+		Ledger:    ledger.NewRepository(db),
+		Publisher: publisher,
+	})
+	if err != nil {
+		cleanup()
+		return api.Dependencies{}, func() {}, err
+	}
+
+	return api.Dependencies{Orders: orders}, cleanup, nil
 }
 
 func runWorkerMode(cfg relayconfig.Config, logger *slog.Logger) error {
@@ -342,7 +408,7 @@ const endpoints = [
   { group: "账户", method: "GET", path: "/v1/accounts", status: "api-mode", body: "" },
   { group: "账户", method: "GET", path: "/v1/accounts/{account_id}/asset", status: "planned", body: "" },
   { group: "账户", method: "GET", path: "/v1/accounts/{account_id}/positions", status: "planned", body: "" },
-  { group: "交易", method: "POST", path: "/v1/orders", status: "planned", body: JSON.stringify({account_id:"00030484", gateway_order_id:"gw-demo-0001", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.54, qty:100}, null, 2) },
+  { group: "交易", method: "POST", path: "/v1/orders", status: "api-mode", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.54, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
   { group: "交易", method: "POST", path: "/v1/orders/batch", status: "planned", body: JSON.stringify({account_id:"00030484", orders:[]}, null, 2) },
   { group: "交易", method: "POST", path: "/v1/orders/{gateway_order_id}/cancel", status: "planned", body: JSON.stringify({account_id:"00030484", gateway_order_id:"gw-demo-0001"}, null, 2) },
   { group: "查询", method: "GET", path: "/v1/orders", status: "planned", body: "" },
