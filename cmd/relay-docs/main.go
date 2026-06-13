@@ -192,10 +192,19 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		listenAddr = flagAddr
 	}
 
+	apiDeps, apiCleanup, err := buildAPIDependencies(cfg, logger)
+	if err != nil {
+		logger.Warn("relay_docs_api_dependencies_unavailable", "error", err)
+		apiDeps = api.Dependencies{}
+		apiCleanup = func() {}
+	}
+	defer apiCleanup()
+
 	mux := http.NewServeMux()
 	server := &portalServer{root: absRoot, logger: logger}
 	mux.HandleFunc("/", server.handleHome)
 	mux.HandleFunc("/healthz", server.handleHealthz)
+	mux.Handle("/v1/", api.NewWithDependencies(cfg, logger, apiDeps))
 	mux.HandleFunc("/docs", server.handleDocsIndex)
 	mux.HandleFunc("/docs/", server.handleDoc)
 	mux.HandleFunc("/api-console", server.handleAPIConsole)
@@ -208,6 +217,8 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		"addr", listenAddr,
 		"public_url", cfg.Service.PublicURL,
 		"project_root", absRoot,
+		"api_console_enabled", true,
+		"order_service_enabled", apiDeps.Orders != nil,
 	)
 	return http.ListenAndServe(listenAddr, httpx.RequestLogger(logger)(mux))
 }
@@ -405,16 +416,16 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 <script>
 const endpoints = [
   { group: "基础", method: "GET", path: "/healthz", status: "ready", body: "" },
-  { group: "基础", method: "GET", path: "/v1/status", status: "api-mode", body: "" },
-  { group: "基础", method: "GET", path: "/v1/schema", status: "api-mode", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts", status: "api-mode", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts/00030484/asset", status: "api-mode", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts/00030484/positions", status: "api-mode", query: "limit=50", body: "" },
-  { group: "交易", method: "POST", path: "/v1/orders", status: "api-mode", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
-  { group: "交易", method: "POST", path: "/v1/orders/batch", status: "api-mode", body: JSON.stringify({account_id:"00030484", idempotency_key:"relay-batch-console-demo", orders:[{client_order_id:"relay-batch-console-1", gateway_order_id:"relay-batch-console-1", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100},{client_order_id:"relay-batch-console-2", gateway_order_id:"relay-batch-console-2", symbol:"000001", exchange:"SZ", trade_side:"B", business_type:"S", offset_type:"C", price:11.24, qty:100}]}, null, 2) },
-  { group: "交易", method: "POST", path: "/v1/orders/relay-api-console-demo/cancel", status: "api-mode", body: JSON.stringify({account_id:"00030484", gateway_order_id:"relay-api-console-demo", cancel_id:"relay-cancel-console-demo", idempotency_key:"relay-cancel-console-demo"}, null, 2) },
-  { group: "查询", method: "GET", path: "/v1/orders", status: "api-mode", query: "account_id=00030484\nlimit=20", body: "" },
-  { group: "查询", method: "GET", path: "/v1/fills", status: "api-mode", query: "account_id=00030484\nlimit=20", body: "" },
+  { group: "基础", method: "GET", path: "/v1/status", status: "ready", body: "" },
+  { group: "基础", method: "GET", path: "/v1/schema", status: "ready", body: "" },
+  { group: "账户", method: "GET", path: "/v1/accounts", status: "ready", body: "" },
+  { group: "账户", method: "GET", path: "/v1/accounts/00030484/asset", status: "needs-config", body: "" },
+  { group: "账户", method: "GET", path: "/v1/accounts/00030484/positions", status: "needs-config", query: "limit=50", body: "" },
+  { group: "交易", method: "POST", path: "/v1/orders", status: "needs-config", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
+  { group: "交易", method: "POST", path: "/v1/orders/batch", status: "needs-config", body: JSON.stringify({account_id:"00030484", idempotency_key:"relay-batch-console-demo", orders:[{client_order_id:"relay-batch-console-1", gateway_order_id:"relay-batch-console-1", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100},{client_order_id:"relay-batch-console-2", gateway_order_id:"relay-batch-console-2", symbol:"000001", exchange:"SZ", trade_side:"B", business_type:"S", offset_type:"C", price:11.24, qty:100}]}, null, 2) },
+  { group: "交易", method: "POST", path: "/v1/orders/relay-api-console-demo/cancel", status: "needs-config", body: JSON.stringify({account_id:"00030484", gateway_order_id:"relay-api-console-demo", cancel_id:"relay-cancel-console-demo", idempotency_key:"relay-cancel-console-demo"}, null, 2) },
+  { group: "查询", method: "GET", path: "/v1/orders", status: "needs-config", query: "account_id=00030484\nlimit=20", body: "" },
+  { group: "查询", method: "GET", path: "/v1/fills", status: "needs-config", query: "account_id=00030484\nlimit=20", body: "" },
   { group: "事件", method: "GET", path: "/v1/events/stream", status: "planned", body: "" }
 ];
 
@@ -1328,6 +1339,6 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     </div>
     <article>{{.Content}}</article>
   </main>
-  <footer>relay documentation portal. This mode is read-only and does not execute trading commands.</footer>
+  <footer>relay documentation portal. Basic API discovery is available here; trading and ledger routes follow the loaded local config.</footer>
 </body>
 </html>`))

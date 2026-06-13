@@ -124,6 +124,7 @@
 - [x] `GET /v1/status` 服务状态骨架。
 - [x] `GET /v1/accounts` 配置态账户列表骨架。
 - [x] 增加 Apifox 风格接口测试台骨架 `/api-console`。
+- [x] 文档门户模式同源挂载 `/v1/*` API handler，接口测试台可直接发送请求查看返回。
 - [x] `POST /v1/orders` 单笔下单：订单草稿落盘、Redis `cmd.trade` 写入、命令 raw 归档。
 - [x] 使用测试 Redis 完成一次单笔下单 API 冒烟，订单回流后落盘到 `filled`。
 - [x] 测试下单参考 Meridian `2026-06-12` 分钟线，示例 `600000.SH` `15:00` close 为 `9.67`。
@@ -149,6 +150,7 @@
 - [x] 中间请求编辑区：method、base URL、path、query、headers、body。
 - [x] 右侧响应查看区：HTTP 状态、耗时、响应 JSON。
 - [x] 未实现交易写接口默认禁用发送。
+- [x] 9092 文档门户同源暴露 `/v1/*`，基础接口可直接从测试台发送。
 - [ ] API handler 完成后自动同步 endpoint 状态。
 - [ ] 增加请求样例保存和导出。
 - [ ] 增加响应断言和冒烟测试集合。
