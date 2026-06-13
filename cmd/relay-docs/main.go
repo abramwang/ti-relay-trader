@@ -40,6 +40,8 @@ var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
 	rootDir = flag.String("root", ".", "project root directory")
 
+	publicURL = "http://relay-trader.quantstage.com"
+
 	docs = []docPage{
 		{
 			Slug:        "readme",
@@ -111,6 +113,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <p class="eyebrow">relay documentation portal</p>
   <h1>TI Relay Trader</h1>
   <p>9092 当前运行文档门户模式，用于查看项目框架、设计文档、接入手册和测试目录。该服务不连接实盘柜台，不处理交易命令。</p>
+  <p>最终服务口径：<a href="` + publicURL + `">` + publicURL + `</a></p>
   <div class="actions">
     <a href="/docs">查看文档</a>
     <a href="/tree">项目结构</a>
@@ -142,10 +145,11 @@ func (s *portalServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"service": "relay-docs",
-		"mode":    "documentation-portal",
-		"status":  "ok",
-		"time":    time.Now().UTC().Format(time.RFC3339Nano),
+		"service":    "relay-docs",
+		"mode":       "documentation-portal",
+		"status":     "ok",
+		"public_url": publicURL,
+		"time":       time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }
 
