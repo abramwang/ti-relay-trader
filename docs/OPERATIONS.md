@@ -96,6 +96,19 @@ migrations/postgres/000001_init_ledger.up.sql
 
 当前仅提交 SQL migration 和静态测试，尚未连接真实 PostgreSQL。真实 DSN 仍放在部署机本地配置或安全渠道。
 
+当前环境已安装 `psql`，同时可使用内置 runner：
+
+```bash
+RELAY_DATABASE_URL=postgres://... go run ./cmd/relayctl migrate status
+RELAY_DATABASE_URL=postgres://... go run ./cmd/relayctl migrate up
+```
+
+如果使用配置文件：
+
+```bash
+go run ./cmd/relayctl migrate up -config config/relay.local.yaml
+```
+
 ## 前置测试环境
 
 当前用户已启动前置程序测试环境。后续进入 Redis Stream 对接阶段时，可以基于可见 stream 做以下联调：

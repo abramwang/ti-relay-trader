@@ -14,6 +14,7 @@
 - 已增加统一交易 schema 的基础校验和状态机单元测试。
 - 已增加 Redis Stream 命名、环境变量兼容、消息摘要解析和 Redis URL 脱敏测试。
 - 已增加 PostgreSQL migration 静态检查，确认首版账本表和关键约束存在。
+- 已增加 migration loader 单元测试，并验证 `relayctl migrate` 在无 DSN 时给出明确错误。
 - 暂无交易核心测试用例。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 

@@ -176,12 +176,13 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 Redis Stream 只读探测命令 `relayctl redis-probe`，支持本地配置和 `HX_REDIS_*` 环境变量。
 - [x] 新增 Apifox 风格接口测试台骨架 `/api-console`，用于后续 API 联调。
 - [x] 新增 PostgreSQL 首版账本 migration，覆盖账户、网关、订单、事件、成交、原始 stream、资金、持仓和对账表。
+- [x] 安装 PostgreSQL client，并新增 `relayctl migrate status/up/down` migration runner。
 - [ ] 设计模拟柜台账表 schema。
 - [x] 实现正式交易服务模式下的 9092 健康检查接口骨架。
 
 ## 待办事项
 
-1. 增加数据库连接和 migration runner。
+1. 使用真实 PostgreSQL DSN 执行 `relayctl migrate status/up`。
 2. 将 PostgreSQL 账本 repository 接入订单、成交、事件写入。
 3. 设计模拟柜台账表 schema。
 4. 增加 Python 盘后对账与账户盈亏统计任务骨架。
@@ -204,6 +205,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 9092 当前线上仍运行文档门户模式；API 模式只是工程骨架，尚未连接 Redis Stream、数据库或交易核心。
+- 当前 shell 未配置真实 PostgreSQL DSN，因此 migration runner 已做无 DSN 负向验证，尚未连库执行 DDL。
 - 前置测试环境已启动，后续可做 Redis Stream 联调；当前 shell 未配置 Redis URL 或 `HX_REDIS_*` 环境变量，所以本轮没有对真实 Redis 做现场探测。
 - 联调凭据只放本地配置或安全渠道，不写入仓库。
 - 接口测试台当前只开放页面骨架和只读健康检查测试；交易写接口仍是 `planned`，不会发送未实现请求。
@@ -227,3 +229,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-13`: 进入 P4 前置对接准备，新增 `cmd/relayctl redis-probe`、`internal/redisstream` 和 `docs/REDIS_STREAM_PROBE.md`，实现 Redis Stream 只读探测边界；当前环境未配置 Redis 凭据，尚未现场读取真实 stream。
 - `2026-06-13`: 根据用户要求新增 `/api-console` 接口测试台骨架，采用 Apifox 风格三栏布局：接口集合、请求编辑和响应查看；交易写接口当前标记 `planned` 并禁用发送。
 - `2026-06-13`: 推进 P5 交易账表持久化，新增 `migrations/postgres/000001_init_ledger.*.sql` 和 `docs/MIGRATIONS.md`，覆盖账户、网关、订单、订单事件、成交、原始 stream、持仓、资产、资金流水和盘后对账表。
+- `2026-06-13`: 安装 PostgreSQL client，新增 `internal/db/migrations` 和 `relayctl migrate status/up/down`，支持通过 `RELAY_DATABASE_URL`、`-database-url` 或配置文件执行 migration。

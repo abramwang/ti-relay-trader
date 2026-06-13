@@ -28,7 +28,7 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 增加数据库连接和 migration runner。
+2. 使用真实 PostgreSQL DSN 执行 migration 并补充数据库状态检查。
 3. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
 4. 基于已启动的前置测试环境做 Redis Stream 只读探测和查询联调。
 5. 规划 Redis Stream client 的命令写入和事件消费边界。
@@ -99,7 +99,10 @@
 - [x] 建立 `positions`、`position_snapshots`。
 - [x] 建立 `cash_ledger`、`asset_snapshots`。
 - [x] 建立 `reconciliation_runs`、`reconciliation_inputs`、`reconciliation_breaks`。
-- [ ] 增加数据库连接和 migration runner。
+- [x] 安装 PostgreSQL client。
+- [x] 增加数据库连接和 migration runner。
+- [x] 增加 `relayctl migrate status/up/down`。
+- [ ] 使用真实 PostgreSQL DSN 执行首版 migration。
 - [ ] 增加基于临时 PostgreSQL 的集成测试。
 
 ### P6 9092 正式交易 API 与 SDK

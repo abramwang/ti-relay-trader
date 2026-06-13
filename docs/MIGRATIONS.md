@@ -15,6 +15,22 @@ migrations/postgres/000001_init_ledger.down.sql
 
 当前仓库不保存真实 PostgreSQL DSN。连接方式仍从部署机本地配置或 `http://doc.quantstage.com` 获取。
 
+当前环境已安装 PostgreSQL client：
+
+```bash
+psql --version
+```
+
+也已新增 Go 版 migration runner：
+
+```bash
+go run ./cmd/relayctl migrate status
+go run ./cmd/relayctl migrate up
+go run ./cmd/relayctl migrate down -steps 1
+```
+
+runner 会创建 `relay_schema_migrations` 表记录已应用版本。真实 DSN 可通过 `-database-url`、`RELAY_DATABASE_URL` 或 `config.database.dsn` 提供。
+
 ## 覆盖表
 
 配置与路由：
@@ -61,16 +77,28 @@ migrations/postgres/000001_init_ledger.down.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.up.sql
 ```
 
+使用 relayctl：
+
+```bash
+RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate up
+```
+
 回滚：
 
 ```bash
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.down.sql
 ```
 
+使用 relayctl 回滚最近一步：
+
+```bash
+RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -steps 1
+```
+
 ## 后续工作
 
-1. 增加数据库连接和 migration runner。
-2. 将 `config.database.dsn` 接入启动检查。
+1. 用真实部署机 PostgreSQL DSN 跑 `relayctl migrate status/up`。
+2. 将 `config.database.dsn` 接入 API 模式启动检查。
 3. 增加 `GET /v1/status` 的数据库状态。
 4. 增加订单、成交、事件写入 repository。
 5. 增加基于临时 PostgreSQL 的集成测试。
