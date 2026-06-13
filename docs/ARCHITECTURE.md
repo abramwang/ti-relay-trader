@@ -54,6 +54,16 @@ relay Python jobs
 7. 提供事件订阅能力，供交易软件和策略接收订单回报与成交回报。
 8. 暴露健康检查、组件状态、Redis lag、DLQ、pending query/trade 等监控接口。
 
+当前 Go 工程底座：
+
+| 包 | 职责 |
+| --- | --- |
+| `internal/config` | YAML 配置加载、`docs/api/worker` 模式、多账户路由配置校验 |
+| `internal/logging` | 结构化日志初始化，默认 JSON 输出 |
+| `internal/httpx` | HTTP request_id、中间件、统一 JSON envelope 和标准错误码骨架 |
+| `internal/api` | API 模式服务骨架，当前提供 `/healthz`、`/v1/status`、`/v1/accounts` |
+| `internal/worker` | worker 模式常驻进程骨架，后续承接 Redis 消费和后台任务 |
+
 ## Python SDK 职责
 
 1. 面向策略开发者封装 9092 HTTP/WebSocket 接口。

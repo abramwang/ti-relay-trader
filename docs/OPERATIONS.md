@@ -36,7 +36,8 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 2. PostgreSQL 连接 DSN、连接池参数。
 3. Redis URL、env、broker、gateway。
 4. account 到 broker/gateway/stream prefix 的多账户路由。
-5. 后台任务开关和 cron 时间。
+5. 日志级别和输出格式。
+6. 后台任务开关和 cron 时间。
 
 真实 PostgreSQL、Redis 等访问方式查阅 `http://doc.quantstage.com`。
 
@@ -46,7 +47,34 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 2. 支持 `docs`、`api`、`worker` 三种服务运行模式。
 3. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
 4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
-5. 已校验服务模式、数据库连接池参数和重复账户路由。
+5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 骨架接口。
+6. worker 模式当前只记录配置态账户和任务数量，后续承接 Redis 消费与后台常驻任务。
+7. 已校验服务模式、日志级别、日志格式、数据库连接池参数和重复账户路由。
+
+## 运行模式
+
+默认文档门户模式：
+
+```bash
+go run ./cmd/relay-docs -root .
+```
+
+指定配置文件：
+
+```bash
+RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/relay-docs -root .
+```
+
+如需试运行 API 或 worker，将本地未提交配置里的 `service.mode` 改为 `api` 或 `worker`。当前 API 模式只暴露工程骨架，不连接 Redis、数据库或实盘柜台。
+
+## 日志与响应
+
+当前 Go 服务使用结构化日志：
+
+1. 默认 `service.log_format=json`，可改为 `text`。
+2. 默认 `service.log_level=info`，可设为 `debug`、`warn`、`error`。
+3. HTTP 请求日志包含 `request_id`、method、path、status、bytes、duration_ms、remote_addr。
+4. API 模式统一返回 JSON envelope，包含 `ok`、`data` 或 `error`、`request_id`、`time`。
 
 ## Cron 任务管理
 

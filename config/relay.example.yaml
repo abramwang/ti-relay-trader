@@ -8,6 +8,8 @@ service:
   docs_addr: "0.0.0.0:9092"
   api_addr: "0.0.0.0:9092"
   mode: "docs"
+  log_level: "info"
+  log_format: "json"
 
 database:
   driver: "postgres"

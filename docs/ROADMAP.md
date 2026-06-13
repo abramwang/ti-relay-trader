@@ -27,12 +27,11 @@
 
 ## 当前优先级
 
-1. 保持 9092 文档门户在线，并让首页成为开发进度面板。
-2. 补充结构化日志和统一错误响应 envelope。
-3. 定义账户、gateway、Redis stream prefix 的多账户路由配置。
-4. 定义第一版统一交易接口 schema。
-5. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
-6. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
+2. 定义第一版统一交易接口 schema。
+3. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
+4. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+5. 规划 Redis Stream client 的命令写入和事件消费边界。
 
 ## 里程碑细化
 
@@ -50,9 +49,9 @@
 - [x] 定义服务运行模式：`docs`、`api`、`worker`。
 - [x] 明确真实凭据放在部署机本地配置文件，模板文件可提交。
 - [x] 增加基础配置加载：端口、数据库、Redis、账户路由。
-- [ ] 增加结构化日志。
-- [ ] 增加统一错误码和响应 envelope。
-- [ ] 增加基础单元测试和健康检查测试。
+- [x] 增加结构化日志。
+- [x] 增加统一错误码和响应 envelope。
+- [x] 增加基础单元测试和健康检查测试。
 - [x] 增加配置加载单元测试。
 
 ### P2 标准交易接口设计
@@ -96,8 +95,9 @@
 
 ### P6 9092 正式交易 API 与 SDK
 
-- [ ] `GET /healthz` 正式服务健康检查。
-- [ ] `GET /v1/accounts`。
+- [x] `GET /healthz` 正式服务健康检查骨架。
+- [x] `GET /v1/status` 服务状态骨架。
+- [x] `GET /v1/accounts` 配置态账户列表骨架。
 - [ ] `GET /v1/accounts/{account_id}/asset`。
 - [ ] `GET /v1/accounts/{account_id}/positions`。
 - [ ] `POST /v1/orders`。

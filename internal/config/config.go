@@ -33,6 +33,8 @@ type ServiceConfig struct {
 	DocsAddr  string `yaml:"docs_addr"`
 	APIAddr   string `yaml:"api_addr"`
 	Mode      Mode   `yaml:"mode"`
+	LogLevel  string `yaml:"log_level"`
+	LogFormat string `yaml:"log_format"`
 }
 
 type DatabaseConfig struct {
@@ -125,6 +127,12 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Service.Mode == "" {
 		cfg.Service.Mode = ModeDocs
 	}
+	if cfg.Service.LogLevel == "" {
+		cfg.Service.LogLevel = "info"
+	}
+	if cfg.Service.LogFormat == "" {
+		cfg.Service.LogFormat = "json"
+	}
 	if cfg.Database.Driver == "" {
 		cfg.Database.Driver = "postgres"
 	}
@@ -142,6 +150,12 @@ func (cfg *Config) ApplyDefaults() {
 func (cfg Config) Validate() error {
 	if !cfg.Service.Mode.Valid() {
 		return fmt.Errorf("invalid service.mode %q", cfg.Service.Mode)
+	}
+	if !validLogLevel(cfg.Service.LogLevel) {
+		return fmt.Errorf("invalid service.log_level %q", cfg.Service.LogLevel)
+	}
+	if !validLogFormat(cfg.Service.LogFormat) {
+		return fmt.Errorf("invalid service.log_format %q", cfg.Service.LogFormat)
 	}
 	if cfg.Database.MaxIdleConns > cfg.Database.MaxOpenConns {
 		return fmt.Errorf("database.max_idle_conns must be <= max_open_conns")
@@ -186,4 +200,22 @@ func (cfg Config) AccountRoute(accountID string) (AccountRouteConfig, bool) {
 		}
 	}
 	return AccountRouteConfig{}, false
+}
+
+func validLogLevel(level string) bool {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug", "info", "warn", "warning", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func validLogFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json", "text":
+		return true
+	default:
+		return false
+	}
 }

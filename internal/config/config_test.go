@@ -19,6 +19,12 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Database.Driver != "postgres" {
 		t.Fatalf("database driver = %q, want postgres", cfg.Database.Driver)
 	}
+	if cfg.Service.LogLevel != "info" {
+		t.Fatalf("log level = %q, want info", cfg.Service.LogLevel)
+	}
+	if cfg.Service.LogFormat != "json" {
+		t.Fatalf("log format = %q, want json", cfg.Service.LogFormat)
+	}
 }
 
 func TestDecodeRejectsInvalidMode(t *testing.T) {
@@ -47,6 +53,16 @@ accounts:
 		t.Fatal("expected duplicate account error")
 	}
 	if !strings.Contains(err.Error(), "duplicate account route") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsInvalidLogFormat(t *testing.T) {
+	_, err := Decode(strings.NewReader(`service: {log_format: xml}`))
+	if err == nil {
+		t.Fatal("expected invalid log format error")
+	}
+	if !strings.Contains(err.Error(), "invalid service.log_format") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

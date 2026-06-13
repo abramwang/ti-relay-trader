@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -8,16 +9,22 @@ import (
 	"html"
 	"html/template"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
+	"ti-relay-trader/internal/api"
 	relayconfig "ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/httpx"
+	"ti-relay-trader/internal/logging"
+	"ti-relay-trader/internal/worker"
 )
 
 type docPage struct {
@@ -111,22 +118,46 @@ func main() {
 
 	absRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
-		log.Fatalf("resolve project root: %v", err)
+		exitError("resolve project root: %v", err)
 	}
 
 	cfg, err := loadPortalConfig(*cfgPath)
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		exitError("load config: %v", err)
 	}
 	if cfg.Service.PublicURL != "" {
 		publicURL = cfg.Service.PublicURL
 	}
-	if !addrWasSet && cfg.Service.DocsAddr != "" {
-		*addr = cfg.Service.DocsAddr
+
+	logger, err := logging.New(os.Stdout, cfg.Service.LogLevel, cfg.Service.LogFormat)
+	if err != nil {
+		exitError("create logger: %v", err)
+	}
+
+	switch cfg.Service.Mode {
+	case relayconfig.ModeDocs:
+		err = runDocsPortal(absRoot, *cfg, *addr, addrWasSet, logger)
+	case relayconfig.ModeAPI:
+		err = runAPIServer(*cfg, *addr, addrWasSet, logger)
+	case relayconfig.ModeWorker:
+		err = runWorkerMode(*cfg, logger)
+	default:
+		err = fmt.Errorf("unsupported service mode %q", cfg.Service.Mode)
+	}
+	if err != nil {
+		logger.Error("relay_service_stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addrWasSet bool, logger *slog.Logger) error {
+	listenAddr := cfg.Service.DocsAddr
+	if addrWasSet {
+		listenAddr = flagAddr
 	}
 
 	mux := http.NewServeMux()
-	server := &portalServer{root: absRoot}
+	server := &portalServer{root: absRoot, logger: logger}
 	mux.HandleFunc("/", server.handleHome)
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/docs", server.handleDocsIndex)
@@ -135,11 +166,33 @@ func main() {
 	mux.HandleFunc("/tree", server.handleTree)
 	mux.HandleFunc("/raw/", server.handleRaw)
 
-	log.Printf("relay documentation portal listening on http://%s", *addr)
-	log.Printf("project root: %s", absRoot)
-	if err := http.ListenAndServe(*addr, logRequest(mux)); err != nil {
-		log.Fatal(err)
+	logger.Info("relay_service_listening",
+		"mode", cfg.Service.Mode,
+		"addr", listenAddr,
+		"public_url", cfg.Service.PublicURL,
+		"project_root", absRoot,
+	)
+	return http.ListenAndServe(listenAddr, httpx.RequestLogger(logger)(mux))
+}
+
+func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logger *slog.Logger) error {
+	listenAddr := cfg.Service.APIAddr
+	if addrWasSet {
+		listenAddr = flagAddr
 	}
+
+	logger.Info("relay_service_listening",
+		"mode", cfg.Service.Mode,
+		"addr", listenAddr,
+		"public_url", cfg.Service.PublicURL,
+	)
+	return http.ListenAndServe(listenAddr, api.New(cfg, logger))
+}
+
+func runWorkerMode(cfg relayconfig.Config, logger *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return worker.Run(ctx, cfg, logger)
 }
 
 func loadPortalConfig(path string) (*relayconfig.Config, error) {
@@ -150,8 +203,14 @@ func loadPortalConfig(path string) (*relayconfig.Config, error) {
 	return relayconfig.Load(path)
 }
 
+func exitError(format string, args ...any) {
+	_, _ = fmt.Fprintf(os.Stderr, "relay: "+format+"\n", args...)
+	os.Exit(1)
+}
+
 type portalServer struct {
-	root string
+	root   string
+	logger *slog.Logger
 }
 
 func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -347,7 +406,7 @@ func (s *portalServer) render(w http.ResponseWriter, data pageData) {
 	data.Generated = time.Now().Format("2006-01-02 15:04:05")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := pageTemplate.Execute(w, data); err != nil {
-		log.Printf("render page: %v", err)
+		s.logger.Error("render_page_failed", "error", err)
 	}
 }
 
@@ -566,14 +625,6 @@ func inlineMarkdown(text string) string {
 	escaped := html.EscapeString(text)
 	escaped = strings.ReplaceAll(escaped, "`", "")
 	return escaped
-}
-
-func logRequest(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
-	})
 }
 
 var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
