@@ -1,0 +1,142 @@
+[
+  { "id": "healthz", "group": "基础", "title": "健康检查", "method": "GET", "path": "/healthz", "status": "ready", "fields": [] },
+  { "id": "status", "group": "基础", "title": "服务状态", "method": "GET", "path": "/v1/status", "status": "ready", "fields": [] },
+  { "id": "schema", "group": "基础", "title": "Schema 发现", "method": "GET", "path": "/v1/schema", "status": "ready", "fields": [] },
+  { "id": "accounts", "group": "账户", "title": "账户列表", "method": "GET", "path": "/v1/accounts", "status": "ready", "fields": [] },
+  {
+    "id": "asset",
+    "group": "账户",
+    "title": "资金查询",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/asset",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
+    "id": "asset-refresh",
+    "group": "账户",
+    "title": "资金刷新",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/asset/refresh",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
+    "id": "positions",
+    "group": "账户",
+    "title": "持仓查询",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/positions",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "positions-refresh",
+    "group": "账户",
+    "title": "持仓刷新",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/positions/refresh",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
+    "id": "submit-order",
+    "group": "交易",
+    "title": "单笔下单",
+    "method": "POST",
+    "path": "/v1/orders",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "body", "required": true, "defaultValue": "00030484" },
+      { "name": "client_order_id", "label": "client_order_id", "source": "body", "defaultValue": "relay-api-console-demo" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "body", "defaultValue": "relay-api-console-demo" },
+      { "name": "symbol", "label": "symbol", "source": "body", "required": true, "defaultValue": "600000" },
+      { "name": "exchange", "label": "exchange", "source": "body", "type": "select", "required": true, "defaultValue": "SH", "options": ["SH", "SZ", "BJ"] },
+      { "name": "trade_side", "label": "trade_side", "source": "body", "type": "select", "required": true, "defaultValue": "B", "options": ["B", "S", "P", "R"] },
+      { "name": "business_type", "label": "business_type", "source": "body", "type": "select", "required": true, "defaultValue": "S", "options": ["S", "E"] },
+      { "name": "offset_type", "label": "offset_type", "source": "body", "type": "select", "defaultValue": "C", "options": ["", "O", "C"] },
+      { "name": "price", "label": "price", "source": "body", "type": "number", "required": true, "defaultValue": "9.67" },
+      { "name": "qty", "label": "qty", "source": "body", "type": "integer", "required": true, "defaultValue": "100" },
+      { "name": "idempotency_key", "label": "idempotency_key", "source": "body", "defaultValue": "relay-api-console-demo" }
+    ]
+  },
+  {
+    "id": "batch-orders",
+    "group": "交易",
+    "title": "批量下单",
+    "method": "POST",
+    "path": "/v1/orders/batch",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "body", "required": true, "defaultValue": "00030484" },
+      { "name": "idempotency_key", "label": "idempotency_key", "source": "body", "defaultValue": "relay-batch-console-demo" },
+      {
+        "name": "orders_json",
+        "label": "orders",
+        "source": "body_json",
+        "type": "textarea",
+        "required": true,
+        "target": "orders",
+        "defaultValue": "[\n  {\n    \"client_order_id\": \"relay-batch-console-1\",\n    \"gateway_order_id\": \"relay-batch-console-1\",\n    \"symbol\": \"600000\",\n    \"exchange\": \"SH\",\n    \"trade_side\": \"B\",\n    \"business_type\": \"S\",\n    \"offset_type\": \"C\",\n    \"price\": 9.67,\n    \"qty\": 100\n  },\n  {\n    \"client_order_id\": \"relay-batch-console-2\",\n    \"gateway_order_id\": \"relay-batch-console-2\",\n    \"symbol\": \"000001\",\n    \"exchange\": \"SZ\",\n    \"trade_side\": \"B\",\n    \"business_type\": \"S\",\n    \"offset_type\": \"C\",\n    \"price\": 11.24,\n    \"qty\": 100\n  }\n]"
+      }
+    ]
+  },
+  {
+    "id": "cancel-order",
+    "group": "交易",
+    "title": "撤单",
+    "method": "POST",
+    "path": "/v1/orders/{gateway_order_id}/cancel",
+    "status": "needs-config",
+    "fields": [
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "path", "required": true, "defaultValue": "relay-api-console-demo" },
+      { "name": "account_id", "label": "account_id", "source": "body", "required": true, "defaultValue": "00030484" },
+      { "name": "cancel_id", "label": "cancel_id", "source": "body", "defaultValue": "relay-cancel-console-demo" },
+      { "name": "idempotency_key", "label": "idempotency_key", "source": "body", "defaultValue": "relay-cancel-console-demo" }
+    ]
+  },
+  {
+    "id": "orders",
+    "group": "查询",
+    "title": "订单查询",
+    "method": "GET",
+    "path": "/v1/orders",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "client_order_id", "label": "client_order_id", "source": "query", "defaultValue": "" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "fills",
+    "group": "查询",
+    "title": "成交查询",
+    "method": "GET",
+    "path": "/v1/fills",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  { "id": "events", "group": "事件", "title": "事件流", "method": "GET", "path": "/v1/events/stream", "status": "planned", "fields": [] }
+]

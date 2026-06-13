@@ -1,0 +1,55 @@
+<section class="api-console-v2">
+  <div class="api-console-head">
+    <div>
+      <p class="eyebrow">API Console</p>
+      <h1>relay 接口测试台</h1>
+      <p class="lead">选择接口、填写参数、发送请求，并查看 JSON 与表格化结果。</p>
+    </div>
+    <div class="api-head-actions">
+      <a href="/docs/api-test-console">接口说明</a>
+      <a href="/v1/schema">Schema</a>
+    </div>
+  </div>
+  <div class="api-console-grid">
+    <aside class="api-console-nav">
+      <div class="api-sidebar-head">
+        <strong>接口集合</strong>
+        <span>v1alpha1</span>
+      </div>
+      <div id="endpointList" class="endpoint-list"></div>
+    </aside>
+    <section class="api-request-panel">
+      <div class="api-section-head">
+        <div>
+          <span id="endpointGroup" class="api-kicker">基础</span>
+          <h2><span id="endpointMethod" class="method get">GET</span><code id="endpointPath">/healthz</code></h2>
+        </div>
+        <span id="endpointStatus" class="api-status ready">ready</span>
+      </div>
+      <div class="request-line-v2">
+        <input id="baseUrlInput" aria-label="Base URL" value="{{.PublicURL}}">
+        <code id="requestPreview">GET /healthz</code>
+        <button id="sendButton" form="paramForm" type="submit">发送</button>
+      </div>
+      <form id="paramForm" class="param-form">
+        <div id="paramGrid" class="param-grid"></div>
+        <div class="form-actions">
+          <button id="resetButton" type="button">重置</button>
+          <button id="copyURLButton" type="button">复制 URL</button>
+        </div>
+      </form>
+    </section>
+    <aside class="api-result-panel">
+      <div class="api-section-head">
+        <h2>响应</h2>
+        <span id="responseStatus" class="api-status planned">idle</span>
+      </div>
+      <div id="responseMeta" class="response-meta">等待请求</div>
+      <div id="tableOutput" class="table-output"></div>
+      <details class="json-details" open>
+        <summary>JSON</summary>
+        <pre id="jsonOutput">{}</pre>
+      </details>
+    </aside>
+  </div>
+</section>

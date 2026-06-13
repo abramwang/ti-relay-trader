@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -45,11 +47,18 @@ type pageData struct {
 	Active     string
 	Summary    string
 	Generated  string
+	Head       template.HTML
 	Content    template.HTML
+	Scripts    template.HTML
 	Docs       []docPage
 	Doc        *docPage
 	ProjectDir string
 }
+
+//go:embed web/templates/*.html web/static/*
+var portalAssets embed.FS
+
+var apiConsoleTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/api_console.html"))
 
 var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
@@ -208,6 +217,11 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	mux.HandleFunc("/docs", server.handleDocsIndex)
 	mux.HandleFunc("/docs/", server.handleDoc)
 	mux.HandleFunc("/api-console", server.handleAPIConsole)
+	staticFS, err := fs.Sub(portalAssets, "web/static")
+	if err != nil {
+		return err
+	}
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(staticFS))))
 	mux.HandleFunc("/tests", server.handleTests)
 	mux.HandleFunc("/tree", server.handleTree)
 	mux.HandleFunc("/raw/", server.handleRaw)
@@ -375,186 +389,21 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	content := `<section class="console-shell">
-  <aside class="console-sidebar">
-    <div class="console-sidebar-head">
-      <strong>relay API</strong>
-      <span>v1alpha1</span>
-    </div>
-    <div id="endpointList" class="endpoint-list"></div>
-  </aside>
-  <section class="console-workbench">
-    <div class="request-line">
-      <select id="methodSelect" aria-label="HTTP method"></select>
-      <input id="baseUrlInput" aria-label="Base URL" value="` + html.EscapeString(publicURL) + `" />
-      <input id="pathInput" aria-label="Path" />
-      <button id="sendButton" type="button">Send</button>
-    </div>
-    <div class="console-tabs" role="tablist">
-      <button class="tab active" type="button" data-tab="params">Params</button>
-      <button class="tab" type="button" data-tab="headers">Headers</button>
-      <button class="tab" type="button" data-tab="body">Body</button>
-    </div>
-    <div class="tab-panel active" id="tab-params">
-      <textarea id="queryInput" spellcheck="false"></textarea>
-    </div>
-    <div class="tab-panel" id="tab-headers">
-      <textarea id="headersInput" spellcheck="false"></textarea>
-    </div>
-    <div class="tab-panel" id="tab-body">
-      <textarea id="bodyInput" spellcheck="false"></textarea>
-    </div>
-  </section>
-  <aside class="console-response">
-    <div class="response-head">
-      <strong>Response</strong>
-      <span id="responseMeta">idle</span>
-    </div>
-    <pre id="responseOutput">{}</pre>
-  </aside>
-</section>
-<script>
-const endpoints = [
-  { group: "基础", method: "GET", path: "/healthz", status: "ready", body: "" },
-  { group: "基础", method: "GET", path: "/v1/status", status: "ready", body: "" },
-  { group: "基础", method: "GET", path: "/v1/schema", status: "ready", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts", status: "ready", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts/00030484/asset", status: "needs-config", body: "" },
-  { group: "账户", method: "POST", path: "/v1/accounts/00030484/asset/refresh", status: "needs-config", body: "" },
-  { group: "账户", method: "GET", path: "/v1/accounts/00030484/positions", status: "needs-config", query: "limit=50", body: "" },
-  { group: "账户", method: "POST", path: "/v1/accounts/00030484/positions/refresh", status: "needs-config", body: "" },
-  { group: "交易", method: "POST", path: "/v1/orders", status: "needs-config", body: JSON.stringify({account_id:"00030484", client_order_id:"relay-api-console-demo", gateway_order_id:"relay-api-console-demo", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100, idempotency_key:"relay-api-console-demo"}, null, 2) },
-  { group: "交易", method: "POST", path: "/v1/orders/batch", status: "needs-config", body: JSON.stringify({account_id:"00030484", idempotency_key:"relay-batch-console-demo", orders:[{client_order_id:"relay-batch-console-1", gateway_order_id:"relay-batch-console-1", symbol:"600000", exchange:"SH", trade_side:"B", business_type:"S", offset_type:"C", price:9.67, qty:100},{client_order_id:"relay-batch-console-2", gateway_order_id:"relay-batch-console-2", symbol:"000001", exchange:"SZ", trade_side:"B", business_type:"S", offset_type:"C", price:11.24, qty:100}]}, null, 2) },
-  { group: "交易", method: "POST", path: "/v1/orders/relay-api-console-demo/cancel", status: "needs-config", body: JSON.stringify({account_id:"00030484", gateway_order_id:"relay-api-console-demo", cancel_id:"relay-cancel-console-demo", idempotency_key:"relay-cancel-console-demo"}, null, 2) },
-  { group: "查询", method: "GET", path: "/v1/orders", status: "needs-config", query: "account_id=00030484\nlimit=20", body: "" },
-  { group: "查询", method: "GET", path: "/v1/fills", status: "needs-config", query: "account_id=00030484\nlimit=20", body: "" },
-  { group: "事件", method: "GET", path: "/v1/events/stream", status: "planned", body: "" }
-];
-
-const methodSelect = document.getElementById("methodSelect");
-const baseUrlInput = document.getElementById("baseUrlInput");
-const pathInput = document.getElementById("pathInput");
-const queryInput = document.getElementById("queryInput");
-const headersInput = document.getElementById("headersInput");
-const bodyInput = document.getElementById("bodyInput");
-const sendButton = document.getElementById("sendButton");
-const responseMeta = document.getElementById("responseMeta");
-const responseOutput = document.getElementById("responseOutput");
-let selectedEndpoint = endpoints[0];
-
-for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"]) {
-  const option = document.createElement("option");
-  option.value = method;
-  option.textContent = method;
-  methodSelect.appendChild(option);
-}
-
-function renderEndpointList() {
-  const root = document.getElementById("endpointList");
-  root.innerHTML = "";
-  const groups = [...new Set(endpoints.map((endpoint) => endpoint.group))];
-  for (const group of groups) {
-    const title = document.createElement("div");
-    title.className = "endpoint-group";
-    title.textContent = group;
-    root.appendChild(title);
-    for (const endpoint of endpoints.filter((item) => item.group === group)) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "endpoint-item" + (endpoint === selectedEndpoint ? " active" : "");
-      const method = document.createElement("span");
-      method.className = "method " + endpoint.method.toLowerCase();
-      method.textContent = endpoint.method;
-      const path = document.createElement("span");
-      path.className = "endpoint-path";
-      path.textContent = endpoint.path;
-      const status = document.createElement("span");
-      status.className = "endpoint-status";
-      status.textContent = endpoint.status;
-      button.append(method, path, status);
-      button.addEventListener("click", () => selectEndpoint(endpoint));
-      root.appendChild(button);
-    }
-  }
-}
-
-function selectEndpoint(endpoint) {
-  selectedEndpoint = endpoint;
-  methodSelect.value = endpoint.method;
-  pathInput.value = endpoint.path;
-  bodyInput.value = endpoint.body || "";
-  queryInput.value = endpoint.query || "";
-  headersInput.value = endpoint.method === "GET" ? "" : "Content-Type: application/json";
-  sendButton.disabled = endpoint.status === "planned";
-  renderEndpointList();
-}
-
-function readHeaders() {
-  const headers = {};
-  for (const line of headersInput.value.split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx > 0) {
-      headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-    }
-  }
-  return headers;
-}
-
-function buildURL() {
-  const base = baseUrlInput.value.trim().replace(/\/+$/, "");
-  const path = pathInput.value.trim().startsWith("/") ? pathInput.value.trim() : "/" + pathInput.value.trim();
-  const url = new URL(base + path);
-  for (const line of queryInput.value.split("\n")) {
-    const idx = line.indexOf("=");
-    if (idx > 0) {
-      url.searchParams.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
-    }
-  }
-  return url.toString();
-}
-
-async function sendRequest() {
-  const started = performance.now();
-  responseMeta.textContent = "sending";
-  responseOutput.textContent = "";
-  const method = methodSelect.value;
-  const init = { method, headers: readHeaders() };
-  if (!["GET", "HEAD"].includes(method) && bodyInput.value.trim() !== "") {
-    init.body = bodyInput.value;
-  }
-  try {
-    const response = await fetch(buildURL(), init);
-    const text = await response.text();
-    const elapsed = Math.round(performance.now() - started);
-    responseMeta.textContent = response.status + " " + response.statusText + " / " + elapsed + "ms";
-    try {
-      responseOutput.textContent = JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      responseOutput.textContent = text;
-    }
-  } catch (err) {
-    responseMeta.textContent = "error";
-    responseOutput.textContent = String(err);
-  }
-}
-
-document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
-  });
-});
-sendButton.addEventListener("click", sendRequest);
-selectEndpoint(endpoints[0]);
-</script>`
+	var body bytes.Buffer
+	if err := apiConsoleTemplate.Execute(&body, map[string]string{
+		"PublicURL": publicURL,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	s.render(w, pageData{
 		Title:      "接口测试台",
 		Active:     "console",
-		Summary:    "Apifox-style API console",
-		Content:    template.HTML(content),
+		Summary:    "Form-based API console",
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css">`),
+		Content:    template.HTML(body.String()),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -1139,187 +988,15 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       color: var(--muted);
       font-size: 12px;
     }
-    .console-shell {
-      display: grid;
-      grid-template-columns: 260px minmax(420px, 1fr) 380px;
-      min-height: 620px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-      background: #fff;
-    }
-    .console-sidebar, .console-response {
-      background: #f8fafc;
-    }
-    .console-sidebar {
-      border-right: 1px solid var(--line);
-      overflow: auto;
-    }
-    .console-sidebar-head, .response-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      min-height: 46px;
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
-      color: var(--text);
-    }
-    .console-sidebar-head span, .response-head span {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 650;
-    }
-    .endpoint-list {
-      padding: 10px;
-    }
-    .endpoint-group {
-      margin: 12px 6px 6px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 800;
-    }
-    .endpoint-item {
-      display: grid;
-      grid-template-columns: 48px minmax(0, 1fr);
-      gap: 4px 8px;
-      width: 100%;
-      min-height: 48px;
-      margin-bottom: 4px;
-      padding: 8px;
-      border: 1px solid transparent;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--text);
-      text-align: left;
-      cursor: pointer;
-    }
-    .endpoint-item:hover, .endpoint-item.active {
-      border-color: var(--accent);
-      background: var(--accent-soft);
-    }
-    .method {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 42px;
-      height: 22px;
-      border-radius: 5px;
-      color: #fff;
-      font-size: 11px;
-      font-weight: 800;
-    }
-    .method.get { background: #0f766e; }
-    .method.post { background: #2563eb; }
-    .method.put, .method.patch { background: #a16207; }
-    .method.delete { background: #b42318; }
-    .endpoint-path {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      line-height: 22px;
-    }
-    .endpoint-status {
-      grid-column: 2;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .console-workbench {
-      min-width: 0;
-      padding: 14px;
-    }
-    .request-line {
-      display: grid;
-      grid-template-columns: 86px minmax(160px, 260px) minmax(220px, 1fr) 86px;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .request-line input, .request-line select, .request-line button, .console-tabs button {
-      min-height: 36px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fff;
-      color: var(--text);
-      font: inherit;
-    }
-    .request-line input, .request-line select {
-      min-width: 0;
-      padding: 0 10px;
-    }
-    .request-line button {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
-      font-weight: 800;
-      cursor: pointer;
-    }
-    .request-line button:disabled {
-      border-color: var(--line);
-      background: #e4e7ec;
-      color: var(--muted);
-      cursor: not-allowed;
-    }
-    .console-tabs {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 8px;
-      border-bottom: 1px solid var(--line);
-    }
-    .console-tabs button {
-      min-width: 86px;
-      border-bottom: 0;
-      border-bottom-right-radius: 0;
-      border-bottom-left-radius: 0;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .console-tabs button.active {
-      border-color: var(--accent);
-      color: var(--accent);
-      background: var(--accent-soft);
-    }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-    .tab-panel textarea {
-      width: 100%;
-      height: 470px;
-      resize: vertical;
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fbfcfe;
-      color: var(--text);
-      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-    .console-response {
-      min-width: 0;
-      border-left: 1px solid var(--line);
-      overflow: hidden;
-    }
-    .console-response pre {
-      height: calc(100% - 46px);
-      min-height: 574px;
-      margin: 0;
-      border-radius: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
     @media (max-width: 860px) {
       header { height: auto; align-items: flex-start; padding: 14px 18px; flex-direction: column; }
       nav { justify-content: flex-start; }
       main { width: min(100vw - 24px, 1180px); margin-top: 18px; }
       .grid, .doc-list { grid-template-columns: 1fr; }
       .hero, .panel, article { padding: 20px; }
-      .console-shell { grid-template-columns: 1fr; }
-      .console-sidebar, .console-response { border: 0; }
-      .request-line { grid-template-columns: 1fr; }
-      .tab-panel textarea, .console-response pre { min-height: 320px; height: 320px; }
     }
   </style>
+  {{.Head}}
 </head>
 <body>
   <header>
@@ -1342,5 +1019,6 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     <article>{{.Content}}</article>
   </main>
   <footer>relay documentation portal. Basic API discovery is available here; trading and ledger routes follow the loaded local config.</footer>
+  {{.Scripts}}
 </body>
 </html>`))
