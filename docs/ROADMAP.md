@@ -19,7 +19,7 @@
 | P3 多账户路由 | todo | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验 |
 | P4 Redis Stream 前置对接 | todo | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
 | P5 交易账表持久化 | todo | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
-| P6 9092 正式交易 API | todo | 给交易软件和策略提供统一接口 | HTTP API、事件订阅、状态查询、错误码 |
+| P6 9092 正式交易 API 与 SDK | todo | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
 | P7 盘后对账任务 | todo | 对账柜台、Redis 事件和内部账表 | Python jobs、对账批次、差异表、修复入口 |
 | P8 历史数据与盈亏统计 | todo | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
 | P9 模拟柜台 | todo | 支持研究和策略联调的模拟交易账表 | 模拟账户、撮合、资金持仓、结算 |
@@ -32,6 +32,7 @@
 3. 定义账户、gateway、Redis stream prefix 的多账户路由配置。
 4. 定义第一版统一交易接口 schema。
 5. 设计 PostgreSQL 交易账表 migration，确保账户交易数据、订单数据和成交数据可审计落盘。
+6. 规划 Python SDK，让策略开发通过 SDK 使用 9092 标准 API。
 
 ## 里程碑细化
 
@@ -92,7 +93,7 @@
 - [ ] 建立 `cash_ledger`、`asset_snapshots`。
 - [ ] 建立 `reconciliation_runs`、`reconciliation_breaks`。
 
-### P6 9092 正式交易 API
+### P6 9092 正式交易 API 与 SDK
 
 - [ ] `GET /healthz` 正式服务健康检查。
 - [ ] `GET /v1/accounts`。
@@ -104,6 +105,14 @@
 - [ ] `GET /v1/orders`。
 - [ ] `GET /v1/fills`。
 - [ ] `GET /v1/events/stream`。
+- [x] 规划 Python SDK 的包形态、核心方法、错误处理和实盘语义。
+- [x] 参考 Meridian SDK，明确内网 HTTP tar.gz 安装包和 pip 安装方式。
+- [ ] 初始化 `sdk/python/relay_sdk` 包。
+- [ ] 实现 SDK 账户、资金、持仓查询。
+- [ ] 实现 SDK 下单、批量下单、撤单。
+- [ ] 实现 SDK 事件订阅和 `wait_order_terminal`。
+- [ ] 增加 SDK mock API 单元测试和集成测试。
+- [ ] 增加 SDK 打包脚本和 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
 
 ### P7 盘后对账任务
 
@@ -136,6 +145,7 @@
 - [ ] 定义部署方式。
 - [ ] 增加启动、停止、重载脚本。
 - [ ] 增加 cron 安装模板和任务锁约定。
+- [ ] 增加 SDK 版本发布和安装包维护清单。
 - [ ] 增加 metrics 和日志采集。
 - [ ] 增加 Redis lag、DLQ、心跳超时告警。
 - [ ] 增加数据库备份和恢复说明。

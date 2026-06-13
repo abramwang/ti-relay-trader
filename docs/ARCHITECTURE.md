@@ -8,6 +8,7 @@ relay 采用 Go + Python 的双语言架构：
 
 - Go 负责 9092 在线服务、标准化交易 API、多账户订单状态机、Redis Stream 对接、实时账表写入和健康监控。
 - Python 负责盘后对账、历史数据拉取、账户盈亏统计、研究侧脚本、验收脚本和批处理任务。
+- Python SDK 负责给策略开发者封装 9092 标准 API，统一请求模型、幂等键、订单状态查询和事件订阅。
 
 当前前置程序已经在托管机房内网统一了各券商结构体和协议，relay 不直接对接券商 SDK，不处理柜台原生结构体，只面向前置服务提供的 `relay.stream.v1` Redis Stream 协议。
 
@@ -52,6 +53,17 @@ relay Python jobs
 6. 将订单、成交、资金、持仓、事件和错误写入持久化账表。
 7. 提供事件订阅能力，供交易软件和策略接收订单回报与成交回报。
 8. 暴露健康检查、组件状态、Redis lag、DLQ、pending query/trade 等监控接口。
+
+## Python SDK 职责
+
+1. 面向策略开发者封装 9092 HTTP/WebSocket 接口。
+2. 提供账户、资金、持仓、订单、成交查询方法。
+3. 提供单笔下单、批量下单和撤单方法。
+4. 统一生成和传递 `client_order_id`、`gateway_order_id`、`idempotency_key`。
+5. 提供 `wait_order_terminal` 和事件订阅能力。
+6. 保留实盘异步语义，不把 accepted 误报为最终成交或撤单成功。
+
+SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)。
 
 建议首批接口：
 
@@ -124,10 +136,10 @@ Meridian 当前可参考的市场数据契约入口：
 
 1. 最终账户交易数据、订单数据、成交数据、资金持仓快照和盘后对账结果必须落盘。
 2. 交易账表天然关系型，适合强约束和审计查询。
-2. 盘后对账、盈亏统计、跨账户聚合查询更适合 SQL。
-3. MySQL 可作为兼容选项，但不作为第一优先级。
-4. Redis 只作为前置通信、短期状态和消费位点协调，不作为最终账本。
-5. PostgreSQL 访问方式查阅 `http://doc.quantstage.com`，仓库不保存真实连接串或密码。
+3. 盘后对账、盈亏统计、跨账户聚合查询更适合 SQL。
+4. MySQL 可作为兼容选项，但不作为第一优先级。
+5. Redis 只作为前置通信、短期状态和消费位点协调，不作为最终账本。
+6. PostgreSQL 访问方式查阅 `http://doc.quantstage.com`，仓库不保存真实连接串或密码。
 
 数据模型和字段映射见 [docs/DATA_MODEL.md](/home/ti-relay-trader/docs/DATA_MODEL.md:1)。
 
