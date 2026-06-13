@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"ti-relay-trader/internal/config"
 	dbmigrations "ti-relay-trader/internal/db/migrations"
+	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/redisstream"
 )
 
@@ -21,6 +25,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "ledger-sync":
+		if err := runLedgerSync(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl ledger-sync: %v\n", err)
+			os.Exit(1)
+		}
 	case "migrate":
 		if err := runMigrate(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl migrate: %v\n", err)
@@ -38,6 +47,68 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func runLedgerSync(args []string) error {
+	flags := flag.NewFlagSet("ledger-sync", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	configPath := flags.String("config", os.Getenv(config.EnvPath), "relay YAML config path")
+	databaseURL := flags.String("database-url", os.Getenv("RELAY_DATABASE_URL"), "PostgreSQL DSN override")
+	prefix := flags.String("stream-prefix", "", "override stream prefix, for example relay:prod:v1:huaxin:00030484")
+	startID := flags.String("from", "0", "Redis Stream ID to read after; use 0 for backfill or $ for new messages")
+	count := flags.Int64("count", 100, "maximum messages to read per stream")
+	block := flags.Duration("block", 0, "optional XREAD block duration")
+	roles := flags.String("roles", "reply,event", "comma-separated output stream roles to sync")
+	timeout := flags.Duration("timeout", 30*time.Second, "sync timeout")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	*cfg = redisstream.ApplyProbeEnv(*cfg)
+
+	dsn := strings.TrimSpace(*databaseURL)
+	if dsn == "" {
+		dsn = strings.TrimSpace(cfg.Database.DSN)
+	}
+	if dsn == "" {
+		return fmt.Errorf("database DSN is required; set -database-url, RELAY_DATABASE_URL, or config.database.dsn")
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		return err
+	}
+
+	var prefixes []string
+	if strings.TrimSpace(*prefix) != "" {
+		prefixes = []string{strings.TrimSpace(*prefix)}
+	}
+
+	repo := ledger.NewRepository(db)
+	report, err := redisstream.SyncLedger(ctx, *cfg, repo, redisstream.LedgerSyncOptions{
+		Prefixes: prefixes,
+		StartID:  *startID,
+		Count:    *count,
+		Block:    *block,
+		Roles:    splitCSV(*roles),
+	})
+	if err != nil {
+		return err
+	}
+	return writeJSON(report)
 }
 
 func runMigrate(args []string) error {
@@ -152,16 +223,30 @@ func loadConfig(path string) (*config.Config, error) {
 
 func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, `relayctl commands:
+  ledger-sync  Archive Redis reply/event streams into PostgreSQL ledger
   migrate      Run PostgreSQL migration status/up/down
   redis-probe  Read-only Redis Stream probe using relay config
 
 Examples:
+  RELAY_DATABASE_URL=postgres://... REDIS_URL=redis://... go run ./cmd/relayctl ledger-sync -stream-prefix relay:prod:v1:huaxin:00030484 -count 20
   RELAY_DATABASE_URL=postgres://... go run ./cmd/relayctl migrate status
   go run ./cmd/relayctl migrate up -config config/relay.local.yaml
   go run ./cmd/relayctl migrate down -config config/relay.local.yaml -steps 1
   RELAY_CONFIG_PATH=config/relay.local.yaml go run ./cmd/relayctl redis-probe
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -samples 2
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -stream-prefix relay:prod:v1:huaxin:00030484`)
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func writeJSON(value any) error {

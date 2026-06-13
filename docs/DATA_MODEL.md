@@ -178,3 +178,24 @@ PostgreSQL 连接信息来源：
 3. 保持旧字段兼容，不破坏已有验收脚本。
 4. 前置程序完成扩展后，relay 增加 schema 和落盘字段。
 5. 增加回放和对账测试，确认历史事件仍可解析。
+
+## 已发现字段缺口
+
+### `order.event.payload`
+
+本轮真实 Redis 联调已确认，当前 `order.event` 可以归档到 `raw_stream_messages`，但部分历史事件缺少订单主表重建所需字段：
+
+| 缺口字段 | 影响 | 建议 |
+| --- | --- | --- |
+| `trade_side` | 无法满足 `orders.trade_side` 枚举约束 | 前置在 `order.event.payload` 中补充买卖方向 |
+| `business_type` | 无法满足 `orders.business_type` 枚举约束 | 前置在 `order.event.payload` 中补充证券业务类型 |
+
+短期处理：
+
+1. `relayctl ledger-sync` 对缺字段事件只归档 raw，并在报告中记录 `skipped`。
+2. 后续 9092 下单 API 写入 Redis 命令前，会先写订单草稿；事件回流后可基于本地草稿补齐订单主表状态。
+
+长期处理：
+
+1. 前置事件 payload 补齐 `trade_side` 和 `business_type`。
+2. relay 增加回放测试，确认历史事件 raw 不丢失，新事件可直接重建 `orders/order_events`。

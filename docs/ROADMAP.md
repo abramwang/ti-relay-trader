@@ -17,7 +17,7 @@
 | P1 工程化底座 | done | 建立正式服务骨架和配置体系 | 服务模式拆分、配置文件、日志、错误模型、基础测试 |
 | P2 标准交易接口设计 | doing | 定义统一 A 股交易 API 和 schema | 账户、资金、持仓、下单、撤单、订单、成交、事件 schema |
 | P3 多账户路由 | todo | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验 |
-| P4 Redis Stream 前置对接 | todo | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
+| P4 Redis Stream 前置对接 | doing | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | todo | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
 | P7 盘后对账任务 | todo | 对账柜台、Redis 事件和内部账表 | Python jobs、对账批次、差异表、修复入口 |
@@ -28,10 +28,10 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 将 Redis Stream `reply/event` 消费接入 PostgreSQL 账本 repository。
-3. 补充数据库状态检查到 `/v1/status`。
-4. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-5. 基于已启动的前置测试环境做 Redis Stream 查询联调和命令写入边界设计。
+2. 补齐 `order.event.payload` 的 `trade_side/business_type` 字段来源，或在下单 API 中先写订单草稿。
+3. 实现 Redis `cmd.trade` 下单命令写入和订单草稿落盘。
+4. 补充数据库状态检查到 `/v1/status`。
+5. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
 
 ## 里程碑细化
 
@@ -79,9 +79,13 @@
 - [x] 实现只读探测命令 `relayctl redis-probe`。
 - [x] 定义 stream prefix、`cmd.trade/cmd.query/reply/event/hb/dlq` 命名辅助。
 - [x] 定义 Redis Stream `body` 消息摘要解析，不打印完整 body。
+- [x] 增加 Redis body envelope 解析，提取 routing、reply、event、payload 和 adapter_context。
+- [x] 增加 `relayctl ledger-sync`，支持批量读取 `reply/event` 并写入 PostgreSQL 账本。
+- [x] 使用真实 Redis 小批量联调 `reply/event` 归档。
 - [ ] 实现命令写入 `cmd.trade` 和 `cmd.query`。
-- [ ] 消费 `reply`。
-- [ ] 消费 `event`。
+- [x] 消费 `reply` 并归档 raw。
+- [x] 消费 `event` 并归档 raw。
+- [ ] 将字段完整的 `order.event/fill.event` 持续消费接入 worker 位点。
 - [ ] 消费 `hb`。
 - [ ] 消费 `dlq`。
 - [ ] 实现 consumer 位点和重放策略。
@@ -106,6 +110,8 @@
 - [x] 增加账本 repository 骨架，覆盖账户、订单、订单事件、成交和原始 stream 消息写入。
 - [x] 增加账本 repository 单元测试，不依赖真实数据库即可验证 SQL 参数和 JSON payload。
 - [x] 增加可选 PostgreSQL 账本集成测试，可通过 `RELAY_LEDGER_TEST_DATABASE_URL` 启用真实写库验证。
+- [x] 将 Redis `reply/event` 批量归档接入 `raw_stream_messages`。
+- [ ] 让 `order.event.payload` 补齐 `trade_side/business_type` 后启用事件单独重建订单主表。
 - [ ] 增加基于临时 PostgreSQL 的 CI 集成测试。
 
 ### P6 9092 正式交易 API 与 SDK

@@ -3,6 +3,8 @@ package redisstream
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 )
 
 type MessageSummary struct {
@@ -27,25 +29,125 @@ type MessageSummary struct {
 }
 
 type genericMessage struct {
-	Protocol        string          `json:"protocol"`
-	MessageType     string          `json:"message_type"`
-	MessageID       string          `json:"message_id"`
-	EventType       string          `json:"event_type"`
-	EventName       string          `json:"event_name"`
-	Action          string          `json:"action"`
-	Status          string          `json:"status"`
-	Code            string          `json:"code"`
-	OriginMessageID string          `json:"origin_message_id"`
-	RequestID       string          `json:"request_id"`
-	CorrelationID   string          `json:"correlation_id"`
-	GatewayOrderID  string          `json:"gateway_order_id"`
-	ProducedAt      string          `json:"produced_at"`
-	Routing         routingMessage  `json:"routing"`
-	Payload         json.RawMessage `json:"payload"`
+	Protocol             string          `json:"protocol"`
+	MessageType          string          `json:"message_type"`
+	MessageID            string          `json:"message_id"`
+	EventType            string          `json:"event_type"`
+	EventName            string          `json:"event_name"`
+	Action               string          `json:"action"`
+	Status               string          `json:"status"`
+	Code                 string          `json:"code"`
+	Message              string          `json:"message"`
+	ResultType           string          `json:"result_type"`
+	OriginMessageID      string          `json:"origin_message_id"`
+	RequestID            string          `json:"request_id"`
+	CorrelationID        string          `json:"correlation_id"`
+	RequestCorrelationID string          `json:"request_correlation_id"`
+	IdempotencyKey       string          `json:"idempotency_key"`
+	GatewayOrderID       string          `json:"gateway_order_id"`
+	ProducedAt           string          `json:"produced_at"`
+	Routing              routingMessage  `json:"routing"`
+	Payload              json.RawMessage `json:"payload"`
+	AdapterContext       map[string]any  `json:"adapter_context"`
 }
 
 type routingMessage struct {
+	Env       string `json:"env"`
+	BrokerID  string `json:"broker_id"`
+	GatewayID string `json:"gateway_id"`
 	AccountID string `json:"account_id"`
+}
+
+type EntryEnvelope struct {
+	Stream               string
+	StreamID             string
+	BodyText             string
+	Protocol             string
+	MessageType          string
+	MessageID            string
+	EventType            string
+	Action               string
+	Status               string
+	Code                 string
+	Message              string
+	ResultType           string
+	OriginMessageID      string
+	RequestID            string
+	CorrelationID        string
+	RequestCorrelationID string
+	IdempotencyKey       string
+	GatewayOrderID       string
+	ProducedAt           time.Time
+	Routing              Routing
+	Payload              json.RawMessage
+	AdapterContext       map[string]any
+}
+
+type Routing struct {
+	Env       string `json:"env,omitempty"`
+	BrokerID  string `json:"broker_id,omitempty"`
+	GatewayID string `json:"gateway_id,omitempty"`
+	AccountID string `json:"account_id,omitempty"`
+}
+
+func DecodeEntry(stream, streamID string, values map[string]any) (EntryEnvelope, error) {
+	envelope := EntryEnvelope{
+		Stream:   stream,
+		StreamID: streamID,
+		Routing:  routingFromStream(stream),
+	}
+
+	bodyValue, ok := values["body"]
+	if !ok {
+		return envelope, fmt.Errorf("missing body field")
+	}
+	body, ok := bodyString(bodyValue)
+	if !ok {
+		return envelope, fmt.Errorf("body field has type %T", bodyValue)
+	}
+	envelope.BodyText = body
+
+	var msg genericMessage
+	if err := json.Unmarshal([]byte(body), &msg); err != nil {
+		return envelope, err
+	}
+
+	envelope.Protocol = msg.Protocol
+	envelope.MessageType = msg.MessageType
+	envelope.MessageID = msg.MessageID
+	if msg.EventType != "" {
+		envelope.EventType = msg.EventType
+	} else {
+		envelope.EventType = msg.EventName
+	}
+	envelope.Action = msg.Action
+	envelope.Status = msg.Status
+	envelope.Code = msg.Code
+	envelope.Message = msg.Message
+	envelope.ResultType = msg.ResultType
+	envelope.OriginMessageID = msg.OriginMessageID
+	envelope.RequestID = msg.RequestID
+	envelope.CorrelationID = msg.CorrelationID
+	envelope.RequestCorrelationID = msg.RequestCorrelationID
+	envelope.IdempotencyKey = msg.IdempotencyKey
+	envelope.GatewayOrderID = msg.GatewayOrderID
+	envelope.Payload = msg.Payload
+	envelope.AdapterContext = msg.AdapterContext
+	envelope.ProducedAt = parseTime(msg.ProducedAt)
+
+	if msg.Routing.Env != "" {
+		envelope.Routing.Env = msg.Routing.Env
+	}
+	if msg.Routing.BrokerID != "" {
+		envelope.Routing.BrokerID = msg.Routing.BrokerID
+	}
+	if msg.Routing.GatewayID != "" {
+		envelope.Routing.GatewayID = msg.Routing.GatewayID
+	}
+	if msg.Routing.AccountID != "" {
+		envelope.Routing.AccountID = msg.Routing.AccountID
+	}
+	return envelope, nil
 }
 
 func SummarizeEntry(stream, streamID string, values map[string]any) MessageSummary {
@@ -58,43 +160,77 @@ func SummarizeEntry(stream, streamID string, values map[string]any) MessageSumma
 		summary.RawFields[key] = true
 	}
 
-	bodyValue, ok := values["body"]
-	if !ok {
-		summary.ParseError = "missing body field"
-		return summary
-	}
-	body, ok := bodyValue.(string)
-	if !ok {
-		summary.ParseError = fmt.Sprintf("body field has type %T", bodyValue)
-		return summary
-	}
-	summary.BodyBytes = len(body)
-
-	var msg genericMessage
-	if err := json.Unmarshal([]byte(body), &msg); err != nil {
+	envelope, err := DecodeEntry(stream, streamID, values)
+	if err != nil {
 		summary.ParseError = err.Error()
+		if envelope.BodyText != "" {
+			summary.BodyBytes = len(envelope.BodyText)
+		}
 		return summary
 	}
 
-	summary.MessageType = msg.MessageType
-	summary.MessageID = msg.MessageID
-	if msg.EventType != "" {
-		summary.EventType = msg.EventType
-	} else {
-		summary.EventType = msg.EventName
+	summary.BodyBytes = len(envelope.BodyText)
+	summary.MessageType = envelope.MessageType
+	summary.MessageID = envelope.MessageID
+	summary.EventType = envelope.EventType
+	summary.Action = envelope.Action
+	summary.Status = envelope.Status
+	summary.Code = envelope.Code
+	summary.OriginMessageID = envelope.OriginMessageID
+	summary.RequestID = envelope.RequestID
+	summary.CorrelationID = envelope.CorrelationID
+	summary.GatewayOrderID = envelope.GatewayOrderID
+	summary.AccountID = envelope.Routing.AccountID
+	if !envelope.ProducedAt.IsZero() {
+		summary.ProducedAt = envelope.ProducedAt.Format(time.RFC3339Nano)
 	}
-	summary.Action = msg.Action
-	summary.Status = msg.Status
-	summary.Code = msg.Code
-	summary.OriginMessageID = msg.OriginMessageID
-	summary.RequestID = msg.RequestID
-	summary.CorrelationID = msg.CorrelationID
-	summary.GatewayOrderID = msg.GatewayOrderID
-	summary.AccountID = msg.Routing.AccountID
-	summary.ProducedAt = msg.ProducedAt
-	summary.PayloadKeys = payloadKeys(msg.Payload)
+	summary.PayloadKeys = payloadKeys(envelope.Payload)
 
 	return summary
+}
+
+func bodyString(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case []byte:
+		return string(typed), true
+	default:
+		return "", false
+	}
+}
+
+func routingFromStream(stream string) Routing {
+	parts := strings.Split(stream, ":")
+	if len(parts) < 6 || parts[0] != "relay" || parts[2] != "v1" {
+		return Routing{}
+	}
+	return Routing{
+		Env:       parts[1],
+		BrokerID:  parts[3],
+		GatewayID: parts[4],
+	}
+}
+
+func parseTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05.999999",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
 }
 
 func payloadKeys(raw json.RawMessage) []string {

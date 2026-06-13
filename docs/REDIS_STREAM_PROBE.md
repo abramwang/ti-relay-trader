@@ -14,7 +14,7 @@
 
 不会执行 `XADD`，不会创建 consumer group，不会确认或移动任何消费位点。
 
-当前 shell 未配置 Redis URL 或 `HX_REDIS_*` 环境变量，因此本轮没有对真实 Redis 做现场探测。后续只要在部署机本地配置或环境变量里补齐连接信息即可直接运行。
+当前已在真实 Redis 上完成 `reply/event` 小批量读取和 PostgreSQL raw 归档。`redis-probe` 仍保持只读探测定位；需要写入账本时使用 `relayctl ledger-sync`。
 
 ## 命令入口
 
@@ -108,5 +108,8 @@ prefix 来源优先级：
 
 1. 用 `redis-probe` 只读确认 `hb` 是否持续增长。
 2. 只读观察 `reply/event/dlq` 是否有历史消息。
-3. 实现查询命令 client，只联调 `account.asset.query`、`account.positions.query`、`order.list.query`、`fill.list.query`。
-4. 查询链路通过后，再在明确测试账户和风险边界后联调 `order.submit`、`order.batch.submit`、`order.cancel`。
+3. 用 `ledger-sync` 将 `reply/event` 小批量归档到 `raw_stream_messages`。
+4. 实现查询命令 client，只联调 `account.asset.query`、`account.positions.query`、`order.list.query`、`fill.list.query`。
+5. 查询链路通过后，再在明确测试账户和风险边界后联调 `order.submit`、`order.batch.submit`、`order.cancel`。
+
+账本同步说明见 [docs/REDIS_LEDGER_SYNC.md](/home/ti-relay-trader/docs/REDIS_LEDGER_SYNC.md:1)。

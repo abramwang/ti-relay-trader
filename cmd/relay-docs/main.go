@@ -114,6 +114,12 @@ var (
 			Description: "前置测试环境 Redis Stream 只读探测命令、输出和联调顺序。",
 		},
 		{
+			Slug:        "redis-ledger-sync",
+			Title:       "Redis 账本同步",
+			Path:        "docs/REDIS_LEDGER_SYNC.md",
+			Description: "Redis reply/event 到 PostgreSQL 账本的批处理同步、幂等策略和字段缺口。",
+		},
+		{
 			Slug:        "third-party-integration",
 			Title:       "前置服务对接手册",
 			Path:        "docs/THIRD_PARTY_INTEGRATION_GUIDE.md",
@@ -270,6 +276,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
+  <a class="card" href="/docs/redis-ledger-sync"><strong>Redis 账本同步</strong><span>reply/event 落盘入口</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
   <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
 </section>`
