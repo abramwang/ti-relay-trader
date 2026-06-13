@@ -6,7 +6,7 @@
 
 第一版 schema 已落在 Go 包 `internal/trading`，版本号为 `relay.trading.v1alpha1`。
 
-该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将 `POST /v1/orders`、`POST /v1/orders/{gateway_order_id}/cancel`、`GET /v1/orders` 和 `GET /v1/fills` 接入测试链路；下单/撤单写 Redis `cmd.trade`，订单/成交查询读取 PostgreSQL 本地账本。
+该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将资金、持仓、单笔下单、批量下单、撤单、订单查询和成交查询接入测试链路；下单/批量下单/撤单写 Redis `cmd.trade`，资金/持仓/订单/成交查询读取 PostgreSQL 本地账本。
 
 ## 参考来源
 
@@ -254,10 +254,10 @@ rejected
 | `GET` | `/v1/status` | - | `StatusView` | 已有骨架 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已有配置态骨架 |
-| `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 待实现 |
-| `GET` | `/v1/accounts/{account_id}/positions` | - | `[]Position` | 待实现 |
+| `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
+| `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，读取 PostgreSQL 当前持仓 |
 | `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
-| `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 待实现 |
+| `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 已实现，读取 PostgreSQL 账本 |
 | `GET` | `/v1/fills` | `FillQuery` | `[]Fill` | 已实现，读取 PostgreSQL 账本 |
@@ -281,11 +281,12 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 
 `POST /v1/orders/{gateway_order_id}/cancel` 会先读取 PostgreSQL 订单账本，只有非终态且 `leaves_qty > 0` 的订单才会写入 Redis `order.cancel`。撤单 `202 Accepted` 只表示撤单请求已提交到前置，是否撤成仍以 `order.event.gateway_status=cancelled` 为准。
 
-当前 `GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动发 `order.list.query` 或 `fill.list.query` 到前置。后续如果需要实时刷新柜台查询结果，再补 `cmd.query` 写入和 reply 合并。
+`POST /v1/orders/batch` 会为每笔子订单写入本地草稿，再向 Redis `cmd.trade` 写入一条 `order.batch.submit` command。批量请求的 `202 Accepted` 不表示交易所接单或成交，最终仍以回流事件为准。
+
+当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动发 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query` 到前置。后续如果需要实时刷新柜台查询结果，再补 `cmd.query` 写入和 reply 合并。
 
 ## 后续工作
 
-1. 实现批量下单 API，将 `BatchSubmitOrderRequest` 转换为 `order.batch.submit`。
-2. 实现资金和持仓查询 API。
+1. 初始化 Python SDK，直接复用本 schema 文档和 `/v1/schema`。
+2. 实现前置查询刷新命令和 reply 合并。
 3. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
-4. 初始化 Python SDK，直接复用本 schema 文档和 `/v1/schema`。

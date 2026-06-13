@@ -79,6 +79,7 @@ func Catalog() CatalogDocument {
 			"FillEvent",
 			"OrderQuery",
 			"FillQuery",
+			"PositionQuery",
 		},
 	}
 }

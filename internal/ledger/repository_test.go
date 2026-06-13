@@ -282,6 +282,49 @@ func TestListFillsBuildsFilteredRead(t *testing.T) {
 	}
 }
 
+func TestGetLatestAssetBuildsRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetLatestAsset(context.Background(), "acct-1")
+	if err == nil {
+		t.Fatal("GetLatestAsset() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM asset_snapshots")
+	requireQueryContains(t, exec.query, "WHERE account_id = $1")
+	requireQueryContains(t, exec.query, "ORDER BY trade_date DESC")
+	requireArgLen(t, exec.args, 1)
+	if exec.args[0] != "acct-1" {
+		t.Fatalf("account arg = %#v", exec.args[0])
+	}
+}
+
+func TestListPositionsBuildsFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		Symbol:    "600000",
+		Exchange:  trading.ExchangeSH,
+		Limit:     20,
+	})
+	if err == nil {
+		t.Fatal("ListPositions() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM positions")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "symbol = $2")
+	requireQueryContains(t, exec.query, "exchange = $3")
+	requireQueryContains(t, exec.query, "LIMIT $4")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[3] != 20 {
+		t.Fatalf("limit arg = %#v", exec.args[3])
+	}
+}
+
 func TestRepositoryValidation(t *testing.T) {
 	repo := NewRepository(&recordingExecutor{})
 
@@ -298,6 +341,11 @@ func TestRepositoryValidation(t *testing.T) {
 	_, err = repo.ListOrders(context.Background(), trading.OrderQuery{})
 	if !errors.Is(err, ErrInvalidLedgerInput) {
 		t.Fatalf("ListOrders() error = %v, want ErrInvalidLedgerInput", err)
+	}
+
+	_, err = repo.GetLatestAsset(context.Background(), "")
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("GetLatestAsset() error = %v, want ErrInvalidLedgerInput", err)
 	}
 }
 

@@ -255,6 +255,47 @@ SELECT
 FROM fills
 `
 
+const latestAssetSQL = `
+SELECT
+    account_id,
+    cash_available,
+    cash_total,
+    net_asset,
+    market_value,
+    stock_value,
+    fund_value,
+    commission,
+    day_profit,
+    position_profit,
+    close_profit,
+    credit,
+    captured_at
+FROM asset_snapshots
+WHERE account_id = $1
+ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
+LIMIT 1
+`
+
+const positionSelectColumns = `
+SELECT
+    account_id,
+    symbol,
+    name,
+    exchange,
+    quantity,
+    sellable_qty,
+    initial_qty,
+    today_qty,
+    avg_cost,
+    last_price,
+    market_value,
+    unrealized_pnl,
+    settled_profit,
+    shareholder_id,
+    updated_at
+FROM positions
+`
+
 const archiveRawStreamMessageSQL = `
 INSERT INTO raw_stream_messages (
     stream_key,

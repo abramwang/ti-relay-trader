@@ -164,6 +164,68 @@ func TestQueryServiceCanStartWithoutPublisher(t *testing.T) {
 	}
 }
 
+func TestBatchSubmitOrdersWritesDraftsPublishesCommandAndArchives(t *testing.T) {
+	ledgerWriter := &fakeLedger{}
+	publisher := &fakePublisher{streamID: "1777100000200-0"}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"msg-batch-1", "batch-1", "gw-b1", "gw-b2"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.BatchSubmitOrders(context.Background(), trading.BatchSubmitOrderRequest{
+		AccountID: "acct-1",
+		Orders: []trading.SubmitOrderRequest{
+			{
+				Symbol:       "600000",
+				Exchange:     trading.ExchangeSH,
+				TradeSide:    trading.TradeSideBuy,
+				BusinessType: trading.BusinessTypeStock,
+				OffsetType:   trading.OffsetTypeClose,
+				Price:        9.67,
+				Qty:          100,
+			},
+			{
+				Symbol:       "000001",
+				Exchange:     trading.ExchangeSZ,
+				TradeSide:    trading.TradeSideBuy,
+				BusinessType: trading.BusinessTypeStock,
+				OffsetType:   trading.OffsetTypeClose,
+				Price:        11.24,
+				Qty:          100,
+			},
+		},
+	}, BatchSubmitOptions{RequestID: "req-http-batch"})
+	if err != nil {
+		t.Fatalf("BatchSubmitOrders() error = %v", err)
+	}
+
+	if result.MessageID != "msg-batch-1" || result.IdempotencyKey != "batch:acct-1:batch-1" {
+		t.Fatalf("batch result = %#v", result)
+	}
+	if len(result.Orders) != 2 || len(ledgerWriter.orders) != 2 {
+		t.Fatalf("orders result=%#v ledger=%#v", result.Orders, ledgerWriter.orders)
+	}
+	if ledgerWriter.orders[0].GatewayOrderID != "gw-b1" || ledgerWriter.orders[1].GatewayOrderID != "gw-b2" {
+		t.Fatalf("generated gateway ids = %#v", ledgerWriter.orders)
+	}
+	if len(publisher.commands) != 1 {
+		t.Fatalf("commands = %#v", publisher.commands)
+	}
+	command := publisher.commands[0]
+	if command.envelope.Action != redisstream.ActionOrderBatchSubmit {
+		t.Fatalf("action = %s", command.envelope.Action)
+	}
+	if len(ledgerWriter.raw) != 1 || ledgerWriter.raw[0].Action != redisstream.ActionOrderBatchSubmit {
+		t.Fatalf("raw archive = %#v", ledgerWriter.raw)
+	}
+}
+
 func TestCancelOrderPublishesCommandAndArchives(t *testing.T) {
 	cfg := testConfig(true, true)
 	ledgerWriter := &fakeLedger{
@@ -286,6 +348,49 @@ func TestListOrdersNormalizesQueryLimit(t *testing.T) {
 	}
 }
 
+func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		asset: trading.Asset{
+			AccountID:     "acct-1",
+			CashTotal:     1000000,
+			CashAvailable: 900000,
+		},
+		listedPositions: []trading.Position{
+			{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100},
+		},
+	}
+	service, err := New(Options{
+		Config: testConfig(true, false),
+		Ledger: ledgerWriter,
+		Clock:  fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	assetResult, err := service.GetAsset(context.Background(), "acct-1")
+	if err != nil {
+		t.Fatalf("GetAsset() error = %v", err)
+	}
+	if assetResult.Asset.CashAvailable != 900000 {
+		t.Fatalf("asset = %#v", assetResult.Asset)
+	}
+
+	positionResult, err := service.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		Limit:     5000,
+	})
+	if err != nil {
+		t.Fatalf("ListPositions() error = %v", err)
+	}
+	if positionResult.Query.Limit != 2000 || ledgerWriter.lastPositionQuery.Limit != 2000 {
+		t.Fatalf("limit = result %d ledger %d", positionResult.Query.Limit, ledgerWriter.lastPositionQuery.Limit)
+	}
+	if positionResult.Count != 1 {
+		t.Fatalf("count = %d", positionResult.Count)
+	}
+}
+
 func validSubmitRequest() trading.SubmitOrderRequest {
 	return trading.SubmitOrderRequest{
 		AccountID:    "acct-1",
@@ -315,15 +420,19 @@ func testConfig(enabled, tradingEnabled bool) config.Config {
 }
 
 type fakeLedger struct {
-	accounts       []trading.Account
-	orders         []trading.Order
-	order          trading.Order
-	getOrderErr    error
-	listedOrders   []trading.Order
-	listedFills    []trading.Fill
-	lastOrderQuery trading.OrderQuery
-	lastFillQuery  trading.FillQuery
-	raw            []ledger.RawStreamMessage
+	accounts          []trading.Account
+	orders            []trading.Order
+	order             trading.Order
+	getOrderErr       error
+	listedOrders      []trading.Order
+	listedFills       []trading.Fill
+	asset             trading.Asset
+	assetErr          error
+	listedPositions   []trading.Position
+	lastOrderQuery    trading.OrderQuery
+	lastFillQuery     trading.FillQuery
+	lastPositionQuery trading.PositionQuery
+	raw               []ledger.RawStreamMessage
 }
 
 func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -354,6 +463,21 @@ func (writer *fakeLedger) ListOrders(_ context.Context, query trading.OrderQuery
 func (writer *fakeLedger) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	writer.lastFillQuery = query
 	return writer.listedFills, nil
+}
+
+func (writer *fakeLedger) GetLatestAsset(_ context.Context, accountID string) (trading.Asset, error) {
+	if writer.assetErr != nil {
+		return trading.Asset{}, writer.assetErr
+	}
+	if writer.asset.AccountID == accountID {
+		return writer.asset, nil
+	}
+	return trading.Asset{}, ledger.ErrAssetNotFound
+}
+
+func (writer *fakeLedger) ListPositions(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	writer.lastPositionQuery = query
+	return writer.listedPositions, nil
 }
 
 func (writer *fakeLedger) ArchiveRawStreamMessage(_ context.Context, message ledger.RawStreamMessage) error {

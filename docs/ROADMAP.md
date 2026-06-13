@@ -28,10 +28,10 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 实现批量下单 API：批内校验、Redis `order.batch.submit` 写入和命令归档。
-3. 实现资金/持仓查询 API，从 PostgreSQL 快照或前置查询回包读取。
+2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+3. 增加前置查询刷新命令：资金、持仓、订单和成交 `cmd.query` 写入及 reply 合并。
 4. 补充数据库状态检查到 `/v1/status`。
-5. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+5. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
 
 ## 里程碑细化
 
@@ -84,7 +84,8 @@
 - [x] 使用真实 Redis 小批量联调 `reply/event` 归档。
 - [x] 实现 Redis command envelope 和 `cmd.trade` 单笔下单写入。
 - [x] 实现撤单命令写入 `cmd.trade`。
-- [ ] 实现批量下单和账户查询命令写入 `cmd.trade/cmd.query`。
+- [x] 实现批量下单命令写入 `cmd.trade`。
+- [ ] 实现账户查询命令写入 `cmd.query`。
 - [x] 消费 `reply` 并归档 raw。
 - [x] 消费 `event` 并归档 raw。
 - [ ] 将字段完整的 `order.event/fill.event` 持续消费接入 worker 位点。
@@ -126,9 +127,9 @@
 - [x] `POST /v1/orders` 单笔下单：订单草稿落盘、Redis `cmd.trade` 写入、命令 raw 归档。
 - [x] 使用测试 Redis 完成一次单笔下单 API 冒烟，订单回流后落盘到 `filled`。
 - [x] 测试下单参考 Meridian `2026-06-12` 分钟线，示例 `600000.SH` `15:00` close 为 `9.67`。
-- [ ] `GET /v1/accounts/{account_id}/asset`。
-- [ ] `GET /v1/accounts/{account_id}/positions`。
-- [ ] `POST /v1/orders/batch`。
+- [x] `GET /v1/accounts/{account_id}/asset`。
+- [x] `GET /v1/accounts/{account_id}/positions`。
+- [x] `POST /v1/orders/batch`。
 - [x] `POST /v1/orders/{gateway_order_id}/cancel`。
 - [x] `GET /v1/orders`。
 - [x] `GET /v1/fills`。

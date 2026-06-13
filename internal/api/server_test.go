@@ -70,6 +70,62 @@ func TestAccountsFromConfig(t *testing.T) {
 	}
 }
 
+func TestAccountAsset(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{
+			Asset: trading.Asset{
+				AccountID:     "acct-1",
+				CashAvailable: 900000,
+				CashTotal:     1000000,
+			},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.assetAccountID != "acct-1" {
+		t.Fatalf("account id = %q", service.assetAccountID)
+	}
+	if !strings.Contains(rec.Body.String(), `"cash_available":900000`) {
+		t.Fatalf("response missing asset: %s", rec.Body.String())
+	}
+}
+
+func TestAccountPositions(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+			Query:     trading.PositionQuery{AccountID: "acct-1", Symbol: "600000", Limit: 10},
+			Count:     1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?symbol=600000&limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.positionQuery.AccountID != "acct-1" || service.positionQuery.Symbol != "600000" || service.positionQuery.Limit != 10 {
+		t.Fatalf("position query = %#v", service.positionQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"count":1`) {
+		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
 func TestSchemaDiscovery(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodGet, "/v1/schema", nil)
@@ -221,6 +277,51 @@ func TestSubmitOrderBadJSON(t *testing.T) {
 	}
 }
 
+func TestBatchSubmitOrdersAccepted(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		batchResult: orderflow.BatchSubmitOrderResult{
+			Orders: []trading.Order{
+				{AccountID: "acct-1", GatewayOrderID: "gw-b1", Status: trading.OrderStatusCreated},
+				{AccountID: "acct-1", GatewayOrderID: "gw-b2", Status: trading.OrderStatusCreated},
+			},
+			MessageID:      "msg-batch-1",
+			StreamKey:      "relay:prod:v1:huaxin:gw-1:cmd.trade",
+			StreamID:       "3-0",
+			IdempotencyKey: "idem-batch-1",
+			Published: redisstream.CommandPublishResult{
+				StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.trade",
+				StreamID:  "3-0",
+				BodyBytes: 256,
+			},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/batch", strings.NewReader(`{
+		"account_id":"acct-1",
+		"orders":[
+			{"symbol":"600000","exchange":"SH","trade_side":"B","business_type":"S","price":9.67,"qty":100},
+			{"symbol":"000001","exchange":"SZ","trade_side":"B","business_type":"S","price":11.24,"qty":100}
+		],
+		"idempotency_key":"idem-batch-1"
+	}`))
+	req.Header.Set("X-Request-ID", "req-batch")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.batchReq.AccountID != "acct-1" || len(service.batchReq.Orders) != 2 || service.batchRequestID != "req-batch" {
+		t.Fatalf("batch request = %#v request_id=%s", service.batchReq, service.batchRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), "msg-batch-1") {
+		t.Fatalf("response missing result: %s", rec.Body.String())
+	}
+}
+
 func TestCancelOrderAccepted(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		cancelResult: orderflow.CancelOrderResult{
@@ -357,6 +458,10 @@ type fakeOrderSubmitter struct {
 	requestID        string
 	result           orderflow.SubmitOrderResult
 	err              error
+	batchReq         trading.BatchSubmitOrderRequest
+	batchRequestID   string
+	batchResult      orderflow.BatchSubmitOrderResult
+	batchErr         error
 	cancelReq        trading.CancelOrderRequest
 	cancelRequestID  string
 	cancelResult     orderflow.CancelOrderResult
@@ -367,6 +472,12 @@ type fakeOrderSubmitter struct {
 	fillQuery        trading.FillQuery
 	listFillsResult  orderflow.ListFillsResult
 	listFillsErr     error
+	assetAccountID   string
+	assetResult      orderflow.GetAssetResult
+	assetErr         error
+	positionQuery    trading.PositionQuery
+	positionsResult  orderflow.ListPositionsResult
+	positionsErr     error
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {
@@ -379,6 +490,18 @@ func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.
 		return orderflow.SubmitOrderResult{}, errors.New("missing fake result")
 	}
 	return submitter.result, nil
+}
+
+func (submitter *fakeOrderSubmitter) BatchSubmitOrders(_ context.Context, req trading.BatchSubmitOrderRequest, opts orderflow.BatchSubmitOptions) (orderflow.BatchSubmitOrderResult, error) {
+	submitter.batchReq = req
+	submitter.batchRequestID = opts.RequestID
+	if submitter.batchErr != nil {
+		return orderflow.BatchSubmitOrderResult{}, submitter.batchErr
+	}
+	if submitter.batchResult.MessageID == "" {
+		return orderflow.BatchSubmitOrderResult{}, errors.New("missing fake batch result")
+	}
+	return submitter.batchResult, nil
 }
 
 func (submitter *fakeOrderSubmitter) CancelOrder(_ context.Context, req trading.CancelOrderRequest, opts orderflow.CancelOptions) (orderflow.CancelOrderResult, error) {
@@ -407,4 +530,20 @@ func (submitter *fakeOrderSubmitter) ListFills(_ context.Context, query trading.
 		return orderflow.ListFillsResult{}, submitter.listFillsErr
 	}
 	return submitter.listFillsResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) GetAsset(_ context.Context, accountID string) (orderflow.GetAssetResult, error) {
+	submitter.assetAccountID = accountID
+	if submitter.assetErr != nil {
+		return orderflow.GetAssetResult{}, submitter.assetErr
+	}
+	return submitter.assetResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) ListPositions(_ context.Context, query trading.PositionQuery) (orderflow.ListPositionsResult, error) {
+	submitter.positionQuery = query
+	if submitter.positionsErr != nil {
+		return orderflow.ListPositionsResult{}, submitter.positionsErr
+	}
+	return submitter.positionsResult, nil
 }

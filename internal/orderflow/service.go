@@ -31,6 +31,8 @@ type LedgerWriter interface {
 	GetOrder(ctx context.Context, accountID string, gatewayOrderID string) (trading.Order, error)
 	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
+	GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error)
+	ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 }
 
@@ -66,6 +68,10 @@ type SubmitOptions struct {
 	RequestID string
 }
 
+type BatchSubmitOptions struct {
+	RequestID string
+}
+
 type CancelOptions struct {
 	RequestID string
 }
@@ -91,6 +97,16 @@ type CancelOrderResult struct {
 	Published      redisstream.CommandPublishResult `json:"published"`
 }
 
+type BatchSubmitOrderResult struct {
+	Orders         []trading.Order                  `json:"orders"`
+	MessageID      string                           `json:"message_id"`
+	StreamKey      string                           `json:"stream_key"`
+	StreamID       string                           `json:"stream_id"`
+	IdempotencyKey string                           `json:"idempotency_key"`
+	RequestID      string                           `json:"request_id,omitempty"`
+	Published      redisstream.CommandPublishResult `json:"published"`
+}
+
 type ListOrdersResult struct {
 	Orders []trading.Order    `json:"orders"`
 	Query  trading.OrderQuery `json:"query"`
@@ -101,6 +117,16 @@ type ListFillsResult struct {
 	Fills []trading.Fill    `json:"fills"`
 	Query trading.FillQuery `json:"query"`
 	Count int               `json:"count"`
+}
+
+type GetAssetResult struct {
+	Asset trading.Asset `json:"asset"`
+}
+
+type ListPositionsResult struct {
+	Positions []trading.Position    `json:"positions"`
+	Query     trading.PositionQuery `json:"query"`
+	Count     int                   `json:"count"`
 }
 
 func New(opts Options) (*Service, error) {
@@ -199,6 +225,107 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 
 	return SubmitOrderResult{
 		Order:          order,
+		MessageID:      messageID,
+		StreamKey:      published.StreamKey,
+		StreamID:       published.StreamID,
+		IdempotencyKey: normalized.IdempotencyKey,
+		RequestID:      requestID,
+		Published:      published,
+	}, nil
+}
+
+func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.BatchSubmitOrderRequest, opts BatchSubmitOptions) (BatchSubmitOrderResult, error) {
+	if err := req.Validate(); err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+	route, err := service.routeForAccount(req.AccountID)
+	if err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+	if service.publisher == nil {
+		return BatchSubmitOrderResult{}, ErrMissingPublisher
+	}
+
+	normalized := req
+	now := service.clock.Now().UTC()
+	messageID := service.ids.NewID("msg-order-batch-submit")
+	requestID := strings.TrimSpace(opts.RequestID)
+	if requestID == "" {
+		requestID = service.ids.NewID("req-order-batch-submit")
+	}
+	if strings.TrimSpace(normalized.IdempotencyKey) == "" {
+		normalized.IdempotencyKey = "batch:" + normalized.AccountID + ":" + service.ids.NewID("batch")
+	}
+
+	account := trading.Account{
+		AccountID:      route.AccountID,
+		BrokerID:       route.BrokerID,
+		GatewayID:      route.GatewayID,
+		StreamPrefix:   route.StreamPrefix,
+		Status:         trading.AccountStatusEnabled,
+		Enabled:        route.Enabled,
+		TradingEnabled: route.TradingEnabled,
+		Simulated:      route.Simulated,
+		Tags: map[string]string{
+			"source": "config",
+		},
+		UpdatedAt: now,
+	}
+	if err := service.ledger.UpsertAccount(ctx, account); err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+
+	orders := make([]trading.Order, 0, len(normalized.Orders))
+	for i := range normalized.Orders {
+		orderReq := normalized.Orders[i]
+		if strings.TrimSpace(orderReq.AccountID) == "" {
+			orderReq.AccountID = normalized.AccountID
+		}
+		if strings.TrimSpace(orderReq.GatewayOrderID) == "" {
+			orderReq.GatewayOrderID = service.ids.NewID("gw")
+		}
+		if strings.TrimSpace(orderReq.ClientOrderID) == "" {
+			orderReq.ClientOrderID = orderReq.GatewayOrderID
+		}
+		if strings.TrimSpace(orderReq.IdempotencyKey) == "" {
+			orderReq.IdempotencyKey = normalized.IdempotencyKey + ":" + orderReq.GatewayOrderID
+		}
+		normalized.Orders[i] = orderReq
+
+		order := draftOrderFromRequest(orderReq, now)
+		order.OriginMessageID = messageID
+		order.RequestID = requestID
+		order.AdapterContext["batch_source"] = "relay-api"
+		order.AdapterContext["batch_index"] = i
+		if err := service.ledger.UpsertOrder(ctx, order); err != nil {
+			return BatchSubmitOrderResult{}, err
+		}
+		orders = append(orders, order)
+	}
+
+	streamKey, err := redisstream.CommandStreamForAction(redisstream.NewStreams(route.StreamPrefix), redisstream.ActionOrderBatchSubmit)
+	if err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+	envelope := redisstream.NewCommandEnvelope(
+		redisstream.ActionOrderBatchSubmit,
+		messageID,
+		requestID,
+		requestID,
+		normalized.IdempotencyKey,
+		normalized,
+		now,
+	)
+	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	if err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, ""); err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+
+	return BatchSubmitOrderResult{
+		Orders:         orders,
 		MessageID:      messageID,
 		StreamKey:      published.StreamKey,
 		StreamID:       published.StreamID,
@@ -310,6 +437,45 @@ func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) 
 	}, nil
 }
 
+func (service *Service) GetAsset(ctx context.Context, accountID string) (GetAssetResult, error) {
+	accountID = strings.TrimSpace(accountID)
+	if _, err := service.routeForConfiguredAccount(accountID); err != nil {
+		return GetAssetResult{}, err
+	}
+	asset, err := service.ledger.GetLatestAsset(ctx, accountID)
+	if err != nil {
+		return GetAssetResult{}, err
+	}
+	return GetAssetResult{Asset: asset}, nil
+}
+
+func (service *Service) ListPositions(ctx context.Context, query trading.PositionQuery) (ListPositionsResult, error) {
+	normalized, err := normalizePositionQuery(query)
+	if err != nil {
+		return ListPositionsResult{}, err
+	}
+	if _, err := service.routeForConfiguredAccount(normalized.AccountID); err != nil {
+		return ListPositionsResult{}, err
+	}
+	positions, err := service.ledger.ListPositions(ctx, normalized)
+	if err != nil {
+		return ListPositionsResult{}, err
+	}
+	return ListPositionsResult{
+		Positions: positions,
+		Query:     normalized,
+		Count:     len(positions),
+	}, nil
+}
+
+func (service *Service) routeForConfiguredAccount(accountID string) (config.AccountRouteConfig, error) {
+	route, ok := service.cfg.AccountRoute(strings.TrimSpace(accountID))
+	if !ok {
+		return config.AccountRouteConfig{}, fmt.Errorf("%w: %s", ErrRouteNotFound, accountID)
+	}
+	return route, nil
+}
+
 func (service *Service) routeForAccount(accountID string) (config.AccountRouteConfig, error) {
 	route, ok := service.cfg.AccountRoute(accountID)
 	if !ok {
@@ -388,6 +554,26 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	}
 	if normalized.Limit > 500 {
 		normalized.Limit = 500
+	}
+	return normalized, nil
+}
+
+func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery, error) {
+	normalized := query
+	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
+	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
+	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	if normalized.AccountID == "" {
+		return normalized, fmt.Errorf("%w: account_id is required", trading.ErrInvalidSchema)
+	}
+	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
+		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
+	}
+	if normalized.Limit <= 0 {
+		normalized.Limit = 500
+	}
+	if normalized.Limit > 2000 {
+		normalized.Limit = 2000
 	}
 	return normalized, nil
 }

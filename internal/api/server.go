@@ -24,9 +24,12 @@ type Dependencies struct {
 
 type OrderService interface {
 	SubmitOrder(ctx context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error)
+	BatchSubmitOrders(ctx context.Context, req trading.BatchSubmitOrderRequest, opts orderflow.BatchSubmitOptions) (orderflow.BatchSubmitOrderResult, error)
 	CancelOrder(ctx context.Context, req trading.CancelOrderRequest, opts orderflow.CancelOptions) (orderflow.CancelOrderResult, error)
 	ListOrders(ctx context.Context, query trading.OrderQuery) (orderflow.ListOrdersResult, error)
 	ListFills(ctx context.Context, query trading.FillQuery) (orderflow.ListFillsResult, error)
+	GetAsset(ctx context.Context, accountID string) (orderflow.GetAssetResult, error)
+	ListPositions(ctx context.Context, query trading.PositionQuery) (orderflow.ListPositionsResult, error)
 }
 
 type Server struct {
@@ -57,6 +60,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/status", server.handleStatus)
 	mux.HandleFunc("/v1/schema", server.handleSchema)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
+	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
 	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
 	mux.HandleFunc("/v1/fills", server.handleFills)
@@ -116,6 +120,37 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/accounts/")
+	path = strings.Trim(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 {
+		httpx.WriteNotFound(w, r)
+		return
+	}
+	accountID, err := url.PathUnescape(parts[0])
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid account_id path", err.Error())
+		return
+	}
+	switch parts[1] {
+	case "asset":
+		if r.Method != http.MethodGet {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			return
+		}
+		s.handleAccountAsset(w, r, accountID)
+	case "positions":
+		if r.Method != http.MethodGet {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			return
+		}
+		s.handleAccountPositions(w, r, accountID)
+	default:
+		httpx.WriteNotFound(w, r)
+	}
+}
+
 func (s *Server) handleOrders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -131,7 +166,11 @@ func (s *Server) handleOrderPath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/orders/")
 	path = strings.Trim(path, "/")
 	if path == "batch" {
-		httpx.WriteError(w, r, http.StatusNotImplemented, httpx.CodeNotImplemented, "batch order submit is not implemented yet", nil)
+		if r.Method != http.MethodPost {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.handleBatchSubmitOrders(w, r)
 		return
 	}
 
@@ -164,6 +203,32 @@ func (s *Server) handleSubmitOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.orders.SubmitOrder(r.Context(), req, orderflow.SubmitOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleBatchSubmitOrders(w http.ResponseWriter, r *http.Request) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+
+	defer r.Body.Close()
+	var req trading.BatchSubmitOrderRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid request body", err.Error())
+		return
+	}
+
+	result, err := s.orders.BatchSubmitOrders(r.Context(), req, orderflow.BatchSubmitOptions{
 		RequestID: httpx.RequestID(r),
 	})
 	if err != nil {
@@ -232,6 +297,37 @@ func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
+func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	result, err := s.orders.GetAsset(r.Context(), accountID)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parsePositionQuery(accountID, r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid position query", err.Error())
+		return
+	}
+	result, err := s.orders.ListPositions(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
 func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -258,6 +354,8 @@ func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err err
 	switch {
 	case errors.Is(err, trading.ErrInvalidSchema):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid order request", err.Error())
+	case errors.Is(err, ledger.ErrAssetNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "asset snapshot not found", err.Error())
 	case errors.Is(err, ledger.ErrOrderNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "order not found", err.Error())
 	case errors.Is(err, orderflow.ErrRouteNotFound):
@@ -303,6 +401,20 @@ func parseFillQuery(values url.Values) (trading.FillQuery, error) {
 		Exchange:       trading.Exchange(values.Get("exchange")),
 		Limit:          limit,
 		Cursor:         values.Get("cursor"),
+	}, nil
+}
+
+func parsePositionQuery(accountID string, values url.Values) (trading.PositionQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return trading.PositionQuery{}, err
+	}
+	return trading.PositionQuery{
+		AccountID: accountID,
+		Symbol:    values.Get("symbol"),
+		Exchange:  trading.Exchange(values.Get("exchange")),
+		Limit:     limit,
+		Cursor:    values.Get("cursor"),
 	}, nil
 }
 

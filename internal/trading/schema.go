@@ -277,3 +277,11 @@ type FillQuery struct {
 	Limit          int      `json:"limit,omitempty"`
 	Cursor         string   `json:"cursor,omitempty"`
 }
+
+type PositionQuery struct {
+	AccountID string   `json:"account_id"`
+	Symbol    string   `json:"symbol,omitempty"`
+	Exchange  Exchange `json:"exchange,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	Cursor    string   `json:"cursor,omitempty"`
+}

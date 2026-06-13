@@ -14,6 +14,7 @@ import (
 
 var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
+var ErrAssetNotFound = errors.New("asset snapshot not found")
 
 type Executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -353,6 +354,69 @@ func (repo *Repository) ListFills(ctx context.Context, query trading.FillQuery) 
 	return fills, nil
 }
 
+func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error) {
+	if repo == nil || repo.exec == nil {
+		return trading.Asset{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return trading.Asset{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return trading.Asset{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, latestAssetSQL, accountID)
+	if err != nil {
+		return trading.Asset{}, fmt.Errorf("get latest asset %s: %w", accountID, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return trading.Asset{}, fmt.Errorf("get latest asset %s: %w", accountID, err)
+		}
+		return trading.Asset{}, fmt.Errorf("%w: %s", ErrAssetNotFound, accountID)
+	}
+	asset, err := scanAsset(rows)
+	if err != nil {
+		return trading.Asset{}, fmt.Errorf("scan asset %s: %w", accountID, err)
+	}
+	return asset, nil
+}
+
+func (repo *Repository) ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePositionQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListPositionsSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list positions: %w", err)
+	}
+	defer rows.Close()
+
+	positions := make([]trading.Position, 0, normalized.Limit)
+	for rows.Next() {
+		position, err := scanPosition(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan position: %w", err)
+		}
+		positions = append(positions, position)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list positions rows: %w", err)
+	}
+	return positions, nil
+}
+
 func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, stream StreamRef, source SourceRef) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -499,6 +563,25 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	return query, nil
 }
 
+func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery, error) {
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.Symbol = strings.TrimSpace(query.Symbol)
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	if query.AccountID == "" {
+		return query, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if query.Exchange != "" && !query.Exchange.Valid() {
+		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if query.Limit <= 0 {
+		query.Limit = 500
+	}
+	if query.Limit > 2000 {
+		query.Limit = 2000
+	}
+	return query, nil
+}
+
 func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 	var where []string
 	var args []any
@@ -566,6 +649,31 @@ func buildListFillsSQL(query trading.FillQuery) (string, []any) {
 	}
 	args = append(args, query.Limit)
 	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(matched_at, created_at) DESC, fill_pk DESC LIMIT $%d", len(args)))
+	return builder.String(), args
+}
+
+func buildListPositionsSQL(query trading.PositionQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	appendFilter("account_id", query.AccountID)
+	if query.Symbol != "" {
+		appendFilter("symbol", query.Symbol)
+	}
+	if query.Exchange != "" {
+		appendFilter("exchange", query.Exchange)
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(positionSelectColumns)
+	builder.WriteString("WHERE ")
+	builder.WriteString(strings.Join(where, " AND "))
+	builder.WriteString("\n")
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY market_value DESC, symbol ASC, exchange ASC LIMIT $%d", len(args)))
 	return builder.String(), args
 }
 
@@ -711,6 +819,62 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 		}
 	}
 	return fill, nil
+}
+
+func scanAsset(row rowScanner) (trading.Asset, error) {
+	var asset trading.Asset
+	var updatedAt sql.NullTime
+	err := row.Scan(
+		&asset.AccountID,
+		&asset.CashAvailable,
+		&asset.CashTotal,
+		&asset.NetAsset,
+		&asset.MarketValue,
+		&asset.StockValue,
+		&asset.FundValue,
+		&asset.Commission,
+		&asset.DayProfit,
+		&asset.PositionProfit,
+		&asset.CloseProfit,
+		&asset.Credit,
+		&updatedAt,
+	)
+	if err != nil {
+		return trading.Asset{}, err
+	}
+	asset.UpdatedAt = updatedAt.Time
+	return asset, nil
+}
+
+func scanPosition(row rowScanner) (trading.Position, error) {
+	var position trading.Position
+	var lastPrice sql.NullFloat64
+	var shareholderID sql.NullString
+	var updatedAt sql.NullTime
+	err := row.Scan(
+		&position.AccountID,
+		&position.Symbol,
+		&position.Name,
+		&position.Exchange,
+		&position.Quantity,
+		&position.SellableQty,
+		&position.InitialQty,
+		&position.TodayQty,
+		&position.AvgCost,
+		&lastPrice,
+		&position.MarketValue,
+		&position.UnrealizedPnL,
+		&position.SettledProfit,
+		&shareholderID,
+		&updatedAt,
+	)
+	if err != nil {
+		return trading.Position{}, err
+	}
+	position.LastPrice = lastPrice.Float64
+	position.ShareholderID = shareholderID.String
+	position.UpdatedAt = updatedAt.Time
+	return position, nil
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {
