@@ -1181,6 +1181,31 @@ func TestPerformanceSeriesQuery(t *testing.T) {
 	}
 }
 
+func TestPerformanceSeriesCSV(t *testing.T) {
+	store := &fakeSettlementStore{
+		performanceSeries: []ledger.DailyPerformance{
+			{AccountID: "acct-1", TradeDate: "2026-06-12", NetAsset: 1000, PreviousNetAsset: 900, DailyPnL: 100, ReturnRate: 0.1111111111},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/series.csv?date_from=20260612&date_to=20260612", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/csv") {
+		t.Fatalf("content-type = %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), "account_id,trade_date,net_asset") || !strings.Contains(rec.Body.String(), "acct-1,2026-06-12,1000") {
+		t.Fatalf("csv response missing row: %s", rec.Body.String())
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string

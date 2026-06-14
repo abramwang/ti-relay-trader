@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,8 @@ type PerformanceSeriesSummary struct {
 	TotalReturn   float64 `json:"total_return"`
 	MaxDrawdown   float64 `json:"max_drawdown"`
 }
+
+var errSettlementStoreUnavailable = errors.New("settlement store is unavailable")
 
 type Server struct {
 	cfg     config.Config
@@ -465,6 +468,8 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			s.handleDailyPerformance(w, r, accountID)
 		case "series":
 			s.handlePerformanceSeries(w, r, accountID)
+		case "series.csv":
+			s.handlePerformanceSeriesCSV(w, r, accountID)
 		default:
 			httpx.WriteNotFound(w, r)
 		}
@@ -709,9 +714,84 @@ func (s *Server) handleDailyPerformance(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request, accountID string) {
-	if s.settles == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+	series, summary, err := s.performanceSeriesFromRequest(r, accountID)
+	if err != nil {
+		s.writePerformanceSeriesError(w, r, err)
 		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"summary": summary,
+		"series":  series,
+	})
+}
+
+func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Request, accountID string) {
+	series, summary, err := s.performanceSeriesFromRequest(r, accountID)
+	if err != nil {
+		s.writePerformanceSeriesError(w, r, err)
+		return
+	}
+	filename := fmt.Sprintf("relay-performance-%s-%s-%s.csv", sanitizeFilenamePart(accountID), summary.DateFrom, summary.DateTo)
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.WriteHeader(http.StatusOK)
+
+	writer := csv.NewWriter(w)
+	_ = writer.Write([]string{
+		"account_id",
+		"trade_date",
+		"net_asset",
+		"previous_net_asset",
+		"daily_pnl",
+		"return_rate",
+		"cumulative_return",
+		"drawdown",
+		"cash_available",
+		"cash_total",
+		"market_value",
+		"position_market_value",
+		"unrealized_pnl",
+		"settled_profit",
+		"fills_count",
+		"buy_amount",
+		"sell_amount",
+		"turnover",
+		"fee_total",
+		"captured_at",
+	})
+	for _, item := range series {
+		_ = writer.Write([]string{
+			item.AccountID,
+			item.TradeDate,
+			formatCSVFloat(item.NetAsset),
+			formatCSVFloat(item.PreviousNetAsset),
+			formatCSVFloat(item.DailyPnL),
+			formatCSVFloat(item.ReturnRate),
+			formatCSVFloat(item.CumulativeReturn),
+			formatCSVFloat(item.Drawdown),
+			formatCSVFloat(item.CashAvailable),
+			formatCSVFloat(item.CashTotal),
+			formatCSVFloat(item.MarketValue),
+			formatCSVFloat(item.PositionMarketValue),
+			formatCSVFloat(item.UnrealizedPnL),
+			formatCSVFloat(item.SettledProfit),
+			strconv.FormatInt(item.FillsCount, 10),
+			formatCSVFloat(item.BuyAmount),
+			formatCSVFloat(item.SellAmount),
+			formatCSVFloat(item.Turnover),
+			formatCSVFloat(item.FeeTotal),
+			formatCSVTime(item.CapturedAt),
+		})
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		s.logger.Warn("performance_series_csv_write_failed", "error", err)
+	}
+}
+
+func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string) ([]ledger.DailyPerformance, PerformanceSeriesSummary, error) {
+	if s.settles == nil {
+		return nil, PerformanceSeriesSummary{}, errSettlementStoreUnavailable
 	}
 	values := r.URL.Query()
 	dateFrom := strings.TrimSpace(values.Get("date_from"))
@@ -732,24 +812,26 @@ func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request,
 	}
 	normalizedDateFrom, err := normalizeAPIDate(dateFrom)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_from", err.Error())
-		return
+		return nil, PerformanceSeriesSummary{}, fmt.Errorf("%w: invalid date_from: %v", ledger.ErrInvalidLedgerInput, err)
 	}
 	normalizedDateTo, err := normalizeAPIDate(dateTo)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_to", err.Error())
-		return
+		return nil, PerformanceSeriesSummary{}, fmt.Errorf("%w: invalid date_to: %v", ledger.ErrInvalidLedgerInput, err)
 	}
 	series, err := s.settles.ListDailyPerformance(r.Context(), accountID, normalizedDateFrom, normalizedDateTo)
 	if err != nil {
-		s.writeOrderError(w, r, err)
-		return
+		return nil, PerformanceSeriesSummary{}, err
 	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
-	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
-		"summary": summary,
-		"series":  series,
-	})
+	return series, summary, nil
+}
+
+func (s *Server) writePerformanceSeriesError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errSettlementStoreUnavailable) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+	s.writeOrderError(w, r, err)
 }
 
 func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, series []ledger.DailyPerformance) ([]ledger.DailyPerformance, PerformanceSeriesSummary) {
@@ -795,6 +877,26 @@ func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, se
 	}
 	summary.MaxDrawdown = maxDrawdown
 	return series, summary
+}
+
+func formatCSVFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func formatCSVTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return timeutil.FormatRFC3339Nano(value)
+}
+
+func sanitizeFilenamePart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	replacer := strings.NewReplacer("/", "_", "\\", "_", "\"", "_", " ", "_", "\t", "_", "\n", "_", "\r", "_")
+	return replacer.Replace(value)
 }
 
 func (s *Server) handleRefreshAsset(w http.ResponseWriter, r *http.Request, accountID string) {

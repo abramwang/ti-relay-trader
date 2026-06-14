@@ -266,6 +266,7 @@ rejected
 | `GET` | `/v1/accounts/{account_id}/positions/history` | `PositionQuery` | `[]Position` | 已实现，读取 `position_snapshots` 历史快照 |
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | `trade_date` query | `DailyPerformance` | 已实现，读取日终 close 资产快照、持仓快照和成交汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | `date_from/date_to` query | `PerformanceSeries` | 已实现，读取 close 资产快照生成日绩效、累计收益和回撤序列 |
+| `GET` | `/v1/accounts/{account_id}/performance/series.csv` | `date_from/date_to` query | `text/csv` | 已实现，导出账户绩效序列 CSV |
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
@@ -315,6 +316,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和第一版 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产计算 `daily_pnl` 和 `return_rate`，并汇总同日 `position_snapshots` 的持仓市值/浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD` 返回账户 close 净值绩效序列。服务读取区间内 `asset_snapshots(snapshot_type=close)`，按上一条 close 净资产计算单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。该接口当前只依赖本地账本，不主动查询柜台；后续可结合 Meridian bars 增加基准序列和研究导出输入。
+
+`GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、日收益、累计收益、回撤、成交额、费用和快照时间等列。
 
 `GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算和绩效序列的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。
 

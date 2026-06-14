@@ -44,6 +44,7 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/accounts/{account_id}/positions/refresh", Response: "RefreshQueryResult", Description: "refresh account positions from front gateway"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/daily", Request: "trade_date", Response: "DailyPerformance", Description: "daily account equity and PnL summary"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series", Request: "date_from/date_to", Response: "PerformanceSeries", Description: "daily account equity, cumulative return, and drawdown series"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series.csv", Request: "date_from/date_to", Response: "text/csv", Description: "CSV export for account performance series"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/orders/refresh", Response: "RefreshQueryResult", Description: "refresh account orders from front gateway"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fills/refresh", Response: "RefreshQueryResult", Description: "refresh account fills from front gateway"},
 			{Method: "POST", Path: "/v1/orders", Request: "SubmitOrderRequest", Response: "Order", Description: "submit one order"},
