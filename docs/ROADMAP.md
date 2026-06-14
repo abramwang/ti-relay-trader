@@ -28,33 +28,33 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 推进 P8 历史数据与盈亏统计，接入 Meridian `bars` 用于账表计算和绩效序列。
-3. 增加 9092 页面冒烟测试。
+2. 推进 P8 历史数据与盈亏统计，基于 Meridian `bars` 补全持仓估值、基准对照和研究侧导出输入。
+3. 增加 Playwright 页面交互冒烟测试。
 4. 增加批量下单测试视图。
 5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 6. 设计模拟柜台账表 schema。
 
 ## 下一步任务
 
-### N5 P8 日终绩效汇总接口
+### N6 P8 bars 持仓估值与研究导出输入
 
 状态：`doing`
 
-目标：基于 `post_close_settlement` 已写入的 close 资产快照、日终持仓快照和成交账本，先提供账户维度日终权益、收益率和 PnL 输入汇总接口，作为后续 Meridian bars、绩效曲线和研究导出的基础。
+目标：基于 `post_close_settlement` 已写入的 close 资产快照、日终持仓快照、成交账本和 Meridian `bars`，补齐账户持仓估值、基准对照和研究侧导出输入。
 
 范围：
 
-- 新增 `GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD`。
-- 读取目标交易日 close 资产快照和上一条 close 资产快照，计算 `daily_pnl` 和 `return_rate`。
-- 汇总目标交易日持仓快照的市值、浮动盈亏和已结利润。
-- 汇总目标交易日成交数量、买入金额、卖出金额、换手成交额和费用。
-- 在 `/api-console` 增加可填写参数的测试入口。
+- 明确账表计算只使用 Meridian `bars`，不接入实时 level2。
+- 为日终持仓读取目标交易日收盘价，补充按 bars close 的估值参考。
+- 为账户绩效序列增加可选基准行情输入，输出基准收益、超额收益和回撤对照的第一版字段。
+- 提供研究侧导出输入，优先 CSV，后续再扩展 PostgreSQL view 或批量文件。
+- 在 `/api-console` 和 `/trade#performance` 暴露可验证入口。
 
 验收口径：
 
-- Go 单元测试覆盖账本 SQL 和 HTTP 路由。
-- 本地 9092 可通过 API Console 或 curl 查询已有 close 快照交易日的日终绩效。
-- 文档明确该接口只读，不主动查询柜台；缺少 close 快照时返回 404。
+- Go 单元测试覆盖 bars 价格匹配、缺失行情和导出字段。
+- 本地 9092 可通过 API Console 或 curl 查询带基准/估值字段的绩效序列。
+- 文档明确该能力只读，不主动查询柜台；行情字段以 Meridian `market_bar.v1` 为准。
 
 ## 里程碑细化
 
@@ -207,6 +207,7 @@
 - [x] 页面模板、样式、脚本和接口 catalog 从 Go handler 中拆分到 `web/` 资源目录。
 - [x] 支持 `GET /v1/events/stream` SSE 事件流连接和最近事件预览。
 - [x] 增加订单和成交前置查询刷新模板。
+- [x] 增加 9092 页面轻量冒烟测试脚本，覆盖首页、文档、测试索引、API Console、交易终端、静态资源、基础 API 和 SDK 下载入口。
 - [ ] API handler 完成后自动同步 endpoint 状态。
 - [ ] 增加请求样例保存和导出。
 - [ ] 增加响应断言和冒烟测试集合。

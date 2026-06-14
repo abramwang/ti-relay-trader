@@ -199,6 +199,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 9092 文档门户同源挂载 `/v1/*` API handler，修复接口测试台无法发送请求查看返回的问题。
 - [x] 参考 Meridian API 测试页优化 `/api-console`，每个接口按 path/query/body 参数生成表单，响应同时提供 JSON 和表格视图。
 - [x] 将接口测试台从 Go 内联字符串拆分为 `web/templates/api_console.html`、`web/static/api-console.css`、`web/static/api-console.js` 和 `web/static/api-console.catalog.json`，由 Go `embed` 打包。
+- [x] 新增 9092 页面轻量冒烟测试脚本 `tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、关键静态资源、基础 API 和 SDK 下载入口。
 - [x] 新增 `/trade` 手动交易测试终端，参考成熟交易软件布局，支持账户切换、资金持仓、委托成交、下单、撤单、订单详情和轮询状态高亮。
 - [x] 新增 PostgreSQL 首版账本 migration，覆盖账户、网关、订单、事件、成交、原始 stream、资金、持仓和对账表。
 - [x] 新增 `stream_checkpoints` migration，持久化 Redis Stream 消费位点、处理计数和最近错误摘要。
@@ -258,7 +259,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 ## 待办事项
 
 1. 基于 Meridian `bars` 补全持仓估值、基准对照和研究侧批量导出视图。
-2. 增加 9092 页面冒烟测试脚本。
+2. 增加 Playwright 页面交互冒烟测试。
 3. 增加 `/trade` 批量下单测试视图。
 4. 设计模拟柜台账表 schema。
 5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
@@ -393,3 +394,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据 `tmp/relay_sdk_017_feedback_20260614.md` 反馈定位成交缺失根因：测试前置已发送 `fill.event`，但模拟柜台复用 `fill_id/match_stream_id`，旧账本唯一键 `account_id + fill_id` 误丢合法成交；新增 `000005_fill_id_order_scope` migration，将成交唯一键改为 `account_id + gateway_order_id + fill_id`，并发布 `relay-sdk 0.1.8` 让成交回调采用同一去重口径。
 - `2026-06-14`: 排查 `688981.SH` Meridian bars 502：Relay 旧默认 5 秒超时先失败，直接 Meridian 约 6 秒返回 200；将 market 默认超时和示例配置调至 15 秒，重启 9092 后本地 `/v1/meridian/market/bars?security_id=688981.SH&trade_date=20260612...` 返回 200。
 - `2026-06-14`: 用户侧复测确认 `relay-sdk 0.1.8` 安装包 SHA256 校验通过、包内单测 14/14 通过；新并发写压 30 笔中 18 笔成交，订单/成交一致性 18/18 通过，未再复现 `filled` 但 `fills` 缺失的问题。
+- `2026-06-14`: 根据路线图推进 9092 页面轻量冒烟测试，新增 `tests/integration/page_smoke.py`；本机 `http://127.0.0.1:9092` 已通过 15 个检查点，覆盖首页、README 文档、测试索引、API Console、交易终端、静态资源、`/healthz`、`/v1/status` 和 `relay-sdk 0.1.8` 下载入口。

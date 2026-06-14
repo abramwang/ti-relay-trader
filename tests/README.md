@@ -17,12 +17,21 @@
 - 已增加 migration loader 单元测试，并验证 `relayctl migrate` 在无 DSN 时给出明确错误。
 - 已增加 SDK 只读 live smoke：`tests/integration/sdk_live_smoke.py`，可对运行中的 9092 验证状态、账户、资金、持仓、订单、成交和 SSE 首事件。
 - 已增加 SDK 发布检查脚本：`scripts/check-python-sdk-release.py`，覆盖版本一致性、tar.gz 内容、sha256、SDK 单元测试和可选 live smoke。
+- 已增加 9092 页面轻量冒烟测试：`tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、静态资源、基础 API 和 SDK 下载入口。
 - 暂无交易核心测试用例。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 
+## 运行示例
+
+```bash
+python3 tests/integration/page_smoke.py --base-url http://127.0.0.1:9092
+```
+
+脚本默认禁用系统 HTTP 代理，避免本机 `127.0.0.1:9092` 被代理环境误转发；也可以通过 `--base-url http://relay-trader.quantstage.com` 对最终服务口径做同样检查。
+
 ## 后续计划
 
-1. 增加 9092 页面冒烟测试。
+1. 增加 Playwright 页面交互冒烟测试。
 2. 增加 Redis Stream envelope schema 测试。
 3. 增加 API handler 请求解析和校验测试。
 4. 增加订单状态机和成交去重测试。
