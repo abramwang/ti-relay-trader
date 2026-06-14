@@ -62,7 +62,20 @@ type SettlementStore interface {
 	UpsertReconciliationBreak(ctx context.Context, item ledger.ReconciliationBreak) error
 	ListReconciliationBreaks(ctx context.Context, query ledger.ReconciliationBreakQuery) ([]ledger.ReconciliationBreak, error)
 	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
+	ListDailyPerformance(ctx context.Context, accountID string, dateFrom string, dateTo string) ([]ledger.DailyPerformance, error)
 	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
+}
+
+type PerformanceSeriesSummary struct {
+	AccountID     string  `json:"account_id"`
+	DateFrom      string  `json:"date_from"`
+	DateTo        string  `json:"date_to"`
+	Count         int     `json:"count"`
+	StartNetAsset float64 `json:"start_net_asset"`
+	EndNetAsset   float64 `json:"end_net_asset"`
+	TotalPnL      float64 `json:"total_pnl"`
+	TotalReturn   float64 `json:"total_return"`
+	MaxDrawdown   float64 `json:"max_drawdown"`
 }
 
 type Server struct {
@@ -439,7 +452,7 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleRefreshFills(w, r, accountID)
 	case "performance":
-		if len(parts) != 3 || parts[2] != "daily" {
+		if len(parts) != 3 {
 			httpx.WriteNotFound(w, r)
 			return
 		}
@@ -447,7 +460,14 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 			return
 		}
-		s.handleDailyPerformance(w, r, accountID)
+		switch parts[2] {
+		case "daily":
+			s.handleDailyPerformance(w, r, accountID)
+		case "series":
+			s.handlePerformanceSeries(w, r, accountID)
+		default:
+			httpx.WriteNotFound(w, r)
+		}
 	default:
 		httpx.WriteNotFound(w, r)
 	}
@@ -686,6 +706,95 @@ func (s *Server) handleDailyPerformance(w http.ResponseWriter, r *http.Request, 
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
 		"performance": performance,
 	})
+}
+
+func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.settles == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+	values := r.URL.Query()
+	dateFrom := strings.TrimSpace(values.Get("date_from"))
+	dateTo := strings.TrimSpace(values.Get("date_to"))
+	if tradeDate := strings.TrimSpace(values.Get("trade_date")); tradeDate != "" {
+		dateFrom = tradeDate
+		dateTo = tradeDate
+	}
+	if dateFrom == "" && dateTo == "" {
+		dateTo = timeutil.Now().Format("2006-01-02")
+		dateFrom = dateTo
+	}
+	if dateFrom == "" {
+		dateFrom = dateTo
+	}
+	if dateTo == "" {
+		dateTo = dateFrom
+	}
+	normalizedDateFrom, err := normalizeAPIDate(dateFrom)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_from", err.Error())
+		return
+	}
+	normalizedDateTo, err := normalizeAPIDate(dateTo)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_to", err.Error())
+		return
+	}
+	series, err := s.settles.ListDailyPerformance(r.Context(), accountID, normalizedDateFrom, normalizedDateTo)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"summary": summary,
+		"series":  series,
+	})
+}
+
+func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, series []ledger.DailyPerformance) ([]ledger.DailyPerformance, PerformanceSeriesSummary) {
+	summary := PerformanceSeriesSummary{
+		AccountID: accountID,
+		DateFrom:  dateFrom,
+		DateTo:    dateTo,
+		Count:     len(series),
+	}
+	if len(series) == 0 {
+		return series, summary
+	}
+	base := series[0].PreviousNetAsset
+	if base <= 0 {
+		base = series[0].NetAsset
+	}
+	peak := base
+	if peak <= 0 {
+		peak = series[0].NetAsset
+	}
+	maxDrawdown := 0.0
+	for idx := range series {
+		netAsset := series[idx].NetAsset
+		if base > 0 {
+			series[idx].CumulativeReturn = (netAsset - base) / base
+		}
+		if netAsset > peak {
+			peak = netAsset
+		}
+		if peak > 0 {
+			series[idx].Drawdown = (netAsset - peak) / peak
+		}
+		if series[idx].Drawdown < maxDrawdown {
+			maxDrawdown = series[idx].Drawdown
+		}
+	}
+	endNetAsset := series[len(series)-1].NetAsset
+	summary.StartNetAsset = base
+	summary.EndNetAsset = endNetAsset
+	if base > 0 {
+		summary.TotalPnL = endNetAsset - base
+		summary.TotalReturn = summary.TotalPnL / base
+	}
+	summary.MaxDrawdown = maxDrawdown
+	return series, summary
 }
 
 func (s *Server) handleRefreshAsset(w http.ResponseWriter, r *http.Request, accountID string) {

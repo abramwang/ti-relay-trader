@@ -373,6 +373,120 @@ CROSS JOIN fills
 LEFT JOIN previous_asset ON TRUE
 `
 
+const dailyPerformanceSeriesSQL = `
+WITH asset_ranked AS (
+    SELECT
+        account_id,
+        trade_date,
+        cash_available,
+        cash_total,
+        net_asset,
+        market_value,
+        stock_value,
+        fund_value,
+        day_profit,
+        position_profit,
+        close_profit,
+        credit,
+        captured_at,
+        row_number() OVER (PARTITION BY trade_date ORDER BY captured_at DESC, asset_snapshot_pk DESC) AS rn
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date <= $3::date
+        AND snapshot_type = 'close'
+),
+asset AS (
+    SELECT
+        account_id,
+        trade_date,
+        cash_available,
+        cash_total,
+        net_asset,
+        COALESCE(lag(net_asset) OVER (ORDER BY trade_date), 0) AS previous_net_asset,
+        market_value,
+        stock_value,
+        fund_value,
+        day_profit,
+        position_profit,
+        close_profit,
+        credit,
+        captured_at
+    FROM asset_ranked
+    WHERE rn = 1
+),
+positions AS (
+    SELECT
+        trade_date,
+        count(*)::bigint AS positions_count,
+        COALESCE(sum(market_value), 0) AS position_market_value,
+        COALESCE(sum(unrealized_pnl), 0) AS unrealized_pnl,
+        COALESCE(sum(settled_profit), 0) AS settled_profit
+    FROM position_snapshots
+    WHERE account_id = $1
+        AND trade_date >= $2::date
+        AND trade_date <= $3::date
+    GROUP BY trade_date
+),
+fills AS (
+    SELECT
+        fill_date,
+        count(*)::bigint AS fills_count,
+        COALESCE(sum(CASE WHEN trade_side IN ('B', 'P') THEN price * qty ELSE 0 END), 0) AS buy_amount,
+        COALESCE(sum(CASE WHEN trade_side IN ('S', 'R') THEN price * qty ELSE 0 END), 0) AS sell_amount,
+        COALESCE(sum(fee), 0) AS fee_total
+    FROM (
+        SELECT
+            CASE
+                WHEN trade_date IS NOT NULL THEN trade_date
+                ELSE (COALESCE(matched_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date
+            END AS fill_date,
+            trade_side,
+            price,
+            qty,
+            fee
+        FROM fills
+        WHERE account_id = $1
+            AND (
+                (trade_date IS NOT NULL AND trade_date >= $2::date AND trade_date <= $3::date)
+                OR (trade_date IS NULL AND COALESCE(matched_at, created_at) >= $4 AND COALESCE(matched_at, created_at) < $5)
+            )
+    ) fill_rows
+    GROUP BY fill_date
+)
+SELECT
+    asset.account_id,
+    asset.trade_date::text,
+    asset.cash_available,
+    asset.cash_total,
+    asset.net_asset,
+    asset.previous_net_asset,
+    CASE WHEN asset.previous_net_asset > 0 THEN asset.net_asset - asset.previous_net_asset ELSE 0 END AS daily_pnl,
+    CASE WHEN asset.previous_net_asset > 0 THEN (asset.net_asset - asset.previous_net_asset) / asset.previous_net_asset ELSE 0 END AS return_rate,
+    asset.market_value,
+    asset.stock_value,
+    asset.fund_value,
+    asset.day_profit,
+    asset.position_profit,
+    asset.close_profit,
+    asset.credit,
+    COALESCE(positions.positions_count, 0) AS positions_count,
+    COALESCE(positions.position_market_value, 0) AS position_market_value,
+    COALESCE(positions.unrealized_pnl, 0) AS unrealized_pnl,
+    COALESCE(positions.settled_profit, 0) AS settled_profit,
+    COALESCE(fills.fills_count, 0) AS fills_count,
+    COALESCE(fills.buy_amount, 0) AS buy_amount,
+    COALESCE(fills.sell_amount, 0) AS sell_amount,
+    COALESCE(fills.buy_amount, 0) + COALESCE(fills.sell_amount, 0) AS turnover,
+    COALESCE(fills.fee_total, 0) AS fee_total,
+    asset.captured_at
+FROM asset
+LEFT JOIN positions ON positions.trade_date = asset.trade_date
+LEFT JOIN fills ON fills.fill_date = asset.trade_date
+WHERE asset.trade_date >= $2::date
+    AND asset.trade_date <= $3::date
+ORDER BY asset.trade_date ASC
+`
+
 const upsertAssetSnapshotSQL = `
 INSERT INTO asset_snapshots (
     trade_date,

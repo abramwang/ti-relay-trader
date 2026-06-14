@@ -167,6 +167,8 @@ type DailyPerformance struct {
 	SellAmount          float64   `json:"sell_amount"`
 	Turnover            float64   `json:"turnover"`
 	FeeTotal            float64   `json:"fee_total"`
+	CumulativeReturn    float64   `json:"cumulative_return"`
+	Drawdown            float64   `json:"drawdown"`
 	CapturedAt          time.Time `json:"captured_at,omitempty"`
 }
 
@@ -570,6 +572,71 @@ func (repo *Repository) GetDailyPerformance(ctx context.Context, accountID strin
 		return DailyPerformance{}, fmt.Errorf("scan daily performance %s/%s: %w", accountID, tradeDate, err)
 	}
 	return performance, nil
+}
+
+func (repo *Repository) ListDailyPerformance(ctx context.Context, accountID string, dateFrom string, dateTo string) ([]DailyPerformance, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	dateFrom = strings.TrimSpace(dateFrom)
+	dateTo = strings.TrimSpace(dateTo)
+	if dateFrom == "" && dateTo == "" {
+		return nil, fmt.Errorf("%w: date_from or date_to is required", ErrInvalidLedgerInput)
+	}
+	if dateFrom == "" {
+		dateFrom = dateTo
+	}
+	if dateTo == "" {
+		dateTo = dateFrom
+	}
+	var err error
+	dateFrom, err = normalizeTradeDate(dateFrom)
+	if err != nil {
+		return nil, err
+	}
+	dateTo, err = normalizeTradeDate(dateTo)
+	if err != nil {
+		return nil, err
+	}
+	start, err := dateStart(dateFrom)
+	if err != nil {
+		return nil, err
+	}
+	endDate, err := dateStart(dateTo)
+	if err != nil {
+		return nil, err
+	}
+	if endDate.Before(start) {
+		return nil, fmt.Errorf("%w: date_to must be greater than or equal to date_from", ErrInvalidLedgerInput)
+	}
+	endExclusive := endDate.AddDate(0, 0, 1)
+
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, dailyPerformanceSeriesSQL, accountID, dateFrom, dateTo, start, endExclusive)
+	if err != nil {
+		return nil, fmt.Errorf("list daily performance %s/%s-%s: %w", accountID, dateFrom, dateTo, err)
+	}
+	defer rows.Close()
+
+	var series []DailyPerformance
+	for rows.Next() {
+		item, err := scanDailyPerformance(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan daily performance series %s/%s-%s: %w", accountID, dateFrom, dateTo, err)
+		}
+		series = append(series, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list daily performance rows %s/%s-%s: %w", accountID, dateFrom, dateTo, err)
+	}
+	return series, nil
 }
 
 func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {

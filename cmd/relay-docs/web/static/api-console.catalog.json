@@ -71,6 +71,19 @@
     ]
   },
   {
+    "id": "performance-series",
+    "group": "账户",
+    "title": "绩效序列",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/series",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "20260612" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" }
+    ]
+  },
+  {
     "id": "positions-refresh",
     "group": "账户",
     "title": "持仓刷新",
