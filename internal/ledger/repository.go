@@ -142,6 +142,34 @@ type RawStreamSummaryBucket struct {
 	LastReceivedAt time.Time `json:"last_received_at,omitempty"`
 }
 
+type DailyPerformance struct {
+	AccountID           string    `json:"account_id"`
+	TradeDate           string    `json:"trade_date"`
+	CashAvailable       float64   `json:"cash_available"`
+	CashTotal           float64   `json:"cash_total"`
+	NetAsset            float64   `json:"net_asset"`
+	PreviousNetAsset    float64   `json:"previous_net_asset"`
+	DailyPnL            float64   `json:"daily_pnl"`
+	ReturnRate          float64   `json:"return_rate"`
+	MarketValue         float64   `json:"market_value"`
+	StockValue          float64   `json:"stock_value"`
+	FundValue           float64   `json:"fund_value"`
+	DayProfit           float64   `json:"day_profit"`
+	PositionProfit      float64   `json:"position_profit"`
+	CloseProfit         float64   `json:"close_profit"`
+	Credit              float64   `json:"credit"`
+	PositionsCount      int64     `json:"positions_count"`
+	PositionMarketValue float64   `json:"position_market_value"`
+	UnrealizedPnL       float64   `json:"unrealized_pnl"`
+	SettledProfit       float64   `json:"settled_profit"`
+	FillsCount          int64     `json:"fills_count"`
+	BuyAmount           float64   `json:"buy_amount"`
+	SellAmount          float64   `json:"sell_amount"`
+	Turnover            float64   `json:"turnover"`
+	FeeTotal            float64   `json:"fee_total"`
+	CapturedAt          time.Time `json:"captured_at,omitempty"`
+}
+
 func NewRepository(exec Executor) *Repository {
 	return &Repository{
 		exec: exec,
@@ -499,6 +527,49 @@ func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (t
 		return trading.Asset{}, fmt.Errorf("scan asset %s: %w", accountID, err)
 	}
 	return asset, nil
+}
+
+func (repo *Repository) GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (DailyPerformance, error) {
+	if repo == nil || repo.exec == nil {
+		return DailyPerformance{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return DailyPerformance{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	tradeDate, err := normalizeTradeDate(tradeDate)
+	if err != nil {
+		return DailyPerformance{}, err
+	}
+	if tradeDate == "" {
+		return DailyPerformance{}, fmt.Errorf("%w: trade_date is required", ErrInvalidLedgerInput)
+	}
+	start, err := dateStart(tradeDate)
+	if err != nil {
+		return DailyPerformance{}, err
+	}
+	end := start.AddDate(0, 0, 1)
+
+	queryer, err := repo.queryer()
+	if err != nil {
+		return DailyPerformance{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, dailyPerformanceSQL, accountID, tradeDate, start, end)
+	if err != nil {
+		return DailyPerformance{}, fmt.Errorf("get daily performance %s/%s: %w", accountID, tradeDate, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return DailyPerformance{}, fmt.Errorf("get daily performance %s/%s: %w", accountID, tradeDate, err)
+		}
+		return DailyPerformance{}, fmt.Errorf("%w: close asset snapshot %s/%s", ErrAssetNotFound, accountID, tradeDate)
+	}
+	performance, err := scanDailyPerformance(rows)
+	if err != nil {
+		return DailyPerformance{}, fmt.Errorf("scan daily performance %s/%s: %w", accountID, tradeDate, err)
+	}
+	return performance, nil
 }
 
 func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {
@@ -1867,6 +1938,43 @@ func scanAsset(row rowScanner) (trading.Asset, error) {
 	}
 	asset.UpdatedAt = updatedAt.Time
 	return asset, nil
+}
+
+func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
+	var performance DailyPerformance
+	var capturedAt sql.NullTime
+	err := row.Scan(
+		&performance.AccountID,
+		&performance.TradeDate,
+		&performance.CashAvailable,
+		&performance.CashTotal,
+		&performance.NetAsset,
+		&performance.PreviousNetAsset,
+		&performance.DailyPnL,
+		&performance.ReturnRate,
+		&performance.MarketValue,
+		&performance.StockValue,
+		&performance.FundValue,
+		&performance.DayProfit,
+		&performance.PositionProfit,
+		&performance.CloseProfit,
+		&performance.Credit,
+		&performance.PositionsCount,
+		&performance.PositionMarketValue,
+		&performance.UnrealizedPnL,
+		&performance.SettledProfit,
+		&performance.FillsCount,
+		&performance.BuyAmount,
+		&performance.SellAmount,
+		&performance.Turnover,
+		&performance.FeeTotal,
+		&capturedAt,
+	)
+	if err != nil {
+		return DailyPerformance{}, err
+	}
+	performance.CapturedAt = capturedAt.Time
+	return performance, nil
 }
 
 func scanPosition(row rowScanner) (trading.Position, error) {

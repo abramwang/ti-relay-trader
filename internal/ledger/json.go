@@ -68,3 +68,14 @@ func (bucket RawStreamSummaryBucket) MarshalJSON() ([]byte, error) {
 		LastReceivedAt:              optionalBusinessTime(bucket.LastReceivedAt),
 	})
 }
+
+func (performance DailyPerformance) MarshalJSON() ([]byte, error) {
+	type dailyPerformanceAlias DailyPerformance
+	return json.Marshal(struct {
+		dailyPerformanceAlias
+		CapturedAt *string `json:"captured_at,omitempty"`
+	}{
+		dailyPerformanceAlias: dailyPerformanceAlias(performance),
+		CapturedAt:            optionalBusinessTime(performance.CapturedAt),
+	})
+}

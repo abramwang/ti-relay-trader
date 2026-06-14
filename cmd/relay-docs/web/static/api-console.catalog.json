@@ -59,6 +59,18 @@
     ]
   },
   {
+    "id": "daily-performance",
+    "group": "账户",
+    "title": "日终权益/PnL",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/daily",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" }
+    ]
+  },
+  {
     "id": "positions-refresh",
     "group": "账户",
     "title": "持仓刷新",

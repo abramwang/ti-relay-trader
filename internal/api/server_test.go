@@ -1078,6 +1078,37 @@ func TestReconciliationBreaksQuery(t *testing.T) {
 	}
 }
 
+func TestDailyPerformanceQuery(t *testing.T) {
+	store := &fakeSettlementStore{
+		performance: ledger.DailyPerformance{
+			AccountID:        "acct-1",
+			TradeDate:        "2026-06-12",
+			NetAsset:         1200000,
+			PreviousNetAsset: 1190000,
+			DailyPnL:         10000,
+			ReturnRate:       0.0084033613,
+			FillsCount:       2,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/daily?trade_date=20260612", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if store.performanceAccountID != "acct-1" || store.performanceTradeDate != "2026-06-12" {
+		t.Fatalf("performance query = %q/%q", store.performanceAccountID, store.performanceTradeDate)
+	}
+	if !strings.Contains(rec.Body.String(), `"daily_pnl":10000`) {
+		t.Fatalf("response missing daily pnl: %s", rec.Body.String())
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string
@@ -1138,11 +1169,14 @@ type fakeSettlementStore struct {
 		position trading.Position
 		source   string
 	}
-	reconciliation ledger.ReconciliationRun
-	inputs         []ledger.ReconciliationInput
-	breaks         []ledger.ReconciliationBreak
-	breakQuery     ledger.ReconciliationBreakQuery
-	err            error
+	reconciliation       ledger.ReconciliationRun
+	inputs               []ledger.ReconciliationInput
+	breaks               []ledger.ReconciliationBreak
+	breakQuery           ledger.ReconciliationBreakQuery
+	performance          ledger.DailyPerformance
+	performanceAccountID string
+	performanceTradeDate string
+	err                  error
 }
 
 func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, _ any, _ time.Time) error {
@@ -1199,6 +1233,15 @@ func (store *fakeSettlementStore) ListReconciliationBreaks(_ context.Context, qu
 	}
 	store.breakQuery = query
 	return store.breaks, nil
+}
+
+func (store *fakeSettlementStore) GetDailyPerformance(_ context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error) {
+	if store.err != nil {
+		return ledger.DailyPerformance{}, store.err
+	}
+	store.performanceAccountID = accountID
+	store.performanceTradeDate = tradeDate
+	return store.performance, nil
 }
 
 func (store *fakeSettlementStore) RawStreamSummary(_ context.Context, _ string, _ time.Time, _ time.Time) ([]ledger.RawStreamSummaryBucket, error) {

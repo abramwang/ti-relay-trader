@@ -61,6 +61,7 @@ type SettlementStore interface {
 	UpsertReconciliationInput(ctx context.Context, input ledger.ReconciliationInput) error
 	UpsertReconciliationBreak(ctx context.Context, item ledger.ReconciliationBreak) error
 	ListReconciliationBreaks(ctx context.Context, query ledger.ReconciliationBreakQuery) ([]ledger.ReconciliationBreak, error)
+	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
 	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
 }
 
@@ -418,6 +419,16 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleRefreshFills(w, r, accountID)
+	case "performance":
+		if len(parts) != 3 || parts[2] != "daily" {
+			httpx.WriteNotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			return
+		}
+		s.handleDailyPerformance(w, r, accountID)
 	default:
 		httpx.WriteNotFound(w, r)
 	}
@@ -632,6 +643,30 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleDailyPerformance(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.settles == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if tradeDate == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	normalizedTradeDate, err := normalizeAPIDate(tradeDate)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid trade_date", err.Error())
+		return
+	}
+	performance, err := s.settles.GetDailyPerformance(r.Context(), accountID, normalizedTradeDate)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"performance": performance,
+	})
 }
 
 func (s *Server) handleRefreshAsset(w http.ResponseWriter, r *http.Request, accountID string) {

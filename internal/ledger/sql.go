@@ -286,6 +286,93 @@ ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
 LIMIT 1
 `
 
+const dailyPerformanceSQL = `
+WITH asset AS (
+    SELECT
+        account_id,
+        trade_date,
+        cash_available,
+        cash_total,
+        net_asset,
+        market_value,
+        stock_value,
+        fund_value,
+        day_profit,
+        position_profit,
+        close_profit,
+        credit,
+        captured_at
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date = $2::date
+        AND snapshot_type = 'close'
+    ORDER BY captured_at DESC, asset_snapshot_pk DESC
+    LIMIT 1
+),
+previous_asset AS (
+    SELECT net_asset
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date < $2::date
+        AND snapshot_type = 'close'
+    ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
+    LIMIT 1
+),
+positions AS (
+    SELECT
+        count(*)::bigint AS positions_count,
+        COALESCE(sum(market_value), 0) AS position_market_value,
+        COALESCE(sum(unrealized_pnl), 0) AS unrealized_pnl,
+        COALESCE(sum(settled_profit), 0) AS settled_profit
+    FROM position_snapshots
+    WHERE account_id = $1
+        AND trade_date = $2::date
+),
+fills AS (
+    SELECT
+        count(*)::bigint AS fills_count,
+        COALESCE(sum(CASE WHEN trade_side IN ('B', 'P') THEN price * qty ELSE 0 END), 0) AS buy_amount,
+        COALESCE(sum(CASE WHEN trade_side IN ('S', 'R') THEN price * qty ELSE 0 END), 0) AS sell_amount,
+        COALESCE(sum(fee), 0) AS fee_total
+    FROM fills
+    WHERE account_id = $1
+        AND (
+            (trade_date IS NOT NULL AND trade_date = $2::date)
+            OR (trade_date IS NULL AND COALESCE(matched_at, created_at) >= $3 AND COALESCE(matched_at, created_at) < $4)
+        )
+)
+SELECT
+    asset.account_id,
+    asset.trade_date::text,
+    asset.cash_available,
+    asset.cash_total,
+    asset.net_asset,
+    COALESCE(previous_asset.net_asset, 0) AS previous_net_asset,
+    CASE WHEN COALESCE(previous_asset.net_asset, 0) > 0 THEN asset.net_asset - previous_asset.net_asset ELSE 0 END AS daily_pnl,
+    CASE WHEN COALESCE(previous_asset.net_asset, 0) > 0 THEN (asset.net_asset - previous_asset.net_asset) / previous_asset.net_asset ELSE 0 END AS return_rate,
+    asset.market_value,
+    asset.stock_value,
+    asset.fund_value,
+    asset.day_profit,
+    asset.position_profit,
+    asset.close_profit,
+    asset.credit,
+    positions.positions_count,
+    positions.position_market_value,
+    positions.unrealized_pnl,
+    positions.settled_profit,
+    fills.fills_count,
+    fills.buy_amount,
+    fills.sell_amount,
+    fills.buy_amount + fills.sell_amount AS turnover,
+    fills.fee_total,
+    asset.captured_at
+FROM asset
+CROSS JOIN positions
+CROSS JOIN fills
+LEFT JOIN previous_asset ON TRUE
+`
+
 const upsertAssetSnapshotSQL = `
 INSERT INTO asset_snapshots (
     trade_date,

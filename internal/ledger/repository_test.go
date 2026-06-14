@@ -402,6 +402,26 @@ func TestGetLatestAssetBuildsRead(t *testing.T) {
 	}
 }
 
+func TestGetDailyPerformanceBuildsSnapshotRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetDailyPerformance(context.Background(), "acct-1", "20260612")
+	if err == nil {
+		t.Fatal("GetDailyPerformance() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM asset_snapshots")
+	requireQueryContains(t, exec.query, "snapshot_type = 'close'")
+	requireQueryContains(t, exec.query, "FROM position_snapshots")
+	requireQueryContains(t, exec.query, "FROM fills")
+	requireQueryContains(t, exec.query, "previous_asset")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" {
+		t.Fatalf("identity args = %#v/%#v", exec.args[0], exec.args[1])
+	}
+}
+
 func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)
