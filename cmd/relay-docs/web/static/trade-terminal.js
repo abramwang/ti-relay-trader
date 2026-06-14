@@ -1157,6 +1157,7 @@
             <th class="num">委托/成交</th>
             <th>柜台/交易所</th>
             <th>状态</th>
+            <th>错误/柜台信息</th>
             <th>委托时间</th>
             <th>操作</th>
           </tr>
@@ -1169,6 +1170,7 @@
               id === state.selectedOrderID ? "selected" : "",
               now - changedAt < 3600 ? "flash" : ""
             ].join(" ");
+            const debugText = orderDebugText(order);
             return `
               <tr class="${className}" data-order-id="${escapeHTML(id)}">
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
@@ -1178,12 +1180,49 @@
                 <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
                 <td><span class="row-title"><strong>${escapeHTML(order.order_id || "--")}</strong><span>${escapeHTML(order.order_stream_id || "--")}</span></span></td>
                 <td><span class="status-badge ${escapeHTML(order.status)}">${statusText(order.status)}</span></td>
+                <td class="debug-cell"><span class="row-title"><strong class="${debugText ? "down" : "muted"}">${escapeHTML(debugText || "--")}</strong><span>${escapeHTML(order.reject_code || adapterText(order, "relay_error_code") || "")}</span></span></td>
                 <td>${formatTime(order.created_at || order.inserted_at)}</td>
                 <td>${order.is_terminal ? '<span class="muted">已完成</span>' : '<button type="button" class="row-action" data-cancel-id="' + escapeHTML(id) + '">撤单</button>'}</td>
               </tr>`;
           }).join("")}
         </tbody>
       </table>`;
+  }
+
+  function orderDebugText(order) {
+    return firstText(
+      order.reject_message,
+      adapterText(order, "relay_error_message"),
+      adapterText(order, "error_message"),
+      adapterText(order, "error_msg"),
+      adapterText(order, "err_msg"),
+      adapterText(order, "error_text"),
+      adapterText(order, "status_msg"),
+      adapterText(order, "status_message"),
+      adapterText(order, "broker_status_text")
+    );
+  }
+
+  function adapterText(item, key) {
+    const context = item && item.adapter_context;
+    if (!context || !Object.prototype.hasOwnProperty.call(context, key)) {
+      return "";
+    }
+    const value = context[key];
+    if (value === null || value === undefined) {
+      return "";
+    }
+    return String(value).trim();
+  }
+
+  function firstText(...values) {
+    for (const value of values) {
+      const text = String(value || "").trim();
+      if (text) {
+        return text;
+      }
+    }
+    return "";
   }
 
   function renderFillsTable() {
@@ -1321,10 +1360,12 @@
       return;
     }
     els.detailSub.textContent = "ReqID: " + (order.client_order_id || "--") + " · OID: " + order.gateway_order_id;
+    const debugText = orderDebugText(order);
     const events = [
       ["下单指令生成", order.created_at || order.inserted_at],
       ["柜台受理", order.accepted_at],
       ["状态刷新 " + statusText(order.status), order.last_updated_at],
+      debugText ? ["柜台/前置信息：" + debugText, order.last_updated_at || order.terminal_at] : null,
       order.terminal_at ? ["终态确认", order.terminal_at] : null
     ].filter(Boolean);
     els.timeline.innerHTML = events.map((item) => `

@@ -809,6 +809,17 @@ td {
   font-size: 12px;
 }
 
+.debug-cell {
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.debug-cell .row-title strong,
+.debug-cell .row-title span {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .row-action {
   border: 0;
   background: transparent;

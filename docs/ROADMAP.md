@@ -113,6 +113,7 @@
 - [x] 实现订单/成交查询命令写入 `cmd.query`。
 - [x] 消费 `reply` 并归档 raw。
 - [x] 合并 `asset_page/position_page/order_page/fill_page` reply 到 PostgreSQL 账本。
+- [x] 将下单类 `rejected/failed` reply 回写本地订单终态，并保留前置/柜台错误信息。
 - [x] 消费 `event` 并归档 raw。
 - [x] 将字段完整的 `order.event/fill.event` 持续消费接入 9092 轻量后台同步循环。
 - [x] 将持续消费迁移到正式 worker 并持久化 stream 位点。
@@ -221,6 +222,7 @@
 - [x] 接入 `GET /v1/events/stream` SSE 实时推送，订单、成交、资金、持仓事件触发页面合并刷新，并保留 3 秒轮询兜底。
 - [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
 - [x] 接入订单/成交前置刷新指令，订单监控区可手动刷新委托和成交。
+- [x] 订单监控表和订单详情展示 `reject_message`、柜台错误和 raw adapter context。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 

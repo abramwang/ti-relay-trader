@@ -203,7 +203,7 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 
 func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
 	if envelope.Status == string(trading.ReplyStatusRejected) || envelope.Status == string(trading.ReplyStatusFailed) {
-		return result
+		return processRejectedOrderReply(ctx, writer, envelope, result)
 	}
 
 	switch {
@@ -320,6 +320,59 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 	default:
 		return result
 	}
+}
+
+func processRejectedOrderReply(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
+	if envelope.Action != ActionOrderSubmit && envelope.Action != ActionOrderBatchSubmit {
+		return result
+	}
+	accountID := envelope.Routing.AccountID
+	gatewayOrderID := firstNonEmpty(envelope.GatewayOrderID, gatewayOrderIDFromPayload(envelope.Payload))
+	if accountID == "" || gatewayOrderID == "" {
+		result.Skipped++
+		result.SkipReasons = append(result.SkipReasons, "rejected order reply missing account_id or gateway_order_id")
+		return result
+	}
+	rejectCode, rejectMessage := orderErrorInfo(envelope)
+	event := trading.OrderEvent{
+		EventID:        envelope.MessageID,
+		EventType:      trading.EventTypeOrder,
+		AccountID:      accountID,
+		GatewayOrderID: gatewayOrderID,
+		Status:         trading.OrderStatusRejected,
+		GatewayStatus:  trading.GatewayStatusRejected,
+		IsTerminal:     true,
+		Order: trading.Order{
+			AccountID:       accountID,
+			GatewayOrderID:  gatewayOrderID,
+			Status:          trading.OrderStatusRejected,
+			GatewayStatus:   trading.GatewayStatusRejected,
+			IsTerminal:      true,
+			RejectCode:      trading.ErrorCode(rejectCode),
+			RejectMessage:   rejectMessage,
+			OriginMessageID: envelope.OriginMessageID,
+			RequestID:       envelope.RequestID,
+			IdempotencyKey:  envelope.IdempotencyKey,
+			LastUpdatedAt:   envelope.ProducedAt,
+			TerminalAt:      envelope.ProducedAt,
+			AdapterContext:  orderDebugContext(envelope, rejectCode, rejectMessage),
+		},
+		ProducedAt:     envelope.ProducedAt,
+		AdapterContext: orderDebugContext(envelope, rejectCode, rejectMessage),
+	}
+	if err := writer.UpdateOrderStatus(ctx, event); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.Orders++
+	if err := writer.AppendOrderEvent(ctx, event, streamRef(envelope), sourceRef(envelope)); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.OrderEvents++
+	return result
 }
 
 func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
@@ -490,7 +543,7 @@ func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, bool, e
 		IsTerminal:     order.IsTerminal,
 		Order:          order,
 		ProducedAt:     envelope.ProducedAt,
-		AdapterContext: envelope.AdapterContext,
+		AdapterContext: order.AdapterContext,
 	}
 	return event, complete, nil
 }
@@ -861,6 +914,8 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	)
 	isTerminal := payload.IsTerminal || inferredTerminal || status.Terminal() || gatewayStatus.Terminal()
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
+	rejectCode, rejectMessage := orderPayloadRejectInfo(envelope, payload, status, gatewayStatus)
+	adapterContext := orderDebugContext(envelope, rejectCode, rejectMessage)
 	return trading.Order{
 		AccountID:         payload.AccountID,
 		ClientOrderID:     payload.ClientOrderID,
@@ -887,8 +942,8 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		AdapterStatusCode: payload.AdapterStatusCode,
 		AdapterStatusName: adapterStatusName,
 		IsTerminal:        isTerminal,
-		RejectCode:        trading.ErrorCode(payload.RejectCode),
-		RejectMessage:     payload.RejectMessage,
+		RejectCode:        trading.ErrorCode(rejectCode),
+		RejectMessage:     rejectMessage,
 		OriginMessageID:   envelope.OriginMessageID,
 		RequestID:         envelope.RequestID,
 		IdempotencyKey:    envelope.IdempotencyKey,
@@ -898,7 +953,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		InsertedAt:        parseTime(payload.InsertedAt),
 		LastUpdatedAt:     parseTime(firstNonEmpty(payload.LastUpdatedAt, payload.UpdateTime)),
 		TerminalAt:        parseTime(payload.TerminalAt),
-		AdapterContext:    envelope.AdapterContext,
+		AdapterContext:    adapterContext,
 	}
 }
 
@@ -1036,10 +1091,90 @@ func firstPositiveInt(values ...int64) int64 {
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
-			return value
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""
+}
+
+func orderPayloadRejectInfo(envelope EntryEnvelope, payload orderPayload, status trading.OrderStatus, gatewayStatus trading.GatewayStatus) (string, string) {
+	code, message := orderErrorInfo(envelope)
+	code = firstNonEmpty(payload.RejectCode, code)
+	message = firstNonEmpty(payload.RejectMessage, message)
+	isRejected := status == trading.OrderStatusRejected ||
+		gatewayStatus == trading.GatewayStatusRejected ||
+		envelope.Status == string(trading.ReplyStatusRejected) ||
+		envelope.Status == string(trading.ReplyStatusFailed) ||
+		payload.RejectMessage != "" ||
+		payload.RejectCode != "" ||
+		stringFromMap(envelope.AdapterContext, "error_text") != ""
+	if message == "" {
+		if isRejected {
+			return code, ""
+		}
+		return "", ""
+	}
+	if isRejected {
+		return code, message
+	}
+	return "", ""
+}
+
+func orderErrorInfo(envelope EntryEnvelope) (string, string) {
+	var payload map[string]any
+	_ = json.Unmarshal(envelope.Payload, &payload)
+	code := firstNonEmpty(
+		stringFromMap(payload, "reject_code"),
+		stringFromMap(payload, "error_code"),
+		stringFromMap(payload, "err_code"),
+		stringFromMap(payload, "code"),
+		envelope.Code,
+	)
+	message := firstNonEmpty(
+		stringFromMap(payload, "reject_message"),
+		stringFromMap(payload, "error_message"),
+		stringFromMap(payload, "error_msg"),
+		stringFromMap(payload, "err_msg"),
+		stringFromMap(payload, "error_text"),
+		stringFromMap(payload, "status_msg"),
+		stringFromMap(payload, "status_message"),
+		stringFromMap(payload, "message"),
+		stringFromMap(envelope.AdapterContext, "error_message"),
+		stringFromMap(envelope.AdapterContext, "error_msg"),
+		stringFromMap(envelope.AdapterContext, "err_msg"),
+		stringFromMap(envelope.AdapterContext, "error_text"),
+		stringFromMap(envelope.AdapterContext, "status_msg"),
+		stringFromMap(envelope.AdapterContext, "status_message"),
+		stringFromMap(envelope.AdapterContext, "broker_status_text"),
+		envelope.Message,
+	)
+	return code, message
+}
+
+func orderDebugContext(envelope EntryEnvelope, rejectCode string, rejectMessage string) map[string]any {
+	context := make(map[string]any, len(envelope.AdapterContext)+6)
+	for key, value := range envelope.AdapterContext {
+		context[key] = value
+	}
+	if envelope.Code != "" {
+		context["relay_reply_code"] = envelope.Code
+	}
+	if envelope.Message != "" {
+		context["relay_reply_message"] = envelope.Message
+	}
+	if envelope.Status != "" {
+		context["relay_reply_status"] = envelope.Status
+	}
+	if rejectCode != "" {
+		context["relay_error_code"] = rejectCode
+	}
+	if rejectMessage != "" {
+		context["relay_error_message"] = rejectMessage
+	}
+	if len(context) == 0 {
+		return nil
+	}
+	return context
 }
 
 func stringFromMap(values map[string]any, key string) string {

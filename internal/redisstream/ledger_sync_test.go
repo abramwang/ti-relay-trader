@@ -283,6 +283,115 @@ func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
 	if order.AdapterStatusName != "unAccept" {
 		t.Fatalf("adapter status should preserve raw broker name: %#v", order)
 	}
+	if order.RejectCode != "" || order.RejectMessage != "" {
+		t.Fatalf("accepted order should not expose normal broker text as reject info: %s/%q", order.RejectCode, order.RejectMessage)
+	}
+	if _, ok := order.AdapterContext["relay_error_message"]; ok {
+		t.Fatalf("accepted order should not expose relay_error_message: %#v", order.AdapterContext)
+	}
+}
+
+func TestProcessLedgerEntryKeepsCounterRejectMessage(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:event", "2-2", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-rejected",
+			"event_type":"order.event",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-rejected",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"offset_type":"C",
+				"order_qty":100,
+				"cum_filled_qty":0,
+				"leaves_qty":0,
+				"limit_price":99.99,
+				"gateway_status":"rejected",
+				"reject_code":"COUNTER_REJECT",
+				"is_terminal":true
+			},
+			"adapter_context":{"error_text":"VIP:超过涨停价","broker_status_text":"废单"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Orders != 1 || result.OrderEvents != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 1 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	order := writer.orders[0]
+	if order.RejectCode != "COUNTER_REJECT" || order.RejectMessage != "VIP:超过涨停价" {
+		t.Fatalf("reject = %s/%q", order.RejectCode, order.RejectMessage)
+	}
+	if order.AdapterContext["relay_error_message"] != "VIP:超过涨停价" {
+		t.Fatalf("adapter context = %#v", order.AdapterContext)
+	}
+}
+
+func TestProcessLedgerEntryUpdatesDraftForRejectedOrderReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:reply", "2-3", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-rejected",
+			"origin_message_id":"msg-submit-1",
+			"request_id":"req-submit-1",
+			"action":"order.submit",
+			"status":"rejected",
+			"code":"COUNTER_REJECT",
+			"message":"柜台拒绝",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"gateway_order_id":"gw-reply-rejected","message":"VIP:无效的报单类别"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Orders != 1 || result.OrderEvents != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 1 || len(writer.orderEvents) != 1 {
+		t.Fatalf("order updates/events = %#v / %#v", writer.orderUpdates, writer.orderEvents)
+	}
+	event := writer.orderUpdates[0]
+	if event.Status != trading.OrderStatusRejected || event.GatewayStatus != trading.GatewayStatusRejected || !event.IsTerminal {
+		t.Fatalf("event = %#v", event)
+	}
+	if event.Order.RejectCode != "COUNTER_REJECT" || event.Order.RejectMessage != "VIP:无效的报单类别" {
+		t.Fatalf("reject = %s/%q", event.Order.RejectCode, event.Order.RejectMessage)
+	}
+}
+
+func TestProcessLedgerEntryDoesNotRejectOrderForRejectedCancelReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:reply", "2-4", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-cancel-rejected",
+			"origin_message_id":"msg-cancel-1",
+			"request_id":"req-cancel-1",
+			"action":"order.cancel",
+			"status":"rejected",
+			"code":"CANCEL_REJECT",
+			"message":"撤单失败",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"gateway_order_id":"gw-cancel-rejected","message":"柜台未找到可撤委托"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Orders != 0 || result.OrderEvents != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
+		t.Fatalf("cancel rejection should not change order state: %#v / %#v", writer.orderUpdates, writer.orderEvents)
+	}
 }
 
 func TestProcessLedgerEntryUpdatesDraftForIncompleteOrderEvent(t *testing.T) {

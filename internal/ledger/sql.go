@@ -108,7 +108,7 @@ ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
         ELSE orders.terminal_at
     END,
     raw_payload = EXCLUDED.raw_payload,
-    adapter_context = EXCLUDED.adapter_context,
+    adapter_context = orders.adapter_context || EXCLUDED.adapter_context,
     updated_at = now()
 `
 
