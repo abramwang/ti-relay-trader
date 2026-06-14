@@ -164,5 +164,6 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 ## 后续工作
 
 1. 增加基于临时 PostgreSQL 的 CI 集成测试。
-2. 设计盘后对账和模拟柜台后续 migration。
+2. 补充盘后对账、任务状态和研究导出后续 migration。
 3. 后续如需严格数据库级下单幂等，可在清理历史重复数据后补充 `orders(account_id, idempotency_key)` 部分唯一约束。
+4. 内置模拟柜台 migration 暂缓；历史行情模拟撮合由回测引擎负责，外部模拟柜台如需接入应复用前置/Redis Stream 协议。
