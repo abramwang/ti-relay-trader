@@ -89,6 +89,72 @@ func (status GatewayStatus) Terminal() bool {
 	}
 }
 
+// NormalizeOrderExecutionState reconciles front-status fields with execution
+// quantities. Some counters keep a non-terminal broker status while the fill
+// quantities already show a completed order.
+func NormalizeOrderExecutionState(status OrderStatus, gatewayStatus GatewayStatus, orderQty, cumFilledQty, leavesQty int64) (OrderStatus, GatewayStatus, bool) {
+	if status.Terminal() {
+		return status, gatewayStatusForOrderStatus(status, gatewayStatus), true
+	}
+	if gatewayStatus.Terminal() {
+		return orderStatusForGatewayStatus(gatewayStatus), gatewayStatus, true
+	}
+	if orderQty > 0 && cumFilledQty >= orderQty && leavesQty == 0 {
+		return OrderStatusFilled, GatewayStatusFilled, true
+	}
+	if cumFilledQty > 0 && leavesQty > 0 {
+		if gatewayStatus == "" || gatewayStatus == GatewayStatusAccepted {
+			gatewayStatus = GatewayStatusWorking
+		}
+		return OrderStatusPartiallyFilled, gatewayStatus, false
+	}
+	if status != "" {
+		return status, gatewayStatusForOrderStatus(status, gatewayStatus), false
+	}
+	if gatewayStatus != "" {
+		return orderStatusForGatewayStatus(gatewayStatus), gatewayStatus, gatewayStatus.Terminal()
+	}
+	return OrderStatusCreated, GatewayStatusAccepted, false
+}
+
+func orderStatusForGatewayStatus(status GatewayStatus) OrderStatus {
+	switch status {
+	case GatewayStatusAccepted:
+		return OrderStatusAccepted
+	case GatewayStatusWorking:
+		return OrderStatusWorking
+	case GatewayStatusFilled:
+		return OrderStatusFilled
+	case GatewayStatusCancelled:
+		return OrderStatusCancelled
+	case GatewayStatusRejected:
+		return OrderStatusRejected
+	default:
+		return OrderStatusCreated
+	}
+}
+
+func gatewayStatusForOrderStatus(status OrderStatus, gatewayStatus GatewayStatus) GatewayStatus {
+	switch status {
+	case OrderStatusWorking, OrderStatusPartiallyFilled:
+		if gatewayStatus != "" && gatewayStatus != GatewayStatusAccepted {
+			return gatewayStatus
+		}
+		return GatewayStatusWorking
+	case OrderStatusFilled:
+		return GatewayStatusFilled
+	case OrderStatusCancelled:
+		return GatewayStatusCancelled
+	case OrderStatusRejected:
+		return GatewayStatusRejected
+	default:
+		if gatewayStatus != "" {
+			return gatewayStatus
+		}
+		return GatewayStatusAccepted
+	}
+}
+
 func NormalizeTradeSide(value string) (TradeSide, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "b", "buy":

@@ -852,9 +852,14 @@ func (payload orderPayload) completeOrderLedgerFields() bool {
 func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	limitPrice := firstPositive(payload.LimitPrice, payload.Price)
 	orderQty := firstPositiveInt(payload.OrderQty, payload.Qty)
-	gatewayStatus := trading.GatewayStatus(payload.GatewayStatus)
-	status := orderStatusFromPayload(payload.Status, gatewayStatus, payload.CumFilledQty, payload.LeavesQty)
-	isTerminal := payload.IsTerminal || status.Terminal() || gatewayStatus.Terminal()
+	status, gatewayStatus, inferredTerminal := trading.NormalizeOrderExecutionState(
+		trading.OrderStatus(strings.TrimSpace(payload.Status)),
+		trading.GatewayStatus(strings.TrimSpace(payload.GatewayStatus)),
+		orderQty,
+		payload.CumFilledQty,
+		payload.LeavesQty,
+	)
+	isTerminal := payload.IsTerminal || inferredTerminal || status.Terminal() || gatewayStatus.Terminal()
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	return trading.Order{
 		AccountID:         payload.AccountID,
@@ -941,29 +946,6 @@ func accountFromEnvelope(envelope EntryEnvelope, accountID string) trading.Accou
 			"gateway_id": envelope.Routing.GatewayID,
 		},
 		UpdatedAt: time.Now().UTC(),
-	}
-}
-
-func orderStatusFromPayload(status string, gatewayStatus trading.GatewayStatus, cumFilledQty, leavesQty int64) trading.OrderStatus {
-	if status != "" {
-		return trading.OrderStatus(status)
-	}
-	switch gatewayStatus {
-	case trading.GatewayStatusAccepted:
-		return trading.OrderStatusAccepted
-	case trading.GatewayStatusWorking:
-		if cumFilledQty > 0 && leavesQty > 0 {
-			return trading.OrderStatusPartiallyFilled
-		}
-		return trading.OrderStatusWorking
-	case trading.GatewayStatusFilled:
-		return trading.OrderStatusFilled
-	case trading.GatewayStatusCancelled:
-		return trading.OrderStatusCancelled
-	case trading.GatewayStatusRejected:
-		return trading.OrderStatusRejected
-	default:
-		return trading.OrderStatusCreated
 	}
 }
 

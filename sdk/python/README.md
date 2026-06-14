@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz"
 ```
 
 ## Quick Start
@@ -55,6 +55,11 @@ does not publish another Redis command. Conflicting idempotency keys raise
 Use `business_type="S"` for secondary-market stock and ETF orders. ETF
 creation/redemption is not implemented by `/v1/orders` yet; do not use
 `business_type="E"` for ordinary ETF buy/sell orders.
+
+`record_job_run()` supports `status="running"`, `"succeeded"`, `"skipped"`,
+and `"failed"`. The SDK accepts `status="completed"` as an alias for
+`"succeeded"` and exposes `target_trade_date`, `timezone`, and `duration_ms`
+as explicit keyword arguments.
 
 ## Callbacks
 

@@ -138,8 +138,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/healthz` | 文档门户健康检查 |
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构草案 |
@@ -230,6 +230,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] Python SDK 升级到 `0.1.3`，新增 `status()` 只读探活方法、真实 9092 只读 live smoke 和 SDK 发布检查脚本。
 - [x] Python SDK 升级到 `0.1.4`，新增历史订单/成交/持仓查询参数和 `record_job_run()` 任务报告落盘方法。
 - [x] Python SDK 升级到 `0.1.5`，新增 `record_settlement_snapshot()`，收盘任务可调用 9092 固化 close 资产/持仓快照和 reconciliation run。
+- [x] 根据 2026-06-14 `relay-sdk 0.1.4` 压测反馈，修复已全成订单仍停留在 `accepted` 的状态归一化问题，账本终态不再被后续非终态推送回退；SDK 升级到 `0.1.6`，`record_job_run()` 支持 `completed` 到 `succeeded` 的兼容映射和显式任务字段。
 - [x] 明确 ETF 二级市场买卖使用 `business_type=S`；`business_type=E` 为 ETF 申购/赎回专项，当前 `/v1/orders` 标记未实现并返回 `NOT_IMPLEMENTED`。
 - [x] 新增 `000003_job_runs` migration 并应用到测试 PostgreSQL，`/v1/status` 已暴露交易阶段和最近盘前/盘后任务状态。
 - [x] `GET /v1/orders`、`GET /v1/fills` 默认按 `Asia/Shanghai` 当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history` 历史查询口径。
@@ -280,7 +281,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 测试下单参考价不要硬编码；`/trade` 当前通过 relay 的 Meridian 薄代理读取 `/v1/market/snapshots`，如果当天不是交易日会调用 Meridian `/v1/metadata/trading-day` 获取最近交易日后读取 historical 快照。
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；收盘任务现在会通过 `/v1/settlements/snapshots` 写入日终持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 
@@ -343,3 +344,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 查询口径调整为订单/成交默认按东八区当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history`，SDK 发布 `relay-sdk 0.1.4` 支持历史查询和任务报告落盘。
 - `2026-06-14`: 清理账本 API 零值时间展示：订单、成交、资金、持仓、订单事件、成交事件和 `job_runs` 响应按东八区格式化非空时间，并省略零值字段，避免策略端和页面看到 `0001-01-01T00:00:00Z`。
 - `2026-06-14`: 新增 `POST /v1/settlements/snapshots` 和 SDK `record_settlement_snapshot()`；`post_close_settlement` 会在刷新/读取账户摘要后写入 close 资产快照、持仓快照和 `reconciliation_runs` 批次，SDK 发布 `relay-sdk 0.1.5`。
+- `2026-06-14`: 根据 `tmp/relay_sdk_014_feedback_20260614.md` 反馈，订单标准状态会按成交数量归一化：`cum_filled_qty >= order_qty` 且 `leaves_qty=0` 时统一进入 `filled/filled/is_terminal=true`；账本冲突更新和状态更新新增终态保护，避免已撤/已成/已拒订单被后续 `created/accepted/working` 推送回退；SDK 发布 `relay-sdk 0.1.6`，`record_job_run()` 增加 `target_trade_date`、`timezone`、`duration_ms` 显式参数并兼容 `status="completed"`。

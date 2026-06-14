@@ -239,6 +239,52 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:event", "2-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-filled-qty",
+			"event_type":"order.event",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-filled-qty",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"offset_type":"C",
+				"order_qty":100,
+				"cum_filled_qty":100,
+				"leaves_qty":0,
+				"limit_price":9.54,
+				"status":"accepted",
+				"gateway_status":"accepted",
+				"adapter_status":"unAccept",
+				"adapter_status_code":0,
+				"is_terminal":false
+			},
+			"adapter_context":{"order_status_code":0,"order_status_name":"unAccept","broker_status_text":"VIP:正确"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Orders != 1 || result.OrderEvents != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 1 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	order := writer.orders[0]
+	if order.Status != trading.OrderStatusFilled || order.GatewayStatus != trading.GatewayStatusFilled || !order.IsTerminal {
+		t.Fatalf("order state = %s/%s terminal=%v", order.Status, order.GatewayStatus, order.IsTerminal)
+	}
+	if order.AdapterStatusName != "unAccept" {
+		t.Fatalf("adapter status should preserve raw broker name: %#v", order)
+	}
+}
+
 func TestProcessLedgerEntryUpdatesDraftForIncompleteOrderEvent(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "3-0", map[string]any{

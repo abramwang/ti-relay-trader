@@ -123,6 +123,45 @@ func TestOrderStatusTerminal(t *testing.T) {
 	}
 }
 
+func TestNormalizeOrderExecutionStateInfersFilledFromQuantities(t *testing.T) {
+	status, gatewayStatus, terminal := NormalizeOrderExecutionState(
+		OrderStatusAccepted,
+		GatewayStatusAccepted,
+		100,
+		100,
+		0,
+	)
+	if status != OrderStatusFilled || gatewayStatus != GatewayStatusFilled || !terminal {
+		t.Fatalf("state = %s/%s terminal=%v, want filled/filled true", status, gatewayStatus, terminal)
+	}
+}
+
+func TestNormalizeOrderExecutionStateInfersPartialFromQuantities(t *testing.T) {
+	status, gatewayStatus, terminal := NormalizeOrderExecutionState(
+		OrderStatusAccepted,
+		GatewayStatusAccepted,
+		100,
+		40,
+		60,
+	)
+	if status != OrderStatusPartiallyFilled || gatewayStatus != GatewayStatusWorking || terminal {
+		t.Fatalf("state = %s/%s terminal=%v, want partially_filled/working false", status, gatewayStatus, terminal)
+	}
+}
+
+func TestNormalizeOrderExecutionStateAlignsGatewayWithExplicitFilled(t *testing.T) {
+	status, gatewayStatus, terminal := NormalizeOrderExecutionState(
+		OrderStatusFilled,
+		GatewayStatusAccepted,
+		100,
+		0,
+		0,
+	)
+	if status != OrderStatusFilled || gatewayStatus != GatewayStatusFilled || !terminal {
+		t.Fatalf("state = %s/%s terminal=%v, want filled/filled true", status, gatewayStatus, terminal)
+	}
+}
+
 func TestOrderJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {
 	body, err := json.Marshal(Order{
 		AccountID:      "acct-1",

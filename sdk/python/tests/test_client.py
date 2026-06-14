@@ -241,11 +241,22 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(RelayHandler.requests[-1][1], "/v1/history/fills")
 
     def test_record_job_run(self):
-        run = self.client.record_job_run({"ok": True, "job": "pre_open_init", "trading_day": {"target_trade_date": "20260614"}}, trigger="unit")
+        run = self.client.record_job_run(
+            {"ok": True, "job": "pre_open_init", "trading_day": {"target_trade_date": "20260614"}},
+            trigger="unit",
+            status="completed",
+            target_trade_date="20260614",
+            timezone="Asia/Shanghai",
+            duration_ms=1200,
+        )
         self.assertEqual(run["run_id"], "job-1")
         method, path, _query, body = RelayHandler.requests[-1]
         self.assertEqual((method, path), ("POST", "/v1/jobs/runs"))
         self.assertEqual(body["trigger"], "unit")
+        self.assertEqual(body["status"], "succeeded")
+        self.assertEqual(body["target_trade_date"], "20260614")
+        self.assertEqual(body["timezone"], "Asia/Shanghai")
+        self.assertEqual(body["duration_ms"], 1200)
 
     def test_record_settlement_snapshot(self):
         result = self.client.record_settlement_snapshot(

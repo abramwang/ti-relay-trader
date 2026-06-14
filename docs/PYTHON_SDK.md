@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.5`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.6`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,8 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.5.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.6.tar.gz` 和 `.sha256` 下载入口。
+17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 
 尚未完成：
 
@@ -83,15 +84,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.5.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.5.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.6.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -221,6 +222,8 @@ client = RelayClient(
 | `watch_fills(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 阻塞式成交回调 |
 | `record_job_run(report, ...)` | `POST /v1/jobs/runs` | 日流程任务报告落盘 |
 | `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 收盘结算 close 资产/持仓快照和 reconciliation run 落盘 |
+
+`record_job_run()` 的标准状态枚举是 `running`、`succeeded`、`skipped`、`failed`；SDK 接受 `completed` 作为 `succeeded` 的兼容别名。
 
 ## 模型建议
 

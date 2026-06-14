@@ -18,7 +18,8 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.5"
+SDK_VERSION = "0.1.6"
+JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 
@@ -200,16 +201,30 @@ class RelayClient:
         trigger: str = "manual",
         status: str | None = None,
         run_id: str | None = None,
+        target_trade_date: str | None = None,
+        timezone: str | None = None,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        duration_ms: int | None = None,
     ) -> Mapping[str, Any]:
-        """Persist a trading-day job report into relay's local ledger."""
+        """Persist a trading-day job report into relay's local ledger.
 
+        Supported statuses are ``running``, ``succeeded``, ``skipped``, and
+        ``failed``. ``completed`` is accepted as an SDK-side alias for
+        ``succeeded``.
+        """
+
+        normalized_status = JOB_STATUS_ALIASES.get(status or "", status)
         payload = {
             "run_id": run_id or report.get("run_id"),
             "job_name": job_name,
+            "target_trade_date": target_trade_date,
+            "timezone": timezone,
             "trigger": trigger,
-            "status": status,
-            "started_at": report.get("started_at"),
-            "finished_at": report.get("finished_at"),
+            "status": normalized_status,
+            "started_at": started_at or report.get("started_at"),
+            "finished_at": finished_at or report.get("finished_at"),
+            "duration_ms": duration_ms,
             "report": dict(report),
         }
         data = self._request("POST", "/v1/jobs/runs", json_body=payload)

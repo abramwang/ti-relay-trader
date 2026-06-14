@@ -1133,6 +1133,9 @@ func normalizeJobRun(run JobRun, now time.Time) (JobRun, error) {
 	if run.Status == "" {
 		run.Status = "succeeded"
 	}
+	if run.Status == "completed" {
+		run.Status = "succeeded"
+	}
 	switch run.Status {
 	case "running", "succeeded", "skipped", "failed":
 	default:
@@ -1740,7 +1743,15 @@ func normalizeOrder(order trading.Order) (trading.Order, error) {
 	if order.GatewayStatus == "" {
 		order.GatewayStatus = trading.GatewayStatusAccepted
 	}
-	if order.Status.Terminal() {
+	var inferredTerminal bool
+	order.Status, order.GatewayStatus, inferredTerminal = trading.NormalizeOrderExecutionState(
+		order.Status,
+		order.GatewayStatus,
+		order.OrderQty,
+		order.CumFilledQty,
+		order.LeavesQty,
+	)
+	if inferredTerminal || order.Status.Terminal() || order.GatewayStatus.Terminal() {
 		order.IsTerminal = true
 	}
 	if order.LeavesQty == 0 && order.CumFilledQty == 0 && order.CancelledQty == 0 && order.InvalidQty == 0 && !order.IsTerminal {
@@ -1780,8 +1791,19 @@ func normalizeOrderEvent(event trading.OrderEvent) (trading.OrderEvent, error) {
 	if event.GatewayStatus == "" {
 		event.GatewayStatus = trading.GatewayStatusAccepted
 	}
-	if event.Status.Terminal() {
+	var inferredTerminal bool
+	event.Status, event.GatewayStatus, inferredTerminal = trading.NormalizeOrderExecutionState(
+		event.Status,
+		event.GatewayStatus,
+		event.Order.OrderQty,
+		event.Order.CumFilledQty,
+		event.Order.LeavesQty,
+	)
+	event.Order.Status = event.Status
+	event.Order.GatewayStatus = event.GatewayStatus
+	if inferredTerminal || event.Status.Terminal() || event.GatewayStatus.Terminal() || event.Order.IsTerminal {
 		event.IsTerminal = true
+		event.Order.IsTerminal = true
 	}
 	return event, nil
 }

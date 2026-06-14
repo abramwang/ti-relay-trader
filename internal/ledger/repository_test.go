@@ -64,6 +64,7 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO orders")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, gateway_order_id)")
+	requireQueryContains(t, exec.query, "status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END")
 	requireArgLen(t, exec.args, 38)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[2])
@@ -73,6 +74,34 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	}
 	assertJSONContains(t, exec.args[36], `"gateway_order_id":"gateway-1"`)
 	assertJSONContains(t, exec.args[37], `"front_status":"accepted"`)
+}
+
+func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.UpsertOrder(context.Background(), trading.Order{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-filled",
+		Symbol:         "600000",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideBuy,
+		BusinessType:   trading.BusinessTypeStock,
+		LimitPrice:     10.25,
+		OrderQty:       100,
+		CumFilledQty:   100,
+		LeavesQty:      0,
+		Status:         trading.OrderStatusAccepted,
+		GatewayStatus:  trading.GatewayStatusAccepted,
+	})
+	if err != nil {
+		t.Fatalf("UpsertOrder() error = %v", err)
+	}
+
+	requireArgLen(t, exec.args, 38)
+	if exec.args[20] != trading.OrderStatusFilled || exec.args[21] != trading.GatewayStatusFilled || exec.args[24] != true {
+		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[20], exec.args[21], exec.args[24])
+	}
 }
 
 func TestAppendOrderEventIsIdempotentByEventOrStream(t *testing.T) {
@@ -143,11 +172,40 @@ func TestUpdateOrderStatusBuildsPartialStatusUpdate(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "UPDATE orders SET")
 	requireQueryContains(t, exec.query, "WHERE account_id = $1 AND gateway_order_id = $2")
+	requireQueryContains(t, exec.query, "status = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN status ELSE $12 END")
 	requireArgLen(t, exec.args, 19)
 	if exec.args[0] != "acct-1" || exec.args[1] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[1])
 	}
 	assertJSONContains(t, exec.args[18], `"order_status_name":"queued"`)
+}
+
+func TestUpdateOrderStatusInfersFilledFromExecutionQuantities(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.UpdateOrderStatus(context.Background(), trading.OrderEvent{
+		EventID:        "event-filled",
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-filled",
+		Status:         trading.OrderStatusAccepted,
+		GatewayStatus:  trading.GatewayStatusAccepted,
+		Order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-filled",
+			OrderQty:       100,
+			CumFilledQty:   100,
+			LeavesQty:      0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateOrderStatus() error = %v", err)
+	}
+
+	requireArgLen(t, exec.args, 19)
+	if exec.args[11] != trading.OrderStatusFilled || exec.args[12] != trading.GatewayStatusFilled || exec.args[13] != true {
+		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[11], exec.args[12], exec.args[13])
+	}
 }
 
 func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
@@ -555,6 +613,24 @@ func TestUpsertJobRunBuildsStatusWrite(t *testing.T) {
 		t.Fatalf("job run = %#v args=%#v", run, exec.args)
 	}
 	assertJSONContains(t, exec.args[10], `"ok":true`)
+}
+
+func TestUpsertJobRunMapsCompletedStatus(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	repo.now = func() time.Time { return time.Date(2026, 6, 14, 8, 0, 0, 0, time.UTC) }
+
+	run, err := repo.UpsertJobRun(context.Background(), JobRun{
+		JobName:         "post_close_settlement",
+		TargetTradeDate: "20260614",
+		Status:          "completed",
+	})
+	if err != nil {
+		t.Fatalf("UpsertJobRun() error = %v", err)
+	}
+	if run.Status != "succeeded" || exec.args[4] != "succeeded" {
+		t.Fatalf("job status = %s args=%#v, want succeeded", run.Status, exec.args)
+	}
 }
 
 func TestLatestJobRunsBuildsDistinctRead(t *testing.T) {

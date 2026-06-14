@@ -190,6 +190,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.3.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.4.tar.gz` 和 SHA256 校验文件，支持历史查询和任务报告落盘。
 - [x] 发布 `public/sdk/relay-sdk-0.1.5.tar.gz` 和 SHA256 校验文件，支持收盘结算快照落盘。
+- [x] 发布 `public/sdk/relay-sdk-0.1.6.tar.gz` 和 SHA256 校验文件，支持 job run 显式字段和 `completed` 状态兼容。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
