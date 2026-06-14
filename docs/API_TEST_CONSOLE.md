@@ -4,7 +4,7 @@
 
 ## 目标
 
-relay 后续提供正式交易 API 后，9092 页面需要同步提供接口测试台，方便交易软件、策略开发、前置服务联调和运维排查。
+`/api-console` 是 9092 内置接口测试台，用于交易软件、策略开发、前置服务联调和运维排查。
 
 页面形态参考 Apifox 的工作台模式：
 
@@ -89,11 +89,10 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 
 1. 页面本身不保存凭据。
 2. 页面不会自动发送任何请求。
-3. `planned` 接口默认禁用发送按钮。
-4. 交易写接口仅在启动配置包含 PostgreSQL、测试 Redis 和账户路由时可用，且账户配置必须 `enabled=true`、`trading_enabled=true`。
-5. 实盘账户会使用另一套 Redis 连接方式，测试 Redis 与实盘 Redis 不混用。
-6. 资金/持仓/订单/成交查询默认只读本地 PostgreSQL 账表；刷新接口会发送测试前置 `cmd.query`，需要 9092 轻量同步循环、`ledger-sync` 或后续 worker 合并 reply 后才能在查询接口看到最新数据。
-7. 若 9092 以纯文档配置启动，测试台仍可发送 `/v1/status`、`/v1/schema` 和 `/v1/accounts`，交易和账本接口会返回明确的不可用或空结果。
+3. 交易写接口仅在启动配置包含 PostgreSQL、测试 Redis 和账户路由时可用，且账户配置必须 `enabled=true`、`trading_enabled=true`。
+4. 实盘账户会使用另一套 Redis 连接方式，测试 Redis 与实盘 Redis 不混用。
+5. 资金/持仓/订单/成交查询默认只读本地 PostgreSQL 账表；刷新接口会发送测试前置 `cmd.query`，需要 9092 轻量同步循环、`ledger-sync` 或正式 worker 合并 reply 后才能在查询接口看到最新数据。
+6. 若 9092 以纯文档配置启动，测试台仍可发送 `/v1/status`、`/v1/schema` 和 `/v1/accounts`，交易和账本接口会返回明确的不可用或空结果。
 
 ## 后续工作
 

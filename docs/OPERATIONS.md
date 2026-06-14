@@ -137,7 +137,7 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 http://relay-trader.quantstage.com/api-console
 ```
 
-当前测试台用于 API 联调页面骨架和只读接口测试。交易写接口在正式 handler、权限边界、幂等键和测试账户确认前保持 `planned` 状态，不会发送未实现请求。
+当前测试台用于 API 联调和只读/写入接口验证。交易写接口已经接入测试账户链路；只有在启动配置包含 PostgreSQL、Redis、账户路由且账户 `enabled=true`、`trading_enabled=true` 时才可成功发布 Redis 命令。纯文档配置下，交易和账本接口会返回明确的服务不可用或空结果。
 
 ## PostgreSQL Migration
 
@@ -146,9 +146,13 @@ http://relay-trader.quantstage.com/api-console
 ```text
 migrations/postgres/000001_init_ledger.up.sql
 migrations/postgres/000002_stream_checkpoints.up.sql
+migrations/postgres/000003_job_runs.up.sql
+migrations/postgres/000004_reconciliation_idempotency.up.sql
+migrations/postgres/000005_fill_id_order_scope.up.sql
+migrations/postgres/000006_research_performance_views.up.sql
 ```
 
-真实 DSN 仍放在部署机本地配置或安全渠道。当前测试 PostgreSQL 已应用 `000001_init_ledger` 和 `000002_stream_checkpoints`。
+真实 DSN 仍放在部署机本地配置或安全渠道。当前测试 PostgreSQL 已应用 `000001` 到 `000006`，包含账本、stream checkpoint、任务运行、对账幂等、成交订单作用域去重和研究导出 view。
 
 当前环境已安装 `psql`，同时可使用内置 runner：
 
@@ -165,11 +169,13 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 ## 前置测试环境
 
-当前用户已启动前置程序测试环境。后续进入 Redis Stream 对接阶段时，可以基于可见 stream 做以下联调：
+当前用户已启动前置程序测试环境，relay 已基于测试 Redis 跑通查询、下单、批量下单、撤单、reply/event 合并和 SSE 推送。继续联调时优先使用以下入口：
 
-1. 只读探测 `reply`、`event`、`hb`、`dlq` stream。
-2. 查询类命令联调：资金、持仓、订单、成交。
-3. 小流量交易类命令联调：下单、批量下单、撤单。
+1. `relayctl redis-probe` 只读探测 `reply`、`event`、`hb`、`dlq` stream。
+2. `/api-console` 或 SDK 发送资金、持仓、订单、成交刷新命令。
+3. `/trade` 或 SDK 做小流量下单、批量下单、撤单。
+4. `relayctl ledger-sync` 或 worker 回放/追赶指定 stream。
+5. `/v1/status`、`/jobs` 和 `/trade` 检查依赖、任务和账本状态。
 
 联调必须继续遵守凭据管理约定：Redis 密码、账号密码、柜台地址等只放本地未提交配置或安全渠道。
 
@@ -209,14 +215,7 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股交易日收盘后结算，15:45 Asia/Shanghai。
 45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
-# A 股交易日盘后资产快照，15:55 Asia/Shanghai。后续可并入 post_close_settlement。
-55 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-asset-snapshot.lock python3 -m relay.jobs.asset_snapshot >> /var/log/relay/asset_snapshot.log 2>&1
-
-# 盘后对账，16:30 Asia/Shanghai。后续可由 post_close_settlement 编排。
-30 16 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-reconcile.lock python3 -m relay.jobs.reconcile >> /var/log/relay/reconcile.log 2>&1
-
-# 账户盈亏统计，17:10 Asia/Shanghai。
-10 17 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pnl.lock python3 -m relay.jobs.pnl >> /var/log/relay/pnl.log 2>&1
+# 研究侧绩效导出当前通过 9092 API / PostgreSQL view 查询，不需要单独 cron。
 ```
 
 注意：
@@ -247,12 +246,11 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。
 
-## 后续实现
+## 待增强项
 
-后续需要补齐：
+当前仍需补齐：
 
-1. 敏感字段脱敏日志。
-2. 日终资产和持仓快照实际写入。
-3. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
-4. cron 安装后验收 `/v1/status` 和 `/jobs` 中的日流程最近运行状态。
-5. 收盘后结算接入正式对账差异表和 PnL 计算。
+1. 正式部署脚本、systemd unit 或 `/etc/cron.d/relay-trader` 模板。
+2. cron 安装后验收 `/v1/status` 和 `/jobs` 中的日流程最近运行状态。
+3. worker 心跳状态合并、DLQ 告警和处置页面。
+4. 更完整的人工复核报告导出。

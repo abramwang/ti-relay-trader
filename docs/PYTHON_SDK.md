@@ -1,10 +1,10 @@
-# relay Python SDK 设计
+# relay Python SDK 当前实现
 
 更新时间：`2026-06-14`
 
 ## 目标
 
-relay 最终交易接口需要同时封装 Python SDK，供策略开发和研究联调使用。
+relay 交易接口已封装 Python SDK，供策略开发和研究联调使用。
 
 SDK 的定位：
 
@@ -74,7 +74,7 @@ sdk/python/
 
 ## 内网安装方式
 
-参考 Meridian SDK 的发布方式，relay SDK 后续也通过内网 HTTP 地址提供安装包，策略机可直接 pip 安装。
+参考 Meridian SDK 的发布方式，relay SDK 通过内网 HTTP 地址提供安装包，策略机可直接 pip 安装。
 
 Meridian 当前参考命令：
 
@@ -176,7 +176,7 @@ fill_sub.stop()
 
 当前后端 SSE 事件只说明订单或成交账本发生变化，不直接携带完整订单/成交对象。SDK 收到 `order.changed` 后会自动调用 `list_orders()` 拉取账本并按订单状态去重触发回调；收到 `fill.changed` 后会调用 `list_fills()` 并按 `account_id + gateway_order_id + fill_id` 成交唯一键去重触发回调。
 
-## 建议接口
+## 接口清单
 
 ### 客户端
 
@@ -231,9 +231,9 @@ client = RelayClient(
 
 `record_job_run()` 的标准状态枚举是 `running`、`succeeded`、`skipped`、`failed`；SDK 接受 `completed` 作为 `succeeded` 的兼容别名。
 
-## 模型建议
+## 模型清单
 
-首批 SDK 模型应和 9092 API schema 一一对应：
+SDK 模型和 9092 API schema 一一对应：
 
 | SDK 模型 | 说明 |
 | --- | --- |
@@ -323,7 +323,7 @@ python3 scripts/check-python-sdk-release.py
 python3 scripts/check-python-sdk-release.py --live-smoke --base-url http://127.0.0.1:9092 --account-id 00030484
 ```
 
-## 测试与发布
+## 待增强项
 
 SDK 后续需要：
 

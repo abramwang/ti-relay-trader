@@ -171,8 +171,72 @@ migrations/postgres/000001_init_ledger.down.sql
 5. 所有交易金额字段优先使用数据库 `numeric`，避免浮点误差进入最终账本。
 6. 所有接口时间进入数据库时统一为带时区时间，原始时间戳保留在 raw 字段。
 7. `reconciliation_inputs` 和 `reconciliation_breaks` 通过唯一索引保证同一 `run_id` 重复执行时可幂等覆盖。
-7. 业务展示、API 输出和报表按 `Asia/Shanghai` 转换；数据库 `timestamptz` 仍保存绝对时刻。
-8. `trade_date` 必须按 `Asia/Shanghai` 下的 A 股交易日确定，交易日判断和最近交易日回退以 Meridian 交易日接口为准。
+8. 业务展示、API 输出和报表按 `Asia/Shanghai` 转换；数据库 `timestamptz` 仍保存绝对时刻。
+9. `trade_date` 必须按 `Asia/Shanghai` 下的 A 股交易日确定，交易日判断和最近交易日回退以 Meridian 交易日接口为准。
+
+## 编号唯一性机制
+
+### 订单编号
+
+relay 当前保留四类订单编号，不能混用：
+
+| 编号 | 字段 | 来源 | 唯一范围 | 当前用途 |
+| --- | --- | --- | --- | --- |
+| 本地客户端请求 ID | `client_order_id` | 策略、页面或 relay 默认生成 | `account_id` 内非空唯一 | 策略侧和页面侧追踪请求 |
+| 北向订单主键 | `gateway_order_id` | 调用方传入或 relay 生成 `gw-*` | `account_id` 内强制唯一 | 订单主表唯一键、撤单、事件归属、SSE/SDK 去重 |
+| 前置/柜台订单 ID | `order_id` | 前置或券商柜台回报 | 柜台当日口径 | 排查柜台回报、与券商侧对账 |
+| 交易所委托流号 | `order_stream_id` | 柜台/交易所回报 | 交易所当日口径 | 与交易所回报和成交回报交叉校验 |
+
+数据库约束：
+
+1. `orders_gateway_order_unique`: `orders(account_id, gateway_order_id)` 唯一。
+2. `orders_client_order_unique`: `orders(account_id, client_order_id)` 在 `client_order_id IS NOT NULL` 时唯一。
+3. `orders_idempotency_idx`: `orders(account_id, idempotency_key)` 当前是查询索引，不是唯一索引；应用层在发布 Redis 前做幂等预检。
+
+下单时的生成规则：
+
+1. 未传 `gateway_order_id` 时，relay 生成 `gw-*`。
+2. 未传 `client_order_id` 时，默认等于 `gateway_order_id`。
+3. 未传单笔 `idempotency_key` 时，默认 `order:{account_id}:{gateway_order_id}`。
+4. 未传批量 `idempotency_key` 时，默认 `batch:{account_id}:{batch_id}`，子订单幂等键默认为 `{batch_id}:{gateway_order_id}`。
+
+下单幂等预检：
+
+1. 先按 `account_id + gateway_order_id` 查订单。
+2. 已存在且幂等键不同：返回重复订单冲突，不发布 Redis。
+3. 已存在且幂等键相同、核心 payload 相同：返回已有订单，`replayed=true`，不发布 Redis。
+4. 已存在且幂等键相同、核心 payload 不同：返回 `IDEMPOTENCY_CONFLICT`，不发布 Redis。
+5. `gateway_order_id` 不存在时，再按 `account_id + idempotency_key` 查订单；同一幂等键被不同订单或不同 payload 使用时返回 `IDEMPOTENCY_CONFLICT`。
+
+这套应用层预检是为了避免在数据库唯一索引尚未清理历史重复键前阻塞线上联调。后续如要加数据库级 `orders(account_id, idempotency_key)` 部分唯一约束，需要先清理历史重复数据。
+
+### 成交编号
+
+成交事实必须关联订单。当前唯一性优先级：
+
+1. `fills(account_id, gateway_order_id, fill_id)`，当 `fill_id` 非空。
+2. `fills(account_id, order_stream_id, match_timestamp, qty, price)`，当 `fill_id` 为空且 fallback 字段足够。
+3. `fills(stream_key, stream_id)`，防止同一 Redis event/reply 被重复消费写入。
+
+前置测试环境已经出现过不同订单复用 `fill_id/match_stream_id` 的情况，因此 relay 不再把 `fill_id` 当账户级全局唯一键。前置发送 `fill.event` 时应尽量携带 `gateway_order_id`、`order_id`、`order_stream_id` 和 `fill_id/match_stream_id`；同一订单内成交编号必须稳定。
+
+### 事件和原始消息
+
+`order_events` 只追加，不覆盖历史。去重顺序：
+
+1. 有 `event_id` 时，`order_events(account_id, event_id)` 唯一。
+2. 有 Redis 来源时，`order_events(stream_key, stream_id)` 唯一。
+
+`raw_stream_messages(stream_key, stream_id)` 唯一，保存所有输入/输出原始消息。即使业务字段无法标准化，也必须保留 `body_text` 或 `body`，用于排查、重放和对账。
+
+### 终态保护
+
+`orders` upsert 会保护终态：
+
+1. 已终态订单不会被后续非终态事件改回 `created/accepted/working`。
+2. `cum_filled_qty`、`submitted_qty`、`cancelled_qty`、`invalid_qty` 使用非递减更新。
+3. `terminal_at` 只在进入终态时写入；已终态订单收到非终态事件时不会覆盖旧终态时间。
+4. 订单事件仍会追加到 `order_events`，保留异常回报历史。
 
 ## 交易日与时间字段
 
@@ -202,14 +266,7 @@ PostgreSQL 连接信息来源：
 3. 连接方式和授权信息查阅 `http://doc.quantstage.com`。
 4. 仓库只保存配置模板，不保存真实密码、Token、生产账号或生产连接串。
 
-建议后续增加：
-
-- `config/relay.example.yaml`
-- `config/relay.local.yaml`
-- `config/relay.prod.yaml`
-- `RELAY_DATABASE_URL`
-- `RELAY_REDIS_URL`
-- `RELAY_CONFIG_PATH`
+当前配置模板为 `config/relay.example.yaml`；真实 `config/relay.local.yaml`、`config/relay.prod.yaml` 和环境变量如 `RELAY_DATABASE_URL`、`RELAY_REDIS_URL`、`RELAY_CONFIG_PATH` 只允许存在于部署机本地或安全环境中，不提交仓库。
 
 ## 与前置程序协作规则
 

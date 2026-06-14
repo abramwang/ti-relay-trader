@@ -80,9 +80,9 @@ var (
 		},
 		{
 			Slug:        "architecture",
-			Title:       "架构草案",
+			Title:       "架构与当前实现",
 			Path:        "docs/ARCHITECTURE.md",
-			Description: "Go + Python 分工、服务边界、多账户模型、持久化和实施顺序。",
+			Description: "Go + Python 分工、服务边界、多账户模型、Redis Stream、持久化和当前主链路。",
 		},
 		{
 			Slug:        "roadmap",
@@ -94,7 +94,7 @@ var (
 			Slug:        "data-model",
 			Title:       "数据模型与落盘",
 			Path:        "docs/DATA_MODEL.md",
-			Description: "PostgreSQL 落盘口径、C++ 结构体参考、标准字段映射和账表建议。",
+			Description: "PostgreSQL 落盘口径、C++ 结构体参考、标准字段映射、编号唯一性和账表约束。",
 		},
 		{
 			Slug:        "migrations",
@@ -508,7 +508,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 </section>
 <section class="grid">
   <a class="card" href="/docs/readme"><strong>README</strong><span>恢复卡片、状态、待办</span></a>
-  <a class="card" href="/docs/architecture"><strong>架构草案</strong><span>Go + Python 服务边界</span></a>
+  <a class="card" href="/docs/architecture"><strong>架构实现</strong><span>Go + Python 服务边界</span></a>
   <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
   <a class="card" href="/docs/data-model"><strong>数据模型</strong><span>落盘与字段映射</span></a>
   <a class="card" href="/docs/migrations"><strong>PostgreSQL Migration</strong><span>交易账本首版 DDL</span></a>

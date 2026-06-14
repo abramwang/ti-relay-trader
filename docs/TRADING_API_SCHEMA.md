@@ -157,7 +157,16 @@ rejected
 1. `account_id`、`symbol`、`exchange`、`trade_side`、`business_type` 必填。
 2. `price` 必须大于 0。
 3. `qty` 必须大于 0。
-4. `gateway_order_id` 强烈建议传入，后续撤单和事件匹配都依赖它。
+4. `gateway_order_id` 可由调用方传入；未传时 relay 会生成 `gw-*`。无论来源如何，它都是撤单和事件匹配的北向主键。
+
+订单编号和幂等规则：
+
+1. `gateway_order_id` 在 `account_id` 内唯一，数据库唯一约束为 `orders(account_id, gateway_order_id)`。
+2. `client_order_id` 未传时默认等于 `gateway_order_id`；非空时在 `account_id` 内唯一。
+3. `idempotency_key` 未传时，单笔下单默认 `order:{account_id}:{gateway_order_id}`。
+4. 重复提交同一 `gateway_order_id + idempotency_key + payload` 会返回已有订单，`replayed=true`，不再写 Redis。
+5. 同一 `gateway_order_id` 换幂等键，或同一幂等键换 `gateway_order_id/payload`，返回 `409` 冲突。
+6. 批量下单的整批 `idempotency_key` 对整批 payload 生效，子订单仍各自拥有 `gateway_order_id` 和子订单幂等键。
 
 ### BatchSubmitOrderRequest
 
@@ -342,5 +351,5 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 ## 后续工作
 
-1. 接入 Meridian `bars`，补全历史行情和账户绩效序列。
-2. 增加常驻 worker 心跳状态和 DLQ 告警。
+1. 增加常驻 worker 心跳状态和 DLQ 告警。
+2. 如需同步涨跌停预校验，等待 Meridian 提供交易规则或涨跌停口径后再接入，不在 relay 内自建行情规则。
