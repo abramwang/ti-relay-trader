@@ -655,9 +655,11 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.query
 
 成交去重规则：
 
-1. 优先使用 `adapter_context.match_stream_id` 或 `payload.fill_id` 去重。
+1. 优先使用 `account_id + gateway_order_id + adapter_context.match_stream_id` 或 `account_id + gateway_order_id + payload.fill_id` 去重。
 2. 如果柜台没有稳定成交流号，可以使用 `order_stream_id + match_timestamp + qty + price` 组合去重。
 3. 不要从订单累计成交差分反推成交明细；成交事实以 `fill.event` 为准。
+
+前置程序发送 `fill.event` 时应尽量携带 `gateway_order_id`、`order_id` 和 `order_stream_id`。Relay 支持 `fill_id/match_stream_id` 在不同订单间复用，但同一订单内的成交编号应保持稳定。
 
 ## 12. Heartbeat 心跳
 
@@ -1149,4 +1151,3 @@ print("sent", entry_id, message_id)
 5. 消费端状态机能正确处理 `accepted -> working -> filled/cancelled/rejected`。
 6. 心跳和 Redis consumer group 均无长期 pending。
 7. DLQ 能被监控并可追溯原始消息。
-

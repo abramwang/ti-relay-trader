@@ -102,6 +102,29 @@ func TestReconciliationIdempotencyMigrationContainsUniqueIndexes(t *testing.T) {
 	}
 }
 
+func TestFillIDOrderScopeMigrationReplacesAccountScopedIndex(t *testing.T) {
+	upSQL := readMigration(t, "000005_fill_id_order_scope.up.sql")
+	for _, snippet := range []string{
+		"DROP INDEX IF EXISTS fills_fill_id_unique",
+		"CREATE UNIQUE INDEX fills_fill_id_order_unique",
+		"ON fills(account_id, gateway_order_id, fill_id)",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("fill id order scope migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000005_fill_id_order_scope.down.sql")
+	for _, snippet := range []string{
+		"DROP INDEX IF EXISTS fills_fill_id_order_unique",
+		"CREATE UNIQUE INDEX fills_fill_id_unique",
+		"ON fills(account_id, fill_id)",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("fill id order scope rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

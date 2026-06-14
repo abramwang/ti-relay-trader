@@ -43,7 +43,7 @@ func NewMeridianClient(cfg config.MarketConfig) (*MeridianClient, error) {
 	}
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = 15 * time.Second
 	}
 	marketLevel := strings.TrimSpace(cfg.SnapshotMarketLevel)
 	if marketLevel == "" {

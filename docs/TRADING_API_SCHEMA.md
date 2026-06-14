@@ -251,8 +251,10 @@ rejected
 
 成交去重优先级：
 
-1. `fill_id`
+1. `account_id + gateway_order_id + fill_id`
 2. `order_stream_id + match_timestamp + qty + price`
+
+`fill_id` 对应的柜台成交流号或 `adapter_context.match_stream_id` 只要求在订单作用域内稳定，不要求在账户当日或全历史范围内唯一。策略端如果自行做成交回调去重，也应把 `gateway_order_id` 纳入 key。
 
 如果前置只推送订单累计成交量，而没有同步推送完整 `fill.event` 或 `fill_page`，relay 会在新订单事件入账时补一条汇总成交，保证订单账本和成交账本的数量口径向前一致。该补齐记录的 `fill_id` 形如 `relay-summary:<gateway_order_id>`，并在 `adapter_context` 中标记 `relay_synthesized=true`、`relay_synthesis_source=order.event/order_page`、`relay_synthesis_reason=order_filled_without_complete_fill_ledger`。这类记录不是柜台逐笔成交，策略端如果需要严格逐笔成交，可以按该标记过滤。
 

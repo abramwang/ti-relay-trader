@@ -170,7 +170,7 @@ func (cfg *Config) ApplyDefaults() {
 		cfg.Market.BaseURL = "http://meridian-data.quantstage.com"
 	}
 	if cfg.Market.TimeoutSeconds == 0 {
-		cfg.Market.TimeoutSeconds = 5
+		cfg.Market.TimeoutSeconds = 15
 	}
 	if cfg.Market.SnapshotMarketLevel == "" {
 		cfg.Market.SnapshotMarketLevel = "level1"

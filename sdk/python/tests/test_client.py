@@ -96,6 +96,29 @@ class RelayHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/v1/fills":
+            if query.get("symbol", [""])[0] == "dup-fill":
+                self._json(
+                    {
+                        "ok": True,
+                        "data": {
+                            "fills": [
+                                {
+                                    "fill_id": "reused-fill",
+                                    "account_id": "acct-1",
+                                    "gateway_order_id": "gw-a",
+                                    "qty": 100,
+                                },
+                                {
+                                    "fill_id": "reused-fill",
+                                    "account_id": "acct-1",
+                                    "gateway_order_id": "gw-b",
+                                    "qty": 200,
+                                },
+                            ]
+                        },
+                    }
+                )
+                return
             self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-1", "account_id": "acct-1", "qty": 100}]}})
             return
         if parsed.path == "/v1/history/orders":
@@ -396,6 +419,16 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0][0].fill_id, "fill-1")
         self.assertEqual(seen[0][1], "fill.changed")
+
+    def test_fill_callback_allows_same_fill_id_on_different_orders(self):
+        seen = []
+
+        self.client.watch_fills(
+            lambda fill, event: seen.append((fill.gateway_order_id, fill.fill_id, fill.qty)),
+            symbol="dup-fill",
+        )
+
+        self.assertEqual(seen, [("gw-a", "reused-fill", 100), ("gw-b", "reused-fill", 200)])
 
 
 if __name__ == "__main__":

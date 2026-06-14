@@ -112,7 +112,7 @@ relay 的核心域对象建议如下：
 | `Account` | 资金账户，包含 account_id、broker_id、gateway_id、交易权限、启停状态 |
 | `Gateway` | 前置服务实例，包含 env、broker_id、gateway_id、Redis stream prefix、心跳状态 |
 | `Order` | relay 标准订单，使用 gateway_order_id 作为跨系统主键 |
-| `Fill` | 成交事实，优先按 fill_id 或 match_stream_id 去重 |
+| `Fill` | 成交事实，优先按 account_id + gateway_order_id + fill_id 或 match_stream_id 去重 |
 | `Position` | 持仓快照和可卖数量，需考虑 A 股 T+1 |
 | `CashLedger` | 资金流水、冻结、解冻、成交扣款、费用 |
 | `ReconciliationRun` | 一次盘后对账任务 |

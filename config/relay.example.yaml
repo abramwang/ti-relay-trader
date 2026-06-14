@@ -28,7 +28,7 @@ redis:
 
 market:
   base_url: "http://meridian-data.quantstage.com"
-  timeout_seconds: 5
+  timeout_seconds: 15
   snapshot_market_level: "level1"
   snapshot_data_scope: "realtime"
 

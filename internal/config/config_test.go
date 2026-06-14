@@ -31,6 +31,9 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Market.BaseURL != "http://meridian-data.quantstage.com" {
 		t.Fatalf("market base url = %q", cfg.Market.BaseURL)
 	}
+	if cfg.Market.TimeoutSeconds != 15 {
+		t.Fatalf("market timeout = %d, want 15", cfg.Market.TimeoutSeconds)
+	}
 	if cfg.Market.SnapshotMarketLevel != "level1" || cfg.Market.SnapshotDataScope != "realtime" {
 		t.Fatalf("market snapshot defaults = %q/%q", cfg.Market.SnapshotMarketLevel, cfg.Market.SnapshotDataScope)
 	}

@@ -192,6 +192,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.5.tar.gz` 和 SHA256 校验文件，支持收盘结算快照落盘。
 - [x] 发布 `public/sdk/relay-sdk-0.1.6.tar.gz` 和 SHA256 校验文件，支持 job run 显式字段和 `completed` 状态兼容。
 - [x] 发布 `public/sdk/relay-sdk-0.1.7.tar.gz` 和 SHA256 校验文件，支持 performance、Meridian bars 和 reconciliation helper。
+- [x] 发布 `public/sdk/relay-sdk-0.1.8.tar.gz` 和 SHA256 校验文件，修复不同订单复用 `fill_id` 时的成交回调去重。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

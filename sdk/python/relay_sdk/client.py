@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.7"
+SDK_VERSION = "0.1.8"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -735,7 +735,7 @@ def _order_state(order: Order) -> tuple[Any, ...]:
 
 def _fill_key(fill: Fill) -> str:
     if fill.fill_id:
-        return fill.fill_id
+        return "|".join([fill.account_id, fill.gateway_order_id, fill.fill_id])
     return "|".join(
         [
             fill.account_id,

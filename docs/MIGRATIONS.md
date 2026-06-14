@@ -13,6 +13,10 @@ migrations/postgres/000002_stream_checkpoints.up.sql
 migrations/postgres/000002_stream_checkpoints.down.sql
 migrations/postgres/000003_job_runs.up.sql
 migrations/postgres/000003_job_runs.down.sql
+migrations/postgres/000004_reconciliation_idempotency.up.sql
+migrations/postgres/000004_reconciliation_idempotency.down.sql
+migrations/postgres/000005_fill_id_order_scope.up.sql
+migrations/postgres/000005_fill_id_order_scope.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -24,7 +28,9 @@ migrations/postgres/000003_job_runs.down.sql
 1. `000001_init_ledger` 已应用。
 2. `000002_stream_checkpoints` 已应用。
 3. `000003_job_runs` 已应用。
-4. `relay_schema_migrations` 已记录版本 `1:init_ledger`、`2:stream_checkpoints` 和 `3:job_runs`。
+4. `000004_reconciliation_idempotency` 已应用。
+5. `000005_fill_id_order_scope` 已应用。
+6. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `5:fill_id_order_scope`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -109,7 +115,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 ## 关键约束
 
 1. `orders(account_id, gateway_order_id)` 唯一，用作订单跨系统主键。
-2. `fills(account_id, fill_id)` 在 `fill_id` 存在时唯一。
+2. `fills(account_id, gateway_order_id, fill_id)` 在 `fill_id` 存在时唯一；前置/柜台的 `fill_id` 不能假设为账户级全局唯一。
 3. 如果 `fill_id` 缺失，`fills` 使用 `account_id + order_stream_id + match_timestamp + qty + price` 作为 fallback 去重。
 4. `order_events` 和 `fills` 对 `stream_key + stream_id` 做唯一约束，避免重复消费写入。
 5. `raw_stream_messages` 归档每条 Redis Stream 原始消息，保留 `body`、`body_text` 和 `parse_error`。
