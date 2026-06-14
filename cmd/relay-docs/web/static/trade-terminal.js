@@ -31,6 +31,8 @@
     performanceError: "",
     barsRows: [],
     barsMeta: null,
+    barsSecurityID: "",
+    barsTradeDate: "",
     barsLoaded: false,
     barsError: "",
     chartOrders: [],
@@ -42,6 +44,7 @@
     streamConnected: false,
     streamRefreshTimer: 0,
     chartMarkerRefreshTimer: 0,
+    chartLoadTimer: 0,
     streamErrorLoggedAt: 0
   };
 
@@ -130,6 +133,8 @@
     performanceSeriesBody: byID("performanceSeriesBody"),
     minuteChart: byID("minuteChart"),
     minuteChartStatus: byID("minuteChartStatus"),
+    chartTradeDateInput: byID("chartTradeDateInput"),
+    reloadChartButton: byID("reloadChartButton"),
     perfDailyDate: byID("perfDailyDate"),
     perfPositions: byID("perfPositions"),
     perfPositionValue: byID("perfPositionValue"),
@@ -508,6 +513,23 @@
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
+    if (view === "trade" && state.initialized) {
+      ensureChartDefaults();
+      const securityID = currentSecurityID();
+      const tradeDate = currentChartTradeDate();
+      if (!state.barsLoaded || !barsMatch(securityID, tradeDate)) {
+        loadTradeChartBars({ silent: true }).catch((err) => pushLog("warn", "K线查询失败", err.message));
+      } else {
+        window.setTimeout(() => {
+          refreshMinuteChartMarkers()
+            .catch((err) => pushLog("warn", "图表买卖点刷新失败", err.message))
+            .finally(() => {
+              renderMinuteChart();
+              resizeMinuteChart();
+            });
+        }, 0);
+      }
+    }
     if (view === "performance" && state.initialized) {
       ensurePerformanceDefaults();
       if (state.activeAccount && !state.performanceLoaded) {
@@ -665,7 +687,7 @@
     if (type !== "order.changed" && type !== "fill.changed") {
       return;
     }
-    if (state.activeView !== "performance" || !state.barsLoaded || !state.activeAccount) {
+    if (state.activeView !== "trade" || !state.barsLoaded || !state.activeAccount) {
       return;
     }
     window.clearTimeout(state.chartMarkerRefreshTimer);
@@ -678,9 +700,19 @@
     }, 350);
   }
 
+  function scheduleTradeChartLoad(delay = 360) {
+    window.clearTimeout(state.chartLoadTimer);
+    if (!state.initialized || state.activeView !== "trade") {
+      return;
+    }
+    state.chartLoadTimer = window.setTimeout(() => {
+      loadTradeChartBars({ silent: true }).catch((err) => pushLog("warn", "K线查询失败", err.message));
+    }, delay);
+  }
+
   async function refreshMinuteChartMarkers() {
-    const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
-    const tradeDate = effectiveBarsTradeDate(els.barTradeDateInput.value);
+    const securityID = normalizeSecurityID(state.barsSecurityID || currentSecurityID());
+    const tradeDate = effectiveBarsTradeDate(state.barsTradeDate || currentChartTradeDate());
     if (!securityID || !tradeDate) {
       return;
     }
@@ -1053,6 +1085,9 @@
         renderAccounts();
         connectEventStream();
         await refreshNow();
+        if (state.activeView === "trade") {
+          await loadTradeChartBars({ silent: true });
+        }
         if (state.activeView === "performance") {
           await loadPerformance();
         }
@@ -1470,6 +1505,41 @@
     if (!els.barSecurityInput.value) {
       els.barSecurityInput.value = currentSecurityID() || "600000.SH";
     }
+    ensureChartDefaults();
+  }
+
+  function ensureChartDefaults() {
+    if (!els.chartTradeDateInput) {
+      return;
+    }
+    if (!els.chartTradeDateInput.value) {
+      els.chartTradeDateInput.value = defaultQueryDate();
+    }
+  }
+
+  function currentChartTradeDate() {
+    ensureChartDefaults();
+    return compactDate(els.chartTradeDateInput && els.chartTradeDateInput.value) || defaultQueryDate();
+  }
+
+  function syncBarsInputs(securityID, tradeDate) {
+    if (els.chartTradeDateInput && tradeDate) {
+      els.chartTradeDateInput.value = tradeDate;
+    }
+    if (els.barSecurityInput && securityID) {
+      els.barSecurityInput.value = securityID;
+    }
+    if (els.barTradeDateInput && tradeDate) {
+      els.barTradeDateInput.value = tradeDate;
+    }
+  }
+
+  function barsMatch(securityID, tradeDate) {
+    const loadedSecurityID = normalizeSecurityID(state.barsSecurityID || "");
+    const requestedSecurityID = normalizeSecurityID(securityID || "");
+    const loadedDate = compactDateLoose(state.barsTradeDate);
+    const requestedDate = compactDateLoose(tradeDate);
+    return Boolean(loadedSecurityID && requestedSecurityID && loadedSecurityID === requestedSecurityID && loadedDate && requestedDate && loadedDate === requestedDate);
   }
 
   function performanceParams() {
@@ -1606,23 +1676,62 @@
     if (!securityID || !tradeDate) {
       throw new Error("请输入 bars 标的和交易日");
     }
+    return loadBarsFor({
+      securityID,
+      tradeDate,
+      frequency: els.barFrequencyInput.value || "1m",
+      adjustment: els.barAdjustmentInput.value || "none",
+      startTime: String(els.barStartTimeInput.value || "").trim(),
+      endTime: String(els.barEndTimeInput.value || "").trim(),
+      source: "performance",
+      silent: false
+    });
+  }
+
+  async function loadTradeChartBars(options = {}) {
+    ensureChartDefaults();
+    const securityID = normalizeSecurityID(options.securityID || currentSecurityID());
+    const tradeDate = compactDate(options.tradeDate || currentChartTradeDate());
+    if (!securityID || !tradeDate) {
+      throw new Error("请输入 K 线标的和交易日");
+    }
+    return loadBarsFor({
+      securityID,
+      tradeDate,
+      frequency: "1m",
+      adjustment: "none",
+      startTime: "09:30:00",
+      endTime: "15:00:00",
+      source: "trade",
+      silent: options.silent !== false
+    });
+  }
+
+  async function loadBarsFor(options) {
+    const securityID = normalizeSecurityID(options.securityID || currentSecurityID());
+    const tradeDate = compactDate(options.tradeDate || defaultQueryDate());
+    if (!securityID || !tradeDate) {
+      throw new Error("请输入 bars 标的和交易日");
+    }
     const query = new URLSearchParams({
       security_id: securityID,
       trade_date: tradeDate,
-      frequency: els.barFrequencyInput.value || "1m",
-      adjustment: els.barAdjustmentInput.value || "none",
+      frequency: options.frequency || "1m",
+      adjustment: options.adjustment || "none",
       limit: "300"
     });
-    const startTime = String(els.barStartTimeInput.value || "").trim();
-    const endTime = String(els.barEndTimeInput.value || "").trim();
-    if (startTime) {
-      query.set("start_time", startTime);
+    if (options.startTime) {
+      query.set("start_time", options.startTime);
     }
-    if (endTime) {
-      query.set("end_time", endTime);
+    if (options.endTime) {
+      query.set("end_time", options.endTime);
     }
-    els.barsStatus.textContent = "查询中...";
-    els.loadBarsButton.disabled = true;
+    if (options.source === "performance") {
+      els.barsStatus.textContent = "查询中...";
+      els.loadBarsButton.disabled = true;
+    } else if (els.minuteChartStatus) {
+      els.minuteChartStatus.textContent = securityID + " · K线查询中...";
+    }
     try {
       const data = await request("/v1/meridian/market/bars?" + query.toString());
       if (data.error) {
@@ -1633,8 +1742,9 @@
       state.barsMeta = data.meta || null;
       state.barsLoaded = true;
       const effectiveTradeDate = effectiveBarsTradeDate(tradeDate);
-      els.barSecurityInput.value = securityID;
-      els.barTradeDateInput.value = effectiveTradeDate;
+      state.barsSecurityID = securityID;
+      state.barsTradeDate = effectiveTradeDate;
+      syncBarsInputs(securityID, effectiveTradeDate);
       try {
         await loadChartMarkers(securityID, effectiveTradeDate);
       } catch (markerErr) {
@@ -1643,15 +1753,23 @@
         pushLog("warn", "图表买卖点读取失败", markerErr.message);
       }
       renderBars();
-      showToast("Bars 数据已更新");
+      if (!options.silent) {
+        showToast("Bars 数据已更新");
+      }
     } catch (err) {
       state.barsLoaded = false;
       state.barsError = err.message;
+      state.barsSecurityID = securityID;
+      state.barsTradeDate = tradeDate;
       pushLog("warn", "Bars 查询失败", securityID + " " + err.message);
-      showToast("Bars 查询失败：" + err.message, "error");
+      if (!options.silent) {
+        showToast("Bars 查询失败：" + err.message, "error");
+      }
       renderBars();
     } finally {
-      els.loadBarsButton.disabled = false;
+      if (options.source === "performance") {
+        els.loadBarsButton.disabled = false;
+      }
     }
   }
 
@@ -1735,7 +1853,7 @@
     if (!els.minuteChart || !els.minuteChartStatus) {
       return;
     }
-    if (state.activeView !== "performance") {
+    if (state.activeView !== "trade") {
       return;
     }
     const rows = state.barsRows || [];
@@ -1750,11 +1868,15 @@
     }
     const chartRows = rows.slice().sort(compareBarRows);
     const labels = chartRows.map((row) => minuteLabel(row.datetime || row.trade_date));
-    const closes = chartRows.map((row) => numericOrNull(row.close));
+    const candles = chartRows.map(candleValues);
+    const volumes = chartRows.map((row) => ({
+      value: numericOrNull(row.volume) || 0,
+      itemStyle: { color: isUpBar(row) ? "rgba(200,16,46,0.52)" : "rgba(0,138,99,0.52)" }
+    }));
     const markers = chartMarkers(labels);
     const latest = chartRows[chartRows.length - 1] || {};
-    const tradeDate = effectiveBarsTradeDate(els.barTradeDateInput.value);
-    const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
+    const tradeDate = effectiveBarsTradeDate(state.barsTradeDate || currentChartTradeDate());
+    const securityID = normalizeSecurityID(state.barsSecurityID || currentSecurityID());
     els.minuteChartStatus.textContent = [
       securityID,
       displayDate(tradeDate),
@@ -1764,8 +1886,11 @@
     ].join(" · ");
     chart.setOption({
       animation: false,
-      color: ["#101828", "#c8102e", "#008a63"],
-      grid: { left: 58, right: 18, top: 26, bottom: 42 },
+      color: ["#c8102e", "#008a63", "#667085"],
+      grid: [
+        { left: 58, right: 18, top: 28, height: "58%" },
+        { left: 58, right: 18, bottom: 36, height: "18%" }
+      ],
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross" },
@@ -1777,37 +1902,74 @@
         itemWidth: 12,
         itemHeight: 8,
         textStyle: { color: "#475467", fontSize: 11 },
-        data: ["Close", "买点", "卖点"]
+        data: ["K线", "成交量", "买点", "卖点"]
       },
-      xAxis: {
-        type: "category",
-        boundaryGap: false,
-        data: labels,
-        axisLabel: { color: "#667085", fontSize: 11 },
-        axisLine: { lineStyle: { color: "#cfd7e3" } }
+      axisPointer: {
+        link: [{ xAxisIndex: [0, 1] }]
       },
-      yAxis: {
-        type: "value",
-        scale: true,
-        axisLabel: { color: "#667085", fontSize: 11, formatter: (value) => formatPrice(value, latest) },
-        splitLine: { lineStyle: { color: "#e4e9f0" } }
-      },
+      xAxis: [
+        {
+          type: "category",
+          data: labels,
+          boundaryGap: true,
+          axisLabel: { color: "#667085", fontSize: 11 },
+          axisLine: { lineStyle: { color: "#cfd7e3" } }
+        },
+        {
+          type: "category",
+          gridIndex: 1,
+          data: labels,
+          boundaryGap: true,
+          axisLabel: { show: false },
+          axisTick: { show: false },
+          axisLine: { lineStyle: { color: "#cfd7e3" } }
+        }
+      ],
+      yAxis: [
+        {
+          type: "value",
+          scale: true,
+          axisLabel: { color: "#667085", fontSize: 11, formatter: (value) => formatPrice(value, latest) },
+          splitLine: { lineStyle: { color: "#e4e9f0" } }
+        },
+        {
+          type: "value",
+          gridIndex: 1,
+          scale: true,
+          axisLabel: { color: "#667085", fontSize: 10, formatter: formatCompactVolume },
+          splitNumber: 2,
+          splitLine: { lineStyle: { color: "#edf1f6" } }
+        }
+      ],
       dataZoom: [
-        { type: "inside", throttle: 60 },
-        { type: "slider", height: 18, bottom: 12, borderColor: "#cfd7e3" }
+        { type: "inside", xAxisIndex: [0, 1], throttle: 60 },
+        { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 8, borderColor: "#cfd7e3" }
       ],
       series: [
         {
-          name: "Close",
-          type: "line",
-          data: closes,
-          showSymbol: false,
-          smooth: false,
-          lineStyle: { width: 1.8, color: "#101828" }
+          name: "K线",
+          type: "candlestick",
+          data: candles,
+          itemStyle: {
+            color: "#c8102e",
+            color0: "#008a63",
+            borderColor: "#a10d24",
+            borderColor0: "#006b4d"
+          }
+        },
+        {
+          name: "成交量",
+          type: "bar",
+          xAxisIndex: 1,
+          yAxisIndex: 1,
+          data: volumes,
+          barMaxWidth: 8
         },
         {
           name: "买点",
           type: "scatter",
+          xAxisIndex: 0,
+          yAxisIndex: 0,
           data: markers.buy,
           symbol: "triangle",
           symbolSize: 12,
@@ -1816,6 +1978,8 @@
         {
           name: "卖点",
           type: "scatter",
+          xAxisIndex: 0,
+          yAxisIndex: 0,
           data: markers.sell,
           symbol: "triangle",
           symbolRotate: 180,
@@ -1900,7 +2064,7 @@
     const priceItem = row && row.instrument_type ? row : (rows[0] || {});
     const lines = [
       escapeHTML(label),
-      "收 " + escapeHTML(formatPrice(row.close, row)),
+      "开 " + escapeHTML(formatPrice(row.open, row)) + " / 收 " + escapeHTML(formatPrice(row.close, row)),
       "高 " + escapeHTML(formatPrice(row.high, row)) + " / 低 " + escapeHTML(formatPrice(row.low, row)),
       "量 " + escapeHTML(formatInt(row.volume))
     ];
@@ -1923,6 +2087,44 @@
   function numericOrNull(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
+  }
+
+  function numericOrFallback(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function candleValues(row) {
+    const close = numericOrNull(row.close);
+    return [
+      numericOrFallback(row.open, close),
+      close,
+      numericOrFallback(row.low, close),
+      numericOrFallback(row.high, close)
+    ];
+  }
+
+  function isUpBar(row) {
+    const open = Number(row.open);
+    const close = Number(row.close);
+    if (!Number.isFinite(open) || !Number.isFinite(close)) {
+      return true;
+    }
+    return close >= open;
+  }
+
+  function formatCompactVolume(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    if (Math.abs(number) >= 100000000) {
+      return (number / 100000000).toFixed(1) + "亿";
+    }
+    if (Math.abs(number) >= 10000) {
+      return (number / 10000).toFixed(1) + "万";
+    }
+    return String(Math.round(number));
   }
 
   function compareBarRows(left, right) {
@@ -2082,6 +2284,7 @@
     state.priceEdited = false;
     applyPriceInputPrecision(item);
     loadQuoteForInput({ securityID: item.security_id }).catch((err) => pushLog("warn", "行情刷新失败", err.message));
+    scheduleTradeChartLoad(120);
   }
 
   function hideSuggestions() {
@@ -2374,6 +2577,9 @@
       resetLedgerPages();
       connectEventStream();
       await refreshNow();
+      if (state.activeView === "trade") {
+        await loadTradeChartBars({ silent: true });
+      }
       if (state.activeView === "performance") {
         await loadPerformance();
       }
@@ -2397,7 +2603,10 @@
       symbolTimer = window.setTimeout(loadSymbolSuggestions, 220);
       if (els.symbolInput.value.length === 6) {
         state.priceEdited = false;
-        quoteTimer = window.setTimeout(() => loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message)), 320);
+        quoteTimer = window.setTimeout(() => {
+          loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
+          scheduleTradeChartLoad(120);
+        }, 320);
       }
     });
     els.symbolInput.addEventListener("keydown", (event) => {
@@ -2434,6 +2643,7 @@
     els.exchangeInput.addEventListener("change", () => {
       state.priceEdited = false;
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
+      scheduleTradeChartLoad(120);
     });
     els.orderForm.addEventListener("submit", submitOrder);
     els.resetOrderButton.addEventListener("click", () => {
@@ -2443,6 +2653,7 @@
       state.priceEdited = false;
       updateSide("B");
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
+      scheduleTradeChartLoad(120);
     });
     els.refreshAssetButton.addEventListener("click", () => refreshAccountResource("asset"));
     els.refreshPositionsButton.addEventListener("click", () => refreshAccountResource("positions"));
@@ -2475,6 +2686,18 @@
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
+    els.reloadChartButton.addEventListener("click", () => loadTradeChartBars({ silent: false }).catch((err) => showToast(err.message, "error")));
+    els.chartTradeDateInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadTradeChartBars({ silent: false }).catch((err) => showToast(err.message, "error"));
+      }
+    });
+    els.chartTradeDateInput.addEventListener("blur", () => {
+      const tradeDate = compactDate(els.chartTradeDateInput.value);
+      if (tradeDate) {
+        els.chartTradeDateInput.value = tradeDate;
+      }
+    });
     els.barSecurityInput.addEventListener("blur", () => {
       const securityID = normalizeSecurityID(els.barSecurityInput.value);
       if (securityID) {
@@ -2513,6 +2736,7 @@
       navigateView("trade");
       updateSide("S");
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
+      scheduleTradeChartLoad(120);
     });
     els.closeDetailButton.addEventListener("click", () => {
       state.selectedOrderID = "";
@@ -2539,6 +2763,8 @@
       if (state.activeView === "performance") {
         await loadPerformance();
         await loadBars();
+      } else if (state.activeView === "trade") {
+        await loadTradeChartBars({ silent: true });
       }
       pushLog("info", "交易终端初始化完成");
     } catch (err) {

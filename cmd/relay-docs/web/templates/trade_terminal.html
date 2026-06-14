@@ -111,6 +111,25 @@
         </form>
       </section>
 
+      <section class="trade-panel chart-panel" id="tradeChartPanel" aria-label="分钟 K 线">
+        <div class="section-toolbar chart-toolbar">
+          <div>
+            <h2>分钟 K 线</h2>
+            <span id="minuteChartStatus">等待 Meridian bars</span>
+          </div>
+          <div class="toolbar-actions">
+            <label class="date-filter">
+              <span>交易日</span>
+              <input id="chartTradeDateInput" inputmode="numeric" placeholder="20260612">
+            </label>
+            <button type="button" id="reloadChartButton">刷新K线</button>
+          </div>
+        </div>
+        <div class="minute-chart-shell trade-chart-shell">
+          <div id="minuteChart" class="minute-chart"></div>
+        </div>
+      </section>
+
       <section class="trade-panel portfolio-panel" id="assetPanel" aria-label="资金持仓">
         <div class="metric-strip" id="metricStrip">
           <div><span>总资产</span><strong id="netAsset">--</strong></div>
@@ -224,13 +243,6 @@
 
         <div class="performance-body">
           <section class="performance-section series-section">
-            <div class="section-toolbar">
-              <h2>当日分钟线</h2>
-              <span id="minuteChartStatus">等待 Meridian bars</span>
-            </div>
-            <div class="minute-chart-shell">
-              <div id="minuteChart" class="minute-chart"></div>
-            </div>
             <div class="section-toolbar series-toolbar">
               <h2>账户绩效序列</h2>
               <span id="performanceStatus">等待查询</span>
