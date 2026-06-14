@@ -1,0 +1,725 @@
+(() => {
+  const state = {
+    accounts: [],
+    activeAccount: "",
+    asset: null,
+    positions: [],
+    orders: [],
+    fills: [],
+    selectedOrderID: "",
+    selectedTab: "orders",
+    side: "B",
+    paused: false,
+    logs: [],
+    lastPayload: {},
+    orderSignatures: new Map(),
+    changedOrders: new Map(),
+    pollID: 0
+  };
+
+  const els = {
+    apiStatus: byID("apiStatus"),
+    redisStatus: byID("redisStatus"),
+    dbStatus: byID("dbStatus"),
+    accountTabs: byID("accountTabs"),
+    tradeDate: byID("tradeDate"),
+    serverClock: byID("serverClock"),
+    footerClock: byID("footerClock"),
+    footerApi: byID("footerApi"),
+    footerRedis: byID("footerRedis"),
+    refreshAllButton: byID("refreshAllButton"),
+    pauseButton: byID("pauseButton"),
+    orderAccount: byID("orderAccount"),
+    orderForm: byID("orderForm"),
+    symbolInput: byID("symbolInput"),
+    exchangeInput: byID("exchangeInput"),
+    priceInput: byID("priceInput"),
+    qtyInput: byID("qtyInput"),
+    maxBuy: byID("maxBuy"),
+    availableCash: byID("availableCash"),
+    riskAlert: byID("riskAlert"),
+    submitOrderButton: byID("submitOrderButton"),
+    resetOrderButton: byID("resetOrderButton"),
+    refreshAssetButton: byID("refreshAssetButton"),
+    refreshPositionsButton: byID("refreshPositionsButton"),
+    netAsset: byID("netAsset"),
+    cashAvailable: byID("cashAvailable"),
+    marketValue: byID("marketValue"),
+    dayProfit: byID("dayProfit"),
+    positionsBody: byID("positionsBody"),
+    blotterTabs: byID("blotterTabs"),
+    blotterContent: byID("blotterContent"),
+    detailSub: byID("detailSub"),
+    timeline: byID("timeline"),
+    rawJson: byID("rawJson"),
+    executionList: byID("executionList"),
+    closeDetailButton: byID("closeDetailButton"),
+    toast: byID("terminalToast"),
+    depthBook: byID("depthBook")
+  };
+
+  function byID(id) {
+    return document.getElementById(id);
+  }
+
+  function apiURL(path) {
+    return path;
+  }
+
+  async function request(path, options = {}) {
+    const init = {
+      method: options.method || "GET",
+      headers: {
+        "X-Request-ID": "relay-trade-" + Date.now()
+      }
+    };
+    if (options.body) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(options.body);
+    }
+    const response = await fetch(apiURL(path), init);
+    const text = await response.text();
+    let payload = {};
+    if (text) {
+      payload = JSON.parse(text);
+    }
+    state.lastPayload = payload;
+    if (!response.ok || payload.ok === false) {
+      const message = payload.error && payload.error.message ? payload.error.message : "HTTP " + response.status;
+      const error = new Error(message);
+      error.payload = payload;
+      throw error;
+    }
+    return Object.prototype.hasOwnProperty.call(payload, "data") ? payload.data : payload;
+  }
+
+  function formatNumber(value, digits = 2) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    return number.toLocaleString("en-US", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function formatInt(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    return Math.trunc(number).toLocaleString("en-US");
+  }
+
+  function formatTime(value) {
+    if (!value) {
+      return "--";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return date.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  function symbolText(item) {
+    if (!item) {
+      return "--";
+    }
+    return item.symbol + (item.exchange ? "." + item.exchange : "");
+  }
+
+  function sideText(side) {
+    return side === "S" ? "卖出" : "买入";
+  }
+
+  function statusText(status) {
+    return {
+      created: "已提交",
+      accepted: "已受理",
+      working: "已报待成",
+      partially_filled: "部分成交",
+      filled: "全部成交",
+      cancelled: "已撤",
+      rejected: "废单"
+    }[status] || status || "--";
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function setStatus(el, ok, label) {
+    el.classList.toggle("danger", !ok);
+    const text = el.childNodes[1];
+    if (text) {
+      text.nodeValue = label;
+    } else {
+      el.append(label);
+    }
+  }
+
+  function pushLog(level, message, detail) {
+    state.logs.unshift({
+      at: new Date(),
+      level,
+      message,
+      detail: detail || ""
+    });
+    state.logs = state.logs.slice(0, 80);
+    if (state.selectedTab === "logs") {
+      renderBlotter();
+    }
+  }
+
+  function showToast(message, type = "info") {
+    els.toast.textContent = message;
+    els.toast.classList.toggle("error", type === "error");
+  }
+
+  async function loadStatus() {
+    try {
+      const data = await request("/v1/status");
+      setStatus(els.apiStatus, true, "API: connected");
+      setStatus(els.redisStatus, true, "Redis: live");
+      setStatus(els.dbStatus, true, "DB: live");
+      els.footerApi.textContent = data.public_url || window.RELAY_PUBLIC_URL || "connected";
+      els.footerRedis.textContent = "poll 3s";
+      if (data.time) {
+        syncClock(data.time);
+      }
+    } catch (err) {
+      setStatus(els.apiStatus, false, "API: error");
+      setStatus(els.redisStatus, false, "Redis: unknown");
+      setStatus(els.dbStatus, false, "DB: unknown");
+      pushLog("error", "状态接口失败", err.message);
+    }
+  }
+
+  async function loadAccounts() {
+    const data = await request("/v1/accounts");
+    state.accounts = data.accounts || [];
+    if (!state.activeAccount && state.accounts.length > 0) {
+      state.activeAccount = state.accounts[0].account_id;
+    }
+    renderAccounts();
+  }
+
+  async function loadAccountData() {
+    if (!state.activeAccount) {
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const [assetResult, positionsResult, ordersResult, fillsResult] = await Promise.allSettled([
+      request("/v1/accounts/" + accountID + "/asset"),
+      request("/v1/accounts/" + accountID + "/positions?limit=100"),
+      request("/v1/orders?account_id=" + accountID + "&limit=100"),
+      request("/v1/fills?account_id=" + accountID + "&limit=100")
+    ]);
+
+    if (assetResult.status === "fulfilled") {
+      state.asset = assetResult.value.asset;
+    } else {
+      pushLog("warn", "资金读取失败", assetResult.reason.message);
+    }
+    if (positionsResult.status === "fulfilled") {
+      state.positions = positionsResult.value.positions || [];
+    } else {
+      pushLog("warn", "持仓读取失败", positionsResult.reason.message);
+    }
+    if (ordersResult.status === "fulfilled") {
+      updateOrders(ordersResult.value.orders || []);
+    } else {
+      pushLog("warn", "订单读取失败", ordersResult.reason.message);
+    }
+    if (fillsResult.status === "fulfilled") {
+      state.fills = fillsResult.value.fills || [];
+    } else {
+      pushLog("warn", "成交读取失败", fillsResult.reason.message);
+    }
+
+    renderAll();
+  }
+
+  function updateOrders(nextOrders) {
+    const now = Date.now();
+    for (const order of nextOrders) {
+      const id = order.gateway_order_id || order.client_order_id || "";
+      const signature = [
+        order.status,
+        order.gateway_status,
+        order.cum_filled_qty,
+        order.leaves_qty,
+        order.last_updated_at,
+        order.reject_message
+      ].join("|");
+      const previous = state.orderSignatures.get(id);
+      if (previous && previous !== signature) {
+        state.changedOrders.set(id, now);
+        pushLog("info", "订单状态更新", id + " -> " + statusText(order.status));
+      }
+      state.orderSignatures.set(id, signature);
+    }
+    state.orders = nextOrders;
+    if (!state.selectedOrderID && state.orders.length > 0) {
+      state.selectedOrderID = state.orders[0].gateway_order_id;
+    }
+  }
+
+  function renderAccounts() {
+    els.accountTabs.innerHTML = "";
+    els.orderAccount.innerHTML = "";
+    if (state.accounts.length === 0) {
+      els.accountTabs.innerHTML = '<button type="button" class="active">无账户</button>';
+      return;
+    }
+    for (const account of state.accounts) {
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = account.account_id === state.activeAccount ? "active" : "";
+      tab.textContent = account.account_id + (account.simulated ? " (模拟)" : "");
+      tab.addEventListener("click", async () => {
+        state.activeAccount = account.account_id;
+        state.selectedOrderID = "";
+        renderAccounts();
+        await refreshNow();
+      });
+      els.accountTabs.appendChild(tab);
+
+      const option = document.createElement("option");
+      option.value = account.account_id;
+      option.textContent = account.account_id;
+      option.selected = account.account_id === state.activeAccount;
+      els.orderAccount.appendChild(option);
+    }
+  }
+
+  function renderMetrics() {
+    const asset = state.asset || {};
+    els.netAsset.textContent = formatNumber(asset.net_asset);
+    els.cashAvailable.textContent = formatNumber(asset.cash_available);
+    els.marketValue.textContent = formatNumber(asset.market_value);
+    els.dayProfit.textContent = formatSigned(asset.day_profit);
+    els.dayProfit.className = Number(asset.day_profit) < 0 ? "down" : "up";
+    els.availableCash.textContent = formatNumber(asset.cash_available);
+    const price = Number(els.priceInput.value);
+    const maxBuy = price > 0 ? Math.floor(Number(asset.cash_available || 0) / price / 100) * 100 : 0;
+    els.maxBuy.textContent = maxBuy > 0 ? formatInt(maxBuy) : "--";
+  }
+
+  function formatSigned(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    const prefix = number > 0 ? "+" : "";
+    return prefix + formatNumber(number);
+  }
+
+  function renderPositions() {
+    if (state.positions.length === 0) {
+      els.positionsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无持仓数据</div></td></tr>';
+      return;
+    }
+    els.positionsBody.innerHTML = state.positions.map((position) => {
+      const pnl = Number(position.unrealized_pnl || 0);
+      const pnlClass = pnl < 0 ? "down" : "up";
+      const pnlRatio = position.market_value ? pnl / Number(position.market_value) * 100 : 0;
+      return `
+        <tr>
+          <td><span class="row-title"><strong>${escapeHTML(symbolText(position))}</strong><span>${escapeHTML(position.name || "")}</span></span></td>
+          <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
+          <td class="num">${formatNumber(position.avg_cost)}<br><span class="${Number(position.last_price) < Number(position.avg_cost) ? "down" : "up"}">${formatNumber(position.last_price)}</span></td>
+          <td class="num">${formatNumber(position.market_value)}</td>
+          <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${formatSigned(pnlRatio)}%</td>
+          <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
+        </tr>`;
+    }).join("");
+  }
+
+  function renderBlotter() {
+    for (const button of els.blotterTabs.querySelectorAll("button")) {
+      button.classList.toggle("active", button.dataset.tab === state.selectedTab);
+    }
+    if (state.selectedTab === "orders") {
+      renderOrdersTable();
+      return;
+    }
+    if (state.selectedTab === "fills") {
+      renderFillsTable();
+      return;
+    }
+    if (state.selectedTab === "logs") {
+      renderLogs();
+      return;
+    }
+    if (state.selectedTab === "raw") {
+      els.blotterContent.innerHTML = '<pre class="raw-block">' + escapeHTML(JSON.stringify(state.lastPayload || {}, null, 2)) + "</pre>";
+      return;
+    }
+    els.blotterContent.innerHTML = '<div class="empty-state">撤单记录将在撤单查询接口完成后展示</div>';
+  }
+
+  function renderOrdersTable() {
+    if (state.orders.length === 0) {
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无当日委托</div>';
+      return;
+    }
+    const now = Date.now();
+    els.blotterContent.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>委托编号</th>
+            <th>代码</th>
+            <th>方向</th>
+            <th class="num">委托价格</th>
+            <th class="num">委托/成交</th>
+            <th>状态</th>
+            <th>委托时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.orders.map((order) => {
+            const id = order.gateway_order_id || order.client_order_id || "";
+            const changedAt = state.changedOrders.get(id) || 0;
+            const className = [
+              id === state.selectedOrderID ? "selected" : "",
+              now - changedAt < 3600 ? "flash" : ""
+            ].join(" ");
+            return `
+              <tr class="${className}" data-order-id="${escapeHTML(id)}">
+                <td>${escapeHTML(id)}</td>
+                <td>${escapeHTML(symbolText(order))}</td>
+                <td class="${order.trade_side === "S" ? "down" : "up"}">${sideText(order.trade_side)}</td>
+                <td class="num">${formatNumber(order.limit_price)}</td>
+                <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
+                <td><span class="status-badge ${escapeHTML(order.status)}">${statusText(order.status)}</span></td>
+                <td>${formatTime(order.created_at || order.inserted_at)}</td>
+                <td>${order.is_terminal ? '<span class="muted">已完成</span>' : '<button type="button" class="row-action" data-cancel-id="' + escapeHTML(id) + '">撤单</button>'}</td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderFillsTable() {
+    if (state.fills.length === 0) {
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无当日成交</div>';
+      return;
+    }
+    els.blotterContent.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>成交编号</th>
+            <th>委托编号</th>
+            <th>代码</th>
+            <th>方向</th>
+            <th class="num">成交价格</th>
+            <th class="num">成交数量</th>
+            <th>成交时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.fills.map((fill) => `
+            <tr>
+              <td>${escapeHTML(fill.fill_id)}</td>
+              <td>${escapeHTML(fill.gateway_order_id)}</td>
+              <td>${escapeHTML(symbolText(fill))}</td>
+              <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
+              <td class="num">${formatNumber(fill.price)}</td>
+              <td class="num">${formatInt(fill.qty)}</td>
+              <td>${formatTime(fill.matched_at)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderLogs() {
+    if (state.logs.length === 0) {
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无推送日志</div>';
+      return;
+    }
+    els.blotterContent.innerHTML = '<ul class="log-list">' + state.logs.map((log) => `
+      <li>[${formatTime(log.at)}] ${escapeHTML(log.level.toUpperCase())} ${escapeHTML(log.message)} ${escapeHTML(log.detail)}</li>
+    `).join("") + "</ul>";
+  }
+
+  function renderDetail() {
+    const order = state.orders.find((item) => item.gateway_order_id === state.selectedOrderID);
+    if (!order) {
+      els.detailSub.textContent = "请选择订单";
+      els.timeline.innerHTML = '<div class="empty-state">暂无状态轨迹</div>';
+      els.rawJson.textContent = "{}";
+      els.executionList.textContent = "暂无成交执行记录...";
+      return;
+    }
+    els.detailSub.textContent = "OID: " + order.gateway_order_id;
+    const events = [
+      ["下单指令生成", order.created_at || order.inserted_at],
+      ["柜台受理", order.accepted_at],
+      ["状态刷新 " + statusText(order.status), order.last_updated_at],
+      order.terminal_at ? ["终态确认", order.terminal_at] : null
+    ].filter(Boolean);
+    els.timeline.innerHTML = events.map((item) => `
+      <div class="timeline-item">
+        <strong>${escapeHTML(item[0])}</strong>
+        <span>${formatTime(item[1])}</span>
+      </div>
+    `).join("");
+    els.rawJson.textContent = JSON.stringify(order, null, 2);
+    const fills = state.fills.filter((fill) => fill.gateway_order_id === order.gateway_order_id);
+    if (fills.length === 0) {
+      els.executionList.textContent = "暂无成交执行记录...";
+      return;
+    }
+    els.executionList.innerHTML = `
+      <table>
+        <thead><tr><th>成交编号</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
+        <tbody>${fills.map((fill) => `
+          <tr><td>${escapeHTML(fill.fill_id)}</td><td class="num">${formatNumber(fill.price)}</td><td class="num">${formatInt(fill.qty)}</td></tr>
+        `).join("")}</tbody>
+      </table>`;
+  }
+
+  function renderDepthBook() {
+    const asks = [
+      ["卖 5", 9.72, 1240],
+      ["卖 4", 9.71, 895],
+      ["卖 3", 9.70, 2100],
+      ["卖 2", 9.69, 1566],
+      ["卖 1", 9.68, 432]
+    ];
+    const bids = [
+      ["买 1", 9.67, 980],
+      ["买 2", 9.66, 1200],
+      ["买 3", 9.65, 3402],
+      ["买 4", 9.64, 880],
+      ["买 5", 9.63, 1945]
+    ];
+    els.depthBook.innerHTML = asks.map((row, idx) => depthRow(row, "sell", idx === asks.length - 1 ? "best-ask" : "")).join("") +
+      bids.map((row, idx) => depthRow(row, "buy", idx === 0 ? "best-bid" : "")).join("");
+  }
+
+  function depthRow(row, side, extra) {
+    return `<div class="depth-row ${side} ${extra}"><span>${row[0]}</span><strong>${formatNumber(row[1])}</strong><span class="qty">${formatInt(row[2])}</span></div>`;
+  }
+
+  function renderAll() {
+    renderAccounts();
+    renderMetrics();
+    renderPositions();
+    renderBlotter();
+    renderDetail();
+    updateRisk();
+  }
+
+  function syncClock(serverTime) {
+    const date = serverTime ? new Date(serverTime) : new Date();
+    const day = date.toISOString().slice(0, 10);
+    const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+    els.tradeDate.textContent = day;
+    els.serverClock.textContent = time;
+    els.footerClock.textContent = time;
+  }
+
+  function updateClock() {
+    syncClock();
+  }
+
+  function updateSide(side) {
+    state.side = side;
+    for (const button of document.querySelectorAll(".side-switch button")) {
+      button.classList.toggle("active", button.dataset.side === side);
+    }
+    els.submitOrderButton.textContent = side === "S" ? "卖出下单" : "买入下单";
+    els.submitOrderButton.classList.toggle("sell", side === "S");
+    els.submitOrderButton.classList.toggle("buy", side !== "S");
+    updateRisk();
+  }
+
+  function updateRisk() {
+    const qty = Number(els.qtyInput.value);
+    const price = Number(els.priceInput.value);
+    const cash = Number((state.asset && state.asset.cash_available) || 0);
+    const amount = qty * price;
+    if (!Number.isFinite(qty) || qty <= 0 || qty % 100 !== 0) {
+      els.riskAlert.textContent = "风控提示：A 股测试下单数量应为 100 股整数倍。";
+      return;
+    }
+    if (state.side === "B" && amount > cash) {
+      els.riskAlert.textContent = "风控警报：委托金额超过当前可用资金。";
+      return;
+    }
+    els.riskAlert.textContent = "风控提示：测试账户指令将写入测试 Redis。";
+  }
+
+  async function submitOrder(event) {
+    event.preventDefault();
+    const accountID = els.orderAccount.value || state.activeAccount;
+    const body = {
+      account_id: accountID,
+      client_order_id: "manual-" + Date.now(),
+      symbol: els.symbolInput.value.trim(),
+      exchange: els.exchangeInput.value,
+      trade_side: state.side,
+      business_type: "S",
+      offset_type: "O",
+      price: Number(els.priceInput.value),
+      qty: Number.parseInt(els.qtyInput.value, 10)
+    };
+    try {
+      els.submitOrderButton.disabled = true;
+      const data = await request("/v1/orders", { method: "POST", body });
+      pushLog("info", "下单已提交", data.order && data.order.gateway_order_id);
+      showToast("下单已提交 " + formatTime(new Date()));
+      if (data.order && data.order.gateway_order_id) {
+        state.selectedOrderID = data.order.gateway_order_id;
+      }
+      await refreshNow();
+    } catch (err) {
+      pushLog("error", "下单失败", err.message);
+      showToast("下单失败：" + err.message, "error");
+    } finally {
+      els.submitOrderButton.disabled = false;
+    }
+  }
+
+  async function cancelOrder(gatewayOrderID) {
+    if (!gatewayOrderID) {
+      return;
+    }
+    try {
+      const accountID = state.activeAccount;
+      const data = await request("/v1/orders/" + encodeURIComponent(gatewayOrderID) + "/cancel", {
+        method: "POST",
+        body: {
+          account_id: accountID,
+          gateway_order_id: gatewayOrderID,
+          cancel_id: "cancel-" + Date.now()
+        }
+      });
+      pushLog("info", "撤单已提交", data.cancel_id || gatewayOrderID);
+      showToast("撤单已提交 " + formatTime(new Date()));
+      await refreshNow();
+    } catch (err) {
+      pushLog("error", "撤单失败", err.message);
+      showToast("撤单失败：" + err.message, "error");
+    }
+  }
+
+  async function refreshAsset(kind) {
+    if (!state.activeAccount) {
+      return;
+    }
+    const path = "/v1/accounts/" + encodeURIComponent(state.activeAccount) + "/" + kind + "/refresh";
+    try {
+      const data = await request(path, { method: "POST" });
+      pushLog("info", kind === "asset" ? "资金刷新指令已发送" : "持仓刷新指令已发送", data.stream_id || "");
+      showToast((kind === "asset" ? "资金" : "持仓") + "刷新指令已发送");
+    } catch (err) {
+      pushLog("error", "刷新指令失败", err.message);
+      showToast("刷新失败：" + err.message, "error");
+    }
+  }
+
+  async function refreshNow() {
+    await loadStatus();
+    await loadAccountData();
+  }
+
+  function bindEvents() {
+    els.refreshAllButton.addEventListener("click", refreshNow);
+    els.pauseButton.addEventListener("click", () => {
+      state.paused = !state.paused;
+      els.pauseButton.classList.toggle("active", state.paused);
+      els.pauseButton.textContent = state.paused ? "▶" : "Ⅱ";
+      pushLog("info", state.paused ? "轮询已暂停" : "轮询已恢复");
+    });
+    els.orderAccount.addEventListener("change", async () => {
+      state.activeAccount = els.orderAccount.value;
+      await refreshNow();
+    });
+    for (const button of document.querySelectorAll(".side-switch button")) {
+      button.addEventListener("click", () => updateSide(button.dataset.side));
+    }
+    els.priceInput.addEventListener("input", updateRisk);
+    els.qtyInput.addEventListener("input", updateRisk);
+    els.orderForm.addEventListener("submit", submitOrder);
+    els.resetOrderButton.addEventListener("click", () => {
+      els.symbolInput.value = "600000";
+      els.exchangeInput.value = "SH";
+      els.priceInput.value = "9.67";
+      els.qtyInput.value = "100";
+      updateSide("B");
+    });
+    els.refreshAssetButton.addEventListener("click", () => refreshAsset("asset"));
+    els.refreshPositionsButton.addEventListener("click", () => refreshAsset("positions"));
+    els.blotterTabs.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-tab]");
+      if (!button) {
+        return;
+      }
+      state.selectedTab = button.dataset.tab;
+      renderBlotter();
+    });
+    els.blotterContent.addEventListener("click", (event) => {
+      const row = event.target.closest("tr[data-order-id]");
+      if (row) {
+        state.selectedOrderID = row.dataset.orderId;
+        renderBlotter();
+        renderDetail();
+      }
+      const cancelButton = event.target.closest("button[data-cancel-id]");
+      if (cancelButton) {
+        event.stopPropagation();
+        cancelOrder(cancelButton.dataset.cancelId);
+      }
+    });
+    els.positionsBody.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-sell-symbol]");
+      if (!button) {
+        return;
+      }
+      els.symbolInput.value = button.dataset.sellSymbol || "";
+      els.exchangeInput.value = button.dataset.sellExchange || "SH";
+      updateSide("S");
+    });
+    els.closeDetailButton.addEventListener("click", () => {
+      state.selectedOrderID = "";
+      renderDetail();
+      renderBlotter();
+    });
+  }
+
+  async function boot() {
+    renderDepthBook();
+    bindEvents();
+    updateClock();
+    setInterval(updateClock, 1000);
+    try {
+      await loadStatus();
+      await loadAccounts();
+      await loadAccountData();
+      pushLog("info", "交易终端初始化完成");
+    } catch (err) {
+      pushLog("error", "初始化失败", err.message);
+      showToast("初始化失败：" + err.message, "error");
+      renderAll();
+    }
+    state.pollID = window.setInterval(() => {
+      if (!state.paused) {
+        refreshNow().catch((err) => pushLog("error", "轮询刷新失败", err.message));
+      }
+    }, 3000);
+  }
+
+  boot();
+})();

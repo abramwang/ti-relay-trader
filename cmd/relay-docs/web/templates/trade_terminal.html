@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relay Trader - 交易终端</title>
+  <link rel="stylesheet" href="/assets/trade-terminal.css">
+</head>
+<body>
+  <div class="terminal-shell">
+    <header class="terminal-topbar">
+      <div class="brand-block">
+        <a class="brand-title" href="/">Relay Trader</a>
+        <span class="env-badge">测试环境</span>
+      </div>
+      <div class="status-strip">
+        <span class="status-pill" id="apiStatus"><i></i>API: checking</span>
+        <span class="status-pill danger" id="redisStatus"><i></i>Redis: pending</span>
+        <span class="status-pill" id="dbStatus"><i></i>DB: pending</span>
+      </div>
+      <div class="account-tabs" id="accountTabs"></div>
+      <div class="clock-block">
+        <span id="tradeDate">--</span>
+        <strong id="serverClock">--:--:--</strong>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="icon-button" id="refreshAllButton" aria-label="刷新">↻</button>
+        <button type="button" class="icon-button" id="pauseButton" aria-label="暂停推送">Ⅱ</button>
+        <button type="button" class="icon-button" id="notifyButton" aria-label="通知">!</button>
+        <button type="button" class="icon-button" id="settingsButton" aria-label="设置">⚙</button>
+        <span class="avatar">RT</span>
+      </div>
+    </header>
+
+    <aside class="terminal-sidebar">
+      <nav class="terminal-nav">
+        <a class="active" href="/trade"><span>⌁</span>交易测试</a>
+        <a href="/trade#orders"><span>▤</span>订单监控</a>
+        <a href="/trade#fills"><span>▧</span>成交回报</a>
+        <a href="/trade#asset"><span>▥</span>资金持仓</a>
+        <a href="/docs/roadmap"><span>◇</span>盘后对账</a>
+        <a href="/api-console"><span>▣</span>接口 Console</a>
+        <a href="/v1/status"><span>☍</span>系统状态</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/docs">文档</a>
+        <a href="/docs/operations">支持</a>
+        <p>RELAY CORE v0.1<br>NODE: 9092</p>
+      </div>
+    </aside>
+
+    <main class="terminal-main">
+      <section class="trade-panel market-panel" aria-label="行情与下单">
+        <div class="quote-head">
+          <div>
+            <h1 id="quoteSymbol">600000.SH</h1>
+            <span id="quoteName">浦发银行</span>
+          </div>
+          <div class="quote-price up">
+            <strong id="quoteLast">9.67</strong>
+            <span id="quoteChange">+0.00 / +0.00%</span>
+          </div>
+        </div>
+        <div class="depth-book" id="depthBook"></div>
+
+        <form class="order-form" id="orderForm">
+          <div class="side-switch" role="tablist" aria-label="交易方向">
+            <button type="button" class="active buy" data-side="B">买入</button>
+            <button type="button" class="sell" data-side="S">卖出</button>
+          </div>
+          <label>
+            <span>账户</span>
+            <select id="orderAccount"></select>
+          </label>
+          <label>
+            <span>代码</span>
+            <input id="symbolInput" value="600000" autocomplete="off">
+          </label>
+          <label>
+            <span>市场</span>
+            <select id="exchangeInput">
+              <option value="SH">SH</option>
+              <option value="SZ">SZ</option>
+              <option value="BJ">BJ</option>
+            </select>
+          </label>
+          <label>
+            <span>报价类型</span>
+            <select id="priceTypeInput">
+              <option value="limit">限价 Limit</option>
+              <option value="market" disabled>市价 Planned</option>
+              <option value="best" disabled>对手方最优 Planned</option>
+            </select>
+          </label>
+          <div class="form-row">
+            <label>
+              <span>价格</span>
+              <input id="priceInput" type="number" step="0.01" value="9.67">
+            </label>
+            <label>
+              <span>数量</span>
+              <input id="qtyInput" type="number" step="100" min="100" value="100">
+            </label>
+          </div>
+          <div class="trade-hints">
+            <span>最大可买 <strong id="maxBuy">--</strong></span>
+            <span>可用资金 <strong id="availableCash">--</strong></span>
+          </div>
+          <div class="risk-alert" id="riskAlert">风控提示：当前为测试账户，请确认价格和数量。</div>
+          <div class="form-actions">
+            <button type="submit" class="primary-trade buy" id="submitOrderButton">买入下单</button>
+            <button type="button" id="resetOrderButton">重置</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="trade-panel portfolio-panel" aria-label="资金持仓">
+        <div class="metric-strip" id="metricStrip">
+          <div><span>总资产</span><strong id="netAsset">--</strong></div>
+          <div><span>可用资金</span><strong id="cashAvailable">--</strong></div>
+          <div><span>证券市值</span><strong id="marketValue">--</strong></div>
+          <div><span>当日盈亏</span><strong id="dayProfit">--</strong></div>
+        </div>
+        <div class="section-toolbar">
+          <h2>持仓</h2>
+          <div>
+            <button type="button" id="refreshAssetButton">刷新资金</button>
+            <button type="button" id="refreshPositionsButton">刷新持仓</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>代码/名称</th>
+                <th class="num">持仓/可用</th>
+                <th class="num">成本/现价</th>
+                <th class="num">市值</th>
+                <th class="num">盈亏/%</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="positionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="trade-panel blotter-panel" id="orders" aria-label="订单与成交">
+        <div class="blotter-tabs" id="blotterTabs">
+          <button type="button" class="active" data-tab="orders">当日委托</button>
+          <button type="button" data-tab="fills">当日成交</button>
+          <button type="button" data-tab="cancels">撤单记录</button>
+          <button type="button" data-tab="logs">推送日志</button>
+          <button type="button" data-tab="raw">原始报文</button>
+        </div>
+        <div class="blotter-content" id="blotterContent"></div>
+      </section>
+    </main>
+
+    <aside class="detail-panel">
+      <div class="detail-head">
+        <div>
+          <h2>委托详情</h2>
+          <span id="detailSub">请选择订单</span>
+        </div>
+        <button type="button" id="closeDetailButton" aria-label="清空详情">×</button>
+      </div>
+      <section>
+        <h3>状态轨迹</h3>
+        <div class="timeline" id="timeline"></div>
+      </section>
+      <section>
+        <h3>原始报文</h3>
+        <pre id="rawJson">{}</pre>
+      </section>
+      <section>
+        <h3>成交执行记录</h3>
+        <div id="executionList" class="execution-list">暂无成交执行记录...</div>
+      </section>
+      <div class="toast" id="terminalToast">等待操作</div>
+    </aside>
+
+    <footer class="terminal-footer">
+      <span><i></i>API: <strong id="footerApi">--</strong></span>
+      <span><i></i>Redis Latency: <strong id="footerRedis">--</strong></span>
+      <span>Market: 上海 A 股</span>
+      <span>Phase: Trading (Continuous)</span>
+      <span>Relay Trader v0.1</span>
+      <span>Server Time: <strong id="footerClock">--</strong></span>
+    </footer>
+  </div>
+  <script>
+    window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
+  </script>
+  <script defer src="/assets/trade-terminal.js"></script>
+</body>
+</html>

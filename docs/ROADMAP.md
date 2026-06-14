@@ -29,9 +29,10 @@
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-3. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
-4. 补充数据库状态检查到 `/v1/status`。
-5. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
+3. 为 `/trade` 增加 `GET /v1/events/stream` SSE 或 WebSocket 实时订单/成交推送。
+4. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
+5. 补充数据库状态检查到 `/v1/status`。
+6. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
 
 ## 里程碑细化
 
@@ -160,6 +161,21 @@
 - [ ] API handler 完成后自动同步 endpoint 状态。
 - [ ] 增加请求样例保存和导出。
 - [ ] 增加响应断言和冒烟测试集合。
+
+### P6.2 手动交易测试终端
+
+- [x] 参考 Stitch 设计稿确定成熟交易软件式页面布局。
+- [x] 新增 `/trade` 全屏终端页面，不复用文档门户文章外壳。
+- [x] 使用本地模板和静态资源实现，不依赖 Tailwind CDN、Google Fonts 或外部 icon font。
+- [x] 接入账户列表、资金、持仓、订单和成交查询。
+- [x] 接入单笔下单和撤单。
+- [x] 接入资金/持仓刷新指令。
+- [x] 订单列表采用 3 秒轮询，状态签名变化时行高亮并写入推送日志。
+- [x] 订单详情展示状态轨迹、订单 JSON 和成交执行记录。
+- [ ] 接入 `GET /v1/events/stream` SSE 或 WebSocket 实时推送。
+- [ ] 接入 Meridian 或前置行情，替换当前盘口占位数据。
+- [ ] 增加批量下单测试视图。
+- [ ] 增加 Playwright 页面冒烟测试。
 
 ### P7 盘后对账任务
 

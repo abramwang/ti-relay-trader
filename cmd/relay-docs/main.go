@@ -59,6 +59,7 @@ type pageData struct {
 var portalAssets embed.FS
 
 var apiConsoleTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/api_console.html"))
+var tradeTerminalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/trade_terminal.html"))
 
 var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
@@ -109,6 +110,12 @@ var (
 			Title:       "接口测试台",
 			Path:        "docs/API_TEST_CONSOLE.md",
 			Description: "Apifox 风格 API 联调页面、当前能力、安全边界和后续计划。",
+		},
+		{
+			Slug:        "trading-terminal",
+			Title:       "交易终端",
+			Path:        "docs/TRADING_TERMINAL.md",
+			Description: "成熟交易软件风格手动测试台、页面结构、接口接入和实时刷新计划。",
 		},
 		{
 			Slug:        "python-sdk",
@@ -217,6 +224,7 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	mux.HandleFunc("/docs", server.handleDocsIndex)
 	mux.HandleFunc("/docs/", server.handleDoc)
 	mux.HandleFunc("/api-console", server.handleAPIConsole)
+	mux.HandleFunc("/trade", server.handleTradeTerminal)
 	staticFS, err := fs.Sub(portalAssets, "web/static")
 	if err != nil {
 		return err
@@ -352,6 +360,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <div class="actions">
     <a href="/docs">查看文档</a>
     <a href="/api-console">接口测试台</a>
+    <a href="/trade">交易终端</a>
     <a href="/docs/roadmap">开发路线图</a>
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
@@ -366,6 +375,8 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/migrations"><strong>PostgreSQL Migration</strong><span>交易账本首版 DDL</span></a>
   <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
   <a class="card" href="/api-console"><strong>接口测试台</strong><span>Apifox 风格联调页面</span></a>
+  <a class="card" href="/trade"><strong>交易终端</strong><span>成熟交易软件风格手动测试台</span></a>
+  <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
@@ -406,6 +417,20 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Scripts:    template.HTML(`<script defer src="/assets/api-console.js"></script>`),
 		ProjectDir: s.root,
 	})
+}
+
+func (s *portalServer) handleTradeTerminal(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/trade" {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tradeTerminalTemplate.Execute(w, map[string]string{
+		"PublicURL": publicURL,
+	}); err != nil {
+		s.logger.Error("render_trade_terminal_failed", "error", err)
+	}
 }
 
 func (s *portalServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -1005,6 +1030,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       <a class="{{if eq .Active "home"}}active{{end}}" href="/">首页</a>
       <a class="{{if eq .Active "docs"}}active{{end}}" href="/docs">文档</a>
       <a class="{{if eq .Active "console"}}active{{end}}" href="/api-console">接口</a>
+      <a href="/trade">交易终端</a>
       <a class="{{if eq .Active "tree"}}active{{end}}" href="/tree">项目结构</a>
       <a class="{{if eq .Active "tests"}}active{{end}}" href="/tests">测试</a>
       <a href="/healthz">健康</a>
