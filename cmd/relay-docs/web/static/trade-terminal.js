@@ -33,11 +33,15 @@
     barsMeta: null,
     barsLoaded: false,
     barsError: "",
+    chartOrders: [],
+    chartFills: [],
+    minuteChart: null,
     initialized: false,
     eventSource: null,
     eventSourceAccount: "",
     streamConnected: false,
     streamRefreshTimer: 0,
+    chartMarkerRefreshTimer: 0,
     streamErrorLoggedAt: 0
   };
 
@@ -124,6 +128,8 @@
     perfDailyPnl: byID("perfDailyPnl"),
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
+    minuteChart: byID("minuteChart"),
+    minuteChartStatus: byID("minuteChartStatus"),
     perfDailyDate: byID("perfDailyDate"),
     perfPositions: byID("perfPositions"),
     perfPositionValue: byID("perfPositionValue"),
@@ -509,6 +515,15 @@
       }
       if (!state.barsLoaded) {
         loadBars().catch((err) => pushLog("warn", "Bars 查询失败", err.message));
+      } else {
+        window.setTimeout(() => {
+          refreshMinuteChartMarkers()
+            .catch((err) => pushLog("warn", "图表买卖点刷新失败", err.message))
+            .finally(() => {
+              renderBars();
+              resizeMinuteChart();
+            });
+        }, 0);
       }
     }
   }
@@ -595,6 +610,7 @@
     }
     state.eventSourceAccount = "";
     state.streamConnected = false;
+    window.clearTimeout(state.chartMarkerRefreshTimer);
     updateStreamFooter();
   }
 
@@ -630,6 +646,7 @@
     updateStreamFooter();
     pushLog("info", "实时事件", type + (payload.last_stream_id ? " " + payload.last_stream_id : ""));
     scheduleStreamRefresh();
+    scheduleChartMarkerRefresh(type);
   }
 
   function streamEventMatchesActiveAccount(payload) {
@@ -642,6 +659,33 @@
     state.streamRefreshTimer = window.setTimeout(() => {
       loadAccountData().catch((err) => pushLog("error", "实时刷新失败", err.message));
     }, 150);
+  }
+
+  function scheduleChartMarkerRefresh(type) {
+    if (type !== "order.changed" && type !== "fill.changed") {
+      return;
+    }
+    if (state.activeView !== "performance" || !state.barsLoaded || !state.activeAccount) {
+      return;
+    }
+    window.clearTimeout(state.chartMarkerRefreshTimer);
+    state.chartMarkerRefreshTimer = window.setTimeout(async () => {
+      try {
+        await refreshMinuteChartMarkers();
+      } catch (err) {
+        pushLog("warn", "图表买卖点刷新失败", err.message);
+      }
+    }, 350);
+  }
+
+  async function refreshMinuteChartMarkers() {
+    const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
+    const tradeDate = effectiveBarsTradeDate(els.barTradeDateInput.value);
+    if (!securityID || !tradeDate) {
+      return;
+    }
+    await loadChartMarkers(securityID, tradeDate);
+    renderMinuteChart();
   }
 
   async function loadAccountData() {
@@ -1567,7 +1611,7 @@
       trade_date: tradeDate,
       frequency: els.barFrequencyInput.value || "1m",
       adjustment: els.barAdjustmentInput.value || "none",
-      limit: "20"
+      limit: "300"
     });
     const startTime = String(els.barStartTimeInput.value || "").trim();
     const endTime = String(els.barEndTimeInput.value || "").trim();
@@ -1588,8 +1632,16 @@
       state.barsRows = Array.isArray(data.data) ? data.data : [];
       state.barsMeta = data.meta || null;
       state.barsLoaded = true;
+      const effectiveTradeDate = effectiveBarsTradeDate(tradeDate);
       els.barSecurityInput.value = securityID;
-      els.barTradeDateInput.value = tradeDate;
+      els.barTradeDateInput.value = effectiveTradeDate;
+      try {
+        await loadChartMarkers(securityID, effectiveTradeDate);
+      } catch (markerErr) {
+        state.chartOrders = [];
+        state.chartFills = [];
+        pushLog("warn", "图表买卖点读取失败", markerErr.message);
+      }
       renderBars();
       showToast("Bars 数据已更新");
     } catch (err) {
@@ -1617,6 +1669,7 @@
     els.barTime.textContent = latest.datetime ? shortDateTime(latest.datetime) : "--";
     if (rows.length === 0) {
       els.barsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无 Meridian bars 数据</div></td></tr>';
+      renderMinuteChart();
       return;
     }
     els.barsBody.innerHTML = rows.map((row) => `
@@ -1629,6 +1682,324 @@
         <td class="num">${formatInt(row.volume)}</td>
       </tr>
     `).join("");
+    renderMinuteChart();
+  }
+
+  function effectiveBarsTradeDate(fallback) {
+    const rows = state.barsRows || [];
+    const meta = state.barsMeta || {};
+    const rowDate = rows.length > 0 ? compactDateLoose(rows[0].trade_date || rows[0].datetime) : "";
+    return rowDate || compactDateLoose(meta.trade_date) || compactDateLoose(fallback);
+  }
+
+  async function loadChartMarkers(securityID, tradeDate) {
+    if (!state.activeAccount || !securityID || !tradeDate) {
+      state.chartOrders = [];
+      state.chartFills = [];
+      return;
+    }
+    const parsed = splitSecurityID(securityID);
+    const [orders, fills] = await Promise.all([
+      fetchChartLedger("/v1/history/orders", "orders", parsed, tradeDate),
+      fetchChartLedger("/v1/history/fills", "fills", parsed, tradeDate)
+    ]);
+    state.chartOrders = orders;
+    state.chartFills = fills;
+  }
+
+  async function fetchChartLedger(path, key, parsed, tradeDate) {
+    const rows = [];
+    let cursor = "";
+    for (let page = 0; page < 6; page += 1) {
+      const params = new URLSearchParams({
+        account_id: state.activeAccount,
+        trade_date: tradeDate,
+        symbol: parsed.symbol,
+        exchange: parsed.exchange,
+        limit: "500"
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const data = await request(path + "?" + params.toString());
+      rows.push(...(Array.isArray(data[key]) ? data[key] : []));
+      cursor = data.next_cursor || "";
+      if (!cursor) {
+        break;
+      }
+    }
+    return rows;
+  }
+
+  function renderMinuteChart() {
+    if (!els.minuteChart || !els.minuteChartStatus) {
+      return;
+    }
+    if (state.activeView !== "performance") {
+      return;
+    }
+    const rows = state.barsRows || [];
+    const chart = ensureMinuteChart();
+    if (!chart) {
+      return;
+    }
+    if (rows.length === 0) {
+      chart.clear();
+      els.minuteChartStatus.textContent = state.barsError ? "分钟线读取失败" : "暂无分钟线";
+      return;
+    }
+    const chartRows = rows.slice().sort(compareBarRows);
+    const labels = chartRows.map((row) => minuteLabel(row.datetime || row.trade_date));
+    const closes = chartRows.map((row) => numericOrNull(row.close));
+    const markers = chartMarkers(labels);
+    const latest = chartRows[chartRows.length - 1] || {};
+    const tradeDate = effectiveBarsTradeDate(els.barTradeDateInput.value);
+    const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
+    els.minuteChartStatus.textContent = [
+      securityID,
+      displayDate(tradeDate),
+      rows.length + " 条",
+      "买 " + markers.buy.length,
+      "卖 " + markers.sell.length
+    ].join(" · ");
+    chart.setOption({
+      animation: false,
+      color: ["#101828", "#c8102e", "#008a63"],
+      grid: { left: 58, right: 18, top: 26, bottom: 42 },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "cross" },
+        formatter: (params) => minuteTooltip(params, chartRows)
+      },
+      legend: {
+        top: 0,
+        right: 8,
+        itemWidth: 12,
+        itemHeight: 8,
+        textStyle: { color: "#475467", fontSize: 11 },
+        data: ["Close", "买点", "卖点"]
+      },
+      xAxis: {
+        type: "category",
+        boundaryGap: false,
+        data: labels,
+        axisLabel: { color: "#667085", fontSize: 11 },
+        axisLine: { lineStyle: { color: "#cfd7e3" } }
+      },
+      yAxis: {
+        type: "value",
+        scale: true,
+        axisLabel: { color: "#667085", fontSize: 11, formatter: (value) => formatPrice(value, latest) },
+        splitLine: { lineStyle: { color: "#e4e9f0" } }
+      },
+      dataZoom: [
+        { type: "inside", throttle: 60 },
+        { type: "slider", height: 18, bottom: 12, borderColor: "#cfd7e3" }
+      ],
+      series: [
+        {
+          name: "Close",
+          type: "line",
+          data: closes,
+          showSymbol: false,
+          smooth: false,
+          lineStyle: { width: 1.8, color: "#101828" }
+        },
+        {
+          name: "买点",
+          type: "scatter",
+          data: markers.buy,
+          symbol: "triangle",
+          symbolSize: 12,
+          itemStyle: { color: "#c8102e", borderColor: "#fff", borderWidth: 1 }
+        },
+        {
+          name: "卖点",
+          type: "scatter",
+          data: markers.sell,
+          symbol: "triangle",
+          symbolRotate: 180,
+          symbolSize: 12,
+          itemStyle: { color: "#008a63", borderColor: "#fff", borderWidth: 1 }
+        }
+      ]
+    }, true);
+  }
+
+  function ensureMinuteChart() {
+    if (!window.echarts) {
+      els.minuteChartStatus.textContent = "ECharts 未加载";
+      return null;
+    }
+    if (!state.minuteChart) {
+      state.minuteChart = window.echarts.init(els.minuteChart, null, { renderer: "canvas" });
+    }
+    return state.minuteChart;
+  }
+
+  function resizeMinuteChart() {
+    if (state.minuteChart) {
+      state.minuteChart.resize();
+    }
+  }
+
+  function chartMarkers(labels) {
+    const fillOrderIDs = new Set();
+    const buy = [];
+    const sell = [];
+    const appendMarker = (side, label, price, meta) => {
+      if (!Number.isFinite(price) || price <= 0 || !label) {
+        return;
+      }
+      const snapped = nearestChartLabel(label, labels);
+      if (!snapped) {
+        return;
+      }
+      const marker = { value: [snapped, price], meta };
+      if (side === "S") {
+        sell.push(marker);
+      } else {
+        buy.push(marker);
+      }
+    };
+
+    for (const fill of state.chartFills || []) {
+      const id = fill.gateway_order_id || "";
+      if (id) {
+        fillOrderIDs.add(id);
+      }
+      appendMarker(fill.trade_side, minuteLabel(fill.matched_at || fill.match_timestamp), Number(fill.price), {
+        kind: "成交",
+        id: fill.fill_id || id,
+        qty: fill.qty,
+        price: fill.price,
+        status: "filled"
+      });
+    }
+    for (const order of state.chartOrders || []) {
+      const id = order.gateway_order_id || order.client_order_id || "";
+      if (id && fillOrderIDs.has(id)) {
+        continue;
+      }
+      appendMarker(order.trade_side, minuteLabel(order.created_at || order.inserted_at || order.accepted_at || order.last_updated_at), Number(order.limit_price), {
+        kind: "委托",
+        id,
+        qty: order.order_qty,
+        price: order.limit_price,
+        status: statusText(order.status)
+      });
+    }
+    return { buy, sell };
+  }
+
+  function minuteTooltip(params, rows) {
+    const items = Array.isArray(params) ? params : [params];
+    const label = items[0] && items[0].axisValueLabel ? items[0].axisValueLabel : "";
+    const rowIndex = rows.findIndex((row) => minuteLabel(row.datetime || row.trade_date) === label);
+    const row = rowIndex >= 0 ? rows[rowIndex] : {};
+    const priceItem = row && row.instrument_type ? row : (rows[0] || {});
+    const lines = [
+      escapeHTML(label),
+      "收 " + escapeHTML(formatPrice(row.close, row)),
+      "高 " + escapeHTML(formatPrice(row.high, row)) + " / 低 " + escapeHTML(formatPrice(row.low, row)),
+      "量 " + escapeHTML(formatInt(row.volume))
+    ];
+    for (const item of items) {
+      const meta = item && item.data && item.data.meta;
+      if (!meta) {
+        continue;
+      }
+      lines.push([
+        escapeHTML(meta.kind || item.seriesName),
+        escapeHTML(meta.id || ""),
+        escapeHTML(meta.status || ""),
+        "价 " + escapeHTML(formatPrice(meta.price, priceItem)),
+        "量 " + escapeHTML(formatInt(meta.qty))
+      ].filter(Boolean).join(" · "));
+    }
+    return lines.join("<br>");
+  }
+
+  function numericOrNull(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function compareBarRows(left, right) {
+    return barRowTimeValue(left) - barRowTimeValue(right);
+  }
+
+  function barRowTimeValue(row) {
+    const raw = row && (row.datetime || row.trade_date);
+    const parsed = raw ? Date.parse(raw) : NaN;
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    const minutes = minutesOfDay(minuteLabel(raw));
+    return Number.isFinite(minutes) ? minutes : 0;
+  }
+
+  function minuteLabel(value) {
+    if (!value) {
+      return "";
+    }
+    if (typeof value === "number") {
+      const timestamp = value > 1000000000000 ? value : value * 1000;
+      return new Date(timestamp).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Shanghai"
+      });
+    }
+    const text = String(value);
+    const match = text.match(/(\d{2}):(\d{2})(?::\d{2})?/);
+    if (match) {
+      return match[1] + ":" + match[2];
+    }
+    return "";
+  }
+
+  function nearestChartLabel(label, labels) {
+    if (labels.includes(label)) {
+      return label;
+    }
+    const target = minutesOfDay(label);
+    if (!Number.isFinite(target)) {
+      return "";
+    }
+    let best = "";
+    let bestDistance = Infinity;
+    for (const candidate of labels) {
+      const value = minutesOfDay(candidate);
+      const distance = Math.abs(value - target);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    return bestDistance <= 8 ? best : "";
+  }
+
+  function minutesOfDay(label) {
+    const match = String(label || "").match(/^(\d{2}):(\d{2})$/);
+    if (!match) {
+      return NaN;
+    }
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function compactDateLoose(value) {
+    const compact = compactDate(value);
+    if (compact) {
+      return compact;
+    }
+    const text = String(value || "");
+    const isoMatch = text.match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+    if (isoMatch) {
+      return isoMatch[1] + isoMatch[2] + isoMatch[3];
+    }
+    return "";
   }
 
   function shortDateTime(value) {
@@ -1995,6 +2366,7 @@
     }
     window.addEventListener("hashchange", () => setActiveView(viewFromLocation()));
     window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
+    window.addEventListener("resize", resizeMinuteChart);
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       state.performanceLoaded = false;

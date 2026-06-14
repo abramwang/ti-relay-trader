@@ -223,6 +223,8 @@
 - [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
 - [x] 接入订单/成交前置刷新指令，订单监控区可手动刷新委托和成交。
 - [x] 订单监控表和订单详情展示 `reject_message`、柜台错误和 raw adapter context。
+- [x] 交易测试视图压缩右侧持仓版面，资金持仓独立工作区保留完整展示。
+- [x] 绩效分析工作区接入 ECharts 分钟线，并按当前账户、标的、交易日标注买卖委托/成交点。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 
@@ -250,11 +252,13 @@
 ### P8 历史数据与盈亏统计
 
 - [x] 接入 Meridian `bars` 同源薄代理，保留 Meridian `market_bar.v1` 原始字段。
+- [x] `bars` 请求当天或空日期时通过 Meridian 交易日接口回退到最近交易日。
 - [x] 接入 Meridian `metadata/instruments` 和 `snapshots` 作为 `/trade` 代码补全和行情刷新薄代理。
 - [x] 计算账户日终权益。
 - [ ] 计算完整已实现盈亏、浮动盈亏、费用和收益率。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。
+- [x] 在 `/trade#performance` 使用 Meridian `bars` 绘制当日分钟线，辅助理解下单点位。
 - [ ] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入。
 - [x] 提供研究侧导出输入第一版：账户绩效序列 CSV。
 - [ ] 生成研究侧数据库导出视图。

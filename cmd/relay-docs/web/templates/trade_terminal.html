@@ -225,6 +225,13 @@
         <div class="performance-body">
           <section class="performance-section series-section">
             <div class="section-toolbar">
+              <h2>当日分钟线</h2>
+              <span id="minuteChartStatus">等待 Meridian bars</span>
+            </div>
+            <div class="minute-chart-shell">
+              <div id="minuteChart" class="minute-chart"></div>
+            </div>
+            <div class="section-toolbar series-toolbar">
               <h2>账户绩效序列</h2>
               <span id="performanceStatus">等待查询</span>
             </div>
@@ -298,7 +305,7 @@
                 </label>
                 <label>
                   <span>开始</span>
-                  <input id="barStartTimeInput" value="14:59:00">
+                  <input id="barStartTimeInput" value="09:30:00">
                 </label>
                 <label>
                   <span>结束</span>
@@ -369,6 +376,7 @@
   <script>
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
+  <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/trade-terminal.js"></script>
 </body>
 </html>

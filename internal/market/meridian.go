@@ -110,7 +110,17 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 	if client == nil {
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
-	return client.getJSON(ctx, barsPath, cloneValues(values))
+	query := cloneValues(values)
+	if shouldUseBarsPreviousTradingDay(query, client.today()) {
+		date := strings.TrimSpace(query.Get("trade_date"))
+		if date == "" {
+			date = client.today()
+		}
+		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, date); err == nil && tradeDate != "" {
+			query.Set("trade_date", tradeDate)
+		}
+	}
+	return client.getJSON(ctx, barsPath, query)
 }
 
 func (client *MeridianClient) getJSON(ctx context.Context, path string, values url.Values) (MeridianResponse, error) {
@@ -189,6 +199,11 @@ func shouldFallbackToHistorical(values url.Values, payload map[string]any) bool 
 	return code == "source_unavailable"
 }
 
+func shouldUseBarsPreviousTradingDay(values url.Values, today string) bool {
+	tradeDate := compactMeridianDate(strings.TrimSpace(values.Get("trade_date")))
+	return tradeDate == "" || tradeDate == today
+}
+
 func meridianDateString(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -202,4 +217,17 @@ func meridianDateString(value any) string {
 	default:
 		return ""
 	}
+}
+
+func compactMeridianDate(value string) string {
+	digits := strings.Builder{}
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			digits.WriteRune(char)
+		}
+	}
+	if digits.Len() == 8 {
+		return digits.String()
+	}
+	return strings.TrimSpace(value)
 }
