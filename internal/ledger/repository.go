@@ -103,6 +103,45 @@ type ReconciliationRun struct {
 	ErrorMessage string         `json:"error_message,omitempty"`
 }
 
+type ReconciliationInput struct {
+	RunID      string         `json:"run_id"`
+	Source     string         `json:"source"`
+	InputType  string         `json:"input_type"`
+	Payload    map[string]any `json:"payload,omitempty"`
+	CapturedAt time.Time      `json:"captured_at,omitempty"`
+}
+
+type ReconciliationBreak struct {
+	RunID           string         `json:"run_id"`
+	AccountID       string         `json:"account_id,omitempty"`
+	BreakType       string         `json:"break_type"`
+	Severity        string         `json:"severity"`
+	Status          string         `json:"status"`
+	ObjectType      string         `json:"object_type"`
+	ObjectID        string         `json:"object_id,omitempty"`
+	InternalPayload map[string]any `json:"internal_payload,omitempty"`
+	ExternalPayload map[string]any `json:"external_payload,omitempty"`
+	Description     string         `json:"description,omitempty"`
+	CreatedAt       time.Time      `json:"created_at,omitempty"`
+	ResolvedAt      time.Time      `json:"resolved_at,omitempty"`
+}
+
+type ReconciliationBreakQuery struct {
+	RunID     string
+	AccountID string
+	Status    string
+	Limit     int
+}
+
+type RawStreamSummaryBucket struct {
+	Role           string    `json:"role"`
+	MessageType    string    `json:"message_type,omitempty"`
+	Action         string    `json:"action,omitempty"`
+	EventType      string    `json:"event_type,omitempty"`
+	Count          int64     `json:"count"`
+	LastReceivedAt time.Time `json:"last_received_at,omitempty"`
+}
+
 func NewRepository(exec Executor) *Repository {
 	return &Repository{
 		exec: exec,
@@ -955,6 +994,130 @@ func (repo *Repository) UpsertReconciliationRun(ctx context.Context, run Reconci
 	return normalized, nil
 }
 
+func (repo *Repository) UpsertReconciliationInput(ctx context.Context, input ReconciliationInput) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeReconciliationInput(input, repo.now())
+	if err != nil {
+		return err
+	}
+	payload, err := marshalJSONObject(normalized.Payload)
+	if err != nil {
+		return err
+	}
+	_, err = repo.exec.ExecContext(ctx, upsertReconciliationInputSQL,
+		normalized.RunID,
+		normalized.Source,
+		normalized.InputType,
+		payload,
+		normalized.CapturedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert reconciliation input %s/%s/%s: %w", normalized.RunID, normalized.Source, normalized.InputType, err)
+	}
+	return nil
+}
+
+func (repo *Repository) UpsertReconciliationBreak(ctx context.Context, item ReconciliationBreak) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeReconciliationBreak(item, repo.now())
+	if err != nil {
+		return err
+	}
+	internalPayload, err := marshalJSONObject(normalized.InternalPayload)
+	if err != nil {
+		return err
+	}
+	externalPayload, err := marshalJSONObject(normalized.ExternalPayload)
+	if err != nil {
+		return err
+	}
+	_, err = repo.exec.ExecContext(ctx, upsertReconciliationBreakSQL,
+		normalized.RunID,
+		nullString(normalized.AccountID),
+		normalized.BreakType,
+		normalized.Severity,
+		normalized.Status,
+		normalized.ObjectType,
+		nullString(normalized.ObjectID),
+		internalPayload,
+		externalPayload,
+		normalized.Description,
+		normalized.CreatedAt,
+		nullTime(normalized.ResolvedAt),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert reconciliation break %s/%s/%s/%s: %w", normalized.RunID, normalized.BreakType, normalized.ObjectType, normalized.ObjectID, err)
+	}
+	return nil
+}
+
+func (repo *Repository) ListReconciliationBreaks(ctx context.Context, query ReconciliationBreakQuery) ([]ReconciliationBreak, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	normalized := normalizeReconciliationBreakQuery(query)
+	sqlText, args := buildListReconciliationBreaksSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list reconciliation breaks: %w", err)
+	}
+	defer rows.Close()
+	items := make([]ReconciliationBreak, 0)
+	for rows.Next() {
+		item, err := scanReconciliationBreak(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan reconciliation break: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reconciliation break rows: %w", err)
+	}
+	return items, nil
+}
+
+func (repo *Repository) RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]RawStreamSummaryBucket, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if start.IsZero() || end.IsZero() {
+		return nil, fmt.Errorf("%w: start and end are required", ErrInvalidLedgerInput)
+	}
+	rows, err := queryer.QueryContext(ctx, rawStreamSummarySQL, accountID, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("raw stream summary %s: %w", accountID, err)
+	}
+	defer rows.Close()
+	buckets := make([]RawStreamSummaryBucket, 0)
+	for rows.Next() {
+		bucket, err := scanRawStreamSummaryBucket(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan raw stream summary: %w", err)
+		}
+		buckets = append(buckets, bucket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("raw stream summary rows: %w", err)
+	}
+	return buckets, nil
+}
+
 func (repo *Repository) queryer() (Queryer, error) {
 	queryer, ok := repo.exec.(Queryer)
 	if !ok {
@@ -1208,6 +1371,90 @@ func normalizeReconciliationRun(run ReconciliationRun, now time.Time) (Reconcili
 	return run, nil
 }
 
+func normalizeReconciliationInput(input ReconciliationInput, now time.Time) (ReconciliationInput, error) {
+	input.RunID = strings.TrimSpace(input.RunID)
+	input.Source = strings.TrimSpace(input.Source)
+	input.InputType = strings.TrimSpace(input.InputType)
+	if input.RunID == "" {
+		return input, fmt.Errorf("%w: run_id is required", ErrInvalidLedgerInput)
+	}
+	if input.Source == "" {
+		return input, fmt.Errorf("%w: source is required", ErrInvalidLedgerInput)
+	}
+	if input.InputType == "" {
+		return input, fmt.Errorf("%w: input_type is required", ErrInvalidLedgerInput)
+	}
+	if input.Payload == nil {
+		input.Payload = map[string]any{}
+	}
+	if input.CapturedAt.IsZero() {
+		if now.IsZero() {
+			now = time.Now()
+		}
+		input.CapturedAt = now
+	}
+	return input, nil
+}
+
+func normalizeReconciliationBreak(item ReconciliationBreak, now time.Time) (ReconciliationBreak, error) {
+	item.RunID = strings.TrimSpace(item.RunID)
+	item.AccountID = strings.TrimSpace(item.AccountID)
+	item.BreakType = strings.TrimSpace(item.BreakType)
+	item.Severity = strings.TrimSpace(item.Severity)
+	item.Status = strings.TrimSpace(item.Status)
+	item.ObjectType = strings.TrimSpace(item.ObjectType)
+	item.ObjectID = strings.TrimSpace(item.ObjectID)
+	item.Description = strings.TrimSpace(item.Description)
+	if item.RunID == "" {
+		return item, fmt.Errorf("%w: run_id is required", ErrInvalidLedgerInput)
+	}
+	if item.BreakType == "" {
+		return item, fmt.Errorf("%w: break_type is required", ErrInvalidLedgerInput)
+	}
+	if item.ObjectType == "" {
+		return item, fmt.Errorf("%w: object_type is required", ErrInvalidLedgerInput)
+	}
+	if item.Severity == "" {
+		item.Severity = "warning"
+	}
+	switch item.Severity {
+	case "info", "warning", "critical":
+	default:
+		return item, fmt.Errorf("%w: severity must be info, warning, or critical", ErrInvalidLedgerInput)
+	}
+	if item.Status == "" {
+		item.Status = "open"
+	}
+	switch item.Status {
+	case "open", "resolved", "ignored":
+	default:
+		return item, fmt.Errorf("%w: break status must be open, resolved, or ignored", ErrInvalidLedgerInput)
+	}
+	if item.InternalPayload == nil {
+		item.InternalPayload = map[string]any{}
+	}
+	if item.ExternalPayload == nil {
+		item.ExternalPayload = map[string]any{}
+	}
+	if item.CreatedAt.IsZero() {
+		if now.IsZero() {
+			now = time.Now()
+		}
+		item.CreatedAt = now
+	}
+	return item, nil
+}
+
+func normalizeReconciliationBreakQuery(query ReconciliationBreakQuery) ReconciliationBreakQuery {
+	query.RunID = strings.TrimSpace(query.RunID)
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.Status = strings.TrimSpace(query.Status)
+	if query.Limit <= 0 || query.Limit > 1000 {
+		query.Limit = 200
+	}
+	return query
+}
+
 func normalizeAsset(asset trading.Asset) (trading.Asset, error) {
 	asset.AccountID = strings.TrimSpace(asset.AccountID)
 	if asset.AccountID == "" {
@@ -1391,6 +1638,34 @@ func buildLatestJobRunsSQL(jobNames []string) (string, []any) {
 		builder.WriteString(")\n")
 	}
 	builder.WriteString("ORDER BY job_name, COALESCE(finished_at, started_at, updated_at) DESC, job_run_pk DESC")
+	return builder.String(), args
+}
+
+func buildListReconciliationBreaksSQL(query ReconciliationBreakQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	if query.RunID != "" {
+		appendFilter("run_id", query.RunID)
+	}
+	if query.AccountID != "" {
+		appendFilter("account_id", query.AccountID)
+	}
+	if query.Status != "" {
+		appendFilter("status", query.Status)
+	}
+	builder := strings.Builder{}
+	builder.WriteString(reconciliationBreakSelectColumns)
+	if len(where) > 0 {
+		builder.WriteString("WHERE ")
+		builder.WriteString(strings.Join(where, " AND "))
+		builder.WriteString("\n")
+	}
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY created_at DESC, reconciliation_break_pk DESC LIMIT $%d", len(args)))
 	return builder.String(), args
 }
 
@@ -1707,6 +1982,68 @@ func scanJobRun(row rowScanner) (JobRun, error) {
 		}
 	}
 	return run, nil
+}
+
+func scanReconciliationBreak(row rowScanner) (ReconciliationBreak, error) {
+	var item ReconciliationBreak
+	var accountID sql.NullString
+	var objectID sql.NullString
+	var internalPayload []byte
+	var externalPayload []byte
+	var createdAt sql.NullTime
+	var resolvedAt sql.NullTime
+	err := row.Scan(
+		&item.RunID,
+		&accountID,
+		&item.BreakType,
+		&item.Severity,
+		&item.Status,
+		&item.ObjectType,
+		&objectID,
+		&internalPayload,
+		&externalPayload,
+		&item.Description,
+		&createdAt,
+		&resolvedAt,
+	)
+	if err != nil {
+		return ReconciliationBreak{}, err
+	}
+	item.AccountID = accountID.String
+	item.ObjectID = objectID.String
+	item.CreatedAt = createdAt.Time
+	item.ResolvedAt = resolvedAt.Time
+	item.InternalPayload = map[string]any{}
+	if len(internalPayload) > 0 {
+		if err := json.Unmarshal(internalPayload, &item.InternalPayload); err != nil {
+			return ReconciliationBreak{}, err
+		}
+	}
+	item.ExternalPayload = map[string]any{}
+	if len(externalPayload) > 0 {
+		if err := json.Unmarshal(externalPayload, &item.ExternalPayload); err != nil {
+			return ReconciliationBreak{}, err
+		}
+	}
+	return item, nil
+}
+
+func scanRawStreamSummaryBucket(row rowScanner) (RawStreamSummaryBucket, error) {
+	var bucket RawStreamSummaryBucket
+	var lastReceivedAt sql.NullTime
+	err := row.Scan(
+		&bucket.Role,
+		&bucket.MessageType,
+		&bucket.Action,
+		&bucket.EventType,
+		&bucket.Count,
+		&lastReceivedAt,
+	)
+	if err != nil {
+		return RawStreamSummaryBucket{}, err
+	}
+	bucket.LastReceivedAt = lastReceivedAt.Time
+	return bucket, nil
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {

@@ -349,6 +349,86 @@ ON CONFLICT (run_id) DO UPDATE SET
     error_message = EXCLUDED.error_message
 `
 
+const upsertReconciliationInputSQL = `
+INSERT INTO reconciliation_inputs (
+    run_id,
+    source,
+    input_type,
+    payload,
+    captured_at
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+ON CONFLICT (run_id, source, input_type) DO UPDATE SET
+    payload = EXCLUDED.payload,
+    captured_at = EXCLUDED.captured_at
+`
+
+const upsertReconciliationBreakSQL = `
+INSERT INTO reconciliation_breaks (
+    run_id,
+    account_id,
+    break_type,
+    severity,
+    status,
+    object_type,
+    object_id,
+    internal_payload,
+    external_payload,
+    description,
+    created_at,
+    resolved_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+)
+ON CONFLICT (
+    run_id,
+    COALESCE(account_id, ''),
+    break_type,
+    object_type,
+    COALESCE(object_id, '')
+) DO UPDATE SET
+    severity = EXCLUDED.severity,
+    status = EXCLUDED.status,
+    internal_payload = EXCLUDED.internal_payload,
+    external_payload = EXCLUDED.external_payload,
+    description = EXCLUDED.description,
+    resolved_at = EXCLUDED.resolved_at
+`
+
+const reconciliationBreakSelectColumns = `
+SELECT
+    run_id,
+    account_id,
+    break_type,
+    severity,
+    status,
+    object_type,
+    object_id,
+    internal_payload,
+    external_payload,
+    description,
+    created_at,
+    resolved_at
+FROM reconciliation_breaks
+`
+
+const rawStreamSummarySQL = `
+SELECT
+    stream_role,
+    COALESCE(message_type, '') AS message_type,
+    COALESCE(action, '') AS action,
+    COALESCE(event_type, '') AS event_type,
+    count(*)::bigint AS count,
+    max(received_at) AS last_received_at
+FROM raw_stream_messages
+WHERE account_id = $1
+    AND received_at >= $2
+    AND received_at <= $3
+GROUP BY stream_role, COALESCE(message_type, ''), COALESCE(action, ''), COALESCE(event_type, '')
+ORDER BY stream_role, message_type, action, event_type
+`
+
 const positionSelectColumns = `
 SELECT
     account_id,

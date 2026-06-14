@@ -58,6 +58,10 @@ type SettlementStore interface {
 	UpsertAssetSnapshotForDate(ctx context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error
 	UpsertReconciliationRun(ctx context.Context, run ledger.ReconciliationRun) (ledger.ReconciliationRun, error)
+	UpsertReconciliationInput(ctx context.Context, input ledger.ReconciliationInput) error
+	UpsertReconciliationBreak(ctx context.Context, item ledger.ReconciliationBreak) error
+	ListReconciliationBreaks(ctx context.Context, query ledger.ReconciliationBreakQuery) ([]ledger.ReconciliationBreak, error)
+	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
 }
 
 type Server struct {
@@ -123,6 +127,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
 	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
+	mux.HandleFunc("/v1/reconciliations/breaks", server.handleReconciliationBreaks)
 	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
 	mux.HandleFunc("/v1/history/fills", server.handleHistoryFills)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
@@ -808,6 +813,29 @@ func (s *Server) handleSettlementSnapshots(w http.ResponseWriter, r *http.Reques
 	httpx.WriteOK(w, r, http.StatusAccepted, result)
 }
 
+func (s *Server) handleReconciliationBreaks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.settles == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	breaks, err := s.settles.ListReconciliationBreaks(r.Context(), ledger.ReconciliationBreakQuery{
+		RunID:     r.URL.Query().Get("run_id"),
+		AccountID: r.URL.Query().Get("account_id"),
+		Status:    r.URL.Query().Get("status"),
+		Limit:     limit,
+	})
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "reconciliation break query failed", nil)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"breaks": breaks})
+}
+
 func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnapshotRequest) (SettlementSnapshotResult, error) {
 	tradeDate, err := normalizeAPIDate(firstNonEmpty(req.TradeDate, timeutil.Now().Format("2006-01-02")))
 	if err != nil {
@@ -846,6 +874,8 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		result.OrdersCount += accountResult.OrdersCount
 		result.FillsCount += accountResult.FillsCount
 		result.NonTerminalOrders += accountResult.NonTerminalOrders
+		result.ReconciliationInputs += accountResult.ReconciliationInputs
+		result.ReconciliationBreaks += accountResult.ReconciliationBreaks
 		if len(accountResult.Errors) > 0 {
 			result.Status = "failed"
 			result.Errors = append(result.Errors, accountResult.Errors...)
@@ -869,13 +899,42 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 			result.Errors = append(result.Errors, fmt.Sprintf("reconciliation run: %v", err))
 		} else {
 			result.ReconciliationRun = &run
+			for _, accountResult := range result.Accounts {
+				for _, input := range accountResult.inputs {
+					if err := s.settles.UpsertReconciliationInput(ctx, input); err != nil {
+						result.Status = "failed"
+						result.Errors = append(result.Errors, fmt.Sprintf("reconciliation input %s/%s: %v", input.Source, input.InputType, err))
+					}
+				}
+				for _, item := range accountResult.breaks {
+					if err := s.settles.UpsertReconciliationBreak(ctx, item); err != nil {
+						result.Status = "failed"
+						result.Errors = append(result.Errors, fmt.Sprintf("reconciliation break %s/%s: %v", item.BreakType, item.ObjectID, err))
+					}
+				}
+			}
+			if result.Status == "failed" {
+				run, err := s.settles.UpsertReconciliationRun(ctx, ledger.ReconciliationRun{
+					RunID:        runID,
+					TradeDate:    tradeDate,
+					Status:       "failed",
+					Source:       source,
+					StartedAt:    startedAt,
+					CompletedAt:  timeutil.Now(),
+					Summary:      result.summary(),
+					ErrorMessage: firstErrorSummary(result.Errors),
+				})
+				if err == nil {
+					result.ReconciliationRun = &run
+				}
+			}
 		}
 	}
 	return result, nil
 }
 
 func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, source string, runID string, dryRun bool, capturedAt time.Time) SettlementSnapshotAccountResult {
-	out := SettlementSnapshotAccountResult{AccountID: accountID}
+	out := SettlementSnapshotAccountResult{AccountID: accountID, Breaks: []ledger.ReconciliationBreak{}}
 	assetResult, err := s.orders.GetAsset(ctx, accountID)
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("asset: %v", err))
@@ -903,9 +962,6 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			}
 		}
 	}
-	if len(out.Errors) > 0 || dryRun {
-		return out
-	}
 
 	rawBase := map[string]any{
 		"run_id":        runID,
@@ -913,24 +969,191 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		"snapshot_type": snapshotType,
 		"source":        source,
 	}
-	assetRaw := cloneMap(rawBase)
-	assetRaw["asset"] = assetResult.Asset
-	if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, capturedAt); err != nil {
-		out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
-	} else {
-		out.AssetSnapshotWritten = true
+	rawSummary := []ledger.RawStreamSummaryBucket{}
+	if s.settles != nil {
+		rawSummary, err = s.settles.RawStreamSummary(ctx, accountID, capturedAt, timeutil.Now())
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("raw stream summary: %v", err))
+		}
 	}
-	for _, position := range positionResult.Positions {
-		position.TradeDate = tradeDate
-		positionRaw := cloneMap(rawBase)
-		positionRaw["position"] = position
-		if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
-			out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
+
+	out.inputs = append(out.inputs,
+		reconciliationInput(runID, source, accountID, "relay_ledger_summary", capturedAt, relayLedgerSummaryPayload(accountID, tradeDate, assetResult.Asset, positionResult.Positions, ordersResult.Orders, fillsResult.Fills, out, rawBase)),
+		reconciliationInput(runID, source, accountID, "pnl_input_summary", capturedAt, pnlInputSummaryPayload(assetResult.Asset, positionResult.Positions, fillsResult.Fills)),
+		reconciliationInput(runID, source, accountID, "redis_raw_summary", capturedAt, map[string]any{
+			"account_id": accountID,
+			"trade_date": tradeDate,
+			"window": map[string]any{
+				"start": timeutil.FormatRFC3339Nano(capturedAt),
+				"end":   timeutil.FormatRFC3339Nano(timeutil.Now()),
+			},
+			"buckets": rawSummary,
+		}),
+		reconciliationInput(runID, source, accountID, "counter_query_summary", capturedAt, map[string]any{
+			"account_id": accountID,
+			"trade_date": tradeDate,
+			"errors":     out.Errors,
+			"queries": map[string]any{
+				"asset_ok":     assetResult.Asset.AccountID != "",
+				"positions_ok": positionResult.Positions != nil,
+				"orders_ok":    ordersResult.Orders != nil,
+				"fills_ok":     fillsResult.Fills != nil,
+			},
+		}),
+	)
+
+	for _, errText := range out.Errors {
+		out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "account_refresh_failed", "critical", "account", accountID, map[string]any{"error": errText}, nil, "settlement account query or raw summary failed"))
+	}
+	for _, order := range ordersResult.Orders {
+		if !order.IsTerminal && !order.Status.Terminal() {
+			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "non_terminal_order", "warning", "order", order.GatewayOrderID, orderBreakPayload(order), nil, "order is not terminal at settlement"))
+		}
+	}
+	out.breaks = append(out.breaks, orderFillQuantityBreaks(runID, accountID, ordersResult.Orders, fillsResult.Fills)...)
+
+	if len(out.Errors) == 0 && !dryRun {
+		assetRaw := cloneMap(rawBase)
+		assetRaw["asset"] = assetResult.Asset
+		if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, capturedAt); err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
+			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "asset_snapshot_missing", "critical", "asset", accountID, map[string]any{"error": err.Error()}, assetRaw, "asset close snapshot was not written"))
+		} else {
+			out.AssetSnapshotWritten = true
+		}
+		for _, position := range positionResult.Positions {
+			position.TradeDate = tradeDate
+			positionRaw := cloneMap(rawBase)
+			positionRaw["position"] = position
+			if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
+				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error()}, positionRaw, "position close snapshot was not written"))
+				continue
+			}
+			out.PositionSnapshotsWritten++
+		}
+	}
+
+	out.ReconciliationInputs = len(out.inputs)
+	out.ReconciliationBreaks = len(out.breaks)
+	out.Breaks = append(out.Breaks, out.breaks...)
+	return out
+}
+
+func reconciliationInput(runID string, source string, accountID string, inputType string, capturedAt time.Time, payload map[string]any) ledger.ReconciliationInput {
+	return ledger.ReconciliationInput{
+		RunID:      runID,
+		Source:     source,
+		InputType:  accountID + ":" + inputType,
+		Payload:    payload,
+		CapturedAt: capturedAt,
+	}
+}
+
+func reconciliationBreak(runID string, accountID string, breakType string, severity string, objectType string, objectID string, internalPayload map[string]any, externalPayload map[string]any, description string) ledger.ReconciliationBreak {
+	return ledger.ReconciliationBreak{
+		RunID:           runID,
+		AccountID:       accountID,
+		BreakType:       breakType,
+		Severity:        severity,
+		Status:          "open",
+		ObjectType:      objectType,
+		ObjectID:        objectID,
+		InternalPayload: internalPayload,
+		ExternalPayload: externalPayload,
+		Description:     description,
+	}
+}
+
+func relayLedgerSummaryPayload(accountID string, tradeDate string, asset trading.Asset, positions []trading.Position, orders []trading.Order, fills []trading.Fill, result SettlementSnapshotAccountResult, rawBase map[string]any) map[string]any {
+	payload := cloneMap(rawBase)
+	payload["account_id"] = accountID
+	payload["trade_date"] = tradeDate
+	payload["asset"] = map[string]any{
+		"account_id":     asset.AccountID,
+		"net_asset":      asset.NetAsset,
+		"cash_available": asset.CashAvailable,
+		"market_value":   asset.MarketValue,
+	}
+	payload["counts"] = map[string]any{
+		"positions":           len(positions),
+		"orders":              len(orders),
+		"fills":               len(fills),
+		"non_terminal_orders": result.NonTerminalOrders,
+	}
+	payload["non_terminal_order_ids"] = result.NonTerminalOrderIDs
+	return payload
+}
+
+func pnlInputSummaryPayload(asset trading.Asset, positions []trading.Position, fills []trading.Fill) map[string]any {
+	var positionMarketValue float64
+	for _, position := range positions {
+		positionMarketValue += position.MarketValue
+	}
+	var buyAmount float64
+	var sellAmount float64
+	var feeTotal float64
+	for _, fill := range fills {
+		amount := fill.Price * float64(fill.Qty)
+		feeTotal += fill.Fee
+		switch fill.TradeSide {
+		case trading.TradeSideBuy, trading.TradeSidePurchase:
+			buyAmount += amount
+		case trading.TradeSideSell, trading.TradeSideRedemption:
+			sellAmount += amount
+		}
+	}
+	return map[string]any{
+		"asset": map[string]any{
+			"net_asset":       asset.NetAsset,
+			"cash_available":  asset.CashAvailable,
+			"market_value":    asset.MarketValue,
+			"day_profit":      asset.DayProfit,
+			"position_profit": asset.PositionProfit,
+			"close_profit":    asset.CloseProfit,
+		},
+		"positions": map[string]any{
+			"count":        len(positions),
+			"market_value": positionMarketValue,
+		},
+		"fills": map[string]any{
+			"count":       len(fills),
+			"buy_amount":  buyAmount,
+			"sell_amount": sellAmount,
+			"fee_total":   feeTotal,
+		},
+	}
+}
+
+func orderFillQuantityBreaks(runID string, accountID string, orders []trading.Order, fills []trading.Fill) []ledger.ReconciliationBreak {
+	fillQtyByOrder := make(map[string]int64)
+	for _, fill := range fills {
+		fillQtyByOrder[fill.GatewayOrderID] += fill.Qty
+	}
+	out := make([]ledger.ReconciliationBreak, 0)
+	for _, order := range orders {
+		if order.CumFilledQty == 0 {
 			continue
 		}
-		out.PositionSnapshotsWritten++
+		fillQty := fillQtyByOrder[order.GatewayOrderID]
+		if fillQty == order.CumFilledQty {
+			continue
+		}
+		out = append(out, reconciliationBreak(runID, accountID, "order_fill_qty_mismatch", "warning", "order", order.GatewayOrderID, orderBreakPayload(order), map[string]any{"fill_qty": fillQty}, "order cum_filled_qty does not match summed fill qty"))
 	}
 	return out
+}
+
+func orderBreakPayload(order trading.Order) map[string]any {
+	return map[string]any{
+		"gateway_order_id": order.GatewayOrderID,
+		"status":           order.Status,
+		"gateway_status":   order.GatewayStatus,
+		"is_terminal":      order.IsTerminal,
+		"order_qty":        order.OrderQty,
+		"cum_filled_qty":   order.CumFilledQty,
+		"leaves_qty":       order.LeavesQty,
+	}
 }
 
 func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err error) {
@@ -1279,51 +1502,60 @@ type SettlementSnapshotRequest struct {
 }
 
 type SettlementSnapshotResult struct {
-	RunID             string                            `json:"run_id"`
-	TradeDate         string                            `json:"trade_date"`
-	SnapshotType      string                            `json:"snapshot_type"`
-	Source            string                            `json:"source"`
-	Status            string                            `json:"status"`
-	DryRun            bool                              `json:"dry_run,omitempty"`
-	StartedAt         string                            `json:"started_at"`
-	CompletedAt       string                            `json:"completed_at"`
-	AssetSnapshots    int                               `json:"asset_snapshots"`
-	PositionSnapshots int                               `json:"position_snapshots"`
-	OrdersCount       int                               `json:"orders_count"`
-	FillsCount        int                               `json:"fills_count"`
-	NonTerminalOrders int                               `json:"non_terminal_orders"`
-	Accounts          []SettlementSnapshotAccountResult `json:"accounts"`
-	ReconciliationRun *ledger.ReconciliationRun         `json:"reconciliation_run,omitempty"`
-	Errors            []string                          `json:"errors,omitempty"`
+	RunID                string                            `json:"run_id"`
+	TradeDate            string                            `json:"trade_date"`
+	SnapshotType         string                            `json:"snapshot_type"`
+	Source               string                            `json:"source"`
+	Status               string                            `json:"status"`
+	DryRun               bool                              `json:"dry_run,omitempty"`
+	StartedAt            string                            `json:"started_at"`
+	CompletedAt          string                            `json:"completed_at"`
+	AssetSnapshots       int                               `json:"asset_snapshots"`
+	PositionSnapshots    int                               `json:"position_snapshots"`
+	OrdersCount          int                               `json:"orders_count"`
+	FillsCount           int                               `json:"fills_count"`
+	NonTerminalOrders    int                               `json:"non_terminal_orders"`
+	ReconciliationInputs int                               `json:"reconciliation_inputs"`
+	ReconciliationBreaks int                               `json:"reconciliation_breaks"`
+	Accounts             []SettlementSnapshotAccountResult `json:"accounts"`
+	ReconciliationRun    *ledger.ReconciliationRun         `json:"reconciliation_run,omitempty"`
+	Errors               []string                          `json:"errors,omitempty"`
 }
 
 type SettlementSnapshotAccountResult struct {
-	AccountID                string   `json:"account_id"`
-	AssetSnapshotWritten     bool     `json:"asset_snapshot_written"`
-	PositionsCount           int      `json:"positions_count"`
-	PositionSnapshotsWritten int      `json:"position_snapshots_written"`
-	OrdersCount              int      `json:"orders_count"`
-	FillsCount               int      `json:"fills_count"`
-	NonTerminalOrders        int      `json:"non_terminal_orders"`
-	NonTerminalOrderIDs      []string `json:"non_terminal_order_ids,omitempty"`
-	Errors                   []string `json:"errors,omitempty"`
+	AccountID                string                       `json:"account_id"`
+	AssetSnapshotWritten     bool                         `json:"asset_snapshot_written"`
+	PositionsCount           int                          `json:"positions_count"`
+	PositionSnapshotsWritten int                          `json:"position_snapshots_written"`
+	OrdersCount              int                          `json:"orders_count"`
+	FillsCount               int                          `json:"fills_count"`
+	NonTerminalOrders        int                          `json:"non_terminal_orders"`
+	NonTerminalOrderIDs      []string                     `json:"non_terminal_order_ids,omitempty"`
+	Errors                   []string                     `json:"errors,omitempty"`
+	ReconciliationInputs     int                          `json:"reconciliation_inputs"`
+	ReconciliationBreaks     int                          `json:"reconciliation_breaks"`
+	Breaks                   []ledger.ReconciliationBreak `json:"breaks,omitempty"`
+	inputs                   []ledger.ReconciliationInput
+	breaks                   []ledger.ReconciliationBreak
 }
 
 func (result SettlementSnapshotResult) summary() map[string]any {
 	return map[string]any{
-		"run_id":              result.RunID,
-		"trade_date":          result.TradeDate,
-		"snapshot_type":       result.SnapshotType,
-		"source":              result.Source,
-		"status":              result.Status,
-		"dry_run":             result.DryRun,
-		"asset_snapshots":     result.AssetSnapshots,
-		"position_snapshots":  result.PositionSnapshots,
-		"orders_count":        result.OrdersCount,
-		"fills_count":         result.FillsCount,
-		"non_terminal_orders": result.NonTerminalOrders,
-		"accounts":            result.Accounts,
-		"errors":              result.Errors,
+		"run_id":                result.RunID,
+		"trade_date":            result.TradeDate,
+		"snapshot_type":         result.SnapshotType,
+		"source":                result.Source,
+		"status":                result.Status,
+		"dry_run":               result.DryRun,
+		"asset_snapshots":       result.AssetSnapshots,
+		"position_snapshots":    result.PositionSnapshots,
+		"orders_count":          result.OrdersCount,
+		"fills_count":           result.FillsCount,
+		"non_terminal_orders":   result.NonTerminalOrders,
+		"reconciliation_inputs": result.ReconciliationInputs,
+		"reconciliation_breaks": result.ReconciliationBreaks,
+		"accounts":              result.Accounts,
+		"errors":                result.Errors,
 	}
 }
 

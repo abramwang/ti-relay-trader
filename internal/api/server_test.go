@@ -1033,8 +1033,48 @@ func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
 	if store.reconciliation.RunID != "settlement-20260612" || store.reconciliation.Status != "completed" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
 	}
+	if len(store.inputs) != 4 {
+		t.Fatalf("reconciliation inputs = %#v", store.inputs)
+	}
+	if len(store.breaks) != 1 || store.breaks[0].BreakType != "non_terminal_order" {
+		t.Fatalf("reconciliation breaks = %#v", store.breaks)
+	}
 	if !strings.Contains(rec.Body.String(), `"non_terminal_orders":1`) {
 		t.Fatalf("response missing non-terminal count: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"reconciliation_breaks":1`) {
+		t.Fatalf("response missing break count: %s", rec.Body.String())
+	}
+}
+
+func TestReconciliationBreaksQuery(t *testing.T) {
+	store := &fakeSettlementStore{
+		breaks: []ledger.ReconciliationBreak{{
+			RunID:      "settlement-20260612",
+			AccountID:  "acct-1",
+			BreakType:  "non_terminal_order",
+			Severity:   "warning",
+			Status:     "open",
+			ObjectType: "order",
+			ObjectID:   "gw-working",
+		}},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/reconciliations/breaks?run_id=settlement-20260612&status=open", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if store.breakQuery.RunID != "settlement-20260612" || store.breakQuery.Status != "open" {
+		t.Fatalf("break query = %#v", store.breakQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"break_type":"non_terminal_order"`) {
+		t.Fatalf("response missing break: %s", rec.Body.String())
 	}
 }
 
@@ -1099,6 +1139,9 @@ type fakeSettlementStore struct {
 		source   string
 	}
 	reconciliation ledger.ReconciliationRun
+	inputs         []ledger.ReconciliationInput
+	breaks         []ledger.ReconciliationBreak
+	breakQuery     ledger.ReconciliationBreakQuery
 	err            error
 }
 
@@ -1132,6 +1175,37 @@ func (store *fakeSettlementStore) UpsertReconciliationRun(_ context.Context, run
 	}
 	store.reconciliation = run
 	return run, nil
+}
+
+func (store *fakeSettlementStore) UpsertReconciliationInput(_ context.Context, input ledger.ReconciliationInput) error {
+	if store.err != nil {
+		return store.err
+	}
+	store.inputs = append(store.inputs, input)
+	return nil
+}
+
+func (store *fakeSettlementStore) UpsertReconciliationBreak(_ context.Context, item ledger.ReconciliationBreak) error {
+	if store.err != nil {
+		return store.err
+	}
+	store.breaks = append(store.breaks, item)
+	return nil
+}
+
+func (store *fakeSettlementStore) ListReconciliationBreaks(_ context.Context, query ledger.ReconciliationBreakQuery) ([]ledger.ReconciliationBreak, error) {
+	if store.err != nil {
+		return nil, store.err
+	}
+	store.breakQuery = query
+	return store.breaks, nil
+}
+
+func (store *fakeSettlementStore) RawStreamSummary(_ context.Context, _ string, _ time.Time, _ time.Time) ([]ledger.RawStreamSummaryBucket, error) {
+	if store.err != nil {
+		return nil, store.err
+	}
+	return []ledger.RawStreamSummaryBucket{{Role: "event", MessageType: "event", EventType: "order.event", Count: 1}}, nil
 }
 
 func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun) (ledger.JobRun, error) {

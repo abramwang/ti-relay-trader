@@ -45,8 +45,8 @@ relay 每个交易日需要两个稳定流程：
 3. 对每个启用账户重新查询资金、持仓、订单和成交，确保本地账本与柜台终态对齐。
 4. 将订单状态更新到终态；仍未终态的订单写入异常列表，供人工复核。
 5. 写入 `asset_snapshots`、`position_snapshots` 和必要的 `cash_ledger` 日终流水。
-6. 生成对账输入：柜台查询快照、Redis 原始消息摘要、relay 标准账本摘要。
-7. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`。
+6. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
+7. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
 8. 为盈亏统计准备输入：日终权益、持仓市值、成交金额、费用、已实现盈亏和浮动盈亏。
 9. 输出结算报告，并把任务状态暴露给 `/v1/status` 或后续运维页面。
 

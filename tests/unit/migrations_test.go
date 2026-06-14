@@ -84,6 +84,24 @@ func TestStreamCheckpointRollbackDropsCursorTable(t *testing.T) {
 	}
 }
 
+func TestReconciliationIdempotencyMigrationContainsUniqueIndexes(t *testing.T) {
+	upSQL := readMigration(t, "000004_reconciliation_idempotency.up.sql")
+	for _, snippet := range []string{
+		"CREATE UNIQUE INDEX reconciliation_inputs_unique",
+		"CREATE UNIQUE INDEX reconciliation_breaks_unique",
+		"COALESCE(account_id, '')",
+		"COALESCE(object_id, '')",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("reconciliation idempotency migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000004_reconciliation_idempotency.down.sql")
+	if !strings.Contains(downSQL, "DROP INDEX IF EXISTS reconciliation_breaks_unique") {
+		t.Fatalf("reconciliation idempotency rollback missing drop index")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

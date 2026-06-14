@@ -44,3 +44,27 @@ func (run ReconciliationRun) MarshalJSON() ([]byte, error) {
 		CompletedAt:            optionalBusinessTime(run.CompletedAt),
 	})
 }
+
+func (item ReconciliationBreak) MarshalJSON() ([]byte, error) {
+	type reconciliationBreakAlias ReconciliationBreak
+	return json.Marshal(struct {
+		reconciliationBreakAlias
+		CreatedAt  *string `json:"created_at,omitempty"`
+		ResolvedAt *string `json:"resolved_at,omitempty"`
+	}{
+		reconciliationBreakAlias: reconciliationBreakAlias(item),
+		CreatedAt:                optionalBusinessTime(item.CreatedAt),
+		ResolvedAt:               optionalBusinessTime(item.ResolvedAt),
+	})
+}
+
+func (bucket RawStreamSummaryBucket) MarshalJSON() ([]byte, error) {
+	type rawStreamSummaryBucketAlias RawStreamSummaryBucket
+	return json.Marshal(struct {
+		rawStreamSummaryBucketAlias
+		LastReceivedAt *string `json:"last_received_at,omitempty"`
+	}{
+		rawStreamSummaryBucketAlias: rawStreamSummaryBucketAlias(bucket),
+		LastReceivedAt:              optionalBusinessTime(bucket.LastReceivedAt),
+	})
+}

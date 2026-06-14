@@ -54,6 +54,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/events/stream", Response: "OrderEvent | FillEvent", Description: "stream order and fill events"},
 			{Method: "GET", Path: "/v1/jobs/runs", Response: "[]JobRun", Description: "query latest daily job runs"},
 			{Method: "POST", Path: "/v1/jobs/runs", Request: "JobRunRequest", Response: "JobRun", Description: "persist daily job run report"},
+			{Method: "GET", Path: "/v1/reconciliations/breaks", Request: "ReconciliationBreakQuery", Response: "[]ReconciliationBreak", Description: "query settlement reconciliation breaks"},
 			{Method: "GET", Path: "/v1/schema", Response: "CatalogDocument", Description: "schema discovery"},
 		},
 		RedisActions: []string{

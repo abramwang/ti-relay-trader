@@ -674,6 +674,89 @@ func TestUpsertReconciliationRunBuildsStatusWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[6], `"accounts":1`)
 }
 
+func TestUpsertReconciliationInputBuildsIdempotentWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	repo.now = func() time.Time { return time.Date(2026, 6, 14, 16, 10, 0, 0, time.UTC) }
+
+	err := repo.UpsertReconciliationInput(context.Background(), ReconciliationInput{
+		RunID:     "settlement-20260612",
+		Source:    "post_close_settlement",
+		InputType: "acct-1:relay_ledger_summary",
+		Payload:   map[string]any{"orders": 2},
+	})
+	if err != nil {
+		t.Fatalf("UpsertReconciliationInput() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO reconciliation_inputs")
+	requireQueryContains(t, exec.query, "ON CONFLICT (run_id, source, input_type)")
+	requireArgLen(t, exec.args, 5)
+	assertJSONContains(t, exec.args[3], `"orders":2`)
+}
+
+func TestUpsertReconciliationBreakBuildsIdempotentWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.UpsertReconciliationBreak(context.Background(), ReconciliationBreak{
+		RunID:      "settlement-20260612",
+		AccountID:  "acct-1",
+		BreakType:  "non_terminal_order",
+		ObjectType: "order",
+		ObjectID:   "gw-working",
+		InternalPayload: map[string]any{
+			"status": "working",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpsertReconciliationBreak() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO reconciliation_breaks")
+	requireQueryContains(t, exec.query, "COALESCE(account_id, '')")
+	requireArgLen(t, exec.args, 12)
+	if exec.args[3] != "warning" || exec.args[4] != "open" {
+		t.Fatalf("default state args = %#v/%#v", exec.args[3], exec.args[4])
+	}
+	assertJSONContains(t, exec.args[7], `"status":"working"`)
+}
+
+func TestListReconciliationBreaksBuildsFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListReconciliationBreaks(context.Background(), ReconciliationBreakQuery{
+		RunID:     "settlement-20260612",
+		AccountID: "acct-1",
+		Status:    "open",
+		Limit:     50,
+	})
+	if err == nil {
+		t.Fatal("ListReconciliationBreaks() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM reconciliation_breaks")
+	requireQueryContains(t, exec.query, "run_id = $1")
+	requireQueryContains(t, exec.query, "account_id = $2")
+	requireQueryContains(t, exec.query, "status = $3")
+	requireArgLen(t, exec.args, 4)
+}
+
+func TestRawStreamSummaryBuildsWindowRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.RawStreamSummary(context.Background(), "acct-1", time.Unix(1700000000, 0), time.Unix(1700000060, 0))
+	if err == nil {
+		t.Fatal("RawStreamSummary() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM raw_stream_messages")
+	requireQueryContains(t, exec.query, "GROUP BY stream_role")
+	requireArgLen(t, exec.args, 3)
+}
+
 func TestJobRunJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {
 	body, err := json.Marshal(JobRun{
 		RunID:           "run-1",

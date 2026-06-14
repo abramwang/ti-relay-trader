@@ -145,6 +145,12 @@ migrations/postgres/000001_init_ledger.down.sql
 | `reconciliation_breaks` | 对账差异 |
 | `reconciliation_inputs` | 对账输入快照和来源信息 |
 
+当前第一版 `post_close_settlement` 会通过 9092 `POST /v1/settlements/snapshots` 写入：
+
+- `reconciliation_inputs`：按账户记录 relay 标准账本摘要、PnL 输入摘要、Redis raw stream 窗口摘要和柜台查询摘要。
+- `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。
+- `GET /v1/reconciliations/breaks`：按 `run_id/account_id/status` 查询待复核差异。
+
 ## 关键约束
 
 1. `orders.account_id + orders.gateway_order_id` 必须唯一。
@@ -153,6 +159,7 @@ migrations/postgres/000001_init_ledger.down.sql
 4. `raw_stream_messages` 保留 Redis stream key、stream id、direction、body 和解析状态。
 5. 所有交易金额字段优先使用数据库 `numeric`，避免浮点误差进入最终账本。
 6. 所有接口时间进入数据库时统一为带时区时间，原始时间戳保留在 raw 字段。
+7. `reconciliation_inputs` 和 `reconciliation_breaks` 通过唯一索引保证同一 `run_id` 重复执行时可幂等覆盖。
 7. 业务展示、API 输出和报表按 `Asia/Shanghai` 转换；数据库 `timestamptz` 仍保存绝对时刻。
 8. `trade_date` 必须按 `Asia/Shanghai` 下的 A 股交易日确定，交易日判断和最近交易日回退以 Meridian 交易日接口为准。
 

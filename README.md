@@ -236,13 +236,14 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `GET /v1/orders`、`GET /v1/fills` 默认按 `Asia/Shanghai` 当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history` 历史查询口径。
 - [x] 账本 API 时间字段统一按 `Asia/Shanghai` 输出，订单、成交、资金、持仓、订单事件、成交事件和任务运行记录的零值时间字段不再展示为 `0001-01-01T00:00:00Z`。
 - [x] 新增 `POST /v1/settlements/snapshots`，按指定交易日将当前资金写入 `asset_snapshots(close)`、当前持仓写入 `position_snapshots`，并 upsert `reconciliation_runs` 批次；`post_close_settlement` 已接入该接口。
+- [x] 新增盘后对账输入和差异记录第一版：`POST /v1/settlements/snapshots` 会写入 `reconciliation_inputs`、生成 `reconciliation_breaks`，并提供 `GET /v1/reconciliations/breaks` 查询入口。
 - [ ] 设计模拟柜台账表 schema。
 - [x] 实现正式交易服务模式下的 9092 健康检查接口骨架。
 
 ## 待办事项
 
-1. 推进盘后对账输入和差异记录：写入 `reconciliation_inputs`，对比柜台查询快照、Redis 原始消息和 relay 标准账本，生成 `reconciliation_breaks`。
-2. 增加 9092 页面冒烟测试脚本。
+1. 增加 9092 页面冒烟测试脚本。
+2. 增加 `/trade` 批量下单测试视图。
 3. 设计模拟柜台账表 schema。
 4. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 
@@ -263,7 +264,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
-- 每日交易主流程已完成 Python 任务骨架、任务运行报告落盘、收盘后 close 资产/持仓快照落盘和 `reconciliation_runs` 批次 upsert；下一步需要补齐 `reconciliation_inputs`、`reconciliation_breaks` 和 PnL 输入。
+- 每日交易主流程已完成 Python 任务骨架、任务运行报告落盘、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要和 `reconciliation_breaks` 差异记录第一版；下一步需要输出更完整的人工复核报告和 PnL 计算。
 - 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
 - 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
 - `/healthz` 只表示 9092 进程存活；`/v1/status` 才包含 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态。健康检查只返回 `ok/error/timeout/not_configured` 等摘要，不返回 DSN、密码、Token 或 Redis URL。
@@ -345,3 +346,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 清理账本 API 零值时间展示：订单、成交、资金、持仓、订单事件、成交事件和 `job_runs` 响应按东八区格式化非空时间，并省略零值字段，避免策略端和页面看到 `0001-01-01T00:00:00Z`。
 - `2026-06-14`: 新增 `POST /v1/settlements/snapshots` 和 SDK `record_settlement_snapshot()`；`post_close_settlement` 会在刷新/读取账户摘要后写入 close 资产快照、持仓快照和 `reconciliation_runs` 批次，SDK 发布 `relay-sdk 0.1.5`。
 - `2026-06-14`: 根据 `tmp/relay_sdk_014_feedback_20260614.md` 反馈，订单标准状态会按成交数量归一化：`cum_filled_qty >= order_qty` 且 `leaves_qty=0` 时统一进入 `filled/filled/is_terminal=true`；账本冲突更新和状态更新新增终态保护，避免已撤/已成/已拒订单被后续 `created/accepted/working` 推送回退；SDK 发布 `relay-sdk 0.1.6`，`record_job_run()` 增加 `target_trade_date`、`timezone`、`duration_ms` 显式参数并兼容 `status="completed"`。
+- `2026-06-14`: 推进 N3 盘后对账输入与差异记录：新增 `000004_reconciliation_idempotency` migration，为 `reconciliation_inputs` 和 `reconciliation_breaks` 增加幂等唯一索引；结算快照接口会写入 relay 账本摘要、PnL 输入摘要、Redis raw 窗口摘要和柜台查询摘要，并生成未终态订单、订单成交数量不一致、快照缺失/刷新失败 break；新增 `GET /v1/reconciliations/breaks` 和 API Console 查询入口。

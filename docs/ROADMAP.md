@@ -28,34 +28,31 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 推进盘后对账输入和差异记录：写入 `reconciliation_inputs`，对比柜台查询快照、Redis 原始消息和 relay 标准账本，生成 `reconciliation_breaks`。
-3. 增加 9092 页面冒烟测试。
-4. 增加批量下单测试视图。
-5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
-6. 设计模拟柜台账表 schema。
+2. 增加 9092 页面冒烟测试。
+3. 增加批量下单测试视图。
+4. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+5. 设计模拟柜台账表 schema。
 
 ## 下一步任务
 
-### N3 盘后对账输入与差异记录
+### N4 9092 页面冒烟测试
 
 状态：`doing`
 
-目标：在 N2 已写入 close 快照和 `reconciliation_runs` 的基础上，补齐盘后对账输入、差异记录和 PnL 输入摘要，让人工复核和后续账户盈亏统计有可追踪依据。
+目标：为文档门户、接口测试台和交易终端增加自动化页面冒烟测试，确保每次改动后 9092 核心页面可访问、关键入口可见、基础 API 请求可发出。
 
 范围：
 
-- 记录 `reconciliation_inputs`：柜台查询快照摘要、relay 标准订单/成交/资金/持仓摘要、Redis 原始消息窗口摘要。
-- 生成第一版 `reconciliation_breaks`：未终态订单、订单成交数量不一致、资产/持仓快照缺失、账户刷新失败。
-- 在 `post_close_settlement` 报告中增加对账输入数量、差异数量、严重级别和 PnL 输入摘要。
-- 为 9092 增加对账批次/差异查询接口或在 `/v1/jobs/runs` 报告中保留足够摘要。
-- 增加单元测试覆盖无差异、存在未终态订单、缺少快照和重复运行幂等。
+- 检查 `/`、`/docs/readme`、`/api-console`、`/trade`、`/docs/python-sdk` 基础可访问。
+- 检查 `/api-console` catalog 能加载，服务状态接口可发出并显示响应。
+- 检查 `/trade` 账户区、下单区、订单监控区和资金持仓区基础 DOM 存在。
+- 输出可用于 CI 或手工发布前执行的脚本。
 
 验收口径：
 
-- 同一 `run_id` 重复执行不会重复生成相同输入和差异。
-- `reconciliation_runs.summary` 能看到输入数量、差异数量、账户范围和失败摘要。
-- 有未终态订单时会形成可查询/可复核的 break，而不是只停留在任务 stdout。
-- 后续 PnL 任务至少能读取日终权益、持仓市值、成交金额和费用摘要。
+- 本地启动 9092 后一条命令能完成页面冒烟。
+- 失败时输出具体页面、选择器或 HTTP 状态。
+- 脚本默认只读，不发送交易写指令。
 
 ## 里程碑细化
 
@@ -242,8 +239,8 @@
 - [x] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [x] 拉取柜台资金、持仓、订单、成交查询结果。
 - [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
-- [ ] 对比 Redis 事件流水和内部账表。
-- [ ] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。
+- [x] 对比 Redis 原始消息窗口摘要和内部账表摘要。
+- [x] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。
 - [ ] 输出人工复核报告。
 
 ### P8 历史数据与盈亏统计

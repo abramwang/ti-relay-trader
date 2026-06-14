@@ -254,6 +254,20 @@
     ]
   },
   {
+    "id": "reconciliation-breaks",
+    "group": "运维",
+    "title": "对账差异查询",
+    "method": "GET",
+    "path": "/v1/reconciliations/breaks",
+    "status": "needs-config",
+    "fields": [
+      { "name": "run_id", "label": "run_id", "source": "query", "defaultValue": "post_close_settlement-20260612" },
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "open", "options": ["", "open", "resolved", "ignored"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "50" }
+    ]
+  },
+  {
     "id": "meridian-snapshots",
     "group": "行情",
     "title": "Meridian 快照",
