@@ -27,6 +27,7 @@ import (
 
 	"ti-relay-trader/internal/api"
 	relayconfig "ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/logging"
@@ -208,15 +209,17 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		listenAddr = flagAddr
 	}
 
+	eventHub := events.NewHub()
 	apiDeps, ledgerWriter, apiCleanup, err := buildAPIDependencies(cfg, logger)
+	apiDeps.Events = eventHub
 	if err != nil {
 		logger.Warn("relay_docs_api_dependencies_unavailable", "error", err)
-		apiDeps = api.Dependencies{}
+		apiDeps = api.Dependencies{Events: eventHub}
 		ledgerWriter = nil
 		apiCleanup = func() {}
 	}
 	defer apiCleanup()
-	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, apiDeps.Orders, logger)
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, apiDeps.Orders, eventHub, logger)
 	defer stopLedgerSync()
 
 	mux := http.NewServeMux()
@@ -255,12 +258,14 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 		listenAddr = flagAddr
 	}
 
+	eventHub := events.NewHub()
 	deps, ledgerWriter, cleanup, err := buildAPIDependencies(cfg, logger)
+	deps.Events = eventHub
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, deps.Orders, logger)
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, deps.Orders, eventHub, logger)
 	defer stopLedgerSync()
 
 	logger.Info("relay_service_listening",
@@ -327,7 +332,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	return api.Dependencies{Orders: orders}, repo, cleanup, nil
 }
 
-func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, refresher orderflow.AccountRefresher, logger *slog.Logger) func() {
+func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, refresher orderflow.AccountRefresher, eventHub *events.Hub, logger *slog.Logger) func() {
 	if writer == nil || strings.TrimSpace(cfg.Redis.URL) == "" {
 		logger.Warn("relay_ledger_sync_loop_disabled", "reason", "redis url or ledger writer missing")
 		return func() {}
@@ -366,6 +371,9 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 				reason := fmt.Sprintf("ledger:%s order_events=%d fills=%d", change.LastStreamID, change.OrderEvents, change.Fills)
 				autoRefresh.RequestAccounts(change.AccountIDs, reason)
 			},
+			OnLedgerChange: func(_ context.Context, change redisstream.LedgerChange) {
+				publishLedgerEvents(eventHub, change)
+			},
 		}, logger.With("component", "ledger-sync-loop"))
 		if err != nil && syncCtx.Err() == nil {
 			logger.Error("relay_ledger_sync_loop_stopped", "error", err)
@@ -378,6 +386,46 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 			autoRefresh.Stop()
 		}
 		<-done
+	}
+}
+
+func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) {
+	if eventHub == nil {
+		return
+	}
+	base := events.Event{
+		AccountIDs:   change.AccountIDs,
+		Source:       "redis-ledger-sync",
+		Stream:       change.Stream,
+		LastStreamID: change.LastStreamID,
+		Data: map[string]any{
+			"role":           change.Role,
+			"order_events":   change.OrderEvents,
+			"fills":          change.Fills,
+			"assets":         change.Assets,
+			"positions":      change.Positions,
+			"last_stream_id": change.LastStreamID,
+		},
+	}
+	if change.OrderEvents > 0 {
+		event := base
+		event.Type = events.TypeOrderChanged
+		eventHub.Publish(event)
+	}
+	if change.Fills > 0 {
+		event := base
+		event.Type = events.TypeFillChanged
+		eventHub.Publish(event)
+	}
+	if change.Assets > 0 {
+		event := base
+		event.Type = events.TypeAssetChanged
+		eventHub.Publish(event)
+	}
+	if change.Positions > 0 {
+		event := base
+		event.Type = events.TypePositionsChanged
+		eventHub.Publish(event)
 	}
 }
 

@@ -18,6 +18,7 @@
 
   let endpoints = [];
   let selectedEndpoint = null;
+  let activeStream = null;
 
   function renderEndpointList() {
     endpointList.innerHTML = "";
@@ -103,6 +104,9 @@
   }
 
   function selectEndpoint(endpoint) {
+    if (selectedEndpoint !== endpoint) {
+      closeActiveStream();
+    }
     selectedEndpoint = endpoint;
     endpointGroup.textContent = endpoint.group;
     endpointMethod.textContent = endpoint.method;
@@ -111,6 +115,7 @@
     endpointStatus.textContent = endpoint.status;
     endpointStatus.className = "api-status " + statusClass(endpoint.status);
     sendButton.disabled = endpoint.status === "planned";
+    sendButton.textContent = endpoint.stream ? "连接" : "发送请求";
     renderForm(endpoint);
     renderEndpointList();
     updatePreview();
@@ -209,6 +214,11 @@
       tableOutput.innerHTML = "";
       return;
     }
+    if (selectedEndpoint.stream) {
+      startStreamRequest(request);
+      return;
+    }
+    closeActiveStream();
     const started = performance.now();
     setStatus("请求中", "planned");
     responseMeta.textContent = request.method + " " + request.relativeURL;
@@ -240,6 +250,63 @@
       setStatus("请求失败", "blocked");
       responseMeta.textContent = request.method + " " + request.relativeURL;
       jsonOutput.textContent = String(err);
+    }
+  }
+
+  function startStreamRequest(request) {
+    closeActiveStream();
+    if (!window.EventSource) {
+      setStatus("不支持", "blocked");
+      responseMeta.textContent = "当前浏览器不支持 EventSource";
+      jsonOutput.textContent = "{}";
+      tableOutput.innerHTML = "";
+      return;
+    }
+
+    const started = performance.now();
+    const rows = [];
+    setStatus("连接中", "planned");
+    responseMeta.textContent = request.method + " " + request.relativeURL;
+    tableOutput.innerHTML = "";
+    jsonOutput.textContent = "waiting for events...";
+
+    const source = new EventSource(request.url);
+    activeStream = source;
+    const append = (type, event) => {
+      let data = event.data || "";
+      try {
+        data = JSON.parse(data);
+      } catch (_err) {
+      }
+      rows.unshift({
+        type,
+        id: event.lastEventId || "",
+        data
+      });
+      rows.splice(20);
+      jsonOutput.textContent = JSON.stringify(rows, null, 2);
+      renderStreamTable(rows);
+      setStatus("已连接", "ready");
+      responseMeta.textContent = request.method + " " + request.relativeURL + " · " + Math.round(performance.now() - started) + "ms";
+    };
+
+    source.addEventListener("open", () => {
+      setStatus("已连接", "ready");
+    });
+    for (const type of ["relay.connected", "relay.heartbeat", "order.changed", "fill.changed", "asset.changed", "positions.changed"]) {
+      source.addEventListener(type, (event) => append(type, event));
+    }
+    source.onmessage = (event) => append("message", event);
+    source.onerror = () => {
+      setStatus("重连中", "planned");
+      responseMeta.textContent = request.method + " " + request.relativeURL + " · EventSource reconnecting";
+    };
+  }
+
+  function closeActiveStream() {
+    if (activeStream) {
+      activeStream.close();
+      activeStream = null;
     }
   }
 
@@ -314,6 +381,44 @@
     tableOutput.appendChild(table);
   }
 
+  function renderStreamTable(rows) {
+    if (rows.length === 0) {
+      tableOutput.innerHTML = "";
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "result-table";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    for (const column of ["event", "id", "account", "time", "stream"]) {
+      const th = document.createElement("th");
+      th.textContent = column;
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    const tbody = document.createElement("tbody");
+    for (const row of rows) {
+      const data = row.data && typeof row.data === "object" ? row.data : {};
+      const values = [
+        row.type,
+        row.id || data.id || "",
+        Array.isArray(data.account_ids) ? data.account_ids.join(",") : "",
+        data.time || "",
+        data.last_stream_id || ""
+      ];
+      const tr = document.createElement("tr");
+      for (const value of values) {
+        const td = document.createElement("td");
+        td.textContent = String(value || "");
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.append(thead, tbody);
+    tableOutput.innerHTML = "";
+    tableOutput.appendChild(table);
+  }
+
   function formatValue(value) {
     if (value === null || value === undefined) {
       return "";
@@ -336,7 +441,10 @@
   paramForm.addEventListener("input", updatePreview);
   paramForm.addEventListener("submit", sendRequest);
   baseUrlInput.addEventListener("input", updatePreview);
-  resetButton.addEventListener("click", () => selectEndpoint(selectedEndpoint));
+  resetButton.addEventListener("click", () => {
+    closeActiveStream();
+    selectEndpoint(selectedEndpoint);
+  });
   copyURLButton.addEventListener("click", async () => {
     try {
       const request = buildRequest();

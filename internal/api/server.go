@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
@@ -22,6 +25,7 @@ import (
 type Dependencies struct {
 	Orders OrderService
 	Market *market.MeridianClient
+	Events *events.Hub
 }
 
 type OrderService interface {
@@ -42,6 +46,7 @@ type Server struct {
 	started time.Time
 	orders  OrderService
 	market  *market.MeridianClient
+	events  *events.Hub
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -67,6 +72,10 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		started: time.Now().UTC(),
 		orders:  deps.Orders,
 		market:  marketClient,
+		events:  deps.Events,
+	}
+	if server.events == nil {
+		server.events = events.NewHub()
 	}
 
 	mux := http.NewServeMux()
@@ -77,12 +86,114 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
+	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
 	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
 	mux.HandleFunc("/v1/fills", server.handleFills)
 	mux.HandleFunc("/", server.handleNotFound)
 
 	return httpx.RequestLogger(logger)(mux)
+}
+
+func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "streaming is not supported", nil)
+		return
+	}
+	accountID := strings.TrimSpace(r.URL.Query().Get("account_id"))
+	ch, unsubscribe := s.events.Subscribe(r.Context(), events.Subscription{
+		AccountID: accountID,
+		Buffer:    64,
+	})
+	defer unsubscribe()
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	_, _ = io.WriteString(w, "retry: 3000\n\n")
+	if err := writeSSEEvent(w, events.Event{
+		ID:         "connected",
+		Type:       events.TypeConnected,
+		AccountIDs: accountIDsForFilter(accountID),
+		Time:       time.Now().UTC(),
+		Source:     "relay-api",
+		Data: map[string]any{
+			"account_id": accountID,
+			"request_id": httpx.RequestID(r),
+		},
+	}); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := writeSSEEvent(w, event); err != nil {
+				return
+			}
+			flusher.Flush()
+		case now := <-heartbeat.C:
+			if err := writeSSEEvent(w, events.Event{
+				Type:       events.TypeHeartbeat,
+				AccountIDs: accountIDsForFilter(accountID),
+				Time:       now.UTC(),
+				Source:     "relay-api",
+			}); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+func writeSSEEvent(w io.Writer, event events.Event) error {
+	if event.Type == "" {
+		event.Type = "relay.event"
+	}
+	if event.Time.IsZero() {
+		event.Time = time.Now().UTC()
+	}
+	if event.ID != "" {
+		if _, err := fmt.Fprintf(w, "id: %s\n", event.ID); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\n", event.Type); err != nil {
+		return err
+	}
+	body, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err = io.WriteString(w, "\n")
+	return err
+}
+
+func accountIDsForFilter(accountID string) []string {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil
+	}
+	return []string{accountID}
 }
 
 func (s *Server) handleMeridianMetadataInstruments(w http.ResponseWriter, r *http.Request) {

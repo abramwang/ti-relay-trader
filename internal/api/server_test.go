@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,8 +11,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/redisstream"
@@ -251,6 +254,50 @@ func TestMeridianMarketSnapshotsProxy(t *testing.T) {
 	}
 }
 
+func TestEventsStreamPublishesSSE(t *testing.T) {
+	eventHub := events.NewHub()
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Events: eventHub,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/events/stream?account_id=acct-1", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request event stream: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("content-type = %q", resp.Header.Get("Content-Type"))
+	}
+
+	lines := make(chan string, 16)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+		close(lines)
+	}()
+
+	waitForSSELine(t, lines, "event: relay.connected")
+	eventHub.Publish(events.Event{
+		Type:       events.TypeOrderChanged,
+		AccountIDs: []string{"acct-1"},
+		Data:       map[string]any{"order_events": 1},
+	})
+	waitForSSELine(t, lines, "event: order.changed")
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
@@ -260,6 +307,25 @@ func TestMethodNotAllowed(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func waitForSSELine(t *testing.T, lines <-chan string, want string) {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatalf("stream closed before %q", want)
+			}
+			if line == want {
+				return
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for %q", want)
+		}
 	}
 }
 

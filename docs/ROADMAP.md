@@ -29,10 +29,9 @@
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-3. 为 `/trade` 增加 `GET /v1/events/stream` SSE 或 WebSocket 实时订单/成交推送。
-4. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
-5. 补充数据库状态检查到 `/v1/status`。
-6. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
+3. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
+4. 补充数据库状态检查到 `/v1/status`。
+5. 增加常驻 worker，持续同步 `reply/event/hb/dlq` 并持久化位点。
 
 ## 里程碑细化
 
@@ -140,7 +139,7 @@
 - [x] `POST /v1/orders/{gateway_order_id}/cancel`。
 - [x] `GET /v1/orders`。
 - [x] `GET /v1/fills`。
-- [ ] `GET /v1/events/stream`。
+- [x] `GET /v1/events/stream`。
 - [x] 规划 Python SDK 的包形态、核心方法、错误处理和实盘语义。
 - [x] 参考 Meridian SDK，明确内网 HTTP tar.gz 安装包和 pip 安装方式。
 - [ ] 初始化 `sdk/python/relay_sdk` 包。
@@ -160,6 +159,7 @@
 - [x] 每个接口按 path/query/body 参数生成表单。
 - [x] 响应结果支持 JSON 和表格视图。
 - [x] 页面模板、样式、脚本和接口 catalog 从 Go handler 中拆分到 `web/` 资源目录。
+- [x] 支持 `GET /v1/events/stream` SSE 事件流连接和最近事件预览。
 - [ ] API handler 完成后自动同步 endpoint 状态。
 - [ ] 增加请求样例保存和导出。
 - [ ] 增加响应断言和冒烟测试集合。
@@ -174,7 +174,7 @@
 - [x] 接入资金/持仓刷新指令。
 - [x] 订单列表采用 3 秒轮询，状态签名变化时行高亮并写入推送日志。
 - [x] 订单详情展示状态轨迹、订单 JSON 和成交执行记录。
-- [ ] 接入 `GET /v1/events/stream` SSE 或 WebSocket 实时推送。
+- [x] 接入 `GET /v1/events/stream` SSE 实时推送，订单、成交、资金、持仓事件触发页面合并刷新，并保留 3 秒轮询兜底。
 - [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。

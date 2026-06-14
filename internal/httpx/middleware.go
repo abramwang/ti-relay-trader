@@ -76,3 +76,12 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 	r.bytes += n
 	return n, err
 }
+
+func (r *statusRecorder) Flush() {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}

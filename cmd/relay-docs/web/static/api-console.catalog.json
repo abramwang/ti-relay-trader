@@ -170,5 +170,16 @@
       { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
     ]
   },
-  { "id": "events", "group": "事件", "title": "事件流", "method": "GET", "path": "/v1/events/stream", "status": "planned", "fields": [] }
+  {
+    "id": "events",
+    "group": "事件",
+    "title": "事件流",
+    "method": "GET",
+    "path": "/v1/events/stream",
+    "status": "ready",
+    "stream": true,
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" }
+    ]
+  }
 ]

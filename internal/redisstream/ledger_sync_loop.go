@@ -13,12 +13,13 @@ import (
 )
 
 type LedgerSyncLoopOptions struct {
-	Prefixes      []string
-	StartID       string
-	Count         int64
-	Block         time.Duration
-	Roles         []string
-	OnTradeChange func(context.Context, LedgerTradeChange)
+	Prefixes       []string
+	StartID        string
+	Count          int64
+	Block          time.Duration
+	Roles          []string
+	OnTradeChange  func(context.Context, LedgerTradeChange)
+	OnLedgerChange func(context.Context, LedgerChange)
 }
 
 type LedgerTradeChange struct {
@@ -27,6 +28,17 @@ type LedgerTradeChange struct {
 	AccountIDs   []string
 	OrderEvents  int
 	Fills        int
+	LastStreamID string
+}
+
+type LedgerChange struct {
+	Stream       string
+	Role         string
+	AccountIDs   []string
+	OrderEvents  int
+	Fills        int
+	Assets       int
+	Positions    int
 	LastStreamID string
 }
 
@@ -127,10 +139,7 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 				)
 			}
 			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0) {
-				accountIDs := report.Totals.AccountIDs
-				if len(accountIDs) == 0 && strings.TrimSpace(report.Totals.LastAccountID) != "" {
-					accountIDs = []string{report.Totals.LastAccountID}
-				}
+				accountIDs := accountIDsFromLedgerResult(report.Totals)
 				if len(accountIDs) > 0 {
 					opts.OnTradeChange(ctx, LedgerTradeChange{
 						Stream:       report.Name,
@@ -142,8 +151,31 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					})
 				}
 			}
+			if opts.OnLedgerChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
+				accountIDs := accountIDsFromLedgerResult(report.Totals)
+				if len(accountIDs) > 0 {
+					opts.OnLedgerChange(ctx, LedgerChange{
+						Stream:       report.Name,
+						Role:         report.Role,
+						AccountIDs:   accountIDs,
+						OrderEvents:  report.Totals.OrderEvents,
+						Fills:        report.Totals.Fills,
+						Assets:       report.Totals.Assets,
+						Positions:    report.Totals.Positions,
+						LastStreamID: report.Totals.LastStreamID,
+					})
+				}
+			}
 		}
 	}
 	logger.Info("relay_ledger_sync_loop_stopped", "reason", ctx.Err())
 	return nil
+}
+
+func accountIDsFromLedgerResult(result LedgerProcessResult) []string {
+	accountIDs := result.AccountIDs
+	if len(accountIDs) == 0 && strings.TrimSpace(result.LastAccountID) != "" {
+		accountIDs = []string{result.LastAccountID}
+	}
+	return accountIDs
 }

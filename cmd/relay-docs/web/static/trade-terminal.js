@@ -20,7 +20,12 @@
     suggestionSeq: 0,
     quoteSeq: 0,
     priceEdited: false,
-    activeView: "trade"
+    activeView: "trade",
+    eventSource: null,
+    eventSourceAccount: "",
+    streamConnected: false,
+    streamRefreshTimer: 0,
+    streamErrorLoggedAt: 0
   };
 
   const els = {
@@ -357,7 +362,7 @@
       setStatus(els.redisStatus, true, "Redis: live");
       setStatus(els.dbStatus, true, "DB: live");
       els.footerApi.textContent = data.public_url || window.RELAY_PUBLIC_URL || "connected";
-      els.footerRedis.textContent = "poll 3s";
+      updateStreamFooter();
       if (data.time) {
         syncClock(data.time);
       }
@@ -376,6 +381,107 @@
       state.activeAccount = state.accounts[0].account_id;
     }
     renderAccounts();
+  }
+
+  function connectEventStream() {
+    if (!window.EventSource || !state.activeAccount) {
+      updateStreamFooter();
+      return;
+    }
+    if (state.eventSource && state.eventSourceAccount === state.activeAccount) {
+      updateStreamFooter();
+      return;
+    }
+    closeEventStream();
+    const accountID = state.activeAccount;
+    const source = new EventSource("/v1/events/stream?account_id=" + encodeURIComponent(accountID));
+    state.eventSource = source;
+    state.eventSourceAccount = accountID;
+    state.streamConnected = false;
+    updateStreamFooter();
+
+    source.addEventListener("open", () => {
+      state.streamConnected = true;
+      updateStreamFooter();
+    });
+    source.addEventListener("relay.connected", (event) => {
+      state.streamConnected = true;
+      updateStreamFooter();
+      const payload = parseStreamPayload(event);
+      pushLog("info", "实时通道已连接", payload && payload.account_ids ? payload.account_ids.join(",") : accountID);
+    });
+    source.addEventListener("relay.heartbeat", () => {
+      state.streamConnected = true;
+      updateStreamFooter();
+    });
+    for (const type of ["order.changed", "fill.changed", "asset.changed", "positions.changed"]) {
+      source.addEventListener(type, (event) => handleLedgerStreamEvent(type, event));
+    }
+    source.onerror = () => {
+      state.streamConnected = false;
+      updateStreamFooter();
+      const now = Date.now();
+      if (now - state.streamErrorLoggedAt > 10000) {
+        state.streamErrorLoggedAt = now;
+        pushLog("warn", "实时通道重连中", "保留 3 秒轮询兜底");
+      }
+    };
+  }
+
+  function closeEventStream() {
+    if (state.eventSource) {
+      state.eventSource.close();
+      state.eventSource = null;
+    }
+    state.eventSourceAccount = "";
+    state.streamConnected = false;
+    updateStreamFooter();
+  }
+
+  function updateStreamFooter() {
+    if (!els.footerRedis) {
+      return;
+    }
+    if (state.streamConnected) {
+      els.footerRedis.textContent = "sse live";
+    } else if (state.eventSource) {
+      els.footerRedis.textContent = "sse reconnecting / poll 3s";
+    } else {
+      els.footerRedis.textContent = "poll 3s";
+    }
+  }
+
+  function parseStreamPayload(event) {
+    try {
+      return JSON.parse(event.data || "{}");
+    } catch (err) {
+      pushLog("warn", "实时事件解析失败", err.message);
+      return null;
+    }
+  }
+
+  function handleLedgerStreamEvent(type, event) {
+    const payload = parseStreamPayload(event);
+    if (!payload || !streamEventMatchesActiveAccount(payload)) {
+      return;
+    }
+    state.streamConnected = true;
+    state.lastPayload = payload;
+    updateStreamFooter();
+    pushLog("info", "实时事件", type + (payload.last_stream_id ? " " + payload.last_stream_id : ""));
+    scheduleStreamRefresh();
+  }
+
+  function streamEventMatchesActiveAccount(payload) {
+    const accountIDs = Array.isArray(payload.account_ids) ? payload.account_ids : [];
+    return accountIDs.length === 0 || accountIDs.includes(state.activeAccount);
+  }
+
+  function scheduleStreamRefresh() {
+    window.clearTimeout(state.streamRefreshTimer);
+    state.streamRefreshTimer = window.setTimeout(() => {
+      loadAccountData().catch((err) => pushLog("error", "实时刷新失败", err.message));
+    }, 150);
   }
 
   async function loadAccountData() {
@@ -615,6 +721,7 @@
         state.activeAccount = account.account_id;
         state.selectedOrderID = "";
         renderAccounts();
+        connectEventStream();
         await refreshNow();
       });
       els.accountTabs.appendChild(tab);
@@ -1117,6 +1224,7 @@
     window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
+      connectEventStream();
       await refreshNow();
     });
     for (const button of document.querySelectorAll(".side-switch button")) {
@@ -1237,6 +1345,7 @@
     try {
       await loadStatus();
       await loadAccounts();
+      connectEventStream();
       await loadAccountData();
       await loadQuoteForInput();
       pushLog("info", "交易终端初始化完成");
@@ -1251,6 +1360,7 @@
     window.setInterval(() => {
       loadQuoteForInput().catch((err) => pushLog("warn", "行情轮询失败", err.message));
     }, 5000);
+    window.addEventListener("beforeunload", closeEventStream);
   }
 
   boot();
