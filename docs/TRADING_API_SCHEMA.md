@@ -1,12 +1,12 @@
 # relay 统一交易接口 Schema
 
-更新时间：`2026-06-13`
+更新时间：`2026-06-14`
 
 ## 当前状态
 
 第一版 schema 已落在 Go 包 `internal/trading`，版本号为 `relay.trading.v1alpha1`。
 
-该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将资金、持仓、单笔下单、批量下单、撤单、订单查询和成交查询接入测试链路；下单/批量下单/撤单写 Redis `cmd.trade`，资金/持仓/订单/成交查询读取 PostgreSQL 本地账本。
+该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接入测试链路；下单/批量下单/撤单写 Redis `cmd.trade`，资金/持仓/订单/成交查询读取 PostgreSQL 本地账本，刷新接口写 Redis `cmd.query`。
 
 ## 参考来源
 
@@ -255,13 +255,17 @@ rejected
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已有配置态骨架 |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
+| `POST` | `/v1/accounts/{account_id}/asset/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，读取 PostgreSQL 当前持仓 |
+| `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
+| `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
+| `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 已实现，读取 PostgreSQL 账本 |
 | `GET` | `/v1/fills` | `FillQuery` | `[]Fill` | 已实现，读取 PostgreSQL 账本 |
-| `GET` | `/v1/events/stream` | - | `OrderEvent | FillEvent` | 待实现 |
+| `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
 
 ## Redis Stream 映射
 
@@ -272,10 +276,10 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 | `POST /v1/orders` | `order.submit` | `cmd.trade` |
 | `POST /v1/orders/batch` | `order.batch.submit` | `cmd.trade` |
 | `POST /v1/orders/{gateway_order_id}/cancel` | `order.cancel` | `cmd.trade` |
-| `GET /v1/accounts/{account_id}/asset` | `account.asset.query` | `cmd.query` |
-| `GET /v1/accounts/{account_id}/positions` | `account.positions.query` | `cmd.query` |
-| `GET /v1/orders` | `order.list.query` | `cmd.query` |
-| `GET /v1/fills` | `fill.list.query` | `cmd.query` |
+| `POST /v1/accounts/{account_id}/asset/refresh` | `account.asset.query` | `cmd.query` |
+| `POST /v1/accounts/{account_id}/positions/refresh` | `account.positions.query` | `cmd.query` |
+| `POST /v1/accounts/{account_id}/orders/refresh` | `order.list.query` | `cmd.query` |
+| `POST /v1/accounts/{account_id}/fills/refresh` | `fill.list.query` | `cmd.query` |
 
 `POST /v1/orders` 的 `202 Accepted` 仅表示 relay 已接受请求、写入订单草稿并向 Redis `cmd.trade` 写入 `order.submit`，不表示交易所接单或成交。最终状态以 `order.event` 和 `fill.event` 回流为准。
 
@@ -283,10 +287,9 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 
 `POST /v1/orders/batch` 会为每笔子订单写入本地草稿，再向 Redis `cmd.trade` 写入一条 `order.batch.submit` command。批量请求的 `202 Accepted` 不表示交易所接单或成交，最终仍以回流事件为准。
 
-当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动发 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query` 到前置。后续如果需要实时刷新柜台查询结果，再补 `cmd.query` 写入和 reply 合并。
+当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 轻量同步循环、`relayctl ledger-sync` 或后续正式 worker 把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL。
 
 ## 后续工作
 
 1. 初始化 Python SDK，直接复用本 schema 文档和 `/v1/schema`。
-2. 实现前置查询刷新命令和 reply 合并。
-3. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
+2. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。

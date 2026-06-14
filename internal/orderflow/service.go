@@ -460,6 +460,14 @@ func (service *Service) RefreshPositions(ctx context.Context, accountID string, 
 	return service.publishAccountQuery(ctx, accountID, redisstream.ActionAccountPositions, "positions", opts)
 }
 
+func (service *Service) RefreshOrders(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
+	return service.publishAccountQuery(ctx, accountID, redisstream.ActionOrderList, "orders", opts)
+}
+
+func (service *Service) RefreshFills(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
+	return service.publishAccountQuery(ctx, accountID, redisstream.ActionFillList, "fills", opts)
+}
+
 func (service *Service) GetAsset(ctx context.Context, accountID string) (GetAssetResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	if _, err := service.routeForConfiguredAccount(accountID); err != nil {

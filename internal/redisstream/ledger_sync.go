@@ -258,6 +258,64 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			result.Positions++
 		}
 		return result
+	case envelope.Action == ActionOrderList || envelope.ResultType == "order_page":
+		orders, err := ordersFromReplyEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		accountID := envelope.Routing.AccountID
+		if len(orders) > 0 {
+			accountID = orders[0].AccountID
+		}
+		if accountID != "" {
+			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Accounts++
+		}
+		for _, order := range orders {
+			result.noteAccount(order.AccountID)
+			if err := writer.UpsertOrder(ctx, order); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Orders++
+		}
+		return result
+	case envelope.Action == ActionFillList || envelope.ResultType == "fill_page":
+		fills, err := fillsFromReplyEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		accountID := envelope.Routing.AccountID
+		if len(fills) > 0 {
+			accountID = fills[0].AccountID
+		}
+		if accountID != "" {
+			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Accounts++
+		}
+		for _, fill := range fills {
+			result.noteAccount(fill.AccountID)
+			if err := writer.InsertFill(ctx, fill, streamRef(envelope), sourceRef(envelope)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Fills++
+		}
+		return result
 	default:
 		return result
 	}
@@ -441,6 +499,10 @@ func fillFromEnvelope(envelope EntryEnvelope) (trading.Fill, error) {
 	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
 		return trading.Fill{}, fmt.Errorf("decode fill.event payload: %w", err)
 	}
+	return fillFromPayload(payload, envelope, "fill.event")
+}
+
+func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string) (trading.Fill, error) {
 	if payload.AccountID == "" {
 		payload.AccountID = envelope.Routing.AccountID
 	}
@@ -454,6 +516,9 @@ func fillFromEnvelope(envelope EntryEnvelope) (trading.Fill, error) {
 		payload.Fee = floatFromMap(envelope.AdapterContext, "fee")
 	}
 	if err := payload.validate(); err != nil {
+		if source != "fill.event" {
+			return trading.Fill{}, errors.New(strings.NewReplacer("fill.event", source).Replace(err.Error()))
+		}
 		return trading.Fill{}, err
 	}
 	return trading.Fill{
@@ -548,6 +613,45 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 	return positions, raws, nil
 }
 
+func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {
+	var payload orderPagePayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("decode order_page payload: %w", err)
+	}
+	orders := make([]trading.Order, 0, len(payload.Items))
+	for _, item := range payload.Items {
+		if item.AccountID == "" {
+			item.AccountID = envelope.Routing.AccountID
+		}
+		mergeEnvelopeFields(&item, envelope)
+		if err := item.validateOrderPageFields(); err != nil {
+			return nil, err
+		}
+		order := item.toOrder(envelope)
+		if order.LastUpdatedAt.IsZero() && !envelope.ProducedAt.IsZero() {
+			order.LastUpdatedAt = envelope.ProducedAt
+		}
+		orders = append(orders, order)
+	}
+	return orders, nil
+}
+
+func fillsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, error) {
+	var payload fillPagePayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("decode fill_page payload: %w", err)
+	}
+	fills := make([]trading.Fill, 0, len(payload.Items))
+	for _, item := range payload.Items {
+		fill, err := fillFromPayload(item, envelope, "fill_page")
+		if err != nil {
+			return nil, err
+		}
+		fills = append(fills, fill)
+	}
+	return fills, nil
+}
+
 type orderPayload struct {
 	AccountID         string  `json:"account_id"`
 	ClientOrderID     string  `json:"client_order_id"`
@@ -575,6 +679,7 @@ type orderPayload struct {
 	GatewayStatus     string  `json:"gateway_status"`
 	AdapterStatusCode int     `json:"adapter_status_code"`
 	AdapterStatusName string  `json:"adapter_status_name"`
+	AdapterStatus     string  `json:"adapter_status"`
 	IsTerminal        bool    `json:"is_terminal"`
 	RejectCode        string  `json:"reject_code"`
 	RejectMessage     string  `json:"reject_message"`
@@ -583,6 +688,7 @@ type orderPayload struct {
 	AcceptedAt        string  `json:"accepted_at"`
 	InsertedAt        string  `json:"inserted_at"`
 	LastUpdatedAt     string  `json:"last_updated_at"`
+	UpdateTime        string  `json:"update_time"`
 	TerminalAt        string  `json:"terminal_at"`
 }
 
@@ -626,6 +732,14 @@ type assetPayload struct {
 
 type positionPagePayload struct {
 	Items []positionPayload `json:"items"`
+}
+
+type orderPagePayload struct {
+	Items []orderPayload `json:"items"`
+}
+
+type fillPagePayload struct {
+	Items []fillPayload `json:"items"`
 }
 
 type positionPayload struct {
@@ -683,6 +797,35 @@ func (payload orderPayload) validateOrderEventFields() error {
 	return nil
 }
 
+func (payload orderPayload) validateOrderPageFields() error {
+	if err := payload.validateOrderEventFields(); err != nil {
+		return errors.New(strings.NewReplacer("order.event", "order_page").Replace(err.Error()))
+	}
+	missing := make([]string, 0)
+	if strings.TrimSpace(payload.Symbol) == "" {
+		missing = append(missing, "symbol")
+	}
+	if strings.TrimSpace(payload.Exchange) == "" {
+		missing = append(missing, "exchange")
+	}
+	if strings.TrimSpace(payload.TradeSide) == "" {
+		missing = append(missing, "trade_side")
+	}
+	if strings.TrimSpace(payload.BusinessType) == "" {
+		missing = append(missing, "business_type")
+	}
+	if firstPositive(payload.LimitPrice, payload.Price) <= 0 {
+		missing = append(missing, "limit_price")
+	}
+	if firstPositiveInt(payload.OrderQty, payload.Qty) <= 0 {
+		missing = append(missing, "order_qty")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("order_page payload incomplete for ledger write: missing %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
 func (payload orderPayload) completeOrderLedgerFields() bool {
 	if strings.TrimSpace(payload.Symbol) == "" {
 		return false
@@ -711,6 +854,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	gatewayStatus := trading.GatewayStatus(payload.GatewayStatus)
 	status := orderStatusFromPayload(payload.Status, gatewayStatus, payload.CumFilledQty, payload.LeavesQty)
 	isTerminal := payload.IsTerminal || status.Terminal() || gatewayStatus.Terminal()
+	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	return trading.Order{
 		AccountID:         payload.AccountID,
 		ClientOrderID:     payload.ClientOrderID,
@@ -735,7 +879,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		Status:            status,
 		GatewayStatus:     gatewayStatus,
 		AdapterStatusCode: payload.AdapterStatusCode,
-		AdapterStatusName: payload.AdapterStatusName,
+		AdapterStatusName: adapterStatusName,
 		IsTerminal:        isTerminal,
 		RejectCode:        trading.ErrorCode(payload.RejectCode),
 		RejectMessage:     payload.RejectMessage,
@@ -746,7 +890,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		CreatedAt:         parseTime(payload.CreatedAt),
 		AcceptedAt:        parseTime(payload.AcceptedAt),
 		InsertedAt:        parseTime(payload.InsertedAt),
-		LastUpdatedAt:     parseTime(payload.LastUpdatedAt),
+		LastUpdatedAt:     parseTime(firstNonEmpty(payload.LastUpdatedAt, payload.UpdateTime)),
 		TerminalAt:        parseTime(payload.TerminalAt),
 		AdapterContext:    envelope.AdapterContext,
 	}

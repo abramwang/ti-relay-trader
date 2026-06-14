@@ -91,6 +91,100 @@ func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-3", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-order-page-1",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-06-13T10:00:02Z",
+			"payload":{"items":[{
+				"gateway_order_id":"gw-page-1",
+				"client_order_id":"cli-page-1",
+				"order_id":1680001,
+				"order_stream_id":"110018100000001",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"offset_type":"C",
+				"order_qty":100,
+				"cum_filled_qty":100,
+				"leaves_qty":0,
+				"limit_price":9.54,
+				"gateway_status":"filled",
+				"adapter_status":"全部成交",
+				"adapter_status_code":8,
+				"update_time":"2026-06-13 10:00:01"
+			}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Orders != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 1 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	order := writer.orders[0]
+	if order.GatewayOrderID != "gw-page-1" || order.Status != trading.OrderStatusFilled || order.AdapterStatusName != "全部成交" {
+		t.Fatalf("order = %#v", order)
+	}
+	if order.LastUpdatedAt.IsZero() {
+		t.Fatalf("last_updated_at was not parsed: %#v", order)
+	}
+}
+
+func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-4", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fill-page-1",
+			"action":"fill.list.query",
+			"result_type":"fill_page",
+			"status":"partial",
+			"origin_message_id":"msg-fill-query-1",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-06-13T10:00:03Z",
+			"payload":{"items":[{
+				"fill_id":"fill-page-1",
+				"gateway_order_id":"gw-page-1",
+				"order_id":1680001,
+				"order_stream_id":"110018100000001",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"price":9.54,
+				"qty":100,
+				"trade_side":"B",
+				"matched_at":"2026-06-13 10:00:02"
+			}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Fills != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.fills) != 1 {
+		t.Fatalf("fills = %#v", writer.fills)
+	}
+	fill := writer.fills[0].fill
+	if fill.FillID != "fill-page-1" || fill.GatewayOrderID != "gw-page-1" || fill.MatchedAt.IsZero() {
+		t.Fatalf("fill = %#v", fill)
+	}
+	if writer.fills[0].stream.ID != "1-4" || writer.fills[0].source.OriginMessageID != "msg-fill-query-1" {
+		t.Fatalf("fill source = %#v", writer.fills[0])
+	}
+}
+
 func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "2-0", map[string]any{

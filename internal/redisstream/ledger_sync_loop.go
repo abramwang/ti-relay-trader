@@ -35,6 +35,7 @@ type LedgerChange struct {
 	Stream       string
 	Role         string
 	AccountIDs   []string
+	Orders       int
 	OrderEvents  int
 	Fills        int
 	Assets       int
@@ -151,13 +152,14 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					})
 				}
 			}
-			if opts.OnLedgerChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
+			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
 				accountIDs := accountIDsFromLedgerResult(report.Totals)
 				if len(accountIDs) > 0 {
 					opts.OnLedgerChange(ctx, LedgerChange{
 						Stream:       report.Name,
 						Role:         report.Role,
 						AccountIDs:   accountIDs,
+						Orders:       report.Totals.Orders,
 						OrderEvents:  report.Totals.OrderEvents,
 						Fills:        report.Totals.Fills,
 						Assets:       report.Totals.Assets,

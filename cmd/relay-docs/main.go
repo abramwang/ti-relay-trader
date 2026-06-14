@@ -400,6 +400,7 @@ func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) 
 		LastStreamID: change.LastStreamID,
 		Data: map[string]any{
 			"role":           change.Role,
+			"orders":         change.Orders,
 			"order_events":   change.OrderEvents,
 			"fills":          change.Fills,
 			"assets":         change.Assets,
@@ -407,7 +408,7 @@ func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) 
 			"last_stream_id": change.LastStreamID,
 		},
 	}
-	if change.OrderEvents > 0 {
+	if change.Orders > 0 || change.OrderEvents > 0 {
 		event := base
 		event.Type = events.TypeOrderChanged
 		eventHub.Publish(event)

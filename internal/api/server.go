@@ -38,6 +38,8 @@ type OrderService interface {
 	ListPositions(ctx context.Context, query trading.PositionQuery) (orderflow.ListPositionsResult, error)
 	RefreshAsset(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 	RefreshPositions(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
+	RefreshOrders(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
+	RefreshFills(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 }
 
 type Server struct {
@@ -345,6 +347,26 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleAccountPositions(w, r, accountID)
+	case "orders":
+		if len(parts) != 3 || parts[2] != "refresh" {
+			httpx.WriteNotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.handleRefreshOrders(w, r, accountID)
+	case "fills":
+		if len(parts) != 3 || parts[2] != "refresh" {
+			httpx.WriteNotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.handleRefreshFills(w, r, accountID)
 	default:
 		httpx.WriteNotFound(w, r)
 	}
@@ -548,6 +570,36 @@ func (s *Server) handleRefreshPositions(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	result, err := s.orders.RefreshPositions(r.Context(), accountID, orderflow.RefreshOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleRefreshOrders(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	result, err := s.orders.RefreshOrders(r.Context(), accountID, orderflow.RefreshOptions{
+		RequestID: httpx.RequestID(r),
+	})
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleRefreshFills(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	result, err := s.orders.RefreshFills(r.Context(), accountID, orderflow.RefreshOptions{
 		RequestID: httpx.RequestID(r),
 	})
 	if err != nil {

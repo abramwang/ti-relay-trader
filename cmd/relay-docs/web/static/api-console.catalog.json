@@ -51,6 +51,28 @@
     ]
   },
   {
+    "id": "orders-refresh",
+    "group": "账户",
+    "title": "委托刷新",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/orders/refresh",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
+    "id": "fills-refresh",
+    "group": "账户",
+    "title": "成交刷新",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/fills/refresh",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
     "id": "submit-order",
     "group": "交易",
     "title": "单笔下单",

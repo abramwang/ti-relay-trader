@@ -391,14 +391,14 @@ func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	}
 }
 
-func TestRefreshAssetAndPositionsPublishQueryCommands(t *testing.T) {
+func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 	ledgerWriter := &fakeLedger{}
 	publisher := &fakePublisher{streamID: "1777100000300-0"}
 	service, err := New(Options{
 		Config:    testConfig(true, false),
 		Ledger:    ledgerWriter,
 		Publisher: publisher,
-		IDs:       sequenceIDs{"msg-asset-1", "msg-positions-1"},
+		IDs:       sequenceIDs{"msg-asset-1", "msg-positions-1", "msg-orders-1", "msg-fills-1"},
 		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
 	})
 	if err != nil {
@@ -413,11 +413,28 @@ func TestRefreshAssetAndPositionsPublishQueryCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshPositions() error = %v", err)
 	}
-
-	if assetResult.Action != redisstream.ActionAccountAsset || positionsResult.Action != redisstream.ActionAccountPositions {
-		t.Fatalf("actions = %s/%s", assetResult.Action, positionsResult.Action)
+	ordersResult, err := service.RefreshOrders(context.Background(), "acct-1", RefreshOptions{RequestID: "req-orders"})
+	if err != nil {
+		t.Fatalf("RefreshOrders() error = %v", err)
 	}
-	if len(publisher.commands) != 2 {
+	fillsResult, err := service.RefreshFills(context.Background(), "acct-1", RefreshOptions{RequestID: "req-fills"})
+	if err != nil {
+		t.Fatalf("RefreshFills() error = %v", err)
+	}
+
+	actions := []string{assetResult.Action, positionsResult.Action, ordersResult.Action, fillsResult.Action}
+	wantActions := []string{
+		redisstream.ActionAccountAsset,
+		redisstream.ActionAccountPositions,
+		redisstream.ActionOrderList,
+		redisstream.ActionFillList,
+	}
+	for i, action := range actions {
+		if action != wantActions[i] {
+			t.Fatalf("actions = %#v, want %#v", actions, wantActions)
+		}
+	}
+	if len(publisher.commands) != 4 {
 		t.Fatalf("commands = %#v", publisher.commands)
 	}
 	for _, command := range publisher.commands {
@@ -429,7 +446,7 @@ func TestRefreshAssetAndPositionsPublishQueryCommands(t *testing.T) {
 			t.Fatalf("payload = %#v", command.envelope.Payload)
 		}
 	}
-	if len(ledgerWriter.raw) != 2 || ledgerWriter.raw[0].Role != redisstream.SuffixCmdQuery {
+	if len(ledgerWriter.raw) != 4 || ledgerWriter.raw[0].Role != redisstream.SuffixCmdQuery {
 		t.Fatalf("raw archives = %#v", ledgerWriter.raw)
 	}
 }

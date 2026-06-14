@@ -54,6 +54,8 @@
     resetOrderButton: byID("resetOrderButton"),
     refreshAssetButton: byID("refreshAssetButton"),
     refreshPositionsButton: byID("refreshPositionsButton"),
+    refreshOrdersButton: byID("refreshOrdersButton"),
+    refreshFillsButton: byID("refreshFillsButton"),
     netAsset: byID("netAsset"),
     cashAvailable: byID("cashAvailable"),
     marketValue: byID("marketValue"),
@@ -1191,15 +1193,22 @@
     }
   }
 
-  async function refreshAsset(kind) {
+  async function refreshAccountResource(kind) {
     if (!state.activeAccount) {
       return;
     }
     const path = "/v1/accounts/" + encodeURIComponent(state.activeAccount) + "/" + kind + "/refresh";
+    const labels = {
+      asset: "资金",
+      positions: "持仓",
+      orders: "委托",
+      fills: "成交"
+    };
+    const label = labels[kind] || kind;
     try {
       const data = await request(path, { method: "POST" });
-      pushLog("info", kind === "asset" ? "资金刷新指令已发送" : "持仓刷新指令已发送", data.stream_id || "");
-      showToast((kind === "asset" ? "资金" : "持仓") + "刷新指令已发送");
+      pushLog("info", label + "刷新指令已发送", data.stream_id || "");
+      showToast(label + "刷新指令已发送");
     } catch (err) {
       pushLog("error", "刷新指令失败", err.message);
       showToast("刷新失败：" + err.message, "error");
@@ -1293,8 +1302,10 @@
       updateSide("B");
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
     });
-    els.refreshAssetButton.addEventListener("click", () => refreshAsset("asset"));
-    els.refreshPositionsButton.addEventListener("click", () => refreshAsset("positions"));
+    els.refreshAssetButton.addEventListener("click", () => refreshAccountResource("asset"));
+    els.refreshPositionsButton.addEventListener("click", () => refreshAccountResource("positions"));
+    els.refreshOrdersButton.addEventListener("click", () => refreshAccountResource("orders"));
+    els.refreshFillsButton.addEventListener("click", () => refreshAccountResource("fills"));
     els.blotterTabs.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-tab]");
       if (!button) {

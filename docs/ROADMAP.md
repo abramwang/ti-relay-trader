@@ -29,9 +29,9 @@
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
-3. 增加订单和成交前置查询刷新命令：`order.list.query`、`fill.list.query` 写入及 reply 合并。
-4. 补充数据库状态检查到 `/v1/status`。
-5. 增加常驻 worker，持续同步 `reply/event/hb/dlq` 并持久化位点。
+3. 补充数据库状态检查到 `/v1/status`。
+4. 增加常驻 worker，持续同步 `reply/event/hb/dlq` 并持久化位点。
+5. 增加批量下单测试视图和基础页面冒烟测试。
 
 ## 里程碑细化
 
@@ -87,8 +87,9 @@
 - [x] 实现撤单命令写入 `cmd.trade`。
 - [x] 实现批量下单命令写入 `cmd.trade`。
 - [x] 实现账户资金/持仓查询命令写入 `cmd.query`。
-- [ ] 实现订单/成交查询命令写入 `cmd.query`。
+- [x] 实现订单/成交查询命令写入 `cmd.query`。
 - [x] 消费 `reply` 并归档 raw。
+- [x] 合并 `asset_page/position_page/order_page/fill_page` reply 到 PostgreSQL 账本。
 - [x] 消费 `event` 并归档 raw。
 - [x] 将字段完整的 `order.event/fill.event` 持续消费接入 9092 轻量后台同步循环。
 - [ ] 将持续消费迁移到正式 worker 并持久化 stream 位点。
@@ -135,6 +136,8 @@
 - [x] `POST /v1/accounts/{account_id}/asset/refresh`。
 - [x] `GET /v1/accounts/{account_id}/positions`。
 - [x] `POST /v1/accounts/{account_id}/positions/refresh`。
+- [x] `POST /v1/accounts/{account_id}/orders/refresh`。
+- [x] `POST /v1/accounts/{account_id}/fills/refresh`。
 - [x] `POST /v1/orders/batch`。
 - [x] `POST /v1/orders/{gateway_order_id}/cancel`。
 - [x] `GET /v1/orders`。
@@ -160,6 +163,7 @@
 - [x] 响应结果支持 JSON 和表格视图。
 - [x] 页面模板、样式、脚本和接口 catalog 从 Go handler 中拆分到 `web/` 资源目录。
 - [x] 支持 `GET /v1/events/stream` SSE 事件流连接和最近事件预览。
+- [x] 增加订单和成交前置查询刷新模板。
 - [ ] API handler 完成后自动同步 endpoint 状态。
 - [ ] 增加请求样例保存和导出。
 - [ ] 增加响应断言和冒烟测试集合。
@@ -176,6 +180,7 @@
 - [x] 订单详情展示状态轨迹、订单 JSON 和成交执行记录。
 - [x] 接入 `GET /v1/events/stream` SSE 实时推送，订单、成交、资金、持仓事件触发页面合并刷新，并保留 3 秒轮询兜底。
 - [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
+- [x] 接入订单/成交前置刷新指令，订单监控区可手动刷新委托和成交。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 

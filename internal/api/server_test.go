@@ -189,6 +189,66 @@ func TestRefreshAccountPositions(t *testing.T) {
 	}
 }
 
+func TestRefreshAccountOrders(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		refreshOrdersResult: orderflow.RefreshQueryResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderList,
+			MessageID: "msg-orders-1",
+			StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.query",
+			StreamID:  "1-0",
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/orders/refresh", nil)
+	req.Header.Set("X-Request-ID", "req-refresh-orders")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.refreshOrdersAccountID != "acct-1" || service.refreshOrdersRequestID != "req-refresh-orders" {
+		t.Fatalf("refresh orders call = %q/%q", service.refreshOrdersAccountID, service.refreshOrdersRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), redisstream.ActionOrderList) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
+func TestRefreshAccountFills(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		refreshFillsResult: orderflow.RefreshQueryResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionFillList,
+			MessageID: "msg-fills-1",
+			StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.query",
+			StreamID:  "1-0",
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/fills/refresh", nil)
+	req.Header.Set("X-Request-ID", "req-refresh-fills")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.refreshFillsAccountID != "acct-1" || service.refreshFillsRequestID != "req-refresh-fills" {
+		t.Fatalf("refresh fills call = %q/%q", service.refreshFillsAccountID, service.refreshFillsRequestID)
+	}
+	if !strings.Contains(rec.Body.String(), redisstream.ActionFillList) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
 func TestSchemaDiscovery(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodGet, "/v1/schema", nil)
@@ -659,6 +719,14 @@ type fakeOrderSubmitter struct {
 	refreshPositionsRequestID string
 	refreshPositionsResult    orderflow.RefreshQueryResult
 	refreshPositionsErr       error
+	refreshOrdersAccountID    string
+	refreshOrdersRequestID    string
+	refreshOrdersResult       orderflow.RefreshQueryResult
+	refreshOrdersErr          error
+	refreshFillsAccountID     string
+	refreshFillsRequestID     string
+	refreshFillsResult        orderflow.RefreshQueryResult
+	refreshFillsErr           error
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {
@@ -745,4 +813,22 @@ func (submitter *fakeOrderSubmitter) RefreshPositions(_ context.Context, account
 		return orderflow.RefreshQueryResult{}, submitter.refreshPositionsErr
 	}
 	return submitter.refreshPositionsResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) RefreshOrders(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
+	submitter.refreshOrdersAccountID = accountID
+	submitter.refreshOrdersRequestID = opts.RequestID
+	if submitter.refreshOrdersErr != nil {
+		return orderflow.RefreshQueryResult{}, submitter.refreshOrdersErr
+	}
+	return submitter.refreshOrdersResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) RefreshFills(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
+	submitter.refreshFillsAccountID = accountID
+	submitter.refreshFillsRequestID = opts.RequestID
+	if submitter.refreshFillsErr != nil {
+		return orderflow.RefreshQueryResult{}, submitter.refreshFillsErr
+	}
+	return submitter.refreshFillsResult, nil
 }

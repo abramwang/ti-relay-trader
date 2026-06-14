@@ -754,9 +754,21 @@ td {
 }
 
 .blotter-tabs button.active {
-  background: #fff;
-  color: var(--text);
-  border-bottom: 2px solid var(--navy);
+	background: #fff;
+	color: var(--text);
+	border-bottom: 2px solid var(--navy);
+}
+
+.blotter-actions {
+	display: flex;
+	margin-left: auto;
+}
+
+.blotter-actions button {
+	min-width: 86px;
+	border-left: 1px solid var(--line);
+	background: #f8fafc;
+	color: var(--navy);
 }
 
 .status-badge {
