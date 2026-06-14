@@ -117,6 +117,68 @@
     });
   }
 
+  function priceDigitsForInstrument(instrumentType) {
+    return String(instrumentType || "").toLowerCase() === "etf" ? 3 : 2;
+  }
+
+  function priceDigitsForItem(item) {
+    return priceDigitsForInstrument(instrumentTypeForItem(item));
+  }
+
+  function instrumentTypeForItem(item) {
+    if (item && item.instrument_type) {
+      return item.instrument_type;
+    }
+    const securityID = itemSecurityID(item);
+    if (securityID && state.marketSnapshot && state.marketSnapshot.security_id === securityID) {
+      return state.marketSnapshot.instrument_type || "";
+    }
+    if (securityID) {
+      for (const instruments of state.instrumentCache.values()) {
+        const match = instruments.find((instrument) => instrument.security_id === securityID);
+        if (match) {
+          return match.instrument_type || "";
+        }
+      }
+    }
+    return "";
+  }
+
+  function itemSecurityID(item) {
+    if (!item) {
+      return "";
+    }
+    if (item.security_id) {
+      return String(item.security_id).toUpperCase();
+    }
+    if (item.symbol) {
+      const symbol = normalizeSymbol(item.symbol);
+      if (symbol.includes(".")) {
+        return symbol;
+      }
+      return symbol + "." + String(item.exchange || inferExchange(symbol)).toUpperCase();
+    }
+    return "";
+  }
+
+  function formatPrice(value, item) {
+    return formatNumber(value, priceDigitsForItem(item));
+  }
+
+  function formatSignedPrice(value, item) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    const prefix = number > 0 ? "+" : "";
+    return prefix + formatNumber(number, priceDigitsForItem(item));
+  }
+
+  function applyPriceInputPrecision(item) {
+    const digits = priceDigitsForItem(item || state.marketSnapshot);
+    els.priceInput.step = digits === 3 ? "0.001" : "0.01";
+  }
+
   function formatInt(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) {
@@ -440,7 +502,7 @@
         symbol,
         exchange,
         name: item.name || "",
-        instrument_type: item.name || "",
+        instrument_type: item.instrument_type || "",
         status: "",
         trade_date: "",
         last: item.last_price || item.limit_price || item.price || ""
@@ -551,7 +613,7 @@
         <tr>
           <td><span class="row-title"><strong>${escapeHTML(symbolText(position))}</strong><span>${escapeHTML(position.name || "")}</span></span></td>
           <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
-          <td class="num">${formatNumber(position.avg_cost)}<br><span class="${Number(position.last_price) < Number(position.avg_cost) ? "down" : "up"}">${formatNumber(position.last_price)}</span></td>
+          <td class="num">${formatPrice(position.avg_cost, position)}<br><span class="${Number(position.last_price) < Number(position.avg_cost) ? "down" : "up"}">${formatPrice(position.last_price, position)}</span></td>
           <td class="num">${formatNumber(position.market_value)}</td>
           <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${formatSigned(pnlRatio)}%</td>
           <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
@@ -616,7 +678,7 @@
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
                 <td>${escapeHTML(symbolText(order))}</td>
                 <td class="${order.trade_side === "S" ? "down" : "up"}">${sideText(order.trade_side)}</td>
-                <td class="num">${formatNumber(order.limit_price)}</td>
+                <td class="num">${formatPrice(order.limit_price, order)}</td>
                 <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
                 <td><span class="row-title"><strong>${escapeHTML(order.order_id || "--")}</strong><span>${escapeHTML(order.order_stream_id || "--")}</span></span></td>
                 <td><span class="status-badge ${escapeHTML(order.status)}">${statusText(order.status)}</span></td>
@@ -657,7 +719,7 @@
                 <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
                 <td>${escapeHTML(symbolText(fill))}</td>
                 <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
-                <td class="num">${formatNumber(fill.price)}</td>
+                <td class="num">${formatPrice(fill.price, fill)}</td>
                 <td class="num">${formatInt(fill.qty)}</td>
                 <td>${formatTime(fill.matched_at)}</td>
               </tr>`;
@@ -715,7 +777,7 @@
           <tr>
             <td>${escapeHTML(fill.fill_id)}</td>
             <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
-            <td class="num">${formatNumber(fill.price)}</td>
+            <td class="num">${formatPrice(fill.price, fill)}</td>
             <td class="num">${formatInt(fill.qty)}</td>
           </tr>
         `).join("")}</tbody>
@@ -737,9 +799,10 @@
       snapshot.trade_date,
       snapshot.source_dataset || snapshot.source
     ].filter(Boolean).join(" · ") || "Meridian";
-    els.quoteLast.textContent = formatNumber(snapshot.last);
+    applyPriceInputPrecision(snapshot);
+    els.quoteLast.textContent = formatPrice(snapshot.last, snapshot);
     els.quoteChange.textContent = Number.isFinite(change) && Number.isFinite(pct)
-      ? formatSigned(change) + " / " + formatSigned(pct) + "%"
+      ? formatSignedPrice(change, snapshot) + " / " + formatSigned(pct) + "%"
       : "-- / --";
     els.quotePrice.classList.toggle("down", change < 0);
     els.quotePrice.classList.toggle("flat", !Number.isFinite(change) || change === 0);
@@ -759,7 +822,7 @@
 
   function depthRow(row, side, extra) {
     const label = (side === "sell" ? "卖 " : "买 ") + (row.level || "");
-    return `<div class="depth-row ${side} ${extra}"><span>${escapeHTML(label)}</span><strong>${formatNumber(row.price)}</strong><span class="qty">${formatInt(row.volume)}</span></div>`;
+    return `<div class="depth-row ${side} ${extra}"><span>${escapeHTML(label)}</span><strong>${formatPrice(row.price, state.marketSnapshot)}</strong><span class="qty">${formatInt(row.volume)}</span></div>`;
   }
 
   function renderSymbolSuggestions() {
@@ -788,6 +851,7 @@
     setSymbolFromSecurityID(item.security_id);
     hideSuggestions();
     state.priceEdited = false;
+    applyPriceInputPrecision(item);
     loadQuoteForInput({ securityID: item.security_id }).catch((err) => pushLog("warn", "行情刷新失败", err.message));
   }
 
@@ -839,7 +903,7 @@
     }
     const price = quoteOrderPrice();
     if (Number.isFinite(price) && price > 0) {
-      els.priceInput.value = price.toFixed(2);
+      els.priceInput.value = price.toFixed(priceDigitsForItem(state.marketSnapshot));
     }
   }
 
