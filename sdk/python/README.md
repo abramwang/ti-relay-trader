@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz"
 ```
 
 ## Quick Start
@@ -27,6 +27,7 @@ client = RelayClient(
 )
 
 asset = client.get_asset()
+status = client.status()
 orders = client.list_orders(limit=20)
 
 receipt = client.submit_order(

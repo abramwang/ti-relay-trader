@@ -138,8 +138,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/healthz` | 文档门户健康检查 |
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构草案 |
@@ -222,17 +222,17 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 实现 `/v1/status` 依赖健康检查，覆盖 PostgreSQL、Redis、订单服务、Meridian 行情代理、SSE 事件流、自动刷新和账户摘要；错误信息不泄露 DSN、密码或 Redis URL。
 - [x] Python SDK 升级到 `0.1.1`，新增 `on_order_status()`、`on_fill()` 后台回调，以及 `watch_order_status()`、`watch_fills()` 阻塞式回调循环，便于策略程序处理订单状态和成交回报。
 - [x] 根据 2026-06-14 SDK/接口压测反馈修复下单幂等：同一订单同 payload 返回 `replayed=true` 且不再发布 Redis 命令；同 gateway 不同幂等键或同幂等键不同 payload 返回 409；SDK 升级到 `0.1.2` 暴露 `CommandReceipt.replayed`。
+- [x] Python SDK 升级到 `0.1.3`，新增 `status()` 只读探活方法、真实 9092 只读 live smoke 和 SDK 发布检查脚本。
 - [x] 明确 ETF 二级市场买卖使用 `business_type=S`；`business_type=E` 为 ETF 申购/赎回专项，当前 `/v1/orders` 标记未实现并返回 `NOT_IMPLEMENTED`。
 - [ ] 设计模拟柜台账表 schema。
 - [x] 实现正式交易服务模式下的 9092 健康检查接口骨架。
 
 ## 待办事项
 
-1. 增加 SDK 集成测试和版本发布检查清单。
-2. 增加 9092 页面冒烟测试和 SDK 发布前检查脚本。
-3. 设计模拟柜台账表 schema。
-4. 增加 Python 盘后对账与账户盈亏统计任务骨架。
-5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+1. 增加 9092 页面冒烟测试脚本。
+2. 设计模拟柜台账表 schema。
+3. 增加 Python 盘后对账与账户盈亏统计任务骨架。
+4. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 
 ## README 状态维护规则
 
@@ -267,7 +267,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 测试下单参考价不要硬编码；`/trade` 当前通过 relay 的 Meridian 薄代理读取 `/v1/market/snapshots`，如果当天不是交易日会调用 Meridian `/v1/metadata/trading-day` 获取最近交易日后读取 historical 快照。
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 
 ## 工作日志
@@ -319,3 +319,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据策略开发便利性反馈升级 Python SDK 到 `0.1.1`，新增订单状态和成交回报回调封装；SDK 收到 SSE 变化事件后自动查询本地账本并去重触发回调，安装包发布为 `public/sdk/relay-sdk-0.1.1.tar.gz`。
 - `2026-06-14`: 根据 11:03-11:16 CST relay 交易接口功能与压力测试反馈，修复重复 `gateway_order_id/idempotency_key` 会重复发布和覆盖终态订单的问题；补充 ETF 二级市场/申赎语义说明，`business_type=E` 在当前普通下单接口返回 `NOT_IMPLEMENTED`；发布 `relay-sdk 0.1.2` 支持 `CommandReceipt.replayed`。
 - `2026-06-14`: 推进正式 worker：新增 `000002_stream_checkpoints` migration 并应用到测试 PostgreSQL，账本 repository 支持读写 stream 位点；`worker` 模式现在可持续消费 `reply/event/hb/dlq`，用 PostgreSQL checkpoint 恢复 Redis Stream 进度，并沿用订单/成交事件触发的资金持仓自动刷新。
+- `2026-06-14`: 补齐 SDK 发布质量门：`relay-sdk 0.1.3` 新增 `status()` 只读探活方法，新增 `tests/integration/sdk_live_smoke.py` 对真实 9092 做只读集成测试，新增 `scripts/check-python-sdk-release.py` 校验版本一致性、tar.gz 内容、sha256、单元测试和可选 live smoke。

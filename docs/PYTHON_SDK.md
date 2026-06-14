@@ -16,12 +16,12 @@ SDK 的定位：
 
 ## 当前状态
 
-首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.2`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.3`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
 1. `RelayClient`：统一 base URL、默认账户、超时、Bearer API key 和代理开关。
-2. 账户、资金、持仓、订单、成交查询。
+2. 服务状态、账户、资金、持仓、订单、成交查询。
 3. 资金、持仓、订单、成交前置刷新指令。
 4. 单笔下单、批量下单、撤单。
 5. `wait_order_terminal()` 轮询等待订单终态。
@@ -31,14 +31,15 @@ SDK 的定位：
 9. relay envelope 错误到 SDK 异常的映射。
 10. `CommandReceipt.replayed`，用于识别幂等重放而非新命令发布。
 11. mock 9092 API 单元测试。
-12. `scripts/build-python-sdk.py` 打包脚本。
-13. 9092 `/sdk/relay-sdk-0.1.2.tar.gz` 和 `.sha256` 下载入口。
+12. 真实 9092 只读 live smoke：`tests/integration/sdk_live_smoke.py`。
+13. `scripts/build-python-sdk.py` 打包脚本。
+14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
+15. 9092 `/sdk/relay-sdk-0.1.3.tar.gz` 和 `.sha256` 下载入口。
 
 尚未完成：
 
-1. 面向真实 9092 测试服务的 SDK 集成测试。
-2. 更完整的事件流断线重连和心跳处理。
-3. SDK 版本发布检查清单和历史版本索引。
+1. 更完整的事件流断线重连和心跳处理。
+2. 历史版本索引。
 
 ## 包形态
 
@@ -81,15 +82,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.2.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.3.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.3.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -190,6 +191,7 @@ client = RelayClient(
 
 | SDK 方法 | HTTP API | 说明 |
 | --- | --- | --- |
+| `status()` | `GET /v1/status` | 查询 relay 服务和依赖健康 |
 | `list_accounts()` | `GET /v1/accounts` | 查询可用账户 |
 | `get_asset(account_id=None)` | `GET /v1/accounts/{account_id}/asset` | 查询资金资产 |
 | `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询持仓 |
@@ -295,26 +297,25 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 8. `on_order_status()` 收到事件后查询订单并按状态去重触发回调。
 9. `watch_fills()` 收到事件后查询成交并按成交唯一键去重触发回调。
 10. `CommandReceipt.replayed` 模型解析。
+11. `status()` 服务状态查询。
 
 打包验证：
 
 ```bash
 cd /home/ti-relay-trader
 python3 scripts/build-python-sdk.py
-sha256sum -c public/sdk/relay-sdk-0.1.2.tar.gz.sha256
-python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.2.tar.gz
+python3 scripts/check-python-sdk-release.py
+python3 scripts/check-python-sdk-release.py --live-smoke --base-url http://127.0.0.1:9092 --account-id 00030484
 ```
 
 ## 测试与发布
 
 SDK 后续需要：
 
-1. 使用文档门户或测试服务做集成测试。
-2. 增加事件流断线重连、heartbeat 和超时测试。
-3. 覆盖下单 accepted 但最终 rejected 的场景。
-4. 覆盖撤单 accepted 但最终 filled 的竞态场景。
-5. 覆盖 idempotency replay 和 conflict。
-6. 后续可补充 wheel 包或内部 PyPI 发布方式。
+1. 增加事件流断线重连、heartbeat 和超时测试。
+2. 覆盖下单 accepted 但最终 rejected 的场景。
+3. 覆盖撤单 accepted 但最终 filled 的竞态场景。
+4. 后续可补充 wheel 包或内部 PyPI 发布方式。
 
 每次 SDK 版本更新必须同步更新：
 

@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.2"
+SDK_VERSION = "0.1.3"
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 
@@ -82,6 +82,11 @@ class RelayClient:
     def list_accounts(self) -> list[Account]:
         data = self._request("GET", "/v1/accounts")
         return [Account.from_dict(item) for item in data.get("accounts", [])]
+
+    def status(self) -> Mapping[str, Any]:
+        """Return relay service and dependency health from ``GET /v1/status``."""
+
+        return self._request("GET", "/v1/status")
 
     def get_asset(self, account_id: str | None = None) -> Asset:
         account_id = self._resolve_account(account_id)

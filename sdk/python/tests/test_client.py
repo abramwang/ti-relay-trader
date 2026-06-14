@@ -18,6 +18,18 @@ class RelayHandler(BaseHTTPRequestHandler):
         parsed = parse.urlparse(self.path)
         query = parse.parse_qs(parsed.query)
         RelayHandler.requests.append(("GET", parsed.path, query, None))
+        if parsed.path == "/v1/status":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "service": "relay-api",
+                        "status": "ok",
+                        "dependencies": {"database": {"status": "ok"}},
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/accounts":
             self._json({"ok": True, "data": {"accounts": [{"account_id": "acct-1", "enabled": True}]}})
             return
@@ -186,6 +198,7 @@ class RelayClientTest(unittest.TestCase):
         self.client = RelayClient(self.base_url, account_id="acct-1")
 
     def test_queries_return_models(self):
+        self.assertEqual(self.client.status()["status"], "ok")
         self.assertEqual(self.client.list_accounts()[0].account_id, "acct-1")
         self.assertEqual(self.client.get_asset().net_asset, 123.45)
         self.assertEqual(self.client.get_positions()[0].symbol, "600000")
