@@ -33,6 +33,7 @@ import (
 	"ti-relay-trader/internal/logging"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/redisstream"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/worker"
 )
 
@@ -129,6 +130,12 @@ var (
 			Title:       "运行配置与任务管理",
 			Path:        "docs/OPERATIONS.md",
 			Description: "本地配置文件、凭据管理、cron 后台任务和部署运行约定。",
+		},
+		{
+			Slug:        "trading-day-workflow",
+			Title:       "交易日流程",
+			Path:        "docs/TRADING_DAY_WORKFLOW.md",
+			Description: "东八区时间口径、盘前初始化和收盘后结算流程。",
 		},
 		{
 			Slug:        "redis-stream-probe",
@@ -507,6 +514,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/sdk/relay-sdk-0.1.3.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.3 tar.gz</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
+  <a class="card" href="/docs/trading-day-workflow"><strong>交易日流程</strong><span>盘前初始化与盘后结算</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
   <a class="card" href="/docs/redis-ledger-sync"><strong>Redis 账本同步</strong><span>reply/event 落盘入口</span></a>
   <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
@@ -573,7 +581,7 @@ func (s *portalServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"mode":       "documentation-portal",
 		"status":     "ok",
 		"public_url": publicURL,
-		"time":       time.Now().UTC().Format(time.RFC3339Nano),
+		"time":       timeutil.Now().Format(time.RFC3339Nano),
 	})
 }
 

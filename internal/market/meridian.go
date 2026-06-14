@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/timeutil"
 )
 
 const (
@@ -149,12 +150,7 @@ func (client *MeridianClient) previousOrCurrentTradingDate(ctx context.Context, 
 }
 
 func (client *MeridianClient) today() string {
-	now := client.now()
-	location, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		location = time.FixedZone("CST", 8*60*60)
-	}
-	return now.In(location).Format("20060102")
+	return client.now().In(timeutil.Location()).Format("20060102")
 }
 
 func cloneValues(values url.Values) url.Values {

@@ -6,8 +6,11 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"ti-relay-trader/internal/timeutil"
 )
 
 const EnvPath = "RELAY_CONFIG_PATH"
@@ -35,6 +38,7 @@ type ServiceConfig struct {
 	DocsAddr  string `yaml:"docs_addr"`
 	APIAddr   string `yaml:"api_addr"`
 	Mode      Mode   `yaml:"mode"`
+	Timezone  string `yaml:"timezone"`
 	LogLevel  string `yaml:"log_level"`
 	LogFormat string `yaml:"log_format"`
 }
@@ -143,6 +147,10 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Service.Mode == "" {
 		cfg.Service.Mode = ModeDocs
 	}
+	cfg.Service.Timezone = strings.TrimSpace(cfg.Service.Timezone)
+	if cfg.Service.Timezone == "" {
+		cfg.Service.Timezone = timeutil.LocationName
+	}
 	if cfg.Service.LogLevel == "" {
 		cfg.Service.LogLevel = "info"
 	}
@@ -187,6 +195,9 @@ func (cfg *Config) ApplyDefaults() {
 func (cfg Config) Validate() error {
 	if !cfg.Service.Mode.Valid() {
 		return fmt.Errorf("invalid service.mode %q", cfg.Service.Mode)
+	}
+	if _, err := time.LoadLocation(cfg.Service.Timezone); err != nil {
+		return fmt.Errorf("invalid service.timezone %q: %w", cfg.Service.Timezone, err)
 	}
 	if !validLogLevel(cfg.Service.LogLevel) {
 		return fmt.Errorf("invalid service.log_level %q", cfg.Service.LogLevel)

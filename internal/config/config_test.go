@@ -25,6 +25,9 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Service.LogFormat != "json" {
 		t.Fatalf("log format = %q, want json", cfg.Service.LogFormat)
 	}
+	if cfg.Service.Timezone != "Asia/Shanghai" {
+		t.Fatalf("timezone = %q, want Asia/Shanghai", cfg.Service.Timezone)
+	}
 	if cfg.Market.BaseURL != "http://meridian-data.quantstage.com" {
 		t.Fatalf("market base url = %q", cfg.Market.BaseURL)
 	}
@@ -75,6 +78,16 @@ func TestDecodeRejectsInvalidLogFormat(t *testing.T) {
 		t.Fatal("expected invalid log format error")
 	}
 	if !strings.Contains(err.Error(), "invalid service.log_format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsInvalidTimezone(t *testing.T) {
+	_, err := Decode(strings.NewReader(`service: {timezone: Mars/Relay}`))
+	if err == nil {
+		t.Fatal("expected invalid timezone error")
+	}
+	if !strings.Contains(err.Error(), "invalid service.timezone") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

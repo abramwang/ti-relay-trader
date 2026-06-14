@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"ti-relay-trader/internal/timeutil"
 )
 
 const (
@@ -61,7 +63,9 @@ func (hub *Hub) Publish(event Event) Event {
 		event.ID = fmt.Sprintf("evt-%d", hub.nextEventID.Add(1))
 	}
 	if event.Time.IsZero() {
-		event.Time = time.Now().UTC()
+		event.Time = timeutil.Now()
+	} else {
+		event.Time = timeutil.InBusinessLocation(event.Time)
 	}
 	event.AccountIDs = normalizeAccountIDs(event.AccountIDs)
 

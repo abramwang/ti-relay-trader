@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/timeutil"
 )
 
 const (
@@ -61,8 +62,9 @@ func OpenRedisCommandPublisher(cfg config.RedisConfig) (*RedisCommandPublisher, 
 
 func NewCommandEnvelope(action, messageID, requestID, correlationID, idempotencyKey string, payload any, sentAt time.Time) CommandEnvelope {
 	if sentAt.IsZero() {
-		sentAt = time.Now().UTC()
+		sentAt = timeutil.Now()
 	}
+	sentAt = timeutil.InBusinessLocation(sentAt)
 	return CommandEnvelope{
 		Protocol:       Protocol,
 		MessageType:    "command",
@@ -72,7 +74,7 @@ func NewCommandEnvelope(action, messageID, requestID, correlationID, idempotency
 		IdempotencyKey: idempotencyKey,
 		Action:         action,
 		Payload:        payload,
-		SentAt:         sentAt.Format(time.RFC3339Nano),
+		SentAt:         timeutil.FormatRFC3339Nano(sentAt),
 	}
 }
 

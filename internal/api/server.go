@@ -19,6 +19,7 @@ import (
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/orderflow"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -81,7 +82,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	server := &Server{
 		cfg:     cfg,
 		logger:  logger,
-		started: time.Now().UTC(),
+		started: timeutil.Now(),
 		orders:  deps.Orders,
 		market:  marketClient,
 		events:  deps.Events,
@@ -137,7 +138,7 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 		ID:         "connected",
 		Type:       events.TypeConnected,
 		AccountIDs: accountIDsForFilter(accountID),
-		Time:       time.Now().UTC(),
+		Time:       timeutil.Now(),
 		Source:     "relay-api",
 		Data: map[string]any{
 			"account_id": accountID,
@@ -164,7 +165,7 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 			if err := writeSSEEvent(w, events.Event{
 				Type:       events.TypeHeartbeat,
 				AccountIDs: accountIDsForFilter(accountID),
-				Time:       now.UTC(),
+				Time:       timeutil.InBusinessLocation(now),
 				Source:     "relay-api",
 			}); err != nil {
 				return
@@ -181,7 +182,9 @@ func writeSSEEvent(w io.Writer, event events.Event) error {
 		event.Type = "relay.event"
 	}
 	if event.Time.IsZero() {
-		event.Time = time.Now().UTC()
+		event.Time = timeutil.Now()
+	} else {
+		event.Time = timeutil.InBusinessLocation(event.Time)
 	}
 	if event.ID != "" {
 		if _, err := fmt.Fprintf(w, "id: %s\n", event.ID); err != nil {
@@ -752,6 +755,7 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 		Mode:               string(s.cfg.Service.Mode),
 		Status:             status,
 		PublicURL:          s.cfg.Service.PublicURL,
+		Timezone:           s.cfg.Service.Timezone,
 		StartedAt:          s.started,
 		UptimeSeconds:      int64(time.Since(s.started).Seconds()),
 		AccountsConfigured: len(s.cfg.Accounts),
@@ -846,6 +850,7 @@ type StatusView struct {
 	Mode               string                      `json:"mode"`
 	Status             string                      `json:"status"`
 	PublicURL          string                      `json:"public_url"`
+	Timezone           string                      `json:"timezone"`
 	StartedAt          time.Time                   `json:"started_at"`
 	UptimeSeconds      int64                       `json:"uptime_seconds"`
 	AccountsConfigured int                         `json:"accounts_configured"`

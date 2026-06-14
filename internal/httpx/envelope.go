@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"ti-relay-trader/internal/timeutil"
 )
 
 type ErrorCode string
@@ -42,7 +44,7 @@ func WriteOK(w http.ResponseWriter, r *http.Request, status int, data any) {
 		OK:        true,
 		Data:      data,
 		RequestID: RequestID(r),
-		Time:      time.Now().UTC(),
+		Time:      timeutil.Now(),
 	})
 }
 
@@ -58,7 +60,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code ErrorCo
 			Detail:  detail,
 		},
 		RequestID: RequestID(r),
-		Time:      time.Now().UTC(),
+		Time:      timeutil.Now(),
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/timeutil"
 )
 
 type ProbeOptions struct {
@@ -65,7 +66,7 @@ func Probe(ctx context.Context, cfg config.Config, opts ProbeOptions) (ProbeRepo
 	}
 
 	report := ProbeReport{
-		GeneratedAt:      time.Now().UTC(),
+		GeneratedAt:      timeutil.Now(),
 		Protocol:         Protocol,
 		RedisAddr:        maskRedisAddr(cfg.Redis.URL),
 		Prefixes:         prefixes,

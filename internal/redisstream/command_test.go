@@ -17,7 +17,7 @@ func TestNewCommandEnvelope(t *testing.T) {
 	if envelope.MessageType != "command" || envelope.Action != ActionOrderSubmit {
 		t.Fatalf("envelope = %#v", envelope)
 	}
-	if envelope.SentAt != "2026-06-13T10:00:00Z" {
+	if envelope.SentAt != "2026-06-13T18:00:00+08:00" {
 		t.Fatalf("sent_at = %q", envelope.SentAt)
 	}
 }

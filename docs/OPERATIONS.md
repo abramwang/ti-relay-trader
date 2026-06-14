@@ -37,8 +37,9 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 3. Redis URL、env、broker、gateway。
 4. account 到 broker/gateway/stream prefix 的多账户路由。
 5. 订单/成交事件驱动的资金持仓自动刷新限频参数。
-6. 日志级别和输出格式。
-7. 后台任务开关和 cron 时间。
+6. 服务业务时区，统一为 `Asia/Shanghai`。
+7. 日志级别和输出格式。
+8. 后台任务开关和 cron 时间。
 
 真实 PostgreSQL、Redis 等访问方式查阅 `http://doc.quantstage.com`。
 
@@ -51,7 +52,21 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 等基础接口；`/v1/status` 会返回 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态摘要。
 6. worker 模式会连接 PostgreSQL 和 Redis，持续消费 `reply/event/hb/dlq`，通过 `stream_checkpoints` 持久化每条 stream 的 `last_stream_id`。
 7. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
-8. 已校验服务模式、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
+8. 默认业务时区为 `Asia/Shanghai`，配置加载会校验 `service.timezone` 是否为合法 IANA timezone。
+9. 已校验服务模式、业务时区、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
+
+## 时区口径
+
+relay 的业务时间统一使用 `Asia/Shanghai`，即东八区 UTC+8。A 股交易日、盘前初始化、收盘后结算、对账批次、报表展示、页面时间和 cron 调度都按这个时区解释。
+
+建议：
+
+1. 配置文件显式设置 `service.timezone: "Asia/Shanghai"`。
+2. cron、systemd timer 或其他调度器显式设置 `CRON_TZ=Asia/Shanghai` 或等价配置。
+3. 文档和日志不要使用容易歧义的三字母时区缩写，需要写时区时使用 `Asia/Shanghai` 或 `+08:00`。
+4. 数据库继续使用 `timestamptz` 保存绝对时刻，业务展示和报告按 `Asia/Shanghai` 转换。
+
+交易日主流程见 [docs/TRADING_DAY_WORKFLOW.md](/home/ti-relay-trader/docs/TRADING_DAY_WORKFLOW.md:1)。
 
 ## 自动资金持仓刷新
 
@@ -164,12 +179,14 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 后台批处理可以优先采用 cron 管理，适合以下任务：
 
-1. 盘后对账。
-2. 资产快照。
-3. 持仓快照。
-4. 账户盈亏统计。
-5. 历史数据补拉。
-6. 对账报告生成。
+1. 盘前初始化。
+2. 收盘后结算。
+3. 盘后对账。
+4. 资产快照。
+5. 持仓快照。
+6. 账户盈亏统计。
+7. 历史数据补拉。
+8. 对账报告生成。
 
 低延迟交易主链路、Redis Stream 实时消费和 9092 在线 API 不建议由 cron 触发，应使用常驻服务进程。
 
@@ -179,16 +196,24 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 ```cron
 SHELL=/bin/bash
+CRON_TZ=Asia/Shanghai
+TZ=Asia/Shanghai
 RELAY_HOME=/home/ti-relay-trader
 RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
 
-# A 股交易日盘后资产快照，15:45 本地时间。
-45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-asset-snapshot.lock python3 -m relay.jobs.asset_snapshot >> /var/log/relay/asset_snapshot.log 2>&1
+# A 股交易日盘前初始化，08:25 Asia/Shanghai。
+25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init >> /var/log/relay/pre_open_init.log 2>&1
 
-# 盘后对账，16:30 本地时间。
+# A 股交易日收盘后结算，15:45 Asia/Shanghai。
+45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement >> /var/log/relay/post_close_settlement.log 2>&1
+
+# A 股交易日盘后资产快照，15:55 Asia/Shanghai。后续可并入 post_close_settlement。
+55 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-asset-snapshot.lock python3 -m relay.jobs.asset_snapshot >> /var/log/relay/asset_snapshot.log 2>&1
+
+# 盘后对账，16:30 Asia/Shanghai。后续可由 post_close_settlement 编排。
 30 16 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-reconcile.lock python3 -m relay.jobs.reconcile >> /var/log/relay/reconcile.log 2>&1
 
-# 账户盈亏统计，17:10 本地时间。
+# 账户盈亏统计，17:10 Asia/Shanghai。
 10 17 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pnl.lock python3 -m relay.jobs.pnl >> /var/log/relay/pnl.log 2>&1
 ```
 
@@ -197,13 +222,15 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
 1. 使用 `flock -n` 防止同一任务重复运行。
 2. cron 日志写入 `/var/log/relay/`，并配置 logrotate。
 3. cron 环境变量少，必须显式设置 `RELAY_CONFIG_PATH`。
-4. 首次部署前先手动执行任务命令，确认配置、权限和日志目录无误。
+4. cron 时区必须和 `service.timezone` 保持一致，当前固定为 `Asia/Shanghai`。
+5. 首次部署前先手动执行任务命令，确认配置、权限和日志目录无误。
 
 ## 后续实现
 
 后续需要补齐：
 
 1. 敏感字段脱敏日志。
-2. Python jobs 入口。
+2. `pre_open_init` 与 `post_close_settlement` Python jobs 入口。
 3. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
 4. 任务运行状态、最近成功时间和失败原因落盘。
+5. `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。

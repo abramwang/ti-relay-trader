@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"ti-relay-trader/internal/timeutil"
 )
 
 type MessageSummary struct {
@@ -182,7 +184,7 @@ func SummarizeEntry(stream, streamID string, values map[string]any) MessageSumma
 	summary.GatewayOrderID = envelope.GatewayOrderID
 	summary.AccountID = envelope.Routing.AccountID
 	if !envelope.ProducedAt.IsZero() {
-		summary.ProducedAt = envelope.ProducedAt.Format(time.RFC3339Nano)
+		summary.ProducedAt = timeutil.FormatRFC3339Nano(envelope.ProducedAt)
 	}
 	summary.PayloadKeys = payloadKeys(envelope.Payload)
 

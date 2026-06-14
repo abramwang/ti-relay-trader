@@ -12,6 +12,7 @@ import (
 
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/ledger"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -122,7 +123,7 @@ func SyncLedger(ctx context.Context, cfg config.Config, writer LedgerWriter, opt
 	roles := outputRoles(opts.Roles)
 
 	report := LedgerSyncReport{
-		GeneratedAt: time.Now().UTC(),
+		GeneratedAt: timeutil.Now(),
 		Protocol:    Protocol,
 		RedisAddr:   maskRedisAddr(cfg.Redis.URL),
 		Prefixes:    prefixes,

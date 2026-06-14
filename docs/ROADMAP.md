@@ -20,7 +20,7 @@
 | P4 Redis Stream 前置对接 | doing | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | doing | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
-| P7 盘后对账任务 | todo | 对账柜台、Redis 事件和内部账表 | Python jobs、对账批次、差异表、修复入口 |
+| P7 交易日流程与盘后对账 | todo | 管理盘前初始化、收盘后结算和盘后对账 | Python jobs、任务状态、对账批次、差异表、修复入口 |
 | P8 历史数据与盈亏统计 | todo | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
 | P9 模拟柜台 | todo | 支持研究和策略联调的模拟交易账表 | 模拟账户、撮合、资金持仓、结算 |
 | P10 运维发布 | todo | 形成可部署、可观测、可回滚的服务 | systemd/container、监控、告警、备份、发布手册 |
@@ -28,10 +28,12 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 增加 9092 页面冒烟测试。
-3. 增加批量下单测试视图。
-4. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
-5. 设计模拟柜台账表 schema。
+2. 增加 Python `pre_open_init` 与 `post_close_settlement` 任务骨架。
+3. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
+4. 增加 9092 页面冒烟测试。
+5. 增加批量下单测试视图。
+6. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+7. 设计模拟柜台账表 schema。
 
 ## 里程碑细化
 
@@ -195,10 +197,18 @@
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 
-### P7 盘后对账任务
+### P7 交易日流程与盘后对账
 
 - [x] 明确盘后、快照、PnL 等后台批处理可优先采用 cron 管理。
+- [x] 明确业务时间统一使用 `Asia/Shanghai`。
+- [x] 规划 `pre_open_init` 盘前初始化流程。
+- [x] 规划 `post_close_settlement` 收盘后结算流程。
+- [x] 增加统一时间工具，集中提供 `Asia/Shanghai` location、业务日期和 API 展示格式。
+- [ ] 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
 - [ ] 增加 Python 任务入口。
+- [ ] 实现 `python -m relay.jobs.pre_open_init`。
+- [ ] 实现 `python -m relay.jobs.post_close_settlement`。
+- [ ] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [ ] 拉取柜台资金、持仓、订单、成交查询结果。
 - [ ] 对比 Redis 事件流水和内部账表。
 - [ ] 记录对账批次和差异。
