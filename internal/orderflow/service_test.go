@@ -499,6 +499,38 @@ func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	}
 }
 
+func TestListPositionsUsesSnapshotsForHistoricalQuery(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		listedPositionSnapshots: []trading.Position{
+			{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100},
+		},
+	}
+	service, err := New(Options{
+		Config: testConfig(true, false),
+		Ledger: ledgerWriter,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		TradeDate: "20260612",
+	})
+	if err != nil {
+		t.Fatalf("ListPositions() error = %v", err)
+	}
+	if result.Count != 1 || result.Positions[0].TradeDate != "2026-06-12" {
+		t.Fatalf("historical positions result = %#v", result)
+	}
+	if ledgerWriter.lastPositionSnapshotQuery.TradeDate != "20260612" {
+		t.Fatalf("snapshot query = %#v", ledgerWriter.lastPositionSnapshotQuery)
+	}
+	if ledgerWriter.lastPositionQuery.AccountID != "" {
+		t.Fatalf("current position query unexpectedly used = %#v", ledgerWriter.lastPositionQuery)
+	}
+}
+
 func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 	ledgerWriter := &fakeLedger{}
 	publisher := &fakePublisher{streamID: "1777100000300-0"}
@@ -608,19 +640,21 @@ func testConfig(enabled, tradingEnabled bool) config.Config {
 }
 
 type fakeLedger struct {
-	accounts          []trading.Account
-	orders            []trading.Order
-	order             trading.Order
-	getOrderErr       error
-	listedOrders      []trading.Order
-	listedFills       []trading.Fill
-	asset             trading.Asset
-	assetErr          error
-	listedPositions   []trading.Position
-	lastOrderQuery    trading.OrderQuery
-	lastFillQuery     trading.FillQuery
-	lastPositionQuery trading.PositionQuery
-	raw               []ledger.RawStreamMessage
+	accounts                  []trading.Account
+	orders                    []trading.Order
+	order                     trading.Order
+	getOrderErr               error
+	listedOrders              []trading.Order
+	listedFills               []trading.Fill
+	asset                     trading.Asset
+	assetErr                  error
+	listedPositions           []trading.Position
+	listedPositionSnapshots   []trading.Position
+	lastOrderQuery            trading.OrderQuery
+	lastFillQuery             trading.FillQuery
+	lastPositionQuery         trading.PositionQuery
+	lastPositionSnapshotQuery trading.PositionQuery
+	raw                       []ledger.RawStreamMessage
 }
 
 func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -676,6 +710,11 @@ func (writer *fakeLedger) GetLatestAsset(_ context.Context, accountID string) (t
 func (writer *fakeLedger) ListPositions(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {
 	writer.lastPositionQuery = query
 	return writer.listedPositions, nil
+}
+
+func (writer *fakeLedger) ListPositionSnapshots(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	writer.lastPositionSnapshotQuery = query
+	return writer.listedPositionSnapshots, nil
 }
 
 func (writer *fakeLedger) ArchiveRawStreamMessage(_ context.Context, message ledger.RawStreamMessage) error {

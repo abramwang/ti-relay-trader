@@ -95,6 +95,13 @@
       input.spellcheck = false;
       return input;
     }
+    if (field.type === "checkbox") {
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = "true";
+      input.checked = field.defaultValue === true || field.defaultValue === "true";
+      return input;
+    }
     const input = document.createElement("input");
     input.type = field.type === "number" || field.type === "integer" ? "number" : "text";
     if (field.type === "number") {
@@ -133,6 +140,9 @@
   }
 
   function fieldValue(field) {
+    if (field.type === "checkbox") {
+      return field.checked ? "true" : "";
+    }
     return field.value.trim();
   }
 

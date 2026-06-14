@@ -11,6 +11,8 @@ migrations/postgres/000001_init_ledger.up.sql
 migrations/postgres/000001_init_ledger.down.sql
 migrations/postgres/000002_stream_checkpoints.up.sql
 migrations/postgres/000002_stream_checkpoints.down.sql
+migrations/postgres/000003_job_runs.up.sql
+migrations/postgres/000003_job_runs.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -21,8 +23,8 @@ migrations/postgres/000002_stream_checkpoints.down.sql
 
 1. `000001_init_ledger` 已应用。
 2. `000002_stream_checkpoints` 已应用。
-3. `relay_schema_migrations` 已记录版本 `1:init_ledger` 和 `2:stream_checkpoints`。
-4. 当前 public schema 下共有 16 张基础表。
+3. `000003_job_runs` 已应用。
+4. `relay_schema_migrations` 已记录版本 `1:init_ledger`、`2:stream_checkpoints` 和 `3:job_runs`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -55,6 +57,8 @@ Repository 当前覆盖：
 5. `ArchiveRawStreamMessage`
 6. `GetStreamCheckpoint`
 7. `UpsertStreamCheckpoint`
+8. `UpsertJobRun`
+9. `LatestJobRuns`
 
 这些入口会把标准交易结构体、stream key、stream id、source/correlation 信息和原始 payload 写入 PostgreSQL。重复消费场景使用唯一约束和 `ON CONFLICT` 做幂等处理。
 
@@ -98,6 +102,10 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 1. `stream_checkpoints`
 
+日流程任务：
+
+1. `job_runs`
+
 ## 关键约束
 
 1. `orders(account_id, gateway_order_id)` 唯一，用作订单跨系统主键。
@@ -108,6 +116,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 6. 金额和价格字段使用 `numeric(20, 6)`，避免浮点误差进入最终账本。
 7. 时间字段统一使用 `timestamptz`，原始柜台时间戳保留在 raw 或 adapter 字段。
 8. `stream_checkpoints(stream_key)` 唯一记录每条 output stream 的最后消费 ID；worker 重启后从该 ID 继续 `XREAD`。
+9. `job_runs(run_id)` 唯一记录每次盘前初始化、盘后结算或后续后台任务运行，完整报告保存在 `report_json`，`/v1/status` 只返回摘要。
 
 ## 手动执行示例
 
@@ -116,6 +125,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 ```bash
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000002_stream_checkpoints.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000003_job_runs.up.sql
 ```
 
 使用 relayctl：

@@ -204,10 +204,10 @@ PYTHONPATH=/home/ti-relay-trader/src:/home/ti-relay-trader/sdk/python
 RELAY_BASE_URL=http://relay-trader.quantstage.com
 
 # A 股交易日盘前初始化，08:25 Asia/Shanghai。
-25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
+25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --persist --trigger cron --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
 
 # A 股交易日收盘后结算，15:45 Asia/Shanghai。
-45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
+45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
 # A 股交易日盘后资产快照，15:55 Asia/Shanghai。后续可并入 post_close_settlement。
 55 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-asset-snapshot.lock python3 -m relay.jobs.asset_snapshot >> /var/log/relay/asset_snapshot.log 2>&1
@@ -245,12 +245,14 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
 
+任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要。
+
 ## 后续实现
 
 后续需要补齐：
 
 1. 敏感字段脱敏日志。
-2. 任务运行状态、最近成功时间和失败原因落盘。
+2. 日终资产和持仓快照实际写入。
 3. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
-4. `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
+4. cron 安装后验收 `/v1/status` 中的日流程最近运行状态。
 5. 收盘后结算接入正式对账差异表和 PnL 计算。

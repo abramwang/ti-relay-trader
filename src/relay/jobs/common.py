@@ -71,6 +71,8 @@ class JobOptions:
     query_limit: int = DEFAULT_QUERY_LIMIT
     dry_run: bool = False
     skip_refresh: bool = False
+    persist: bool = False
+    trigger: str = "manual"
     allow_non_trading_day: bool = False
     skip_trading_day_check: bool = False
     output: str = ""
@@ -92,6 +94,8 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument("--query-limit", type=int, default=DEFAULT_QUERY_LIMIT, help="orders/fills sample limit")
     parser.add_argument("--dry-run", action="store_true", help="do not publish refresh commands")
     parser.add_argument("--skip-refresh", action="store_true", help="skip refresh commands and only query local ledger")
+    parser.add_argument("--persist", action="store_true", help="persist the final report through relay POST /v1/jobs/runs")
+    parser.add_argument("--trigger", default="manual", help="job trigger label persisted with --persist, for example cron or manual")
     parser.add_argument("--allow-non-trading-day", action="store_true", help="run account flow even when target date is not a trading day")
     parser.add_argument("--skip-trading-day-check", action="store_true", help="do not call Meridian trading-day endpoint")
     parser.add_argument("--output", default="", help="optional JSON report path")
@@ -109,6 +113,8 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         query_limit=max(args.query_limit, 1),
         dry_run=args.dry_run,
         skip_refresh=args.skip_refresh,
+        persist=args.persist,
+        trigger=args.trigger,
         allow_non_trading_day=args.allow_non_trading_day,
         skip_trading_day_check=args.skip_trading_day_check,
         output=args.output,
@@ -418,6 +424,18 @@ def main_for(job_name: str, description: str, runner: Callable[[JobOptions], Map
                 "errors": [str(exc)],
             }
         )
+    if options.persist:
+        _value, persistence = capture_call(
+            "record_job_run",
+            RelayClient(options.base_url, timeout=options.timeout, trust_env=False).record_job_run,
+            report,
+            job_name=job_name,
+            trigger=options.trigger,
+        )
+        report["persistence"] = persistence
+        if persistence.get("error"):
+            report["ok"] = False
+            report.setdefault("errors", []).append(persistence["error"])
     emit_report(report, options)
     raise SystemExit(0 if report.get("ok") else 1)
 

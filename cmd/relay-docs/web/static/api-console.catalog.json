@@ -36,6 +36,25 @@
       { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
       { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
       { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "history", "label": "history", "source": "query", "type": "checkbox", "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "positions-history",
+    "group": "账户",
+    "title": "历史持仓",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/positions/history",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
@@ -142,6 +161,27 @@
       { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
       { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
       { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "orders-history",
+    "group": "查询",
+    "title": "历史订单",
+    "method": "GET",
+    "path": "/v1/history/orders",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "client_order_id", "label": "client_order_id", "source": "query", "defaultValue": "" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
@@ -157,7 +197,37 @@
       { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
       { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
       { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "fills-history",
+    "group": "查询",
+    "title": "历史成交",
+    "method": "GET",
+    "path": "/v1/history/fills",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "job-runs",
+    "group": "运维",
+    "title": "任务运行状态",
+    "method": "GET",
+    "path": "/v1/jobs/runs",
+    "status": "needs-config",
+    "fields": [
+      { "name": "job_name", "label": "job_name", "source": "query", "defaultValue": "pre_open_init,post_close_settlement" }
     ]
   },
   {

@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.3"
+SDK_VERSION = "0.1.4"
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 
@@ -99,12 +99,26 @@ class RelayClient:
         *,
         symbol: str | None = None,
         exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
     ) -> list[Position]:
         account_id = self._resolve_account(account_id)
+        path = f"/v1/accounts/{parse.quote(account_id)}/positions"
+        if history:
+            path += "/history"
         data = self._request(
             "GET",
-            f"/v1/accounts/{parse.quote(account_id)}/positions",
-            query={"symbol": symbol, "exchange": exchange},
+            path,
+            query={
+                "symbol": symbol,
+                "exchange": exchange,
+                "trade_date": trade_date,
+                "date_from": date_from,
+                "date_to": date_to,
+                "history": history,
+            },
         )
         return [Position.from_dict(item) for item in data.get("positions", [])]
 
@@ -128,6 +142,10 @@ class RelayClient:
         symbol: str | None = None,
         exchange: str | None = None,
         status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
         limit: int | None = 100,
     ) -> list[Order]:
         query = {
@@ -136,9 +154,14 @@ class RelayClient:
             "symbol": symbol,
             "exchange": exchange,
             "status": status,
+            "trade_date": trade_date,
+            "date_from": date_from,
+            "date_to": date_to,
+            "history": history,
             "limit": limit,
         }
-        data = self._request("GET", "/v1/orders", query=query)
+        path = "/v1/history/orders" if history else "/v1/orders"
+        data = self._request("GET", path, query=query)
         return [Order.from_dict(item) for item in data.get("orders", [])]
 
     def list_fills(
@@ -148,6 +171,10 @@ class RelayClient:
         gateway_order_id: str | None = None,
         symbol: str | None = None,
         exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
         limit: int | None = 100,
     ) -> list[Fill]:
         query = {
@@ -155,10 +182,38 @@ class RelayClient:
             "gateway_order_id": gateway_order_id,
             "symbol": symbol,
             "exchange": exchange,
+            "trade_date": trade_date,
+            "date_from": date_from,
+            "date_to": date_to,
+            "history": history,
             "limit": limit,
         }
-        data = self._request("GET", "/v1/fills", query=query)
+        path = "/v1/history/fills" if history else "/v1/fills"
+        data = self._request("GET", path, query=query)
         return [Fill.from_dict(item) for item in data.get("fills", [])]
+
+    def record_job_run(
+        self,
+        report: Mapping[str, Any],
+        *,
+        job_name: str | None = None,
+        trigger: str = "manual",
+        status: str | None = None,
+        run_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Persist a trading-day job report into relay's local ledger."""
+
+        payload = {
+            "run_id": run_id,
+            "job_name": job_name,
+            "trigger": trigger,
+            "status": status,
+            "started_at": report.get("started_at"),
+            "finished_at": report.get("finished_at"),
+            "report": dict(report),
+        }
+        data = self._request("POST", "/v1/jobs/runs", json_body=payload)
+        return data.get("run", data)
 
     def submit_order(
         self,

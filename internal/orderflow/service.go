@@ -37,6 +37,7 @@ type LedgerWriter interface {
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error)
 	ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
+	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 }
 
@@ -566,7 +567,12 @@ func (service *Service) ListPositions(ctx context.Context, query trading.Positio
 	if _, err := service.routeForConfiguredAccount(normalized.AccountID); err != nil {
 		return ListPositionsResult{}, err
 	}
-	positions, err := service.ledger.ListPositions(ctx, normalized)
+	var positions []trading.Position
+	if normalized.History || normalized.TradeDate != "" || normalized.DateFrom != "" || normalized.DateTo != "" {
+		positions, err = service.ledger.ListPositionSnapshots(ctx, normalized)
+	} else {
+		positions, err = service.ledger.ListPositions(ctx, normalized)
+	}
 	if err != nil {
 		return ListPositionsResult{}, err
 	}
@@ -715,6 +721,9 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	normalized.ClientOrderID = strings.TrimSpace(normalized.ClientOrderID)
 	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
 	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
+	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
+	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
 	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
 		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
 	}
@@ -736,6 +745,9 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
 	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
 	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
+	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
+	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
 	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
 		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
 	}
@@ -753,6 +765,9 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
 	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
 	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
+	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
+	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
 	if normalized.AccountID == "" {
 		return normalized, fmt.Errorf("%w: account_id is required", trading.ErrInvalidSchema)
 	}

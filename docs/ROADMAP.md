@@ -28,8 +28,8 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 将 `pre_open_init` 与 `post_close_settlement` 任务运行状态落盘，并在 `/v1/status` 暴露最近运行状态。
-3. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
+2. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`，并清理零值时间展示。
+3. 推进 `post_close_settlement` 从报告摘要升级为实际写入日终 `asset_snapshots`、`position_snapshots` 和对账批次。
 4. 增加 9092 页面冒烟测试。
 5. 增加批量下单测试视图。
 6. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
@@ -38,6 +38,8 @@
 ## 下一步任务
 
 ### N1 交易日任务运行状态落盘与状态接口
+
+状态：`done`
 
 目标：让每日盘前初始化和收盘后结算不只输出一次性 JSON 报告，还能被 9092 服务、首页状态、运维页面和后续 cron 监控稳定追踪。
 
@@ -168,6 +170,9 @@
 - [x] `POST /v1/orders/{gateway_order_id}/cancel`。
 - [x] `GET /v1/orders`。
 - [x] `GET /v1/fills`。
+- [x] `GET /v1/orders` 和 `GET /v1/fills` 默认按 `Asia/Shanghai` 当日过滤。
+- [x] `GET /v1/history/orders` 和 `GET /v1/history/fills`。
+- [x] `GET /v1/accounts/{account_id}/positions/history`，读取 `position_snapshots` 历史持仓快照。
 - [x] `GET /v1/events/stream`。
 - [x] 规划 Python SDK 的包形态、核心方法、错误处理和实盘语义。
 - [x] 参考 Meridian SDK，明确内网 HTTP tar.gz 安装包和 pip 安装方式。
@@ -184,6 +189,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.1.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.2.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.3.tar.gz` 和 SHA256 校验文件。
+- [x] 发布 `public/sdk/relay-sdk-0.1.4.tar.gz` 和 SHA256 校验文件，支持历史查询和任务报告落盘。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -230,9 +236,9 @@
 - [x] 实现 `python -m relay.jobs.pre_open_init` 任务骨架。
 - [x] 实现 `python -m relay.jobs.post_close_settlement` 任务骨架。
 - [x] 任务报告输出交易日、依赖状态、账户范围、刷新回执、账本快照摘要和未终态订单列表。
-- [ ] 建立任务运行账表，记录日流程报告、耗时、终态和错误摘要。
-- [ ] 将 `pre_open_init` 与 `post_close_settlement` 报告写入任务运行账表。
-- [ ] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
+- [x] 建立任务运行账表，记录日流程报告、耗时、终态和错误摘要。
+- [x] 将 `pre_open_init` 与 `post_close_settlement` 报告写入任务运行账表。
+- [x] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [ ] 拉取柜台资金、持仓、订单、成交查询结果。
 - [ ] 对比 Redis 事件流水和内部账表。
 - [ ] 记录对账批次和差异。

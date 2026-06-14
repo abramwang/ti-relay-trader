@@ -25,6 +25,7 @@ import (
 
 type Dependencies struct {
 	Orders       OrderService
+	Jobs         JobRunStore
 	Market       *market.MeridianClient
 	Events       *events.Hub
 	DatabasePing HealthCheckFunc
@@ -47,11 +48,17 @@ type OrderService interface {
 	RefreshFills(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 }
 
+type JobRunStore interface {
+	UpsertJobRun(ctx context.Context, run ledger.JobRun) (ledger.JobRun, error)
+	LatestJobRuns(ctx context.Context, jobNames []string) ([]ledger.JobRun, error)
+}
+
 type Server struct {
 	cfg     config.Config
 	logger  *slog.Logger
 	started time.Time
 	orders  OrderService
+	jobs    JobRunStore
 	market  *market.MeridianClient
 	events  *events.Hub
 	health  statusHealthChecks
@@ -84,6 +91,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		logger:  logger,
 		started: timeutil.Now(),
 		orders:  deps.Orders,
+		jobs:    deps.Jobs,
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
@@ -104,6 +112,9 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
+	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
+	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
+	mux.HandleFunc("/v1/history/fills", server.handleHistoryFills)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
 	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
 	mux.HandleFunc("/v1/fills", server.handleFills)
@@ -348,6 +359,14 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 		s.handleAccountAsset(w, r, accountID)
 	case "positions":
 		if len(parts) == 3 {
+			if parts[2] == "history" {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleAccountPositions(w, r, accountID, true)
+				return
+			}
 			if parts[2] != "refresh" {
 				httpx.WriteNotFound(w, r)
 				return
@@ -363,7 +382,7 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 			return
 		}
-		s.handleAccountPositions(w, r, accountID)
+		s.handleAccountPositions(w, r, accountID, false)
 	case "orders":
 		if len(parts) != 3 || parts[2] != "refresh" {
 			httpx.WriteNotFound(w, r)
@@ -530,11 +549,34 @@ func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	query, err := parseOrderQuery(r.URL.Query())
+	query, err := parseOrderQuery(r.URL.Query(), true)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid order query", err.Error())
 		return
 	}
+	result, err := s.orders.ListOrders(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleHistoryOrders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parseOrderQuery(r.URL.Query(), false)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid history order query", err.Error())
+		return
+	}
+	query.History = true
 	result, err := s.orders.ListOrders(r.Context(), query)
 	if err != nil {
 		s.writeOrderError(w, r, err)
@@ -556,7 +598,7 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
-func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, accountID string) {
+func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, accountID string, forceHistory bool) {
 	if s.orders == nil {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
@@ -565,6 +607,9 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid position query", err.Error())
 		return
+	}
+	if forceHistory {
+		query.History = true
 	}
 	result, err := s.orders.ListPositions(r.Context(), query)
 	if err != nil {
@@ -643,7 +688,7 @@ func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	query, err := parseFillQuery(r.URL.Query())
+	query, err := parseFillQuery(r.URL.Query(), true)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fill query", err.Error())
 		return
@@ -656,10 +701,78 @@ func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
+func (s *Server) handleHistoryFills(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parseFillQuery(r.URL.Query(), false)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid history fill query", err.Error())
+		return
+	}
+	query.History = true
+	result, err := s.orders.ListFills(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
+	if s.jobs == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "job run store is unavailable", nil)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		names := splitQueryCSV(r.URL.Query()["job_name"])
+		runs, err := s.jobs.LatestJobRuns(r.Context(), names)
+		if err != nil && !errors.Is(err, ledger.ErrJobRunNotFound) {
+			s.logger.Warn("job_runs_query_failed", "error", err)
+			httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "job run query failed", nil)
+			return
+		}
+		if runs == nil {
+			runs = []ledger.JobRun{}
+		}
+		httpx.WriteOK(w, r, http.StatusOK, map[string]any{"runs": runs, "count": len(runs)})
+	case http.MethodPost:
+		defer r.Body.Close()
+		var req JobRunRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid job run body", err.Error())
+			return
+		}
+		run, err := jobRunFromRequest(req)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid job run", err.Error())
+			return
+		}
+		saved, err := s.jobs.UpsertJobRun(r.Context(), run)
+		if err != nil {
+			s.writeOrderError(w, r, err)
+			return
+		}
+		httpx.WriteOK(w, r, http.StatusAccepted, map[string]any{"run": saved})
+	default:
+		httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+	}
+}
+
 func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, trading.ErrInvalidSchema):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid order request", err.Error())
+	case errors.Is(err, ledger.ErrInvalidLedgerInput):
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid ledger request", err.Error())
 	case errors.Is(err, ledger.ErrAssetNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "asset snapshot not found", err.Error())
 	case errors.Is(err, ledger.ErrOrderNotFound):
@@ -684,10 +797,15 @@ func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err err
 	}
 }
 
-func parseOrderQuery(values url.Values) (trading.OrderQuery, error) {
+func parseOrderQuery(values url.Values, defaultToday bool) (trading.OrderQuery, error) {
 	limit, err := parseLimit(values.Get("limit"))
 	if err != nil {
 		return trading.OrderQuery{}, err
+	}
+	history := parseBool(values.Get("history"))
+	tradeDate, dateFrom, dateTo := parseDateQuery(values)
+	if defaultToday && !history && tradeDate == "" && dateFrom == "" && dateTo == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
 	}
 	return trading.OrderQuery{
 		AccountID:      values.Get("account_id"),
@@ -696,21 +814,34 @@ func parseOrderQuery(values url.Values) (trading.OrderQuery, error) {
 		Symbol:         values.Get("symbol"),
 		Exchange:       trading.Exchange(values.Get("exchange")),
 		Status:         trading.OrderStatus(values.Get("status")),
+		TradeDate:      tradeDate,
+		DateFrom:       dateFrom,
+		DateTo:         dateTo,
+		History:        history,
 		Limit:          limit,
 		Cursor:         values.Get("cursor"),
 	}, nil
 }
 
-func parseFillQuery(values url.Values) (trading.FillQuery, error) {
+func parseFillQuery(values url.Values, defaultToday bool) (trading.FillQuery, error) {
 	limit, err := parseLimit(values.Get("limit"))
 	if err != nil {
 		return trading.FillQuery{}, err
+	}
+	history := parseBool(values.Get("history"))
+	tradeDate, dateFrom, dateTo := parseDateQuery(values)
+	if defaultToday && !history && tradeDate == "" && dateFrom == "" && dateTo == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
 	}
 	return trading.FillQuery{
 		AccountID:      values.Get("account_id"),
 		GatewayOrderID: values.Get("gateway_order_id"),
 		Symbol:         values.Get("symbol"),
 		Exchange:       trading.Exchange(values.Get("exchange")),
+		TradeDate:      tradeDate,
+		DateFrom:       dateFrom,
+		DateTo:         dateTo,
+		History:        history,
 		Limit:          limit,
 		Cursor:         values.Get("cursor"),
 	}, nil
@@ -725,9 +856,39 @@ func parsePositionQuery(accountID string, values url.Values) (trading.PositionQu
 		AccountID: accountID,
 		Symbol:    values.Get("symbol"),
 		Exchange:  trading.Exchange(values.Get("exchange")),
+		TradeDate: values.Get("trade_date"),
+		DateFrom:  values.Get("date_from"),
+		DateTo:    values.Get("date_to"),
+		History:   parseBool(values.Get("history")),
 		Limit:     limit,
 		Cursor:    values.Get("cursor"),
 	}, nil
+}
+
+func parseDateQuery(values url.Values) (string, string, string) {
+	return values.Get("trade_date"), values.Get("date_from"), values.Get("date_to")
+}
+
+func parseBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitQueryCSV(values []string) []string {
+	var output []string
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				output = append(output, item)
+			}
+		}
+	}
+	return output
 }
 
 func parseLimit(value string) (int, error) {
@@ -756,6 +917,7 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 		Status:             status,
 		PublicURL:          s.cfg.Service.PublicURL,
 		Timezone:           s.cfg.Service.Timezone,
+		TradingDay:         currentTradingDayStatus(),
 		StartedAt:          s.started,
 		UptimeSeconds:      int64(time.Since(s.started).Seconds()),
 		AccountsConfigured: len(s.cfg.Accounts),
@@ -765,8 +927,32 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 	if includeDependencies {
 		view.Dependencies = s.dependencyStatus(ctx)
 		view.Status = statusFromDependencies(view.Dependencies)
+		view.JobRuns = s.latestJobRunStatus(ctx)
 	}
 	return view
+}
+
+func (s *Server) latestJobRunStatus(ctx context.Context) map[string]JobRunStatusView {
+	if s.jobs == nil {
+		return nil
+	}
+	names := []string{"pre_open_init", "post_close_settlement"}
+	checkCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	runs, err := s.jobs.LatestJobRuns(checkCtx, names)
+	if err != nil {
+		if errors.Is(err, ledger.ErrJobRunNotFound) {
+			return map[string]JobRunStatusView{}
+		}
+		return map[string]JobRunStatusView{
+			"_error": {Status: "unavailable", ErrorSummary: "job run query failed"},
+		}
+	}
+	out := make(map[string]JobRunStatusView, len(runs))
+	for _, run := range runs {
+		out[run.JobName] = jobRunStatusView(run)
+	}
+	return out
 }
 
 func (s *Server) dependencyStatus(ctx context.Context) map[string]DependencyStatus {
@@ -851,12 +1037,32 @@ type StatusView struct {
 	Status             string                      `json:"status"`
 	PublicURL          string                      `json:"public_url"`
 	Timezone           string                      `json:"timezone"`
+	TradingDay         TradingDayStatusView        `json:"trading_day"`
 	StartedAt          time.Time                   `json:"started_at"`
 	UptimeSeconds      int64                       `json:"uptime_seconds"`
 	AccountsConfigured int                         `json:"accounts_configured"`
 	Accounts           AccountStatusSummary        `json:"accounts"`
 	JobsConfigured     int                         `json:"jobs_configured"`
 	Dependencies       map[string]DependencyStatus `json:"dependencies,omitempty"`
+	JobRuns            map[string]JobRunStatusView `json:"job_runs,omitempty"`
+}
+
+type TradingDayStatusView struct {
+	Date     string `json:"date"`
+	Timezone string `json:"timezone"`
+	Phase    string `json:"phase"`
+}
+
+type JobRunStatusView struct {
+	RunID           string    `json:"run_id,omitempty"`
+	JobName         string    `json:"job_name,omitempty"`
+	TargetTradeDate string    `json:"target_trade_date,omitempty"`
+	Status          string    `json:"status"`
+	Skipped         bool      `json:"skipped,omitempty"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	FinishedAt      time.Time `json:"finished_at,omitempty"`
+	DurationMS      int64     `json:"duration_ms,omitempty"`
+	ErrorSummary    string    `json:"error_summary,omitempty"`
 }
 
 type AccountStatusSummary struct {
@@ -880,4 +1086,140 @@ type AccountView struct {
 	Enabled        bool   `json:"enabled"`
 	TradingEnabled bool   `json:"trading_enabled"`
 	Simulated      bool   `json:"simulated"`
+}
+
+type JobRunRequest struct {
+	RunID           string         `json:"run_id,omitempty"`
+	JobName         string         `json:"job_name,omitempty"`
+	TargetTradeDate string         `json:"target_trade_date,omitempty"`
+	Timezone        string         `json:"timezone,omitempty"`
+	Status          string         `json:"status,omitempty"`
+	Trigger         string         `json:"trigger,omitempty"`
+	Skipped         bool           `json:"skipped,omitempty"`
+	StartedAt       time.Time      `json:"started_at,omitempty"`
+	FinishedAt      time.Time      `json:"finished_at,omitempty"`
+	DurationMS      int64          `json:"duration_ms,omitempty"`
+	Report          map[string]any `json:"report,omitempty"`
+	ErrorSummary    string         `json:"error_summary,omitempty"`
+}
+
+func jobRunFromRequest(req JobRunRequest) (ledger.JobRun, error) {
+	report := req.Report
+	if report == nil {
+		report = map[string]any{}
+	}
+	jobName := firstNonEmpty(req.JobName, stringFromMap(report, "job"))
+	targetTradeDate := req.TargetTradeDate
+	if targetTradeDate == "" {
+		if tradingDay, ok := report["trading_day"].(map[string]any); ok {
+			targetTradeDate = stringFromMap(tradingDay, "target_trade_date")
+		}
+	}
+	status := req.Status
+	if status == "" {
+		status = "succeeded"
+		if boolFromMap(report, "skipped") || req.Skipped {
+			status = "skipped"
+		}
+		if ok, exists := report["ok"].(bool); exists && !ok {
+			status = "failed"
+		}
+	}
+	errorSummary := req.ErrorSummary
+	if errorSummary == "" {
+		if errorsValue, ok := report["errors"].([]any); ok && len(errorsValue) > 0 {
+			errorSummary = fmt.Sprint(errorsValue[0])
+		}
+	}
+	return ledger.JobRun{
+		RunID:           req.RunID,
+		JobName:         jobName,
+		TargetTradeDate: targetTradeDate,
+		Timezone:        firstNonEmpty(req.Timezone, stringFromMap(report, "timezone"), timeutil.LocationName),
+		Status:          status,
+		Trigger:         req.Trigger,
+		Skipped:         req.Skipped || boolFromMap(report, "skipped"),
+		StartedAt:       req.StartedAt,
+		FinishedAt:      req.FinishedAt,
+		DurationMS:      req.DurationMS,
+		Report:          report,
+		ErrorSummary:    errorSummary,
+	}, nil
+}
+
+func currentTradingDayStatus() TradingDayStatusView {
+	now := timeutil.Now()
+	return TradingDayStatusView{
+		Date:     now.Format("2006-01-02"),
+		Timezone: timeutil.LocationName,
+		Phase:    tradingPhase(now),
+	}
+}
+
+func tradingPhase(now time.Time) string {
+	local := timeutil.InBusinessLocation(now)
+	hour, minute, _ := local.Clock()
+	minutes := hour*60 + minute
+	switch {
+	case minutes < 9*60+15:
+		return "pre_open"
+	case minutes < 9*60+30:
+		return "call_auction"
+	case minutes < 11*60+30:
+		return "continuous"
+	case minutes < 13*60:
+		return "lunch_break"
+	case minutes < 15*60:
+		return "continuous"
+	default:
+		return "post_close"
+	}
+}
+
+func jobRunStatusView(run ledger.JobRun) JobRunStatusView {
+	return JobRunStatusView{
+		RunID:           run.RunID,
+		JobName:         run.JobName,
+		TargetTradeDate: run.TargetTradeDate,
+		Status:          run.Status,
+		Skipped:         run.Skipped,
+		StartedAt:       run.StartedAt,
+		FinishedAt:      run.FinishedAt,
+		DurationMS:      run.DurationMS,
+		ErrorSummary:    run.ErrorSummary,
+	}
+}
+
+func stringFromMap(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	if value, ok := values[key]; ok {
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+	return ""
+}
+
+func boolFromMap(values map[string]any, key string) bool {
+	if values == nil {
+		return false
+	}
+	value, ok := values[key]
+	if !ok {
+		return false
+	}
+	if boolValue, ok := value.(bool); ok {
+		return boolValue
+	}
+	return parseBool(fmt.Sprint(value))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

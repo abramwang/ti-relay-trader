@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -16,6 +17,7 @@ var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
 var ErrAssetNotFound = errors.New("asset snapshot not found")
 var ErrStreamCheckpointNotFound = errors.New("stream checkpoint not found")
+var ErrJobRunNotFound = errors.New("job run not found")
 
 type Executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -70,6 +72,23 @@ type StreamCheckpoint struct {
 	ProcessedCount  int64          `json:"processed_count"`
 	ErrorCount      int64          `json:"error_count"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
+	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
+}
+
+type JobRun struct {
+	RunID           string         `json:"run_id"`
+	JobName         string         `json:"job_name"`
+	TargetTradeDate string         `json:"target_trade_date"`
+	Timezone        string         `json:"timezone"`
+	Status          string         `json:"status"`
+	Trigger         string         `json:"trigger,omitempty"`
+	Skipped         bool           `json:"skipped,omitempty"`
+	StartedAt       time.Time      `json:"started_at,omitempty"`
+	FinishedAt      time.Time      `json:"finished_at,omitempty"`
+	DurationMS      int64          `json:"duration_ms,omitempty"`
+	Report          map[string]any `json:"report,omitempty"`
+	ErrorSummary    string         `json:"error_summary,omitempty"`
+	CreatedAt       time.Time      `json:"created_at,omitempty"`
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
@@ -517,6 +536,39 @@ func (repo *Repository) ListPositions(ctx context.Context, query trading.Positio
 	return positions, nil
 }
 
+func (repo *Repository) ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePositionQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListPositionSnapshotsSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list position snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	positions := make([]trading.Position, 0, normalized.Limit)
+	for rows.Next() {
+		position, err := scanPositionSnapshot(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan position snapshot: %w", err)
+		}
+		positions = append(positions, position)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list position snapshot rows: %w", err)
+	}
+	return positions, nil
+}
+
 func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -561,6 +613,56 @@ func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Pos
 	)
 	if err != nil {
 		return fmt.Errorf("upsert position %s/%s.%s: %w", normalized.AccountID, normalized.Symbol, normalized.Exchange, err)
+	}
+	return nil
+}
+
+func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePosition(position)
+	if err != nil {
+		return err
+	}
+	if capturedAt.IsZero() {
+		capturedAt = repo.now()
+	}
+	tradeDate, err := normalizeTradeDate(firstNonEmpty(normalized.TradeDate, capturedAt.Format("2006-01-02")))
+	if err != nil {
+		return err
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "close"
+	}
+	body, err := marshalJSONObject(rawPayload)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.exec.ExecContext(ctx, upsertPositionSnapshotSQL,
+		tradeDate,
+		normalized.AccountID,
+		normalized.Symbol,
+		normalized.Name,
+		normalized.Exchange,
+		normalized.Quantity,
+		normalized.SellableQty,
+		normalized.InitialQty,
+		normalized.TodayQty,
+		normalized.AvgCost,
+		nullFloat64(normalized.LastPrice),
+		normalized.MarketValue,
+		normalized.UnrealizedPnL,
+		normalized.SettledProfit,
+		nullString(normalized.ShareholderID),
+		source,
+		body,
+		capturedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert position snapshot %s/%s.%s: %w", normalized.AccountID, normalized.Symbol, normalized.Exchange, err)
 	}
 	return nil
 }
@@ -739,6 +841,69 @@ func (repo *Repository) UpsertStreamCheckpoint(ctx context.Context, checkpoint S
 	return nil
 }
 
+func (repo *Repository) UpsertJobRun(ctx context.Context, run JobRun) (JobRun, error) {
+	if repo == nil || repo.exec == nil {
+		return JobRun{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeJobRun(run, repo.now())
+	if err != nil {
+		return JobRun{}, err
+	}
+	report, err := marshalJSONObject(normalized.Report)
+	if err != nil {
+		return JobRun{}, err
+	}
+	_, err = repo.exec.ExecContext(ctx, upsertJobRunSQL,
+		normalized.RunID,
+		normalized.JobName,
+		normalized.TargetTradeDate,
+		normalized.Timezone,
+		normalized.Status,
+		nullString(normalized.Trigger),
+		normalized.Skipped,
+		nullTime(normalized.StartedAt),
+		nullTime(normalized.FinishedAt),
+		normalized.DurationMS,
+		report,
+		nullString(normalized.ErrorSummary),
+	)
+	if err != nil {
+		return JobRun{}, fmt.Errorf("upsert job run %s/%s: %w", normalized.JobName, normalized.RunID, err)
+	}
+	return normalized, nil
+}
+
+func (repo *Repository) LatestJobRuns(ctx context.Context, jobNames []string) ([]JobRun, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildLatestJobRunsSQL(jobNames)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("latest job runs: %w", err)
+	}
+	defer rows.Close()
+	runs := make([]JobRun, 0, len(jobNames))
+	for rows.Next() {
+		run, err := scanJobRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan job run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("latest job run rows: %w", err)
+	}
+	if len(runs) == 0 && len(jobNames) > 0 {
+		return nil, ErrJobRunNotFound
+	}
+	return runs, nil
+}
+
 func (repo *Repository) queryer() (Queryer, error) {
 	queryer, ok := repo.exec.(Queryer)
 	if !ok {
@@ -753,6 +918,11 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	query.ClientOrderID = strings.TrimSpace(query.ClientOrderID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	var err error
+	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
+	if err != nil {
+		return query, err
+	}
 	if query.Exchange != "" && !query.Exchange.Valid() {
 		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
 	}
@@ -773,6 +943,11 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	var err error
+	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
+	if err != nil {
+		return query, err
+	}
 	if query.Exchange != "" && !query.Exchange.Valid() {
 		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
 	}
@@ -789,6 +964,11 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	query.AccountID = strings.TrimSpace(query.AccountID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	var err error
+	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
+	if err != nil {
+		return query, err
+	}
 	if query.AccountID == "" {
 		return query, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
 	}
@@ -802,6 +982,133 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 		query.Limit = 2000
 	}
 	return query, nil
+}
+
+func normalizeQueryDates(tradeDate string, dateFrom string, dateTo string) (string, string, string, error) {
+	tradeDate = strings.TrimSpace(tradeDate)
+	dateFrom = strings.TrimSpace(dateFrom)
+	dateTo = strings.TrimSpace(dateTo)
+	var err error
+	if tradeDate != "" {
+		tradeDate, err = normalizeTradeDate(tradeDate)
+		if err != nil {
+			return "", "", "", err
+		}
+		if dateFrom != "" || dateTo != "" {
+			return "", "", "", fmt.Errorf("%w: trade_date cannot be combined with date_from/date_to", ErrInvalidLedgerInput)
+		}
+		return tradeDate, tradeDate, tradeDate, nil
+	}
+	if dateFrom != "" {
+		dateFrom, err = normalizeTradeDate(dateFrom)
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+	if dateTo != "" {
+		dateTo, err = normalizeTradeDate(dateTo)
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+	if dateFrom != "" && dateTo != "" && dateFrom > dateTo {
+		return "", "", "", fmt.Errorf("%w: date_from must be <= date_to", ErrInvalidLedgerInput)
+	}
+	return "", dateFrom, dateTo, nil
+}
+
+func normalizeTradeDate(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	layout := "2006-01-02"
+	if len(value) == 8 {
+		layout = "20060102"
+	}
+	parsed, err := time.ParseInLocation(layout, value, timeutil.Location())
+	if err != nil {
+		return "", fmt.Errorf("%w: date must be YYYYMMDD or YYYY-MM-DD", ErrInvalidLedgerInput)
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+func dateStart(value string) (time.Time, error) {
+	normalized, err := normalizeTradeDate(value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.ParseInLocation("2006-01-02", normalized, timeutil.Location())
+}
+
+func dateEndExclusive(value string) (time.Time, error) {
+	start, err := dateStart(value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return start.AddDate(0, 0, 1), nil
+}
+
+func nextTradeDate(value string) (string, error) {
+	start, err := dateStart(value)
+	if err != nil {
+		return "", err
+	}
+	return start.AddDate(0, 0, 1).Format("2006-01-02"), nil
+}
+
+func normalizeJobRun(run JobRun, now time.Time) (JobRun, error) {
+	run.JobName = strings.TrimSpace(run.JobName)
+	run.RunID = strings.TrimSpace(run.RunID)
+	run.TargetTradeDate = strings.TrimSpace(run.TargetTradeDate)
+	run.Timezone = strings.TrimSpace(run.Timezone)
+	run.Status = strings.TrimSpace(run.Status)
+	run.Trigger = strings.TrimSpace(run.Trigger)
+	run.ErrorSummary = strings.TrimSpace(run.ErrorSummary)
+	if run.JobName == "" {
+		return run, fmt.Errorf("%w: job_name is required", ErrInvalidLedgerInput)
+	}
+	var err error
+	run.TargetTradeDate, err = normalizeTradeDate(run.TargetTradeDate)
+	if err != nil {
+		return run, err
+	}
+	if run.TargetTradeDate == "" {
+		return run, fmt.Errorf("%w: target_trade_date is required", ErrInvalidLedgerInput)
+	}
+	if run.Timezone == "" {
+		run.Timezone = timeutil.LocationName
+	}
+	if run.Status == "" {
+		run.Status = "succeeded"
+	}
+	switch run.Status {
+	case "running", "succeeded", "skipped", "failed":
+	default:
+		return run, fmt.Errorf("%w: job status must be running, succeeded, skipped, or failed", ErrInvalidLedgerInput)
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if run.StartedAt.IsZero() {
+		run.StartedAt = now
+	}
+	if run.FinishedAt.IsZero() && run.Status != "running" {
+		run.FinishedAt = now
+	}
+	if run.DurationMS == 0 && !run.StartedAt.IsZero() && !run.FinishedAt.IsZero() {
+		run.DurationMS = int64(run.FinishedAt.Sub(run.StartedAt) / time.Millisecond)
+		if run.DurationMS < 0 {
+			run.DurationMS = 0
+		}
+	}
+	if run.RunID == "" {
+		run.RunID = fmt.Sprintf("%s-%s-%d", run.JobName, strings.ReplaceAll(run.TargetTradeDate, "-", ""), run.StartedAt.UnixNano())
+	}
+	if run.Report == nil {
+		run.Report = map[string]any{}
+	}
+	return run, nil
 }
 
 func normalizeAsset(asset trading.Asset) (trading.Asset, error) {
@@ -855,6 +1162,9 @@ func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 	if query.Status != "" {
 		appendFilter("status", query.Status)
 	}
+	if query.DateFrom != "" || query.DateTo != "" {
+		appendTimestampRange(&where, &args, "created_at", query.DateFrom, query.DateTo)
+	}
 
 	builder := strings.Builder{}
 	builder.WriteString(orderSelectColumns)
@@ -886,6 +1196,9 @@ func buildListFillsSQL(query trading.FillQuery) (string, []any) {
 	}
 	if query.Exchange != "" {
 		appendFilter("exchange", query.Exchange)
+	}
+	if query.DateFrom != "" || query.DateTo != "" {
+		appendFillDateRange(&where, &args, query.DateFrom, query.DateTo)
 	}
 
 	builder := strings.Builder{}
@@ -923,6 +1236,96 @@ func buildListPositionsSQL(query trading.PositionQuery) (string, []any) {
 	args = append(args, query.Limit)
 	builder.WriteString(fmt.Sprintf("ORDER BY market_value DESC, symbol ASC, exchange ASC LIMIT $%d", len(args)))
 	return builder.String(), args
+}
+
+func buildListPositionSnapshotsSQL(query trading.PositionQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	appendFilter("account_id", query.AccountID)
+	if query.Symbol != "" {
+		appendFilter("symbol", query.Symbol)
+	}
+	if query.Exchange != "" {
+		appendFilter("exchange", query.Exchange)
+	}
+	if query.DateFrom != "" {
+		args = append(args, query.DateFrom)
+		where = append(where, fmt.Sprintf("trade_date >= $%d::date", len(args)))
+	}
+	if query.DateTo != "" {
+		next, _ := nextTradeDate(query.DateTo)
+		args = append(args, next)
+		where = append(where, fmt.Sprintf("trade_date < $%d::date", len(args)))
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(positionSnapshotSelectColumns)
+	builder.WriteString("WHERE ")
+	builder.WriteString(strings.Join(where, " AND "))
+	builder.WriteString("\n")
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY trade_date DESC, market_value DESC, symbol ASC, exchange ASC LIMIT $%d", len(args)))
+	return builder.String(), args
+}
+
+func buildLatestJobRunsSQL(jobNames []string) (string, []any) {
+	cleaned := make([]string, 0, len(jobNames))
+	for _, name := range jobNames {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			cleaned = append(cleaned, name)
+		}
+	}
+	builder := strings.Builder{}
+	builder.WriteString(strings.Replace(jobRunSelectColumns, "\nSELECT", "\nSELECT DISTINCT ON (job_name)", 1))
+	var args []any
+	if len(cleaned) > 0 {
+		placeholders := make([]string, 0, len(cleaned))
+		for _, name := range cleaned {
+			args = append(args, name)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		builder.WriteString("WHERE job_name IN (")
+		builder.WriteString(strings.Join(placeholders, ", "))
+		builder.WriteString(")\n")
+	}
+	builder.WriteString("ORDER BY job_name, COALESCE(finished_at, started_at, updated_at) DESC, job_run_pk DESC")
+	return builder.String(), args
+}
+
+func appendTimestampRange(where *[]string, args *[]any, column string, dateFrom string, dateTo string) {
+	if dateFrom != "" {
+		start, _ := dateStart(dateFrom)
+		*args = append(*args, start)
+		*where = append(*where, fmt.Sprintf("%s >= $%d", column, len(*args)))
+	}
+	if dateTo != "" {
+		end, _ := dateEndExclusive(dateTo)
+		*args = append(*args, end)
+		*where = append(*where, fmt.Sprintf("%s < $%d", column, len(*args)))
+	}
+}
+
+func appendFillDateRange(where *[]string, args *[]any, dateFrom string, dateTo string) {
+	if dateFrom != "" {
+		start, _ := dateStart(dateFrom)
+		*args = append(*args, dateFrom, start)
+		dateArg := len(*args) - 1
+		timeArg := len(*args)
+		*where = append(*where, fmt.Sprintf("((trade_date IS NOT NULL AND trade_date >= $%d::date) OR (trade_date IS NULL AND COALESCE(matched_at, created_at) >= $%d))", dateArg, timeArg))
+	}
+	if dateTo != "" {
+		next, _ := nextTradeDate(dateTo)
+		end, _ := dateEndExclusive(dateTo)
+		*args = append(*args, next, end)
+		dateArg := len(*args) - 1
+		timeArg := len(*args)
+		*where = append(*where, fmt.Sprintf("((trade_date IS NOT NULL AND trade_date < $%d::date) OR (trade_date IS NULL AND COALESCE(matched_at, created_at) < $%d))", dateArg, timeArg))
+	}
 }
 
 type rowScanner interface {
@@ -1096,11 +1499,13 @@ func scanAsset(row rowScanner) (trading.Asset, error) {
 
 func scanPosition(row rowScanner) (trading.Position, error) {
 	var position trading.Position
+	var tradeDate sql.NullString
 	var lastPrice sql.NullFloat64
 	var shareholderID sql.NullString
 	var updatedAt sql.NullTime
 	err := row.Scan(
 		&position.AccountID,
+		&tradeDate,
 		&position.Symbol,
 		&position.Name,
 		&position.Exchange,
@@ -1119,10 +1524,15 @@ func scanPosition(row rowScanner) (trading.Position, error) {
 	if err != nil {
 		return trading.Position{}, err
 	}
+	position.TradeDate = tradeDate.String
 	position.LastPrice = lastPrice.Float64
 	position.ShareholderID = shareholderID.String
 	position.UpdatedAt = updatedAt.Time
 	return position, nil
+}
+
+func scanPositionSnapshot(row rowScanner) (trading.Position, error) {
+	return scanPosition(row)
 }
 
 func scanStreamCheckpoint(row rowScanner) (StreamCheckpoint, error) {
@@ -1157,6 +1567,49 @@ func scanStreamCheckpoint(row rowScanner) (StreamCheckpoint, error) {
 		}
 	}
 	return checkpoint, nil
+}
+
+func scanJobRun(row rowScanner) (JobRun, error) {
+	var run JobRun
+	var trigger sql.NullString
+	var startedAt sql.NullTime
+	var finishedAt sql.NullTime
+	var report []byte
+	var errorSummary sql.NullString
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
+	err := row.Scan(
+		&run.RunID,
+		&run.JobName,
+		&run.TargetTradeDate,
+		&run.Timezone,
+		&run.Status,
+		&trigger,
+		&run.Skipped,
+		&startedAt,
+		&finishedAt,
+		&run.DurationMS,
+		&report,
+		&errorSummary,
+		&createdAt,
+		&updatedAt,
+	)
+	if err != nil {
+		return JobRun{}, err
+	}
+	run.Trigger = trigger.String
+	run.StartedAt = startedAt.Time
+	run.FinishedAt = finishedAt.Time
+	run.ErrorSummary = errorSummary.String
+	run.CreatedAt = createdAt.Time
+	run.UpdatedAt = updatedAt.Time
+	run.Report = map[string]any{}
+	if len(report) > 0 {
+		if err := json.Unmarshal(report, &run.Report); err != nil {
+			return JobRun{}, err
+		}
+	}
+	return run, nil
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {

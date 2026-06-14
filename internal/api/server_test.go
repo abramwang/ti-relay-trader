@@ -16,8 +16,10 @@ import (
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
+	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/redisstream"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -58,6 +60,12 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	redisPinged := false
 	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: &fakeOrderSubmitter{},
+		Jobs: &fakeJobRunStore{runs: []ledger.JobRun{{
+			RunID:           "pre-open-1",
+			JobName:         "pre_open_init",
+			TargetTradeDate: "2026-06-14",
+			Status:          "succeeded",
+		}}},
 		DatabasePing: func(_ context.Context) error {
 			dbPinged = true
 			return nil
@@ -96,6 +104,12 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 	if envelope.Data.Dependencies["database"].Status != "ok" || envelope.Data.Dependencies["redis"].Status != "ok" {
 		t.Fatalf("dependencies = %#v", envelope.Data.Dependencies)
+	}
+	if envelope.Data.TradingDay.Timezone != "Asia/Shanghai" || envelope.Data.TradingDay.Phase == "" {
+		t.Fatalf("trading day = %#v", envelope.Data.TradingDay)
+	}
+	if envelope.Data.JobRuns["pre_open_init"].RunID != "pre-open-1" {
+		t.Fatalf("job runs = %#v", envelope.Data.JobRuns)
 	}
 }
 
@@ -214,6 +228,30 @@ func TestAccountPositions(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestHistoricalAccountPositions(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+			Query:     trading.PositionQuery{AccountID: "acct-1", History: true, TradeDate: "20260612", Limit: 10},
+			Count:     1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions/history?trade_date=20260612&limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !service.positionQuery.History || service.positionQuery.TradeDate != "20260612" {
+		t.Fatalf("position query = %#v", service.positionQuery)
 	}
 }
 
@@ -831,8 +869,31 @@ func TestListOrders(t *testing.T) {
 	if service.orderQuery.AccountID != "acct-1" || service.orderQuery.Status != trading.OrderStatusWorking || service.orderQuery.Limit != 5 {
 		t.Fatalf("query = %#v", service.orderQuery)
 	}
+	if service.orderQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
+		t.Fatalf("default trade date = %q", service.orderQuery.TradeDate)
+	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestHistoryOrdersUsesExplicitDateRange(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{Count: 0},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/history/orders?account_id=acct-1&date_from=20260612&date_to=20260613", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !service.orderQuery.History || service.orderQuery.TradeDate != "" || service.orderQuery.DateFrom != "20260612" || service.orderQuery.DateTo != "20260613" {
+		t.Fatalf("history order query = %#v", service.orderQuery)
 	}
 }
 
@@ -858,8 +919,37 @@ func TestListFills(t *testing.T) {
 	if service.fillQuery.AccountID != "acct-1" || service.fillQuery.Limit != 5 {
 		t.Fatalf("query = %#v", service.fillQuery)
 	}
+	if service.fillQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
+		t.Fatalf("default trade date = %q", service.fillQuery.TradeDate)
+	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestJobRunPostPersistsReport(t *testing.T) {
+	store := &fakeJobRunStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Jobs: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/runs", strings.NewReader(`{
+		"trigger":"unit-test",
+		"report":{
+			"ok":true,
+			"job":"pre_open_init",
+			"timezone":"Asia/Shanghai",
+			"trading_day":{"target_trade_date":"20260614"}
+		}
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if store.saved.JobName != "pre_open_init" || store.saved.TargetTradeDate != "20260614" || store.saved.Trigger != "unit-test" {
+		t.Fatalf("saved job run = %#v", store.saved)
 	}
 }
 
@@ -904,6 +994,34 @@ type fakeOrderSubmitter struct {
 	refreshFillsRequestID     string
 	refreshFillsResult        orderflow.RefreshQueryResult
 	refreshFillsErr           error
+}
+
+type fakeJobRunStore struct {
+	saved ledger.JobRun
+	runs  []ledger.JobRun
+	err   error
+}
+
+func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun) (ledger.JobRun, error) {
+	store.saved = run
+	if store.err != nil {
+		return ledger.JobRun{}, store.err
+	}
+	if run.RunID == "" {
+		run.RunID = "run-1"
+	}
+	store.runs = append(store.runs, run)
+	return run, nil
+}
+
+func (store *fakeJobRunStore) LatestJobRuns(_ context.Context, _ []string) ([]ledger.JobRun, error) {
+	if store.err != nil {
+		return nil, store.err
+	}
+	if len(store.runs) == 0 {
+		return nil, ledger.ErrJobRunNotFound
+	}
+	return store.runs, nil
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {

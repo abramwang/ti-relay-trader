@@ -325,6 +325,7 @@ ON CONFLICT (trade_date, account_id, snapshot_type) DO UPDATE SET
 const positionSelectColumns = `
 SELECT
     account_id,
+    ''::text AS trade_date,
     symbol,
     name,
     exchange,
@@ -340,6 +341,27 @@ SELECT
     shareholder_id,
     updated_at
 FROM positions
+`
+
+const positionSnapshotSelectColumns = `
+SELECT
+    account_id,
+    trade_date::text,
+    symbol,
+    name,
+    exchange,
+    quantity,
+    sellable_qty,
+    initial_qty,
+    today_qty,
+    avg_cost,
+    last_price,
+    market_value,
+    unrealized_pnl,
+    settled_profit,
+    shareholder_id,
+    captured_at
+FROM position_snapshots
 `
 
 const upsertPositionSQL = `
@@ -380,6 +402,47 @@ ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     source = EXCLUDED.source,
     raw_payload = EXCLUDED.raw_payload,
     updated_at = EXCLUDED.updated_at
+`
+
+const upsertPositionSnapshotSQL = `
+INSERT INTO position_snapshots (
+    trade_date,
+    account_id,
+    symbol,
+    name,
+    exchange,
+    quantity,
+    sellable_qty,
+    initial_qty,
+    today_qty,
+    avg_cost,
+    last_price,
+    market_value,
+    unrealized_pnl,
+    settled_profit,
+    shareholder_id,
+    source,
+    raw_payload,
+    captured_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18
+)
+ON CONFLICT (trade_date, account_id, symbol, exchange) DO UPDATE SET
+    name = EXCLUDED.name,
+    quantity = EXCLUDED.quantity,
+    sellable_qty = EXCLUDED.sellable_qty,
+    initial_qty = EXCLUDED.initial_qty,
+    today_qty = EXCLUDED.today_qty,
+    avg_cost = EXCLUDED.avg_cost,
+    last_price = EXCLUDED.last_price,
+    market_value = EXCLUDED.market_value,
+    unrealized_pnl = EXCLUDED.unrealized_pnl,
+    settled_profit = EXCLUDED.settled_profit,
+    shareholder_id = EXCLUDED.shareholder_id,
+    source = EXCLUDED.source,
+    raw_payload = EXCLUDED.raw_payload,
+    captured_at = EXCLUDED.captured_at
 `
 
 const archiveRawStreamMessageSQL = `
@@ -469,5 +532,57 @@ ON CONFLICT (stream_key) DO UPDATE SET
     processed_count = stream_checkpoints.processed_count + EXCLUDED.processed_count,
     error_count = stream_checkpoints.error_count + EXCLUDED.error_count,
     metadata = stream_checkpoints.metadata || EXCLUDED.metadata,
+    updated_at = now()
+`
+
+const jobRunSelectColumns = `
+SELECT
+    run_id,
+    job_name,
+    trade_date::text,
+    timezone,
+    status,
+    trigger,
+    skipped,
+    started_at,
+    finished_at,
+    duration_ms,
+    report_json,
+    error_summary,
+    created_at,
+    updated_at
+FROM job_runs
+`
+
+const upsertJobRunSQL = `
+INSERT INTO job_runs (
+    run_id,
+    job_name,
+    trade_date,
+    timezone,
+    status,
+    trigger,
+    skipped,
+    started_at,
+    finished_at,
+    duration_ms,
+    report_json,
+    error_summary
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12
+)
+ON CONFLICT (run_id) DO UPDATE SET
+    job_name = EXCLUDED.job_name,
+    trade_date = EXCLUDED.trade_date,
+    timezone = EXCLUDED.timezone,
+    status = EXCLUDED.status,
+    trigger = EXCLUDED.trigger,
+    skipped = EXCLUDED.skipped,
+    started_at = COALESCE(EXCLUDED.started_at, job_runs.started_at),
+    finished_at = COALESCE(EXCLUDED.finished_at, job_runs.finished_at),
+    duration_ms = EXCLUDED.duration_ms,
+    report_json = EXCLUDED.report_json,
+    error_summary = EXCLUDED.error_summary,
     updated_at = now()
 `

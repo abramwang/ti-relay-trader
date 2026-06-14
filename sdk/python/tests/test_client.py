@@ -39,6 +39,9 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/accounts/acct-1/positions":
             self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100}]}})
             return
+        if parsed.path == "/v1/accounts/acct-1/positions/history":
+            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "trade_date": "2026-06-12", "symbol": "600000", "quantity": 100}]}})
+            return
         if parsed.path == "/v1/orders":
             self._json(
                 {
@@ -59,6 +62,12 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/v1/fills":
             self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-1", "account_id": "acct-1", "qty": 100}]}})
+            return
+        if parsed.path == "/v1/history/orders":
+            self._json({"ok": True, "data": {"orders": [{"account_id": "acct-1", "gateway_order_id": "gw-history", "status": "filled", "is_terminal": True}]}})
+            return
+        if parsed.path == "/v1/history/fills":
+            self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-history", "account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "qty": 100}]}})
             return
         if parsed.path == "/v1/events/stream":
             events = [
@@ -162,6 +171,9 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/orders/batch":
             self._json({"ok": True, "data": {"orders": body["orders"], "stream_id": "5-0"}}, status=202)
             return
+        if parsed.path == "/v1/jobs/runs":
+            self._json({"ok": True, "data": {"run": {"run_id": "job-1", "job_name": body.get("job_name") or body.get("report", {}).get("job")}}}, status=202)
+            return
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
@@ -204,6 +216,21 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.get_positions()[0].symbol, "600000")
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
+
+    def test_history_queries_use_history_endpoints(self):
+        self.assertEqual(self.client.get_positions(history=True, trade_date="20260612")[0].trade_date, "2026-06-12")
+        self.assertEqual(self.client.list_orders(history=True, date_from="20260612")[0].gateway_order_id, "gw-history")
+        self.assertEqual(self.client.list_fills(history=True, trade_date="20260612")[0].fill_id, "fill-history")
+        self.assertEqual(RelayHandler.requests[-3][1], "/v1/accounts/acct-1/positions/history")
+        self.assertEqual(RelayHandler.requests[-2][1], "/v1/history/orders")
+        self.assertEqual(RelayHandler.requests[-1][1], "/v1/history/fills")
+
+    def test_record_job_run(self):
+        run = self.client.record_job_run({"ok": True, "job": "pre_open_init", "trading_day": {"target_trade_date": "20260614"}}, trigger="unit")
+        self.assertEqual(run["run_id"], "job-1")
+        method, path, _query, body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/v1/jobs/runs"))
+        self.assertEqual(body["trigger"], "unit")
 
     def test_submit_order_generates_traceable_ids(self):
         receipt = self.client.submit_order(symbol="600000", exchange="SH", side="B", price=9.67, qty=100)

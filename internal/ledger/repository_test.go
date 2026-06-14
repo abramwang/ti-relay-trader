@@ -259,6 +259,28 @@ func TestListOrdersBuildsFilteredRead(t *testing.T) {
 	}
 }
 
+func TestListOrdersBuildsDateFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		TradeDate: "20260614",
+		Limit: 10,
+	})
+	if err == nil {
+		t.Fatal("ListOrders() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "created_at >= $2")
+	requireQueryContains(t, exec.query, "created_at < $3")
+	requireQueryContains(t, exec.query, "LIMIT $4")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[0] != "acct-1" || exec.args[3] != 10 {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
 func TestListFillsBuildsFilteredRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -280,6 +302,28 @@ func TestListFillsBuildsFilteredRead(t *testing.T) {
 	if exec.args[2] != 5 {
 		t.Fatalf("limit arg = %#v", exec.args[2])
 	}
+}
+
+func TestListFillsBuildsDateFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListFills(context.Background(), trading.FillQuery{
+		AccountID: "acct-1",
+		DateFrom:  "2026-06-12",
+		DateTo:    "2026-06-14",
+		Limit:     10,
+	})
+	if err == nil {
+		t.Fatal("ListFills() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "trade_date >= $2::date")
+	requireQueryContains(t, exec.query, "COALESCE(matched_at, created_at) >= $3")
+	requireQueryContains(t, exec.query, "trade_date < $4::date")
+	requireQueryContains(t, exec.query, "COALESCE(matched_at, created_at) < $5")
+	requireQueryContains(t, exec.query, "LIMIT $6")
+	requireArgLen(t, exec.args, 6)
 }
 
 func TestGetLatestAssetBuildsRead(t *testing.T) {
@@ -350,6 +394,30 @@ func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	}
 }
 
+func TestListPositionSnapshotsBuildsHistoricalRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListPositionSnapshots(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		TradeDate: "20260612",
+		Limit: 20,
+	})
+	if err == nil {
+		t.Fatal("ListPositionSnapshots() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM position_snapshots")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "trade_date >= $2::date")
+	requireQueryContains(t, exec.query, "trade_date < $3::date")
+	requireQueryContains(t, exec.query, "LIMIT $4")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[1] != "2026-06-12" {
+		t.Fatalf("trade date arg = %#v", exec.args[1])
+	}
+}
+
 func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)
@@ -376,6 +444,34 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[3])
 	}
 	assertJSONContains(t, exec.args[15], `"source":"front"`)
+}
+
+func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	capturedAt := time.Date(2026, 6, 14, 16, 5, 0, 0, time.UTC)
+
+	err := repo.UpsertPositionSnapshot(context.Background(), trading.Position{
+		AccountID:   "acct-1",
+		TradeDate:   "20260612",
+		Symbol:      "600000",
+		Exchange:    trading.ExchangeSH,
+		Quantity:    100,
+		SellableQty: 100,
+		AvgCost:     9.54,
+		MarketValue: 954,
+	}, "close", map[string]any{"source": "settlement"}, capturedAt)
+	if err != nil {
+		t.Fatalf("UpsertPositionSnapshot() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO position_snapshots")
+	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, symbol, exchange)")
+	requireArgLen(t, exec.args, 18)
+	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" {
+		t.Fatalf("snapshot identity args = %#v %#v", exec.args[0], exec.args[1])
+	}
+	assertJSONContains(t, exec.args[16], `"source":"settlement"`)
 }
 
 func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {
@@ -408,6 +504,46 @@ func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {
 		t.Fatalf("checkpoint counts = %#v %#v", exec.args[6], exec.args[7])
 	}
 	assertJSONContains(t, exec.args[8], `"last_batch_orders":3`)
+}
+
+func TestUpsertJobRunBuildsStatusWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	repo.now = func() time.Time { return time.Date(2026, 6, 14, 8, 0, 0, 0, time.UTC) }
+
+	run, err := repo.UpsertJobRun(context.Background(), JobRun{
+		JobName:         "pre_open_init",
+		TargetTradeDate: "20260614",
+		Status:          "succeeded",
+		Report:          map[string]any{"ok": true},
+	})
+	if err != nil {
+		t.Fatalf("UpsertJobRun() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO job_runs")
+	requireQueryContains(t, exec.query, "ON CONFLICT (run_id)")
+	requireArgLen(t, exec.args, 12)
+	if run.RunID == "" || exec.args[2] != "2026-06-14" || exec.args[4] != "succeeded" {
+		t.Fatalf("job run = %#v args=%#v", run, exec.args)
+	}
+	assertJSONContains(t, exec.args[10], `"ok":true`)
+}
+
+func TestLatestJobRunsBuildsDistinctRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.LatestJobRuns(context.Background(), []string{"pre_open_init", "post_close_settlement"})
+	if err == nil {
+		t.Fatal("LatestJobRuns() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "SELECT DISTINCT ON (job_name)")
+	requireQueryContains(t, exec.query, "FROM job_runs")
+	requireQueryContains(t, exec.query, "job_name IN ($1, $2)")
+	requireQueryContains(t, exec.query, "ORDER BY job_name")
+	requireArgLen(t, exec.args, 2)
 }
 
 func TestGetStreamCheckpointBuildsRead(t *testing.T) {

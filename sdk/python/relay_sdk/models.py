@@ -99,6 +99,7 @@ class Asset:
 @dataclass(frozen=True)
 class Position:
     account_id: str = ""
+    trade_date: str = ""
     symbol: str = ""
     name: str = ""
     exchange: str = ""
@@ -117,6 +118,7 @@ class Position:
     def from_dict(cls, data: Mapping[str, Any]) -> "Position":
         return cls(
             account_id=_text(data, "account_id"),
+            trade_date=_text(data, "trade_date"),
             symbol=_text(data, "symbol"),
             name=_text(data, "name"),
             exchange=_text(data, "exchange"),
