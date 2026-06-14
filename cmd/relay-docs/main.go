@@ -368,11 +368,19 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 	}
 	go func() {
 		defer close(done)
+		var checkpoints redisstream.LedgerCheckpointStore
+		if checkpointStore, ok := writer.(redisstream.LedgerCheckpointStore); ok {
+			checkpoints = checkpointStore
+			logger.Info("relay_ledger_sync_checkpoints_enabled")
+		} else {
+			logger.Warn("relay_ledger_sync_checkpoints_unavailable")
+		}
 		err := redisstream.RunLedgerSyncLoop(syncCtx, cfg, writer, redisstream.LedgerSyncLoopOptions{
-			StartID: "0",
-			Count:   200,
-			Block:   time.Second,
-			Roles:   []string{redisstream.SuffixReply, redisstream.SuffixEvent},
+			StartID:     "0",
+			Count:       200,
+			Block:       time.Second,
+			Roles:       []string{redisstream.SuffixReply, redisstream.SuffixEvent},
+			Checkpoints: checkpoints,
 			OnTradeChange: func(_ context.Context, change redisstream.LedgerTradeChange) {
 				if autoRefresh == nil {
 					return

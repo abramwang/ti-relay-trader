@@ -426,3 +426,48 @@ ON CONFLICT (stream_key, stream_id) DO UPDATE SET
     parse_error = EXCLUDED.parse_error,
     received_at = EXCLUDED.received_at
 `
+
+const streamCheckpointSelectColumns = `
+SELECT
+    stream_key,
+    stream_role,
+    last_stream_id,
+    last_seen_at,
+    last_processed_at,
+    last_error,
+    processed_count,
+    error_count,
+    metadata,
+    updated_at
+FROM stream_checkpoints
+`
+
+const getStreamCheckpointSQL = streamCheckpointSelectColumns + `
+WHERE stream_key = $1
+`
+
+const upsertStreamCheckpointSQL = `
+INSERT INTO stream_checkpoints (
+    stream_key,
+    stream_role,
+    last_stream_id,
+    last_seen_at,
+    last_processed_at,
+    last_error,
+    processed_count,
+    error_count,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+ON CONFLICT (stream_key) DO UPDATE SET
+    stream_role = EXCLUDED.stream_role,
+    last_stream_id = EXCLUDED.last_stream_id,
+    last_seen_at = COALESCE(EXCLUDED.last_seen_at, stream_checkpoints.last_seen_at),
+    last_processed_at = COALESCE(EXCLUDED.last_processed_at, stream_checkpoints.last_processed_at),
+    last_error = EXCLUDED.last_error,
+    processed_count = stream_checkpoints.processed_count + EXCLUDED.processed_count,
+    error_count = stream_checkpoints.error_count + EXCLUDED.error_count,
+    metadata = stream_checkpoints.metadata || EXCLUDED.metadata,
+    updated_at = now()
+`

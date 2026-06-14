@@ -60,6 +60,30 @@ func TestInitialLedgerRollbackDropsRequiredTables(t *testing.T) {
 	}
 }
 
+func TestStreamCheckpointMigrationContainsCursorTable(t *testing.T) {
+	upSQL := readMigration(t, "000002_stream_checkpoints.up.sql")
+	requiredSnippets := []string{
+		"CREATE TABLE stream_checkpoints",
+		"stream_key TEXT PRIMARY KEY",
+		"last_stream_id TEXT NOT NULL DEFAULT '0'",
+		"processed_count BIGINT NOT NULL DEFAULT 0",
+		"CONSTRAINT stream_checkpoints_role_check CHECK",
+	}
+
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("stream checkpoint migration missing snippet: %s", snippet)
+		}
+	}
+}
+
+func TestStreamCheckpointRollbackDropsCursorTable(t *testing.T) {
+	downSQL := readMigration(t, "000002_stream_checkpoints.down.sql")
+	if !strings.Contains(downSQL, "DROP TABLE IF EXISTS stream_checkpoints") {
+		t.Fatalf("stream checkpoint rollback missing DROP TABLE")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

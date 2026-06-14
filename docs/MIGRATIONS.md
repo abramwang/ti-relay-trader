@@ -4,22 +4,25 @@
 
 ## 当前状态
 
-已新增 PostgreSQL 首批账本 migration：
+已新增 PostgreSQL 账本和位点 migration：
 
 ```text
 migrations/postgres/000001_init_ledger.up.sql
 migrations/postgres/000001_init_ledger.down.sql
+migrations/postgres/000002_stream_checkpoints.up.sql
+migrations/postgres/000002_stream_checkpoints.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
 
 当前仓库不保存真实 PostgreSQL DSN。连接方式仍从部署机本地配置或 `http://doc.quantstage.com` 获取。
 
-已在内网 PostgreSQL 上创建专用数据库 `relay_trader`，并通过 `relayctl migrate status/up/status` 验证首版 migration 已应用。验证结果：
+已在内网 PostgreSQL 上创建专用数据库 `relay_trader`，并通过 `relayctl migrate status/up/status` 验证 migration 已应用。验证结果：
 
 1. `000001_init_ledger` 已应用。
-2. `relay_schema_migrations` 已记录版本 `1:init_ledger`。
-3. 当前 public schema 下共有 15 张基础表。
+2. `000002_stream_checkpoints` 已应用。
+3. `relay_schema_migrations` 已记录版本 `1:init_ledger` 和 `2:stream_checkpoints`。
+4. 当前 public schema 下共有 16 张基础表。
 
 当前环境已安装 PostgreSQL client：
 
@@ -43,13 +46,15 @@ runner 会创建 `relay_schema_migrations` 表记录已应用版本。真实 DSN
 internal/ledger
 ```
 
-首批覆盖：
+Repository 当前覆盖：
 
 1. `UpsertAccount`
 2. `UpsertOrder`
 3. `AppendOrderEvent`
 4. `InsertFill`
 5. `ArchiveRawStreamMessage`
+6. `GetStreamCheckpoint`
+7. `UpsertStreamCheckpoint`
 
 这些入口会把标准交易结构体、stream key、stream id、source/correlation 信息和原始 payload 写入 PostgreSQL。重复消费场景使用唯一约束和 `ON CONFLICT` 做幂等处理。
 
@@ -89,6 +94,10 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 2. `reconciliation_inputs`
 3. `reconciliation_breaks`
 
+运行位点：
+
+1. `stream_checkpoints`
+
 ## 关键约束
 
 1. `orders(account_id, gateway_order_id)` 唯一，用作订单跨系统主键。
@@ -98,6 +107,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 5. `raw_stream_messages` 归档每条 Redis Stream 原始消息，保留 `body`、`body_text` 和 `parse_error`。
 6. 金额和价格字段使用 `numeric(20, 6)`，避免浮点误差进入最终账本。
 7. 时间字段统一使用 `timestamptz`，原始柜台时间戳保留在 raw 或 adapter 字段。
+8. `stream_checkpoints(stream_key)` 唯一记录每条 output stream 的最后消费 ID；worker 重启后从该 ID 继续 `XREAD`。
 
 ## 手动执行示例
 
@@ -105,6 +115,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 ```bash
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000002_stream_checkpoints.up.sql
 ```
 
 使用 relayctl：
@@ -127,6 +138,6 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 
 ## 后续工作
 
-1. 增加正式常驻 worker 的数据库位点表和消费状态落盘。
-2. 增加基于临时 PostgreSQL 的 CI 集成测试。
-3. 设计盘后对账和模拟柜台后续 migration。
+1. 增加基于临时 PostgreSQL 的 CI 集成测试。
+2. 设计盘后对账和模拟柜台后续 migration。
+3. 后续如需严格数据库级下单幂等，可在清理历史重复数据后补充 `orders(account_id, idempotency_key)` 部分唯一约束。

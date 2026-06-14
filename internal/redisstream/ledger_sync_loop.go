@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/ledger"
 )
 
 type LedgerSyncLoopOptions struct {
@@ -18,8 +19,14 @@ type LedgerSyncLoopOptions struct {
 	Count          int64
 	Block          time.Duration
 	Roles          []string
+	Checkpoints    LedgerCheckpointStore
 	OnTradeChange  func(context.Context, LedgerTradeChange)
 	OnLedgerChange func(context.Context, LedgerChange)
+}
+
+type LedgerCheckpointStore interface {
+	GetStreamCheckpoint(ctx context.Context, streamKey string) (ledger.StreamCheckpoint, error)
+	UpsertStreamCheckpoint(ctx context.Context, checkpoint ledger.StreamCheckpoint) error
 }
 
 type LedgerTradeChange struct {
@@ -100,7 +107,22 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 			if name == "" {
 				continue
 			}
-			cursors = append(cursors, ledgerStreamCursor{name: name, role: role, lastID: startID})
+			cursorStartID := startID
+			if opts.Checkpoints != nil {
+				checkpoint, err := opts.Checkpoints.GetStreamCheckpoint(ctx, name)
+				switch {
+				case err == nil && strings.TrimSpace(checkpoint.LastStreamID) != "":
+					cursorStartID = checkpoint.LastStreamID
+				case err != nil && !errors.Is(err, ledger.ErrStreamCheckpointNotFound):
+					logger.Warn("relay_ledger_checkpoint_read_failed",
+						"stream", name,
+						"role", role,
+						"error", err,
+						"fallback_start_id", startID,
+					)
+				}
+			}
+			cursors = append(cursors, ledgerStreamCursor{name: name, role: role, lastID: cursorStartID})
 		}
 	}
 	if len(cursors) == 0 {
@@ -122,6 +144,7 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 			if report.Totals.LastStreamID != "" {
 				cursors[i].lastID = report.Totals.LastStreamID
 			}
+			saveLedgerCheckpoint(ctx, opts.Checkpoints, cursors[i], report, logger)
 			if report.Count > 0 || len(report.Errors) > 0 {
 				logger.Info("relay_ledger_sync_stream_batch",
 					"stream", report.Name,
@@ -172,6 +195,60 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 	}
 	logger.Info("relay_ledger_sync_loop_stopped", "reason", ctx.Err())
 	return nil
+}
+
+func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, cursor ledgerStreamCursor, report LedgerStreamReport, logger *slog.Logger) {
+	if store == nil || (report.Count == 0 && len(report.Errors) == 0) {
+		return
+	}
+	now := time.Now().UTC()
+	checkpoint := ledger.StreamCheckpoint{
+		StreamKey:      cursor.name,
+		Role:           cursor.role,
+		LastStreamID:   cursor.lastID,
+		LastError:      ledgerCheckpointError(report.Errors),
+		ProcessedCount: int64(report.Count),
+		ErrorCount:     int64(len(report.Errors)),
+		Metadata: map[string]any{
+			"last_batch_archived":      report.Totals.Archived,
+			"last_batch_orders":        report.Totals.Orders,
+			"last_batch_order_events":  report.Totals.OrderEvents,
+			"last_batch_fills":         report.Totals.Fills,
+			"last_batch_assets":        report.Totals.Assets,
+			"last_batch_positions":     report.Totals.Positions,
+			"last_batch_parse_errors":  report.Totals.ParseErrors,
+			"last_batch_ledger_errors": report.Totals.LedgerErrors,
+		},
+	}
+	if report.Count > 0 {
+		checkpoint.LastSeenAt = now
+		checkpoint.LastProcessedAt = now
+	}
+	if checkpoint.LastStreamID == "" {
+		checkpoint.LastStreamID = "0"
+	}
+	if err := store.UpsertStreamCheckpoint(ctx, checkpoint); err != nil {
+		logger.Error("relay_ledger_checkpoint_write_failed",
+			"stream", cursor.name,
+			"role", cursor.role,
+			"last_stream_id", cursor.lastID,
+			"error", err,
+		)
+	}
+}
+
+func ledgerCheckpointError(errors []LedgerEntryError) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	errText := strings.TrimSpace(errors[0].Error)
+	if errors[0].StreamID != "" {
+		errText = errors[0].StreamID + ": " + errText
+	}
+	if len(errText) > 500 {
+		return errText[:500]
+	}
+	return errText
 }
 
 func accountIDsFromLedgerResult(result LedgerProcessResult) []string {

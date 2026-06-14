@@ -15,6 +15,7 @@ import (
 var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
 var ErrAssetNotFound = errors.New("asset snapshot not found")
+var ErrStreamCheckpointNotFound = errors.New("stream checkpoint not found")
 
 type Executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -57,6 +58,19 @@ type RawStreamMessage struct {
 	BodyText       string
 	ParseError     string
 	ReceivedAt     time.Time
+}
+
+type StreamCheckpoint struct {
+	StreamKey       string         `json:"stream_key"`
+	Role            string         `json:"stream_role"`
+	LastStreamID    string         `json:"last_stream_id"`
+	LastSeenAt      time.Time      `json:"last_seen_at,omitempty"`
+	LastProcessedAt time.Time      `json:"last_processed_at,omitempty"`
+	LastError       string         `json:"last_error,omitempty"`
+	ProcessedCount  int64          `json:"processed_count"`
+	ErrorCount      int64          `json:"error_count"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
 func NewRepository(exec Executor) *Repository {
@@ -651,6 +665,80 @@ func (repo *Repository) ArchiveRawStreamMessage(ctx context.Context, message Raw
 	return nil
 }
 
+func (repo *Repository) GetStreamCheckpoint(ctx context.Context, streamKey string) (StreamCheckpoint, error) {
+	if repo == nil || repo.exec == nil {
+		return StreamCheckpoint{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	streamKey = strings.TrimSpace(streamKey)
+	if streamKey == "" {
+		return StreamCheckpoint{}, fmt.Errorf("%w: stream_key is required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return StreamCheckpoint{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, getStreamCheckpointSQL, streamKey)
+	if err != nil {
+		return StreamCheckpoint{}, fmt.Errorf("get stream checkpoint %s: %w", streamKey, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return StreamCheckpoint{}, fmt.Errorf("get stream checkpoint %s: %w", streamKey, err)
+		}
+		return StreamCheckpoint{}, fmt.Errorf("%w: %s", ErrStreamCheckpointNotFound, streamKey)
+	}
+	checkpoint, err := scanStreamCheckpoint(rows)
+	if err != nil {
+		return StreamCheckpoint{}, fmt.Errorf("scan stream checkpoint %s: %w", streamKey, err)
+	}
+	return checkpoint, nil
+}
+
+func (repo *Repository) UpsertStreamCheckpoint(ctx context.Context, checkpoint StreamCheckpoint) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	checkpoint.StreamKey = strings.TrimSpace(checkpoint.StreamKey)
+	checkpoint.Role = strings.TrimSpace(checkpoint.Role)
+	checkpoint.LastStreamID = strings.TrimSpace(checkpoint.LastStreamID)
+	if checkpoint.StreamKey == "" {
+		return fmt.Errorf("%w: stream_key is required", ErrInvalidLedgerInput)
+	}
+	if checkpoint.Role == "" {
+		return fmt.Errorf("%w: stream_role is required", ErrInvalidLedgerInput)
+	}
+	if checkpoint.LastStreamID == "" {
+		checkpoint.LastStreamID = "0"
+	}
+	if checkpoint.ProcessedCount < 0 {
+		return fmt.Errorf("%w: processed_count must be non-negative", ErrInvalidLedgerInput)
+	}
+	if checkpoint.ErrorCount < 0 {
+		return fmt.Errorf("%w: error_count must be non-negative", ErrInvalidLedgerInput)
+	}
+	metadata, err := marshalJSONObject(checkpoint.Metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.exec.ExecContext(ctx, upsertStreamCheckpointSQL,
+		checkpoint.StreamKey,
+		checkpoint.Role,
+		checkpoint.LastStreamID,
+		nullTime(checkpoint.LastSeenAt),
+		nullTime(checkpoint.LastProcessedAt),
+		checkpoint.LastError,
+		checkpoint.ProcessedCount,
+		checkpoint.ErrorCount,
+		metadata,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert stream checkpoint %s: %w", checkpoint.StreamKey, err)
+	}
+	return nil
+}
+
 func (repo *Repository) queryer() (Queryer, error) {
 	queryer, ok := repo.exec.(Queryer)
 	if !ok {
@@ -1035,6 +1123,40 @@ func scanPosition(row rowScanner) (trading.Position, error) {
 	position.ShareholderID = shareholderID.String
 	position.UpdatedAt = updatedAt.Time
 	return position, nil
+}
+
+func scanStreamCheckpoint(row rowScanner) (StreamCheckpoint, error) {
+	var checkpoint StreamCheckpoint
+	var lastSeenAt sql.NullTime
+	var lastProcessedAt sql.NullTime
+	var metadata []byte
+	var updatedAt sql.NullTime
+
+	err := row.Scan(
+		&checkpoint.StreamKey,
+		&checkpoint.Role,
+		&checkpoint.LastStreamID,
+		&lastSeenAt,
+		&lastProcessedAt,
+		&checkpoint.LastError,
+		&checkpoint.ProcessedCount,
+		&checkpoint.ErrorCount,
+		&metadata,
+		&updatedAt,
+	)
+	if err != nil {
+		return StreamCheckpoint{}, err
+	}
+	checkpoint.LastSeenAt = lastSeenAt.Time
+	checkpoint.LastProcessedAt = lastProcessedAt.Time
+	checkpoint.UpdatedAt = updatedAt.Time
+	checkpoint.Metadata = map[string]any{}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &checkpoint.Metadata); err != nil {
+			return StreamCheckpoint{}, err
+		}
+	}
+	return checkpoint, nil
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {

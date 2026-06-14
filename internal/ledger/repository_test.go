@@ -378,6 +378,55 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[15], `"source":"front"`)
 }
 
+func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	processedAt := time.Date(2026, 6, 14, 3, 20, 0, 0, time.UTC)
+
+	err := repo.UpsertStreamCheckpoint(context.Background(), StreamCheckpoint{
+		StreamKey:       "relay:prod:v1:huaxin:g1:event",
+		Role:            "event",
+		LastStreamID:    "1718340000000-0",
+		LastSeenAt:      processedAt,
+		LastProcessedAt: processedAt,
+		ProcessedCount:  25,
+		ErrorCount:      1,
+		LastError:       "skipped sample",
+		Metadata:        map[string]any{"last_batch_orders": 3},
+	})
+	if err != nil {
+		t.Fatalf("UpsertStreamCheckpoint() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO stream_checkpoints")
+	requireQueryContains(t, exec.query, "ON CONFLICT (stream_key)")
+	requireArgLen(t, exec.args, 9)
+	if exec.args[0] != "relay:prod:v1:huaxin:g1:event" || exec.args[1] != "event" || exec.args[2] != "1718340000000-0" {
+		t.Fatalf("checkpoint identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[2])
+	}
+	if exec.args[6] != int64(25) || exec.args[7] != int64(1) {
+		t.Fatalf("checkpoint counts = %#v %#v", exec.args[6], exec.args[7])
+	}
+	assertJSONContains(t, exec.args[8], `"last_batch_orders":3`)
+}
+
+func TestGetStreamCheckpointBuildsRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetStreamCheckpoint(context.Background(), "relay:prod:v1:huaxin:g1:reply")
+	if err == nil {
+		t.Fatal("GetStreamCheckpoint() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM stream_checkpoints")
+	requireQueryContains(t, exec.query, "WHERE stream_key = $1")
+	requireArgLen(t, exec.args, 1)
+	if exec.args[0] != "relay:prod:v1:huaxin:g1:reply" {
+		t.Fatalf("stream key arg = %#v", exec.args[0])
+	}
+}
+
 func TestRepositoryValidation(t *testing.T) {
 	repo := NewRepository(&recordingExecutor{})
 
@@ -399,6 +448,11 @@ func TestRepositoryValidation(t *testing.T) {
 	_, err = repo.GetLatestAsset(context.Background(), "")
 	if !errors.Is(err, ErrInvalidLedgerInput) {
 		t.Fatalf("GetLatestAsset() error = %v, want ErrInvalidLedgerInput", err)
+	}
+
+	err = repo.UpsertStreamCheckpoint(context.Background(), StreamCheckpoint{})
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("UpsertStreamCheckpoint() error = %v, want ErrInvalidLedgerInput", err)
 	}
 }
 

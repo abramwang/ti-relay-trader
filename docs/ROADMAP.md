@@ -28,9 +28,9 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 增加常驻 worker，持续同步 `reply/event/hb/dlq` 并持久化位点。
-3. 增加 SDK 集成测试和版本发布检查清单。
-4. 增加批量下单测试视图和基础页面冒烟测试。
+2. 增加 SDK 集成测试和版本发布检查清单。
+3. 增加批量下单测试视图和基础页面冒烟测试。
+4. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 5. 设计模拟柜台账表 schema。
 
 ## 里程碑细化
@@ -92,11 +92,13 @@
 - [x] 合并 `asset_page/position_page/order_page/fill_page` reply 到 PostgreSQL 账本。
 - [x] 消费 `event` 并归档 raw。
 - [x] 将字段完整的 `order.event/fill.event` 持续消费接入 9092 轻量后台同步循环。
-- [ ] 将持续消费迁移到正式 worker 并持久化 stream 位点。
-- [ ] 消费 `hb`。
-- [ ] 消费 `dlq`。
-- [ ] 实现 consumer 位点和重放策略。
-- [ ] 实现幂等键和 `gateway_order_id` 管理。
+- [x] 将持续消费迁移到正式 worker 并持久化 stream 位点。
+- [x] worker 原始归档 `hb`。
+- [x] worker 原始归档 `dlq`。
+- [x] 实现 consumer 位点和重放策略。
+- [x] 实现幂等键和 `gateway_order_id` 管理。
+- [ ] 将 `hb` 合并为 gateway 心跳状态。
+- [ ] 增加 `dlq` 告警和处置状态。
 
 ### P5 交易账表持久化
 
@@ -119,6 +121,7 @@
 - [x] 增加可选 PostgreSQL 账本集成测试，可通过 `RELAY_LEDGER_TEST_DATABASE_URL` 启用真实写库验证。
 - [x] 将 Redis `reply/event` 批量归档接入 `raw_stream_messages`。
 - [x] 新订单先写订单草稿，再用缺字段 `order.event` 更新订单状态并追加事件。
+- [x] 新增 `stream_checkpoints` 表，持久化 Redis Stream 消费位点、处理计数和最近错误摘要。
 - [ ] 让历史 `order.event.payload` 补齐 `trade_side/business_type` 后启用无草稿事件重建订单主表。
 - [ ] 增加基于临时 PostgreSQL 的 CI 集成测试。
 

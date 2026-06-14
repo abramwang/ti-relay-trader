@@ -49,7 +49,7 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 3. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
 4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
 5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 等基础接口；`/v1/status` 会返回 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态摘要。
-6. worker 模式当前只记录配置态账户和任务数量，后续承接 Redis 消费与后台常驻任务。
+6. worker 模式会连接 PostgreSQL 和 Redis，持续消费 `reply/event/hb/dlq`，通过 `stream_checkpoints` 持久化每条 stream 的 `last_stream_id`。
 7. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
 8. 已校验服务模式、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
 
@@ -88,7 +88,15 @@ go run ./cmd/relay-docs -root .
 RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/relay-docs -root .
 ```
 
-如需试运行 API 或 worker，将本地未提交配置里的 `service.mode` 改为 `api` 或 `worker`。当前 API 模式只暴露工程骨架，不连接 Redis、数据库或实盘柜台。
+如需试运行 API 或 worker，将本地未提交配置里的 `service.mode` 改为 `api` 或 `worker`。API 模式提供 9092 HTTP 服务；worker 模式不监听 HTTP，负责 Redis output stream 持续同步、checkpoint 落盘和订单/成交事件驱动的资金持仓自动刷新。
+
+worker 模式示例：
+
+```bash
+RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/relay-docs
+```
+
+生产化建议将 API/docs 进程和 worker 进程拆开部署，避免 HTTP 重启影响 Redis 消费位点推进。
 
 ## 日志与响应
 
@@ -118,13 +126,14 @@ http://relay-trader.quantstage.com/api-console
 
 ## PostgreSQL Migration
 
-首版交易账本 DDL 位于：
+当前交易账本和位点 DDL 位于：
 
 ```text
 migrations/postgres/000001_init_ledger.up.sql
+migrations/postgres/000002_stream_checkpoints.up.sql
 ```
 
-当前仅提交 SQL migration 和静态测试，尚未连接真实 PostgreSQL。真实 DSN 仍放在部署机本地配置或安全渠道。
+真实 DSN 仍放在部署机本地配置或安全渠道。当前测试 PostgreSQL 已应用 `000001_init_ledger` 和 `000002_stream_checkpoints`。
 
 当前环境已安装 `psql`，同时可使用内置 runner：
 
