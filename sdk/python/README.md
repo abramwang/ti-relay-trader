@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz"
 ```
 
 ## Quick Start
@@ -43,4 +43,25 @@ print(receipt.gateway_order_id, receipt.status)
 
 `submit_order()` and `cancel_order()` return command receipts. A successful
 receipt means relay accepted and published the command; the final exchange state
-still comes from `list_orders()`, `wait_order_terminal()`, or `stream_events()`.
+still comes from `list_orders()`, `wait_order_terminal()`, callbacks, or
+`stream_events()`.
+
+## Callbacks
+
+```python
+def on_order(order, event):
+    print(order.gateway_order_id, order.status, order.filled_qty)
+
+def on_fill(fill, event):
+    print(fill.gateway_order_id, fill.fill_id, fill.qty, fill.price)
+
+order_sub = client.on_order_status(on_order, gateway_order_id=receipt.gateway_order_id)
+fill_sub = client.on_fill(on_fill)
+
+# Later, before shutdown:
+order_sub.stop()
+fill_sub.stop()
+```
+
+`on_order_status()` and `on_fill()` run in background daemon threads. For scripts
+that prefer blocking control flow, use `watch_order_status()` or `watch_fills()`.

@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
 import time
 import uuid
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from urllib import error as urlerror
 from urllib import parse, request
 
@@ -17,6 +18,46 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
+SDK_VERSION = "0.1.1"
+OrderStatusCallback = Callable[[Order, RelayEvent], object]
+FillCallback = Callable[[Fill, RelayEvent], object]
+
+
+class CallbackSubscription:
+    """Background callback subscription returned by ``on_*`` helpers."""
+
+    def __init__(self, target: Callable[[threading.Event], None], *, daemon: bool = True) -> None:
+        self._stop_event = threading.Event()
+        self._target = target
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=daemon)
+
+    def start(self) -> "CallbackSubscription":
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def close(self) -> None:
+        self.stop()
+
+    def join(self, timeout: float | None = None) -> None:
+        self._thread.join(timeout)
+
+    @property
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    @property
+    def error(self) -> BaseException | None:
+        return self._error
+
+    def _run(self) -> None:
+        try:
+            self._target(self._stop_event)
+        except BaseException as exc:  # noqa: BLE001 - surfaced through ``error``.
+            self._error = exc
 
 
 class RelayClient:
@@ -223,6 +264,165 @@ class RelayClient:
         response = self._open("GET", "/v1/events/stream", query=query)
         return iter_sse_events(response)
 
+    def on_order_status(
+        self,
+        callback: OrderStatusCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        limit: int | None = 100,
+        include_snapshot: bool = False,
+        dedupe: bool = True,
+        daemon: bool = True,
+    ) -> CallbackSubscription:
+        """Start a background order-status callback subscription."""
+
+        subscription = CallbackSubscription(
+            lambda stop_event: self.watch_order_status(
+                callback,
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                limit=limit,
+                include_snapshot=include_snapshot,
+                dedupe=dedupe,
+                stop_event=stop_event,
+            ),
+            daemon=daemon,
+        )
+        return subscription.start()
+
+    def on_fill(
+        self,
+        callback: FillCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        limit: int | None = 100,
+        include_snapshot: bool = False,
+        dedupe: bool = True,
+        daemon: bool = True,
+    ) -> CallbackSubscription:
+        """Start a background fill callback subscription."""
+
+        subscription = CallbackSubscription(
+            lambda stop_event: self.watch_fills(
+                callback,
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                limit=limit,
+                include_snapshot=include_snapshot,
+                dedupe=dedupe,
+                stop_event=stop_event,
+            ),
+            daemon=daemon,
+        )
+        return subscription.start()
+
+    def watch_order_status(
+        self,
+        callback: OrderStatusCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        limit: int | None = 100,
+        include_snapshot: bool = False,
+        dedupe: bool = True,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        """Block and invoke ``callback(order, event)`` when order state changes.
+
+        Returning ``False`` from the callback stops the watch loop.
+        """
+
+        seen: dict[str, tuple[Any, ...]] = {}
+
+        def emit(event: RelayEvent) -> bool:
+            orders = self.list_orders(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                limit=limit,
+            )
+            for order in orders:
+                key = _order_key(order)
+                state = _order_state(order)
+                if dedupe and seen.get(key) == state:
+                    continue
+                seen[key] = state
+                if callback(order, event) is False:
+                    return False
+            return True
+
+        if include_snapshot and not emit(_snapshot_event("order.snapshot")):
+            return
+
+        for event in self.stream_events(account_id=account_id):
+            if stop_event is not None and stop_event.is_set():
+                return
+            if event.event_type != "order.changed":
+                continue
+            if not emit(event):
+                return
+
+    def watch_fills(
+        self,
+        callback: FillCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        limit: int | None = 100,
+        include_snapshot: bool = False,
+        dedupe: bool = True,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        """Block and invoke ``callback(fill, event)`` when new fills arrive.
+
+        Returning ``False`` from the callback stops the watch loop.
+        """
+
+        seen: set[str] = set()
+
+        def emit(event: RelayEvent) -> bool:
+            fills = self.list_fills(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                limit=limit,
+            )
+            for fill in fills:
+                key = _fill_key(fill)
+                if dedupe and key in seen:
+                    continue
+                seen.add(key)
+                if callback(fill, event) is False:
+                    return False
+            return True
+
+        if include_snapshot and not emit(_snapshot_event("fill.snapshot")):
+            return
+
+        for event in self.stream_events(account_id=account_id):
+            if stop_event is not None and stop_event.is_set():
+                return
+            if event.event_type != "fill.changed":
+                continue
+            if not emit(event):
+                return
+
     def _refresh(self, kind: str, account_id: str | None) -> CommandReceipt:
         account_id = self._resolve_account(account_id)
         data = self._request("POST", f"/v1/accounts/{parse.quote(account_id)}/{kind}/refresh")
@@ -263,7 +463,7 @@ class RelayClient:
         url = self._url(path, query)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "relay-sdk/0.1.0",
+            "User-Agent": f"relay-sdk/{SDK_VERSION}",
         }
         data = None
         if json_body is not None:
@@ -302,3 +502,38 @@ class RelayClient:
     @staticmethod
     def _new_id(prefix: str, account_id: str) -> str:
         return f"sdk-{prefix}-{account_id}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+
+
+def _snapshot_event(event_type: str) -> RelayEvent:
+    return RelayEvent(event_type=event_type, source="relay-sdk")
+
+
+def _order_key(order: Order) -> str:
+    return order.gateway_order_id or order.client_order_id or f"{order.account_id}:{order.order_id}:{order.symbol}"
+
+
+def _order_state(order: Order) -> tuple[Any, ...]:
+    return (
+        order.status,
+        order.gateway_status,
+        order.cum_filled_qty,
+        order.leaves_qty,
+        order.avg_fill_price,
+        order.is_terminal,
+        order.reject_message,
+    )
+
+
+def _fill_key(fill: Fill) -> str:
+    if fill.fill_id:
+        return fill.fill_id
+    return "|".join(
+        [
+            fill.account_id,
+            fill.gateway_order_id,
+            fill.order_stream_id,
+            str(fill.match_timestamp),
+            str(fill.qty),
+            str(fill.price),
+        ]
+    )

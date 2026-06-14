@@ -48,6 +48,50 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/fills":
             self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-1", "account_id": "acct-1", "qty": 100}]}})
             return
+        if parsed.path == "/v1/events/stream":
+            events = [
+                (
+                    "order.changed",
+                    {
+                        "type": "order.changed",
+                        "account_ids": ["acct-1"],
+                        "time": "2026-06-14T00:00:00Z",
+                        "data": {"orders": 1, "last_stream_id": "1-0"},
+                    },
+                ),
+                (
+                    "fill.changed",
+                    {
+                        "type": "fill.changed",
+                        "account_ids": ["acct-1"],
+                        "time": "2026-06-14T00:00:01Z",
+                        "data": {"fills": 1, "last_stream_id": "2-0"},
+                    },
+                ),
+                (
+                    "order.changed",
+                    {
+                        "type": "order.changed",
+                        "account_ids": ["acct-1"],
+                        "time": "2026-06-14T00:00:02Z",
+                        "data": {"orders": 1, "last_stream_id": "3-0"},
+                    },
+                ),
+            ]
+            body = b"".join(
+                (
+                    f"event: {event_name}\n"
+                    f"data: {json.dumps(payload, separators=(',', ':'))}\n"
+                    "\n"
+                ).encode("utf-8")
+                for event_name, payload in events
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.send_error(404)
 
     def do_POST(self):  # noqa: N802
@@ -163,6 +207,31 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(event.event_type, "order.changed")
         self.assertEqual(event.account_ids, ("acct-1",))
         self.assertEqual(event.data["orders"], 1)
+
+    def test_order_status_callback_fetches_orders_after_event(self):
+        seen = []
+
+        subscription = self.client.on_order_status(
+            lambda order, event: seen.append((order, event.event_type)),
+            gateway_order_id="gw-1",
+        )
+        subscription.join(timeout=2)
+
+        self.assertFalse(subscription.is_alive)
+        self.assertIsNone(subscription.error)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0].status, "filled")
+        self.assertEqual(seen[0][1], "order.changed")
+        self.assertIn(("GET", "/v1/events/stream", {"account_id": ["acct-1"]}, None), RelayHandler.requests)
+
+    def test_fill_callback_fetches_fills_after_event(self):
+        seen = []
+
+        self.client.watch_fills(lambda fill, event: seen.append((fill, event.event_type)))
+
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0].fill_id, "fill-1")
+        self.assertEqual(seen[0][1], "fill.changed")
 
 
 if __name__ == "__main__":

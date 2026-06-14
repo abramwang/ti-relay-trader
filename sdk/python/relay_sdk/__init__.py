@@ -1,6 +1,6 @@
 """Python SDK for the Relay Trader 9092 API."""
 
-from .client import RelayClient
+from .client import CallbackSubscription, RelayClient
 from .errors import (
     RelayConnectionError,
     RelayError,
@@ -22,6 +22,7 @@ from .models import (
 __all__ = [
     "Account",
     "Asset",
+    "CallbackSubscription",
     "CommandReceipt",
     "Fill",
     "Order",
@@ -36,4 +37,4 @@ __all__ = [
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

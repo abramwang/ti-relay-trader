@@ -150,10 +150,12 @@
 - [x] 实现 SDK 资金、持仓、订单和成交刷新指令。
 - [x] 实现 SDK 下单、批量下单、撤单。
 - [x] 实现 SDK 事件订阅和 `wait_order_terminal` 基础能力。
+- [x] 实现 SDK 订单状态和成交回报回调：`on_order_status()`、`on_fill()`、`watch_order_status()`、`watch_fills()`。
 - [x] 增加 SDK mock API 单元测试。
 - [ ] 增加 SDK 集成测试。
 - [x] 增加 SDK 打包脚本和 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
 - [x] 发布 `public/sdk/relay-sdk-0.1.0.tar.gz` 和 SHA256 校验文件。
+- [x] 发布 `public/sdk/relay-sdk-0.1.1.tar.gz` 和 SHA256 校验文件。
 - [ ] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

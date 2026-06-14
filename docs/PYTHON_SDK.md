@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.0`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.1`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -26,11 +26,12 @@ SDK 的定位：
 4. 单笔下单、批量下单、撤单。
 5. `wait_order_terminal()` 轮询等待订单终态。
 6. `stream_events()` SSE 事件迭代器。
-7. dataclass 模型和 `raw` 原始响应保留。
-8. relay envelope 错误到 SDK 异常的映射。
-9. mock 9092 API 单元测试。
-10. `scripts/build-python-sdk.py` 打包脚本。
-11. 9092 `/sdk/relay-sdk-0.1.0.tar.gz` 和 `.sha256` 下载入口。
+7. `on_order_status()`、`on_fill()` 后台回调订阅，以及 `watch_order_status()`、`watch_fills()` 阻塞式回调循环。
+8. dataclass 模型和 `raw` 原始响应保留。
+9. relay envelope 错误到 SDK 异常的映射。
+10. mock 9092 API 单元测试。
+11. `scripts/build-python-sdk.py` 打包脚本。
+12. 9092 `/sdk/relay-sdk-0.1.1.tar.gz` 和 `.sha256` 下载入口。
 
 尚未完成：
 
@@ -79,15 +80,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.0.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.1.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -136,6 +137,36 @@ terminal = client.wait_order_terminal(
 print(terminal.status, terminal.filled_qty)
 ```
 
+## 订单和成交回调
+
+策略程序可以用后台回调订阅订单状态和成交回报，避免自己解析 SSE 原始事件：
+
+```python
+from relay_sdk import RelayClient
+
+client = RelayClient(
+    base_url="http://relay-trader.quantstage.com",
+    account_id="00030484",
+)
+
+def on_order_status(order, event):
+    print("order", order.gateway_order_id, order.status, order.filled_qty)
+
+def on_fill(fill, event):
+    print("fill", fill.gateway_order_id, fill.fill_id, fill.qty, fill.price)
+
+order_sub = client.on_order_status(on_order_status)
+fill_sub = client.on_fill(on_fill)
+
+# 策略退出前停止后台订阅。
+order_sub.stop()
+fill_sub.stop()
+```
+
+`on_order_status()` 和 `on_fill()` 会在后台 daemon thread 中运行，并返回 `CallbackSubscription`，可调用 `stop()`、`close()`、`join()`，也可读取 `error` 查看后台异常。若策略希望自己控制主循环，可直接使用阻塞式 `watch_order_status()` 和 `watch_fills()`。
+
+当前后端 SSE 事件只说明订单或成交账本发生变化，不直接携带完整订单/成交对象。SDK 收到 `order.changed` 后会自动调用 `list_orders()` 拉取账本并按订单状态去重触发回调；收到 `fill.changed` 后会调用 `list_fills()` 并按成交唯一键去重触发回调。
+
 ## 建议接口
 
 ### 客户端
@@ -173,6 +204,10 @@ client = RelayClient(
 | `cancel_order(...)` | `POST /v1/orders/{gateway_order_id}/cancel` | 撤单 |
 | `wait_order_terminal(...)` | `GET /v1/orders` + event stream | 等待终态 |
 | `stream_events(...)` | `GET /v1/events/stream` | 订阅订单和成交事件 |
+| `on_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 后台订单状态回调 |
+| `on_fill(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 后台成交回调 |
+| `watch_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 阻塞式订单状态回调 |
+| `watch_fills(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 阻塞式成交回调 |
 
 ## 模型建议
 
@@ -251,14 +286,16 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 5. `wait_order_terminal()` 轮询终态。
 6. `IDEMPOTENCY_CONFLICT` 到 `RelayIdempotencyError` 的异常映射。
 7. SSE `order.changed` 事件解析。
+8. `on_order_status()` 收到事件后查询订单并按状态去重触发回调。
+9. `watch_fills()` 收到事件后查询成交并按成交唯一键去重触发回调。
 
 打包验证：
 
 ```bash
 cd /home/ti-relay-trader
 python3 scripts/build-python-sdk.py
-sha256sum -c public/sdk/relay-sdk-0.1.0.tar.gz.sha256
-python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.0.tar.gz
+sha256sum -c public/sdk/relay-sdk-0.1.1.tar.gz.sha256
+python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.1.tar.gz
 ```
 
 ## 测试与发布
