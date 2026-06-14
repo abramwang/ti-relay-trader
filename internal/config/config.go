@@ -21,12 +21,13 @@ const (
 )
 
 type Config struct {
-	Service  ServiceConfig        `yaml:"service"`
-	Database DatabaseConfig       `yaml:"database"`
-	Redis    RedisConfig          `yaml:"redis"`
-	Market   MarketConfig         `yaml:"market"`
-	Accounts []AccountRouteConfig `yaml:"accounts"`
-	Jobs     map[string]JobConfig `yaml:"jobs"`
+	Service     ServiceConfig        `yaml:"service"`
+	Database    DatabaseConfig       `yaml:"database"`
+	Redis       RedisConfig          `yaml:"redis"`
+	Market      MarketConfig         `yaml:"market"`
+	AutoRefresh AutoRefreshConfig    `yaml:"auto_refresh"`
+	Accounts    []AccountRouteConfig `yaml:"accounts"`
+	Jobs        map[string]JobConfig `yaml:"jobs"`
 }
 
 type ServiceConfig struct {
@@ -57,6 +58,13 @@ type MarketConfig struct {
 	TimeoutSeconds      int    `yaml:"timeout_seconds"`
 	SnapshotMarketLevel string `yaml:"snapshot_market_level"`
 	SnapshotDataScope   string `yaml:"snapshot_data_scope"`
+}
+
+type AutoRefreshConfig struct {
+	Enabled         *bool `yaml:"enabled"`
+	DebounceSeconds int   `yaml:"debounce_seconds"`
+	CooldownSeconds int   `yaml:"cooldown_seconds"`
+	TimeoutSeconds  int   `yaml:"timeout_seconds"`
 }
 
 type AccountRouteConfig struct {
@@ -162,6 +170,15 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Market.SnapshotDataScope == "" {
 		cfg.Market.SnapshotDataScope = "realtime"
 	}
+	if cfg.AutoRefresh.DebounceSeconds == 0 {
+		cfg.AutoRefresh.DebounceSeconds = 2
+	}
+	if cfg.AutoRefresh.CooldownSeconds == 0 {
+		cfg.AutoRefresh.CooldownSeconds = 20
+	}
+	if cfg.AutoRefresh.TimeoutSeconds == 0 {
+		cfg.AutoRefresh.TimeoutSeconds = 10
+	}
 	if cfg.Jobs == nil {
 		cfg.Jobs = map[string]JobConfig{}
 	}
@@ -185,6 +202,15 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Market.TimeoutSeconds < 0 {
 		return fmt.Errorf("market.timeout_seconds must be non-negative")
+	}
+	if cfg.AutoRefresh.DebounceSeconds < 0 {
+		return fmt.Errorf("auto_refresh.debounce_seconds must be non-negative")
+	}
+	if cfg.AutoRefresh.CooldownSeconds < 0 {
+		return fmt.Errorf("auto_refresh.cooldown_seconds must be non-negative")
+	}
+	if cfg.AutoRefresh.TimeoutSeconds < 0 {
+		return fmt.Errorf("auto_refresh.timeout_seconds must be non-negative")
 	}
 
 	seenAccounts := make(map[string]struct{}, len(cfg.Accounts))
@@ -226,6 +252,10 @@ func (cfg Config) AccountRoute(accountID string) (AccountRouteConfig, bool) {
 		}
 	}
 	return AccountRouteConfig{}, false
+}
+
+func (cfg Config) AutoRefreshEnabled() bool {
+	return cfg.AutoRefresh.Enabled == nil || *cfg.AutoRefresh.Enabled
 }
 
 func validLogLevel(level string) bool {

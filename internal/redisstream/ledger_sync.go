@@ -80,6 +80,7 @@ type LedgerProcessResult struct {
 	LastEventType  string   `json:"last_event_type,omitempty"`
 	LastAction     string   `json:"last_action,omitempty"`
 	LastAccountID  string   `json:"last_account_id,omitempty"`
+	AccountIDs     []string `json:"account_ids,omitempty"`
 	LastGatewayOID string   `json:"last_gateway_order_id,omitempty"`
 }
 
@@ -172,6 +173,7 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 	result.LastEventType = envelope.EventType
 	result.LastAction = envelope.Action
 	result.LastAccountID = envelope.Routing.AccountID
+	result.noteAccount(envelope.Routing.AccountID)
 	result.LastGatewayOID = firstNonEmpty(envelope.GatewayOrderID, gatewayOrderIDFromPayload(envelope.Payload))
 
 	if err := writer.ArchiveRawStreamMessage(ctx, rawMessageFromEnvelope(envelope)); err != nil {
@@ -211,6 +213,7 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			result.SkipReasons = append(result.SkipReasons, err.Error())
 			return result
 		}
+		result.noteAccount(asset.AccountID)
 		if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, asset.AccountID)); err != nil {
 			result.LedgerErrors++
 			result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -246,6 +249,7 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		updatedAt := envelope.ProducedAt
 		for i, position := range positions {
+			result.noteAccount(position.AccountID)
 			if err := writer.UpsertPosition(ctx, position, "query", raws[i], updatedAt); err != nil {
 				result.LedgerErrors++
 				result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -269,6 +273,7 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			return result
 		}
 		if complete {
+			result.noteAccount(event.AccountID)
 			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, event.AccountID)); err != nil {
 				result.LedgerErrors++
 				result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -282,6 +287,7 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			}
 			result.Orders++
 		} else {
+			result.noteAccount(event.AccountID)
 			if err := writer.UpdateOrderStatus(ctx, event); err != nil {
 				if errors.Is(err, ledger.ErrOrderNotFound) {
 					result.Skipped++
@@ -308,6 +314,7 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			result.SkipReasons = append(result.SkipReasons, err.Error())
 			return result
 		}
+		result.noteAccount(fill.AccountID)
 		if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, fill.AccountID)); err != nil {
 			result.LedgerErrors++
 			result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -992,9 +999,25 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	if other.LastAccountID != "" {
 		result.LastAccountID = other.LastAccountID
 	}
+	for _, accountID := range other.AccountIDs {
+		result.noteAccount(accountID)
+	}
 	if other.LastGatewayOID != "" {
 		result.LastGatewayOID = other.LastGatewayOID
 	}
+}
+
+func (result *LedgerProcessResult) noteAccount(accountID string) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return
+	}
+	for _, existing := range result.AccountIDs {
+		if existing == accountID {
+			return
+		}
+	}
+	result.AccountIDs = append(result.AccountIDs, accountID)
 }
 
 var _ LedgerWriter = (*ledger.Repository)(nil)

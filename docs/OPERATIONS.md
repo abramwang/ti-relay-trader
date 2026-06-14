@@ -1,6 +1,6 @@
 # relay 运行配置与任务管理
 
-更新时间：`2026-06-13`
+更新时间：`2026-06-14`
 
 ## 配置文件口径
 
@@ -36,8 +36,9 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 2. PostgreSQL 连接 DSN、连接池参数。
 3. Redis URL、env、broker、gateway。
 4. account 到 broker/gateway/stream prefix 的多账户路由。
-5. 日志级别和输出格式。
-6. 后台任务开关和 cron 时间。
+5. 订单/成交事件驱动的资金持仓自动刷新限频参数。
+6. 日志级别和输出格式。
+7. 后台任务开关和 cron 时间。
 
 真实 PostgreSQL、Redis 等访问方式查阅 `http://doc.quantstage.com`。
 
@@ -49,7 +50,29 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
 5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 骨架接口。
 6. worker 模式当前只记录配置态账户和任务数量，后续承接 Redis 消费与后台常驻任务。
-7. 已校验服务模式、日志级别、日志格式、数据库连接池参数和重复账户路由。
+7. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
+8. 已校验服务模式、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
+
+## 自动资金持仓刷新
+
+9092 docs/api 常驻服务在启动轻量后台 Redis `reply/event` 同步循环时，会监听订单和成交落账结果。如果某个账户出现 `order.event` 或 `fill.event`，relay 会自动向该账户的 `cmd.query` 写入一轮资金和持仓查询命令。
+
+默认配置：
+
+```yaml
+auto_refresh:
+  enabled: true
+  debounce_seconds: 2
+  cooldown_seconds: 20
+  timeout_seconds: 10
+```
+
+含义：
+
+1. `debounce_seconds`：同一账户密集订单/成交事件先合并，等待该秒数后发查询。
+2. `cooldown_seconds`：同一账户发出一轮资金+持仓查询后，冷却期内的新事件会继续合并到下一轮，避免高频查询柜台。
+3. `timeout_seconds`：发布查询命令到 Redis 的单轮超时。
+4. `enabled: false` 可关闭自动刷新，页面仍可通过手动刷新按钮发送查询。
 
 ## 运行模式
 

@@ -216,7 +216,7 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		apiCleanup = func() {}
 	}
 	defer apiCleanup()
-	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, logger)
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, apiDeps.Orders, logger)
 	defer stopLedgerSync()
 
 	mux := http.NewServeMux()
@@ -260,7 +260,7 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 		return err
 	}
 	defer cleanup()
-	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, logger)
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, deps.Orders, logger)
 	defer stopLedgerSync()
 
 	logger.Info("relay_service_listening",
@@ -327,7 +327,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	return api.Dependencies{Orders: orders}, repo, cleanup, nil
 }
 
-func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, logger *slog.Logger) func() {
+func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, refresher orderflow.AccountRefresher, logger *slog.Logger) func() {
 	if writer == nil || strings.TrimSpace(cfg.Redis.URL) == "" {
 		logger.Warn("relay_ledger_sync_loop_disabled", "reason", "redis url or ledger writer missing")
 		return func() {}
@@ -335,6 +335,23 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 
 	syncCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
+	var autoRefresh *orderflow.AutoRefreshScheduler
+	if cfg.AutoRefreshEnabled() && refresher != nil {
+		autoRefresh = orderflow.NewAutoRefreshScheduler(orderflow.AutoRefreshSchedulerOptions{
+			Refresher: refresher,
+			Logger:    logger.With("component", "auto-refresh"),
+			Debounce:  time.Duration(cfg.AutoRefresh.DebounceSeconds) * time.Second,
+			Cooldown:  time.Duration(cfg.AutoRefresh.CooldownSeconds) * time.Second,
+			Timeout:   time.Duration(cfg.AutoRefresh.TimeoutSeconds) * time.Second,
+		})
+		logger.Info("relay_auto_refresh_enabled",
+			"debounce", fmt.Sprintf("%ds", cfg.AutoRefresh.DebounceSeconds),
+			"cooldown", fmt.Sprintf("%ds", cfg.AutoRefresh.CooldownSeconds),
+			"timeout", fmt.Sprintf("%ds", cfg.AutoRefresh.TimeoutSeconds),
+		)
+	} else {
+		logger.Info("relay_auto_refresh_disabled", "enabled", cfg.AutoRefreshEnabled(), "refresher_available", refresher != nil)
+	}
 	go func() {
 		defer close(done)
 		err := redisstream.RunLedgerSyncLoop(syncCtx, cfg, writer, redisstream.LedgerSyncLoopOptions{
@@ -342,6 +359,13 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 			Count:   200,
 			Block:   time.Second,
 			Roles:   []string{redisstream.SuffixReply, redisstream.SuffixEvent},
+			OnTradeChange: func(_ context.Context, change redisstream.LedgerTradeChange) {
+				if autoRefresh == nil {
+					return
+				}
+				reason := fmt.Sprintf("ledger:%s order_events=%d fills=%d", change.LastStreamID, change.OrderEvents, change.Fills)
+				autoRefresh.RequestAccounts(change.AccountIDs, reason)
+			},
 		}, logger.With("component", "ledger-sync-loop"))
 		if err != nil && syncCtx.Err() == nil {
 			logger.Error("relay_ledger_sync_loop_stopped", "error", err)
@@ -350,6 +374,9 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 
 	return func() {
 		cancel()
+		if autoRefresh != nil {
+			autoRefresh.Stop()
+		}
 		<-done
 	}
 }

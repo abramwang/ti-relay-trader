@@ -31,6 +31,12 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Market.SnapshotMarketLevel != "level1" || cfg.Market.SnapshotDataScope != "realtime" {
 		t.Fatalf("market snapshot defaults = %q/%q", cfg.Market.SnapshotMarketLevel, cfg.Market.SnapshotDataScope)
 	}
+	if !cfg.AutoRefreshEnabled() {
+		t.Fatal("auto refresh should be enabled by default")
+	}
+	if cfg.AutoRefresh.DebounceSeconds != 2 || cfg.AutoRefresh.CooldownSeconds != 20 || cfg.AutoRefresh.TimeoutSeconds != 10 {
+		t.Fatalf("auto refresh defaults = %+v", cfg.AutoRefresh)
+	}
 }
 
 func TestDecodeRejectsInvalidMode(t *testing.T) {
@@ -90,5 +96,25 @@ accounts:
 	}
 	if route.StreamPrefix != "relay:prod:v1:huaxin:gw-1" {
 		t.Fatalf("stream prefix = %q", route.StreamPrefix)
+	}
+}
+
+func TestDecodeCanDisableAutoRefresh(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(`
+service: {}
+auto_refresh:
+  enabled: false
+  debounce_seconds: 1
+  cooldown_seconds: 30
+  timeout_seconds: 5
+`))
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if cfg.AutoRefreshEnabled() {
+		t.Fatal("auto refresh should be disabled")
+	}
+	if cfg.AutoRefresh.CooldownSeconds != 30 {
+		t.Fatalf("cooldown = %d", cfg.AutoRefresh.CooldownSeconds)
 	}
 }

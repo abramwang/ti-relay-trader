@@ -31,6 +31,15 @@ market:
   snapshot_market_level: "level1"
   snapshot_data_scope: "realtime"
 
+auto_refresh:
+  # When order/fill events arrive from Redis, relay coalesces one asset query and
+  # one positions query per account. This keeps /trade fresh without polling the
+  # broker counter too aggressively.
+  enabled: true
+  debounce_seconds: 2
+  cooldown_seconds: 20
+  timeout_seconds: 10
+
 accounts:
   - account_id: "<account_id>"
     broker_id: "huaxin"

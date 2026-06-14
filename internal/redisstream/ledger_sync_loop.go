@@ -13,11 +13,21 @@ import (
 )
 
 type LedgerSyncLoopOptions struct {
-	Prefixes []string
-	StartID  string
-	Count    int64
-	Block    time.Duration
-	Roles    []string
+	Prefixes      []string
+	StartID       string
+	Count         int64
+	Block         time.Duration
+	Roles         []string
+	OnTradeChange func(context.Context, LedgerTradeChange)
+}
+
+type LedgerTradeChange struct {
+	Stream       string
+	Role         string
+	AccountIDs   []string
+	OrderEvents  int
+	Fills        int
+	LastStreamID string
 }
 
 type ledgerStreamCursor struct {
@@ -115,6 +125,22 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"ledger_errors", report.Totals.LedgerErrors,
 					"parse_errors", report.Totals.ParseErrors,
 				)
+			}
+			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0) {
+				accountIDs := report.Totals.AccountIDs
+				if len(accountIDs) == 0 && strings.TrimSpace(report.Totals.LastAccountID) != "" {
+					accountIDs = []string{report.Totals.LastAccountID}
+				}
+				if len(accountIDs) > 0 {
+					opts.OnTradeChange(ctx, LedgerTradeChange{
+						Stream:       report.Name,
+						Role:         report.Role,
+						AccountIDs:   accountIDs,
+						OrderEvents:  report.Totals.OrderEvents,
+						Fills:        report.Totals.Fills,
+						LastStreamID: report.Totals.LastStreamID,
+					})
+				}
 			}
 		}
 	}
