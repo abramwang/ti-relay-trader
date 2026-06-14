@@ -1167,6 +1167,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       <a class="{{if eq .Active "docs"}}active{{end}}" href="/docs">文档</a>
       <a class="{{if eq .Active "console"}}active{{end}}" href="/api-console">接口</a>
       <a href="/trade">交易终端</a>
+      <a href="/docs/python-sdk">SDK</a>
       <a class="{{if eq .Active "tree"}}active{{end}}" href="/tree">项目结构</a>
       <a class="{{if eq .Active "tests"}}active{{end}}" href="/tests">测试</a>
       <a href="/healthz">健康</a>

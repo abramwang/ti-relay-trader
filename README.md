@@ -329,3 +329,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 补齐 SDK 发布质量门：`relay-sdk 0.1.3` 新增 `status()` 只读探活方法，新增 `tests/integration/sdk_live_smoke.py` 对真实 9092 做只读集成测试，新增 `scripts/check-python-sdk-release.py` 校验版本一致性、tar.gz 内容、sha256、单元测试和可选 live smoke。
 - `2026-06-14`: 固化全系统业务时间统一 `Asia/Shanghai`，新增 `docs/TRADING_DAY_WORKFLOW.md` 规划每日 `pre_open_init` 盘前初始化和 `post_close_settlement` 收盘后结算；配置模板新增 `service.timezone` 和两个交易日任务，`/v1/status` 暴露 `timezone`。
 - `2026-06-14`: 新增 `internal/timeutil` 统一东八区时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at`、Redis 探测报告和账本同步报告生成时间改为 `Asia/Shanghai` 输出。
+- `2026-06-14`: 首页顶部导航新增 `SDK` 页面入口，指向 `/docs/python-sdk`，方便策略开发直接查看 SDK 文档。
