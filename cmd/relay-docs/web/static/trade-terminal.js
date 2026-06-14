@@ -19,10 +19,13 @@
     activeSuggestion: -1,
     suggestionSeq: 0,
     quoteSeq: 0,
-    priceEdited: false
+    priceEdited: false,
+    activeView: "trade"
   };
 
   const els = {
+    shell: byID("terminalShell"),
+    viewLinks: Array.from(document.querySelectorAll("[data-view-link]")),
     apiStatus: byID("apiStatus"),
     redisStatus: byID("redisStatus"),
     dbStatus: byID("dbStatus"),
@@ -50,7 +53,17 @@
     cashAvailable: byID("cashAvailable"),
     marketValue: byID("marketValue"),
     dayProfit: byID("dayProfit"),
+    cashTotal: byID("cashTotal"),
+    stockValue: byID("stockValue"),
+    fundValue: byID("fundValue"),
+    positionProfit: byID("positionProfit"),
+    closeProfit: byID("closeProfit"),
+    commission: byID("commission"),
     positionsBody: byID("positionsBody"),
+    orderCount: byID("orderCount"),
+    activeOrderCount: byID("activeOrderCount"),
+    fillCount: byID("fillCount"),
+    lastEventTime: byID("lastEventTime"),
     blotterTabs: byID("blotterTabs"),
     blotterContent: byID("blotterContent"),
     detailSub: byID("detailSub"),
@@ -299,6 +312,42 @@
   function showToast(message, type = "info") {
     els.toast.textContent = message;
     els.toast.classList.toggle("error", type === "error");
+  }
+
+  function viewFromLocation() {
+    const hash = String(window.location.hash || "").replace("#", "");
+    if (hash === "asset") {
+      return "asset";
+    }
+    if (hash === "orders" || hash === "fills") {
+      if (hash === "fills") {
+        state.selectedTab = "fills";
+      }
+      return "orders";
+    }
+    return "trade";
+  }
+
+  function navigateView(view) {
+    const url = view === "trade" ? "/trade" : "/trade#" + view;
+    window.history.pushState({ view }, "", url);
+    setActiveView(view);
+  }
+
+  function setActiveView(view) {
+    if (!["trade", "orders", "asset"].includes(view)) {
+      view = "trade";
+    }
+    state.activeView = view;
+    els.shell.classList.toggle("view-trade", view === "trade");
+    els.shell.classList.toggle("view-orders", view === "orders");
+    els.shell.classList.toggle("view-asset", view === "asset");
+    for (const link of els.viewLinks) {
+      link.classList.toggle("active", link.dataset.viewLink === view);
+    }
+    renderMonitorSummary();
+    renderBlotter();
+    renderDetail();
   }
 
   async function loadStatus() {
@@ -585,6 +634,14 @@
     els.marketValue.textContent = formatNumber(asset.market_value);
     els.dayProfit.textContent = formatSigned(asset.day_profit);
     els.dayProfit.className = Number(asset.day_profit) < 0 ? "down" : "up";
+    els.cashTotal.textContent = formatNumber(asset.cash_total);
+    els.stockValue.textContent = formatNumber(asset.stock_value);
+    els.fundValue.textContent = formatNumber(asset.fund_value);
+    els.positionProfit.textContent = formatSigned(asset.position_profit);
+    els.positionProfit.className = Number(asset.position_profit) < 0 ? "down" : "up";
+    els.closeProfit.textContent = formatSigned(asset.close_profit);
+    els.closeProfit.className = Number(asset.close_profit) < 0 ? "down" : "up";
+    els.commission.textContent = formatNumber(asset.commission);
     els.availableCash.textContent = formatNumber(asset.cash_available);
     const price = Number(els.priceInput.value);
     const maxBuy = price > 0 ? Math.floor(Number(asset.cash_available || 0) / price / 100) * 100 : 0;
@@ -619,6 +676,42 @@
           <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
         </tr>`;
     }).join("");
+  }
+
+  function renderMonitorSummary() {
+    const terminalStatuses = new Set(["filled", "cancelled", "rejected"]);
+    const activeOrders = state.orders.filter((order) => {
+      const status = String(order.status || "").toLowerCase();
+      return !order.is_terminal && !terminalStatuses.has(status);
+    });
+    els.orderCount.textContent = formatInt(state.orders.length);
+    els.activeOrderCount.textContent = formatInt(activeOrders.length);
+    els.fillCount.textContent = formatInt(state.fills.length);
+    const latest = latestOrderOrFillTime();
+    els.lastEventTime.textContent = latest ? formatTime(latest) : "--";
+  }
+
+  function latestOrderOrFillTime() {
+    let latest = null;
+    const note = (value) => {
+      if (!value) {
+        return;
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return;
+      }
+      if (!latest || date > latest) {
+        latest = date;
+      }
+    };
+    for (const order of state.orders) {
+      note(order.last_updated_at || order.terminal_at || order.accepted_at || order.created_at || order.inserted_at);
+    }
+    for (const fill of state.fills) {
+      note(fill.matched_at);
+    }
+    return latest;
   }
 
   function renderBlotter() {
@@ -867,6 +960,7 @@
     renderDepthBook();
     renderMetrics();
     renderPositions();
+    renderMonitorSummary();
     renderBlotter();
     renderDetail();
     updateRisk();
@@ -1013,6 +1107,14 @@
   function bindEvents() {
     let symbolTimer = 0;
     let quoteTimer = 0;
+    for (const link of els.viewLinks) {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        navigateView(link.dataset.viewLink || "trade");
+      });
+    }
+    window.addEventListener("hashchange", () => setActiveView(viewFromLocation()));
+    window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       await refreshNow();
@@ -1114,6 +1216,7 @@
       els.symbolInput.value = button.dataset.sellSymbol || "";
       els.exchangeInput.value = button.dataset.sellExchange || "SH";
       state.priceEdited = false;
+      navigateView("trade");
       updateSide("S");
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
     });
@@ -1125,6 +1228,7 @@
   }
 
   async function boot() {
+    setActiveView(viewFromLocation());
     renderQuote();
     renderDepthBook();
     bindEvents();

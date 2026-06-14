@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/assets/trade-terminal.css">
 </head>
 <body>
-  <div class="terminal-shell">
+  <div class="terminal-shell view-trade" id="terminalShell">
     <header class="terminal-topbar">
       <div class="brand-block">
         <a class="brand-title" href="/">Relay Trader</a>
@@ -30,10 +30,9 @@
 
     <aside class="terminal-sidebar">
       <nav class="terminal-nav">
-        <a class="active" href="/trade"><span>⌁</span>交易测试</a>
-        <a href="/trade#orders"><span>▤</span>订单监控</a>
-        <a href="/trade#fills"><span>▧</span>成交回报</a>
-        <a href="/trade#asset"><span>▥</span>资金持仓</a>
+        <a class="active" href="/trade" data-view-link="trade"><span>⌁</span>交易测试</a>
+        <a href="/trade#orders" data-view-link="orders"><span>▤</span>订单监控</a>
+        <a href="/trade#asset" data-view-link="asset"><span>▥</span>资金持仓</a>
         <a href="/docs/roadmap"><span>◇</span>盘后对账</a>
         <a href="/api-console"><span>▣</span>接口 Console</a>
         <a href="/v1/status"><span>☍</span>系统状态</a>
@@ -46,7 +45,7 @@
     </aside>
 
     <main class="terminal-main">
-      <section class="trade-panel market-panel" aria-label="行情与下单">
+      <section class="trade-panel market-panel" id="marketPanel" aria-label="行情与下单">
         <div class="quote-head">
           <div>
             <h1 id="quoteSymbol">600000.SH</h1>
@@ -112,12 +111,20 @@
         </form>
       </section>
 
-      <section class="trade-panel portfolio-panel" aria-label="资金持仓">
+      <section class="trade-panel portfolio-panel" id="assetPanel" aria-label="资金持仓">
         <div class="metric-strip" id="metricStrip">
           <div><span>总资产</span><strong id="netAsset">--</strong></div>
           <div><span>可用资金</span><strong id="cashAvailable">--</strong></div>
           <div><span>证券市值</span><strong id="marketValue">--</strong></div>
           <div><span>当日盈亏</span><strong id="dayProfit">--</strong></div>
+        </div>
+        <div class="asset-detail-strip">
+          <div><span>资金总额</span><strong id="cashTotal">--</strong></div>
+          <div><span>股票市值</span><strong id="stockValue">--</strong></div>
+          <div><span>基金市值</span><strong id="fundValue">--</strong></div>
+          <div><span>持仓盈亏</span><strong id="positionProfit">--</strong></div>
+          <div><span>平仓盈亏</span><strong id="closeProfit">--</strong></div>
+          <div><span>手续费</span><strong id="commission">--</strong></div>
         </div>
         <div class="section-toolbar">
           <h2>持仓</h2>
@@ -143,7 +150,13 @@
         </div>
       </section>
 
-      <section class="trade-panel blotter-panel" id="orders" aria-label="订单与成交">
+      <section class="trade-panel blotter-panel" id="ordersPanel" aria-label="订单监控">
+        <div class="monitor-summary">
+          <div><span>当日委托</span><strong id="orderCount">--</strong></div>
+          <div><span>活动委托</span><strong id="activeOrderCount">--</strong></div>
+          <div><span>当日成交</span><strong id="fillCount">--</strong></div>
+          <div><span>最近回报</span><strong id="lastEventTime">--</strong></div>
+        </div>
         <div class="blotter-tabs" id="blotterTabs">
           <button type="button" class="active" data-tab="orders">当日委托</button>
           <button type="button" data-tab="fills">当日成交</button>

@@ -252,6 +252,40 @@ button {
   overflow: hidden;
 }
 
+.terminal-shell.view-orders .terminal-main {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.terminal-shell.view-orders .market-panel,
+.terminal-shell.view-orders .portfolio-panel {
+  display: none;
+}
+
+.terminal-shell.view-orders .blotter-panel {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: 72px 42px minmax(0, 1fr);
+}
+
+.terminal-shell.view-asset .terminal-main {
+  grid-column: 2 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.terminal-shell.view-asset .market-panel,
+.terminal-shell.view-asset .blotter-panel,
+.terminal-shell.view-asset .detail-panel {
+  display: none;
+}
+
+.terminal-shell.view-asset .portfolio-panel {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: 92px 72px 45px minmax(0, 1fr);
+}
+
 .trade-panel {
   min-width: 0;
   min-height: 0;
@@ -535,6 +569,11 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.asset-detail-strip,
+.monitor-summary {
+  display: none;
+}
+
 .metric-strip div {
   padding: 14px 16px;
   border-right: 1px solid var(--line-soft);
@@ -553,6 +592,40 @@ button {
   margin-top: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 22px;
+}
+
+.terminal-shell.view-asset .asset-detail-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.asset-detail-strip div,
+.monitor-summary div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.asset-detail-strip span,
+.monitor-summary span {
+  display: block;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.asset-detail-strip strong,
+.monitor-summary strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .up {
@@ -655,6 +728,13 @@ td {
   grid-column: 1 / -1;
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr);
+}
+
+.terminal-shell.view-orders .monitor-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfe;
 }
 
 .blotter-tabs {
