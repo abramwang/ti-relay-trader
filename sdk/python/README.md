@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.6.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.7.tar.gz"
 ```
 
 ## Quick Start
@@ -29,6 +29,13 @@ client = RelayClient(
 asset = client.get_asset()
 status = client.status()
 orders = client.list_orders(limit=20)
+bars = client.get_meridian_bars(
+    security_id="600000.SH",
+    trade_date="20260612",
+    frequency="1m",
+    start_time="09:30:00",
+    end_time="15:00:00",
+)
 
 receipt = client.submit_order(
     symbol="600000",
@@ -60,6 +67,16 @@ creation/redemption is not implemented by `/v1/orders` yet; do not use
 and `"failed"`. The SDK accepts `status="completed"` as an alias for
 `"succeeded"` and exposes `target_trade_date`, `timezone`, and `duration_ms`
 as explicit keyword arguments.
+
+P8 helper methods are available for strategy and research tooling:
+
+- `get_performance_daily(trade_date=...)`
+- `get_performance_series(date_from=..., date_to=...)`
+- `get_performance_series_csv(date_from=..., date_to=...)`
+- `list_reconciliation_breaks(...)`
+- `get_meridian_bars(security_id=..., trade_date=...)`
+
+Meridian bars use `trade_date`, not `start_date` / `end_date`.
 
 ## Callbacks
 

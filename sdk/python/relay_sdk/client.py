@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.6"
+SDK_VERSION = "0.1.7"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -251,6 +251,108 @@ class RelayClient:
             "dry_run": dry_run,
         }
         return self._request("POST", "/v1/settlements/snapshots", json_body=payload)
+
+    def get_performance_daily(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Return one account's daily close equity and PnL summary."""
+
+        account_id = self._resolve_account(account_id)
+        return self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/daily",
+            query={"trade_date": trade_date},
+        )
+
+    def get_performance_series(
+        self,
+        *,
+        date_from: str,
+        date_to: str,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Return close-equity performance series for an account."""
+
+        account_id = self._resolve_account(account_id)
+        return self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/series",
+            query={"date_from": date_from, "date_to": date_to},
+        )
+
+    def get_performance_series_csv(
+        self,
+        *,
+        date_from: str,
+        date_to: str,
+        account_id: str | None = None,
+    ) -> str:
+        """Return the account performance series CSV text."""
+
+        account_id = self._resolve_account(account_id)
+        return self._request_text(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/series.csv",
+            query={"date_from": date_from, "date_to": date_to},
+        )
+
+    def list_reconciliation_breaks(
+        self,
+        *,
+        run_id: str | None = None,
+        account_id: str | None = None,
+        status: str | None = None,
+        limit: int | None = 100,
+    ) -> list[Mapping[str, Any]]:
+        """Return post-close reconciliation breaks from relay's ledger."""
+
+        data = self._request(
+            "GET",
+            "/v1/reconciliations/breaks",
+            query={
+                "run_id": run_id,
+                "account_id": account_id or self.account_id or None,
+                "status": status,
+                "limit": limit,
+            },
+        )
+        breaks = data.get("breaks", [])
+        return [item for item in breaks if isinstance(item, Mapping)]
+
+    def get_meridian_bars(
+        self,
+        *,
+        security_id: str,
+        trade_date: str | None = None,
+        frequency: str = "1m",
+        adjustment: str = "none",
+        start_time: str | None = None,
+        end_time: str | None = None,
+        limit: int | None = 300,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Proxy Meridian market bars through relay.
+
+        Meridian bars use ``trade_date`` rather than ``start_date`` /
+        ``end_date``. If ``trade_date`` is omitted or equals today's
+        Asia/Shanghai date, relay will resolve the previous/current trading day
+        before querying Meridian.
+        """
+
+        query = {
+            "security_id": security_id,
+            "trade_date": trade_date,
+            "frequency": frequency,
+            "adjustment": adjustment,
+            "start_time": start_time,
+            "end_time": end_time,
+            "limit": limit,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/market/bars", query=query)
 
     def submit_order(
         self,
@@ -548,6 +650,16 @@ class RelayClient:
             data = payload.get("data")
             return data if isinstance(data, Mapping) else {"value": data}
         return payload if isinstance(payload, Mapping) else {"value": payload}
+
+    def _request_text(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, Any] | None = None,
+    ) -> str:
+        response = self._open(method, path, query=query)
+        return response.read().decode("utf-8")
 
     def _open(
         self,

@@ -191,6 +191,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.4.tar.gz` 和 SHA256 校验文件，支持历史查询和任务报告落盘。
 - [x] 发布 `public/sdk/relay-sdk-0.1.5.tar.gz` 和 SHA256 校验文件，支持收盘结算快照落盘。
 - [x] 发布 `public/sdk/relay-sdk-0.1.6.tar.gz` 和 SHA256 校验文件，支持 job run 显式字段和 `completed` 状态兼容。
+- [x] 发布 `public/sdk/relay-sdk-0.1.7.tar.gz` 和 SHA256 校验文件，支持 performance、Meridian bars 和 reconciliation helper。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -223,6 +224,7 @@
 - [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
 - [x] 接入订单/成交前置刷新指令，订单监控区可手动刷新委托和成交。
 - [x] 订单监控表和订单详情展示 `reject_message`、柜台错误和 raw adapter context。
+- [x] 订单累计成交量存在但成交明细缺失时，向前生成标记型汇总成交，避免订单/成交账本数量口径断裂。
 - [x] 交易测试视图压缩右侧持仓版面，资金持仓独立工作区保留完整展示。
 - [x] 绩效分析工作区接入 ECharts 分钟线，并按当前账户、标的、交易日标注买卖委托/成交点。
 - [ ] 增加批量下单测试视图。

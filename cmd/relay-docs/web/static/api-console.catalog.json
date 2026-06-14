@@ -317,9 +317,9 @@
       { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
       { "name": "frequency", "label": "frequency", "source": "query", "defaultValue": "1m" },
       { "name": "adjustment", "label": "adjustment", "source": "query", "defaultValue": "none" },
-      { "name": "start_time", "label": "start_time", "source": "query", "defaultValue": "14:59:00" },
+      { "name": "start_time", "label": "start_time", "source": "query", "defaultValue": "09:30:00" },
       { "name": "end_time", "label": "end_time", "source": "query", "defaultValue": "15:00:00" },
-      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "5" }
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "300" }
     ]
   },
   {

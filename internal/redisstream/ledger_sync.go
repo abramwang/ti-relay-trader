@@ -22,6 +22,7 @@ type LedgerWriter interface {
 	UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
+	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
@@ -286,6 +287,11 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 			result.Orders++
+			if err := synthesizeOrderSummaryFill(ctx, writer, envelope, order, "order_page", &result); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
 		}
 		return result
 	case envelope.Action == ActionFillList || envelope.ResultType == "fill_page":
@@ -398,6 +404,11 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 			result.Orders++
+			if err := synthesizeOrderSummaryFill(ctx, writer, envelope, event.Order, "order.event", &result); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
 		} else {
 			result.noteAccount(event.AccountID)
 			if err := writer.UpdateOrderStatus(ctx, event); err != nil {
@@ -704,6 +715,157 @@ func fillsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, error) {
 		fills = append(fills, fill)
 	}
 	return fills, nil
+}
+
+func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, order trading.Order, source string, result *LedgerProcessResult) error {
+	targetQty := orderSummaryFilledQty(order)
+	if targetQty <= 0 {
+		return nil
+	}
+	existingQty, err := existingOrderFillQty(ctx, writer, order.AccountID, order.GatewayOrderID)
+	if err != nil {
+		return err
+	}
+	missingQty := targetQty - existingQty
+	if missingQty <= 0 {
+		return nil
+	}
+	price, priceSource := orderSummaryFillPrice(order)
+	if price <= 0 {
+		return fmt.Errorf("synthesize fill %s/%s: missing executable price", order.AccountID, order.GatewayOrderID)
+	}
+	matchedAt := firstTime(order.TerminalAt, order.LastUpdatedAt, order.AcceptedAt, order.InsertedAt, order.CreatedAt, envelope.ProducedAt)
+	context := map[string]any{
+		"relay_synthesized":             true,
+		"relay_synthesis_source":        source,
+		"relay_synthesis_reason":        "order_filled_without_complete_fill_ledger",
+		"relay_synthesis_target_qty":    targetQty,
+		"relay_synthesis_existing_qty":  existingQty,
+		"relay_synthesis_missing_qty":   missingQty,
+		"relay_synthesis_price_source":  priceSource,
+		"relay_synthesis_gateway_order": order.GatewayOrderID,
+	}
+	for key, value := range order.AdapterContext {
+		if _, exists := context[key]; !exists {
+			context[key] = value
+		}
+	}
+	fill := trading.Fill{
+		FillID:         "relay-summary:" + order.GatewayOrderID,
+		AccountID:      order.AccountID,
+		GatewayOrderID: order.GatewayOrderID,
+		OrderID:        order.OrderID,
+		OrderStreamID:  order.OrderStreamID,
+		Symbol:         order.Symbol,
+		Name:           order.Name,
+		Exchange:       order.Exchange,
+		TradeSide:      order.TradeSide,
+		Price:          price,
+		Qty:            missingQty,
+		Fee:            0,
+		TradeDate:      tradeDateFromTime(matchedAt),
+		MatchTimestamp: unixMilliOrZero(matchedAt),
+		MatchedAt:      matchedAt,
+		ShareholderID:  order.ShareholderID,
+		AdapterContext: context,
+	}
+	if err := writer.InsertFill(ctx, fill, summaryFillStreamRef(envelope, order.GatewayOrderID), sourceRef(envelope)); err != nil {
+		return err
+	}
+	result.Fills++
+	return nil
+}
+
+func summaryFillStreamRef(envelope EntryEnvelope, gatewayOrderID string) ledger.StreamRef {
+	stream := streamRef(envelope)
+	if stream.ID != "" && gatewayOrderID != "" {
+		stream.ID = stream.ID + ":summary:" + gatewayOrderID
+	}
+	return stream
+}
+
+func orderSummaryFilledQty(order trading.Order) int64 {
+	isFilled := order.Status == trading.OrderStatusFilled || order.GatewayStatus == trading.GatewayStatusFilled
+	if !isFilled {
+		return 0
+	}
+	targetQty := firstPositiveInt(
+		order.CumFilledQty,
+		int64FromMap(order.AdapterContext, "dealt_vol"),
+		int64FromMap(order.AdapterContext, "nDealtVol"),
+	)
+	if targetQty <= 0 && order.OrderQty > 0 {
+		targetQty = order.OrderQty
+	}
+	if order.OrderQty > 0 && targetQty > order.OrderQty {
+		targetQty = order.OrderQty
+	}
+	return targetQty
+}
+
+func existingOrderFillQty(ctx context.Context, writer LedgerWriter, accountID string, gatewayOrderID string) (int64, error) {
+	const limit = 500
+	var total int64
+	for page := 0; page < 20; page++ {
+		query := trading.FillQuery{
+			AccountID:      accountID,
+			GatewayOrderID: gatewayOrderID,
+			Limit:          limit,
+		}
+		if page > 0 {
+			query.Cursor = fmt.Sprintf("%d", page*limit)
+		}
+		fills, err := writer.ListFills(ctx, query)
+		if err != nil {
+			return 0, err
+		}
+		for _, fill := range fills {
+			total += fill.Qty
+		}
+		if len(fills) < limit {
+			break
+		}
+	}
+	return total, nil
+}
+
+func orderSummaryFillPrice(order trading.Order) (float64, string) {
+	if order.AvgFillPrice > 0 {
+		return order.AvgFillPrice, "avg_fill_price"
+	}
+	if value := floatFromMap(order.AdapterContext, "avg_fill_price"); value > 0 {
+		return value, "adapter_context.avg_fill_price"
+	}
+	if value := floatFromMap(order.AdapterContext, "avg_price"); value > 0 {
+		return value, "adapter_context.avg_price"
+	}
+	if order.LimitPrice > 0 {
+		return order.LimitPrice, "limit_price"
+	}
+	return 0, ""
+}
+
+func firstTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
+}
+
+func tradeDateFromTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.In(timeutil.Location()).Format("2006-01-02")
+}
+
+func unixMilliOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixMilli()
 }
 
 type orderPayload struct {

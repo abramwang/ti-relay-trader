@@ -42,6 +42,41 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/accounts/acct-1/positions/history":
             self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "trade_date": "2026-06-12", "symbol": "600000", "quantity": 100}]}})
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/daily":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "net_asset": 123.45}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/series":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "series": [{"trade_date": "20260612", "net_asset": 123.45}]}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/series.csv":
+            body = b"account_id,trade_date,net_asset\nacct-1,20260612,123.45\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if parsed.path == "/v1/reconciliations/breaks":
+            self._json({"ok": True, "data": {"breaks": [{"run_id": query.get("run_id", ["run-1"])[0], "status": query.get("status", ["open"])[0]}]}})
+            return
+        if parsed.path == "/v1/meridian/market/bars":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["600000.SH"])[0],
+                                "trade_date": 20260612,
+                                "datetime": "2026-06-12T09:31:00+08:00",
+                                "close": 9.46,
+                            }
+                        ],
+                        "meta": {"schema_version": "market_bar.v1"},
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/orders":
             self._json(
                 {
@@ -257,6 +292,21 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(body["target_trade_date"], "20260614")
         self.assertEqual(body["timezone"], "Asia/Shanghai")
         self.assertEqual(body["duration_ms"], 1200)
+
+    def test_performance_meridian_and_reconciliation_helpers(self):
+        daily = self.client.get_performance_daily(trade_date="20260612")
+        self.assertEqual(daily["net_asset"], 123.45)
+        series = self.client.get_performance_series(date_from="20260612", date_to="20260612")
+        self.assertEqual(series["series"][0]["trade_date"], "20260612")
+        csv_text = self.client.get_performance_series_csv(date_from="20260612", date_to="20260612")
+        self.assertIn("account_id,trade_date,net_asset", csv_text)
+        breaks = self.client.list_reconciliation_breaks(run_id="run-1", status="open")
+        self.assertEqual(breaks[0]["run_id"], "run-1")
+        bars = self.client.get_meridian_bars(security_id="600000.SH", trade_date="20260612")
+        self.assertEqual(bars["data"][0]["close"], 9.46)
+
+        self.assertEqual(RelayHandler.requests[-1][1], "/v1/meridian/market/bars")
+        self.assertEqual(RelayHandler.requests[-1][2]["trade_date"], ["20260612"])
 
     def test_record_settlement_snapshot(self):
         result = self.client.record_settlement_snapshot(

@@ -126,7 +126,7 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 		}`,
 	})
 
-	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Orders != 1 {
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Orders != 1 || result.Fills != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(writer.orders) != 1 {
@@ -138,6 +138,19 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	}
 	if order.LastUpdatedAt.IsZero() {
 		t.Fatalf("last_updated_at was not parsed: %#v", order)
+	}
+	if len(writer.fills) != 1 {
+		t.Fatalf("summary fills = %#v", writer.fills)
+	}
+	fill := writer.fills[0].fill
+	if fill.FillID != "relay-summary:gw-page-1" || fill.Qty != 100 || fill.Price != 9.54 {
+		t.Fatalf("summary fill = %#v", fill)
+	}
+	if fill.AdapterContext["relay_synthesized"] != true || fill.AdapterContext["relay_synthesis_source"] != "order_page" {
+		t.Fatalf("summary fill context = %#v", fill.AdapterContext)
+	}
+	if writer.fills[0].stream.ID != "1-3:summary:gw-page-1" {
+		t.Fatalf("summary fill stream = %#v", writer.fills[0].stream)
 	}
 }
 
@@ -270,7 +283,7 @@ func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
 		}`,
 	})
 
-	if result.Archived != 1 || result.Orders != 1 || result.OrderEvents != 1 {
+	if result.Archived != 1 || result.Orders != 1 || result.OrderEvents != 1 || result.Fills != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(writer.orders) != 1 {
@@ -288,6 +301,116 @@ func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
 	}
 	if _, ok := order.AdapterContext["relay_error_message"]; ok {
 		t.Fatalf("accepted order should not expose relay_error_message: %#v", order.AdapterContext)
+	}
+	if len(writer.fills) != 1 {
+		t.Fatalf("summary fills = %#v", writer.fills)
+	}
+	fill := writer.fills[0].fill
+	if fill.FillID != "relay-summary:gw-filled-qty" || fill.Qty != 100 || fill.Price != 9.54 {
+		t.Fatalf("summary fill = %#v", fill)
+	}
+	if fill.AdapterContext["relay_synthesized"] != true || fill.AdapterContext["relay_synthesis_source"] != "order.event" {
+		t.Fatalf("summary fill context = %#v", fill.AdapterContext)
+	}
+}
+
+func TestProcessLedgerEntrySynthesizesOnlyMissingFillQty(t *testing.T) {
+	writer := &fakeLedgerWriter{
+		fills: []recordedFill{{
+			fill: trading.Fill{
+				FillID:         "fill-real-1",
+				AccountID:      "00030484",
+				GatewayOrderID: "gw-partial-ledger",
+				Symbol:         "000333",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideBuy,
+				Price:          83.57,
+				Qty:            500,
+			},
+		}},
+	}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:event", "2-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-filled-partial-ledger",
+			"event_type":"order.event",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-partial-ledger",
+				"account_id":"00030484",
+				"symbol":"000333",
+				"exchange":"SZ",
+				"trade_side":"B",
+				"business_type":"S",
+				"offset_type":"C",
+				"order_qty":1000,
+				"cum_filled_qty":1000,
+				"leaves_qty":0,
+				"limit_price":84.89,
+				"gateway_status":"filled",
+				"is_terminal":true
+			}
+		}`,
+	})
+
+	if result.Fills != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.fills) != 2 {
+		t.Fatalf("fills = %#v", writer.fills)
+	}
+	fill := writer.fills[1].fill
+	if fill.FillID != "relay-summary:gw-partial-ledger" || fill.Qty != 500 || fill.Price != 84.89 {
+		t.Fatalf("summary fill = %#v", fill)
+	}
+}
+
+func TestProcessLedgerEntrySkipsSummaryFillWhenFilledQtyAlreadyCovered(t *testing.T) {
+	writer := &fakeLedgerWriter{
+		fills: []recordedFill{{
+			fill: trading.Fill{
+				FillID:         "fill-real-1",
+				AccountID:      "00030484",
+				GatewayOrderID: "gw-covered",
+				Symbol:         "600000",
+				Exchange:       trading.ExchangeSH,
+				TradeSide:      trading.TradeSideBuy,
+				Price:          9.54,
+				Qty:            100,
+			},
+		}},
+	}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:event", "2-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-filled-covered",
+			"event_type":"order.event",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-covered",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"offset_type":"C",
+				"order_qty":100,
+				"cum_filled_qty":100,
+				"leaves_qty":0,
+				"limit_price":9.54,
+				"gateway_status":"filled",
+				"is_terminal":true
+			}
+		}`,
+	})
+
+	if result.Fills != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.fills) != 1 {
+		t.Fatalf("fills = %#v", writer.fills)
 	}
 }
 
@@ -553,6 +676,21 @@ func (writer *fakeLedgerWriter) AppendOrderEvent(_ context.Context, event tradin
 func (writer *fakeLedgerWriter) InsertFill(_ context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error {
 	writer.fills = append(writer.fills, recordedFill{fill: fill, stream: stream, source: source})
 	return nil
+}
+
+func (writer *fakeLedgerWriter) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
+	fills := make([]trading.Fill, 0, len(writer.fills))
+	for _, recorded := range writer.fills {
+		fill := recorded.fill
+		if query.AccountID != "" && fill.AccountID != query.AccountID {
+			continue
+		}
+		if query.GatewayOrderID != "" && fill.GatewayOrderID != query.GatewayOrderID {
+			continue
+		}
+		fills = append(fills, fill)
+	}
+	return fills, nil
 }
 
 func (writer *fakeLedgerWriter) UpsertAssetSnapshot(_ context.Context, asset trading.Asset, snapshotType string, source string, _ any, _ time.Time) error {

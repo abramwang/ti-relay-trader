@@ -130,6 +130,8 @@ rejected
 }
 ```
 
+`sellable_qty` 当前按前置/柜台 `position_page` 原样落盘和返回，relay 不在账本层重新计算 A 股 T+1 可卖数量。模拟柜台如果返回同日买入可卖或不可卖的差异，页面和 SDK 会如实展示；需要统一 T+1 规则时应优先在模拟柜台或前置持仓回报中统一字段语义。
+
 ### SubmitOrderRequest
 
 下单请求映射前置 `order.submit` payload 和 `TiReqOrderInsert`：
@@ -252,6 +254,8 @@ rejected
 1. `fill_id`
 2. `order_stream_id + match_timestamp + qty + price`
 
+如果前置只推送订单累计成交量，而没有同步推送完整 `fill.event` 或 `fill_page`，relay 会在新订单事件入账时补一条汇总成交，保证订单账本和成交账本的数量口径向前一致。该补齐记录的 `fill_id` 形如 `relay-summary:<gateway_order_id>`，并在 `adapter_context` 中标记 `relay_synthesized=true`、`relay_synthesis_source=order.event/order_page`、`relay_synthesis_reason=order_filled_without_complete_fill_ledger`。这类记录不是柜台逐笔成交，策略端如果需要严格逐笔成交，可以按该标记过滤。
+
 ## API 路由规划
 
 | 方法 | 路径 | 请求 | 响应 | 当前状态 |
@@ -323,7 +327,7 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、日收益、累计收益、回撤、成交额、费用和快照时间等列。
 
-`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。当 `trade_date` 为空或等于东八区当天时，relay 会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，非交易日自动读取最近交易日 bars。
+`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。bars 查询使用 `trade_date`，不使用 `start_date/end_date`；例如 `security_id=600000.SH&trade_date=20260612&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`。当 `trade_date` 为空或等于东八区当天时，relay 会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，非交易日自动读取最近交易日 bars。
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 
