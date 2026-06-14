@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz"
 ```
 
 ## Quick Start
@@ -45,6 +45,15 @@ print(receipt.gateway_order_id, receipt.status)
 receipt means relay accepted and published the command; the final exchange state
 still comes from `list_orders()`, `wait_order_terminal()`, callbacks, or
 `stream_events()`.
+
+If a submit request replays the same `gateway_order_id`, `idempotency_key`, and
+payload, relay returns the existing order with `receipt.replayed == True` and
+does not publish another Redis command. Conflicting idempotency keys raise
+`RelayIdempotencyError`.
+
+Use `business_type="S"` for secondary-market stock and ETF orders. ETF
+creation/redemption is not implemented by `/v1/orders` yet; do not use
+`business_type="E"` for ordinary ETF buy/sell orders.
 
 ## Callbacks
 

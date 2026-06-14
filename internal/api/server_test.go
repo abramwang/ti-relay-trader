@@ -525,6 +525,44 @@ func TestSubmitOrderAccepted(t *testing.T) {
 	}
 }
 
+func TestSubmitOrderReplayReturnsOK(t *testing.T) {
+	submitter := &fakeOrderSubmitter{
+		result: orderflow.SubmitOrderResult{
+			Order: trading.Order{
+				AccountID:      "acct-1",
+				GatewayOrderID: "gateway-1",
+				Status:         trading.OrderStatusCancelled,
+			},
+			IdempotencyKey: "idem-1",
+			Replayed:       true,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: submitter,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{
+		"account_id":"acct-1",
+		"gateway_order_id":"gateway-1",
+		"symbol":"600000",
+		"exchange":"SH",
+		"trade_side":"B",
+		"business_type":"S",
+		"price":9.67,
+		"qty":100,
+		"idempotency_key":"idem-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"replayed":true`) {
+		t.Fatalf("response missing replayed marker: %s", rec.Body.String())
+	}
+}
+
 func TestSubmitOrderUnavailableWithoutService(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{}`))
@@ -578,6 +616,57 @@ func TestSubmitOrderMissingPublisherUnavailable(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
+func TestSubmitOrderIdempotencyConflict(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{err: orderflow.ErrIdempotencyConflict},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{
+		"account_id":"acct-1",
+		"symbol":"600000",
+		"exchange":"SH",
+		"trade_side":"B",
+		"business_type":"S",
+		"price":9.67,
+		"qty":100,
+		"idempotency_key":"idem-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"IDEMPOTENCY_CONFLICT"`) {
+		t.Fatalf("response missing idempotency code: %s", rec.Body.String())
+	}
+}
+
+func TestSubmitOrderUnsupportedBusinessType(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{err: orderflow.ErrUnsupportedBusinessType},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{
+		"account_id":"acct-1",
+		"symbol":"510300",
+		"exchange":"SH",
+		"trade_side":"B",
+		"business_type":"E",
+		"price":4.818,
+		"qty":100
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusNotImplemented, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"NOT_IMPLEMENTED"`) {
+		t.Fatalf("response missing not implemented code: %s", rec.Body.String())
 	}
 }
 
@@ -820,7 +909,7 @@ func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.
 	if submitter.err != nil {
 		return orderflow.SubmitOrderResult{}, submitter.err
 	}
-	if submitter.result.MessageID == "" {
+	if submitter.result.MessageID == "" && !submitter.result.Replayed {
 		return orderflow.SubmitOrderResult{}, errors.New("missing fake result")
 	}
 	return submitter.result, nil
@@ -832,7 +921,7 @@ func (submitter *fakeOrderSubmitter) BatchSubmitOrders(_ context.Context, req tr
 	if submitter.batchErr != nil {
 		return orderflow.BatchSubmitOrderResult{}, submitter.batchErr
 	}
-	if submitter.batchResult.MessageID == "" {
+	if submitter.batchResult.MessageID == "" && !submitter.batchResult.Replayed {
 		return orderflow.BatchSubmitOrderResult{}, errors.New("missing fake batch result")
 	}
 	return submitter.batchResult, nil

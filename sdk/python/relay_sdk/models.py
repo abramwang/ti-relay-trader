@@ -237,6 +237,7 @@ class CommandReceipt:
     order: Order | None = None
     orders: tuple[Order, ...] = ()
     cancel_id: str = ""
+    replayed: bool = False
     published: Mapping[str, Any] = field(default_factory=dict)
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -255,6 +256,7 @@ class CommandReceipt:
             order=Order.from_dict(order_data) if order_data else None,
             orders=tuple(Order.from_dict(item) for item in orders_data if isinstance(item, Mapping)),
             cancel_id=_text(data, "cancel_id"),
+            replayed=_bool(data, "replayed"),
             published=data.get("published") if isinstance(data.get("published"), Mapping) else {},
             raw=dict(data),
         )

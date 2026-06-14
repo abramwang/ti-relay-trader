@@ -21,6 +21,9 @@ var (
 	ErrTradingDisabled                 = errors.New("account trading is disabled")
 	ErrOrderTerminalNotCancelable      = errors.New("order is terminal and cannot be cancelled")
 	ErrOrderWithoutLeavesNotCancelable = errors.New("order has no leaves quantity and cannot be cancelled")
+	ErrDuplicateGatewayOrder           = errors.New("gateway_order_id already exists")
+	ErrIdempotencyConflict             = errors.New("idempotency key conflicts with an existing order")
+	ErrUnsupportedBusinessType         = errors.New("business_type is not supported by relay order API")
 	ErrMissingLedger                   = errors.New("ledger writer is required")
 	ErrMissingPublisher                = errors.New("command publisher is required")
 )
@@ -29,6 +32,7 @@ type LedgerWriter interface {
 	UpsertAccount(ctx context.Context, account trading.Account) error
 	UpsertOrder(ctx context.Context, order trading.Order) error
 	GetOrder(ctx context.Context, accountID string, gatewayOrderID string) (trading.Order, error)
+	GetOrderByIdempotencyKey(ctx context.Context, accountID string, idempotencyKey string) (trading.Order, error)
 	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error)
@@ -88,6 +92,7 @@ type SubmitOrderResult struct {
 	IdempotencyKey string                           `json:"idempotency_key"`
 	RequestID      string                           `json:"request_id,omitempty"`
 	Published      redisstream.CommandPublishResult `json:"published"`
+	Replayed       bool                             `json:"replayed,omitempty"`
 }
 
 type CancelOrderResult struct {
@@ -109,6 +114,7 @@ type BatchSubmitOrderResult struct {
 	IdempotencyKey string                           `json:"idempotency_key"`
 	RequestID      string                           `json:"request_id,omitempty"`
 	Published      redisstream.CommandPublishResult `json:"published"`
+	Replayed       bool                             `json:"replayed,omitempty"`
 }
 
 type RefreshQueryResult struct {
@@ -167,6 +173,9 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	if err := req.Validate(); err != nil {
 		return SubmitOrderResult{}, err
 	}
+	if err := validateSupportedSubmitOrder(req); err != nil {
+		return SubmitOrderResult{}, err
+	}
 	route, err := service.routeForAccount(req.AccountID)
 	if err != nil {
 		return SubmitOrderResult{}, err
@@ -187,8 +196,19 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	}
 
 	now := service.clock.Now().UTC()
-	messageID := service.ids.NewID("msg-order-submit")
 	requestID := strings.TrimSpace(opts.RequestID)
+	if existing, replayed, err := service.preflightSubmitOrder(ctx, normalized); err != nil {
+		return SubmitOrderResult{}, err
+	} else if replayed {
+		return SubmitOrderResult{
+			Order:          existing,
+			IdempotencyKey: normalized.IdempotencyKey,
+			RequestID:      requestID,
+			Replayed:       true,
+		}, nil
+	}
+
+	messageID := service.ids.NewID("msg-order-submit")
 	if requestID == "" {
 		requestID = service.ids.NewID("req-order-submit")
 	}
@@ -263,11 +283,7 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 
 	normalized := req
 	now := service.clock.Now().UTC()
-	messageID := service.ids.NewID("msg-order-batch-submit")
 	requestID := strings.TrimSpace(opts.RequestID)
-	if requestID == "" {
-		requestID = service.ids.NewID("req-order-batch-submit")
-	}
 	if strings.TrimSpace(normalized.IdempotencyKey) == "" {
 		normalized.IdempotencyKey = "batch:" + normalized.AccountID + ":" + service.ids.NewID("batch")
 	}
@@ -291,10 +307,15 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 	}
 
 	orders := make([]trading.Order, 0, len(normalized.Orders))
+	replayedOrders := make([]trading.Order, 0, len(normalized.Orders))
+	seenIdempotencyKeys := make(map[string]string, len(normalized.Orders))
 	for i := range normalized.Orders {
 		orderReq := normalized.Orders[i]
 		if strings.TrimSpace(orderReq.AccountID) == "" {
 			orderReq.AccountID = normalized.AccountID
+		}
+		if err := validateSupportedSubmitOrder(orderReq); err != nil {
+			return BatchSubmitOrderResult{}, fmt.Errorf("orders[%d]: %w", i, err)
 		}
 		if strings.TrimSpace(orderReq.GatewayOrderID) == "" {
 			orderReq.GatewayOrderID = service.ids.NewID("gw")
@@ -305,17 +326,46 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 		if strings.TrimSpace(orderReq.IdempotencyKey) == "" {
 			orderReq.IdempotencyKey = normalized.IdempotencyKey + ":" + orderReq.GatewayOrderID
 		}
+		if previousGatewayOrderID, ok := seenIdempotencyKeys[orderReq.IdempotencyKey]; ok && previousGatewayOrderID != orderReq.GatewayOrderID {
+			return BatchSubmitOrderResult{}, fmt.Errorf("%w: orders[%d].idempotency_key=%s already used by gateway_order_id=%s", ErrIdempotencyConflict, i, orderReq.IdempotencyKey, previousGatewayOrderID)
+		}
+		seenIdempotencyKeys[orderReq.IdempotencyKey] = orderReq.GatewayOrderID
 		normalized.Orders[i] = orderReq
 
+		if existing, replayed, err := service.preflightSubmitOrder(ctx, orderReq); err != nil {
+			return BatchSubmitOrderResult{}, err
+		} else if replayed {
+			replayedOrders = append(replayedOrders, existing)
+			continue
+		}
+
 		order := draftOrderFromRequest(orderReq, now)
-		order.OriginMessageID = messageID
-		order.RequestID = requestID
 		order.AdapterContext["batch_source"] = "relay-api"
 		order.AdapterContext["batch_index"] = i
-		if err := service.ledger.UpsertOrder(ctx, order); err != nil {
+		orders = append(orders, order)
+	}
+	if len(replayedOrders) > 0 {
+		if len(orders) == 0 {
+			return BatchSubmitOrderResult{
+				Orders:         replayedOrders,
+				IdempotencyKey: normalized.IdempotencyKey,
+				RequestID:      requestID,
+				Replayed:       true,
+			}, nil
+		}
+		return BatchSubmitOrderResult{}, fmt.Errorf("%w: batch contains both replayed and new gateway_order_id values", ErrDuplicateGatewayOrder)
+	}
+
+	messageID := service.ids.NewID("msg-order-batch-submit")
+	if requestID == "" {
+		requestID = service.ids.NewID("req-order-batch-submit")
+	}
+	for i := range orders {
+		orders[i].OriginMessageID = messageID
+		orders[i].RequestID = requestID
+		if err := service.ledger.UpsertOrder(ctx, orders[i]); err != nil {
 			return BatchSubmitOrderResult{}, err
 		}
-		orders = append(orders, order)
 	}
 
 	streamKey, err := redisstream.CommandStreamForAction(redisstream.NewStreams(route.StreamPrefix), redisstream.ActionOrderBatchSubmit)
@@ -466,6 +516,34 @@ func (service *Service) RefreshOrders(ctx context.Context, accountID string, opt
 
 func (service *Service) RefreshFills(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
 	return service.publishAccountQuery(ctx, accountID, redisstream.ActionFillList, "fills", opts)
+}
+
+func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.SubmitOrderRequest) (trading.Order, bool, error) {
+	existing, err := service.ledger.GetOrder(ctx, req.AccountID, req.GatewayOrderID)
+	if err == nil {
+		if existing.IdempotencyKey != req.IdempotencyKey {
+			return trading.Order{}, false, fmt.Errorf("%w: %s/%s already uses idempotency_key=%s", ErrDuplicateGatewayOrder, req.AccountID, req.GatewayOrderID, existing.IdempotencyKey)
+		}
+		if !sameSubmitOrder(existing, req) {
+			return trading.Order{}, false, fmt.Errorf("%w: %s/%s payload differs from original request", ErrIdempotencyConflict, req.AccountID, req.GatewayOrderID)
+		}
+		return existing, true, nil
+	}
+	if !errors.Is(err, ledger.ErrOrderNotFound) {
+		return trading.Order{}, false, err
+	}
+
+	existing, err = service.ledger.GetOrderByIdempotencyKey(ctx, req.AccountID, req.IdempotencyKey)
+	if err == nil {
+		if existing.GatewayOrderID != req.GatewayOrderID || !sameSubmitOrder(existing, req) {
+			return trading.Order{}, false, fmt.Errorf("%w: idempotency_key=%s already used by gateway_order_id=%s", ErrIdempotencyConflict, req.IdempotencyKey, existing.GatewayOrderID)
+		}
+		return existing, true, nil
+	}
+	if !errors.Is(err, ledger.ErrOrderNotFound) {
+		return trading.Order{}, false, err
+	}
+	return trading.Order{}, false, nil
 }
 
 func (service *Service) GetAsset(ctx context.Context, accountID string) (GetAssetResult, error) {
@@ -715,6 +793,26 @@ func draftOrderFromRequest(req trading.SubmitOrderRequest, now time.Time) tradin
 			"draft_source": "relay-api",
 		},
 	}
+}
+
+func sameSubmitOrder(order trading.Order, req trading.SubmitOrderRequest) bool {
+	return order.AccountID == req.AccountID &&
+		order.ClientOrderID == req.ClientOrderID &&
+		order.GatewayOrderID == req.GatewayOrderID &&
+		order.Symbol == req.Symbol &&
+		order.Exchange == req.Exchange &&
+		order.TradeSide == req.TradeSide &&
+		order.BusinessType == req.BusinessType &&
+		order.OffsetType == req.OffsetType &&
+		order.LimitPrice == req.Price &&
+		order.OrderQty == req.Qty
+}
+
+func validateSupportedSubmitOrder(req trading.SubmitOrderRequest) error {
+	if req.BusinessType == trading.BusinessTypeETF {
+		return fmt.Errorf("%w: business_type=E ETF creation/redemption is planned; use business_type=S for secondary-market stock and ETF orders", ErrUnsupportedBusinessType)
+	}
+	return nil
 }
 
 type defaultIDGenerator struct{}

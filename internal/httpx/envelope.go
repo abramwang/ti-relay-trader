@@ -9,14 +9,15 @@ import (
 type ErrorCode string
 
 const (
-	CodeBadRequest       ErrorCode = "BAD_REQUEST"
-	CodeConflict         ErrorCode = "CONFLICT"
-	CodeForbidden        ErrorCode = "FORBIDDEN"
-	CodeMethodNotAllowed ErrorCode = "METHOD_NOT_ALLOWED"
-	CodeNotFound         ErrorCode = "NOT_FOUND"
-	CodeInternal         ErrorCode = "INTERNAL"
-	CodeNotImplemented   ErrorCode = "NOT_IMPLEMENTED"
-	CodeUnavailable      ErrorCode = "UNAVAILABLE"
+	CodeBadRequest          ErrorCode = "BAD_REQUEST"
+	CodeConflict            ErrorCode = "CONFLICT"
+	CodeIdempotencyConflict ErrorCode = "IDEMPOTENCY_CONFLICT"
+	CodeForbidden           ErrorCode = "FORBIDDEN"
+	CodeMethodNotAllowed    ErrorCode = "METHOD_NOT_ALLOWED"
+	CodeNotFound            ErrorCode = "NOT_FOUND"
+	CodeInternal            ErrorCode = "INTERNAL"
+	CodeNotImplemented      ErrorCode = "NOT_IMPLEMENTED"
+	CodeUnavailable         ErrorCode = "UNAVAILABLE"
 )
 
 type Envelope struct {

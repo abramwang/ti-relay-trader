@@ -86,7 +86,7 @@
       { "name": "symbol", "label": "symbol", "source": "body", "required": true, "defaultValue": "600000" },
       { "name": "exchange", "label": "exchange", "source": "body", "type": "select", "required": true, "defaultValue": "SH", "options": ["SH", "SZ", "BJ"] },
       { "name": "trade_side", "label": "trade_side", "source": "body", "type": "select", "required": true, "defaultValue": "B", "options": ["B", "S", "P", "R"] },
-      { "name": "business_type", "label": "business_type", "source": "body", "type": "select", "required": true, "defaultValue": "S", "options": ["S", "E"] },
+      { "name": "business_type", "label": "business_type", "source": "body", "type": "select", "required": true, "defaultValue": "S", "options": ["S"] },
       { "name": "offset_type", "label": "offset_type", "source": "body", "type": "select", "defaultValue": "C", "options": ["", "O", "C"] },
       { "name": "price", "label": "price", "source": "body", "type": "number", "required": true, "defaultValue": "9.67" },
       { "name": "qty", "label": "qty", "source": "body", "type": "integer", "required": true, "defaultValue": "100" },

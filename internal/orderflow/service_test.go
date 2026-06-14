@@ -137,6 +137,114 @@ func TestSubmitOrderRejectsInvalidRequestBeforeWrites(t *testing.T) {
 	}
 }
 
+func TestSubmitOrderRejectsUnsupportedETFBusinessType(t *testing.T) {
+	ledgerWriter := &fakeLedger{}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"gw-1"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 14, 11, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := validSubmitRequest()
+	req.BusinessType = trading.BusinessTypeETF
+	_, err = service.SubmitOrder(context.Background(), req, SubmitOptions{})
+	if !errors.Is(err, ErrUnsupportedBusinessType) {
+		t.Fatalf("SubmitOrder() error = %v, want ErrUnsupportedBusinessType", err)
+	}
+	if len(ledgerWriter.orders) != 0 || len(publisher.commands) != 0 {
+		t.Fatalf("unsupported request should not write: orders=%d commands=%d", len(ledgerWriter.orders), len(publisher.commands))
+	}
+}
+
+func TestSubmitOrderReplaysIdenticalExistingOrderWithoutPublishing(t *testing.T) {
+	existing := validDraftOrder()
+	existing.Status = trading.OrderStatusCancelled
+	existing.GatewayStatus = trading.GatewayStatusCancelled
+	existing.IsTerminal = true
+	ledgerWriter := &fakeLedger{order: existing}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 14, 11, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := validSubmitRequest()
+	req.ClientOrderID = existing.ClientOrderID
+	req.GatewayOrderID = existing.GatewayOrderID
+	req.IdempotencyKey = existing.IdempotencyKey
+	result, err := service.SubmitOrder(context.Background(), req, SubmitOptions{RequestID: "req-replay"})
+	if err != nil {
+		t.Fatalf("SubmitOrder() replay error = %v", err)
+	}
+
+	if !result.Replayed || result.Order.Status != trading.OrderStatusCancelled {
+		t.Fatalf("replay result = %#v", result)
+	}
+	if len(ledgerWriter.orders) != 0 || len(publisher.commands) != 0 || len(ledgerWriter.raw) != 0 {
+		t.Fatalf("replay should not write or publish: orders=%d commands=%d raw=%d", len(ledgerWriter.orders), len(publisher.commands), len(ledgerWriter.raw))
+	}
+}
+
+func TestSubmitOrderRejectsDuplicateGatewayOrderID(t *testing.T) {
+	existing := validDraftOrder()
+	existing.IdempotencyKey = "idem-old"
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    &fakeLedger{order: existing},
+		Publisher: &fakePublisher{},
+		IDs:       sequenceIDs{"unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 14, 11, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := validSubmitRequest()
+	req.ClientOrderID = existing.ClientOrderID
+	req.GatewayOrderID = existing.GatewayOrderID
+	req.IdempotencyKey = "idem-new"
+	_, err = service.SubmitOrder(context.Background(), req, SubmitOptions{})
+	if !errors.Is(err, ErrDuplicateGatewayOrder) {
+		t.Fatalf("SubmitOrder() error = %v, want ErrDuplicateGatewayOrder", err)
+	}
+}
+
+func TestSubmitOrderRejectsIdempotencyKeyConflict(t *testing.T) {
+	existing := validDraftOrder()
+	existing.GatewayOrderID = "gateway-existing"
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    &fakeLedger{order: existing},
+		Publisher: &fakePublisher{},
+		IDs:       sequenceIDs{"unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 14, 11, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := validSubmitRequest()
+	req.ClientOrderID = "client-new"
+	req.GatewayOrderID = "gateway-new"
+	req.IdempotencyKey = existing.IdempotencyKey
+	_, err = service.SubmitOrder(context.Background(), req, SubmitOptions{})
+	if !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("SubmitOrder() error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
 func TestQueryServiceCanStartWithoutPublisher(t *testing.T) {
 	ledgerWriter := &fakeLedger{
 		listedOrders: []trading.Order{{AccountID: "acct-1", GatewayOrderID: "gateway-1"}},
@@ -171,7 +279,7 @@ func TestBatchSubmitOrdersWritesDraftsPublishesCommandAndArchives(t *testing.T) 
 		Config:    testConfig(true, true),
 		Ledger:    ledgerWriter,
 		Publisher: publisher,
-		IDs:       sequenceIDs{"msg-batch-1", "batch-1", "gw-b1", "gw-b2"},
+		IDs:       sequenceIDs{"batch-1", "gw-b1", "gw-b2", "msg-batch-1"},
 		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
 	})
 	if err != nil {
@@ -464,6 +572,26 @@ func validSubmitRequest() trading.SubmitOrderRequest {
 	}
 }
 
+func validDraftOrder() trading.Order {
+	return trading.Order{
+		AccountID:      "acct-1",
+		ClientOrderID:  "client-1",
+		GatewayOrderID: "gateway-1",
+		Symbol:         "600000",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideBuy,
+		BusinessType:   trading.BusinessTypeStock,
+		OffsetType:     trading.OffsetTypeClose,
+		LimitPrice:     9.54,
+		OrderQty:       100,
+		LeavesQty:      100,
+		Status:         trading.OrderStatusCreated,
+		GatewayStatus:  trading.GatewayStatusAccepted,
+		IdempotencyKey: "idem-1",
+		AdapterContext: map[string]any{},
+	}
+}
+
 func testConfig(enabled, tradingEnabled bool) config.Config {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -510,6 +638,16 @@ func (writer *fakeLedger) GetOrder(_ context.Context, accountID string, gatewayO
 		return trading.Order{}, writer.getOrderErr
 	}
 	if writer.order.AccountID == accountID && writer.order.GatewayOrderID == gatewayOrderID {
+		return writer.order, nil
+	}
+	return trading.Order{}, ledger.ErrOrderNotFound
+}
+
+func (writer *fakeLedger) GetOrderByIdempotencyKey(_ context.Context, accountID string, idempotencyKey string) (trading.Order, error) {
+	if writer.getOrderErr != nil {
+		return trading.Order{}, writer.getOrderErr
+	}
+	if writer.order.AccountID == accountID && writer.order.IdempotencyKey == idempotencyKey {
 		return writer.order, nil
 	}
 	return trading.Order{}, ledger.ErrOrderNotFound

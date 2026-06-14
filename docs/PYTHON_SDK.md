@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.1`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.2`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -29,9 +29,10 @@ SDK 的定位：
 7. `on_order_status()`、`on_fill()` 后台回调订阅，以及 `watch_order_status()`、`watch_fills()` 阻塞式回调循环。
 8. dataclass 模型和 `raw` 原始响应保留。
 9. relay envelope 错误到 SDK 异常的映射。
-10. mock 9092 API 单元测试。
-11. `scripts/build-python-sdk.py` 打包脚本。
-12. 9092 `/sdk/relay-sdk-0.1.1.tar.gz` 和 `.sha256` 下载入口。
+10. `CommandReceipt.replayed`，用于识别幂等重放而非新命令发布。
+11. mock 9092 API 单元测试。
+12. `scripts/build-python-sdk.py` 打包脚本。
+13. 9092 `/sdk/relay-sdk-0.1.2.tar.gz` 和 `.sha256` 下载入口。
 
 尚未完成：
 
@@ -80,15 +81,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.1.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.1.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.2.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.2.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -136,6 +137,10 @@ terminal = client.wait_order_terminal(
 
 print(terminal.status, terminal.filled_qty)
 ```
+
+如果 `submit_order()` 命中完全相同的 `gateway_order_id + idempotency_key + payload`，relay 会返回已有订单且 `receipt.replayed == True`，不会再次发布 Redis 下单命令。相同幂等键但 payload 不一致会抛出 `RelayIdempotencyError`。
+
+ETF 二级市场买卖和股票一样使用 `business_type="S"`。`business_type="E"` 预留给 ETF 申购/赎回专项，当前 relay API 尚未实现；策略端不要把 `E` 当成普通 ETF 买卖参数。
 
 ## 订单和成交回调
 
@@ -236,6 +241,7 @@ SDK 必须保留 relay 的实盘语义：
 4. 成交事实以 `FillEvent` 和 `Fill` 为准。
 5. SDK 自动生成 `gateway_order_id` 和 `idempotency_key` 时必须可复现、可追踪。
 6. SDK 日志不能打印账号密码、Token、数据库连接串或 Redis 连接串。
+7. 超涨跌停等柜台规则可能以异步 `rejected` 回流，不保证在 `submit_order()` 同步返回中抛错。
 
 ## 配置来源
 
@@ -288,14 +294,15 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 7. SSE `order.changed` 事件解析。
 8. `on_order_status()` 收到事件后查询订单并按状态去重触发回调。
 9. `watch_fills()` 收到事件后查询成交并按成交唯一键去重触发回调。
+10. `CommandReceipt.replayed` 模型解析。
 
 打包验证：
 
 ```bash
 cd /home/ti-relay-trader
 python3 scripts/build-python-sdk.py
-sha256sum -c public/sdk/relay-sdk-0.1.1.tar.gz.sha256
-python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.1.tar.gz
+sha256sum -c public/sdk/relay-sdk-0.1.2.tar.gz.sha256
+python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.2.tar.gz
 ```
 
 ## 测试与发布

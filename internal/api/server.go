@@ -445,7 +445,11 @@ func (s *Server) handleSubmitOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteOK(w, r, http.StatusAccepted, result)
+	status := http.StatusAccepted
+	if result.Replayed {
+		status = http.StatusOK
+	}
+	httpx.WriteOK(w, r, status, result)
 }
 
 func (s *Server) handleBatchSubmitOrders(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +475,11 @@ func (s *Server) handleBatchSubmitOrders(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	httpx.WriteOK(w, r, http.StatusAccepted, result)
+	status := http.StatusAccepted
+	if result.Replayed {
+		status = http.StatusOK
+	}
+	httpx.WriteOK(w, r, status, result)
 }
 
 func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request, gatewayOrderID string) {
@@ -659,6 +667,12 @@ func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err err
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "account is not enabled for trading", err.Error())
 	case errors.Is(err, orderflow.ErrMissingPublisher):
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "redis command publisher is unavailable", err.Error())
+	case errors.Is(err, orderflow.ErrIdempotencyConflict):
+		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeIdempotencyConflict, "idempotency key conflicts with an existing order", err.Error())
+	case errors.Is(err, orderflow.ErrDuplicateGatewayOrder):
+		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeConflict, "gateway_order_id already exists", err.Error())
+	case errors.Is(err, orderflow.ErrUnsupportedBusinessType):
+		httpx.WriteError(w, r, http.StatusNotImplemented, httpx.CodeNotImplemented, "order business type is not supported", err.Error())
 	case errors.Is(err, orderflow.ErrOrderTerminalNotCancelable), errors.Is(err, orderflow.ErrOrderWithoutLeavesNotCancelable):
 		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeConflict, "order cannot be cancelled", err.Error())
 	default:

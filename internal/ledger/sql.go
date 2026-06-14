@@ -201,6 +201,12 @@ const getOrderSQL = orderSelectColumns + `
 WHERE account_id = $1 AND gateway_order_id = $2
 `
 
+const getOrderByIdempotencyKeySQL = orderSelectColumns + `
+WHERE account_id = $1 AND idempotency_key = $2
+ORDER BY COALESCE(last_updated_at, created_at) DESC, gateway_order_id DESC
+LIMIT 1
+`
+
 const insertFillSQL = `
 INSERT INTO fills (
     account_id,

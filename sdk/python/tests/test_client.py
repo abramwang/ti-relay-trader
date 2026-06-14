@@ -100,6 +100,24 @@ class RelayHandler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         RelayHandler.requests.append(("POST", parsed.path, {}, body))
         if parsed.path == "/v1/orders":
+            if body.get("gateway_order_id") == "gw-replay":
+                self._json(
+                    {
+                        "ok": True,
+                        "data": {
+                            "order": {
+                                "account_id": body["account_id"],
+                                "gateway_order_id": "gw-replay",
+                                "client_order_id": body["client_order_id"],
+                                "status": "cancelled",
+                                "is_terminal": True,
+                            },
+                            "idempotency_key": body["idempotency_key"],
+                            "replayed": True,
+                        },
+                    }
+                )
+                return
             order = {
                 "account_id": body["account_id"],
                 "gateway_order_id": body["gateway_order_id"],
@@ -182,6 +200,21 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual((method, path), ("POST", "/v1/orders"))
         self.assertEqual(body["account_id"], "acct-1")
         self.assertEqual(body["idempotency_key"], f"order:acct-1:{body['gateway_order_id']}")
+
+    def test_submit_order_replay_marker(self):
+        receipt = self.client.submit_order(
+            symbol="600000",
+            exchange="SH",
+            side="B",
+            price=9.67,
+            qty=100,
+            gateway_order_id="gw-replay",
+            client_order_id="client-replay",
+            idempotency_key="idem-replay",
+        )
+
+        self.assertTrue(receipt.replayed)
+        self.assertEqual(receipt.status, "cancelled")
 
     def test_refresh_and_cancel(self):
         self.assertEqual(self.client.refresh_orders().action, "order.list.query")

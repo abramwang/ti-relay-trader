@@ -156,6 +156,7 @@
 - [x] 增加 SDK 打包脚本和 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
 - [x] 发布 `public/sdk/relay-sdk-0.1.0.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.1.tar.gz` 和 SHA256 校验文件。
+- [x] 发布 `public/sdk/relay-sdk-0.1.2.tar.gz` 和 SHA256 校验文件。
 - [ ] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

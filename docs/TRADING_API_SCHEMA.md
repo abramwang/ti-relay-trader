@@ -49,8 +49,8 @@ API 模式统一返回 JSON envelope：
 | 名称 | 值 | 说明 |
 | --- | --- | --- |
 | `exchange` | `SH`、`SZ`、`BJ` | 上海、深圳、北京交易所 |
-| `trade_side` | `B`、`S`、`P`、`R` | 买入、卖出、申购、赎回 |
-| `business_type` | `S`、`E` | 股票、ETF |
+| `trade_side` | `B`、`S`、`P`、`R` | 买入、卖出、申购、赎回；当前 relay 二级市场下单只开放 `B/S` |
+| `business_type` | `S`、`E` | `S` 表示二级市场证券买卖，股票和 ETF 二级市场买卖均使用 `S`；`E` 预留给 ETF 申购/赎回专项，当前 `/v1/orders` 返回 `NOT_IMPLEMENTED` |
 | `offset_type` | `O`、`C` | 开仓、平仓；A 股股票通常为 `C` |
 | `reply_status` | `accepted`、`partial`、`completed`、`rejected`、`failed` | 前置命令级回包状态 |
 | `gateway_status` | `accepted`、`working`、`filled`、`cancelled`、`rejected` | 前置/柜台订单状态 |
@@ -282,6 +282,12 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 | `POST /v1/accounts/{account_id}/fills/refresh` | `fill.list.query` | `cmd.query` |
 
 `POST /v1/orders` 的 `202 Accepted` 仅表示 relay 已接受请求、写入订单草稿并向 Redis `cmd.trade` 写入 `order.submit`，不表示交易所接单或成交。最终状态以 `order.event` 和 `fill.event` 回流为准。
+
+若同一 `account_id + gateway_order_id` 和同一 `idempotency_key` 的请求与原始下单核心字段一致，relay 不会再次写 Redis，而是返回已有订单并标记 `replayed=true`，HTTP 状态为 `200 OK`。若同一 `gateway_order_id` 使用不同幂等键，返回 `409 CONFLICT`；若同一 `idempotency_key` 指向不同订单或不同 payload，返回 `409 IDEMPOTENCY_CONFLICT`。
+
+涨跌停等柜台规则当前以异步回报为准。relay 同步层只做 schema、账户路由、重复订单和已知 unsupported 交易类型校验；超涨跌停价格可能先返回 `202 Accepted`，随后通过订单账本/SSE 进入 `rejected`。策略端必须订阅订单状态或轮询账本判断最终结果。若需要同步涨跌停预校验，应以后续接入 Meridian 涨跌停/交易规则数据后单独实现。
+
+ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business_type=S`、`trade_side=B/S`，价格精度按 Meridian `instrument_type=etf` 保留 3 位。ETF 申购/赎回不是普通买卖参数，涉及最小申赎单位、申赎清单等数据，当前 relay `/v1/orders` 未实现，`business_type=E` 会返回 `NOT_IMPLEMENTED`。
 
 `POST /v1/orders/{gateway_order_id}/cancel` 会先读取 PostgreSQL 订单账本，只有非终态且 `leaves_qty > 0` 的订单才会写入 Redis `order.cancel`。撤单 `202 Accepted` 只表示撤单请求已提交到前置，是否撤成仍以 `order.event.gateway_status=cancelled` 为准。
 

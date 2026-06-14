@@ -480,7 +480,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
     <a href="/api-console">接口测试台</a>
     <a href="/trade">交易终端</a>
     <a href="/docs/roadmap">开发路线图</a>
-    <a href="/sdk/relay-sdk-0.1.1.tar.gz">SDK 下载</a>
+    <a href="/sdk/relay-sdk-0.1.2.tar.gz">SDK 下载</a>
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
     <a href="/healthz">健康检查</a>
@@ -497,7 +497,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/trade"><strong>交易终端</strong><span>成熟交易软件风格手动测试台</span></a>
   <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
-  <a class="card" href="/sdk/relay-sdk-0.1.1.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.1 tar.gz</span></a>
+  <a class="card" href="/sdk/relay-sdk-0.1.2.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.2 tar.gz</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
   <a class="card" href="/docs/redis-ledger-sync"><strong>Redis 账本同步</strong><span>reply/event 落盘入口</span></a>

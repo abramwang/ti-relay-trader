@@ -288,6 +288,40 @@ func (repo *Repository) GetOrder(ctx context.Context, accountID string, gatewayO
 	return order, nil
 }
 
+func (repo *Repository) GetOrderByIdempotencyKey(ctx context.Context, accountID string, idempotencyKey string) (trading.Order, error) {
+	if repo == nil || repo.exec == nil {
+		return trading.Order{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if accountID == "" {
+		return trading.Order{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if idempotencyKey == "" {
+		return trading.Order{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return trading.Order{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, getOrderByIdempotencyKeySQL, accountID, idempotencyKey)
+	if err != nil {
+		return trading.Order{}, fmt.Errorf("get order by idempotency key %s: %w", accountID, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return trading.Order{}, fmt.Errorf("get order by idempotency key %s: %w", accountID, err)
+		}
+		return trading.Order{}, fmt.Errorf("%w: %s idempotency_key=%s", ErrOrderNotFound, accountID, idempotencyKey)
+	}
+	order, err := scanOrder(rows)
+	if err != nil {
+		return trading.Order{}, fmt.Errorf("scan order by idempotency key %s: %w", accountID, err)
+	}
+	return order, nil
+}
+
 func (repo *Repository) ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error) {
 	if repo == nil || repo.exec == nil {
 		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
