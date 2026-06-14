@@ -163,6 +163,9 @@ type DailyPerformance struct {
 	PositionMarketValue float64   `json:"position_market_value"`
 	UnrealizedPnL       float64   `json:"unrealized_pnl"`
 	SettledProfit       float64   `json:"settled_profit"`
+	RealizedPnL         float64   `json:"realized_pnl"`
+	GrossPnL            float64   `json:"gross_pnl"`
+	NetPnL              float64   `json:"net_pnl"`
 	FillsCount          int64     `json:"fills_count"`
 	BuyAmount           float64   `json:"buy_amount"`
 	SellAmount          float64   `json:"sell_amount"`
@@ -2081,7 +2084,17 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 		return DailyPerformance{}, err
 	}
 	performance.CapturedAt = capturedAt.Time
+	derivePerformancePnL(&performance)
 	return performance, nil
+}
+
+func derivePerformancePnL(performance *DailyPerformance) {
+	if performance == nil {
+		return
+	}
+	performance.RealizedPnL = performance.SettledProfit
+	performance.GrossPnL = performance.RealizedPnL + performance.UnrealizedPnL
+	performance.NetPnL = performance.GrossPnL - performance.FeeTotal
 }
 
 func scanPosition(row rowScanner) (trading.Position, error) {

@@ -21,24 +21,23 @@
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | doing | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
 | P7 交易日流程与盘后对账 | doing | 管理盘前初始化、收盘后结算和盘后对账 | Python jobs、任务状态、对账批次、差异表、修复入口 |
-| P8 历史数据与盈亏统计 | doing | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
+| P8 历史数据与盈亏统计 | done | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
 | P9 模拟柜台 | todo | 支持研究和策略联调的模拟交易账表 | 模拟账户、撮合、资金持仓、结算 |
 | P10 运维发布 | todo | 形成可部署、可观测、可回滚的服务 | systemd/container、监控、告警、备份、发布手册 |
 
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 推进 P8 历史数据与盈亏统计，基于 Meridian `bars` 补全持仓估值、基准对照和研究侧导出输入。
+2. 进入 P9 模拟柜台，先设计模拟账户、资金、持仓、订单和成交账表 schema。
 3. 增加 Playwright 页面交互冒烟测试。
 4. 增加批量下单测试视图。
 5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
-6. 设计模拟柜台账表 schema。
 
 ## 下一步任务
 
 ### N6 P8 bars 持仓估值与研究导出输入
 
-状态：`doing`
+状态：`done`
 
 目标：基于 `post_close_settlement` 已写入的 close 资产快照、日终持仓快照、成交账本和 Meridian `bars`，补齐账户持仓估值、基准对照和研究侧导出输入。
 
@@ -55,6 +54,12 @@
 - Go 单元测试覆盖 bars 价格匹配、缺失行情和导出字段。
 - 本地 9092 可通过 API Console 或 curl 查询带基准/估值字段的绩效序列。
 - 文档明确该能力只读，不主动查询柜台；行情字段以 Meridian `market_bar.v1` 为准。
+
+### N7 P9 模拟柜台账表 schema
+
+状态：`todo`
+
+目标：设计可复用正式交易 API 的模拟柜台账表、撮合状态和交易日结算口径，用于策略开发和回归测试。
 
 ## 里程碑细化
 
@@ -261,13 +266,13 @@
 - [x] `bars` 请求当天或空日期时通过 Meridian 交易日接口回退到最近交易日。
 - [x] 接入 Meridian `metadata/instruments` 和 `snapshots` 作为 `/trade` 代码补全和行情刷新薄代理。
 - [x] 计算账户日终权益。
-- [ ] 计算完整已实现盈亏、浮动盈亏、费用和收益率。
+- [x] 计算第一版完整已实现盈亏、浮动盈亏、费用和收益率：保留 `settled_profit/unrealized_pnl/fee_total/return_rate`，新增 `realized_pnl/gross_pnl/net_pnl` 研究侧口径。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。
 - [x] 在 `/trade` 交易测试主界面使用 Meridian `bars` 绘制当日分钟 K 线和成交量，辅助理解下单点位。
 - [x] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入：`benchmark_security_id` 输出基准收益、基准回撤、超额收益并进入 CSV。
 - [x] 提供研究侧导出输入第一版：账户绩效序列 CSV。
-- [ ] 生成研究侧数据库导出视图。
+- [x] 生成研究侧数据库导出视图：`research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。
 
 ### P9 模拟柜台
 

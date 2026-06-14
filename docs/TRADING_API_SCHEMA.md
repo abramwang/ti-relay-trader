@@ -323,11 +323,16 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 订单、成交、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 
-`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和第一版 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产计算 `daily_pnl` 和 `return_rate`，并汇总同日 `position_snapshots` 的持仓市值/浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
+`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和第一版 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产计算 `daily_pnl` 和 `return_rate`，并汇总同日 `position_snapshots` 的持仓市值/浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。当前研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+unrealized_pnl`、`net_pnl=gross_pnl-fee_total`，同时保留 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 原始/基础字段。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000300.SH` 返回账户 close 净值绩效序列。服务读取区间内 `asset_snapshots(snapshot_type=close)`，按上一条 close 净资产计算单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。如果传入 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 
-`GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000300.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、日收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、成交额、费用和快照时间等列。
+`GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000300.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、日收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现/浮动/总/净 PnL、成交额、费用和快照时间等列。
+
+研究侧 PostgreSQL 导出 view 已通过 `000006_research_performance_views` 提供：
+
+- `research_account_daily_performance_v1`：账户日绩效、持仓汇总、成交汇总和第一版 PnL 字段。
+- `research_order_fill_export_v1`：订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息和成交价量。
 
 `GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260612&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`。当 `trade_date` 为空或等于东八区当天时，relay 会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，非交易日自动读取最近交易日 bars。
 

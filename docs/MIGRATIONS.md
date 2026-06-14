@@ -17,6 +17,8 @@ migrations/postgres/000004_reconciliation_idempotency.up.sql
 migrations/postgres/000004_reconciliation_idempotency.down.sql
 migrations/postgres/000005_fill_id_order_scope.up.sql
 migrations/postgres/000005_fill_id_order_scope.down.sql
+migrations/postgres/000006_research_performance_views.up.sql
+migrations/postgres/000006_research_performance_views.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -30,7 +32,8 @@ migrations/postgres/000005_fill_id_order_scope.down.sql
 3. `000003_job_runs` 已应用。
 4. `000004_reconciliation_idempotency` 已应用。
 5. `000005_fill_id_order_scope` 已应用。
-6. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `5:fill_id_order_scope`。
+6. `000006_research_performance_views` 已应用。
+7. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `6:research_performance_views`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -112,6 +115,11 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 1. `job_runs`
 
+研究导出 view：
+
+1. `research_account_daily_performance_v1`
+2. `research_order_fill_export_v1`
+
 ## 关键约束
 
 1. `orders(account_id, gateway_order_id)` 唯一，用作订单跨系统主键。
@@ -132,6 +140,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000002_stream_checkpoints.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000003_job_runs.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000006_research_performance_views.up.sql
 ```
 
 使用 relayctl：

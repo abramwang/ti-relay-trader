@@ -151,6 +151,17 @@ migrations/postgres/000001_init_ledger.down.sql
 - `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。
 - `GET /v1/reconciliations/breaks`：按 `run_id/account_id/status` 查询待复核差异。
 
+### 研究导出 view
+
+`000006_research_performance_views` 新增两张只读 view，供研究侧脚本直接从 PostgreSQL 导出，不改变原始账表：
+
+| View | 用途 |
+| --- | --- |
+| `research_account_daily_performance_v1` | 按账户和交易日输出 close 净资产、上一 close 净资产、日盈亏、收益率、持仓市值、已实现/浮动/总/净 PnL、成交额和费用 |
+| `research_order_fill_export_v1` | 输出订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息、成交价量和成交时间 |
+
+第一版 PnL 口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留，后续如前置或柜台提供更精细的已实现盈亏字段，再在 view 新版本中扩展。
+
 ## 关键约束
 
 1. `orders.account_id + orders.gateway_order_id` 必须唯一。
