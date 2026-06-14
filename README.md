@@ -268,6 +268,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务骨架、任务运行报告落盘、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告、接入 Meridian bars，并形成连续绩效序列。
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。第一版 `daily_pnl/return_rate` 以相邻 close 净资产计算，成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
+- P8 账表计算只接入 Meridian `bars`。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
 - 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
 - 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
 - `/healthz` 只表示 9092 进程存活；`/v1/status` 才包含 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态。健康检查只返回 `ok/error/timeout/not_configured` 等摘要，不返回 DSN、密码、Token 或 Redis URL。
@@ -351,3 +352,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据 `tmp/relay_sdk_014_feedback_20260614.md` 反馈，订单标准状态会按成交数量归一化：`cum_filled_qty >= order_qty` 且 `leaves_qty=0` 时统一进入 `filled/filled/is_terminal=true`；账本冲突更新和状态更新新增终态保护，避免已撤/已成/已拒订单被后续 `created/accepted/working` 推送回退；SDK 发布 `relay-sdk 0.1.6`，`record_job_run()` 增加 `target_trade_date`、`timezone`、`duration_ms` 显式参数并兼容 `status="completed"`。
 - `2026-06-14`: 推进 N3 盘后对账输入与差异记录：新增 `000004_reconciliation_idempotency` migration，为 `reconciliation_inputs` 和 `reconciliation_breaks` 增加幂等唯一索引；结算快照接口会写入 relay 账本摘要、PnL 输入摘要、Redis raw 窗口摘要和柜台查询摘要，并生成未终态订单、订单成交数量不一致、快照缺失/刷新失败 break；新增 `GET /v1/reconciliations/breaks` 和 API Console 查询入口。
 - `2026-06-14`: 更新开发路线图并进入 P8，新增 `GET /v1/accounts/{account_id}/performance/daily` 日终权益/PnL 输入汇总接口和 API Console 表单入口；第一版基于 close 资产快照、上一 close 净资产、日终持仓快照和成交账本计算日盈亏、收益率、持仓汇总、成交额和费用。
+- `2026-06-14`: 根据用户确认收窄 P8 市场数据范围：账表计算只接入 Meridian `bars`，暂不接入实时 level2，也不规划 `trades/orders/order-queues`。
