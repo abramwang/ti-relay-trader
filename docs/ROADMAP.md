@@ -28,7 +28,7 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 增加 Python `pre_open_init` 与 `post_close_settlement` 任务骨架。
+2. 将 `pre_open_init` 与 `post_close_settlement` 任务运行状态落盘，并在 `/v1/status` 暴露最近运行状态。
 3. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
 4. 增加 9092 页面冒烟测试。
 5. 增加批量下单测试视图。
@@ -205,9 +205,10 @@
 - [x] 规划 `post_close_settlement` 收盘后结算流程。
 - [x] 增加统一时间工具，集中提供 `Asia/Shanghai` location、业务日期和 API 展示格式。
 - [ ] 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
-- [ ] 增加 Python 任务入口。
-- [ ] 实现 `python -m relay.jobs.pre_open_init`。
-- [ ] 实现 `python -m relay.jobs.post_close_settlement`。
+- [x] 增加 Python 任务入口。
+- [x] 实现 `python -m relay.jobs.pre_open_init` 任务骨架。
+- [x] 实现 `python -m relay.jobs.post_close_settlement` 任务骨架。
+- [x] 任务报告输出交易日、依赖状态、账户范围、刷新回执、账本快照摘要和未终态订单列表。
 - [ ] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [ ] 拉取柜台资金、持仓、订单、成交查询结果。
 - [ ] 对比 Redis 事件流水和内部账表。

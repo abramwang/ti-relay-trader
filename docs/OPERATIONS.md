@@ -192,7 +192,7 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 ## Cron 示例
 
-以下示例用于规划，等 Python jobs 实现后再启用：
+基础 Python jobs 已实现。正式启用前先在部署机手动执行一次，确认 `PYTHONPATH`、9092 地址、账户范围、日志目录和输出目录都正确：
 
 ```cron
 SHELL=/bin/bash
@@ -200,12 +200,14 @@ CRON_TZ=Asia/Shanghai
 TZ=Asia/Shanghai
 RELAY_HOME=/home/ti-relay-trader
 RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
+PYTHONPATH=/home/ti-relay-trader/src:/home/ti-relay-trader/sdk/python
+RELAY_BASE_URL=http://relay-trader.quantstage.com
 
 # A 股交易日盘前初始化，08:25 Asia/Shanghai。
-25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init >> /var/log/relay/pre_open_init.log 2>&1
+25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
 
 # A 股交易日收盘后结算，15:45 Asia/Shanghai。
-45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement >> /var/log/relay/post_close_settlement.log 2>&1
+45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
 # A 股交易日盘后资产快照，15:55 Asia/Shanghai。后续可并入 post_close_settlement。
 55 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-asset-snapshot.lock python3 -m relay.jobs.asset_snapshot >> /var/log/relay/asset_snapshot.log 2>&1
@@ -222,15 +224,33 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
 1. 使用 `flock -n` 防止同一任务重复运行。
 2. cron 日志写入 `/var/log/relay/`，并配置 logrotate。
 3. cron 环境变量少，必须显式设置 `RELAY_CONFIG_PATH`。
-4. cron 时区必须和 `service.timezone` 保持一致，当前固定为 `Asia/Shanghai`。
-5. 首次部署前先手动执行任务命令，确认配置、权限和日志目录无误。
+4. 当前 Python jobs 通过 `PYTHONPATH=$RELAY_HOME/src:$RELAY_HOME/sdk/python` 复用仓库内源码和 SDK。
+5. cron 时区必须和 `service.timezone` 保持一致，当前固定为 `Asia/Shanghai`。
+6. 首次部署前先手动执行任务命令，确认配置、权限和日志目录无误。
+
+手动 dry-run 示例：
+
+```bash
+cd /home/ti-relay-trader
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init \
+  --base-url http://relay-trader.quantstage.com \
+  --dry-run \
+  --output outputs/jobs/pre_open_init.dry-run.json
+
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
+  --base-url http://relay-trader.quantstage.com \
+  --dry-run \
+  --output outputs/jobs/post_close_settlement.dry-run.json
+```
+
+当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
 
 ## 后续实现
 
 后续需要补齐：
 
 1. 敏感字段脱敏日志。
-2. `pre_open_init` 与 `post_close_settlement` Python jobs 入口。
+2. 任务运行状态、最近成功时间和失败原因落盘。
 3. cron 安装脚本或 `/etc/cron.d/relay-trader` 模板。
-4. 任务运行状态、最近成功时间和失败原因落盘。
-5. `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
+4. `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
+5. 收盘后结算接入正式对账差异表和 PnL 计算。
