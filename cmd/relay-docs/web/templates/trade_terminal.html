@@ -129,7 +129,12 @@
         </div>
         <div class="section-toolbar">
           <h2>持仓</h2>
-          <div>
+          <div class="toolbar-actions">
+            <label class="date-filter">
+              <span>交易日</span>
+              <input id="assetTradeDate" inputmode="numeric" placeholder="20260614">
+            </label>
+            <button type="button" id="queryAssetButton">查询</button>
             <button type="button" id="refreshAssetButton">刷新资金</button>
             <button type="button" id="refreshPositionsButton">刷新持仓</button>
           </div>
@@ -149,27 +154,46 @@
             <tbody id="positionsBody"></tbody>
           </table>
         </div>
+        <div class="pager-bar" id="positionsPager">
+          <span id="positionsPageInfo">--</span>
+          <div>
+            <button type="button" id="positionsPrevPage">上一页</button>
+            <button type="button" id="positionsNextPage">下一页</button>
+          </div>
+        </div>
       </section>
 
       <section class="trade-panel blotter-panel" id="ordersPanel" aria-label="订单监控">
         <div class="monitor-summary">
-          <div><span>当日委托</span><strong id="orderCount">--</strong></div>
+          <div><span>本页委托</span><strong id="orderCount">--</strong></div>
           <div><span>活动委托</span><strong id="activeOrderCount">--</strong></div>
-          <div><span>当日成交</span><strong id="fillCount">--</strong></div>
+          <div><span>本页成交</span><strong id="fillCount">--</strong></div>
           <div><span>最近回报</span><strong id="lastEventTime">--</strong></div>
         </div>
         <div class="blotter-tabs" id="blotterTabs">
-          <button type="button" class="active" data-tab="orders">当日委托</button>
-          <button type="button" data-tab="fills">当日成交</button>
+          <button type="button" class="active" data-tab="orders">委托</button>
+          <button type="button" data-tab="fills">成交</button>
           <button type="button" data-tab="cancels">撤单记录</button>
           <button type="button" data-tab="logs">推送日志</button>
           <button type="button" data-tab="raw">原始报文</button>
           <div class="blotter-actions">
+            <label class="date-filter">
+              <span>交易日</span>
+              <input id="ordersTradeDate" inputmode="numeric" placeholder="20260614">
+            </label>
+            <button type="button" id="queryOrdersButton">查询</button>
             <button type="button" id="refreshOrdersButton">刷新委托</button>
             <button type="button" id="refreshFillsButton">刷新成交</button>
           </div>
         </div>
         <div class="blotter-content" id="blotterContent"></div>
+        <div class="pager-bar" id="ordersPager">
+          <span id="ordersPageInfo">--</span>
+          <div>
+            <button type="button" id="ordersPrevPage">上一页</button>
+            <button type="button" id="ordersNextPage">下一页</button>
+          </div>
+        </div>
       </section>
 
       <section class="trade-panel performance-panel" id="performancePanel" aria-label="绩效分析">

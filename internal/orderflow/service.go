@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,12 @@ var (
 	ErrUnsupportedBusinessType         = errors.New("business_type is not supported by relay order API")
 	ErrMissingLedger                   = errors.New("ledger writer is required")
 	ErrMissingPublisher                = errors.New("command publisher is required")
+)
+
+const (
+	maxOrderQueryLimit    = 500
+	maxFillQueryLimit     = 500
+	maxPositionQueryLimit = 2000
 )
 
 type LedgerWriter interface {
@@ -130,15 +137,17 @@ type RefreshQueryResult struct {
 }
 
 type ListOrdersResult struct {
-	Orders []trading.Order    `json:"orders"`
-	Query  trading.OrderQuery `json:"query"`
-	Count  int                `json:"count"`
+	Orders     []trading.Order    `json:"orders"`
+	Query      trading.OrderQuery `json:"query"`
+	Count      int                `json:"count"`
+	NextCursor string             `json:"next_cursor,omitempty"`
 }
 
 type ListFillsResult struct {
-	Fills []trading.Fill    `json:"fills"`
-	Query trading.FillQuery `json:"query"`
-	Count int               `json:"count"`
+	Fills      []trading.Fill    `json:"fills"`
+	Query      trading.FillQuery `json:"query"`
+	Count      int               `json:"count"`
+	NextCursor string            `json:"next_cursor,omitempty"`
 }
 
 type GetAssetResult struct {
@@ -146,9 +155,10 @@ type GetAssetResult struct {
 }
 
 type ListPositionsResult struct {
-	Positions []trading.Position    `json:"positions"`
-	Query     trading.PositionQuery `json:"query"`
-	Count     int                   `json:"count"`
+	Positions  []trading.Position    `json:"positions"`
+	Query      trading.PositionQuery `json:"query"`
+	Count      int                   `json:"count"`
+	NextCursor string                `json:"next_cursor,omitempty"`
 }
 
 func New(opts Options) (*Service, error) {
@@ -476,14 +486,28 @@ func (service *Service) ListOrders(ctx context.Context, query trading.OrderQuery
 	if err != nil {
 		return ListOrdersResult{}, err
 	}
-	orders, err := service.ledger.ListOrders(ctx, normalized)
+	offset, err := cursorOffset(normalized.Cursor)
 	if err != nil {
 		return ListOrdersResult{}, err
 	}
+	fetchQuery := normalized
+	if normalized.Limit < maxOrderQueryLimit {
+		fetchQuery.Limit = normalized.Limit + 1
+	}
+	orders, err := service.ledger.ListOrders(ctx, fetchQuery)
+	if err != nil {
+		return ListOrdersResult{}, err
+	}
+	nextCursor := ""
+	if len(orders) > normalized.Limit {
+		orders = orders[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	}
 	return ListOrdersResult{
-		Orders: orders,
-		Query:  normalized,
-		Count:  len(orders),
+		Orders:     orders,
+		Query:      normalized,
+		Count:      len(orders),
+		NextCursor: nextCursor,
 	}, nil
 }
 
@@ -492,14 +516,28 @@ func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) 
 	if err != nil {
 		return ListFillsResult{}, err
 	}
-	fills, err := service.ledger.ListFills(ctx, normalized)
+	offset, err := cursorOffset(normalized.Cursor)
 	if err != nil {
 		return ListFillsResult{}, err
 	}
+	fetchQuery := normalized
+	if normalized.Limit < maxFillQueryLimit {
+		fetchQuery.Limit = normalized.Limit + 1
+	}
+	fills, err := service.ledger.ListFills(ctx, fetchQuery)
+	if err != nil {
+		return ListFillsResult{}, err
+	}
+	nextCursor := ""
+	if len(fills) > normalized.Limit {
+		fills = fills[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	}
 	return ListFillsResult{
-		Fills: fills,
-		Query: normalized,
-		Count: len(fills),
+		Fills:      fills,
+		Query:      normalized,
+		Count:      len(fills),
+		NextCursor: nextCursor,
 	}, nil
 }
 
@@ -567,19 +605,33 @@ func (service *Service) ListPositions(ctx context.Context, query trading.Positio
 	if _, err := service.routeForConfiguredAccount(normalized.AccountID); err != nil {
 		return ListPositionsResult{}, err
 	}
+	offset, err := cursorOffset(normalized.Cursor)
+	if err != nil {
+		return ListPositionsResult{}, err
+	}
 	var positions []trading.Position
+	fetchQuery := normalized
+	if normalized.Limit < maxPositionQueryLimit {
+		fetchQuery.Limit = normalized.Limit + 1
+	}
 	if normalized.History || normalized.TradeDate != "" || normalized.DateFrom != "" || normalized.DateTo != "" {
-		positions, err = service.ledger.ListPositionSnapshots(ctx, normalized)
+		positions, err = service.ledger.ListPositionSnapshots(ctx, fetchQuery)
 	} else {
-		positions, err = service.ledger.ListPositions(ctx, normalized)
+		positions, err = service.ledger.ListPositions(ctx, fetchQuery)
 	}
 	if err != nil {
 		return ListPositionsResult{}, err
 	}
+	nextCursor := ""
+	if len(positions) > normalized.Limit {
+		positions = positions[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	}
 	return ListPositionsResult{
-		Positions: positions,
-		Query:     normalized,
-		Count:     len(positions),
+		Positions:  positions,
+		Query:      normalized,
+		Count:      len(positions),
+		NextCursor: nextCursor,
 	}, nil
 }
 
@@ -733,8 +785,8 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	if normalized.Limit <= 0 {
 		normalized.Limit = 100
 	}
-	if normalized.Limit > 500 {
-		normalized.Limit = 500
+	if normalized.Limit > maxOrderQueryLimit {
+		normalized.Limit = maxOrderQueryLimit
 	}
 	return normalized, nil
 }
@@ -754,8 +806,8 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	if normalized.Limit <= 0 {
 		normalized.Limit = 100
 	}
-	if normalized.Limit > 500 {
-		normalized.Limit = 500
+	if normalized.Limit > maxFillQueryLimit {
+		normalized.Limit = maxFillQueryLimit
 	}
 	return normalized, nil
 }
@@ -777,10 +829,22 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	if normalized.Limit <= 0 {
 		normalized.Limit = 500
 	}
-	if normalized.Limit > 2000 {
-		normalized.Limit = 2000
+	if normalized.Limit > maxPositionQueryLimit {
+		normalized.Limit = maxPositionQueryLimit
 	}
 	return normalized, nil
+}
+
+func cursorOffset(cursor string) (int, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(cursor)
+	if err != nil || offset < 0 {
+		return 0, fmt.Errorf("%w: cursor must be a non-negative offset", trading.ErrInvalidSchema)
+	}
+	return offset, nil
 }
 
 func draftOrderFromRequest(req trading.SubmitOrderRequest, now time.Time) trading.Order {

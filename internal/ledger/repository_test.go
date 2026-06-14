@@ -339,6 +339,26 @@ func TestListOrdersBuildsDateFilteredRead(t *testing.T) {
 	}
 }
 
+func TestListOrdersBuildsCursorOffset(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		Cursor:    "25",
+		Limit:     10,
+	})
+	if err == nil {
+		t.Fatal("ListOrders() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "LIMIT $2 OFFSET $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[1] != 10 || exec.args[2] != 25 {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
 func TestListFillsBuildsFilteredRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -359,6 +379,26 @@ func TestListFillsBuildsFilteredRead(t *testing.T) {
 	requireArgLen(t, exec.args, 3)
 	if exec.args[2] != 5 {
 		t.Fatalf("limit arg = %#v", exec.args[2])
+	}
+}
+
+func TestListFillsBuildsCursorOffset(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListFills(context.Background(), trading.FillQuery{
+		AccountID: "acct-1",
+		Cursor:    "50",
+		Limit:     20,
+	})
+	if err == nil {
+		t.Fatal("ListFills() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "LIMIT $2 OFFSET $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[1] != 20 || exec.args[2] != 50 {
+		t.Fatalf("args = %#v", exec.args)
 	}
 }
 
@@ -520,6 +560,26 @@ func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	}
 }
 
+func TestListPositionsBuildsCursorOffset(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		Cursor:    "100",
+		Limit:     50,
+	})
+	if err == nil {
+		t.Fatal("ListPositions() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "LIMIT $2 OFFSET $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[1] != 50 || exec.args[2] != 100 {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
 func TestListPositionSnapshotsBuildsHistoricalRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -541,6 +601,27 @@ func TestListPositionSnapshotsBuildsHistoricalRead(t *testing.T) {
 	requireArgLen(t, exec.args, 4)
 	if exec.args[1] != "2026-06-12" {
 		t.Fatalf("trade date arg = %#v", exec.args[1])
+	}
+}
+
+func TestListPositionSnapshotsBuildsCursorOffset(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListPositionSnapshots(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		TradeDate: "20260612",
+		Cursor:    "50",
+		Limit:     20,
+	})
+	if err == nil {
+		t.Fatal("ListPositionSnapshots() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "LIMIT $4 OFFSET $5")
+	requireArgLen(t, exec.args, 5)
+	if exec.args[3] != 20 || exec.args[4] != 50 {
+		t.Fatalf("args = %#v", exec.args)
 	}
 }
 

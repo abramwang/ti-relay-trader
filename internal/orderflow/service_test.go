@@ -456,6 +456,40 @@ func TestListOrdersNormalizesQueryLimit(t *testing.T) {
 	}
 }
 
+func TestListOrdersReturnsNextCursor(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		listedOrders: []trading.Order{
+			{AccountID: "acct-1", GatewayOrderID: "gateway-1"},
+			{AccountID: "acct-1", GatewayOrderID: "gateway-2"},
+			{AccountID: "acct-1", GatewayOrderID: "gateway-3"},
+		},
+	}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: &fakePublisher{},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		Limit:     2,
+		Cursor:    "4",
+	})
+	if err != nil {
+		t.Fatalf("ListOrders() error = %v", err)
+	}
+	if ledgerWriter.lastOrderQuery.Limit != 3 || ledgerWriter.lastOrderQuery.Cursor != "4" {
+		t.Fatalf("ledger query = %#v", ledgerWriter.lastOrderQuery)
+	}
+	if result.Count != 2 || len(result.Orders) != 2 || result.NextCursor != "6" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	ledgerWriter := &fakeLedger{
 		asset: trading.Asset{
@@ -496,6 +530,40 @@ func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	}
 	if positionResult.Count != 1 {
 		t.Fatalf("count = %d", positionResult.Count)
+	}
+}
+
+func TestListPositionsReturnsNextCursor(t *testing.T) {
+	ledgerWriter := &fakeLedger{
+		listedPositionSnapshots: []trading.Position{
+			{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100},
+			{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "000001", Exchange: trading.ExchangeSZ, Quantity: 200},
+			{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "510300", Exchange: trading.ExchangeSH, Quantity: 300},
+		},
+	}
+	service, err := New(Options{
+		Config: testConfig(true, false),
+		Ledger: ledgerWriter,
+		Clock:  fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		TradeDate: "20260612",
+		Limit:     2,
+		Cursor:    "2",
+	})
+	if err != nil {
+		t.Fatalf("ListPositions() error = %v", err)
+	}
+	if ledgerWriter.lastPositionSnapshotQuery.Limit != 3 || ledgerWriter.lastPositionSnapshotQuery.Cursor != "2" {
+		t.Fatalf("ledger query = %#v", ledgerWriter.lastPositionSnapshotQuery)
+	}
+	if result.Count != 2 || len(result.Positions) != 2 || result.NextCursor != "4" {
+		t.Fatalf("result = %#v", result)
 	}
 }
 

@@ -6,6 +6,9 @@
     positions: [],
     orders: [],
     fills: [],
+    ordersPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
+    fillsPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
+    positionsPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
     selectedOrderID: "",
     selectedTab: "orders",
     side: "B",
@@ -66,6 +69,10 @@
     refreshPositionsButton: byID("refreshPositionsButton"),
     refreshOrdersButton: byID("refreshOrdersButton"),
     refreshFillsButton: byID("refreshFillsButton"),
+    queryAssetButton: byID("queryAssetButton"),
+    queryOrdersButton: byID("queryOrdersButton"),
+    assetTradeDate: byID("assetTradeDate"),
+    ordersTradeDate: byID("ordersTradeDate"),
     netAsset: byID("netAsset"),
     cashAvailable: byID("cashAvailable"),
     marketValue: byID("marketValue"),
@@ -77,12 +84,18 @@
     closeProfit: byID("closeProfit"),
     commission: byID("commission"),
     positionsBody: byID("positionsBody"),
+    positionsPageInfo: byID("positionsPageInfo"),
+    positionsPrevPage: byID("positionsPrevPage"),
+    positionsNextPage: byID("positionsNextPage"),
     orderCount: byID("orderCount"),
     activeOrderCount: byID("activeOrderCount"),
     fillCount: byID("fillCount"),
     lastEventTime: byID("lastEventTime"),
     blotterTabs: byID("blotterTabs"),
     blotterContent: byID("blotterContent"),
+    ordersPageInfo: byID("ordersPageInfo"),
+    ordersPrevPage: byID("ordersPrevPage"),
+    ordersNextPage: byID("ordersNextPage"),
     detailSub: byID("detailSub"),
     timeline: byID("timeline"),
     rawJson: byID("rawJson"),
@@ -207,6 +220,22 @@
     return "";
   }
 
+  function businessDateCompact(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date);
+    const byType = {};
+    for (const part of parts) {
+      byType[part.type] = part.value;
+    }
+    return String(byType.year || "").padStart(4, "0") +
+      String(byType.month || "").padStart(2, "0") +
+      String(byType.day || "").padStart(2, "0");
+  }
+
   function displayDate(value) {
     const digits = compactDate(value);
     if (!digits) {
@@ -221,6 +250,15 @@
       return "";
     }
     return number < 0 ? "down" : "up";
+  }
+
+  function defaultLedgerDate() {
+    return compactDate(els.tradeDate.textContent) || businessDateCompact();
+  }
+
+  function isCurrentBusinessDate(value) {
+    const date = compactDate(value);
+    return date !== "" && date === businessDateCompact();
   }
 
   function priceDigitsForInstrument(instrumentType) {
@@ -610,36 +648,160 @@
     if (!state.activeAccount) {
       return;
     }
-    const accountID = encodeURIComponent(state.activeAccount);
+    ensureLedgerQueryDefaults();
     const [assetResult, positionsResult, ordersResult, fillsResult] = await Promise.allSettled([
-      request("/v1/accounts/" + accountID + "/asset"),
-      request("/v1/accounts/" + accountID + "/positions?limit=100"),
-      request("/v1/orders?account_id=" + accountID + "&limit=100"),
-      request("/v1/fills?account_id=" + accountID + "&limit=100")
+      fetchAssetForSelectedDate(),
+      fetchPositionsPage(),
+      fetchOrdersPage(),
+      fetchFillsPage()
     ]);
 
     if (assetResult.status === "fulfilled") {
-      state.asset = assetResult.value.asset;
+      state.asset = assetResult.value;
     } else {
+      state.asset = null;
       pushLog("warn", "资金读取失败", assetResult.reason.message);
     }
     if (positionsResult.status === "fulfilled") {
       state.positions = positionsResult.value.positions || [];
+      state.positionsPage.next = positionsResult.value.next_cursor || "";
     } else {
       pushLog("warn", "持仓读取失败", positionsResult.reason.message);
     }
     if (ordersResult.status === "fulfilled") {
+      state.ordersPage.next = ordersResult.value.next_cursor || "";
       updateOrders(ordersResult.value.orders || []);
     } else {
       pushLog("warn", "订单读取失败", ordersResult.reason.message);
     }
     if (fillsResult.status === "fulfilled") {
       state.fills = fillsResult.value.fills || [];
+      state.fillsPage.next = fillsResult.value.next_cursor || "";
     } else {
       pushLog("warn", "成交读取失败", fillsResult.reason.message);
     }
 
     renderAll();
+  }
+
+  function ensureLedgerQueryDefaults() {
+    const day = defaultLedgerDate();
+    if (!els.ordersTradeDate.value) {
+      els.ordersTradeDate.value = day;
+    }
+    if (!els.assetTradeDate.value) {
+      els.assetTradeDate.value = day;
+    }
+  }
+
+  function selectedOrdersTradeDate() {
+    ensureLedgerQueryDefaults();
+    const day = compactDate(els.ordersTradeDate.value);
+    if (!day) {
+      throw new Error("订单交易日需为 YYYYMMDD 或 YYYY-MM-DD");
+    }
+    return day;
+  }
+
+  function selectedAssetTradeDate() {
+    ensureLedgerQueryDefaults();
+    const day = compactDate(els.assetTradeDate.value);
+    if (!day) {
+      throw new Error("持仓交易日需为 YYYYMMDD 或 YYYY-MM-DD");
+    }
+    return day;
+  }
+
+  function resetPage(page) {
+    page.cursor = "";
+    page.previous = [];
+    page.next = "";
+    page.page = 1;
+  }
+
+  function resetLedgerPages() {
+    resetPage(state.ordersPage);
+    resetPage(state.fillsPage);
+    resetPage(state.positionsPage);
+  }
+
+  async function fetchAssetForSelectedDate() {
+    const accountID = encodeURIComponent(state.activeAccount);
+    const tradeDate = selectedAssetTradeDate();
+    if (isCurrentBusinessDate(tradeDate)) {
+      const data = await request("/v1/accounts/" + accountID + "/asset");
+      return data.asset || null;
+    }
+    const data = await request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(tradeDate));
+    return assetFromPerformance(data.performance || {});
+  }
+
+  function assetFromPerformance(performance) {
+    return {
+      account_id: performance.account_id,
+      cash_available: performance.cash_available,
+      cash_total: performance.cash_total,
+      net_asset: performance.net_asset,
+      market_value: performance.market_value || performance.position_market_value,
+      stock_value: performance.stock_value,
+      fund_value: performance.fund_value,
+      day_profit: performance.daily_pnl,
+      position_profit: performance.position_profit || performance.unrealized_pnl,
+      close_profit: performance.close_profit || performance.settled_profit,
+      commission: performance.fee_total,
+      captured_at: performance.captured_at
+    };
+  }
+
+  async function fetchPositionsPage() {
+    const accountID = encodeURIComponent(state.activeAccount);
+    const tradeDate = selectedAssetTradeDate();
+    const params = new URLSearchParams({
+      limit: String(state.positionsPage.pageSize)
+    });
+    if (state.positionsPage.cursor) {
+      params.set("cursor", state.positionsPage.cursor);
+    }
+    let path = "/v1/accounts/" + accountID + "/positions";
+    if (!isCurrentBusinessDate(tradeDate)) {
+      path = "/v1/accounts/" + accountID + "/positions/history";
+      params.set("trade_date", tradeDate);
+    }
+    return request(path + "?" + params.toString());
+  }
+
+  async function fetchOrdersPage() {
+    const tradeDate = selectedOrdersTradeDate();
+    const params = new URLSearchParams({
+      account_id: state.activeAccount,
+      limit: String(state.ordersPage.pageSize)
+    });
+    if (state.ordersPage.cursor) {
+      params.set("cursor", state.ordersPage.cursor);
+    }
+    let path = "/v1/orders";
+    if (!isCurrentBusinessDate(tradeDate)) {
+      path = "/v1/history/orders";
+      params.set("trade_date", tradeDate);
+    }
+    return request(path + "?" + params.toString());
+  }
+
+  async function fetchFillsPage() {
+    const tradeDate = selectedOrdersTradeDate();
+    const params = new URLSearchParams({
+      account_id: state.activeAccount,
+      limit: String(state.fillsPage.pageSize)
+    });
+    if (state.fillsPage.cursor) {
+      params.set("cursor", state.fillsPage.cursor);
+    }
+    let path = "/v1/fills";
+    if (!isCurrentBusinessDate(tradeDate)) {
+      path = "/v1/history/fills";
+      params.set("trade_date", tradeDate);
+    }
+    return request(path + "?" + params.toString());
   }
 
   async function loadQuoteForInput(options = {}) {
@@ -843,6 +1005,7 @@
         state.activeAccount = account.account_id;
         state.selectedOrderID = "";
         state.performanceLoaded = false;
+        resetLedgerPages();
         renderAccounts();
         connectEventStream();
         await refreshNow();
@@ -892,7 +1055,8 @@
 
   function renderPositions() {
     if (state.positions.length === 0) {
-      els.positionsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无持仓数据</div></td></tr>';
+      els.positionsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+      renderPositionsPager();
       return;
     }
     els.positionsBody.innerHTML = state.positions.map((position) => {
@@ -909,6 +1073,7 @@
           <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
         </tr>`;
     }).join("");
+    renderPositionsPager();
   }
 
   function renderMonitorSummary() {
@@ -953,26 +1118,31 @@
     }
     if (state.selectedTab === "orders") {
       renderOrdersTable();
+      renderBlotterPager();
       return;
     }
     if (state.selectedTab === "fills") {
       renderFillsTable();
+      renderBlotterPager();
       return;
     }
     if (state.selectedTab === "logs") {
       renderLogs();
+      renderBlotterPager();
       return;
     }
     if (state.selectedTab === "raw") {
       els.blotterContent.innerHTML = '<pre class="raw-block">' + escapeHTML(JSON.stringify(state.lastPayload || {}, null, 2)) + "</pre>";
+      renderBlotterPager();
       return;
     }
     els.blotterContent.innerHTML = '<div class="empty-state">撤单记录将在撤单查询接口完成后展示</div>';
+    renderBlotterPager();
   }
 
   function renderOrdersTable() {
     if (state.orders.length === 0) {
-      els.blotterContent.innerHTML = '<div class="empty-state">暂无当日委托</div>';
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedOrdersTradeDateSafe())) + ' 委托</div>';
       return;
     }
     const now = Date.now();
@@ -1018,7 +1188,7 @@
 
   function renderFillsTable() {
     if (state.fills.length === 0) {
-      els.blotterContent.innerHTML = '<div class="empty-state">暂无当日成交</div>';
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedOrdersTradeDateSafe())) + ' 成交</div>';
       return;
     }
     els.blotterContent.innerHTML = `
@@ -1052,6 +1222,79 @@
           }).join("")}
         </tbody>
       </table>`;
+  }
+
+  function selectedOrdersTradeDateSafe() {
+    try {
+      return selectedOrdersTradeDate();
+    } catch {
+      return defaultLedgerDate();
+    }
+  }
+
+  function selectedAssetTradeDateSafe() {
+    try {
+      return selectedAssetTradeDate();
+    } catch {
+      return defaultLedgerDate();
+    }
+  }
+
+  function renderPositionsPager() {
+    renderPager({
+      page: state.positionsPage,
+      count: state.positions.length,
+      info: els.positionsPageInfo,
+      prev: els.positionsPrevPage,
+      next: els.positionsNextPage,
+      label: "持仓",
+      tradeDate: selectedAssetTradeDateSafe()
+    });
+  }
+
+  function renderBlotterPager() {
+    if (state.selectedTab === "orders") {
+      renderPager({
+        page: state.ordersPage,
+        count: state.orders.length,
+        info: els.ordersPageInfo,
+        prev: els.ordersPrevPage,
+        next: els.ordersNextPage,
+        label: "委托",
+        tradeDate: selectedOrdersTradeDateSafe()
+      });
+      return;
+    }
+    if (state.selectedTab === "fills") {
+      renderPager({
+        page: state.fillsPage,
+        count: state.fills.length,
+        info: els.ordersPageInfo,
+        prev: els.ordersPrevPage,
+        next: els.ordersNextPage,
+        label: "成交",
+        tradeDate: selectedOrdersTradeDateSafe()
+      });
+      return;
+    }
+    els.ordersPageInfo.textContent = state.selectedTab === "logs" ? "推送日志无分页" : "当前视图无分页";
+    els.ordersPrevPage.disabled = true;
+    els.ordersNextPage.disabled = true;
+  }
+
+  function renderPager(options) {
+    const page = options.page;
+    const start = options.count > 0 ? (page.page - 1) * page.pageSize + 1 : 0;
+    const end = options.count > 0 ? start + options.count - 1 : 0;
+    options.info.textContent = [
+      displayDate(options.tradeDate),
+      options.label,
+      "第 " + page.page + " 页",
+      options.count > 0 ? start + "-" + end : "0 条",
+      page.next ? "还有下一页" : "已到末页"
+    ].join(" · ");
+    options.prev.disabled = page.previous.length === 0;
+    options.next.disabled = !page.next;
   }
 
   function orderForFill(fill) {
@@ -1451,8 +1694,8 @@
 
   function syncClock(serverTime) {
     const date = serverTime ? new Date(serverTime) : new Date();
-    const day = date.toISOString().slice(0, 10);
-    const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+    const day = displayDate(businessDateCompact(date));
+    const time = date.toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
     els.tradeDate.textContent = day;
     els.serverClock.textContent = time;
     els.footerClock.textContent = time;
@@ -1594,6 +1837,112 @@
     await loadAccountData();
   }
 
+  async function queryOrdersForDate() {
+    try {
+      selectedOrdersTradeDate();
+      resetPage(state.ordersPage);
+      resetPage(state.fillsPage);
+      const [ordersResult, fillsResult] = await Promise.allSettled([
+        fetchOrdersPage(),
+        fetchFillsPage()
+      ]);
+      if (ordersResult.status === "fulfilled") {
+        state.ordersPage.next = ordersResult.value.next_cursor || "";
+        updateOrders(ordersResult.value.orders || []);
+      } else {
+        throw ordersResult.reason;
+      }
+      if (fillsResult.status === "fulfilled") {
+        state.fillsPage.next = fillsResult.value.next_cursor || "";
+        state.fills = fillsResult.value.fills || [];
+      } else {
+        pushLog("warn", "成交读取失败", fillsResult.reason.message);
+      }
+      renderMonitorSummary();
+      renderBlotter();
+      renderDetail();
+      showToast("订单监控已更新");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+
+  async function queryPositionsForDate() {
+    try {
+      selectedAssetTradeDate();
+      resetPage(state.positionsPage);
+      await loadPositionsOnly();
+      showToast("资金持仓已更新");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+
+  async function gotoPage(page, direction, loader) {
+    if (direction === "next") {
+      if (!page.next) {
+        return;
+      }
+      page.previous.push(page.cursor || "");
+      page.cursor = page.next;
+      page.next = "";
+      page.page += 1;
+    } else {
+      if (page.previous.length === 0) {
+        return;
+      }
+      page.cursor = page.previous.pop() || "";
+      page.next = "";
+      page.page = Math.max(1, page.page - 1);
+    }
+    try {
+      await loader();
+    } catch (err) {
+      pushLog("error", "分页查询失败", err.message);
+      showToast("分页查询失败：" + err.message, "error");
+    }
+  }
+
+  async function loadOrdersOnly() {
+    const data = await fetchOrdersPage();
+    state.ordersPage.next = data.next_cursor || "";
+    updateOrders(data.orders || []);
+    renderMonitorSummary();
+    renderBlotter();
+    renderDetail();
+  }
+
+  async function loadFillsOnly() {
+    const data = await fetchFillsPage();
+    state.fillsPage.next = data.next_cursor || "";
+    state.fills = data.fills || [];
+    renderMonitorSummary();
+    renderBlotter();
+    renderDetail();
+  }
+
+  async function loadPositionsOnly() {
+    const [assetResult, positionsResult] = await Promise.allSettled([
+      fetchAssetForSelectedDate(),
+      fetchPositionsPage()
+    ]);
+    if (assetResult.status === "fulfilled") {
+      state.asset = assetResult.value;
+    } else {
+      state.asset = null;
+      pushLog("warn", "资金读取失败", assetResult.reason.message);
+    }
+    if (positionsResult.status === "fulfilled") {
+      state.positions = positionsResult.value.positions || [];
+      state.positionsPage.next = positionsResult.value.next_cursor || "";
+    } else {
+      throw positionsResult.reason;
+    }
+    renderMetrics();
+    renderPositions();
+    updateRisk();
+  }
+
   function bindEvents() {
     let symbolTimer = 0;
     let quoteTimer = 0;
@@ -1608,6 +1957,8 @@
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       state.performanceLoaded = false;
+      state.selectedOrderID = "";
+      resetLedgerPages();
       connectEventStream();
       await refreshNow();
       if (state.activeView === "performance") {
@@ -1684,6 +2035,30 @@
     els.refreshPositionsButton.addEventListener("click", () => refreshAccountResource("positions"));
     els.refreshOrdersButton.addEventListener("click", () => refreshAccountResource("orders"));
     els.refreshFillsButton.addEventListener("click", () => refreshAccountResource("fills"));
+    els.queryAssetButton.addEventListener("click", queryPositionsForDate);
+    els.queryOrdersButton.addEventListener("click", queryOrdersForDate);
+    els.assetTradeDate.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        queryPositionsForDate();
+      }
+    });
+    els.ordersTradeDate.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        queryOrdersForDate();
+      }
+    });
+    els.positionsPrevPage.addEventListener("click", () => gotoPage(state.positionsPage, "prev", loadPositionsOnly));
+    els.positionsNextPage.addEventListener("click", () => gotoPage(state.positionsPage, "next", loadPositionsOnly));
+    els.ordersPrevPage.addEventListener("click", () => {
+      const page = state.selectedTab === "fills" ? state.fillsPage : state.ordersPage;
+      const loader = state.selectedTab === "fills" ? loadFillsOnly : loadOrdersOnly;
+      gotoPage(page, "prev", loader);
+    });
+    els.ordersNextPage.addEventListener("click", () => {
+      const page = state.selectedTab === "fills" ? state.fillsPage : state.ordersPage;
+      const loader = state.selectedTab === "fills" ? loadFillsOnly : loadOrdersOnly;
+      gotoPage(page, "next", loader);
+    });
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));

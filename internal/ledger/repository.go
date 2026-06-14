@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1281,6 +1282,9 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	if query.Status != "" && !query.Status.Valid() {
 		return query, fmt.Errorf("%w: status is invalid", ErrInvalidLedgerInput)
 	}
+	if _, err := queryCursorOffset(query.Cursor); err != nil {
+		return query, err
+	}
 	if query.Limit <= 0 {
 		query.Limit = 100
 	}
@@ -1302,6 +1306,9 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	}
 	if query.Exchange != "" && !query.Exchange.Valid() {
 		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if _, err := queryCursorOffset(query.Cursor); err != nil {
+		return query, err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 100
@@ -1326,6 +1333,9 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	}
 	if query.Exchange != "" && !query.Exchange.Valid() {
 		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if _, err := queryCursorOffset(query.Cursor); err != nil {
+		return query, err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 500
@@ -1367,6 +1377,18 @@ func normalizeQueryDates(tradeDate string, dateFrom string, dateTo string) (stri
 		return "", "", "", fmt.Errorf("%w: date_from must be <= date_to", ErrInvalidLedgerInput)
 	}
 	return "", dateFrom, dateTo, nil
+}
+
+func queryCursorOffset(cursor string) (int, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(cursor)
+	if err != nil || offset < 0 {
+		return 0, fmt.Errorf("%w: cursor must be a non-negative offset", ErrInvalidLedgerInput)
+	}
+	return offset, nil
 }
 
 func normalizeTradeDate(value string) (string, error) {
@@ -1655,8 +1677,8 @@ func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 		builder.WriteString(strings.Join(where, " AND "))
 		builder.WriteString("\n")
 	}
-	args = append(args, query.Limit)
-	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(last_updated_at, created_at) DESC, gateway_order_id DESC LIMIT $%d", len(args)))
+	builder.WriteString("ORDER BY COALESCE(last_updated_at, created_at) DESC, gateway_order_id DESC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
 	return builder.String(), args
 }
 
@@ -1690,8 +1712,8 @@ func buildListFillsSQL(query trading.FillQuery) (string, []any) {
 		builder.WriteString(strings.Join(where, " AND "))
 		builder.WriteString("\n")
 	}
-	args = append(args, query.Limit)
-	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(matched_at, created_at) DESC, fill_pk DESC LIMIT $%d", len(args)))
+	builder.WriteString("ORDER BY COALESCE(matched_at, created_at) DESC, fill_pk DESC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
 	return builder.String(), args
 }
 
@@ -1715,8 +1737,8 @@ func buildListPositionsSQL(query trading.PositionQuery) (string, []any) {
 	builder.WriteString("WHERE ")
 	builder.WriteString(strings.Join(where, " AND "))
 	builder.WriteString("\n")
-	args = append(args, query.Limit)
-	builder.WriteString(fmt.Sprintf("ORDER BY market_value DESC, symbol ASC, exchange ASC LIMIT $%d", len(args)))
+	builder.WriteString("ORDER BY market_value DESC, symbol ASC, exchange ASC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
 	return builder.String(), args
 }
 
@@ -1749,8 +1771,8 @@ func buildListPositionSnapshotsSQL(query trading.PositionQuery) (string, []any) 
 	builder.WriteString("WHERE ")
 	builder.WriteString(strings.Join(where, " AND "))
 	builder.WriteString("\n")
-	args = append(args, query.Limit)
-	builder.WriteString(fmt.Sprintf("ORDER BY trade_date DESC, market_value DESC, symbol ASC, exchange ASC LIMIT $%d", len(args)))
+	builder.WriteString("ORDER BY trade_date DESC, market_value DESC, symbol ASC, exchange ASC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
 	return builder.String(), args
 }
 
@@ -1805,6 +1827,17 @@ func buildListReconciliationBreaksSQL(query ReconciliationBreakQuery) (string, [
 	args = append(args, query.Limit)
 	builder.WriteString(fmt.Sprintf("ORDER BY created_at DESC, reconciliation_break_pk DESC LIMIT $%d", len(args)))
 	return builder.String(), args
+}
+
+func appendLimitOffset(builder *strings.Builder, args *[]any, limit int, cursor string) {
+	*args = append(*args, limit)
+	builder.WriteString(fmt.Sprintf(" LIMIT $%d", len(*args)))
+	offset, _ := queryCursorOffset(cursor)
+	if offset <= 0 {
+		return
+	}
+	*args = append(*args, offset)
+	builder.WriteString(fmt.Sprintf(" OFFSET $%d", len(*args)))
 }
 
 func appendTimestampRange(where *[]string, args *[]any, column string, dateFrom string, dateTo string) {

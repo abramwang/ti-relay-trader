@@ -266,7 +266,7 @@ button {
 .terminal-shell.view-orders .blotter-panel {
   grid-column: 1;
   grid-row: 1;
-  grid-template-rows: 72px 42px minmax(0, 1fr);
+  grid-template-rows: 72px 42px minmax(0, 1fr) 36px;
 }
 
 .terminal-shell.view-asset .terminal-main {
@@ -285,7 +285,7 @@ button {
 .terminal-shell.view-asset .portfolio-panel {
   grid-column: 1;
   grid-row: 1;
-  grid-template-rows: 92px 72px 45px minmax(0, 1fr);
+  grid-template-rows: 92px 72px 45px minmax(0, 1fr) 36px;
 }
 
 .terminal-shell.view-performance .terminal-main {
@@ -586,7 +586,7 @@ button {
 
 .portfolio-panel {
   display: grid;
-  grid-template-rows: 92px 45px minmax(0, 1fr);
+  grid-template-rows: 92px 45px minmax(0, 1fr) 36px;
 }
 
 .metric-strip {
@@ -677,7 +677,8 @@ button {
   font-size: 15px;
 }
 
-.section-toolbar div {
+.section-toolbar div,
+.toolbar-actions {
   display: flex;
   gap: 6px;
 }
@@ -686,6 +687,71 @@ button {
   min-height: 28px;
   padding: 4px 9px;
   font-size: 12px;
+}
+
+.toolbar-actions,
+.blotter-actions {
+  align-items: center;
+}
+
+.date-filter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.date-filter span {
+  white-space: nowrap;
+}
+
+.date-filter input {
+  width: 92px;
+  min-height: 28px;
+  border: 1px solid #bfc7d3;
+  border-radius: 0;
+  padding: 4px 7px;
+  background: #fff;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.pager-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  color: #475467;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.pager-bar div {
+  display: flex;
+  gap: 6px;
+}
+
+.pager-bar button {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pager-bar button:disabled {
+  cursor: not-allowed;
+  color: #98a2b3;
+  background: #eef2f6;
 }
 
 .table-wrap,
@@ -753,7 +819,7 @@ td {
 .blotter-panel {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-rows: 42px minmax(0, 1fr);
+  grid-template-rows: 42px minmax(0, 1fr) 36px;
 }
 
 .terminal-shell.view-orders .monitor-summary {
