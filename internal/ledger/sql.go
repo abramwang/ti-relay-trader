@@ -322,6 +322,29 @@ ON CONFLICT (trade_date, account_id, snapshot_type) DO UPDATE SET
     captured_at = EXCLUDED.captured_at
 `
 
+const upsertReconciliationRunSQL = `
+INSERT INTO reconciliation_runs (
+    run_id,
+    trade_date,
+    status,
+    source,
+    started_at,
+    completed_at,
+    summary,
+    error_message
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8
+)
+ON CONFLICT (run_id) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    status = EXCLUDED.status,
+    source = EXCLUDED.source,
+    started_at = COALESCE(EXCLUDED.started_at, reconciliation_runs.started_at),
+    completed_at = EXCLUDED.completed_at,
+    summary = EXCLUDED.summary,
+    error_message = EXCLUDED.error_message
+`
+
 const positionSelectColumns = `
 SELECT
     account_id,

@@ -147,6 +147,9 @@
   }
 
   function typedValue(field) {
+    if (field.type === "checkbox") {
+      return field.checked;
+    }
     const value = fieldValue(field);
     if (value === "") {
       return "";

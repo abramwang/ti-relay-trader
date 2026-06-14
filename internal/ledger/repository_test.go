@@ -369,6 +369,33 @@ func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[15], `"source":"front"`)
 }
 
+func TestUpsertAssetSnapshotForDateBuildsBackfillSnapshotWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	capturedAt := time.Date(2026, 6, 14, 16, 30, 0, 0, time.UTC)
+
+	err := repo.UpsertAssetSnapshotForDate(context.Background(), trading.Asset{
+		AccountID:     "acct-1",
+		CashAvailable: 900000,
+		CashTotal:     1000000,
+		NetAsset:      1200000,
+		MarketValue:   200000,
+	}, "20260612", "close", "post_close_settlement", map[string]any{"run_id": "settlement-1"}, capturedAt)
+	if err != nil {
+		t.Fatalf("UpsertAssetSnapshotForDate() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO asset_snapshots")
+	requireArgLen(t, exec.args, 17)
+	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" || exec.args[2] != "close" {
+		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[2])
+	}
+	if exec.args[14] != "post_close_settlement" {
+		t.Fatalf("source arg = %#v", exec.args[14])
+	}
+	assertJSONContains(t, exec.args[15], `"run_id":"settlement-1"`)
+}
+
 func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -544,6 +571,31 @@ func TestLatestJobRunsBuildsDistinctRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "job_name IN ($1, $2)")
 	requireQueryContains(t, exec.query, "ORDER BY job_name")
 	requireArgLen(t, exec.args, 2)
+}
+
+func TestUpsertReconciliationRunBuildsStatusWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	repo.now = func() time.Time { return time.Date(2026, 6, 14, 16, 5, 0, 0, time.UTC) }
+
+	run, err := repo.UpsertReconciliationRun(context.Background(), ReconciliationRun{
+		RunID:     "settlement-20260612",
+		TradeDate: "20260612",
+		Status:    "completed",
+		Source:    "post_close_settlement",
+		Summary:   map[string]any{"accounts": 1},
+	})
+	if err != nil {
+		t.Fatalf("UpsertReconciliationRun() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO reconciliation_runs")
+	requireQueryContains(t, exec.query, "ON CONFLICT (run_id)")
+	requireArgLen(t, exec.args, 8)
+	if run.TradeDate != "2026-06-12" || exec.args[0] != "settlement-20260612" || exec.args[1] != "2026-06-12" {
+		t.Fatalf("run = %#v args=%#v", run, exec.args)
+	}
+	assertJSONContains(t, exec.args[6], `"accounts":1`)
 }
 
 func TestJobRunJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {

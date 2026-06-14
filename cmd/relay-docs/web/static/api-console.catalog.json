@@ -231,6 +231,29 @@
     ]
   },
   {
+    "id": "settlement-snapshots",
+    "group": "运维",
+    "title": "结算快照落盘",
+    "method": "POST",
+    "path": "/v1/settlements/snapshots",
+    "status": "needs-config",
+    "fields": [
+      { "name": "run_id", "label": "run_id", "source": "body", "defaultValue": "post_close_settlement-20260612" },
+      { "name": "trade_date", "label": "trade_date", "source": "body", "required": true, "defaultValue": "20260612" },
+      { "name": "snapshot_type", "label": "snapshot_type", "source": "body", "type": "select", "defaultValue": "close", "options": ["intraday", "close", "reconcile"] },
+      { "name": "source", "label": "source", "source": "body", "defaultValue": "post_close_settlement" },
+      { "name": "dry_run", "label": "dry_run", "source": "body", "type": "checkbox", "defaultValue": "true" },
+      {
+        "name": "account_ids_json",
+        "label": "account_ids",
+        "source": "body_json",
+        "type": "textarea",
+        "target": "account_ids",
+        "defaultValue": "[\"00030484\"]"
+      }
+    ]
+  },
+  {
     "id": "meridian-snapshots",
     "group": "行情",
     "title": "Meridian 快照",

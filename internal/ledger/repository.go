@@ -92,6 +92,17 @@ type JobRun struct {
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
+type ReconciliationRun struct {
+	RunID        string         `json:"run_id"`
+	TradeDate    string         `json:"trade_date"`
+	Status       string         `json:"status"`
+	Source       string         `json:"source"`
+	StartedAt    time.Time      `json:"started_at,omitempty"`
+	CompletedAt  time.Time      `json:"completed_at,omitempty"`
+	Summary      map[string]any `json:"summary,omitempty"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+}
+
 func NewRepository(exec Executor) *Repository {
 	return &Repository{
 		exec: exec,
@@ -452,6 +463,14 @@ func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (t
 }
 
 func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {
+	tradeDate := ""
+	if !capturedAt.IsZero() {
+		tradeDate = capturedAt.Format("2006-01-02")
+	}
+	return repo.UpsertAssetSnapshotForDate(ctx, asset, tradeDate, snapshotType, source, rawPayload, capturedAt)
+}
+
+func (repo *Repository) UpsertAssetSnapshotForDate(ctx context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
 	}
@@ -470,6 +489,10 @@ func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.A
 	if capturedAt.IsZero() {
 		capturedAt = repo.now()
 	}
+	tradeDate, err = normalizeTradeDate(firstNonEmpty(tradeDate, capturedAt.Format("2006-01-02")))
+	if err != nil {
+		return err
+	}
 	if normalized.UpdatedAt.IsZero() {
 		normalized.UpdatedAt = capturedAt
 	}
@@ -479,7 +502,7 @@ func (repo *Repository) UpsertAssetSnapshot(ctx context.Context, asset trading.A
 	}
 
 	_, err = repo.exec.ExecContext(ctx, upsertAssetSnapshotSQL,
-		capturedAt.Format("2006-01-02"),
+		tradeDate,
 		normalized.AccountID,
 		snapshotType,
 		normalized.CashAvailable,
@@ -904,6 +927,34 @@ func (repo *Repository) LatestJobRuns(ctx context.Context, jobNames []string) ([
 	return runs, nil
 }
 
+func (repo *Repository) UpsertReconciliationRun(ctx context.Context, run ReconciliationRun) (ReconciliationRun, error) {
+	if repo == nil || repo.exec == nil {
+		return ReconciliationRun{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeReconciliationRun(run, repo.now())
+	if err != nil {
+		return ReconciliationRun{}, err
+	}
+	summary, err := marshalJSONObject(normalized.Summary)
+	if err != nil {
+		return ReconciliationRun{}, err
+	}
+	_, err = repo.exec.ExecContext(ctx, upsertReconciliationRunSQL,
+		normalized.RunID,
+		normalized.TradeDate,
+		normalized.Status,
+		normalized.Source,
+		normalized.StartedAt,
+		nullTime(normalized.CompletedAt),
+		summary,
+		nullString(normalized.ErrorMessage),
+	)
+	if err != nil {
+		return ReconciliationRun{}, fmt.Errorf("upsert reconciliation run %s: %w", normalized.RunID, err)
+	}
+	return normalized, nil
+}
+
 func (repo *Repository) queryer() (Queryer, error) {
 	queryer, ok := repo.exec.(Queryer)
 	if !ok {
@@ -1107,6 +1158,49 @@ func normalizeJobRun(run JobRun, now time.Time) (JobRun, error) {
 	}
 	if run.Report == nil {
 		run.Report = map[string]any{}
+	}
+	return run, nil
+}
+
+func normalizeReconciliationRun(run ReconciliationRun, now time.Time) (ReconciliationRun, error) {
+	run.RunID = strings.TrimSpace(run.RunID)
+	run.TradeDate = strings.TrimSpace(run.TradeDate)
+	run.Status = strings.TrimSpace(run.Status)
+	run.Source = strings.TrimSpace(run.Source)
+	run.ErrorMessage = strings.TrimSpace(run.ErrorMessage)
+	var err error
+	run.TradeDate, err = normalizeTradeDate(run.TradeDate)
+	if err != nil {
+		return run, err
+	}
+	if run.TradeDate == "" {
+		return run, fmt.Errorf("%w: trade_date is required", ErrInvalidLedgerInput)
+	}
+	if run.Source == "" {
+		run.Source = "post_close_settlement"
+	}
+	if run.Status == "" {
+		run.Status = "completed"
+	}
+	switch run.Status {
+	case "running", "completed", "failed":
+	default:
+		return run, fmt.Errorf("%w: reconciliation status must be running, completed, or failed", ErrInvalidLedgerInput)
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if run.StartedAt.IsZero() {
+		run.StartedAt = now
+	}
+	if run.CompletedAt.IsZero() && run.Status != "running" {
+		run.CompletedAt = now
+	}
+	if run.RunID == "" {
+		run.RunID = fmt.Sprintf("%s-%s", run.Source, strings.ReplaceAll(run.TradeDate, "-", ""))
+	}
+	if run.Summary == nil {
+		run.Summary = map[string]any{}
 	}
 	return run, nil
 }

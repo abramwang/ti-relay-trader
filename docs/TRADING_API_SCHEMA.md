@@ -277,6 +277,7 @@ rejected
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
 | `GET` | `/v1/jobs/runs` | `job_name` query | `[]JobRun` | 已实现，查询最近任务运行 |
 | `POST` | `/v1/jobs/runs` | `JobRunRequest` | `JobRun` | 已实现，日流程任务报告落盘 |
+| `POST` | `/v1/settlements/snapshots` | `SettlementSnapshotRequest` | `SettlementSnapshotResult` | 已实现，收盘结算 close 资产/持仓快照和 reconciliation run 落盘 |
 
 ## Redis Stream 映射
 
@@ -310,7 +311,9 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 
+`POST /v1/settlements/snapshots` 用于收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type=close`、`source=post_close_settlement` 和可选 `dry_run`。服务会从本地账本读取指定账户的最新资金、当前持仓、目标交易日订单和成交，将资金写入 `asset_snapshots(close)`，将持仓写入 `position_snapshots`，并 upsert `reconciliation_runs`。该接口不向前置发送查询命令；调用前应先执行资金/持仓/订单/成交 refresh 并等待账本合并。
+
 ## 后续工作
 
-1. 初始化 Python SDK，直接复用本 schema 文档和 `/v1/schema`。
-2. 增加常驻 worker，持续同步 `reply/event/hb/dlq`。
+1. 增加 `reconciliation_inputs` 和 `reconciliation_breaks` 的写入与查询接口。
+2. 增加常驻 worker 心跳状态和 DLQ 告警。

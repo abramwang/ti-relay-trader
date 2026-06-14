@@ -21,6 +21,7 @@ class FakeReceipt:
 class FakeClient:
     def __init__(self) -> None:
         self.refresh_calls: list[tuple[str, str]] = []
+        self.settlement_calls: list[dict[str, object]] = []
 
     def status(self):
         return {"status": "ok", "timezone": "Asia/Shanghai"}
@@ -49,14 +50,24 @@ class FakeClient:
     def get_positions(self, account_id: str):
         return [SimpleNamespace(account_id=account_id, symbol="600000", quantity=100)]
 
-    def list_orders(self, *, account_id: str, limit: int):
+    def list_orders(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
         return [
             SimpleNamespace(account_id=account_id, gateway_order_id="gw-working", is_terminal=False),
             SimpleNamespace(account_id=account_id, gateway_order_id="gw-filled", is_terminal=True),
         ]
 
-    def list_fills(self, *, account_id: str, limit: int):
+    def list_fills(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
         return [SimpleNamespace(account_id=account_id, fill_id="fill-1")]
+
+    def record_settlement_snapshot(self, **kwargs):
+        self.settlement_calls.append(dict(kwargs))
+        return {
+            "run_id": kwargs.get("run_id"),
+            "trade_date": kwargs.get("trade_date"),
+            "status": "completed",
+            "asset_snapshots": 1,
+            "position_snapshots": 1,
+        }
 
     def _refresh(self, account_id: str, action: str) -> FakeReceipt:
         self.refresh_calls.append((account_id, action))
@@ -125,6 +136,10 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertFalse(report["skipped"])
         self.assertEqual(len(report["accounts"]), 1)
         self.assertEqual(report["accounts"][0]["snapshot"]["non_terminal_order_ids"], ["gw-working"])
+        self.assertEqual(len(client.settlement_calls), 1)
+        self.assertEqual(client.settlement_calls[0]["trade_date"], "20260612")
+        self.assertEqual(client.settlement_calls[0]["account_ids"], ["acct-1"])
+        self.assertEqual(report["settlement_snapshot"]["result"]["status"], "completed")
 
 
 if __name__ == "__main__":

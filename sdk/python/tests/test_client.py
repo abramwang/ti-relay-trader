@@ -174,6 +174,21 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/jobs/runs":
             self._json({"ok": True, "data": {"run": {"run_id": "job-1", "job_name": body.get("job_name") or body.get("report", {}).get("job")}}}, status=202)
             return
+        if parsed.path == "/v1/settlements/snapshots":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "run_id": body.get("run_id"),
+                        "trade_date": body.get("trade_date"),
+                        "status": "completed",
+                        "asset_snapshots": 1,
+                        "position_snapshots": 1,
+                    },
+                },
+                status=202,
+            )
+            return
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
@@ -231,6 +246,21 @@ class RelayClientTest(unittest.TestCase):
         method, path, _query, body = RelayHandler.requests[-1]
         self.assertEqual((method, path), ("POST", "/v1/jobs/runs"))
         self.assertEqual(body["trigger"], "unit")
+
+    def test_record_settlement_snapshot(self):
+        result = self.client.record_settlement_snapshot(
+            trade_date="20260612",
+            account_ids=["acct-1"],
+            run_id="settlement-20260612",
+            dry_run=True,
+        )
+
+        self.assertEqual(result["run_id"], "settlement-20260612")
+        method, path, _query, body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/v1/settlements/snapshots"))
+        self.assertEqual(body["trade_date"], "20260612")
+        self.assertEqual(body["account_ids"], ["acct-1"])
+        self.assertTrue(body["dry_run"])
 
     def test_submit_order_generates_traceable_ids(self):
         receipt = self.client.submit_order(symbol="600000", exchange="SH", side="B", price=9.67, qty=100)

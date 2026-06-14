@@ -981,6 +981,63 @@ func TestJobRunPostPersistsReport(t *testing.T) {
 	}
 }
 
+func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{
+			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1200000, CashAvailable: 1000000, MarketValue: 200000},
+		},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+			Count:     1,
+		},
+		listOrdersResult: orderflow.ListOrdersResult{
+			Orders: []trading.Order{{AccountID: "acct-1", GatewayOrderID: "gw-working", Status: trading.OrderStatusWorking}},
+			Count:  1,
+		},
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{{FillID: "fill-1", AccountID: "acct-1", GatewayOrderID: "gw-filled"}},
+			Count: 1,
+		},
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders:      service,
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"settlement-20260612",
+		"trade_date":"20260612",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.assetAccountID != "acct-1" || service.positionQuery.AccountID != "acct-1" {
+		t.Fatalf("service queries asset=%q positions=%#v", service.assetAccountID, service.positionQuery)
+	}
+	if service.orderQuery.TradeDate != "2026-06-12" || !service.orderQuery.History {
+		t.Fatalf("order query = %#v", service.orderQuery)
+	}
+	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].tradeDate != "2026-06-12" || store.assetSnapshots[0].snapshotType != "close" {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.TradeDate != "2026-06-12" {
+		t.Fatalf("position snapshots = %#v", store.positionSnapshots)
+	}
+	if store.reconciliation.RunID != "settlement-20260612" || store.reconciliation.Status != "completed" {
+		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+	if !strings.Contains(rec.Body.String(), `"non_terminal_orders":1`) {
+		t.Fatalf("response missing non-terminal count: %s", rec.Body.String())
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string
@@ -1028,6 +1085,53 @@ type fakeJobRunStore struct {
 	saved ledger.JobRun
 	runs  []ledger.JobRun
 	err   error
+}
+
+type fakeSettlementStore struct {
+	assetSnapshots []struct {
+		asset        trading.Asset
+		tradeDate    string
+		snapshotType string
+		source       string
+	}
+	positionSnapshots []struct {
+		position trading.Position
+		source   string
+	}
+	reconciliation ledger.ReconciliationRun
+	err            error
+}
+
+func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, _ any, _ time.Time) error {
+	if store.err != nil {
+		return store.err
+	}
+	store.assetSnapshots = append(store.assetSnapshots, struct {
+		asset        trading.Asset
+		tradeDate    string
+		snapshotType string
+		source       string
+	}{asset: asset, tradeDate: tradeDate, snapshotType: snapshotType, source: source})
+	return nil
+}
+
+func (store *fakeSettlementStore) UpsertPositionSnapshot(_ context.Context, position trading.Position, source string, _ any, _ time.Time) error {
+	if store.err != nil {
+		return store.err
+	}
+	store.positionSnapshots = append(store.positionSnapshots, struct {
+		position trading.Position
+		source   string
+	}{position: position, source: source})
+	return nil
+}
+
+func (store *fakeSettlementStore) UpsertReconciliationRun(_ context.Context, run ledger.ReconciliationRun) (ledger.ReconciliationRun, error) {
+	if store.err != nil {
+		return ledger.ReconciliationRun{}, store.err
+	}
+	store.reconciliation = run
+	return run, nil
 }
 
 func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun) (ledger.JobRun, error) {

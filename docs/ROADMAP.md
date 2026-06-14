@@ -28,7 +28,7 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 推进 `post_close_settlement` 从报告摘要升级为实际写入日终 `asset_snapshots`、`position_snapshots` 和对账批次。
+2. 推进盘后对账输入和差异记录：写入 `reconciliation_inputs`，对比柜台查询快照、Redis 原始消息和 relay 标准账本，生成 `reconciliation_breaks`。
 3. 增加 9092 页面冒烟测试。
 4. 增加批量下单测试视图。
 5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
@@ -36,26 +36,26 @@
 
 ## 下一步任务
 
-### N2 收盘结算快照落盘与对账批次
+### N3 盘后对账输入与差异记录
 
 状态：`doing`
 
-目标：让 `post_close_settlement` 不只输出报告摘要，而是固化日终资产、持仓和对账批次，为历史持仓查询、账户盈亏统计和盘后复核提供稳定数据源。
+目标：在 N2 已写入 close 快照和 `reconciliation_runs` 的基础上，补齐盘后对账输入、差异记录和 PnL 输入摘要，让人工复核和后续账户盈亏统计有可追踪依据。
 
 范围：
 
-- 在收盘任务中按账户触发资金、持仓、订单、成交刷新，并等待本地账本合并到可审计状态。
-- 将当前资金写入 `asset_snapshots` 的日终 `close` 快照，保留捕获时间、来源和报告摘要。
-- 将当前持仓写入 `position_snapshots` 的日终快照，供 `/positions/history` 和后续 PnL 使用。
-- 创建或更新 `reconciliation_runs`，记录任务批次、输入范围、状态和错误摘要。
-- 为 Python job 增加单元测试，覆盖交易日跳过、成功写入、部分账户失败和重复运行幂等。
+- 记录 `reconciliation_inputs`：柜台查询快照摘要、relay 标准订单/成交/资金/持仓摘要、Redis 原始消息窗口摘要。
+- 生成第一版 `reconciliation_breaks`：未终态订单、订单成交数量不一致、资产/持仓快照缺失、账户刷新失败。
+- 在 `post_close_settlement` 报告中增加对账输入数量、差异数量、严重级别和 PnL 输入摘要。
+- 为 9092 增加对账批次/差异查询接口或在 `/v1/jobs/runs` 报告中保留足够摘要。
+- 增加单元测试覆盖无差异、存在未终态订单、缺少快照和重复运行幂等。
 
 验收口径：
 
-- 收盘任务对同一账户同一交易日重复执行不会生成重复快照或重复对账批次。
-- `/v1/accounts/{account_id}/positions/history?trade_date=YYYY-MM-DD` 能读到收盘任务写入的持仓快照。
-- 任务报告包含资产快照数、持仓快照数、对账批次号、未终态订单数量和失败账户摘要。
-- 失败时任务状态可通过 `/v1/status.job_runs.post_close_settlement` 和 `/v1/jobs/runs` 追踪。
+- 同一 `run_id` 重复执行不会重复生成相同输入和差异。
+- `reconciliation_runs.summary` 能看到输入数量、差异数量、账户范围和失败摘要。
+- 有未终态订单时会形成可查询/可复核的 break，而不是只停留在任务 stdout。
+- 后续 PnL 任务至少能读取日终权益、持仓市值、成交金额和费用摘要。
 
 ## 里程碑细化
 
@@ -189,6 +189,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.2.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.3.tar.gz` 和 SHA256 校验文件。
 - [x] 发布 `public/sdk/relay-sdk-0.1.4.tar.gz` 和 SHA256 校验文件，支持历史查询和任务报告落盘。
+- [x] 发布 `public/sdk/relay-sdk-0.1.5.tar.gz` 和 SHA256 校验文件，支持收盘结算快照落盘。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -238,9 +239,10 @@
 - [x] 建立任务运行账表，记录日流程报告、耗时、终态和错误摘要。
 - [x] 将 `pre_open_init` 与 `post_close_settlement` 报告写入任务运行账表。
 - [x] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
-- [ ] 拉取柜台资金、持仓、订单、成交查询结果。
+- [x] 拉取柜台资金、持仓、订单、成交查询结果。
+- [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
 - [ ] 对比 Redis 事件流水和内部账表。
-- [ ] 记录对账批次和差异。
+- [ ] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。
 - [ ] 输出人工复核报告。
 
 ### P8 历史数据与盈亏统计

@@ -76,7 +76,8 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 4. 对启用账户发布资金、持仓、订单、成交刷新命令。
 5. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
 6. 输出 JSON 报告，可通过 `--output` 写入文件。
-7. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要。
+7. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
+8. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要。
 
 示例配置：
 
@@ -104,7 +105,5 @@ TZ=Asia/Shanghai
 
 ## 后续落地项
 
-1. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
-2. 将收盘后结算实际写入日终 `asset_snapshots`、`position_snapshots` 和对账批次。
-3. 将收盘后结算接入正式盘后对账差异表和 PnL 计算。
-4. 增加 cron 安装模板或 systemd timer 部署模板。
+1. 将收盘后结算接入正式盘后对账输入、差异表和 PnL 计算。
+2. 增加 cron 安装模板或 systemd timer 部署模板。

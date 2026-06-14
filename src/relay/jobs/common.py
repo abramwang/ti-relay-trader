@@ -141,6 +141,7 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
         phase="post_close_settlement",
         refresh_steps=("orders", "fills", "asset", "positions"),
         check_non_terminal_orders=True,
+        settle_snapshots=True,
     )
 
 
@@ -152,6 +153,7 @@ def run_daily_job(
     phase: str,
     refresh_steps: tuple[str, ...],
     check_non_terminal_orders: bool,
+    settle_snapshots: bool = False,
 ) -> dict[str, Any]:
     started_at = now_iso()
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
@@ -202,12 +204,36 @@ def run_daily_job(
             relay_client,
             account_id,
             options=options,
+            trade_date=trading_day.target_trade_date,
             refresh_steps=refresh_steps,
             check_non_terminal_orders=check_non_terminal_orders,
         )
         report["accounts"].append(account_report)
         if account_report.get("errors"):
             report["ok"] = False
+
+    if settle_snapshots and accounts:
+        settlement_run_id = f"{phase}-{trading_day.target_trade_date}"
+        report["settlement_run_id"] = settlement_run_id
+        settlement_value, settlement_report = capture_call(
+            "record_settlement_snapshot",
+            relay_client.record_settlement_snapshot,
+            trade_date=trading_day.target_trade_date,
+            account_ids=accounts,
+            run_id=settlement_run_id,
+            snapshot_type="close",
+            source=phase,
+            dry_run=options.dry_run,
+        )
+        report["settlement_snapshot"] = settlement_report
+        if settlement_report.get("error"):
+            report["ok"] = False
+            report["errors"].append(settlement_report["error"])
+        elif isinstance(settlement_value, Mapping) and settlement_value.get("status") == "failed":
+            report["ok"] = False
+            errors = settlement_value.get("errors")
+            if errors:
+                report["errors"].append(f"settlement snapshot failed: {errors}")
 
     return finish_report(report)
 
@@ -217,6 +243,7 @@ def run_account_flow(
     account_id: str,
     *,
     options: JobOptions,
+    trade_date: str,
     refresh_steps: tuple[str, ...],
     check_non_terminal_orders: bool,
 ) -> dict[str, Any]:
@@ -241,6 +268,8 @@ def run_account_flow(
         "list_orders",
         client.list_orders,
         account_id=account_id,
+        trade_date=trade_date,
+        history=True,
         limit=options.query_limit,
         include_result=False,
     )
@@ -248,6 +277,8 @@ def run_account_flow(
         "list_fills",
         client.list_fills,
         account_id=account_id,
+        trade_date=trade_date,
+        history=True,
         limit=options.query_limit,
         include_result=False,
     )

@@ -31,3 +31,16 @@ func (run JobRun) MarshalJSON() ([]byte, error) {
 		UpdatedAt:   optionalBusinessTime(run.UpdatedAt),
 	})
 }
+
+func (run ReconciliationRun) MarshalJSON() ([]byte, error) {
+	type reconciliationRunAlias ReconciliationRun
+	return json.Marshal(struct {
+		reconciliationRunAlias
+		StartedAt   *string `json:"started_at,omitempty"`
+		CompletedAt *string `json:"completed_at,omitempty"`
+	}{
+		reconciliationRunAlias: reconciliationRunAlias(run),
+		StartedAt:              optionalBusinessTime(run.StartedAt),
+		CompletedAt:            optionalBusinessTime(run.CompletedAt),
+	})
+}

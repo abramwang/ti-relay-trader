@@ -26,6 +26,7 @@ import (
 type Dependencies struct {
 	Orders       OrderService
 	Jobs         JobRunStore
+	Settlements  SettlementStore
 	Market       *market.MeridianClient
 	Events       *events.Hub
 	DatabasePing HealthCheckFunc
@@ -53,12 +54,19 @@ type JobRunStore interface {
 	LatestJobRuns(ctx context.Context, jobNames []string) ([]ledger.JobRun, error)
 }
 
+type SettlementStore interface {
+	UpsertAssetSnapshotForDate(ctx context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
+	UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error
+	UpsertReconciliationRun(ctx context.Context, run ledger.ReconciliationRun) (ledger.ReconciliationRun, error)
+}
+
 type Server struct {
 	cfg     config.Config
 	logger  *slog.Logger
 	started time.Time
 	orders  OrderService
 	jobs    JobRunStore
+	settles SettlementStore
 	market  *market.MeridianClient
 	events  *events.Hub
 	health  statusHealthChecks
@@ -92,6 +100,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		started: timeutil.Now(),
 		orders:  deps.Orders,
 		jobs:    deps.Jobs,
+		settles: deps.Settlements,
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
@@ -113,6 +122,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
+	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
 	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
 	mux.HandleFunc("/v1/history/fills", server.handleHistoryFills)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
@@ -767,6 +777,162 @@ func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleSettlementSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+		return
+	}
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+
+	defer r.Body.Close()
+	var req SettlementSnapshotRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid settlement snapshot body", err.Error())
+		return
+	}
+	if s.settles == nil && !req.DryRun {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+
+	result, err := s.buildSettlementSnapshot(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid settlement snapshot request", err.Error())
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnapshotRequest) (SettlementSnapshotResult, error) {
+	tradeDate, err := normalizeAPIDate(firstNonEmpty(req.TradeDate, timeutil.Now().Format("2006-01-02")))
+	if err != nil {
+		return SettlementSnapshotResult{}, err
+	}
+	snapshotType := firstNonEmpty(req.SnapshotType, "close")
+	switch snapshotType {
+	case "intraday", "close", "reconcile":
+	default:
+		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_type must be intraday, close, or reconcile")
+	}
+	source := firstNonEmpty(req.Source, "post_close_settlement")
+	accountIDs := settlementAccountIDs(req.AccountIDs, s.cfg.Accounts)
+	if len(accountIDs) == 0 {
+		return SettlementSnapshotResult{}, fmt.Errorf("account_ids is required when no enabled accounts are configured")
+	}
+	runID := firstNonEmpty(req.RunID, fmt.Sprintf("%s-%s", source, strings.ReplaceAll(tradeDate, "-", "")))
+	startedAt := timeutil.Now()
+	result := SettlementSnapshotResult{
+		RunID:        runID,
+		TradeDate:    tradeDate,
+		SnapshotType: snapshotType,
+		Source:       source,
+		Status:       "completed",
+		DryRun:       req.DryRun,
+		Accounts:     make([]SettlementSnapshotAccountResult, 0, len(accountIDs)),
+		Errors:       []string{},
+		StartedAt:    timeutil.FormatRFC3339Nano(startedAt),
+	}
+
+	for _, accountID := range accountIDs {
+		accountResult := s.buildAccountSettlementSnapshot(ctx, accountID, tradeDate, snapshotType, source, runID, req.DryRun, startedAt)
+		result.Accounts = append(result.Accounts, accountResult)
+		result.AssetSnapshots += boolAsInt(accountResult.AssetSnapshotWritten)
+		result.PositionSnapshots += accountResult.PositionSnapshotsWritten
+		result.OrdersCount += accountResult.OrdersCount
+		result.FillsCount += accountResult.FillsCount
+		result.NonTerminalOrders += accountResult.NonTerminalOrders
+		if len(accountResult.Errors) > 0 {
+			result.Status = "failed"
+			result.Errors = append(result.Errors, accountResult.Errors...)
+		}
+	}
+
+	result.CompletedAt = timeutil.FormatRFC3339Nano(timeutil.Now())
+	if !req.DryRun {
+		run, err := s.settles.UpsertReconciliationRun(ctx, ledger.ReconciliationRun{
+			RunID:        runID,
+			TradeDate:    tradeDate,
+			Status:       reconciliationStatus(result.Status),
+			Source:       source,
+			StartedAt:    startedAt,
+			CompletedAt:  timeutil.Now(),
+			Summary:      result.summary(),
+			ErrorMessage: firstErrorSummary(result.Errors),
+		})
+		if err != nil {
+			result.Status = "failed"
+			result.Errors = append(result.Errors, fmt.Sprintf("reconciliation run: %v", err))
+		} else {
+			result.ReconciliationRun = &run
+		}
+	}
+	return result, nil
+}
+
+func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, source string, runID string, dryRun bool, capturedAt time.Time) SettlementSnapshotAccountResult {
+	out := SettlementSnapshotAccountResult{AccountID: accountID}
+	assetResult, err := s.orders.GetAsset(ctx, accountID)
+	if err != nil {
+		out.Errors = append(out.Errors, fmt.Sprintf("asset: %v", err))
+	}
+	positionResult, err := s.orders.ListPositions(ctx, trading.PositionQuery{AccountID: accountID, Limit: 2000})
+	if err != nil {
+		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
+	}
+	ordersResult, err := s.orders.ListOrders(ctx, trading.OrderQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: 500})
+	if err != nil {
+		out.Errors = append(out.Errors, fmt.Sprintf("orders: %v", err))
+	}
+	fillsResult, err := s.orders.ListFills(ctx, trading.FillQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: 500})
+	if err != nil {
+		out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
+	}
+	out.PositionsCount = len(positionResult.Positions)
+	out.OrdersCount = len(ordersResult.Orders)
+	out.FillsCount = len(fillsResult.Fills)
+	for _, order := range ordersResult.Orders {
+		if !order.IsTerminal && !order.Status.Terminal() {
+			out.NonTerminalOrders++
+			if len(out.NonTerminalOrderIDs) < 20 {
+				out.NonTerminalOrderIDs = append(out.NonTerminalOrderIDs, order.GatewayOrderID)
+			}
+		}
+	}
+	if len(out.Errors) > 0 || dryRun {
+		return out
+	}
+
+	rawBase := map[string]any{
+		"run_id":        runID,
+		"trade_date":    tradeDate,
+		"snapshot_type": snapshotType,
+		"source":        source,
+	}
+	assetRaw := cloneMap(rawBase)
+	assetRaw["asset"] = assetResult.Asset
+	if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, capturedAt); err != nil {
+		out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
+	} else {
+		out.AssetSnapshotWritten = true
+	}
+	for _, position := range positionResult.Positions {
+		position.TradeDate = tradeDate
+		positionRaw := cloneMap(rawBase)
+		positionRaw["position"] = position
+		if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
+			continue
+		}
+		out.PositionSnapshotsWritten++
+	}
+	return out
+}
+
 func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, trading.ErrInvalidSchema):
@@ -1103,6 +1269,64 @@ type JobRunRequest struct {
 	ErrorSummary    string         `json:"error_summary,omitempty"`
 }
 
+type SettlementSnapshotRequest struct {
+	RunID        string   `json:"run_id,omitempty"`
+	TradeDate    string   `json:"trade_date,omitempty"`
+	AccountIDs   []string `json:"account_ids,omitempty"`
+	SnapshotType string   `json:"snapshot_type,omitempty"`
+	Source       string   `json:"source,omitempty"`
+	DryRun       bool     `json:"dry_run,omitempty"`
+}
+
+type SettlementSnapshotResult struct {
+	RunID             string                            `json:"run_id"`
+	TradeDate         string                            `json:"trade_date"`
+	SnapshotType      string                            `json:"snapshot_type"`
+	Source            string                            `json:"source"`
+	Status            string                            `json:"status"`
+	DryRun            bool                              `json:"dry_run,omitempty"`
+	StartedAt         string                            `json:"started_at"`
+	CompletedAt       string                            `json:"completed_at"`
+	AssetSnapshots    int                               `json:"asset_snapshots"`
+	PositionSnapshots int                               `json:"position_snapshots"`
+	OrdersCount       int                               `json:"orders_count"`
+	FillsCount        int                               `json:"fills_count"`
+	NonTerminalOrders int                               `json:"non_terminal_orders"`
+	Accounts          []SettlementSnapshotAccountResult `json:"accounts"`
+	ReconciliationRun *ledger.ReconciliationRun         `json:"reconciliation_run,omitempty"`
+	Errors            []string                          `json:"errors,omitempty"`
+}
+
+type SettlementSnapshotAccountResult struct {
+	AccountID                string   `json:"account_id"`
+	AssetSnapshotWritten     bool     `json:"asset_snapshot_written"`
+	PositionsCount           int      `json:"positions_count"`
+	PositionSnapshotsWritten int      `json:"position_snapshots_written"`
+	OrdersCount              int      `json:"orders_count"`
+	FillsCount               int      `json:"fills_count"`
+	NonTerminalOrders        int      `json:"non_terminal_orders"`
+	NonTerminalOrderIDs      []string `json:"non_terminal_order_ids,omitempty"`
+	Errors                   []string `json:"errors,omitempty"`
+}
+
+func (result SettlementSnapshotResult) summary() map[string]any {
+	return map[string]any{
+		"run_id":              result.RunID,
+		"trade_date":          result.TradeDate,
+		"snapshot_type":       result.SnapshotType,
+		"source":              result.Source,
+		"status":              result.Status,
+		"dry_run":             result.DryRun,
+		"asset_snapshots":     result.AssetSnapshots,
+		"position_snapshots":  result.PositionSnapshots,
+		"orders_count":        result.OrdersCount,
+		"fills_count":         result.FillsCount,
+		"non_terminal_orders": result.NonTerminalOrders,
+		"accounts":            result.Accounts,
+		"errors":              result.Errors,
+	}
+}
+
 func jobRunFromRequest(req JobRunRequest) (ledger.JobRun, error) {
 	report := req.Report
 	if report == nil {
@@ -1219,6 +1443,82 @@ func boolFromMap(values map[string]any, key string) bool {
 		return boolValue
 	}
 	return parseBool(fmt.Sprint(value))
+}
+
+func normalizeAPIDate(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("trade_date is required")
+	}
+	layout := "2006-01-02"
+	if len(value) == 8 {
+		layout = "20060102"
+	}
+	parsed, err := time.ParseInLocation(layout, value, timeutil.Location())
+	if err != nil {
+		return "", errors.New("trade_date must be YYYYMMDD or YYYY-MM-DD")
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+func settlementAccountIDs(requested []string, configured []config.AccountRouteConfig) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(accountID string) {
+		accountID = strings.TrimSpace(accountID)
+		if accountID == "" {
+			return
+		}
+		if _, ok := seen[accountID]; ok {
+			return
+		}
+		seen[accountID] = struct{}{}
+		out = append(out, accountID)
+	}
+	for _, accountID := range requested {
+		add(accountID)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, account := range configured {
+		if account.Enabled {
+			add(account.AccountID)
+		}
+	}
+	return out
+}
+
+func cloneMap(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func boolAsInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func reconciliationStatus(status string) string {
+	if status == "failed" {
+		return "failed"
+	}
+	return "completed"
+}
+
+func firstErrorSummary(errors []string) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	if len(errors) > 5 {
+		errors = errors[:5]
+	}
+	return strings.Join(errors, "; ")
 }
 
 func firstNonEmpty(values ...string) string {

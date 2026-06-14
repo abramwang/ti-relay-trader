@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.4"
+SDK_VERSION = "0.1.5"
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 
@@ -204,7 +204,7 @@ class RelayClient:
         """Persist a trading-day job report into relay's local ledger."""
 
         payload = {
-            "run_id": run_id,
+            "run_id": run_id or report.get("run_id"),
             "job_name": job_name,
             "trigger": trigger,
             "status": status,
@@ -214,6 +214,28 @@ class RelayClient:
         }
         data = self._request("POST", "/v1/jobs/runs", json_body=payload)
         return data.get("run", data)
+
+    def record_settlement_snapshot(
+        self,
+        *,
+        trade_date: str,
+        account_ids: Iterable[str] | None = None,
+        run_id: str | None = None,
+        snapshot_type: str = "close",
+        source: str = "post_close_settlement",
+        dry_run: bool = False,
+    ) -> Mapping[str, Any]:
+        """Persist post-close asset/position snapshots and a reconciliation run."""
+
+        payload = {
+            "run_id": run_id,
+            "trade_date": trade_date,
+            "account_ids": list(account_ids or ([self.account_id] if self.account_id else [])),
+            "snapshot_type": snapshot_type,
+            "source": source,
+            "dry_run": dry_run,
+        }
+        return self._request("POST", "/v1/settlements/snapshots", json_body=payload)
 
     def submit_order(
         self,
