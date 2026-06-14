@@ -1,6 +1,6 @@
 # relay Python SDK 设计
 
-更新时间：`2026-06-13`
+更新时间：`2026-06-14`
 
 ## 目标
 
@@ -14,9 +14,32 @@ SDK 的定位：
 4. 明确区分“命令已接受”和“订单最终完成”，不隐藏实盘交易异步语义。
 5. 后续同时支持实盘账户和模拟账户，使用同一套方法。
 
+## 当前状态
+
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.0`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过后续 tar.gz 包安装。
+
+已实现能力：
+
+1. `RelayClient`：统一 base URL、默认账户、超时、Bearer API key 和代理开关。
+2. 账户、资金、持仓、订单、成交查询。
+3. 资金、持仓、订单、成交前置刷新指令。
+4. 单笔下单、批量下单、撤单。
+5. `wait_order_terminal()` 轮询等待订单终态。
+6. `stream_events()` SSE 事件迭代器。
+7. dataclass 模型和 `raw` 原始响应保留。
+8. relay envelope 错误到 SDK 异常的映射。
+9. mock 9092 API 单元测试。
+
+尚未完成：
+
+1. 内网 tar.gz 安装包生成脚本。
+2. 9092 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
+3. 面向真实 9092 测试服务的 SDK 集成测试。
+4. 更完整的事件流断线重连和心跳处理。
+
 ## 包形态
 
-建议包名：
+包名：
 
 ```text
 relay-sdk
@@ -28,10 +51,12 @@ Python import：
 from relay_sdk import RelayClient
 ```
 
-建议目录：
+当前目录：
 
 ```text
 sdk/python/
+├── pyproject.toml
+├── README.md
 └── relay_sdk/
     ├── __init__.py
     ├── client.py
@@ -125,6 +150,10 @@ client = RelayClient(
 | `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询持仓 |
 | `list_orders(...)` | `GET /v1/orders` | 查询订单 |
 | `list_fills(...)` | `GET /v1/fills` | 查询成交 |
+| `refresh_asset(account_id=None)` | `POST /v1/accounts/{account_id}/asset/refresh` | 触发资金前置查询 |
+| `refresh_positions(account_id=None)` | `POST /v1/accounts/{account_id}/positions/refresh` | 触发持仓前置查询 |
+| `refresh_orders(account_id=None)` | `POST /v1/accounts/{account_id}/orders/refresh` | 触发订单前置查询 |
+| `refresh_fills(account_id=None)` | `POST /v1/accounts/{account_id}/fills/refresh` | 触发成交前置查询 |
 
 ### 交易
 
@@ -195,12 +224,31 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 - `gateway_order_id`
 - `raw_response`
 
+## 当前测试
+
+本地 mock API 单元测试：
+
+```bash
+cd /home/ti-relay-trader
+PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
+```
+
+当前覆盖：
+
+1. 账户、资金、持仓、订单和成交查询模型转换。
+2. 下单时自动生成可追踪 `gateway_order_id` 和 `idempotency_key`。
+3. 资金、持仓、订单和成交刷新。
+4. 撤单回执。
+5. `wait_order_terminal()` 轮询终态。
+6. `IDEMPOTENCY_CONFLICT` 到 `RelayIdempotencyError` 的异常映射。
+7. SSE `order.changed` 事件解析。
+
 ## 测试与发布
 
 SDK 后续需要：
 
-1. 使用 mock 9092 API 做单元测试。
-2. 使用文档门户或测试服务做集成测试。
+1. 使用文档门户或测试服务做集成测试。
+2. 增加事件流断线重连、heartbeat 和超时测试。
 3. 覆盖下单 accepted 但最终 rejected 的场景。
 4. 覆盖撤单 accepted 但最终 filled 的竞态场景。
 5. 覆盖 idempotency replay 和 conflict。

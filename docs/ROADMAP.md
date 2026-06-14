@@ -28,7 +28,7 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 初始化 Python SDK 包骨架，让策略开发通过 SDK 使用 9092 标准 API。
+2. 补充 Python SDK 打包发布脚本和 9092 `/sdk/` 下载入口。
 3. 补充数据库状态检查到 `/v1/status`。
 4. 增加常驻 worker，持续同步 `reply/event/hb/dlq` 并持久化位点。
 5. 增加批量下单测试视图和基础页面冒烟测试。
@@ -145,11 +145,13 @@
 - [x] `GET /v1/events/stream`。
 - [x] 规划 Python SDK 的包形态、核心方法、错误处理和实盘语义。
 - [x] 参考 Meridian SDK，明确内网 HTTP tar.gz 安装包和 pip 安装方式。
-- [ ] 初始化 `sdk/python/relay_sdk` 包。
-- [ ] 实现 SDK 账户、资金、持仓查询。
-- [ ] 实现 SDK 下单、批量下单、撤单。
-- [ ] 实现 SDK 事件订阅和 `wait_order_terminal`。
-- [ ] 增加 SDK mock API 单元测试和集成测试。
+- [x] 初始化 `sdk/python/relay_sdk` 包。
+- [x] 实现 SDK 账户、资金、持仓、订单和成交查询。
+- [x] 实现 SDK 资金、持仓、订单和成交刷新指令。
+- [x] 实现 SDK 下单、批量下单、撤单。
+- [x] 实现 SDK 事件订阅和 `wait_order_terminal` 基础能力。
+- [x] 增加 SDK mock API 单元测试。
+- [ ] 增加 SDK 集成测试。
 - [ ] 增加 SDK 打包脚本和 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
 
 ### P6.1 接口测试台

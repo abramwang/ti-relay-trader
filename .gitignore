@@ -17,6 +17,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+*.egg-info/
 
 # OS/editor files.
 .DS_Store

@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+import json
+import threading
+import unittest
+from io import BytesIO
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib import parse
+
+from relay_sdk import RelayClient, RelayIdempotencyError
+from relay_sdk.streaming import iter_sse_events
+
+
+class RelayHandler(BaseHTTPRequestHandler):
+    requests = []
+
+    def do_GET(self):  # noqa: N802
+        parsed = parse.urlparse(self.path)
+        query = parse.parse_qs(parsed.query)
+        RelayHandler.requests.append(("GET", parsed.path, query, None))
+        if parsed.path == "/v1/accounts":
+            self._json({"ok": True, "data": {"accounts": [{"account_id": "acct-1", "enabled": True}]}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/asset":
+            self._json({"ok": True, "data": {"asset": {"account_id": "acct-1", "net_asset": 123.45}}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/positions":
+            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100}]}})
+            return
+        if parsed.path == "/v1/orders":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "orders": [
+                            {
+                                "account_id": "acct-1",
+                                "gateway_order_id": query.get("gateway_order_id", ["gw-1"])[0],
+                                "status": "filled",
+                                "is_terminal": True,
+                                "cum_filled_qty": 100,
+                            }
+                        ]
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/fills":
+            self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-1", "account_id": "acct-1", "qty": 100}]}})
+            return
+        self.send_error(404)
+
+    def do_POST(self):  # noqa: N802
+        parsed = parse.urlparse(self.path)
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        RelayHandler.requests.append(("POST", parsed.path, {}, body))
+        if parsed.path == "/v1/orders":
+            order = {
+                "account_id": body["account_id"],
+                "gateway_order_id": body["gateway_order_id"],
+                "client_order_id": body["client_order_id"],
+                "status": "created",
+            }
+            self._json({"ok": True, "data": {"order": order, "stream_id": "1-0", "message_id": "msg-1"}}, status=202)
+            return
+        if parsed.path == "/v1/orders/gw-1/cancel":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "order": {"account_id": body["account_id"], "gateway_order_id": "gw-1", "status": "working"},
+                        "cancel_id": body["cancel_id"],
+                    },
+                },
+                status=202,
+            )
+            return
+        if parsed.path == "/v1/accounts/acct-1/orders/refresh":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "action": "order.list.query", "stream_id": "2-0"}}, status=202)
+            return
+        if parsed.path == "/v1/accounts/acct-1/fills/refresh":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "action": "fill.list.query", "stream_id": "3-0"}}, status=202)
+            return
+        if parsed.path == "/v1/accounts/acct-1/asset/refresh" or parsed.path == "/v1/accounts/acct-1/positions/refresh":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "action": "query", "stream_id": "4-0"}}, status=202)
+            return
+        if parsed.path == "/v1/orders/batch":
+            self._json({"ok": True, "data": {"orders": body["orders"], "stream_id": "5-0"}}, status=202)
+            return
+        if parsed.path == "/v1/error":
+            self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
+            return
+        self.send_error(404)
+
+    def log_message(self, *_args):
+        return
+
+    def _json(self, payload, status=200):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class RelayClientTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        RelayHandler.requests = []
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), RelayHandler)
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.thread.join(timeout=2)
+
+    def setUp(self):
+        RelayHandler.requests = []
+        self.client = RelayClient(self.base_url, account_id="acct-1")
+
+    def test_queries_return_models(self):
+        self.assertEqual(self.client.list_accounts()[0].account_id, "acct-1")
+        self.assertEqual(self.client.get_asset().net_asset, 123.45)
+        self.assertEqual(self.client.get_positions()[0].symbol, "600000")
+        self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
+        self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
+
+    def test_submit_order_generates_traceable_ids(self):
+        receipt = self.client.submit_order(symbol="600000", exchange="SH", side="B", price=9.67, qty=100)
+        self.assertTrue(receipt.gateway_order_id.startswith("sdk-gw-acct-1-"))
+        self.assertEqual(receipt.status, "created")
+        method, path, _query, body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/v1/orders"))
+        self.assertEqual(body["account_id"], "acct-1")
+        self.assertEqual(body["idempotency_key"], f"order:acct-1:{body['gateway_order_id']}")
+
+    def test_refresh_and_cancel(self):
+        self.assertEqual(self.client.refresh_orders().action, "order.list.query")
+        self.assertEqual(self.client.refresh_fills().action, "fill.list.query")
+        self.assertEqual(self.client.cancel_order("gw-1").gateway_order_id, "gw-1")
+
+    def test_wait_order_terminal(self):
+        order = self.client.wait_order_terminal("gw-1", timeout=1, poll_interval=0.01)
+        self.assertTrue(order.is_terminal)
+        self.assertEqual(order.filled_qty, 100)
+
+    def test_error_mapping(self):
+        with self.assertRaises(RelayIdempotencyError):
+            self.client._request("POST", "/v1/error", json_body={})
+
+    def test_sse_parser(self):
+        stream = BytesIO(
+            b'event: order.changed\n'
+            b'data: {"account_ids":["acct-1"],"time":"2026-06-14T00:00:00Z","data":{"orders":1}}\n'
+            b"\n"
+        )
+        event = next(iter_sse_events(stream))
+        self.assertEqual(event.event_type, "order.changed")
+        self.assertEqual(event.account_ids, ("acct-1",))
+        self.assertEqual(event.data["orders"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
