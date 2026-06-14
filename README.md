@@ -139,8 +139,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.9.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.9.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构草案 |
@@ -254,6 +254,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
+- [x] 绩效序列增加 Meridian bars 基准对照：`GET /v1/accounts/{account_id}/performance/series` 和 `.csv` 支持 `benchmark_security_id`，输出基准收益、基准回撤和超额收益字段；`/api-console`、`/trade#performance` 和 Python SDK `0.1.9` 已同步。
 - [x] 将 Meridian 行情代理默认超时从 5 秒放宽到 15 秒，修复 `688981.SH` 分钟 bars 上游慢响应被 Relay 转成 502 的问题。
 - [ ] 设计模拟柜台账表 schema。
 - [x] 实现正式交易服务模式下的 9092 健康检查接口骨架。
@@ -310,7 +311,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.9.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；收盘任务现在会通过 `/v1/settlements/snapshots` 写入日终持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 
@@ -396,5 +397,6 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据 `tmp/relay_sdk_017_feedback_20260614.md` 反馈定位成交缺失根因：测试前置已发送 `fill.event`，但模拟柜台复用 `fill_id/match_stream_id`，旧账本唯一键 `account_id + fill_id` 误丢合法成交；新增 `000005_fill_id_order_scope` migration，将成交唯一键改为 `account_id + gateway_order_id + fill_id`，并发布 `relay-sdk 0.1.8` 让成交回调采用同一去重口径。
 - `2026-06-14`: 排查 `688981.SH` Meridian bars 502：Relay 旧默认 5 秒超时先失败，直接 Meridian 约 6 秒返回 200；将 market 默认超时和示例配置调至 15 秒，重启 9092 后本地 `/v1/meridian/market/bars?security_id=688981.SH&trade_date=20260612...` 返回 200。
 - `2026-06-14`: 用户侧复测确认 `relay-sdk 0.1.8` 安装包 SHA256 校验通过、包内单测 14/14 通过；新并发写压 30 笔中 18 笔成交，订单/成交一致性 18/18 通过，未再复现 `filled` 但 `fills` 缺失的问题。
-- `2026-06-14`: 根据路线图推进 9092 页面轻量冒烟测试，新增 `tests/integration/page_smoke.py`；本机 `http://127.0.0.1:9092` 已通过 18 个检查点，覆盖首页、README 文档、测试索引、API Console、交易终端、任务状态、静态资源、`/healthz`、`/v1/status` 和 `relay-sdk 0.1.8` 下载入口。
+- `2026-06-14`: 根据路线图推进 9092 页面轻量冒烟测试，新增 `tests/integration/page_smoke.py`；本机 `http://127.0.0.1:9092` 已通过 18 个检查点，覆盖首页、README 文档、测试索引、API Console、交易终端、任务状态、静态资源、`/healthz`、`/v1/status` 和 `relay-sdk 0.1.9` 下载入口。
 - `2026-06-14`: 新增 `/jobs` 后台任务状态监控页，参考 Meridian `realtime-status` 的任务状态面板思路，展示盘前初始化、盘后结算等 `job_runs` 的状态、交易日、开始/完成时间、耗时、错误摘要和完整 report JSON；交易终端侧边栏和首页已增加入口。
+- `2026-06-14`: 完善 P8 绩效研究导出输入：账户绩效序列和 CSV 增加 `benchmark_security_id`，通过 Meridian `bars` 的 14:55-15:00 分钟 close 生成基准收益、基准回撤和超额收益字段；API Console、`/trade#performance` 和 `relay-sdk 0.1.9` 已同步，下一步继续补研究侧 PostgreSQL 导出 view 和更完整已实现/浮动盈亏口径。

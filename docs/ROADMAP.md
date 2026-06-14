@@ -193,6 +193,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.6.tar.gz` 和 SHA256 校验文件，支持 job run 显式字段和 `completed` 状态兼容。
 - [x] 发布 `public/sdk/relay-sdk-0.1.7.tar.gz` 和 SHA256 校验文件，支持 performance、Meridian bars 和 reconciliation helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.8.tar.gz` 和 SHA256 校验文件，修复不同订单复用 `fill_id` 时的成交回调去重。
+- [x] 发布 `public/sdk/relay-sdk-0.1.9.tar.gz` 和 SHA256 校验文件，支持绩效序列 `benchmark_security_id` 基准对照。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -264,7 +265,7 @@
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。
 - [x] 在 `/trade` 交易测试主界面使用 Meridian `bars` 绘制当日分钟 K 线和成交量，辅助理解下单点位。
-- [ ] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入。
+- [x] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入：`benchmark_security_id` 输出基准收益、基准回撤、超额收益并进入 CSV。
 - [x] 提供研究侧导出输入第一版：账户绩效序列 CSV。
 - [ ] 生成研究侧数据库导出视图。
 

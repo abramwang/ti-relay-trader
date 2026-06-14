@@ -68,18 +68,27 @@ type SettlementStore interface {
 }
 
 type PerformanceSeriesSummary struct {
-	AccountID     string  `json:"account_id"`
-	DateFrom      string  `json:"date_from"`
-	DateTo        string  `json:"date_to"`
-	Count         int     `json:"count"`
-	StartNetAsset float64 `json:"start_net_asset"`
-	EndNetAsset   float64 `json:"end_net_asset"`
-	TotalPnL      float64 `json:"total_pnl"`
-	TotalReturn   float64 `json:"total_return"`
-	MaxDrawdown   float64 `json:"max_drawdown"`
+	AccountID                string   `json:"account_id"`
+	DateFrom                 string   `json:"date_from"`
+	DateTo                   string   `json:"date_to"`
+	Count                    int      `json:"count"`
+	StartNetAsset            float64  `json:"start_net_asset"`
+	EndNetAsset              float64  `json:"end_net_asset"`
+	TotalPnL                 float64  `json:"total_pnl"`
+	TotalReturn              float64  `json:"total_return"`
+	MaxDrawdown              float64  `json:"max_drawdown"`
+	BenchmarkSecurityID      string   `json:"benchmark_security_id,omitempty"`
+	BenchmarkStartClose      *float64 `json:"benchmark_start_close,omitempty"`
+	BenchmarkEndClose        *float64 `json:"benchmark_end_close,omitempty"`
+	BenchmarkTotalReturn     *float64 `json:"benchmark_total_return,omitempty"`
+	BenchmarkMaxDrawdown     *float64 `json:"benchmark_max_drawdown,omitempty"`
+	ExcessTotalReturn        *float64 `json:"excess_total_return,omitempty"`
+	BenchmarkObservationDays int      `json:"benchmark_observation_days,omitempty"`
 }
 
 var errSettlementStoreUnavailable = errors.New("settlement store is unavailable")
+var errMarketClientUnavailable = errors.New("meridian market client is unavailable")
+var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
 
 type Server struct {
 	cfg     config.Config
@@ -746,6 +755,13 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"return_rate",
 		"cumulative_return",
 		"drawdown",
+		"benchmark_security_id",
+		"benchmark_close",
+		"benchmark_return",
+		"benchmark_cumulative_return",
+		"benchmark_drawdown",
+		"excess_return",
+		"excess_cumulative_return",
 		"cash_available",
 		"cash_total",
 		"market_value",
@@ -769,6 +785,13 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			formatCSVFloat(item.ReturnRate),
 			formatCSVFloat(item.CumulativeReturn),
 			formatCSVFloat(item.Drawdown),
+			item.BenchmarkSecurityID,
+			formatCSVOptionalFloat(item.BenchmarkClose),
+			formatCSVOptionalFloat(item.BenchmarkReturn),
+			formatCSVOptionalFloat(item.BenchmarkCumulative),
+			formatCSVOptionalFloat(item.BenchmarkDrawdown),
+			formatCSVOptionalFloat(item.ExcessReturn),
+			formatCSVOptionalFloat(item.ExcessCumulative),
 			formatCSVFloat(item.CashAvailable),
 			formatCSVFloat(item.CashTotal),
 			formatCSVFloat(item.MarketValue),
@@ -823,12 +846,28 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 		return nil, PerformanceSeriesSummary{}, err
 	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
+	if benchmarkSecurityID := strings.TrimSpace(values.Get("benchmark_security_id")); benchmarkSecurityID != "" {
+		if s.market == nil {
+			return nil, PerformanceSeriesSummary{}, errMarketClientUnavailable
+		}
+		if err := s.applyBenchmarkSeries(r.Context(), series, &summary, benchmarkSecurityID); err != nil {
+			return nil, PerformanceSeriesSummary{}, err
+		}
+	}
 	return series, summary, nil
 }
 
 func (s *Server) writePerformanceSeriesError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errSettlementStoreUnavailable) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+		return
+	}
+	if errors.Is(err, errMarketClientUnavailable) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	if errors.Is(err, errBenchmarkBarsUnavailable) {
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "benchmark bars request failed", err.Error())
 		return
 	}
 	s.writeOrderError(w, r, err)
@@ -879,8 +918,201 @@ func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, se
 	return series, summary
 }
 
+func (s *Server) applyBenchmarkSeries(ctx context.Context, series []ledger.DailyPerformance, summary *PerformanceSeriesSummary, securityID string) error {
+	securityID = strings.TrimSpace(securityID)
+	if summary != nil {
+		summary.BenchmarkSecurityID = securityID
+	}
+	if securityID == "" || len(series) == 0 {
+		return nil
+	}
+
+	closes := make(map[string]float64, len(series))
+	for _, item := range series {
+		normalizedDate, err := normalizeAPIDate(item.TradeDate)
+		if err != nil {
+			continue
+		}
+		closePrice, ok, err := s.benchmarkClose(ctx, securityID, normalizedDate)
+		if err != nil {
+			return err
+		}
+		if ok {
+			closes[normalizedDate] = closePrice
+		}
+	}
+
+	var startClose float64
+	var previousClose float64
+	var lastClose float64
+	var peakClose float64
+	var maxDrawdown float64
+	observations := 0
+	for idx := range series {
+		series[idx].BenchmarkSecurityID = securityID
+		normalizedDate, err := normalizeAPIDate(series[idx].TradeDate)
+		if err != nil {
+			continue
+		}
+		closePrice, ok := closes[normalizedDate]
+		if !ok || closePrice <= 0 {
+			continue
+		}
+		series[idx].BenchmarkClose = floatPtr(closePrice)
+		if observations == 0 {
+			startClose = closePrice
+			previousClose = closePrice
+			peakClose = closePrice
+			series[idx].BenchmarkReturn = floatPtr(0)
+			series[idx].ExcessReturn = floatPtr(0)
+		} else if previousClose > 0 {
+			benchmarkReturn := (closePrice - previousClose) / previousClose
+			series[idx].BenchmarkReturn = floatPtr(benchmarkReturn)
+			series[idx].ExcessReturn = floatPtr(series[idx].ReturnRate - benchmarkReturn)
+		}
+		if startClose > 0 {
+			benchmarkCumulative := (closePrice - startClose) / startClose
+			series[idx].BenchmarkCumulative = floatPtr(benchmarkCumulative)
+			series[idx].ExcessCumulative = floatPtr(series[idx].CumulativeReturn - benchmarkCumulative)
+		}
+		if closePrice > peakClose {
+			peakClose = closePrice
+		}
+		if peakClose > 0 {
+			series[idx].BenchmarkDrawdown = floatPtr((closePrice - peakClose) / peakClose)
+		}
+		if series[idx].BenchmarkDrawdown != nil && *series[idx].BenchmarkDrawdown < maxDrawdown {
+			maxDrawdown = *series[idx].BenchmarkDrawdown
+		}
+		previousClose = closePrice
+		lastClose = closePrice
+		observations++
+	}
+	if summary != nil && observations > 0 {
+		summary.BenchmarkStartClose = floatPtr(startClose)
+		summary.BenchmarkEndClose = floatPtr(lastClose)
+		if startClose > 0 {
+			benchmarkTotalReturn := (lastClose - startClose) / startClose
+			summary.BenchmarkTotalReturn = floatPtr(benchmarkTotalReturn)
+			summary.ExcessTotalReturn = floatPtr(summary.TotalReturn - benchmarkTotalReturn)
+		}
+		summary.BenchmarkMaxDrawdown = floatPtr(maxDrawdown)
+		summary.BenchmarkObservationDays = observations
+	}
+	return nil
+}
+
+func (s *Server) benchmarkClose(ctx context.Context, securityID string, normalizedTradeDate string) (float64, bool, error) {
+	values := url.Values{}
+	values.Set("security_id", securityID)
+	values.Set("trade_date", strings.ReplaceAll(normalizedTradeDate, "-", ""))
+	values.Set("frequency", "1m")
+	values.Set("adjustment", "none")
+	values.Set("start_time", "14:55:00")
+	values.Set("end_time", "15:00:00")
+	values.Set("limit", "10")
+
+	response, err := s.market.MarketBars(ctx, values)
+	if err != nil {
+		return 0, false, fmt.Errorf("%w: %v", errBenchmarkBarsUnavailable, err)
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		return 0, false, fmt.Errorf("%w: status %d", errBenchmarkBarsUnavailable, response.StatusCode)
+	}
+	if errorPayload, ok := response.Payload["error"].(map[string]any); ok {
+		return 0, false, fmt.Errorf("%w: %s", errBenchmarkBarsUnavailable, meridianErrorMessage(errorPayload))
+	}
+	rows, ok := response.Payload["data"].([]any)
+	if !ok || len(rows) == 0 {
+		return 0, false, nil
+	}
+
+	var latestKey string
+	var latestClose float64
+	found := false
+	for _, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		closePrice, ok := floatFromAny(row["close"])
+		if !ok || closePrice <= 0 {
+			continue
+		}
+		key := stringFromAny(row["datetime"])
+		if key == "" {
+			key = stringFromAny(row["trade_date"])
+		}
+		if !found || key >= latestKey {
+			latestKey = key
+			latestClose = closePrice
+			found = true
+		}
+	}
+	return latestClose, found, nil
+}
+
+func meridianErrorMessage(payload map[string]any) string {
+	if message, ok := payload["message"].(string); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	if code, ok := payload["code"].(string); ok && strings.TrimSpace(code) != "" {
+		return strings.TrimSpace(code)
+	}
+	return "meridian returned an error payload"
+}
+
+func floatFromAny(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func stringFromAny(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return strconv.FormatInt(int64(typed), 10)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case json.Number:
+		return typed.String()
+	default:
+		return ""
+	}
+}
+
 func formatCSVFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func formatCSVOptionalFloat(value *float64) string {
+	if value == nil {
+		return ""
+	}
+	return formatCSVFloat(*value)
+}
+
+func floatPtr(value float64) *float64 {
+	return &value
 }
 
 func formatCSVTime(value time.Time) string {

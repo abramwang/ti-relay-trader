@@ -1181,10 +1181,73 @@ func TestPerformanceSeriesQuery(t *testing.T) {
 	}
 }
 
+func TestPerformanceSeriesQueryWithBenchmarkBars(t *testing.T) {
+	var queries []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/market/bars" {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.RawQuery)
+		tradeDate := r.URL.Query().Get("trade_date")
+		closePrice := 100.0
+		if tradeDate == "20260613" {
+			closePrice = 105.0
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id":    r.URL.Query().Get("security_id"),
+				"trade_date":     tradeDate,
+				"datetime":       tradeDate[:4] + "-" + tradeDate[4:6] + "-" + tradeDate[6:8] + "T15:00:00+08:00",
+				"frequency":      "1m",
+				"adjustment":     "none",
+				"close":          closePrice,
+				"schema_version": "market_bar.v1",
+			}},
+			"meta": map[string]any{"schema_version": "market_bar.v1"},
+		})
+	}))
+	defer upstream.Close()
+
+	store := &fakeSettlementStore{
+		performanceSeries: []ledger.DailyPerformance{
+			{AccountID: "acct-1", TradeDate: "2026-06-12", NetAsset: 1000, PreviousNetAsset: 1000, ReturnRate: 0},
+			{AccountID: "acct-1", TradeDate: "2026-06-13", NetAsset: 1120, PreviousNetAsset: 1000, ReturnRate: 0.12},
+		},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/series?date_from=20260612&date_to=20260613&benchmark_security_id=000300.SH", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(queries) != 2 {
+		t.Fatalf("meridian bars calls = %d, want 2: %v", len(queries), queries)
+	}
+	if !strings.Contains(queries[0], "trade_date=20260612") || !strings.Contains(queries[0], "start_time=14%3A55%3A00") || !strings.Contains(queries[0], "end_time=15%3A00%3A00") {
+		t.Fatalf("benchmark query did not use meridian bars close window: %s", queries[0])
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"benchmark_security_id":"000300.SH"`) || !strings.Contains(body, `"benchmark_total_return":0.05`) {
+		t.Fatalf("response missing benchmark summary: %s", body)
+	}
+	if !strings.Contains(body, `"benchmark_observation_days":2`) || !strings.Contains(body, `"excess_total_return"`) {
+		t.Fatalf("response missing benchmark observation or excess return: %s", body)
+	}
+}
+
 func TestPerformanceSeriesCSV(t *testing.T) {
 	store := &fakeSettlementStore{
 		performanceSeries: []ledger.DailyPerformance{
-			{AccountID: "acct-1", TradeDate: "2026-06-12", NetAsset: 1000, PreviousNetAsset: 900, DailyPnL: 100, ReturnRate: 0.1111111111},
+			{AccountID: "acct-1", TradeDate: "2026-06-12", NetAsset: 1000, PreviousNetAsset: 900, DailyPnL: 100, ReturnRate: 0.1111111111, BenchmarkSecurityID: "000300.SH", BenchmarkClose: floatPtr(4777.32)},
 		},
 	}
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
@@ -1201,7 +1264,7 @@ func TestPerformanceSeriesCSV(t *testing.T) {
 	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/csv") {
 		t.Fatalf("content-type = %q", rec.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(rec.Body.String(), "account_id,trade_date,net_asset") || !strings.Contains(rec.Body.String(), "acct-1,2026-06-12,1000") {
+	if !strings.Contains(rec.Body.String(), "benchmark_security_id,benchmark_close") || !strings.Contains(rec.Body.String(), "acct-1,2026-06-12,1000") {
 		t.Fatalf("csv response missing row: %s", rec.Body.String())
 	}
 }

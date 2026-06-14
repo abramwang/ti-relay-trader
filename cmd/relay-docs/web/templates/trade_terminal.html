@@ -230,6 +230,10 @@
               <span>结束日</span>
               <input id="perfDateTo" inputmode="numeric" placeholder="20260612">
             </label>
+            <label>
+              <span>基准</span>
+              <input id="perfBenchmarkInput" value="000300.SH" autocomplete="off">
+            </label>
             <button type="button" id="loadPerformanceButton">查询绩效</button>
             <button type="button" id="downloadPerformanceButton">下载 CSV</button>
           </div>
@@ -240,6 +244,8 @@
           <div><span>区间盈亏</span><strong id="perfTotalPnl">--</strong><small id="perfRows">样本 --</small></div>
           <div><span>累计收益</span><strong id="perfTotalReturn">--</strong><small id="perfDailyReturn">当日 --</small></div>
           <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong><small id="perfDailyPnl">当日 --</small></div>
+          <div><span>基准收益</span><strong id="perfBenchmarkReturn">--</strong><small id="perfBenchmarkID">基准 --</small></div>
+          <div><span>超额收益</span><strong id="perfExcessReturn">--</strong><small id="perfBenchmarkDays">样本 --</small></div>
         </div>
 
         <div class="performance-body">
@@ -257,6 +263,8 @@
                     <th class="num">日盈亏</th>
                     <th class="num">日收益</th>
                     <th class="num">累计收益</th>
+                    <th class="num">基准累计</th>
+                    <th class="num">超额累计</th>
                     <th class="num">回撤</th>
                     <th class="num">成交额</th>
                     <th class="num">费用</th>

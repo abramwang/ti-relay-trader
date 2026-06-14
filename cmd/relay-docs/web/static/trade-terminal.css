@@ -1081,6 +1081,10 @@ tr.flash {
   font-size: 13px;
 }
 
+.performance-actions label:nth-child(3) input {
+  width: 126px;
+}
+
 .bars-query input {
   width: 92px;
 }
@@ -1110,7 +1114,7 @@ tr.flash {
 
 .performance-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
 }
 

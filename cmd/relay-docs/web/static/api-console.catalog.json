@@ -80,7 +80,8 @@
     "fields": [
       { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "20260612" },
-      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" }
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" },
+      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000300.SH" }
     ]
   },
   {
@@ -93,7 +94,8 @@
     "fields": [
       { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "20260612" },
-      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" }
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" },
+      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000300.SH" }
     ]
   },
   {

@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.8"
+SDK_VERSION = "0.1.9"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -273,6 +273,7 @@ class RelayClient:
         date_from: str,
         date_to: str,
         account_id: str | None = None,
+        benchmark_security_id: str | None = None,
     ) -> Mapping[str, Any]:
         """Return close-equity performance series for an account."""
 
@@ -280,7 +281,11 @@ class RelayClient:
         return self._request(
             "GET",
             f"/v1/accounts/{parse.quote(account_id)}/performance/series",
-            query={"date_from": date_from, "date_to": date_to},
+            query={
+                "date_from": date_from,
+                "date_to": date_to,
+                "benchmark_security_id": benchmark_security_id,
+            },
         )
 
     def get_performance_series_csv(
@@ -289,6 +294,7 @@ class RelayClient:
         date_from: str,
         date_to: str,
         account_id: str | None = None,
+        benchmark_security_id: str | None = None,
     ) -> str:
         """Return the account performance series CSV text."""
 
@@ -296,7 +302,11 @@ class RelayClient:
         return self._request_text(
             "GET",
             f"/v1/accounts/{parse.quote(account_id)}/performance/series.csv",
-            query={"date_from": date_from, "date_to": date_to},
+            query={
+                "date_from": date_from,
+                "date_to": date_to,
+                "benchmark_security_id": benchmark_security_id,
+            },
         )
 
     def list_reconciliation_breaks(
@@ -336,10 +346,10 @@ class RelayClient:
     ) -> Mapping[str, Any]:
         """Proxy Meridian market bars through relay.
 
-        Meridian bars use ``trade_date`` rather than ``start_date`` /
-        ``end_date``. If ``trade_date`` is omitted or equals today's
-        Asia/Shanghai date, relay will resolve the previous/current trading day
-        before querying Meridian.
+        Relay forwards Meridian's bars query parameters without redefining the
+        schema. If ``trade_date`` is omitted or equals today's Asia/Shanghai
+        date, relay will resolve the previous/current trading day before
+        querying Meridian.
         """
 
         query = {

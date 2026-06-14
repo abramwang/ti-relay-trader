@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.9.tar.gz"
 ```
 
 ## Quick Start
@@ -71,12 +71,14 @@ as explicit keyword arguments.
 P8 helper methods are available for strategy and research tooling:
 
 - `get_performance_daily(trade_date=...)`
-- `get_performance_series(date_from=..., date_to=...)`
-- `get_performance_series_csv(date_from=..., date_to=...)`
+- `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)`
+- `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)`
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
 
-Meridian bars use `trade_date`, not `start_date` / `end_date`.
+Meridian bars parameters follow Meridian's API. The relay SDK exposes common
+`trade_date` minute-bar arguments and forwards extra query parameters when
+needed.
 
 ## Callbacks
 

@@ -170,6 +170,13 @@ type DailyPerformance struct {
 	FeeTotal            float64   `json:"fee_total"`
 	CumulativeReturn    float64   `json:"cumulative_return"`
 	Drawdown            float64   `json:"drawdown"`
+	BenchmarkSecurityID string    `json:"benchmark_security_id,omitempty"`
+	BenchmarkClose      *float64  `json:"benchmark_close,omitempty"`
+	BenchmarkReturn     *float64  `json:"benchmark_return,omitempty"`
+	BenchmarkCumulative *float64  `json:"benchmark_cumulative_return,omitempty"`
+	BenchmarkDrawdown   *float64  `json:"benchmark_drawdown,omitempty"`
+	ExcessReturn        *float64  `json:"excess_return,omitempty"`
+	ExcessCumulative    *float64  `json:"excess_cumulative_return,omitempty"`
 	CapturedAt          time.Time `json:"captured_at,omitempty"`
 }
 

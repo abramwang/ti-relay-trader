@@ -500,7 +500,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
     <a href="/trade">交易终端</a>
     <a href="/jobs">任务状态</a>
     <a href="/docs/roadmap">开发路线图</a>
-    <a href="/sdk/relay-sdk-0.1.8.tar.gz">SDK 下载</a>
+    <a href="/sdk/relay-sdk-0.1.9.tar.gz">SDK 下载</a>
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
     <a href="/healthz">健康检查</a>
@@ -518,7 +518,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/jobs"><strong>任务状态</strong><span>盘前初始化与盘后结算监控</span></a>
   <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
-  <a class="card" href="/sdk/relay-sdk-0.1.8.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.8 tar.gz</span></a>
+  <a class="card" href="/sdk/relay-sdk-0.1.9.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.9 tar.gz</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/trading-day-workflow"><strong>交易日流程</strong><span>盘前初始化与盘后结算</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>

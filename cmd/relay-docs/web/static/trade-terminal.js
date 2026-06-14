@@ -119,6 +119,7 @@
     performanceRangeHint: byID("performanceRangeHint"),
     perfDateFrom: byID("perfDateFrom"),
     perfDateTo: byID("perfDateTo"),
+    perfBenchmarkInput: byID("perfBenchmarkInput"),
     loadPerformanceButton: byID("loadPerformanceButton"),
     downloadPerformanceButton: byID("downloadPerformanceButton"),
     perfNetAsset: byID("perfNetAsset"),
@@ -129,6 +130,10 @@
     perfDailyReturn: byID("perfDailyReturn"),
     perfMaxDrawdown: byID("perfMaxDrawdown"),
     perfDailyPnl: byID("perfDailyPnl"),
+    perfBenchmarkReturn: byID("perfBenchmarkReturn"),
+    perfBenchmarkID: byID("perfBenchmarkID"),
+    perfExcessReturn: byID("perfExcessReturn"),
+    perfBenchmarkDays: byID("perfBenchmarkDays"),
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
     minuteChart: byID("minuteChart"),
@@ -1499,6 +1504,9 @@
     if (!els.perfDateTo.value) {
       els.perfDateTo.value = day;
     }
+    if (els.perfBenchmarkInput && !els.perfBenchmarkInput.value) {
+      els.perfBenchmarkInput.value = "000300.SH";
+    }
     if (!els.barTradeDateInput.value) {
       els.barTradeDateInput.value = els.perfDateTo.value || day;
     }
@@ -1552,7 +1560,8 @@
     if (dateFrom > dateTo) {
       throw new Error("起始日不能晚于结束日");
     }
-    return { dateFrom, dateTo };
+    const benchmarkSecurityID = normalizeSecurityID(els.perfBenchmarkInput && els.perfBenchmarkInput.value);
+    return { dateFrom, dateTo, benchmarkSecurityID };
   }
 
   async function loadPerformance() {
@@ -1566,6 +1575,9 @@
       date_from: params.dateFrom,
       date_to: params.dateTo
     });
+    if (params.benchmarkSecurityID) {
+      query.set("benchmark_security_id", params.benchmarkSecurityID);
+    }
     els.performanceStatus.textContent = "查询中...";
     els.loadPerformanceButton.disabled = true;
     try {
@@ -1611,6 +1623,9 @@
       date_from: params.dateFrom,
       date_to: params.dateTo
     });
+    if (params.benchmarkSecurityID) {
+      query.set("benchmark_security_id", params.benchmarkSecurityID);
+    }
     window.open("/v1/accounts/" + accountID + "/performance/series.csv?" + query.toString(), "_blank", "noopener");
   }
 
@@ -1625,6 +1640,7 @@
     els.performanceRangeHint.textContent = [
       state.activeAccount || "未选择账户",
       summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
+      summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
@@ -1638,6 +1654,12 @@
     els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown);
     els.perfMaxDrawdown.className = classForNumber(summary.max_drawdown);
     els.perfDailyPnl.textContent = "当日 " + formatSigned(daily.daily_pnl);
+    els.perfBenchmarkReturn.textContent = formatPercent(summary.benchmark_total_return);
+    els.perfBenchmarkReturn.className = classForNumber(summary.benchmark_total_return);
+    els.perfBenchmarkID.textContent = "基准 " + (summary.benchmark_security_id || "--");
+    els.perfExcessReturn.textContent = formatPercent(summary.excess_total_return);
+    els.perfExcessReturn.className = classForNumber(summary.excess_total_return);
+    els.perfBenchmarkDays.textContent = "bars " + formatInt(summary.benchmark_observation_days);
     els.perfDailyDate.textContent = daily.trade_date ? displayDate(daily.trade_date) : "--";
     els.perfPositions.textContent = formatInt(daily.positions_count);
     els.perfPositionValue.textContent = formatNumber(daily.position_market_value);
@@ -1651,7 +1673,7 @@
       ? "查询失败：" + state.performanceError
       : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
     if (series.length === 0) {
-      els.performanceSeriesBody.innerHTML = '<tr><td colspan="9"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
+      els.performanceSeriesBody.innerHTML = '<tr><td colspan="11"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
       return;
     }
     els.performanceSeriesBody.innerHTML = series.map((item) => `
@@ -1661,6 +1683,8 @@
         <td class="num ${classForNumber(item.daily_pnl)}">${formatSigned(item.daily_pnl)}</td>
         <td class="num ${classForNumber(item.return_rate)}">${formatPercent(item.return_rate)}</td>
         <td class="num ${classForNumber(item.cumulative_return)}">${formatPercent(item.cumulative_return)}</td>
+        <td class="num ${classForNumber(item.benchmark_cumulative_return)}">${formatPercent(item.benchmark_cumulative_return)}</td>
+        <td class="num ${classForNumber(item.excess_cumulative_return)}">${formatPercent(item.excess_cumulative_return)}</td>
         <td class="num ${classForNumber(item.drawdown)}">${formatPercent(item.drawdown)}</td>
         <td class="num">${formatNumber(item.turnover)}</td>
         <td class="num">${formatNumber(item.fee_total)}</td>
