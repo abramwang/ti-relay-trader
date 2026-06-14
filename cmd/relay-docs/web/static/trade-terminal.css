@@ -243,7 +243,7 @@ button {
   grid-column: 2;
   grid-row: 2;
   display: grid;
-  grid-template-columns: 300px minmax(340px, 1fr) 240px;
+  grid-template-columns: 300px minmax(260px, 1fr) 320px;
   grid-template-rows: minmax(0, 1fr) 260px;
   gap: 1px;
   min-width: 0;
