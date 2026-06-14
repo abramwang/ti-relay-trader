@@ -280,6 +280,7 @@ button {
 }
 
 .quote-head span {
+  display: block;
   color: var(--muted);
   font-size: 13px;
 }
@@ -303,6 +304,15 @@ button {
 .quote-price span {
   color: var(--buy);
   font-size: 12px;
+}
+
+.quote-price.down span {
+  color: var(--sell);
+}
+
+.quote-price.flat strong,
+.quote-price.flat span {
+  color: #344054;
 }
 
 .depth-book {
@@ -382,6 +392,10 @@ button {
   text-transform: uppercase;
 }
 
+.symbol-field {
+  position: relative;
+}
+
 .order-form input,
 .order-form select {
   width: 100%;
@@ -393,6 +407,63 @@ button {
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 15px;
+}
+
+.symbol-suggest {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  display: none;
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid #aab4c1;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(16, 24, 40, 0.16);
+}
+
+.symbol-suggest.open {
+  display: block;
+}
+
+.symbol-option {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.symbol-option:last-child {
+  border-bottom: 0;
+}
+
+.symbol-option:hover,
+.symbol-option.active {
+  background: #eef3f9;
+}
+
+.symbol-option span {
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-option em {
+  color: #475467;
+  font-style: normal;
 }
 
 .form-row {

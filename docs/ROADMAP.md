@@ -175,7 +175,7 @@
 - [x] 订单列表采用 3 秒轮询，状态签名变化时行高亮并写入推送日志。
 - [x] 订单详情展示状态轨迹、订单 JSON 和成交执行记录。
 - [ ] 接入 `GET /v1/events/stream` SSE 或 WebSocket 实时推送。
-- [ ] 接入 Meridian 或前置行情，替换当前盘口占位数据。
+- [x] 接入 Meridian `/v1/market/snapshots` 薄代理，替换 `/trade` 盘口占位数据。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 
@@ -191,7 +191,7 @@
 ### P8 历史数据与盈亏统计
 
 - [ ] 接入 Meridian `bars`。
-- [ ] 接入 Meridian `snapshots`。
+- [x] 接入 Meridian `metadata/instruments` 和 `snapshots` 作为 `/trade` 代码补全和行情刷新薄代理。
 - [ ] 接入 Meridian `trades/orders/order-queues`。
 - [ ] 计算账户日终权益。
 - [ ] 计算已实现盈亏、浮动盈亏、费用和收益率。

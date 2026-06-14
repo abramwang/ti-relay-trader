@@ -50,10 +50,11 @@
         <div class="quote-head">
           <div>
             <h1 id="quoteSymbol">600000.SH</h1>
-            <span id="quoteName">浦发银行</span>
+            <span id="quoteName">--</span>
+            <span id="quoteSource">Meridian</span>
           </div>
-          <div class="quote-price up">
-            <strong id="quoteLast">9.67</strong>
+          <div class="quote-price up" id="quotePrice">
+            <strong id="quoteLast">--</strong>
             <span id="quoteChange">+0.00 / +0.00%</span>
           </div>
         </div>
@@ -68,9 +69,10 @@
             <span>账户</span>
             <select id="orderAccount"></select>
           </label>
-          <label>
+          <label class="symbol-field">
             <span>代码</span>
-            <input id="symbolInput" value="600000" autocomplete="off">
+            <input id="symbolInput" value="600000" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="symbolSuggest">
+            <div class="symbol-suggest" id="symbolSuggest" role="listbox"></div>
           </label>
           <label>
             <span>市场</span>

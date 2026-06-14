@@ -25,6 +25,12 @@ redis:
   broker_id: "huaxin"
   gateway_id: "<gateway_id>"
 
+market:
+  base_url: "http://meridian-data.quantstage.com"
+  timeout_seconds: 5
+  snapshot_market_level: "level1"
+  snapshot_data_scope: "realtime"
+
 accounts:
   - account_id: "<account_id>"
     broker_id: "huaxin"

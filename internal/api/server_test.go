@@ -204,6 +204,53 @@ func TestSchemaDiscovery(t *testing.T) {
 	}
 }
 
+func TestMeridianMarketSnapshotsProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/metadata/trading-day":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"date":                             20260614,
+					"is_trading_day":                   false,
+					"previous_or_current_trading_date": 20260612,
+				},
+			})
+		case "/v1/market/snapshots":
+			if r.URL.Query().Get("trade_date") != "20260612" {
+				t.Fatalf("trade_date = %q", r.URL.Query().Get("trade_date"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":  "600000.SH",
+					"market_level": "level1",
+					"last":         9.67,
+					"pre_close":    9.59,
+				}},
+				"meta": map[string]any{"schema_version": "market_snapshot.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/market/snapshots?security_id=600000.SH", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"security_id":"600000.SH"`) || !strings.Contains(rec.Body.String(), `"schema_version":"market_snapshot.v1"`) {
+		t.Fatalf("response did not preserve meridian payload: %s", rec.Body.String())
+	}
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)

@@ -24,6 +24,7 @@ type Config struct {
 	Service  ServiceConfig        `yaml:"service"`
 	Database DatabaseConfig       `yaml:"database"`
 	Redis    RedisConfig          `yaml:"redis"`
+	Market   MarketConfig         `yaml:"market"`
 	Accounts []AccountRouteConfig `yaml:"accounts"`
 	Jobs     map[string]JobConfig `yaml:"jobs"`
 }
@@ -49,6 +50,13 @@ type RedisConfig struct {
 	Env       string `yaml:"env"`
 	BrokerID  string `yaml:"broker_id"`
 	GatewayID string `yaml:"gateway_id"`
+}
+
+type MarketConfig struct {
+	BaseURL             string `yaml:"base_url"`
+	TimeoutSeconds      int    `yaml:"timeout_seconds"`
+	SnapshotMarketLevel string `yaml:"snapshot_market_level"`
+	SnapshotDataScope   string `yaml:"snapshot_data_scope"`
 }
 
 type AccountRouteConfig struct {
@@ -142,6 +150,18 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Database.MaxIdleConns == 0 {
 		cfg.Database.MaxIdleConns = 4
 	}
+	if cfg.Market.BaseURL == "" {
+		cfg.Market.BaseURL = "http://meridian-data.quantstage.com"
+	}
+	if cfg.Market.TimeoutSeconds == 0 {
+		cfg.Market.TimeoutSeconds = 5
+	}
+	if cfg.Market.SnapshotMarketLevel == "" {
+		cfg.Market.SnapshotMarketLevel = "level1"
+	}
+	if cfg.Market.SnapshotDataScope == "" {
+		cfg.Market.SnapshotDataScope = "realtime"
+	}
 	if cfg.Jobs == nil {
 		cfg.Jobs = map[string]JobConfig{}
 	}
@@ -159,6 +179,12 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Database.MaxIdleConns > cfg.Database.MaxOpenConns {
 		return fmt.Errorf("database.max_idle_conns must be <= max_open_conns")
+	}
+	if strings.TrimSpace(cfg.Market.BaseURL) == "" {
+		return fmt.Errorf("market.base_url is required")
+	}
+	if cfg.Market.TimeoutSeconds < 0 {
+		return fmt.Errorf("market.timeout_seconds must be non-negative")
 	}
 
 	seenAccounts := make(map[string]struct{}, len(cfg.Accounts))

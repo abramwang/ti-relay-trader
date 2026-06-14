@@ -25,6 +25,12 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Service.LogFormat != "json" {
 		t.Fatalf("log format = %q, want json", cfg.Service.LogFormat)
 	}
+	if cfg.Market.BaseURL != "http://meridian-data.quantstage.com" {
+		t.Fatalf("market base url = %q", cfg.Market.BaseURL)
+	}
+	if cfg.Market.SnapshotMarketLevel != "level1" || cfg.Market.SnapshotDataScope != "realtime" {
+		t.Fatalf("market snapshot defaults = %q/%q", cfg.Market.SnapshotMarketLevel, cfg.Market.SnapshotDataScope)
+	}
 }
 
 func TestDecodeRejectsInvalidMode(t *testing.T) {

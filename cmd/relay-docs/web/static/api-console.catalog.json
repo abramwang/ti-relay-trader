@@ -138,5 +138,37 @@
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
+  {
+    "id": "meridian-snapshots",
+    "group": "行情",
+    "title": "Meridian 快照",
+    "method": "GET",
+    "path": "/v1/meridian/market/snapshots",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "600000.SH" },
+      { "name": "security_id_pattern", "label": "security_id_pattern", "source": "query", "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "market_level", "label": "market_level", "source": "query", "type": "select", "defaultValue": "level1", "options": ["level1", "level2"] },
+      { "name": "data_scope", "label": "data_scope", "source": "query", "type": "select", "defaultValue": "realtime", "options": ["", "realtime", "historical", "auto"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "1" }
+    ]
+  },
+  {
+    "id": "meridian-instruments",
+    "group": "行情",
+    "title": "Meridian 证券主数据",
+    "method": "GET",
+    "path": "/v1/meridian/metadata/instruments",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "600000.SH" },
+      { "name": "instrument_type", "label": "instrument_type", "source": "query", "type": "select", "defaultValue": "stock", "options": ["", "stock", "etf", "index"] },
+      { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "SH", "options": ["", "SH", "SZ", "BJ"] },
+      { "name": "status", "label": "status", "source": "query", "defaultValue": "active" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" },
+      { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
+    ]
+  },
   { "id": "events", "group": "事件", "title": "事件流", "method": "GET", "path": "/v1/events/stream", "status": "planned", "fields": [] }
 ]

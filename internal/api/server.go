@@ -14,12 +14,14 @@ import (
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
+	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/trading"
 )
 
 type Dependencies struct {
 	Orders OrderService
+	Market *market.MeridianClient
 }
 
 type OrderService interface {
@@ -39,6 +41,7 @@ type Server struct {
 	logger  *slog.Logger
 	started time.Time
 	orders  OrderService
+	market  *market.MeridianClient
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -49,12 +52,21 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	if logger == nil {
 		logger = slog.Default()
 	}
+	marketClient := deps.Market
+	if marketClient == nil {
+		var err error
+		marketClient, err = market.NewMeridianClient(cfg.Market)
+		if err != nil {
+			logger.Warn("meridian_client_unavailable", "error", err)
+		}
+	}
 
 	server := &Server{
 		cfg:     cfg,
 		logger:  logger,
 		started: time.Now().UTC(),
 		orders:  deps.Orders,
+		market:  marketClient,
 	}
 
 	mux := http.NewServeMux()
@@ -63,12 +75,62 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/schema", server.handleSchema)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
+	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
+	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
 	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
 	mux.HandleFunc("/v1/fills", server.handleFills)
 	mux.HandleFunc("/", server.handleNotFound)
 
 	return httpx.RequestLogger(logger)(mux)
+}
+
+func (s *Server) handleMeridianMetadataInstruments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MetadataInstruments(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_metadata_instruments_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian metadata request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian metadata request failed")
+}
+
+func (s *Server) handleMeridianMarketSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MarketSnapshots(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_market_snapshots_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian market request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian market request failed")
+}
+
+func (s *Server) writeMeridianResponse(w http.ResponseWriter, r *http.Request, response market.MeridianResponse, message string) {
+	if response.StatusCode >= http.StatusBadRequest {
+		code := httpx.CodeBadRequest
+		if response.StatusCode >= http.StatusInternalServerError {
+			code = httpx.CodeUnavailable
+		}
+		httpx.WriteError(w, r, response.StatusCode, code, message, response.Payload)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, response.Payload)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

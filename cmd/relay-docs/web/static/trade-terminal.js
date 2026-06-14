@@ -12,7 +12,14 @@
     logs: [],
     lastPayload: {},
     orderSignatures: new Map(),
-    changedOrders: new Map()
+    changedOrders: new Map(),
+    marketSnapshot: null,
+    symbolSuggestions: [],
+    instrumentCache: new Map(),
+    activeSuggestion: -1,
+    suggestionSeq: 0,
+    quoteSeq: 0,
+    priceEdited: false
   };
 
   const els = {
@@ -28,6 +35,7 @@
     orderAccount: byID("orderAccount"),
     orderForm: byID("orderForm"),
     symbolInput: byID("symbolInput"),
+    symbolSuggest: byID("symbolSuggest"),
     exchangeInput: byID("exchangeInput"),
     priceInput: byID("priceInput"),
     qtyInput: byID("qtyInput"),
@@ -51,7 +59,13 @@
     executionList: byID("executionList"),
     closeDetailButton: byID("closeDetailButton"),
     toast: byID("terminalToast"),
-    depthBook: byID("depthBook")
+    depthBook: byID("depthBook"),
+    quoteSymbol: byID("quoteSymbol"),
+    quoteName: byID("quoteName"),
+    quoteSource: byID("quoteSource"),
+    quotePrice: byID("quotePrice"),
+    quoteLast: byID("quoteLast"),
+    quoteChange: byID("quoteChange")
   };
 
   function byID(id) {
@@ -72,6 +86,9 @@
     if (options.body) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body);
+    }
+    if (options.signal) {
+      init.signal = options.signal;
     }
     const response = await fetch(apiURL(path), init);
     const text = await response.text();
@@ -124,6 +141,50 @@
       return "--";
     }
     return item.symbol + (item.exchange ? "." + item.exchange : "");
+  }
+
+  function normalizeSymbol(value) {
+    return String(value || "").trim().toUpperCase().replace(/[^0-9A-Z.]/g, "");
+  }
+
+  function splitSecurityID(securityID) {
+    const normalized = normalizeSymbol(securityID);
+    const parts = normalized.split(".");
+    return {
+      symbol: parts[0] || "",
+      exchange: parts[1] || inferExchange(parts[0] || "")
+    };
+  }
+
+  function inferExchange(symbol) {
+    const code = normalizeSymbol(symbol).replace(/\..*$/, "");
+    if (/^(6|5|9)/.test(code)) {
+      return "SH";
+    }
+    if (/^(0|1|2|3)/.test(code)) {
+      return "SZ";
+    }
+    if (/^(4|8)/.test(code)) {
+      return "BJ";
+    }
+    return els.exchangeInput.value || "SH";
+  }
+
+  function currentSecurityID() {
+    const raw = normalizeSymbol(els.symbolInput.value);
+    if (!raw) {
+      return "";
+    }
+    if (raw.includes(".")) {
+      return raw;
+    }
+    return raw + "." + (els.exchangeInput.value || inferExchange(raw));
+  }
+
+  function setSymbolFromSecurityID(securityID) {
+    const parsed = splitSecurityID(securityID);
+    els.symbolInput.value = parsed.symbol;
+    els.exchangeInput.value = parsed.exchange;
   }
 
   function sideText(side) {
@@ -240,6 +301,166 @@
     }
 
     renderAll();
+  }
+
+  async function loadQuoteForInput(options = {}) {
+    const securityID = options.securityID || currentSecurityID();
+    if (!securityID) {
+      return;
+    }
+    const seq = ++state.quoteSeq;
+    const params = new URLSearchParams({
+      security_id: securityID,
+      market_level: "level1",
+      data_scope: "realtime",
+      limit: "1"
+    });
+    try {
+      const data = await request("/v1/meridian/market/snapshots?" + params.toString(), {
+        signal: options.signal
+      });
+      if (seq !== state.quoteSeq) {
+        return;
+      }
+      if (data.error) {
+        throw new Error(data.error.message || data.error.code || "Meridian quote error");
+      }
+      const items = Array.isArray(data.data) ? data.data : [];
+      state.marketSnapshot = items[0] || null;
+      renderQuote();
+      renderDepthBook();
+      applyQuotePrice();
+    } catch (err) {
+      if (err.name === "AbortError") {
+        return;
+      }
+      pushLog("warn", "行情刷新失败", securityID + " " + err.message);
+    }
+  }
+
+  async function loadSymbolSuggestions() {
+    const query = normalizeSymbol(els.symbolInput.value).replace(/\..*$/, "");
+    const seq = ++state.suggestionSeq;
+    if (query.length < 3) {
+      state.symbolSuggestions = localSymbolSuggestions(query);
+      state.activeSuggestion = state.symbolSuggestions.length > 0 ? 0 : -1;
+      renderSymbolSuggestions();
+      return;
+    }
+    const exchange = inferExchange(query);
+    try {
+      const instruments = await loadInstruments(exchange);
+      if (seq !== state.suggestionSeq) {
+        return;
+      }
+      state.symbolSuggestions = mergeSuggestions(
+        instruments.filter((item) => item.symbol.startsWith(query)).map(instrumentSuggestion),
+        localSymbolSuggestions(query)
+      );
+      state.activeSuggestion = state.symbolSuggestions.length > 0 ? 0 : -1;
+      renderSymbolSuggestions();
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        pushLog("warn", "代码补全失败", err.message);
+      }
+      if (seq === state.suggestionSeq) {
+        state.symbolSuggestions = localSymbolSuggestions(query);
+        state.activeSuggestion = state.symbolSuggestions.length > 0 ? 0 : -1;
+        renderSymbolSuggestions();
+      }
+    }
+  }
+
+  async function loadInstruments(exchange) {
+    const cacheKey = exchange || "SH";
+    if (state.instrumentCache.has(cacheKey)) {
+      return state.instrumentCache.get(cacheKey);
+    }
+    const pages = [];
+    for (const instrumentType of ["stock", "etf"]) {
+      let cursor = "";
+      for (let page = 0; page < 3; page += 1) {
+        const params = new URLSearchParams({
+          exchange: cacheKey,
+          instrument_type: instrumentType,
+          status: "active",
+          limit: "1000"
+        });
+        if (cursor) {
+          params.set("cursor", cursor);
+        }
+        const data = await request("/v1/meridian/metadata/instruments?" + params.toString());
+        if (data.error) {
+          throw new Error(data.error.message || data.error.code || "Meridian metadata error");
+        }
+        const items = Array.isArray(data.data) ? data.data : [];
+        pages.push(...items.map((item) => {
+          const parsed = splitSecurityID(item.security_id || "");
+          return {
+            ...item,
+            symbol: parsed.symbol,
+            exchange: parsed.exchange
+          };
+        }));
+        cursor = data.meta && data.meta.next_cursor ? String(data.meta.next_cursor) : "";
+        if (!cursor) {
+          break;
+        }
+      }
+    }
+    state.instrumentCache.set(cacheKey, pages);
+    return pages;
+  }
+
+  function instrumentSuggestion(instrument) {
+    const securityID = String(instrument.security_id || "");
+    const parsed = splitSecurityID(securityID);
+    return {
+      security_id: securityID,
+      symbol: parsed.symbol,
+      exchange: parsed.exchange,
+      name: instrument.name || "",
+      instrument_type: instrument.instrument_type || "",
+      status: instrument.status || "",
+      trade_date: "",
+      last: ""
+    };
+  }
+
+  function localSymbolSuggestions(query) {
+    const rows = []
+      .concat(state.positions || [])
+      .concat(state.orders || [])
+      .concat(state.fills || []);
+    return mergeSuggestions(rows.map((item) => {
+      const symbol = normalizeSymbol(item.symbol);
+      const exchange = String(item.exchange || inferExchange(symbol)).toUpperCase();
+      return {
+        security_id: symbol && exchange ? symbol + "." + exchange : "",
+        symbol,
+        exchange,
+        name: item.name || "",
+        instrument_type: item.name || "",
+        status: "",
+        trade_date: "",
+        last: item.last_price || item.limit_price || item.price || ""
+      };
+    })).filter((item) => !query || item.symbol.startsWith(query) || item.security_id.startsWith(query));
+  }
+
+  function mergeSuggestions(...groups) {
+    const merged = [];
+    const seen = new Set();
+    for (const group of groups) {
+      for (const item of group || []) {
+        if (!item || !item.security_id || seen.has(item.security_id)) {
+          continue;
+        }
+        seen.add(item.security_id);
+        merged.push(item);
+      }
+    }
+    return merged.slice(0, 10);
   }
 
   function updateOrders(nextOrders) {
@@ -501,31 +722,85 @@
       </table>`;
   }
 
+  function renderQuote() {
+    const snapshot = state.marketSnapshot || {};
+    const securityID = snapshot.security_id || currentSecurityID() || "--";
+    const last = Number(snapshot.last);
+    const preClose = Number(snapshot.pre_close);
+    const change = Number.isFinite(last) && Number.isFinite(preClose) ? last - preClose : NaN;
+    const pct = Number.isFinite(change) && preClose !== 0 ? change / preClose * 100 : NaN;
+    els.quoteSymbol.textContent = securityID;
+    els.quoteName.textContent = snapshot.instrument_type || "--";
+    els.quoteSource.textContent = [
+      snapshot.market_level,
+      snapshot.data_scope,
+      snapshot.trade_date,
+      snapshot.source_dataset || snapshot.source
+    ].filter(Boolean).join(" · ") || "Meridian";
+    els.quoteLast.textContent = formatNumber(snapshot.last);
+    els.quoteChange.textContent = Number.isFinite(change) && Number.isFinite(pct)
+      ? formatSigned(change) + " / " + formatSigned(pct) + "%"
+      : "-- / --";
+    els.quotePrice.classList.toggle("down", change < 0);
+    els.quotePrice.classList.toggle("flat", !Number.isFinite(change) || change === 0);
+  }
+
   function renderDepthBook() {
-    const asks = [
-      ["卖 5", 9.72, 1240],
-      ["卖 4", 9.71, 895],
-      ["卖 3", 9.70, 2100],
-      ["卖 2", 9.69, 1566],
-      ["卖 1", 9.68, 432]
-    ];
-    const bids = [
-      ["买 1", 9.67, 980],
-      ["买 2", 9.66, 1200],
-      ["买 3", 9.65, 3402],
-      ["买 4", 9.64, 880],
-      ["买 5", 9.63, 1945]
-    ];
+    const snapshot = state.marketSnapshot || {};
+    const asks = Array.isArray(snapshot.asks) ? snapshot.asks.slice(0, 5).reverse() : [];
+    const bids = Array.isArray(snapshot.bids) ? snapshot.bids.slice(0, 5) : [];
+    if (asks.length === 0 && bids.length === 0) {
+      els.depthBook.innerHTML = '<div class="empty-state">等待 Meridian 快照...</div>';
+      return;
+    }
     els.depthBook.innerHTML = asks.map((row, idx) => depthRow(row, "sell", idx === asks.length - 1 ? "best-ask" : "")).join("") +
       bids.map((row, idx) => depthRow(row, "buy", idx === 0 ? "best-bid" : "")).join("");
   }
 
   function depthRow(row, side, extra) {
-    return `<div class="depth-row ${side} ${extra}"><span>${row[0]}</span><strong>${formatNumber(row[1])}</strong><span class="qty">${formatInt(row[2])}</span></div>`;
+    const label = (side === "sell" ? "卖 " : "买 ") + (row.level || "");
+    return `<div class="depth-row ${side} ${extra}"><span>${escapeHTML(label)}</span><strong>${formatNumber(row.price)}</strong><span class="qty">${formatInt(row.volume)}</span></div>`;
+  }
+
+  function renderSymbolSuggestions() {
+    if (state.symbolSuggestions.length === 0) {
+      els.symbolSuggest.classList.remove("open");
+      els.symbolInput.setAttribute("aria-expanded", "false");
+      els.symbolSuggest.innerHTML = "";
+      return;
+    }
+    els.symbolInput.setAttribute("aria-expanded", "true");
+    els.symbolSuggest.classList.add("open");
+    els.symbolSuggest.innerHTML = state.symbolSuggestions.map((item, index) => `
+      <button type="button" class="symbol-option ${index === state.activeSuggestion ? "active" : ""}" role="option" data-index="${index}">
+        <strong>${escapeHTML(item.security_id)}</strong>
+        <span>${escapeHTML(item.name || item.instrument_type || "")}</span>
+        <em>${escapeHTML(item.status || item.trade_date || "")}</em>
+      </button>
+    `).join("");
+  }
+
+  function selectSuggestion(index) {
+    const item = state.symbolSuggestions[index];
+    if (!item) {
+      return;
+    }
+    setSymbolFromSecurityID(item.security_id);
+    hideSuggestions();
+    state.priceEdited = false;
+    loadQuoteForInput({ securityID: item.security_id }).catch((err) => pushLog("warn", "行情刷新失败", err.message));
+  }
+
+  function hideSuggestions() {
+    state.symbolSuggestions = [];
+    state.activeSuggestion = -1;
+    renderSymbolSuggestions();
   }
 
   function renderAll() {
     renderAccounts();
+    renderQuote();
+    renderDepthBook();
     renderMetrics();
     renderPositions();
     renderBlotter();
@@ -554,7 +829,31 @@
     els.submitOrderButton.textContent = side === "S" ? "卖出下单" : "买入下单";
     els.submitOrderButton.classList.toggle("sell", side === "S");
     els.submitOrderButton.classList.toggle("buy", side !== "S");
+    applyQuotePrice();
     updateRisk();
+  }
+
+  function applyQuotePrice() {
+    if (state.priceEdited) {
+      return;
+    }
+    const price = quoteOrderPrice();
+    if (Number.isFinite(price) && price > 0) {
+      els.priceInput.value = price.toFixed(2);
+    }
+  }
+
+  function quoteOrderPrice() {
+    const snapshot = state.marketSnapshot || {};
+    const bids = Array.isArray(snapshot.bids) ? snapshot.bids : [];
+    const asks = Array.isArray(snapshot.asks) ? snapshot.asks : [];
+    const best = state.side === "S" ? bids[0] : asks[0];
+    const bestPrice = Number(best && best.price);
+    if (Number.isFinite(bestPrice) && bestPrice > 0) {
+      return bestPrice;
+    }
+    const last = Number(snapshot.last);
+    return Number.isFinite(last) ? last : NaN;
   }
 
   function updateRisk() {
@@ -648,6 +947,8 @@
   }
 
   function bindEvents() {
+    let symbolTimer = 0;
+    let quoteTimer = 0;
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       await refreshNow();
@@ -655,15 +956,68 @@
     for (const button of document.querySelectorAll(".side-switch button")) {
       button.addEventListener("click", () => updateSide(button.dataset.side));
     }
-    els.priceInput.addEventListener("input", updateRisk);
+    els.priceInput.addEventListener("input", () => {
+      state.priceEdited = true;
+      updateRisk();
+    });
     els.qtyInput.addEventListener("input", updateRisk);
+    els.symbolInput.addEventListener("input", () => {
+      const normalized = normalizeSymbol(els.symbolInput.value);
+      els.symbolInput.value = normalized.replace(/\..*$/, "");
+      if (els.symbolInput.value.length >= 1) {
+        els.exchangeInput.value = inferExchange(els.symbolInput.value);
+      }
+      window.clearTimeout(symbolTimer);
+      window.clearTimeout(quoteTimer);
+      symbolTimer = window.setTimeout(loadSymbolSuggestions, 220);
+      if (els.symbolInput.value.length === 6) {
+        state.priceEdited = false;
+        quoteTimer = window.setTimeout(() => loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message)), 320);
+      }
+    });
+    els.symbolInput.addEventListener("keydown", (event) => {
+      if (!els.symbolSuggest.classList.contains("open")) {
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        state.activeSuggestion = Math.min(state.activeSuggestion + 1, state.symbolSuggestions.length - 1);
+        renderSymbolSuggestions();
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        state.activeSuggestion = Math.max(state.activeSuggestion - 1, 0);
+        renderSymbolSuggestions();
+      } else if (event.key === "Enter") {
+        if (state.activeSuggestion >= 0) {
+          event.preventDefault();
+          selectSuggestion(state.activeSuggestion);
+        }
+      } else if (event.key === "Escape") {
+        hideSuggestions();
+      }
+    });
+    els.symbolInput.addEventListener("blur", () => {
+      window.setTimeout(hideSuggestions, 120);
+    });
+    els.symbolSuggest.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      const button = event.target.closest("button[data-index]");
+      if (button) {
+        selectSuggestion(Number(button.dataset.index));
+      }
+    });
+    els.exchangeInput.addEventListener("change", () => {
+      state.priceEdited = false;
+      loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
+    });
     els.orderForm.addEventListener("submit", submitOrder);
     els.resetOrderButton.addEventListener("click", () => {
       els.symbolInput.value = "600000";
       els.exchangeInput.value = "SH";
-      els.priceInput.value = "9.67";
       els.qtyInput.value = "100";
+      state.priceEdited = false;
       updateSide("B");
+      loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
     });
     els.refreshAssetButton.addEventListener("click", () => refreshAsset("asset"));
     els.refreshPositionsButton.addEventListener("click", () => refreshAsset("positions"));
@@ -695,7 +1049,9 @@
       }
       els.symbolInput.value = button.dataset.sellSymbol || "";
       els.exchangeInput.value = button.dataset.sellExchange || "SH";
+      state.priceEdited = false;
       updateSide("S");
+      loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
     });
     els.closeDetailButton.addEventListener("click", () => {
       state.selectedOrderID = "";
@@ -705,6 +1061,7 @@
   }
 
   async function boot() {
+    renderQuote();
     renderDepthBook();
     bindEvents();
     updateClock();
@@ -713,6 +1070,7 @@
       await loadStatus();
       await loadAccounts();
       await loadAccountData();
+      await loadQuoteForInput();
       pushLog("info", "交易终端初始化完成");
     } catch (err) {
       pushLog("error", "初始化失败", err.message);
@@ -722,6 +1080,9 @@
     window.setInterval(() => {
       refreshNow().catch((err) => pushLog("error", "轮询刷新失败", err.message));
     }, 3000);
+    window.setInterval(() => {
+      loadQuoteForInput().catch((err) => pushLog("warn", "行情轮询失败", err.message));
+    }, 5000);
   }
 
   boot();
