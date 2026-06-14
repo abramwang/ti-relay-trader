@@ -9,12 +9,10 @@
     selectedOrderID: "",
     selectedTab: "orders",
     side: "B",
-    paused: false,
     logs: [],
     lastPayload: {},
     orderSignatures: new Map(),
-    changedOrders: new Map(),
-    pollID: 0
+    changedOrders: new Map()
   };
 
   const els = {
@@ -27,8 +25,6 @@
     footerClock: byID("footerClock"),
     footerApi: byID("footerApi"),
     footerRedis: byID("footerRedis"),
-    refreshAllButton: byID("refreshAllButton"),
-    pauseButton: byID("pauseButton"),
     orderAccount: byID("orderAccount"),
     orderForm: byID("orderForm"),
     symbolInput: byID("symbolInput"),
@@ -636,13 +632,6 @@
   }
 
   function bindEvents() {
-    els.refreshAllButton.addEventListener("click", refreshNow);
-    els.pauseButton.addEventListener("click", () => {
-      state.paused = !state.paused;
-      els.pauseButton.classList.toggle("active", state.paused);
-      els.pauseButton.textContent = state.paused ? "▶" : "Ⅱ";
-      pushLog("info", state.paused ? "轮询已暂停" : "轮询已恢复");
-    });
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       await refreshNow();
@@ -714,10 +703,8 @@
       showToast("初始化失败：" + err.message, "error");
       renderAll();
     }
-    state.pollID = window.setInterval(() => {
-      if (!state.paused) {
-        refreshNow().catch((err) => pushLog("error", "轮询刷新失败", err.message));
-      }
+    window.setInterval(() => {
+      refreshNow().catch((err) => pushLog("error", "轮询刷新失败", err.message));
     }, 3000);
   }
 

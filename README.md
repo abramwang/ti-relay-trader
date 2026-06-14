@@ -276,3 +276,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 参考 Meridian `/api-tests/level2/level2-snapshots` 页面优化 `/api-console`，将接口参数改为表单填写，发送后展示 HTTP 状态、耗时、JSON 和可表格化响应。
 - `2026-06-14`: 将 `/api-console` 从 Go 内联 HTML/JS/CSS 重构为模板和静态资源：Go 仅负责 `embed`、`/assets/` 静态路由和模板渲染，接口字段清单迁移到 JSON catalog。
 - `2026-06-14`: 根据 Stitch 设计稿方向新增 `/trade` 手动交易测试终端，采用全屏交易软件式布局，并接入现有账户、资金、持仓、订单、成交、下单、撤单和刷新 API；当前订单状态刷新用 3 秒轮询模拟持续推新。
+- `2026-06-14`: 精简 `/trade` 顶部右侧未落地功能按钮，仅保留 RT 身份块；将操作反馈从右侧详情栏固定区域改为右下角悬浮弹出框。

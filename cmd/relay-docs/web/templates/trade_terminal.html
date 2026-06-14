@@ -24,10 +24,6 @@
         <strong id="serverClock">--:--:--</strong>
       </div>
       <div class="top-actions">
-        <button type="button" class="icon-button" id="refreshAllButton" aria-label="刷新">↻</button>
-        <button type="button" class="icon-button" id="pauseButton" aria-label="暂停推送">Ⅱ</button>
-        <button type="button" class="icon-button" id="notifyButton" aria-label="通知">!</button>
-        <button type="button" class="icon-button" id="settingsButton" aria-label="设置">⚙</button>
         <span class="avatar">RT</span>
       </div>
     </header>
@@ -177,8 +173,9 @@
         <h3>成交执行记录</h3>
         <div id="executionList" class="execution-list">暂无成交执行记录...</div>
       </section>
-      <div class="toast" id="terminalToast">等待操作</div>
     </aside>
+
+    <div class="toast" id="terminalToast" role="status" aria-live="polite">等待操作</div>
 
     <footer class="terminal-footer">
       <span><i></i>API: <strong id="footerApi">--</strong></span>
