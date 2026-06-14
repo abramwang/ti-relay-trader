@@ -45,6 +45,91 @@ func TestHealthzEnvelope(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesDependencyHealth(t *testing.T) {
+	cfg := config.Default()
+	cfg.Service.Mode = config.ModeDocs
+	cfg.Database.DSN = "postgres://configured"
+	cfg.Redis.URL = "redis://configured"
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:prod:v1:huaxin:gw-1", Enabled: true, TradingEnabled: true},
+		{AccountID: "acct-2", BrokerID: "huaxin", GatewayID: "gw-2", StreamPrefix: "relay:prod:v1:huaxin:gw-2", Enabled: true, Simulated: true},
+	}
+	dbPinged := false
+	redisPinged := false
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{},
+		DatabasePing: func(_ context.Context) error {
+			dbPinged = true
+			return nil
+		},
+		RedisPing: func(_ context.Context) error {
+			redisPinged = true
+			return nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		OK   bool       `json:"ok"`
+		Data StatusView `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !envelope.OK || envelope.Data.Status != "ok" || envelope.Data.Mode != string(config.ModeDocs) {
+		t.Fatalf("status view = %#v", envelope.Data)
+	}
+	if !dbPinged || !redisPinged {
+		t.Fatalf("dependency pings db=%v redis=%v", dbPinged, redisPinged)
+	}
+	if envelope.Data.Accounts.Configured != 2 || envelope.Data.Accounts.Enabled != 2 || envelope.Data.Accounts.TradingEnabled != 1 || envelope.Data.Accounts.Simulated != 1 {
+		t.Fatalf("account summary = %#v", envelope.Data.Accounts)
+	}
+	if envelope.Data.Dependencies["database"].Status != "ok" || envelope.Data.Dependencies["redis"].Status != "ok" {
+		t.Fatalf("dependencies = %#v", envelope.Data.Dependencies)
+	}
+}
+
+func TestStatusDegradedAndDoesNotLeakDependencyErrors(t *testing.T) {
+	cfg := config.Default()
+	cfg.Database.DSN = "postgres://configured"
+	cfg.Redis.URL = "redis://configured"
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		DatabasePing: func(_ context.Context) error {
+			return errors.New("password=secret database refused")
+		},
+		RedisPing: func(_ context.Context) error {
+			return nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	var envelope struct {
+		Data StatusView `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if envelope.Data.Status != "degraded" {
+		t.Fatalf("status = %q, want degraded", envelope.Data.Status)
+	}
+	if got := envelope.Data.Dependencies["database"].Message; got != "ping failed" {
+		t.Fatalf("database message = %q", got)
+	}
+	if strings.Contains(rec.Body.String(), "secret") {
+		t.Fatalf("status leaked dependency error: %s", rec.Body.String())
+	}
+}
+
 func TestAccountsFromConfig(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{

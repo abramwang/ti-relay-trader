@@ -48,7 +48,7 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 2. 支持 `docs`、`api`、`worker` 三种服务运行模式。
 3. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
 4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
-5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 骨架接口。
+5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 等基础接口；`/v1/status` 会返回 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态摘要。
 6. worker 模式当前只记录配置态账户和任务数量，后续承接 Redis 消费与后台常驻任务。
 7. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
 8. 已校验服务模式、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
@@ -98,6 +98,13 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 2. 默认 `service.log_level=info`，可设为 `debug`、`warn`、`error`。
 3. HTTP 请求日志包含 `request_id`、method、path、status、bytes、duration_ms、remote_addr。
 4. API 模式统一返回 JSON envelope，包含 `ok`、`data` 或 `error`、`request_id`、`time`。
+
+## 健康检查口径
+
+1. `GET /healthz` 只用于进程存活探测，不做数据库或 Redis ping。
+2. `GET /v1/status` 用于服务状态和依赖健康检查，包含账户摘要、PostgreSQL、Redis、订单服务、Meridian 行情代理、SSE 事件流和自动刷新状态。
+3. PostgreSQL 和 Redis 已配置时会执行短超时 ping；未配置时返回 `not_configured`，已配置但不可用时返回 `error`、`timeout` 或 `unavailable`。
+4. 健康检查响应不返回 DSN、密码、Token、Redis URL 或底层错误原文，只返回通用摘要，避免把本地配置泄露到页面和日志里。
 
 ## 接口测试台
 

@@ -303,10 +303,11 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	}
 
 	var publisher orderflow.CommandPublisher
+	var redisPublisher *redisstream.RedisCommandPublisher
 	if strings.TrimSpace(cfg.Redis.URL) == "" {
 		logger.Warn("relay_api_trade_commands_unavailable", "reason", "redis.url is required")
 	} else {
-		redisPublisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
+		redisPublisher, err = redisstream.OpenRedisCommandPublisher(cfg.Redis)
 		if err != nil {
 			cleanup()
 			return api.Dependencies{}, nil, func() {}, err
@@ -330,7 +331,14 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		return api.Dependencies{}, nil, func() {}, err
 	}
 
-	return api.Dependencies{Orders: orders}, repo, cleanup, nil
+	deps := api.Dependencies{
+		Orders:       orders,
+		DatabasePing: db.PingContext,
+	}
+	if redisPublisher != nil {
+		deps.RedisPing = redisPublisher.Ping
+	}
+	return deps, repo, cleanup, nil
 }
 
 func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, refresher orderflow.AccountRefresher, eventHub *events.Hub, logger *slog.Logger) func() {

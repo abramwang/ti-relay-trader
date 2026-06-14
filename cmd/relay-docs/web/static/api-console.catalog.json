@@ -1,6 +1,6 @@
 [
   { "id": "healthz", "group": "基础", "title": "健康检查", "method": "GET", "path": "/healthz", "status": "ready", "fields": [] },
-  { "id": "status", "group": "基础", "title": "服务状态", "method": "GET", "path": "/v1/status", "status": "ready", "fields": [] },
+  { "id": "status", "group": "基础", "title": "服务状态/依赖健康", "method": "GET", "path": "/v1/status", "status": "ready", "fields": [] },
   { "id": "schema", "group": "基础", "title": "Schema 发现", "method": "GET", "path": "/v1/schema", "status": "ready", "fields": [] },
   { "id": "accounts", "group": "账户", "title": "账户列表", "method": "GET", "path": "/v1/accounts", "status": "ready", "fields": [] },
   {

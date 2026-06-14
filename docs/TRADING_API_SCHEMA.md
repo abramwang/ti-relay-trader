@@ -251,7 +251,7 @@ rejected
 | 方法 | 路径 | 请求 | 响应 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | `GET` | `/healthz` | - | `StatusView` | 已有骨架 |
-| `GET` | `/v1/status` | - | `StatusView` | 已有骨架 |
+| `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康和账户摘要 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已有配置态骨架 |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |

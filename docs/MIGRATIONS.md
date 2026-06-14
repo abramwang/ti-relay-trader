@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-06-13`
+更新时间：`2026-06-14`
 
 ## 当前状态
 
@@ -127,7 +127,6 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 
 ## 后续工作
 
-1. 将 `config.database.dsn` 接入 API 模式启动检查。
-2. 增加 `GET /v1/status` 的数据库状态。
-3. 将 Redis Stream `reply/event` 消费接入 `internal/ledger` repository。
-4. 增加基于临时 PostgreSQL 的 CI 集成测试。
+1. 增加正式常驻 worker 的数据库位点表和消费状态落盘。
+2. 增加基于临时 PostgreSQL 的 CI 集成测试。
+3. 设计盘后对账和模拟柜台后续 migration。

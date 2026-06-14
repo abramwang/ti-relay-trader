@@ -62,7 +62,7 @@ relay Python jobs
 | `internal/config` | YAML 配置加载、`docs/api/worker` 模式、多账户路由配置校验 |
 | `internal/logging` | 结构化日志初始化，默认 JSON 输出 |
 | `internal/httpx` | HTTP request_id、中间件、统一 JSON envelope 和标准错误码骨架 |
-| `internal/api` | API 模式服务骨架，当前提供 `/healthz`、`/v1/status`、`/v1/accounts` |
+| `internal/api` | API handler、统一交易接口、SSE 事件流、依赖健康检查和配置态账户列表 |
 | `internal/redisstream` | Redis Stream 命名、前置消息摘要解析和只读探测边界 |
 | `internal/trading` | 统一交易接口 schema、枚举、基础校验、状态机语义和 `/v1/schema` 目录 |
 | `internal/worker` | worker 模式常驻进程骨架，后续承接 Redis 消费和后台任务 |

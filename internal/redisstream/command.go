@@ -107,6 +107,13 @@ func (publisher *RedisCommandPublisher) Close() error {
 	return publisher.client.Close()
 }
 
+func (publisher *RedisCommandPublisher) Ping(ctx context.Context) error {
+	if publisher == nil || publisher.client == nil {
+		return fmt.Errorf("redis command publisher is nil")
+	}
+	return publisher.client.Ping(ctx).Err()
+}
+
 func CommandStreamForAction(streams Streams, action string) (string, error) {
 	switch action {
 	case ActionOrderSubmit, ActionOrderBatchSubmit, ActionOrderCancel:

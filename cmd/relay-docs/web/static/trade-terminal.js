@@ -303,6 +303,14 @@
     }
   }
 
+  function dependencyOK(dep) {
+    return dep && dep.status === "ok";
+  }
+
+  function dependencyLabel(name, dep) {
+    return name + ": " + (dep && dep.status ? dep.status : "unknown");
+  }
+
   function pushLog(level, message, detail) {
     state.logs.unshift({
       at: new Date(),
@@ -360,9 +368,11 @@
   async function loadStatus() {
     try {
       const data = await request("/v1/status");
-      setStatus(els.apiStatus, true, "API: connected");
-      setStatus(els.redisStatus, true, "Redis: live");
-      setStatus(els.dbStatus, true, "DB: live");
+      const dependencies = data.dependencies || {};
+      const apiOK = data.status === "ok";
+      setStatus(els.apiStatus, apiOK, "API: " + (apiOK ? "connected" : data.status || "degraded"));
+      setStatus(els.redisStatus, dependencyOK(dependencies.redis), dependencyLabel("Redis", dependencies.redis));
+      setStatus(els.dbStatus, dependencyOK(dependencies.database), dependencyLabel("DB", dependencies.database));
       els.footerApi.textContent = data.public_url || window.RELAY_PUBLIC_URL || "connected";
       updateStreamFooter();
       if (data.time) {

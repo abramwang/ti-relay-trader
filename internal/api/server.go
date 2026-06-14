@@ -23,10 +23,14 @@ import (
 )
 
 type Dependencies struct {
-	Orders OrderService
-	Market *market.MeridianClient
-	Events *events.Hub
+	Orders       OrderService
+	Market       *market.MeridianClient
+	Events       *events.Hub
+	DatabasePing HealthCheckFunc
+	RedisPing    HealthCheckFunc
 }
+
+type HealthCheckFunc func(context.Context) error
 
 type OrderService interface {
 	SubmitOrder(ctx context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error)
@@ -49,6 +53,12 @@ type Server struct {
 	orders  OrderService
 	market  *market.MeridianClient
 	events  *events.Hub
+	health  statusHealthChecks
+}
+
+type statusHealthChecks struct {
+	Database HealthCheckFunc
+	Redis    HealthCheckFunc
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -75,6 +85,10 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		orders:  deps.Orders,
 		market:  marketClient,
 		events:  deps.Events,
+		health: statusHealthChecks{
+			Database: deps.DatabasePing,
+			Redis:    deps.RedisPing,
+		},
 	}
 	if server.events == nil {
 		server.events = events.NewHub()
@@ -252,7 +266,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteOK(w, r, http.StatusOK, s.statusPayload("ok"))
+	httpx.WriteOK(w, r, http.StatusOK, s.statusPayload(r.Context(), "ok", false))
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +275,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteOK(w, r, http.StatusOK, s.statusPayload("ok"))
+	httpx.WriteOK(w, r, http.StatusOK, s.statusPayload(r.Context(), "ok", true))
 }
 
 func (s *Server) handleSchema(w http.ResponseWriter, r *http.Request) {
@@ -718,28 +732,126 @@ func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteNotFound(w, r)
 }
 
-func (s *Server) statusPayload(status string) StatusView {
-	return StatusView{
+func (s *Server) statusPayload(ctx context.Context, status string, includeDependencies bool) StatusView {
+	view := StatusView{
 		Service:            "relay-api",
-		Mode:               string(config.ModeAPI),
+		Mode:               string(s.cfg.Service.Mode),
 		Status:             status,
 		PublicURL:          s.cfg.Service.PublicURL,
 		StartedAt:          s.started,
 		UptimeSeconds:      int64(time.Since(s.started).Seconds()),
 		AccountsConfigured: len(s.cfg.Accounts),
+		Accounts:           summarizeAccounts(s.cfg.Accounts),
 		JobsConfigured:     len(s.cfg.Jobs),
+	}
+	if includeDependencies {
+		view.Dependencies = s.dependencyStatus(ctx)
+		view.Status = statusFromDependencies(view.Dependencies)
+	}
+	return view
+}
+
+func (s *Server) dependencyStatus(ctx context.Context) map[string]DependencyStatus {
+	return map[string]DependencyStatus{
+		"database":      s.pingDependency(ctx, strings.TrimSpace(s.cfg.Database.DSN) != "", s.health.Database),
+		"redis":         s.pingDependency(ctx, strings.TrimSpace(s.cfg.Redis.URL) != "", s.health.Redis),
+		"order_service": serviceDependency(s.orders != nil),
+		"market":        serviceDependency(s.market != nil),
+		"event_stream":  serviceDependency(s.events != nil),
+		"auto_refresh":  configDependency(s.cfg.AutoRefreshEnabled()),
 	}
 }
 
+func (s *Server) pingDependency(ctx context.Context, configured bool, checker HealthCheckFunc) DependencyStatus {
+	if !configured {
+		return DependencyStatus{Status: "not_configured", Configured: false}
+	}
+	if checker == nil {
+		return DependencyStatus{Status: "unavailable", Configured: true, Message: "health checker unavailable"}
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := checker(checkCtx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+			return DependencyStatus{Status: "timeout", Configured: true, LatencyMs: int64(time.Since(started) / time.Millisecond), Message: "ping timeout"}
+		}
+		return DependencyStatus{Status: "error", Configured: true, LatencyMs: int64(time.Since(started) / time.Millisecond), Message: "ping failed"}
+	}
+	return DependencyStatus{Status: "ok", Configured: true, LatencyMs: int64(time.Since(started) / time.Millisecond)}
+}
+
+func serviceDependency(available bool) DependencyStatus {
+	if !available {
+		return DependencyStatus{Status: "unavailable", Configured: false}
+	}
+	return DependencyStatus{Status: "ok", Configured: true}
+}
+
+func configDependency(enabled bool) DependencyStatus {
+	if !enabled {
+		return DependencyStatus{Status: "disabled", Configured: true}
+	}
+	return DependencyStatus{Status: "ok", Configured: true}
+}
+
+func statusFromDependencies(dependencies map[string]DependencyStatus) string {
+	for _, name := range []string{"database", "redis", "order_service"} {
+		dep, ok := dependencies[name]
+		if !ok {
+			continue
+		}
+		if name == "order_service" && dep.Status != "ok" {
+			return "degraded"
+		}
+		if dep.Configured && dep.Status != "ok" {
+			return "degraded"
+		}
+	}
+	return "ok"
+}
+
+func summarizeAccounts(accounts []config.AccountRouteConfig) AccountStatusSummary {
+	summary := AccountStatusSummary{Configured: len(accounts)}
+	for _, account := range accounts {
+		if account.Enabled {
+			summary.Enabled++
+		}
+		if account.TradingEnabled {
+			summary.TradingEnabled++
+		}
+		if account.Simulated {
+			summary.Simulated++
+		}
+	}
+	return summary
+}
+
 type StatusView struct {
-	Service            string    `json:"service"`
-	Mode               string    `json:"mode"`
-	Status             string    `json:"status"`
-	PublicURL          string    `json:"public_url"`
-	StartedAt          time.Time `json:"started_at"`
-	UptimeSeconds      int64     `json:"uptime_seconds"`
-	AccountsConfigured int       `json:"accounts_configured"`
-	JobsConfigured     int       `json:"jobs_configured"`
+	Service            string                      `json:"service"`
+	Mode               string                      `json:"mode"`
+	Status             string                      `json:"status"`
+	PublicURL          string                      `json:"public_url"`
+	StartedAt          time.Time                   `json:"started_at"`
+	UptimeSeconds      int64                       `json:"uptime_seconds"`
+	AccountsConfigured int                         `json:"accounts_configured"`
+	Accounts           AccountStatusSummary        `json:"accounts"`
+	JobsConfigured     int                         `json:"jobs_configured"`
+	Dependencies       map[string]DependencyStatus `json:"dependencies,omitempty"`
+}
+
+type AccountStatusSummary struct {
+	Configured     int `json:"configured"`
+	Enabled        int `json:"enabled"`
+	TradingEnabled int `json:"trading_enabled"`
+	Simulated      int `json:"simulated"`
+}
+
+type DependencyStatus struct {
+	Status     string `json:"status"`
+	Configured bool   `json:"configured"`
+	LatencyMs  int64  `json:"latency_ms,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type AccountView struct {
