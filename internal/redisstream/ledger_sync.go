@@ -283,6 +283,11 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			result.Orders++
 		} else {
 			if err := writer.UpdateOrderStatus(ctx, event); err != nil {
+				if errors.Is(err, ledger.ErrOrderNotFound) {
+					result.Skipped++
+					result.SkipReasons = append(result.SkipReasons, err.Error())
+					return result
+				}
 				result.LedgerErrors++
 				result.SkipReasons = append(result.SkipReasons, err.Error())
 				return result

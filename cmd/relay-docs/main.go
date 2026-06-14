@@ -208,13 +208,16 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		listenAddr = flagAddr
 	}
 
-	apiDeps, apiCleanup, err := buildAPIDependencies(cfg, logger)
+	apiDeps, ledgerWriter, apiCleanup, err := buildAPIDependencies(cfg, logger)
 	if err != nil {
 		logger.Warn("relay_docs_api_dependencies_unavailable", "error", err)
 		apiDeps = api.Dependencies{}
+		ledgerWriter = nil
 		apiCleanup = func() {}
 	}
 	defer apiCleanup()
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, logger)
+	defer stopLedgerSync()
 
 	mux := http.NewServeMux()
 	server := &portalServer{root: absRoot, logger: logger}
@@ -252,11 +255,13 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 		listenAddr = flagAddr
 	}
 
-	deps, cleanup, err := buildAPIDependencies(cfg, logger)
+	deps, ledgerWriter, cleanup, err := buildAPIDependencies(cfg, logger)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, logger)
+	defer stopLedgerSync()
 
 	logger.Info("relay_service_listening",
 		"mode", cfg.Service.Mode,
@@ -267,16 +272,16 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 	return http.ListenAndServe(listenAddr, api.NewWithDependencies(cfg, logger, deps))
 }
 
-func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Dependencies, func(), error) {
+func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Dependencies, redisstream.LedgerWriter, func(), error) {
 	cleanup := func() {}
 	if strings.TrimSpace(cfg.Database.DSN) == "" {
 		logger.Warn("relay_api_order_service_unavailable", "reason", "database.dsn is required")
-		return api.Dependencies{}, cleanup, nil
+		return api.Dependencies{}, nil, cleanup, nil
 	}
 
 	db, err := sql.Open("pgx", cfg.Database.DSN)
 	if err != nil {
-		return api.Dependencies{}, cleanup, err
+		return api.Dependencies{}, nil, cleanup, err
 	}
 	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
@@ -288,7 +293,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
 		cleanup()
-		return api.Dependencies{}, func() {}, err
+		return api.Dependencies{}, nil, func() {}, err
 	}
 
 	var publisher orderflow.CommandPublisher
@@ -298,7 +303,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		redisPublisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
 		if err != nil {
 			cleanup()
-			return api.Dependencies{}, func() {}, err
+			return api.Dependencies{}, nil, func() {}, err
 		}
 		publisher = redisPublisher
 		previousCleanup := cleanup
@@ -308,17 +313,45 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		}
 	}
 
+	repo := ledger.NewRepository(db)
 	orders, err := orderflow.New(orderflow.Options{
 		Config:    cfg,
-		Ledger:    ledger.NewRepository(db),
+		Ledger:    repo,
 		Publisher: publisher,
 	})
 	if err != nil {
 		cleanup()
-		return api.Dependencies{}, func() {}, err
+		return api.Dependencies{}, nil, func() {}, err
 	}
 
-	return api.Dependencies{Orders: orders}, cleanup, nil
+	return api.Dependencies{Orders: orders}, repo, cleanup, nil
+}
+
+func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, logger *slog.Logger) func() {
+	if writer == nil || strings.TrimSpace(cfg.Redis.URL) == "" {
+		logger.Warn("relay_ledger_sync_loop_disabled", "reason", "redis url or ledger writer missing")
+		return func() {}
+	}
+
+	syncCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		err := redisstream.RunLedgerSyncLoop(syncCtx, cfg, writer, redisstream.LedgerSyncLoopOptions{
+			StartID: "0",
+			Count:   200,
+			Block:   time.Second,
+			Roles:   []string{redisstream.SuffixReply, redisstream.SuffixEvent},
+		}, logger.With("component", "ledger-sync-loop"))
+		if err != nil && syncCtx.Err() == nil {
+			logger.Error("relay_ledger_sync_loop_stopped", "error", err)
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 func runWorkerMode(cfg relayconfig.Config, logger *slog.Logger) error {

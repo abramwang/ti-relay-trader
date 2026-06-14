@@ -371,11 +371,12 @@
       <table>
         <thead>
           <tr>
-            <th>委托编号</th>
+            <th>ReqID</th>
             <th>代码</th>
             <th>方向</th>
             <th class="num">委托价格</th>
             <th class="num">委托/成交</th>
+            <th>柜台/交易所</th>
             <th>状态</th>
             <th>委托时间</th>
             <th>操作</th>
@@ -391,11 +392,12 @@
             ].join(" ");
             return `
               <tr class="${className}" data-order-id="${escapeHTML(id)}">
-                <td>${escapeHTML(id)}</td>
+                <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
                 <td>${escapeHTML(symbolText(order))}</td>
                 <td class="${order.trade_side === "S" ? "down" : "up"}">${sideText(order.trade_side)}</td>
                 <td class="num">${formatNumber(order.limit_price)}</td>
                 <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
+                <td><span class="row-title"><strong>${escapeHTML(order.order_id || "--")}</strong><span>${escapeHTML(order.order_stream_id || "--")}</span></span></td>
                 <td><span class="status-badge ${escapeHTML(order.status)}">${statusText(order.status)}</span></td>
                 <td>${formatTime(order.created_at || order.inserted_at)}</td>
                 <td>${order.is_terminal ? '<span class="muted">已完成</span>' : '<button type="button" class="row-action" data-cancel-id="' + escapeHTML(id) + '">撤单</button>'}</td>
@@ -415,7 +417,8 @@
         <thead>
           <tr>
             <th>成交编号</th>
-            <th>委托编号</th>
+            <th>ReqID</th>
+            <th>柜台/交易所</th>
             <th>代码</th>
             <th>方向</th>
             <th class="num">成交价格</th>
@@ -424,18 +427,26 @@
           </tr>
         </thead>
         <tbody>
-          ${state.fills.map((fill) => `
-            <tr>
-              <td>${escapeHTML(fill.fill_id)}</td>
-              <td>${escapeHTML(fill.gateway_order_id)}</td>
-              <td>${escapeHTML(symbolText(fill))}</td>
-              <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
-              <td class="num">${formatNumber(fill.price)}</td>
-              <td class="num">${formatInt(fill.qty)}</td>
-              <td>${formatTime(fill.matched_at)}</td>
-            </tr>`).join("")}
+          ${state.fills.map((fill) => {
+            const order = orderForFill(fill);
+            return `
+              <tr>
+                <td>${escapeHTML(fill.fill_id)}</td>
+                <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || "--")}</strong><span>${escapeHTML(fill.gateway_order_id)}</span></span></td>
+                <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
+                <td>${escapeHTML(symbolText(fill))}</td>
+                <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
+                <td class="num">${formatNumber(fill.price)}</td>
+                <td class="num">${formatInt(fill.qty)}</td>
+                <td>${formatTime(fill.matched_at)}</td>
+              </tr>`;
+          }).join("")}
         </tbody>
       </table>`;
+  }
+
+  function orderForFill(fill) {
+    return state.orders.find((order) => order.gateway_order_id === fill.gateway_order_id) || {};
   }
 
   function renderLogs() {
@@ -457,7 +468,7 @@
       els.executionList.textContent = "暂无成交执行记录...";
       return;
     }
-    els.detailSub.textContent = "OID: " + order.gateway_order_id;
+    els.detailSub.textContent = "ReqID: " + (order.client_order_id || "--") + " · OID: " + order.gateway_order_id;
     const events = [
       ["下单指令生成", order.created_at || order.inserted_at],
       ["柜台受理", order.accepted_at],
@@ -478,9 +489,14 @@
     }
     els.executionList.innerHTML = `
       <table>
-        <thead><tr><th>成交编号</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
+        <thead><tr><th>成交编号</th><th>订单 ID</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
         <tbody>${fills.map((fill) => `
-          <tr><td>${escapeHTML(fill.fill_id)}</td><td class="num">${formatNumber(fill.price)}</td><td class="num">${formatInt(fill.qty)}</td></tr>
+          <tr>
+            <td>${escapeHTML(fill.fill_id)}</td>
+            <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
+            <td class="num">${formatNumber(fill.price)}</td>
+            <td class="num">${formatInt(fill.qty)}</td>
+          </tr>
         `).join("")}</tbody>
       </table>`;
   }

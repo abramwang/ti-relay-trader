@@ -6,6 +6,8 @@
 
 已新增 `relayctl ledger-sync`，用于把前置服务输出的 Redis Stream 消息写入 PostgreSQL 账本。
 
+`2026-06-14` 起，9092 docs/api 模式也会在本地配置包含 PostgreSQL 和 Redis 时启动轻量后台同步循环，持续消费测试 Redis `reply/event` 并更新本地账本。该循环目前使用内存 stream id，从 `0` 追赶历史；正式生产化仍需要迁移到 worker 并持久化消费位点。
+
 首批同步范围：
 
 1. `reply`：完整归档到 `raw_stream_messages`。

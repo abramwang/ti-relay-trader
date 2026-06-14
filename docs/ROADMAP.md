@@ -83,6 +83,7 @@
 - [x] 增加 Redis body envelope 解析，提取 routing、reply、event、payload 和 adapter_context。
 - [x] 增加 `relayctl ledger-sync`，支持批量读取 `reply/event` 并写入 PostgreSQL 账本。
 - [x] 使用真实 Redis 小批量联调 `reply/event` 归档。
+- [x] 在 9092 docs/api 模式启动轻量后台同步循环，持续消费测试 Redis `reply/event` 更新本地账本。
 - [x] 实现 Redis command envelope 和 `cmd.trade` 单笔下单写入。
 - [x] 实现撤单命令写入 `cmd.trade`。
 - [x] 实现批量下单命令写入 `cmd.trade`。
@@ -90,7 +91,8 @@
 - [ ] 实现订单/成交查询命令写入 `cmd.query`。
 - [x] 消费 `reply` 并归档 raw。
 - [x] 消费 `event` 并归档 raw。
-- [ ] 将字段完整的 `order.event/fill.event` 持续消费接入 worker 位点。
+- [x] 将字段完整的 `order.event/fill.event` 持续消费接入 9092 轻量后台同步循环。
+- [ ] 将持续消费迁移到正式 worker 并持久化 stream 位点。
 - [ ] 消费 `hb`。
 - [ ] 消费 `dlq`。
 - [ ] 实现 consumer 位点和重放策略。
