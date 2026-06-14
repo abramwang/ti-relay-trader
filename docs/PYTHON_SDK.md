@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.0`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过后续 tar.gz 包安装。
+首版源码包已落在 `sdk/python/relay_sdk`，版本号 `0.1.0`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -29,13 +29,14 @@ SDK 的定位：
 7. dataclass 模型和 `raw` 原始响应保留。
 8. relay envelope 错误到 SDK 异常的映射。
 9. mock 9092 API 单元测试。
+10. `scripts/build-python-sdk.py` 打包脚本。
+11. 9092 `/sdk/relay-sdk-0.1.0.tar.gz` 和 `.sha256` 下载入口。
 
 尚未完成：
 
-1. 内网 tar.gz 安装包生成脚本。
-2. 9092 `/sdk/relay-sdk-<version>.tar.gz` 下载入口。
-3. 面向真实 9092 测试服务的 SDK 集成测试。
-4. 更完整的事件流断线重连和心跳处理。
+1. 面向真实 9092 测试服务的 SDK 集成测试。
+2. 更完整的事件流断线重连和心跳处理。
+3. SDK 版本发布检查清单和历史版本索引。
 
 ## 包形态
 
@@ -75,10 +76,18 @@ Meridian 当前参考命令：
 python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk-0.1.7.tar.gz"
 ```
 
-relay SDK 建议命令：
+relay SDK 当前命令：
 
 ```bash
 python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz"
+```
+
+校验文件：
+
+```bash
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.0.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.0.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -243,6 +252,15 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 6. `IDEMPOTENCY_CONFLICT` 到 `RelayIdempotencyError` 的异常映射。
 7. SSE `order.changed` 事件解析。
 
+打包验证：
+
+```bash
+cd /home/ti-relay-trader
+python3 scripts/build-python-sdk.py
+sha256sum -c public/sdk/relay-sdk-0.1.0.tar.gz.sha256
+python3 -m pip install --no-deps --target /tmp/relay-sdk-install-test public/sdk/relay-sdk-0.1.0.tar.gz
+```
+
 ## 测试与发布
 
 SDK 后续需要：
@@ -252,8 +270,7 @@ SDK 后续需要：
 3. 覆盖下单 accepted 但最终 rejected 的场景。
 4. 覆盖撤单 accepted 但最终 filled 的竞态场景。
 5. 覆盖 idempotency replay 和 conflict。
-6. 提供内网 tar.gz 安装包，路径形如 `http://relay-trader.quantstage.com/sdk/relay-sdk-<version>.tar.gz`。
-7. 后续可补充 wheel 包或内部 PyPI 发布方式。
+6. 后续可补充 wheel 包或内部 PyPI 发布方式。
 
 每次 SDK 版本更新必须同步更新：
 
