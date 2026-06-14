@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260614-2106">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260615-0001">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -121,7 +121,7 @@
           <div class="toolbar-actions">
             <label class="date-filter">
               <span>交易日</span>
-              <input id="chartTradeDateInput" inputmode="numeric" placeholder="20260612">
+              <input id="chartTradeDateInput" inputmode="numeric" placeholder="YYYYMMDD">
             </label>
             <button type="button" id="reloadChartButton">刷新K线</button>
           </div>
@@ -151,7 +151,7 @@
           <div class="toolbar-actions">
             <label class="date-filter">
               <span>交易日</span>
-              <input id="assetTradeDate" inputmode="numeric" placeholder="20260614">
+              <input id="assetTradeDate" inputmode="numeric" placeholder="YYYYMMDD">
             </label>
             <button type="button" id="queryAssetButton">查询</button>
             <button type="button" id="refreshAssetButton">刷新资金</button>
@@ -198,7 +198,7 @@
           <div class="blotter-actions">
             <label class="date-filter">
               <span>交易日</span>
-              <input id="ordersTradeDate" inputmode="numeric" placeholder="20260614">
+              <input id="ordersTradeDate" inputmode="numeric" placeholder="YYYYMMDD">
             </label>
             <button type="button" id="queryOrdersButton">查询</button>
             <button type="button" id="refreshOrdersButton">刷新委托</button>
@@ -224,11 +224,11 @@
           <div class="performance-actions">
             <label>
               <span>起始日</span>
-              <input id="perfDateFrom" inputmode="numeric" placeholder="20260612">
+              <input id="perfDateFrom" inputmode="numeric" placeholder="YYYYMMDD">
             </label>
             <label>
               <span>结束日</span>
-              <input id="perfDateTo" inputmode="numeric" placeholder="20260612">
+              <input id="perfDateTo" inputmode="numeric" placeholder="YYYYMMDD">
             </label>
             <label>
               <span>基准</span>
@@ -305,7 +305,7 @@
                 </label>
                 <label>
                   <span>交易日</span>
-                  <input id="barTradeDateInput" inputmode="numeric" placeholder="20260612">
+                  <input id="barTradeDateInput" inputmode="numeric" placeholder="YYYYMMDD">
                 </label>
                 <label>
                   <span>频率</span>
@@ -398,6 +398,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260615-0001"></script>
 </body>
 </html>

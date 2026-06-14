@@ -35,6 +35,9 @@
     barsTradeDate: "",
     barsLoaded: false,
     barsError: "",
+    defaultTradeDate: "",
+    defaultTradeDateSource: "",
+    lastDefaultTradeDate: "",
     chartOrders: [],
     chartFills: [],
     minuteChart: null,
@@ -252,6 +255,10 @@
       String(byType.day || "").padStart(2, "0");
   }
 
+  function currentBusinessDate() {
+    return businessDateCompact();
+  }
+
   function displayDate(value) {
     const digits = compactDate(value);
     if (!digits) {
@@ -269,12 +276,91 @@
   }
 
   function defaultLedgerDate() {
-    return compactDate(els.tradeDate.textContent) || businessDateCompact();
+    return terminalDefaultDate();
   }
 
   function isCurrentBusinessDate(value) {
     const date = compactDate(value);
-    return date !== "" && date === businessDateCompact();
+    return date !== "" && date === currentBusinessDate();
+  }
+
+  function terminalDefaultDate() {
+    return compactDate(state.defaultTradeDate) ||
+      compactDate(state.marketSnapshot && state.marketSnapshot.trade_date) ||
+      compactDate(els.tradeDate.textContent) ||
+      currentBusinessDate();
+  }
+
+  function shouldReplaceDefaultDateInput(input, previousDefault) {
+    if (!input) {
+      return false;
+    }
+    const value = compactDate(input.value);
+    if (!value) {
+      return true;
+    }
+    return value === previousDefault || value === currentBusinessDate();
+  }
+
+  function applyDefaultDateInput(input, nextDate, previousDefault) {
+    if (!shouldReplaceDefaultDateInput(input, previousDefault)) {
+      return false;
+    }
+    if (input.value !== nextDate) {
+      input.value = nextDate;
+      return true;
+    }
+    return false;
+  }
+
+  function setTerminalDefaultDate(value, source, options = {}) {
+    const nextDate = compactDate(value);
+    if (!nextDate) {
+      return { changed: false, ledgerChanged: false, chartChanged: false, performanceChanged: false };
+    }
+    const previousDefault = compactDate(state.defaultTradeDate) ||
+      compactDate(state.lastDefaultTradeDate) ||
+      currentBusinessDate();
+    const changed = compactDate(state.defaultTradeDate) !== nextDate;
+    state.lastDefaultTradeDate = previousDefault;
+    state.defaultTradeDate = nextDate;
+    state.defaultTradeDateSource = source || state.defaultTradeDateSource || "terminal";
+    const result = {
+      changed,
+      ledgerChanged: false,
+      chartChanged: false,
+      performanceChanged: false
+    };
+    if (!options.applyToInputs) {
+      return result;
+    }
+    result.ledgerChanged = [
+      applyDefaultDateInput(els.ordersTradeDate, nextDate, previousDefault),
+      applyDefaultDateInput(els.assetTradeDate, nextDate, previousDefault)
+    ].some(Boolean);
+    result.chartChanged = [
+      applyDefaultDateInput(els.chartTradeDateInput, nextDate, previousDefault),
+      applyDefaultDateInput(els.barTradeDateInput, nextDate, previousDefault)
+    ].some(Boolean);
+    result.performanceChanged = [
+      applyDefaultDateInput(els.perfDateFrom, nextDate, previousDefault),
+      applyDefaultDateInput(els.perfDateTo, nextDate, previousDefault)
+    ].some(Boolean);
+    return result;
+  }
+
+  function maybeAdoptMarketDefaultDate(value, source, requestedDate = "") {
+    const nextDate = compactDate(value);
+    if (!nextDate) {
+      return { changed: false, ledgerChanged: false, chartChanged: false, performanceChanged: false };
+    }
+    const requested = compactDate(requestedDate);
+    const current = currentBusinessDate();
+    const previousDefault = compactDate(state.defaultTradeDate) || current;
+    if (requested && requested !== current && requested !== previousDefault) {
+      return { changed: false, ledgerChanged: false, chartChanged: false, performanceChanged: false };
+    }
+    return setTerminalDefaultDate(nextDate, source, { applyToInputs: true });
   }
 
   function priceDigitsForInstrument(instrumentType) {
@@ -909,9 +995,14 @@
       }
       const items = Array.isArray(data.data) ? data.data : [];
       state.marketSnapshot = items[0] || null;
+      const adopted = maybeAdoptMarketDefaultDate(state.marketSnapshot && state.marketSnapshot.trade_date, "snapshot");
       renderQuote();
       renderDepthBook();
       applyQuotePrice();
+      if (adopted.ledgerChanged && state.initialized && state.activeAccount) {
+        resetLedgerPages();
+        loadAccountData().catch((err) => pushLog("warn", "交易日默认值刷新失败", err.message));
+      }
     } catch (err) {
       if (err.name === "AbortError") {
         return;
@@ -1479,6 +1570,10 @@
   }
 
   function defaultQueryDate() {
+    const terminalDate = compactDate(state.defaultTradeDate);
+    if (terminalDate) {
+      return terminalDate;
+    }
     const snapshotDate = state.marketSnapshot && state.marketSnapshot.trade_date;
     const snapshotDigits = compactDate(snapshotDate);
     if (snapshotDigits) {
@@ -1493,7 +1588,7 @@
     if (screenDate) {
       return screenDate;
     }
-    return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    return currentBusinessDate();
   }
 
   function ensurePerformanceDefaults() {
@@ -1768,7 +1863,12 @@
       const effectiveTradeDate = effectiveBarsTradeDate(tradeDate);
       state.barsSecurityID = securityID;
       state.barsTradeDate = effectiveTradeDate;
+      const adopted = maybeAdoptMarketDefaultDate(effectiveTradeDate, "bars", tradeDate);
       syncBarsInputs(securityID, effectiveTradeDate);
+      if (adopted.ledgerChanged && state.initialized && state.activeAccount) {
+        resetLedgerPages();
+        loadAccountData().catch((err) => pushLog("warn", "交易日默认值刷新失败", err.message));
+      }
       try {
         await loadChartMarkers(securityID, effectiveTradeDate);
       } catch (markerErr) {
@@ -2780,9 +2880,9 @@
       await loadStatus();
       await loadAccounts();
       connectEventStream();
-      await loadAccountData();
       await loadQuoteForInput();
       ensurePerformanceDefaults();
+      await loadAccountData();
       state.initialized = true;
       if (state.activeView === "performance") {
         await loadPerformance();
