@@ -1,9 +1,11 @@
 package trading
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSubmitOrderValidate(t *testing.T) {
@@ -118,5 +120,51 @@ func TestOrderStatusTerminal(t *testing.T) {
 	}
 	if OrderStatusWorking.Terminal() {
 		t.Fatal("working should not be terminal")
+	}
+}
+
+func TestOrderJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {
+	body, err := json.Marshal(Order{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gw-1",
+		Symbol:         "600000",
+		Exchange:       ExchangeSH,
+		TradeSide:      TradeSideBuy,
+		BusinessType:   BusinessTypeStock,
+		LimitPrice:     9.54,
+		OrderQty:       100,
+		Status:         OrderStatusWorking,
+		GatewayStatus:  GatewayStatusWorking,
+		CreatedAt:      time.Date(2026, 6, 14, 3, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("marshal order: %v", err)
+	}
+	text := string(body)
+	if strings.Contains(text, "0001-01-01") || strings.Contains(text, "accepted_at") {
+		t.Fatalf("order json leaked zero time: %s", text)
+	}
+	if !strings.Contains(text, `"created_at":"2026-06-14T11:00:00+08:00"`) {
+		t.Fatalf("order json missing business time: %s", text)
+	}
+}
+
+func TestFillJSONOmitZeroMatchedAt(t *testing.T) {
+	body, err := json.Marshal(Fill{
+		FillID:         "fill-1",
+		AccountID:      "acct-1",
+		GatewayOrderID: "gw-1",
+		Symbol:         "600000",
+		Exchange:       ExchangeSH,
+		TradeSide:      TradeSideBuy,
+		Price:          9.54,
+		Qty:            100,
+	})
+	if err != nil {
+		t.Fatalf("marshal fill: %v", err)
+	}
+	text := string(body)
+	if strings.Contains(text, "0001-01-01") || strings.Contains(text, "matched_at") {
+		t.Fatalf("fill json leaked zero time: %s", text)
 	}
 }

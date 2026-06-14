@@ -28,35 +28,34 @@
 ## 当前优先级
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
-2. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`，并清理零值时间展示。
-3. 推进 `post_close_settlement` 从报告摘要升级为实际写入日终 `asset_snapshots`、`position_snapshots` 和对账批次。
-4. 增加 9092 页面冒烟测试。
-5. 增加批量下单测试视图。
-6. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
-7. 设计模拟柜台账表 schema。
+2. 推进 `post_close_settlement` 从报告摘要升级为实际写入日终 `asset_snapshots`、`position_snapshots` 和对账批次。
+3. 增加 9092 页面冒烟测试。
+4. 增加批量下单测试视图。
+5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+6. 设计模拟柜台账表 schema。
 
 ## 下一步任务
 
-### N1 交易日任务运行状态落盘与状态接口
+### N2 收盘结算快照落盘与对账批次
 
-状态：`done`
+状态：`doing`
 
-目标：让每日盘前初始化和收盘后结算不只输出一次性 JSON 报告，还能被 9092 服务、首页状态、运维页面和后续 cron 监控稳定追踪。
+目标：让 `post_close_settlement` 不只输出报告摘要，而是固化日终资产、持仓和对账批次，为历史持仓查询、账户盈亏统计和盘后复核提供稳定数据源。
 
 范围：
 
-- 新增 PostgreSQL 任务运行账表，记录 `job_name`、`target_trade_date`、`timezone`、`status`、`started_at`、`finished_at`、`duration_ms`、`report_json`、`error_summary` 和触发来源。
-- 为 Go 账本 repository 增加任务运行写入和按任务读取最近状态能力。
-- 让 `python -m relay.jobs.pre_open_init` 与 `python -m relay.jobs.post_close_settlement` 可把报告写入 relay 账本。
-- 扩展 `GET /v1/status`，返回交易日、交易阶段、最近一次盘前初始化和最近一次盘后结算状态。
-- 更新 9092 文档和接口测试台状态展示，保证线程恢复时能快速判断日流程是否执行成功。
+- 在收盘任务中按账户触发资金、持仓、订单、成交刷新，并等待本地账本合并到可审计状态。
+- 将当前资金写入 `asset_snapshots` 的日终 `close` 快照，保留捕获时间、来源和报告摘要。
+- 将当前持仓写入 `position_snapshots` 的日终快照，供 `/positions/history` 和后续 PnL 使用。
+- 创建或更新 `reconciliation_runs`，记录任务批次、输入范围、状态和错误摘要。
+- 为 Python job 增加单元测试，覆盖交易日跳过、成功写入、部分账户失败和重复运行幂等。
 
 验收口径：
 
-- 非交易日运行任务时应记录 `skipped=true`，并指向最近交易日。
-- 交易日运行任务时应记录每个账户的刷新回执、账本快照摘要和未终态订单数量。
-- `/v1/status` 不泄露数据库或 Redis 凭据，只返回任务状态摘要和可审计的 `run_id`。
-- 单元测试覆盖成功、跳过、失败三类任务报告落盘。
+- 收盘任务对同一账户同一交易日重复执行不会生成重复快照或重复对账批次。
+- `/v1/accounts/{account_id}/positions/history?trade_date=YYYY-MM-DD` 能读到收盘任务写入的持仓快照。
+- 任务报告包含资产快照数、持仓快照数、对账批次号、未终态订单数量和失败账户摘要。
+- 失败时任务状态可通过 `/v1/status.job_runs.post_close_settlement` 和 `/v1/jobs/runs` 追踪。
 
 ## 里程碑细化
 
@@ -231,7 +230,7 @@
 - [x] 规划 `pre_open_init` 盘前初始化流程。
 - [x] 规划 `post_close_settlement` 收盘后结算流程。
 - [x] 增加统一时间工具，集中提供 `Asia/Shanghai` location、业务日期和 API 展示格式。
-- [ ] 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
+- [x] 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`，并省略零值时间。
 - [x] 增加 Python 任务入口。
 - [x] 实现 `python -m relay.jobs.pre_open_init` 任务骨架。
 - [x] 实现 `python -m relay.jobs.post_close_settlement` 任务骨架。

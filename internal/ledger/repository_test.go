@@ -266,7 +266,7 @@ func TestListOrdersBuildsDateFilteredRead(t *testing.T) {
 	_, err := repo.ListOrders(context.Background(), trading.OrderQuery{
 		AccountID: "acct-1",
 		TradeDate: "20260614",
-		Limit: 10,
+		Limit:     10,
 	})
 	if err == nil {
 		t.Fatal("ListOrders() expected query error")
@@ -401,7 +401,7 @@ func TestListPositionSnapshotsBuildsHistoricalRead(t *testing.T) {
 	_, err := repo.ListPositionSnapshots(context.Background(), trading.PositionQuery{
 		AccountID: "acct-1",
 		TradeDate: "20260612",
-		Limit: 20,
+		Limit:     20,
 	})
 	if err == nil {
 		t.Fatal("ListPositionSnapshots() expected query error")
@@ -544,6 +544,26 @@ func TestLatestJobRunsBuildsDistinctRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "job_name IN ($1, $2)")
 	requireQueryContains(t, exec.query, "ORDER BY job_name")
 	requireArgLen(t, exec.args, 2)
+}
+
+func TestJobRunJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {
+	body, err := json.Marshal(JobRun{
+		RunID:           "run-1",
+		JobName:         "pre_open_init",
+		TargetTradeDate: "2026-06-14",
+		Status:          "succeeded",
+		StartedAt:       time.Date(2026, 6, 14, 0, 20, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("marshal job run: %v", err)
+	}
+	text := string(body)
+	if strings.Contains(text, "0001-01-01") || strings.Contains(text, "finished_at") {
+		t.Fatalf("job run json leaked zero time: %s", text)
+	}
+	if !strings.Contains(text, `"started_at":"2026-06-14T08:20:00+08:00"`) {
+		t.Fatalf("job run json missing business time: %s", text)
+	}
 }
 
 func TestGetStreamCheckpointBuildsRead(t *testing.T) {

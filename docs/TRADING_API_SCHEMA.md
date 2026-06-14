@@ -26,7 +26,7 @@ API 模式统一返回 JSON envelope：
   "ok": true,
   "data": {},
   "request_id": "relay-...",
-  "time": "2026-06-13T10:00:00Z"
+  "time": "2026-06-13T18:00:00+08:00"
 }
 ```
 
@@ -40,9 +40,15 @@ API 模式统一返回 JSON envelope：
     "message": "qty must be positive"
   },
   "request_id": "relay-...",
-  "time": "2026-06-13T10:00:00Z"
+  "time": "2026-06-13T18:00:00+08:00"
 }
 ```
+
+时间字段约定：
+
+1. 业务展示时间统一按 `Asia/Shanghai` 输出，格式为 RFC3339/RFC3339Nano，例如 `2026-06-14T11:00:00+08:00`。
+2. PostgreSQL `timestamptz` 仍记录绝对时刻，API 响应在序列化阶段转换为东八区。
+3. 订单、成交、资金、持仓、订单事件、成交事件和任务运行记录中的零值时间会省略，不返回 `0001-01-01T00:00:00Z`。
 
 ## 枚举
 

@@ -147,6 +147,34 @@ func TestStatusDegradedAndDoesNotLeakDependencyErrors(t *testing.T) {
 	}
 }
 
+func TestStatusJobRunErrorDoesNotEmitZeroTime(t *testing.T) {
+	cfg := config.Default()
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{},
+		Jobs:   &fakeJobRunStore{err: errors.New("job store down")},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		Data StatusView `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if strings.Contains(rec.Body.String(), "0001-01-01") {
+		t.Fatalf("status leaked zero time: %s", rec.Body.String())
+	}
+	if got := envelope.Data.JobRuns["_error"].StartedAt; got != "" {
+		t.Fatalf("job error started_at = %q, want empty", got)
+	}
+}
+
 func TestAccountsFromConfig(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{

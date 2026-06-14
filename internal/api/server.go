@@ -1054,15 +1054,15 @@ type TradingDayStatusView struct {
 }
 
 type JobRunStatusView struct {
-	RunID           string    `json:"run_id,omitempty"`
-	JobName         string    `json:"job_name,omitempty"`
-	TargetTradeDate string    `json:"target_trade_date,omitempty"`
-	Status          string    `json:"status"`
-	Skipped         bool      `json:"skipped,omitempty"`
-	StartedAt       time.Time `json:"started_at,omitempty"`
-	FinishedAt      time.Time `json:"finished_at,omitempty"`
-	DurationMS      int64     `json:"duration_ms,omitempty"`
-	ErrorSummary    string    `json:"error_summary,omitempty"`
+	RunID           string `json:"run_id,omitempty"`
+	JobName         string `json:"job_name,omitempty"`
+	TargetTradeDate string `json:"target_trade_date,omitempty"`
+	Status          string `json:"status"`
+	Skipped         bool   `json:"skipped,omitempty"`
+	StartedAt       string `json:"started_at,omitempty"`
+	FinishedAt      string `json:"finished_at,omitempty"`
+	DurationMS      int64  `json:"duration_ms,omitempty"`
+	ErrorSummary    string `json:"error_summary,omitempty"`
 }
 
 type AccountStatusSummary struct {
@@ -1183,11 +1183,18 @@ func jobRunStatusView(run ledger.JobRun) JobRunStatusView {
 		TargetTradeDate: run.TargetTradeDate,
 		Status:          run.Status,
 		Skipped:         run.Skipped,
-		StartedAt:       run.StartedAt,
-		FinishedAt:      run.FinishedAt,
+		StartedAt:       optionalBusinessTime(run.StartedAt),
+		FinishedAt:      optionalBusinessTime(run.FinishedAt),
 		DurationMS:      run.DurationMS,
 		ErrorSummary:    run.ErrorSummary,
 	}
+}
+
+func optionalBusinessTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return timeutil.FormatRFC3339Nano(value)
 }
 
 func stringFromMap(values map[string]any, key string) string {
