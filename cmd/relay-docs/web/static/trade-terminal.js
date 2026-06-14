@@ -21,6 +21,16 @@
     quoteSeq: 0,
     priceEdited: false,
     activeView: "trade",
+    performanceSummary: null,
+    performanceSeries: [],
+    performanceDaily: null,
+    performanceLoaded: false,
+    performanceError: "",
+    barsRows: [],
+    barsMeta: null,
+    barsLoaded: false,
+    barsError: "",
+    initialized: false,
     eventSource: null,
     eventSourceAccount: "",
     streamConnected: false,
@@ -85,7 +95,43 @@
     quoteSource: byID("quoteSource"),
     quotePrice: byID("quotePrice"),
     quoteLast: byID("quoteLast"),
-    quoteChange: byID("quoteChange")
+    quoteChange: byID("quoteChange"),
+    performanceRangeHint: byID("performanceRangeHint"),
+    perfDateFrom: byID("perfDateFrom"),
+    perfDateTo: byID("perfDateTo"),
+    loadPerformanceButton: byID("loadPerformanceButton"),
+    downloadPerformanceButton: byID("downloadPerformanceButton"),
+    perfNetAsset: byID("perfNetAsset"),
+    perfStartNetAsset: byID("perfStartNetAsset"),
+    perfTotalPnl: byID("perfTotalPnl"),
+    perfRows: byID("perfRows"),
+    perfTotalReturn: byID("perfTotalReturn"),
+    perfDailyReturn: byID("perfDailyReturn"),
+    perfMaxDrawdown: byID("perfMaxDrawdown"),
+    perfDailyPnl: byID("perfDailyPnl"),
+    performanceStatus: byID("performanceStatus"),
+    performanceSeriesBody: byID("performanceSeriesBody"),
+    perfDailyDate: byID("perfDailyDate"),
+    perfPositions: byID("perfPositions"),
+    perfPositionValue: byID("perfPositionValue"),
+    perfUnrealizedPnl: byID("perfUnrealizedPnl"),
+    perfFills: byID("perfFills"),
+    perfTurnover: byID("perfTurnover"),
+    perfFee: byID("perfFee"),
+    perfCapturedAt: byID("perfCapturedAt"),
+    barSecurityInput: byID("barSecurityInput"),
+    barTradeDateInput: byID("barTradeDateInput"),
+    barFrequencyInput: byID("barFrequencyInput"),
+    barAdjustmentInput: byID("barAdjustmentInput"),
+    barStartTimeInput: byID("barStartTimeInput"),
+    barEndTimeInput: byID("barEndTimeInput"),
+    loadBarsButton: byID("loadBarsButton"),
+    barsStatus: byID("barsStatus"),
+    barClose: byID("barClose"),
+    barVolume: byID("barVolume"),
+    barCount: byID("barCount"),
+    barTime: byID("barTime"),
+    barsBody: byID("barsBody")
   };
 
   function byID(id) {
@@ -135,6 +181,46 @@
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
     });
+  }
+
+  function formatPercent(value, digits = 2) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    const prefix = number > 0 ? "+" : "";
+    return prefix + (number * 100).toLocaleString("en-US", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }) + "%";
+  }
+
+  function compactDate(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+    const digits = text.replace(/[^0-9]/g, "");
+    if (digits.length === 8) {
+      return digits;
+    }
+    return "";
+  }
+
+  function displayDate(value) {
+    const digits = compactDate(value);
+    if (!digits) {
+      return String(value || "--");
+    }
+    return digits.slice(0, 4) + "-" + digits.slice(4, 6) + "-" + digits.slice(6, 8);
+  }
+
+  function classForNumber(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number === 0) {
+      return "";
+    }
+    return number < 0 ? "down" : "up";
   }
 
   function priceDigitsForInstrument(instrumentType) {
@@ -263,6 +349,17 @@
     return raw + "." + (els.exchangeInput.value || inferExchange(raw));
   }
 
+  function normalizeSecurityID(value) {
+    const raw = normalizeSymbol(value);
+    if (!raw) {
+      return "";
+    }
+    if (raw.includes(".")) {
+      return raw;
+    }
+    return raw + "." + inferExchange(raw);
+  }
+
   function setSymbolFromSecurityID(securityID) {
     const parsed = splitSecurityID(securityID);
     els.symbolInput.value = parsed.symbol;
@@ -334,6 +431,9 @@
     if (hash === "asset") {
       return "asset";
     }
+    if (hash === "performance") {
+      return "performance";
+    }
     if (hash === "orders" || hash === "fills") {
       if (hash === "fills") {
         state.selectedTab = "fills";
@@ -350,19 +450,29 @@
   }
 
   function setActiveView(view) {
-    if (!["trade", "orders", "asset"].includes(view)) {
+    if (!["trade", "orders", "asset", "performance"].includes(view)) {
       view = "trade";
     }
     state.activeView = view;
     els.shell.classList.toggle("view-trade", view === "trade");
     els.shell.classList.toggle("view-orders", view === "orders");
     els.shell.classList.toggle("view-asset", view === "asset");
+    els.shell.classList.toggle("view-performance", view === "performance");
     for (const link of els.viewLinks) {
       link.classList.toggle("active", link.dataset.viewLink === view);
     }
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
+    if (view === "performance" && state.initialized) {
+      ensurePerformanceDefaults();
+      if (state.activeAccount && !state.performanceLoaded) {
+        loadPerformance().catch((err) => pushLog("warn", "绩效查询失败", err.message));
+      }
+      if (!state.barsLoaded) {
+        loadBars().catch((err) => pushLog("warn", "Bars 查询失败", err.message));
+      }
+    }
   }
 
   async function loadStatus() {
@@ -732,9 +842,13 @@
       tab.addEventListener("click", async () => {
         state.activeAccount = account.account_id;
         state.selectedOrderID = "";
+        state.performanceLoaded = false;
         renderAccounts();
         connectEventStream();
         await refreshNow();
+        if (state.activeView === "performance") {
+          await loadPerformance();
+        }
       });
       els.accountTabs.appendChild(tab);
 
@@ -996,6 +1110,254 @@
       </table>`;
   }
 
+  function defaultQueryDate() {
+    const snapshotDate = state.marketSnapshot && state.marketSnapshot.trade_date;
+    const snapshotDigits = compactDate(snapshotDate);
+    if (snapshotDigits) {
+      return snapshotDigits;
+    }
+    const latestPoint = state.performanceSeries[state.performanceSeries.length - 1];
+    const latestDigits = compactDate(latestPoint && latestPoint.trade_date);
+    if (latestDigits) {
+      return latestDigits;
+    }
+    const screenDate = compactDate(els.tradeDate.textContent);
+    if (screenDate) {
+      return screenDate;
+    }
+    return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  }
+
+  function ensurePerformanceDefaults() {
+    const day = defaultQueryDate();
+    if (!els.perfDateFrom.value) {
+      els.perfDateFrom.value = day;
+    }
+    if (!els.perfDateTo.value) {
+      els.perfDateTo.value = day;
+    }
+    if (!els.barTradeDateInput.value) {
+      els.barTradeDateInput.value = els.perfDateTo.value || day;
+    }
+    if (!els.barSecurityInput.value) {
+      els.barSecurityInput.value = currentSecurityID() || "600000.SH";
+    }
+  }
+
+  function performanceParams() {
+    ensurePerformanceDefaults();
+    const dateFrom = compactDate(els.perfDateFrom.value);
+    const dateTo = compactDate(els.perfDateTo.value || els.perfDateFrom.value);
+    if (!dateFrom || !dateTo) {
+      throw new Error("请输入 YYYYMMDD 或 YYYY-MM-DD 日期");
+    }
+    if (dateFrom > dateTo) {
+      throw new Error("起始日不能晚于结束日");
+    }
+    return { dateFrom, dateTo };
+  }
+
+  async function loadPerformance() {
+    if (!state.activeAccount) {
+      renderPerformance();
+      return;
+    }
+    const params = performanceParams();
+    const accountID = encodeURIComponent(state.activeAccount);
+    const query = new URLSearchParams({
+      date_from: params.dateFrom,
+      date_to: params.dateTo
+    });
+    els.performanceStatus.textContent = "查询中...";
+    els.loadPerformanceButton.disabled = true;
+    try {
+      const data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      state.performanceError = "";
+      state.performanceSummary = data.summary || null;
+      state.performanceSeries = Array.isArray(data.series) ? data.series : [];
+      state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
+      const dailyDate = compactDate(state.performanceDaily && state.performanceDaily.trade_date) || params.dateTo;
+      try {
+        const dailyData = await request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate));
+        state.performanceDaily = dailyData.performance || state.performanceDaily;
+      } catch (err) {
+        pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + err.message);
+      }
+      state.performanceLoaded = true;
+      renderPerformance();
+      showToast("绩效数据已更新");
+    } catch (err) {
+      state.performanceLoaded = false;
+      state.performanceError = err.message;
+      pushLog("error", "绩效查询失败", err.message);
+      showToast("绩效查询失败：" + err.message, "error");
+      renderPerformance();
+    } finally {
+      els.loadPerformanceButton.disabled = false;
+    }
+  }
+
+  function downloadPerformanceCSV() {
+    if (!state.activeAccount) {
+      return;
+    }
+    let params;
+    try {
+      params = performanceParams();
+    } catch (err) {
+      showToast(err.message, "error");
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const query = new URLSearchParams({
+      date_from: params.dateFrom,
+      date_to: params.dateTo
+    });
+    window.open("/v1/accounts/" + accountID + "/performance/series.csv?" + query.toString(), "_blank", "noopener");
+  }
+
+  function renderPerformance() {
+    if (!els.performanceSeriesBody) {
+      return;
+    }
+    const summary = state.performanceSummary || {};
+    const series = state.performanceSeries || [];
+    const latest = series[series.length - 1] || state.performanceDaily || {};
+    const daily = state.performanceDaily || latest || {};
+    els.performanceRangeHint.textContent = [
+      state.activeAccount || "未选择账户",
+      summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
+      "Asia/Shanghai"
+    ].filter(Boolean).join(" · ");
+    els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
+    els.perfStartNetAsset.textContent = "期初 " + formatNumber(summary.start_net_asset);
+    els.perfTotalPnl.textContent = formatSigned(summary.total_pnl);
+    els.perfTotalPnl.className = classForNumber(summary.total_pnl);
+    els.perfRows.textContent = "样本 " + formatInt(summary.count);
+    els.perfTotalReturn.textContent = formatPercent(summary.total_return);
+    els.perfTotalReturn.className = classForNumber(summary.total_return);
+    els.perfDailyReturn.textContent = "当日 " + formatPercent(daily.return_rate);
+    els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown);
+    els.perfMaxDrawdown.className = classForNumber(summary.max_drawdown);
+    els.perfDailyPnl.textContent = "当日 " + formatSigned(daily.daily_pnl);
+    els.perfDailyDate.textContent = daily.trade_date ? displayDate(daily.trade_date) : "--";
+    els.perfPositions.textContent = formatInt(daily.positions_count);
+    els.perfPositionValue.textContent = formatNumber(daily.position_market_value);
+    els.perfUnrealizedPnl.textContent = formatSigned(daily.unrealized_pnl);
+    els.perfUnrealizedPnl.className = classForNumber(daily.unrealized_pnl);
+    els.perfFills.textContent = formatInt(daily.fills_count);
+    els.perfTurnover.textContent = formatNumber(daily.turnover);
+    els.perfFee.textContent = formatNumber(daily.fee_total);
+    els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
+    els.performanceStatus.textContent = state.performanceError
+      ? "查询失败：" + state.performanceError
+      : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
+    if (series.length === 0) {
+      els.performanceSeriesBody.innerHTML = '<tr><td colspan="9"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
+      return;
+    }
+    els.performanceSeriesBody.innerHTML = series.map((item) => `
+      <tr>
+        <td>${escapeHTML(displayDate(item.trade_date))}</td>
+        <td class="num">${formatNumber(item.net_asset)}</td>
+        <td class="num ${classForNumber(item.daily_pnl)}">${formatSigned(item.daily_pnl)}</td>
+        <td class="num ${classForNumber(item.return_rate)}">${formatPercent(item.return_rate)}</td>
+        <td class="num ${classForNumber(item.cumulative_return)}">${formatPercent(item.cumulative_return)}</td>
+        <td class="num ${classForNumber(item.drawdown)}">${formatPercent(item.drawdown)}</td>
+        <td class="num">${formatNumber(item.turnover)}</td>
+        <td class="num">${formatNumber(item.fee_total)}</td>
+        <td>${escapeHTML(shortDateTime(item.captured_at))}</td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadBars() {
+    ensurePerformanceDefaults();
+    const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
+    const tradeDate = compactDate(els.barTradeDateInput.value || els.perfDateTo.value);
+    if (!securityID || !tradeDate) {
+      throw new Error("请输入 bars 标的和交易日");
+    }
+    const query = new URLSearchParams({
+      security_id: securityID,
+      trade_date: tradeDate,
+      frequency: els.barFrequencyInput.value || "1m",
+      adjustment: els.barAdjustmentInput.value || "none",
+      limit: "20"
+    });
+    const startTime = String(els.barStartTimeInput.value || "").trim();
+    const endTime = String(els.barEndTimeInput.value || "").trim();
+    if (startTime) {
+      query.set("start_time", startTime);
+    }
+    if (endTime) {
+      query.set("end_time", endTime);
+    }
+    els.barsStatus.textContent = "查询中...";
+    els.loadBarsButton.disabled = true;
+    try {
+      const data = await request("/v1/meridian/market/bars?" + query.toString());
+      if (data.error) {
+        throw new Error(data.error.message || data.error.code || "Meridian bars error");
+      }
+      state.barsError = "";
+      state.barsRows = Array.isArray(data.data) ? data.data : [];
+      state.barsMeta = data.meta || null;
+      state.barsLoaded = true;
+      els.barSecurityInput.value = securityID;
+      els.barTradeDateInput.value = tradeDate;
+      renderBars();
+      showToast("Bars 数据已更新");
+    } catch (err) {
+      state.barsLoaded = false;
+      state.barsError = err.message;
+      pushLog("warn", "Bars 查询失败", securityID + " " + err.message);
+      showToast("Bars 查询失败：" + err.message, "error");
+      renderBars();
+    } finally {
+      els.loadBarsButton.disabled = false;
+    }
+  }
+
+  function renderBars() {
+    if (!els.barsBody) {
+      return;
+    }
+    const rows = state.barsRows || [];
+    const meta = state.barsMeta || {};
+    const latest = rows[rows.length - 1] || {};
+    els.barsStatus.textContent = state.barsError ? "查询失败：" + state.barsError : (meta.schema_version || latest.schema_version || "market_bar.v1");
+    els.barClose.textContent = formatPrice(latest.close, latest);
+    els.barVolume.textContent = formatInt(latest.volume);
+    els.barCount.textContent = formatInt(meta.count ?? rows.length);
+    els.barTime.textContent = latest.datetime ? shortDateTime(latest.datetime) : "--";
+    if (rows.length === 0) {
+      els.barsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无 Meridian bars 数据</div></td></tr>';
+      return;
+    }
+    els.barsBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHTML(shortDateTime(row.datetime || row.trade_date))}</td>
+        <td class="num">${formatPrice(row.open, row)}</td>
+        <td class="num">${formatPrice(row.high, row)}</td>
+        <td class="num">${formatPrice(row.low, row)}</td>
+        <td class="num">${formatPrice(row.close, row)}</td>
+        <td class="num">${formatInt(row.volume)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function shortDateTime(value) {
+    if (!value) {
+      return "--";
+    }
+    const text = String(value);
+    if (/^\d{8}$/.test(text)) {
+      return displayDate(text);
+    }
+    return text.replace("T", " ").replace(/\.\d+/, "").replace(/([+-]\d{2}:\d{2}|Z)$/, "");
+  }
+
   function renderQuote() {
     const snapshot = state.marketSnapshot || {};
     const securityID = snapshot.security_id || currentSecurityID() || "--";
@@ -1082,6 +1444,8 @@
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
+    renderPerformance();
+    renderBars();
     updateRisk();
   }
 
@@ -1243,8 +1607,12 @@
     window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
+      state.performanceLoaded = false;
       connectEventStream();
       await refreshNow();
+      if (state.activeView === "performance") {
+        await loadPerformance();
+      }
     });
     for (const button of document.querySelectorAll(".side-switch button")) {
       button.addEventListener("click", () => updateSide(button.dataset.side));
@@ -1316,6 +1684,15 @@
     els.refreshPositionsButton.addEventListener("click", () => refreshAccountResource("positions"));
     els.refreshOrdersButton.addEventListener("click", () => refreshAccountResource("orders"));
     els.refreshFillsButton.addEventListener("click", () => refreshAccountResource("fills"));
+    els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
+    els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
+    els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
+    els.barSecurityInput.addEventListener("blur", () => {
+      const securityID = normalizeSecurityID(els.barSecurityInput.value);
+      if (securityID) {
+        els.barSecurityInput.value = securityID;
+      }
+    });
     els.blotterTabs.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-tab]");
       if (!button) {
@@ -1369,8 +1746,15 @@
       connectEventStream();
       await loadAccountData();
       await loadQuoteForInput();
+      ensurePerformanceDefaults();
+      state.initialized = true;
+      if (state.activeView === "performance") {
+        await loadPerformance();
+        await loadBars();
+      }
       pushLog("info", "交易终端初始化完成");
     } catch (err) {
+      state.initialized = true;
       pushLog("error", "初始化失败", err.message);
       showToast("初始化失败：" + err.message, "error");
       renderAll();

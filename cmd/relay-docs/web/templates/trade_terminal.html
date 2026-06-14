@@ -33,6 +33,7 @@
         <a class="active" href="/trade" data-view-link="trade"><span>⌁</span>交易测试</a>
         <a href="/trade#orders" data-view-link="orders"><span>▤</span>订单监控</a>
         <a href="/trade#asset" data-view-link="asset"><span>▥</span>资金持仓</a>
+        <a href="/trade#performance" data-view-link="performance"><span>▦</span>绩效分析</a>
         <a href="/docs/roadmap"><span>◇</span>盘后对账</a>
         <a href="/api-console"><span>▣</span>接口 Console</a>
         <a href="/v1/status"><span>☍</span>系统状态</a>
@@ -169,6 +170,143 @@
           </div>
         </div>
         <div class="blotter-content" id="blotterContent"></div>
+      </section>
+
+      <section class="trade-panel performance-panel" id="performancePanel" aria-label="绩效分析">
+        <div class="performance-toolbar">
+          <div>
+            <h2>绩效分析</h2>
+            <span id="performanceRangeHint">读取 close 资产快照、成交汇总与 Meridian bars</span>
+          </div>
+          <div class="performance-actions">
+            <label>
+              <span>起始日</span>
+              <input id="perfDateFrom" inputmode="numeric" placeholder="20260612">
+            </label>
+            <label>
+              <span>结束日</span>
+              <input id="perfDateTo" inputmode="numeric" placeholder="20260612">
+            </label>
+            <button type="button" id="loadPerformanceButton">查询绩效</button>
+            <button type="button" id="downloadPerformanceButton">下载 CSV</button>
+          </div>
+        </div>
+
+        <div class="performance-summary">
+          <div><span>期末净资产</span><strong id="perfNetAsset">--</strong><small id="perfStartNetAsset">期初 --</small></div>
+          <div><span>区间盈亏</span><strong id="perfTotalPnl">--</strong><small id="perfRows">样本 --</small></div>
+          <div><span>累计收益</span><strong id="perfTotalReturn">--</strong><small id="perfDailyReturn">当日 --</small></div>
+          <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong><small id="perfDailyPnl">当日 --</small></div>
+        </div>
+
+        <div class="performance-body">
+          <section class="performance-section series-section">
+            <div class="section-toolbar">
+              <h2>账户绩效序列</h2>
+              <span id="performanceStatus">等待查询</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>交易日</th>
+                    <th class="num">净资产</th>
+                    <th class="num">日盈亏</th>
+                    <th class="num">日收益</th>
+                    <th class="num">累计收益</th>
+                    <th class="num">回撤</th>
+                    <th class="num">成交额</th>
+                    <th class="num">费用</th>
+                    <th>快照时间</th>
+                  </tr>
+                </thead>
+                <tbody id="performanceSeriesBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="performance-side">
+            <section class="performance-section daily-section">
+              <div class="section-toolbar">
+                <h2>日终快照</h2>
+                <span id="perfDailyDate">--</span>
+              </div>
+              <div class="daily-grid">
+                <div><span>持仓数量</span><strong id="perfPositions">--</strong></div>
+                <div><span>持仓市值</span><strong id="perfPositionValue">--</strong></div>
+                <div><span>浮动盈亏</span><strong id="perfUnrealizedPnl">--</strong></div>
+                <div><span>成交笔数</span><strong id="perfFills">--</strong></div>
+                <div><span>成交额</span><strong id="perfTurnover">--</strong></div>
+                <div><span>费用</span><strong id="perfFee">--</strong></div>
+              </div>
+              <p id="perfCapturedAt">captured_at --</p>
+            </section>
+
+            <section class="performance-section bars-section">
+              <div class="section-toolbar">
+                <h2>Meridian Bars</h2>
+                <span id="barsStatus">market_bar.v1</span>
+              </div>
+              <div class="bars-query">
+                <label>
+                  <span>标的</span>
+                  <input id="barSecurityInput" value="600000.SH" autocomplete="off">
+                </label>
+                <label>
+                  <span>交易日</span>
+                  <input id="barTradeDateInput" inputmode="numeric" placeholder="20260612">
+                </label>
+                <label>
+                  <span>频率</span>
+                  <select id="barFrequencyInput">
+                    <option value="1m">1m</option>
+                    <option value="5m">5m</option>
+                    <option value="15m">15m</option>
+                    <option value="1d">1d</option>
+                  </select>
+                </label>
+                <label>
+                  <span>复权</span>
+                  <select id="barAdjustmentInput">
+                    <option value="none">none</option>
+                    <option value="pre">pre</option>
+                    <option value="post">post</option>
+                  </select>
+                </label>
+                <label>
+                  <span>开始</span>
+                  <input id="barStartTimeInput" value="14:59:00">
+                </label>
+                <label>
+                  <span>结束</span>
+                  <input id="barEndTimeInput" value="15:00:00">
+                </label>
+                <button type="button" id="loadBarsButton">读取 Bars</button>
+              </div>
+              <div class="bars-summary">
+                <div><span>最新收盘</span><strong id="barClose">--</strong></div>
+                <div><span>成交量</span><strong id="barVolume">--</strong></div>
+                <div><span>条数</span><strong id="barCount">--</strong></div>
+                <div><span>时间</span><strong id="barTime">--</strong></div>
+              </div>
+              <div class="table-wrap bars-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th class="num">开</th>
+                      <th class="num">高</th>
+                      <th class="num">低</th>
+                      <th class="num">收</th>
+                      <th class="num">量</th>
+                    </tr>
+                  </thead>
+                  <tbody id="barsBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </aside>
+        </div>
       </section>
     </main>
 
