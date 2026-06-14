@@ -20,7 +20,7 @@
 | P4 Redis Stream 前置对接 | doing | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | doing | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
-| P7 交易日流程与盘后对账 | todo | 管理盘前初始化、收盘后结算和盘后对账 | Python jobs、任务状态、对账批次、差异表、修复入口 |
+| P7 交易日流程与盘后对账 | doing | 管理盘前初始化、收盘后结算和盘后对账 | Python jobs、任务状态、对账批次、差异表、修复入口 |
 | P8 历史数据与盈亏统计 | todo | 接入 Meridian 并计算账户绩效 | 历史行情拉取、资产快照、PnL、收益率、回撤 |
 | P9 模拟柜台 | todo | 支持研究和策略联调的模拟交易账表 | 模拟账户、撮合、资金持仓、结算 |
 | P10 运维发布 | todo | 形成可部署、可观测、可回滚的服务 | systemd/container、监控、告警、备份、发布手册 |
@@ -34,6 +34,27 @@
 5. 增加批量下单测试视图。
 6. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 7. 设计模拟柜台账表 schema。
+
+## 下一步任务
+
+### N1 交易日任务运行状态落盘与状态接口
+
+目标：让每日盘前初始化和收盘后结算不只输出一次性 JSON 报告，还能被 9092 服务、首页状态、运维页面和后续 cron 监控稳定追踪。
+
+范围：
+
+- 新增 PostgreSQL 任务运行账表，记录 `job_name`、`target_trade_date`、`timezone`、`status`、`started_at`、`finished_at`、`duration_ms`、`report_json`、`error_summary` 和触发来源。
+- 为 Go 账本 repository 增加任务运行写入和按任务读取最近状态能力。
+- 让 `python -m relay.jobs.pre_open_init` 与 `python -m relay.jobs.post_close_settlement` 可把报告写入 relay 账本。
+- 扩展 `GET /v1/status`，返回交易日、交易阶段、最近一次盘前初始化和最近一次盘后结算状态。
+- 更新 9092 文档和接口测试台状态展示，保证线程恢复时能快速判断日流程是否执行成功。
+
+验收口径：
+
+- 非交易日运行任务时应记录 `skipped=true`，并指向最近交易日。
+- 交易日运行任务时应记录每个账户的刷新回执、账本快照摘要和未终态订单数量。
+- `/v1/status` 不泄露数据库或 Redis 凭据，只返回任务状态摘要和可审计的 `run_id`。
+- 单元测试覆盖成功、跳过、失败三类任务报告落盘。
 
 ## 里程碑细化
 
@@ -209,6 +230,8 @@
 - [x] 实现 `python -m relay.jobs.pre_open_init` 任务骨架。
 - [x] 实现 `python -m relay.jobs.post_close_settlement` 任务骨架。
 - [x] 任务报告输出交易日、依赖状态、账户范围、刷新回执、账本快照摘要和未终态订单列表。
+- [ ] 建立任务运行账表，记录日流程报告、耗时、终态和错误摘要。
+- [ ] 将 `pre_open_init` 与 `post_close_settlement` 报告写入任务运行账表。
 - [ ] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [ ] 拉取柜台资金、持仓、订单、成交查询结果。
 - [ ] 对比 Redis 事件流水和内部账表。

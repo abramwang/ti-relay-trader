@@ -234,9 +234,9 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 增加 9092 页面冒烟测试脚本。
-2. 将 `pre_open_init` 与 `post_close_settlement` 任务运行状态落盘，并在 `/v1/status` 暴露最近运行状态。
-3. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
+1. 将 `pre_open_init` 与 `post_close_settlement` 任务运行状态落盘，并在 `/v1/status` 暴露最近运行状态。
+2. 检查订单/成交/资金/持仓账本 API 的历史时间字段展示是否全部转换为 `Asia/Shanghai`。
+3. 增加 9092 页面冒烟测试脚本。
 4. 设计模拟柜台账表 schema。
 5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 
@@ -257,7 +257,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at` 和探测/同步报告已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，后续需要检查订单/成交等历史 API 视图是否按东八区展示。
-- 每日交易已规划为盘前初始化和收盘后结算两个主流程；Python jobs、任务运行状态落盘和 `/v1/status` 交易日状态仍待实现。
+- 每日交易主流程已完成 Python 任务骨架；下一步需要将任务运行报告落盘，并在 `/v1/status` 暴露最近一次盘前初始化和盘后结算状态。
 - 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
 - 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
 - `/healthz` 只表示 9092 进程存活；`/v1/status` 才包含 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态。健康检查只返回 `ok/error/timeout/not_configured` 等摘要，不返回 DSN、密码、Token 或 Redis URL。
@@ -332,3 +332,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 新增 `internal/timeutil` 统一东八区时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at`、Redis 探测报告和账本同步报告生成时间改为 `Asia/Shanghai` 输出。
 - `2026-06-14`: 首页顶部导航新增 `SDK` 页面入口，指向 `/docs/python-sdk`，方便策略开发直接查看 SDK 文档。
 - `2026-06-14`: 新增 Python 日流程任务骨架：`src/relay/jobs/pre_open_init.py` 和 `post_close_settlement.py`，复用 relay SDK 执行 `/v1/status` 检查、Meridian 交易日判断、资金/持仓/订单/成交刷新、账本快照摘要和 JSON 报告输出；新增单元测试覆盖交易日跳过、刷新顺序和未终态订单统计。
+- `2026-06-14`: 更新开发路线图，将 P7 标记为进行中；下一步任务明确为交易日任务运行状态落盘，并在 `/v1/status` 暴露最近盘前/盘后任务状态。
