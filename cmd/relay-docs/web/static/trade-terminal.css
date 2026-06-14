@@ -44,10 +44,10 @@ button {
 
 .terminal-shell {
   display: grid;
-  grid-template-columns: 240px minmax(1140px, 1fr) 300px;
+  grid-template-columns: 240px minmax(1190px, 1fr) 300px;
   grid-template-rows: 56px minmax(0, 1fr) 28px;
   height: 100vh;
-  min-width: 1680px;
+  min-width: 1730px;
   background: var(--line);
 }
 
@@ -243,7 +243,7 @@ button {
   grid-column: 2;
   grid-row: 2;
   display: grid;
-  grid-template-columns: 300px minmax(280px, 1fr) 540px;
+  grid-template-columns: 300px minmax(280px, 1fr) 590px;
   grid-template-rows: minmax(0, 1fr) 260px;
   gap: 1px;
   min-width: 0;
