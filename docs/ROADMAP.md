@@ -247,6 +247,7 @@
 - [x] 建立任务运行账表，记录日流程报告、耗时、终态和错误摘要。
 - [x] 将 `pre_open_init` 与 `post_close_settlement` 报告写入任务运行账表。
 - [x] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
+- [x] 新增 `/jobs` 后台任务状态监控页，展示任务状态、交易日、开始/完成时间、耗时、错误摘要和 report JSON。
 - [x] 拉取柜台资金、持仓、订单、成交查询结果。
 - [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
 - [x] 对比 Redis 原始消息窗口摘要和内部账表摘要。

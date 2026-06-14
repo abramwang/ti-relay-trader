@@ -1,0 +1,68 @@
+<section class="jobs-status">
+  <div class="jobs-head">
+    <div>
+      <p class="eyebrow">Operations Monitor</p>
+      <h1>后台任务状态</h1>
+      <p class="lead">盘前初始化、盘后结算和后续后台任务的运行时间、完成状态、错误摘要和报告输入。</p>
+    </div>
+    <div class="jobs-actions">
+      <input id="jobNameFilter" value="pre_open_init,post_close_settlement" aria-label="job_name filter">
+      <button id="refreshJobs" type="button">刷新</button>
+    </div>
+  </div>
+
+  <div class="jobs-overview">
+    <div>
+      <span>服务状态</span>
+      <strong id="jobsServiceStatus">--</strong>
+    </div>
+    <div>
+      <span>交易阶段</span>
+      <strong id="jobsTradingPhase">--</strong>
+    </div>
+    <div>
+      <span>依赖健康</span>
+      <strong id="jobsDependencies">--</strong>
+    </div>
+    <div>
+      <span>最近刷新</span>
+      <strong id="jobsRefreshTime">--</strong>
+    </div>
+  </div>
+
+  <div id="jobCards" class="job-cards" aria-live="polite"></div>
+
+  <section class="jobs-panel">
+    <div class="jobs-panel-head">
+      <h2>运行记录</h2>
+      <span id="jobCount">--</span>
+    </div>
+    <div class="jobs-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>任务</th>
+            <th>状态</th>
+            <th>交易日</th>
+            <th>触发</th>
+            <th>开始</th>
+            <th>结束</th>
+            <th>耗时</th>
+            <th>错误摘要</th>
+          </tr>
+        </thead>
+        <tbody id="jobRunsBody">
+          <tr><td colspan="8">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="jobs-panel">
+    <div class="jobs-panel-head">
+      <h2>任务报告</h2>
+      <span id="jobReportTitle">选择一条记录查看 report_json</span>
+    </div>
+    <pre id="jobReport" class="job-report">暂无报告</pre>
+  </section>
+</section>

@@ -61,7 +61,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com
 ```
 
-需要把任务状态写入 9092 和 `/v1/status` 时，增加 `--persist`：
+需要把任务状态写入 9092、`/v1/status` 和 `/jobs` 时，增加 `--persist`：
 
 ```bash
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://relay-trader.quantstage.com --persist --trigger cron
@@ -77,7 +77,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 5. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
 6. 输出 JSON 报告，可通过 `--output` 写入文件。
 7. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
-8. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要。
+8. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 
 示例配置：
 

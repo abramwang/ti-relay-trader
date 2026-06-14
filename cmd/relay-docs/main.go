@@ -62,6 +62,7 @@ var portalAssets embed.FS
 
 var apiConsoleTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/api_console.html"))
 var tradeTerminalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/trade_terminal.html"))
+var jobStatusTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/job_status.html"))
 
 var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
@@ -238,6 +239,7 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	mux.HandleFunc("/docs/", server.handleDoc)
 	mux.HandleFunc("/api-console", server.handleAPIConsole)
 	mux.HandleFunc("/trade", server.handleTradeTerminal)
+	mux.HandleFunc("/jobs", server.handleJobStatus)
 	staticFS, err := fs.Sub(portalAssets, "web/static")
 	if err != nil {
 		return err
@@ -496,8 +498,9 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
     <a href="/docs">查看文档</a>
     <a href="/api-console">接口测试台</a>
     <a href="/trade">交易终端</a>
+    <a href="/jobs">任务状态</a>
     <a href="/docs/roadmap">开发路线图</a>
-    <a href="/sdk/relay-sdk-0.1.3.tar.gz">SDK 下载</a>
+    <a href="/sdk/relay-sdk-0.1.8.tar.gz">SDK 下载</a>
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
     <a href="/healthz">健康检查</a>
@@ -512,9 +515,10 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
   <a class="card" href="/api-console"><strong>接口测试台</strong><span>Apifox 风格联调页面</span></a>
   <a class="card" href="/trade"><strong>交易终端</strong><span>成熟交易软件风格手动测试台</span></a>
+  <a class="card" href="/jobs"><strong>任务状态</strong><span>盘前初始化与盘后结算监控</span></a>
   <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
-  <a class="card" href="/sdk/relay-sdk-0.1.3.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.3 tar.gz</span></a>
+  <a class="card" href="/sdk/relay-sdk-0.1.8.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.8 tar.gz</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
   <a class="card" href="/docs/trading-day-workflow"><strong>交易日流程</strong><span>盘前初始化与盘后结算</span></a>
   <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
@@ -569,6 +573,31 @@ func (s *portalServer) handleTradeTerminal(w http.ResponseWriter, r *http.Reques
 	}); err != nil {
 		s.logger.Error("render_trade_terminal_failed", "error", err)
 	}
+}
+
+func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/jobs" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var body bytes.Buffer
+	if err := jobStatusTemplate.Execute(&body, map[string]string{
+		"PublicURL": publicURL,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, pageData{
+		Title:      "任务状态",
+		Active:     "jobs",
+		Summary:    "Daily jobs and background process monitor",
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css">`),
+		Content:    template.HTML(body.String()),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js"></script>`),
+		ProjectDir: s.root,
+	})
 }
 
 func (s *portalServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -1169,6 +1198,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       <a class="{{if eq .Active "docs"}}active{{end}}" href="/docs">文档</a>
       <a class="{{if eq .Active "console"}}active{{end}}" href="/api-console">接口</a>
       <a href="/trade">交易终端</a>
+      <a class="{{if eq .Active "jobs"}}active{{end}}" href="/jobs">任务</a>
       <a href="/docs/python-sdk">SDK</a>
       <a class="{{if eq .Active "tree"}}active{{end}}" href="/tree">项目结构</a>
       <a class="{{if eq .Active "tests"}}active{{end}}" href="/tests">测试</a>

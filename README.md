@@ -138,6 +138,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/healthz` | 文档门户健康检查 |
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
+| `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
 | `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz` | Python SDK 安装包 |
 | `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.8.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
@@ -234,6 +235,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 根据 2026-06-14 `relay-sdk 0.1.4` 压测反馈，修复已全成订单仍停留在 `accepted` 的状态归一化问题，账本终态不再被后续非终态推送回退；SDK 升级到 `0.1.6`，`record_job_run()` 支持 `completed` 到 `succeeded` 的兼容映射和显式任务字段。
 - [x] 明确 ETF 二级市场买卖使用 `business_type=S`；`business_type=E` 为 ETF 申购/赎回专项，当前 `/v1/orders` 标记未实现并返回 `NOT_IMPLEMENTED`。
 - [x] 新增 `000003_job_runs` migration 并应用到测试 PostgreSQL，`/v1/status` 已暴露交易阶段和最近盘前/盘后任务状态。
+- [x] 新增 `/jobs` 后台任务状态监控页，展示盘前初始化、盘后结算等任务的状态、交易日、开始/完成时间、耗时、错误摘要和 report_json。
 - [x] `GET /v1/orders`、`GET /v1/fills` 默认按 `Asia/Shanghai` 当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history` 历史查询口径。
 - [x] 账本 API 时间字段统一按 `Asia/Shanghai` 输出，订单、成交、资金、持仓、订单事件、成交事件和任务运行记录的零值时间字段不再展示为 `0001-01-01T00:00:00Z`。
 - [x] 新增 `POST /v1/settlements/snapshots`，按指定交易日将当前资金写入 `asset_snapshots(close)`、当前持仓写入 `position_snapshots`，并 upsert `reconciliation_runs` 批次；`post_close_settlement` 已接入该接口。
@@ -394,4 +396,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据 `tmp/relay_sdk_017_feedback_20260614.md` 反馈定位成交缺失根因：测试前置已发送 `fill.event`，但模拟柜台复用 `fill_id/match_stream_id`，旧账本唯一键 `account_id + fill_id` 误丢合法成交；新增 `000005_fill_id_order_scope` migration，将成交唯一键改为 `account_id + gateway_order_id + fill_id`，并发布 `relay-sdk 0.1.8` 让成交回调采用同一去重口径。
 - `2026-06-14`: 排查 `688981.SH` Meridian bars 502：Relay 旧默认 5 秒超时先失败，直接 Meridian 约 6 秒返回 200；将 market 默认超时和示例配置调至 15 秒，重启 9092 后本地 `/v1/meridian/market/bars?security_id=688981.SH&trade_date=20260612...` 返回 200。
 - `2026-06-14`: 用户侧复测确认 `relay-sdk 0.1.8` 安装包 SHA256 校验通过、包内单测 14/14 通过；新并发写压 30 笔中 18 笔成交，订单/成交一致性 18/18 通过，未再复现 `filled` 但 `fills` 缺失的问题。
-- `2026-06-14`: 根据路线图推进 9092 页面轻量冒烟测试，新增 `tests/integration/page_smoke.py`；本机 `http://127.0.0.1:9092` 已通过 15 个检查点，覆盖首页、README 文档、测试索引、API Console、交易终端、静态资源、`/healthz`、`/v1/status` 和 `relay-sdk 0.1.8` 下载入口。
+- `2026-06-14`: 根据路线图推进 9092 页面轻量冒烟测试，新增 `tests/integration/page_smoke.py`；本机 `http://127.0.0.1:9092` 已通过 18 个检查点，覆盖首页、README 文档、测试索引、API Console、交易终端、任务状态、静态资源、`/healthz`、`/v1/status` 和 `relay-sdk 0.1.8` 下载入口。
+- `2026-06-14`: 新增 `/jobs` 后台任务状态监控页，参考 Meridian `realtime-status` 的任务状态面板思路，展示盘前初始化、盘后结算等 `job_runs` 的状态、交易日、开始/完成时间、耗时、错误摘要和完整 report JSON；交易终端侧边栏和首页已增加入口。
