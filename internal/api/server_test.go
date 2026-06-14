@@ -1109,6 +1109,51 @@ func TestDailyPerformanceQuery(t *testing.T) {
 	}
 }
 
+func TestMeridianMarketBarsProxy(t *testing.T) {
+	var barsQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/market/bars":
+			barsQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":     "600000.SH",
+					"instrument_type": "stock",
+					"trade_date":      20260612,
+					"datetime":        "2026-06-12T15:00:00+08:00",
+					"frequency":       "1m",
+					"adjustment":      "none",
+					"close":           9.67,
+					"schema_version":  "market_bar.v1",
+				}},
+				"meta": map[string]any{"schema_version": "market_bar.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/market/bars?security_id=600000.SH&trade_date=20260612&frequency=1m&adjustment=none&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(barsQuery, "security_id=600000.SH") || !strings.Contains(barsQuery, "frequency=1m") {
+		t.Fatalf("query not passed through: %s", barsQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"schema_version":"market_bar.v1"`) || !strings.Contains(rec.Body.String(), `"close":9.67`) {
+		t.Fatalf("response did not preserve meridian bars payload: %s", rec.Body.String())
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string

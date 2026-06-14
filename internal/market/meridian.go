@@ -17,6 +17,7 @@ import (
 
 const (
 	instrumentsPath = "/v1/metadata/instruments"
+	barsPath        = "/v1/market/bars"
 	snapshotsPath   = "/v1/market/snapshots"
 	tradingDayPath  = "/v1/metadata/trading-day"
 )
@@ -103,6 +104,13 @@ func (client *MeridianClient) MetadataInstruments(ctx context.Context, values ur
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
 	return client.getJSON(ctx, instrumentsPath, cloneValues(values))
+}
+
+func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, barsPath, cloneValues(values))
 }
 
 func (client *MeridianClient) getJSON(ctx context.Context, path string, values url.Values) (MeridianResponse, error) {

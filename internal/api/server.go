@@ -124,6 +124,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
+	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
@@ -272,6 +273,24 @@ func (s *Server) handleMeridianMarketSnapshots(w http.ResponseWriter, r *http.Re
 	response, err := s.market.MarketSnapshots(r.Context(), r.URL.Query())
 	if err != nil {
 		s.logger.Warn("meridian_market_snapshots_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian market request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian market request failed")
+}
+
+func (s *Server) handleMeridianMarketBars(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MarketBars(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_market_bars_failed", "error", err)
 		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian market request failed", err.Error())
 		return
 	}

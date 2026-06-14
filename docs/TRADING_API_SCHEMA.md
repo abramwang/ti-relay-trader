@@ -276,6 +276,7 @@ rejected
 | `GET` | `/v1/history/orders` | `OrderQuery` | `[]Order` | 已实现，显式历史订单查询 |
 | `GET` | `/v1/history/fills` | `FillQuery` | `[]Fill` | 已实现，显式历史成交查询 |
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
+| `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | `job_name` query | `[]JobRun` | 已实现，查询最近任务运行 |
 | `POST` | `/v1/jobs/runs` | `JobRunRequest` | `JobRun` | 已实现，日流程任务报告落盘 |
 | `POST` | `/v1/settlements/snapshots` | `SettlementSnapshotRequest` | `SettlementSnapshotResult` | 已实现，收盘结算 close 资产/持仓快照和 reconciliation run 落盘 |
@@ -311,6 +312,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为日终 `position_snapshots`。
 
 `GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和第一版 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产计算 `daily_pnl` 和 `return_rate`，并汇总同日 `position_snapshots` 的持仓市值/浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
+
+`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算和绩效序列的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 

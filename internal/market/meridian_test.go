@@ -124,3 +124,52 @@ func TestMarketSnapshotsFallsBackWhenRealtimeUnavailable(t *testing.T) {
 		t.Fatalf("snapshot requests = %d, want 2", requests)
 	}
 }
+
+func TestMarketBarsPassesThroughQuery(t *testing.T) {
+	var barsQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != barsPath {
+			http.NotFound(w, r)
+			return
+		}
+		barsQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id":     "600000.SH",
+				"instrument_type": "stock",
+				"trade_date":      20260612,
+				"datetime":        "2026-06-12T15:00:00+08:00",
+				"frequency":       "1m",
+				"adjustment":      "none",
+				"close":           9.67,
+				"schema_version":  "market_bar.v1",
+			}},
+			"meta": map[string]any{"schema_version": "market_bar.v1"},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:        server.URL,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	response, err := client.MarketBars(context.Background(), url.Values{
+		"security_id": {"600000.SH"},
+		"trade_date":  {"20260612"},
+		"frequency":   {"1m"},
+		"adjustment":  {"none"},
+		"limit":       {"5"},
+	})
+	if err != nil {
+		t.Fatalf("MarketBars: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if barsQuery.Get("security_id") != "600000.SH" || barsQuery.Get("frequency") != "1m" || barsQuery.Get("adjustment") != "none" {
+		t.Fatalf("bars query = %s", barsQuery.Encode())
+	}
+}

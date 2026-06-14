@@ -247,11 +247,12 @@
 
 ### P8 历史数据与盈亏统计
 
-- [ ] 接入 Meridian `bars`，用于账表计算、绩效序列和回撤统计。
+- [x] 接入 Meridian `bars` 同源薄代理，保留 Meridian `market_bar.v1` 原始字段。
 - [x] 接入 Meridian `metadata/instruments` 和 `snapshots` 作为 `/trade` 代码补全和行情刷新薄代理。
 - [x] 计算账户日终权益。
 - [ ] 计算完整已实现盈亏、浮动盈亏、费用和收益率。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
+- [ ] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入。
 - [ ] 生成研究侧导出视图。
 
 ### P9 模拟柜台

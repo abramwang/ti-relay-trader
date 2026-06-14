@@ -280,6 +280,23 @@
     ]
   },
   {
+    "id": "meridian-bars",
+    "group": "行情",
+    "title": "Meridian Bars",
+    "method": "GET",
+    "path": "/v1/meridian/market/bars",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "600000.SH" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
+      { "name": "frequency", "label": "frequency", "source": "query", "defaultValue": "1m" },
+      { "name": "adjustment", "label": "adjustment", "source": "query", "defaultValue": "none" },
+      { "name": "start_time", "label": "start_time", "source": "query", "defaultValue": "14:59:00" },
+      { "name": "end_time", "label": "end_time", "source": "query", "defaultValue": "15:00:00" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "5" }
+    ]
+  },
+  {
     "id": "meridian-snapshots",
     "group": "行情",
     "title": "Meridian 快照",
@@ -290,7 +307,7 @@
       { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "600000.SH" },
       { "name": "security_id_pattern", "label": "security_id_pattern", "source": "query", "defaultValue": "" },
       { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
-      { "name": "market_level", "label": "market_level", "source": "query", "type": "select", "defaultValue": "level1", "options": ["level1", "level2"] },
+      { "name": "market_level", "label": "market_level", "source": "query", "type": "select", "defaultValue": "level1", "options": ["level1"] },
       { "name": "data_scope", "label": "data_scope", "source": "query", "type": "select", "defaultValue": "realtime", "options": ["", "realtime", "historical", "auto"] },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "1" }
     ]

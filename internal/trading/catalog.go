@@ -53,6 +53,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/history/orders", Request: "OrderQuery", Response: "[]Order", Description: "query historical orders"},
 			{Method: "GET", Path: "/v1/history/fills", Request: "FillQuery", Response: "[]Fill", Description: "query historical fills"},
 			{Method: "GET", Path: "/v1/events/stream", Response: "OrderEvent | FillEvent", Description: "stream order and fill events"},
+			{Method: "GET", Path: "/v1/meridian/market/bars", Response: "Meridian market_bar.v1 payload", Description: "proxy Meridian market bars without redefining fields"},
 			{Method: "GET", Path: "/v1/jobs/runs", Response: "[]JobRun", Description: "query latest daily job runs"},
 			{Method: "POST", Path: "/v1/jobs/runs", Request: "JobRunRequest", Response: "JobRun", Description: "persist daily job run report"},
 			{Method: "GET", Path: "/v1/reconciliations/breaks", Request: "ReconciliationBreakQuery", Response: "[]ReconciliationBreak", Description: "query settlement reconciliation breaks"},
