@@ -2,6 +2,7 @@
   const state = {
     accounts: [],
     activeAccount: "",
+    environment: "test",
     asset: null,
     positions: [],
     allPositions: [],
@@ -75,6 +76,7 @@
     shell: byID("terminalShell"),
     viewLinks: Array.from(document.querySelectorAll("[data-view-link]")),
     apiStatus: byID("apiStatus"),
+    environmentBadge: byID("environmentBadge"),
     redisStatus: byID("redisStatus"),
     dbStatus: byID("dbStatus"),
     accountTabs: byID("accountTabs"),
@@ -686,6 +688,7 @@
       const data = await request("/v1/status");
       const dependencies = data.dependencies || {};
       const apiOK = data.status === "ok";
+      updateEnvironmentBadge(data.environment);
       setStatus(els.apiStatus, apiOK, "API: " + (apiOK ? "connected" : data.status || "degraded"));
       setStatus(els.redisStatus, dependencyOK(dependencies.redis), dependencyLabel("Redis", dependencies.redis));
       setStatus(els.dbStatus, dependencyOK(dependencies.database), dependencyLabel("DB", dependencies.database));
@@ -696,10 +699,23 @@
       }
     } catch (err) {
       setStatus(els.apiStatus, false, "API: error");
+      updateEnvironmentBadge(state.environment);
       setStatus(els.redisStatus, false, "Redis: unknown");
       setStatus(els.dbStatus, false, "DB: unknown");
       pushLog("error", "状态接口失败", err.message);
     }
+  }
+
+  function updateEnvironmentBadge(environment) {
+    const normalized = String(environment || "test").trim().toLowerCase();
+    state.environment = normalized || "test";
+    if (!els.environmentBadge) {
+      return;
+    }
+    els.environmentBadge.classList.toggle("production", normalized === "production");
+    els.environmentBadge.classList.toggle("test", normalized !== "production");
+    els.environmentBadge.textContent = normalized === "production" ? "生产环境" : "测试环境";
+    els.environmentBadge.title = normalized === "production" ? "当前服务连接生产环境" : "当前服务连接测试环境";
   }
 
   async function loadAccounts() {

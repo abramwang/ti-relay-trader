@@ -1,7 +1,6 @@
-# relay example configuration.
-# Copy this file to config/relay.local.yaml or config/relay.prod.yaml on the
-# deployment host, then fill in real credentials there. Local config files are
-# intentionally ignored by git.
+# relay broker-test example configuration.
+# Copy to config/relay.test.yaml on the deployment host and fill credentials
+# there. This file is safe to commit because it contains placeholders only.
 
 service:
   public_url: "http://relay-trader.quantstage.com"
@@ -15,17 +14,17 @@ service:
 
 database:
   driver: "postgres"
-  # Use a real DSN only in an untracked local config file.
   dsn: "postgres://<user>:<password>@<host>:5432/<database>?sslmode=disable"
   max_open_conns: 16
   max_idle_conns: 4
 
 redis:
-  # Use a real Redis URL only in an untracked local config file.
-  url: "redis://:<password>@<host>:6379/0"
+  url: "redis://:<password>@<test-redis-host>:6379/0"
+  # Keep this value aligned with the front service stream namespace. Some
+  # broker test counters may still use relay:prod:* stream names.
   env: "prod"
   broker_id: "huaxin"
-  gateway_id: "<gateway_id>"
+  gateway_id: "<test_gateway_id>"
 
 market:
   base_url: "http://meridian-data.quantstage.com"
@@ -34,38 +33,33 @@ market:
   snapshot_data_scope: "realtime"
 
 auto_refresh:
-  # When order/fill events arrive from Redis, relay coalesces one asset query and
-  # one positions query per account. This keeps /trade fresh without polling the
-  # broker counter too aggressively.
   enabled: true
   debounce_seconds: 2
   cooldown_seconds: 20
   timeout_seconds: 10
 
 accounts:
-  - account_id: "<account_id>"
+  - account_id: "<test_account_id>"
     broker_id: "huaxin"
-    gateway_id: "<gateway_id>"
-    stream_prefix: "relay:prod:v1:huaxin:<gateway_id>"
+    gateway_id: "<test_gateway_id>"
+    stream_prefix: "relay:prod:v1:huaxin:<test_gateway_id>"
     enabled: true
-    trading_enabled: false
+    trading_enabled: true
     simulated: false
 
 jobs:
-  # All schedules use Asia/Shanghai time. Keep the host timezone or CRON_TZ in
-  # sync with service.timezone.
   pre_open_init:
-    enabled: true
+    enabled: false
     schedule: "25 8 * * 1-5"
   post_close_settlement:
-    enabled: true
+    enabled: false
     schedule: "45 15 * * 1-5"
   reconcile:
-    enabled: true
+    enabled: false
     schedule: "30 16 * * 1-5"
   asset_snapshot:
-    enabled: true
+    enabled: false
     schedule: "55 15 * * 1-5"
   pnl:
-    enabled: true
+    enabled: false
     schedule: "10 17 * * 1-5"

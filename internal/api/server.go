@@ -1869,6 +1869,7 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 	view := StatusView{
 		Service:            "relay-api",
 		Mode:               string(s.cfg.Service.Mode),
+		Environment:        string(s.cfg.Service.Environment),
 		Status:             status,
 		PublicURL:          s.cfg.Service.PublicURL,
 		Timezone:           s.cfg.Service.Timezone,
@@ -1989,6 +1990,7 @@ func summarizeAccounts(accounts []config.AccountRouteConfig) AccountStatusSummar
 type StatusView struct {
 	Service            string                      `json:"service"`
 	Mode               string                      `json:"mode"`
+	Environment        string                      `json:"environment"`
 	Status             string                      `json:"status"`
 	PublicURL          string                      `json:"public_url"`
 	Timezone           string                      `json:"timezone"`

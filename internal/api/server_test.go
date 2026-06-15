@@ -96,6 +96,9 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	if envelope.Data.Timezone != "Asia/Shanghai" {
 		t.Fatalf("timezone = %q, want Asia/Shanghai", envelope.Data.Timezone)
 	}
+	if envelope.Data.Environment != string(config.EnvironmentTest) {
+		t.Fatalf("environment = %q, want test", envelope.Data.Environment)
+	}
 	if !dbPinged || !redisPinged {
 		t.Fatalf("dependency pings db=%v redis=%v", dbPinged, redisPinged)
 	}

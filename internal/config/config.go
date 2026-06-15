@@ -34,14 +34,22 @@ type Config struct {
 }
 
 type ServiceConfig struct {
-	PublicURL string `yaml:"public_url"`
-	DocsAddr  string `yaml:"docs_addr"`
-	APIAddr   string `yaml:"api_addr"`
-	Mode      Mode   `yaml:"mode"`
-	Timezone  string `yaml:"timezone"`
-	LogLevel  string `yaml:"log_level"`
-	LogFormat string `yaml:"log_format"`
+	PublicURL   string      `yaml:"public_url"`
+	DocsAddr    string      `yaml:"docs_addr"`
+	APIAddr     string      `yaml:"api_addr"`
+	Mode        Mode        `yaml:"mode"`
+	Environment Environment `yaml:"environment"`
+	Timezone    string      `yaml:"timezone"`
+	LogLevel    string      `yaml:"log_level"`
+	LogFormat   string      `yaml:"log_format"`
 }
+
+type Environment string
+
+const (
+	EnvironmentTest       Environment = "test"
+	EnvironmentProduction Environment = "production"
+)
 
 type DatabaseConfig struct {
 	Driver       string `yaml:"driver"`
@@ -147,6 +155,9 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Service.Mode == "" {
 		cfg.Service.Mode = ModeDocs
 	}
+	if cfg.Service.Environment == "" {
+		cfg.Service.Environment = EnvironmentTest
+	}
 	cfg.Service.Timezone = strings.TrimSpace(cfg.Service.Timezone)
 	if cfg.Service.Timezone == "" {
 		cfg.Service.Timezone = timeutil.LocationName
@@ -196,6 +207,9 @@ func (cfg Config) Validate() error {
 	if !cfg.Service.Mode.Valid() {
 		return fmt.Errorf("invalid service.mode %q", cfg.Service.Mode)
 	}
+	if !cfg.Service.Environment.Valid() {
+		return fmt.Errorf("invalid service.environment %q", cfg.Service.Environment)
+	}
 	if _, err := time.LoadLocation(cfg.Service.Timezone); err != nil {
 		return fmt.Errorf("invalid service.timezone %q: %w", cfg.Service.Timezone, err)
 	}
@@ -242,6 +256,15 @@ func (cfg Config) Validate() error {
 		if strings.TrimSpace(account.StreamPrefix) == "" {
 			return fmt.Errorf("accounts[%d].stream_prefix is required", i)
 		}
+		if account.TradingEnabled && !account.Enabled {
+			return fmt.Errorf("accounts[%d].trading_enabled requires enabled=true", i)
+		}
+		if cfg.Service.Environment == EnvironmentProduction && account.TradingEnabled && account.Simulated {
+			return fmt.Errorf("accounts[%d].simulated must be false when production trading is enabled", i)
+		}
+		if expected := streamPrefixForAccount(cfg.Redis.Env, account); expected != "" && account.StreamPrefix != expected {
+			return fmt.Errorf("accounts[%d].stream_prefix %q does not match expected %q", i, account.StreamPrefix, expected)
+		}
 	}
 
 	return nil
@@ -250,6 +273,15 @@ func (cfg Config) Validate() error {
 func (mode Mode) Valid() bool {
 	switch mode {
 	case ModeDocs, ModeAPI, ModeWorker:
+		return true
+	default:
+		return false
+	}
+}
+
+func (environment Environment) Valid() bool {
+	switch environment {
+	case EnvironmentTest, EnvironmentProduction:
 		return true
 	default:
 		return false
@@ -285,4 +317,14 @@ func validLogFormat(format string) bool {
 	default:
 		return false
 	}
+}
+
+func streamPrefixForAccount(redisEnv string, account AccountRouteConfig) string {
+	redisEnv = strings.TrimSpace(redisEnv)
+	brokerID := strings.TrimSpace(account.BrokerID)
+	gatewayID := strings.TrimSpace(account.GatewayID)
+	if redisEnv == "" || brokerID == "" || gatewayID == "" {
+		return ""
+	}
+	return fmt.Sprintf("relay:%s:v1:%s:%s", redisEnv, brokerID, gatewayID)
 }

@@ -89,10 +89,20 @@ button {
   align-items: center;
   min-height: 28px;
   padding: 4px 9px;
-  background: var(--buy);
-  color: #fff;
+  background: #dbeafe;
+  color: #164e63;
   font-size: 12px;
   font-weight: 750;
+}
+
+.env-badge.production {
+  background: var(--buy);
+  color: #fff;
+}
+
+.env-badge.test {
+  background: #dbeafe;
+  color: #164e63;
 }
 
 .status-strip {

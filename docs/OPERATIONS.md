@@ -1,6 +1,6 @@
 # relay 运行配置与任务管理
 
-更新时间：`2026-06-14`
+更新时间：`2026-06-15`
 
 ## 配置文件口径
 
@@ -11,6 +11,9 @@
 | 文件 | 是否提交 | 说明 |
 | --- | --- | --- |
 | `config/relay.example.yaml` | 是 | 配置模板，只放占位符 |
+| `config/relay.test.example.yaml` | 是 | 券商测试环境模板，只放占位符 |
+| `config/relay.prod.example.yaml` | 是 | 生产环境模板，只放占位符 |
+| `config/relay.test.yaml` | 否 | 部署机测试配置，可包含测试凭据 |
 | `config/relay.local.yaml` | 否 | 本地开发配置，可包含本地凭据 |
 | `config/relay.prod.yaml` | 否 | 部署机生产配置，可包含真实凭据 |
 
@@ -47,13 +50,72 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 
 1. Go 配置包位于 `internal/config`。
 2. 支持 `docs`、`api`、`worker` 三种服务运行模式。
-3. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
-4. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
-5. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 等基础接口；`/v1/status` 会返回 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态摘要。
-6. worker 模式会连接 PostgreSQL 和 Redis，持续消费 `reply/event/hb/dlq`，通过 `stream_checkpoints` 持久化每条 stream 的 `last_stream_id`。
-7. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
-8. 默认业务时区为 `Asia/Shanghai`，配置加载会校验 `service.timezone` 是否为合法 IANA timezone。
-9. 已校验服务模式、业务时区、日志级别、日志格式、数据库连接池参数、自动刷新参数和重复账户路由。
+3. 支持 `service.environment=test|production` 显式标记运行环境，默认 `test`。
+4. 支持从 `RELAY_CONFIG_PATH` 或 `-config` 指定的 YAML 文件读取配置。
+5. 文档门户会用配置中的 `service.public_url` 和 `service.docs_addr` 覆盖默认值。
+6. API 模式会使用 `service.api_addr`，并提供 `/healthz`、`/v1/status`、`/v1/accounts` 等基础接口；`/v1/status` 会返回 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态摘要。
+7. worker 模式会连接 PostgreSQL 和 Redis，持续消费 `reply/event/hb/dlq`，通过 `stream_checkpoints` 持久化每条 stream 的 `last_stream_id`。
+8. 自动资金持仓刷新默认开启，订单/成交事件落账后会按账户合并并限频发送 `account.asset.query` 和 `account.positions.query`。
+9. 默认业务时区为 `Asia/Shanghai`，配置加载会校验 `service.timezone` 是否为合法 IANA timezone。
+10. 已校验服务模式、运行环境、业务时区、日志级别、日志格式、数据库连接池参数、自动刷新参数、重复账户路由、账户交易开关和 Redis Stream 前缀一致性。
+
+## 测试/生产切换
+
+测试环境和生产环境不要通过临时编辑同一个配置文件切换。推荐固定两份本地未跟踪配置：
+
+```bash
+cp config/relay.test.example.yaml config/relay.test.yaml
+cp config/relay.prod.example.yaml config/relay.prod.yaml
+chmod 600 config/relay.test.yaml config/relay.prod.yaml
+```
+
+切换测试环境：
+
+```bash
+export RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.test.yaml
+```
+
+切换生产环境：
+
+```bash
+export RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
+```
+
+生产 Redis 的 host、port、auth、db 只写入 `config/relay.prod.yaml` 或进程环境变量，不写入 README、docs、示例配置、脚本或 Git commit。当前收到的生产 Redis 凭据尚未写入仓库。
+
+生产配置必须显式设置：
+
+```yaml
+service:
+  environment: "production"
+
+redis:
+  env: "prod"
+
+accounts:
+  - enabled: true
+    trading_enabled: false
+    simulated: false
+```
+
+上线顺序：
+
+1. 先保持生产账户 `trading_enabled: false`，启动只读链路。
+2. 执行 `relayctl redis-probe -config config/relay.prod.yaml`，确认只读 stream、心跳和命名空间。
+3. 检查 `GET /v1/status`，确认 `environment=production`、Redis/PostgreSQL 为 `ok`，账户摘要符合预期。
+4. 打开 `/trade`，确认顶部显示“生产环境”红色标识，并核对账户号、broker、gateway。
+5. 手动评审 `accounts[].stream_prefix`，必须等于 `relay:<redis.env>:v1:<broker_id>:<gateway_id>`。
+6. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。
+7. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
+
+配置加载会阻止以下明显危险配置：
+
+1. 未知 `service.environment`。
+2. `trading_enabled=true` 但账户 `enabled=false`。
+3. 生产环境中 `trading_enabled=true` 且 `simulated=true`。
+4. 账户 `stream_prefix` 与 `redis.env`、`broker_id`、`gateway_id` 不一致。
+
+注意：券商测试环境的 Redis Stream namespace 可能仍使用 `relay:prod:*`，所以 `redis.env=prod` 不能单独表示生产。以 `service.environment`、配置文件路径、账户权限和页面环境标识共同判断当前运行态。
 
 ## 时区口径
 

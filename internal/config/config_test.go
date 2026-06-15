@@ -13,6 +13,9 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Service.Mode != ModeDocs {
 		t.Fatalf("mode = %q, want %q", cfg.Service.Mode, ModeDocs)
 	}
+	if cfg.Service.Environment != EnvironmentTest {
+		t.Fatalf("environment = %q, want %q", cfg.Service.Environment, EnvironmentTest)
+	}
 	if cfg.Service.PublicURL == "" {
 		t.Fatal("public URL default was not applied")
 	}
@@ -55,6 +58,16 @@ func TestDecodeRejectsInvalidMode(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsInvalidEnvironment(t *testing.T) {
+	_, err := Decode(strings.NewReader(`service: {environment: staging}`))
+	if err == nil {
+		t.Fatal("expected invalid environment error")
+	}
+	if !strings.Contains(err.Error(), "invalid service.environment") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDecodeRejectsDuplicateAccounts(t *testing.T) {
 	_, err := Decode(strings.NewReader(`
 accounts:
@@ -71,6 +84,67 @@ accounts:
 		t.Fatal("expected duplicate account error")
 	}
 	if !strings.Contains(err.Error(), "duplicate account route") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsStreamPrefixMismatch(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+redis:
+  env: "prod"
+accounts:
+  - account_id: "acct-1"
+    broker_id: "huaxin"
+    gateway_id: "gw-1"
+    stream_prefix: "relay:test:v1:huaxin:gw-1"
+    enabled: true
+    trading_enabled: true
+`))
+	if err == nil {
+		t.Fatal("expected stream prefix mismatch")
+	}
+	if !strings.Contains(err.Error(), "does not match expected") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsProductionTradingForSimulatedAccount(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+service:
+  environment: "production"
+redis:
+  env: "prod"
+accounts:
+  - account_id: "acct-1"
+    broker_id: "huaxin"
+    gateway_id: "gw-1"
+    stream_prefix: "relay:prod:v1:huaxin:gw-1"
+    enabled: true
+    trading_enabled: true
+    simulated: true
+`))
+	if err == nil {
+		t.Fatal("expected production simulated trading error")
+	}
+	if !strings.Contains(err.Error(), "simulated must be false") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsTradingWhenAccountDisabled(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+accounts:
+  - account_id: "acct-1"
+    broker_id: "huaxin"
+    gateway_id: "gw-1"
+    stream_prefix: "relay:prod:v1:huaxin:gw-1"
+    enabled: false
+    trading_enabled: true
+`))
+	if err == nil {
+		t.Fatal("expected disabled trading account error")
+	}
+	if !strings.Contains(err.Error(), "trading_enabled requires enabled=true") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

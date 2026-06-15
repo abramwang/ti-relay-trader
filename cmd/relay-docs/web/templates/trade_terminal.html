@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260615-0005">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260615-0006">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
     <header class="terminal-topbar">
       <div class="brand-block">
         <a class="brand-title" href="/">Relay Trader</a>
-        <span class="env-badge">测试环境</span>
+        <span class="env-badge test" id="environmentBadge">测试环境</span>
       </div>
       <div class="status-strip">
         <span class="status-pill" id="apiStatus"><i></i>API: checking</span>
@@ -398,6 +398,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260615-0005"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260615-0006"></script>
 </body>
 </html>
