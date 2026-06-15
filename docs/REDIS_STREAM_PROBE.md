@@ -6,6 +6,8 @@
 
 已新增 `relayctl redis-probe` 只读探测命令，用于查看前置测试环境 Redis Stream 的存在性、长度、最新 ID 和最近消息摘要。
 
+已新增 `relayctl redis-scan` 只读扫描命令，用于在生产或测试 Redis 中发现 `relay:<env>:v1:<broker>:<gateway>:<role>` 账户前缀。它只执行 `PING`、`SCAN`、`TYPE` 和 `XLEN`，不读取消息正文，不执行 `XADD`，不会创建 consumer group，不会确认或移动任何消费位点。
+
 该命令只执行：
 
 1. `PING`
@@ -17,6 +19,20 @@
 当前已在真实 Redis 上完成 `reply/event` 小批量读取和 PostgreSQL raw 归档。`redis-probe` 仍保持只读探测定位；需要写入账本时使用 `relayctl ledger-sync`。
 
 ## 命令入口
+
+发现 Redis 中有哪些账户前缀：
+
+```bash
+go run ./cmd/relayctl redis-scan -config config/relay.prod.yaml
+```
+
+限定扫描 pattern：
+
+```bash
+go run ./cmd/relayctl redis-scan \
+  -config config/relay.prod.yaml \
+  -pattern 'relay:prod:v1:huaxin:*'
+```
 
 ```bash
 go run ./cmd/relayctl redis-probe -config config/relay.local.yaml
@@ -73,6 +89,8 @@ prefix 来源优先级：
 1. `-stream-prefix` 参数。
 2. 配置文件 `accounts[].stream_prefix`。
 3. 配置文件或环境变量中的 `redis.env + redis.broker_id + redis.gateway_id`。
+
+`redis-scan` 不依赖 `accounts[]` 路由；默认根据 `redis.env` 扫描 `relay:<env>:v1:*:*`，并按 prefix 汇总出候选账户。发现新账户后，仍需要人工确认并写入本地未跟踪配置 `accounts[]`，默认保持 `trading_enabled=false`。
 
 ## 输出说明
 

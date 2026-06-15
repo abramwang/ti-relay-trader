@@ -40,6 +40,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl redis-probe: %v\n", err)
 			os.Exit(1)
 		}
+	case "redis-scan":
+		if err := runRedisScan(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl redis-scan: %v\n", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -213,6 +218,36 @@ func runRedisProbe(args []string) error {
 	return writeJSON(report)
 }
 
+func runRedisScan(args []string) error {
+	flags := flag.NewFlagSet("redis-scan", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	configPath := flags.String("config", os.Getenv(config.EnvPath), "relay YAML config path")
+	pattern := flags.String("pattern", "", "Redis key pattern, defaults to relay:<redis.env>:v1:*:*")
+	count := flags.Int64("count", 200, "SCAN count hint")
+	timeout := flags.Duration("timeout", 10*time.Second, "scan timeout")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	*cfg = redisstream.ApplyProbeEnv(*cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	report, err := redisstream.ScanStreams(ctx, *cfg, redisstream.StreamScanOptions{
+		Pattern: *pattern,
+		Count:   *count,
+	})
+	if err != nil {
+		return err
+	}
+	return writeJSON(report)
+}
+
 func loadConfig(path string) (*config.Config, error) {
 	if strings.TrimSpace(path) == "" {
 		cfg := config.Default()
@@ -226,6 +261,7 @@ func usage() {
   ledger-sync  Archive Redis reply/event streams into PostgreSQL ledger
   migrate      Run PostgreSQL migration status/up/down
   redis-probe  Read-only Redis Stream probe using relay config
+  redis-scan   Read-only Redis key scan for relay stream accounts
 
 Examples:
   RELAY_DATABASE_URL=postgres://... REDIS_URL=redis://... go run ./cmd/relayctl ledger-sync -stream-prefix relay:prod:v1:huaxin:00030484 -count 20
@@ -234,7 +270,8 @@ Examples:
   go run ./cmd/relayctl migrate down -config config/relay.local.yaml -steps 1
   RELAY_CONFIG_PATH=config/relay.local.yaml go run ./cmd/relayctl redis-probe
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -samples 2
-  go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -stream-prefix relay:prod:v1:huaxin:00030484`)
+  go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -stream-prefix relay:prod:v1:huaxin:00030484
+  go run ./cmd/relayctl redis-scan -config config/relay.prod.yaml`)
 }
 
 func splitCSV(value string) []string {

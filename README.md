@@ -195,7 +195,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 增加 API/worker 启动入口，API 模式已提供 `/healthz`、`/v1/status`、`/v1/accounts`。
 - [x] 定义第一版标准交易柜台接口 schema，覆盖账户、资金、持仓、下单、撤单、订单、成交和事件。
 - [x] 记录前置测试环境已启动，并已基于 Redis Stream 完成查询、下单、撤单和事件消费联调。
-- [x] 新增 Redis Stream 只读探测命令 `relayctl redis-probe`，支持本地配置和 `HX_REDIS_*` 环境变量。
+- [x] 新增 Redis Stream 只读探测命令 `relayctl redis-probe` 和账户前缀扫描命令 `relayctl redis-scan`，支持本地配置和 `HX_REDIS_*` 环境变量。
 - [x] 新增 Redis Stream 到 PostgreSQL 账本同步命令 `relayctl ledger-sync`，支持 `reply/event` 归档和完整事件落盘。
 - [x] 9092 docs/api 模式启动轻量后台同步循环，持续消费测试 Redis `reply/event` 并更新 PostgreSQL 订单、成交、资金和持仓账本。
 - [x] 正式 worker 模式接入 Redis 同步循环，可持续消费 `reply/event/hb/dlq` 并通过 PostgreSQL `stream_checkpoints` 恢复位点。
@@ -433,3 +433,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 明确 SDK 与环境切换解耦：SDK 只面向同一个 HTTP/SSE base URL，测试/生产由 relay 服务端配置控制；首页新增运行环境控制台，并记录当前数据库仍是同库按账户隔离，后续需做独立 DSN/schema 或环境维度 migration。
 - `2026-06-15`: 为多账户可读性新增账户别名：配置 `accounts[].alias`、`/v1/accounts.alias` 和 `/trade` 账户展示均已支持；当前生产账户 `501000114077` 配置默认别名为 `生产查询账户`。
 - `2026-06-15`: 账户别名从浏览器临时状态改为服务端持久化，新增 `PATCH /v1/accounts/{account_id}/alias`，写入 PostgreSQL `accounts.account_name`；`GET /v1/accounts` 会用落库别名覆盖配置默认值。
+- `2026-06-15`: 生产 Redis 发现第二账户 `314000046830`，新增只读 `relayctl redis-scan` 用于扫描 `relay:<env>:v1:*:*` stream 前缀；未跟踪生产配置已加入该账户，保持 `trading_enabled=false`，9092 已重启并显示 2 个生产账户。

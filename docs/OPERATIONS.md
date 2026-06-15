@@ -102,12 +102,14 @@ accounts:
 上线顺序：
 
 1. 先保持生产账户 `trading_enabled: false`，启动只读链路。
-2. 执行 `relayctl redis-probe -config config/relay.prod.yaml`，确认只读 stream、心跳和命名空间。
-3. 检查 `GET /v1/status`，确认 `environment=production`、Redis/PostgreSQL 为 `ok`，账户摘要符合预期。
-4. 打开 `/trade`，确认顶部显示“生产环境”红色标识，并核对账户号、broker、gateway。
-5. 手动评审 `accounts[].stream_prefix`，必须等于 `relay:<redis.env>:v1:<broker_id>:<gateway_id>`。
-6. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。
-7. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
+2. 执行 `relayctl redis-scan -config config/relay.prod.yaml`，发现生产 Redis 中实际存在的账户 stream 前缀。
+3. 将确认后的账户写入本地未跟踪配置 `accounts[]`，继续保持 `trading_enabled: false`。
+4. 执行 `relayctl redis-probe -config config/relay.prod.yaml`，确认已配置账户的只读 stream、心跳和命名空间。
+5. 检查 `GET /v1/status`，确认 `environment=production`、Redis/PostgreSQL 为 `ok`，账户摘要符合预期。
+6. 打开 `/trade`，确认顶部显示“生产环境”红色标识，并核对账户号、broker、gateway。
+7. 手动评审 `accounts[].stream_prefix`，必须等于 `relay:<redis.env>:v1:<broker_id>:<gateway_id>`。
+8. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。
+9. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
 
 配置加载会阻止以下明显危险配置：
 
@@ -249,7 +251,7 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 当前用户已启动前置程序测试环境，relay 已基于测试 Redis 跑通查询、下单、批量下单、撤单、reply/event 合并和 SSE 推送。继续联调时优先使用以下入口：
 
-1. `relayctl redis-probe` 只读探测 `reply`、`event`、`hb`、`dlq` stream。
+1. `relayctl redis-scan` 发现账户前缀，`relayctl redis-probe` 只读探测 `reply`、`event`、`hb`、`dlq` stream。
 2. `/api-console` 或 SDK 发送资金、持仓、订单、成交刷新命令。
 3. `/trade` 或 SDK 做小流量下单、批量下单、撤单。
 4. `relayctl ledger-sync` 或 worker 回放/追赶指定 stream。
