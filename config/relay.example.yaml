@@ -57,7 +57,7 @@ jobs:
   # sync with service.timezone.
   pre_open_init:
     enabled: true
-    schedule: "25 8 * * 1-5"
+    schedule: "55 8 * * 1-5"
   post_close_settlement:
     enabled: true
     schedule: "45 15 * * 1-5"

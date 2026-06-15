@@ -180,6 +180,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 明确真实凭据可放在部署机本地配置文件，后台批处理可采用 cron 管理。
 - [x] 明确业务时间统一为 `Asia/Shanghai` 东八区，A 股交易日、cron、报表、页面和 API 业务字段都按该时区解释。
 - [x] 明确每日交易主流程包含 `pre_open_init` 盘前初始化和 `post_close_settlement` 收盘后结算。
+- [x] 生产盘前初始化时间调整为交易日 08:55 `Asia/Shanghai`，避免过早撞上券商柜台和交易所链路尚未初始化。
 - [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:30 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
 - [x] 新增统一时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at` 和探测/同步报告生成时间按 `Asia/Shanghai` 输出。
 - [x] 新增 Python 日流程任务入口：`python -m relay.jobs.pre_open_init` 和 `python -m relay.jobs.post_close_settlement`，支持交易日判断、依赖检查、账户刷新、账本快照摘要和 JSON 报告输出。
@@ -300,6 +301,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:30 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
+- 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 08:55 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。第一版 `daily_pnl/return_rate` 以相邻 close 净资产计算，成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
@@ -463,3 +465,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 推进并收尾 P3 多账户路由：新增 `GET /v1/account-routes` 路由诊断接口，返回账户别名、broker/gateway、stream prefix、查询/交易/只读权限、环境和 Redis 六类 stream key；`/v1/schema` 和 API Console catalog 已同步。路线图中 P3 已标记为 done。
 - `2026-06-15`: 完成绩效分析页面第一版设计文档，明确 `/trade#performance` 后续聚焦日终净值、收益贡献、交易归因和数据质量，不再把分钟 K 线作为主图；文档门户新增 `/docs/performance-analysis` 入口。
 - `2026-06-15`: 首页运行环境控制台新增测试/生产候选配置卡片，展示配置文件、账户、下单账户、Redis/DB/自动刷新状态和服务器本机切换命令；新增 `scripts/switch-relay-env.sh`，默认拦截带下单权限的生产配置。
+- `2026-06-15`: 盘前初始化时间从 08:25 调整为 08:55 `Asia/Shanghai`；生产本地配置补齐 `pre_open_init` 和 `post_close_settlement`，root crontab 新增 `RELAY_TRADER_CRON` 管理块，08:55 盘前初始化、15:30 盘后结算。
