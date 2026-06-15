@@ -435,3 +435,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 账户别名从浏览器临时状态改为服务端持久化，新增 `PATCH /v1/accounts/{account_id}/alias`，写入 PostgreSQL `accounts.account_name`；`GET /v1/accounts` 会用落库别名覆盖配置默认值。
 - `2026-06-15`: 生产 Redis 发现第二账户 `314000046830`，新增只读 `relayctl redis-scan` 用于扫描 `relay:<env>:v1:*:*` stream 前缀；未跟踪生产配置已加入该账户，保持 `trading_enabled=false`，9092 已重启并显示 2 个生产账户。
 - `2026-06-15`: `/trade` 持仓、委托和成交表格新增独立“证券名称”列，前端通过 Meridian `metadata/instruments?security_ids=...` 批量补齐名称和 `instrument_type`，继续遵循 Meridian 字段标准，不在 relay 自建证券主数据。
+- `2026-06-15`: 优化 `/trade` 右下角 toast，从常驻提示改为新消息短暂弹出后自动隐藏，避免遮挡订单监控和资金持仓分页按钮。

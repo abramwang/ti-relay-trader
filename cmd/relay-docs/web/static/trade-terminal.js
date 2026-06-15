@@ -69,7 +69,8 @@
     chartAutoRefreshTimer: 0,
     chartAutoRefreshRunning: false,
     chartAutoRefreshErrorAt: 0,
-    streamErrorLoggedAt: 0
+    streamErrorLoggedAt: 0,
+    toastTimer: 0
   };
 
   const chartAutoRefreshIntervalMs = 30000;
@@ -646,8 +647,14 @@
   }
 
   function showToast(message, type = "info") {
+    window.clearTimeout(state.toastTimer);
     els.toast.textContent = message;
     els.toast.classList.toggle("error", type === "error");
+    els.toast.classList.add("show");
+    state.toastTimer = window.setTimeout(() => {
+      els.toast.classList.remove("show");
+      state.toastTimer = 0;
+    }, type === "error" ? 6000 : 3200);
   }
 
   function viewFromLocation() {

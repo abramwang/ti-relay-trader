@@ -1456,7 +1456,17 @@ tr.flash {
   color: #fff;
   box-shadow: 0 10px 28px rgba(16, 24, 40, 0.28);
   font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+  visibility: hidden;
+}
+
+.toast.show {
+  opacity: 1;
   transform: translateY(0);
+  visibility: visible;
 }
 
 .toast.error {
