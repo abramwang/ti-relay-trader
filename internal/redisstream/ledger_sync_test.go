@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/ledger"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -118,12 +119,13 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 				"cum_filled_qty":100,
 				"leaves_qty":0,
 				"limit_price":9.54,
-				"gateway_status":"filled",
-				"adapter_status":"全部成交",
-				"adapter_status_code":8,
-				"update_time":"2026-06-13 10:00:01"
-			}]}
-		}`,
+					"gateway_status":"filled",
+					"adapter_status":"全部成交",
+					"adapter_status_code":8,
+					"created_at":"2026-06-13T09:30:00+08:00",
+					"update_time":"2026-06-13 10:00:01"
+				}]}
+			}`,
 	})
 
 	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Orders != 1 || result.Fills != 1 {
@@ -145,6 +147,12 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	fill := writer.fills[0].fill
 	if fill.FillID != "relay-summary:gw-page-1" || fill.Qty != 100 || fill.Price != 9.54 {
 		t.Fatalf("summary fill = %#v", fill)
+	}
+	if got := fill.MatchedAt.In(timeutil.Location()).Format("15:04:05"); got != "09:30:00" {
+		t.Fatalf("summary fill matched_at = %s, want order created_at", got)
+	}
+	if fill.AdapterContext["relay_synthesis_time_source"] != "created_at" {
+		t.Fatalf("summary fill time source = %#v", fill.AdapterContext)
 	}
 	if fill.AdapterContext["relay_synthesized"] != true || fill.AdapterContext["relay_synthesis_source"] != "order_page" {
 		t.Fatalf("summary fill context = %#v", fill.AdapterContext)
@@ -241,6 +249,9 @@ func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
 	fill := writer.fills[0].fill
 	if fill.FillID != "fill-page-1" || fill.GatewayOrderID != "gw-page-1" || fill.MatchedAt.IsZero() {
 		t.Fatalf("fill = %#v", fill)
+	}
+	if got := fill.MatchedAt.In(timeutil.Location()).Format(time.RFC3339); got != "2026-06-13T10:00:02+08:00" {
+		t.Fatalf("fill matched_at = %s, want Asia/Shanghai local parse", got)
 	}
 	if writer.fills[0].stream.ID != "1-4" || writer.fills[0].source.OriginMessageID != "msg-fill-query-1" {
 		t.Fatalf("fill source = %#v", writer.fills[0])

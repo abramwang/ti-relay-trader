@@ -754,7 +754,7 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 	if price <= 0 {
 		return fmt.Errorf("synthesize fill %s/%s: missing executable price", order.AccountID, order.GatewayOrderID)
 	}
-	matchedAt := firstTime(order.TerminalAt, order.LastUpdatedAt, order.AcceptedAt, order.InsertedAt, order.CreatedAt, envelope.ProducedAt)
+	matchedAt, matchedAtSource := summaryFillMatchedAt(order, source, envelope)
 	context := map[string]any{
 		"relay_synthesized":             true,
 		"relay_synthesis_source":        source,
@@ -764,6 +764,7 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 		"relay_synthesis_missing_qty":   missingQty,
 		"relay_synthesis_price_source":  priceSource,
 		"relay_synthesis_gateway_order": order.GatewayOrderID,
+		"relay_synthesis_time_source":   matchedAtSource,
 	}
 	for key, value := range order.AdapterContext {
 		if _, exists := context[key]; !exists {
@@ -794,6 +795,39 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 	}
 	result.Fills++
 	return nil
+}
+
+func summaryFillMatchedAt(order trading.Order, source string, envelope EntryEnvelope) (time.Time, string) {
+	candidates := []struct {
+		name  string
+		value time.Time
+	}{
+		{name: "terminal_at", value: order.TerminalAt},
+		{name: "last_updated_at", value: order.LastUpdatedAt},
+		{name: "created_at", value: order.CreatedAt},
+		{name: "inserted_at", value: order.InsertedAt},
+		{name: "accepted_at", value: order.AcceptedAt},
+		{name: "produced_at", value: envelope.ProducedAt},
+	}
+	if source == "order_page" {
+		candidates = []struct {
+			name  string
+			value time.Time
+		}{
+			{name: "created_at", value: order.CreatedAt},
+			{name: "inserted_at", value: order.InsertedAt},
+			{name: "accepted_at", value: order.AcceptedAt},
+			{name: "terminal_at", value: order.TerminalAt},
+			{name: "last_updated_at", value: order.LastUpdatedAt},
+			{name: "produced_at", value: envelope.ProducedAt},
+		}
+	}
+	for _, candidate := range candidates {
+		if !candidate.value.IsZero() {
+			return candidate.value, candidate.name
+		}
+	}
+	return time.Time{}, ""
 }
 
 func summaryFillStreamRef(envelope EntryEnvelope, gatewayOrderID string) ledger.StreamRef {

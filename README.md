@@ -262,6 +262,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `/trade` 分页请求层增加非 JSON 响应保护，订单、成交和持仓分页失败时会展示具体请求路径、HTTP 状态和 content-type，并回滚 page/cursor，避免一次失败后分页状态错位。
 - [x] `/trade` 资金持仓页补齐测试前置缺失的资金指标展示：股票市值/基金市值按全量持仓和 Meridian `instrument_type` 拆分，其中基金市值只统计 ETF；手续费按资金持仓交易日的全量成交 `fee/adapter_context.fee/nFee` 汇总；当前日若前置未给 `day_profit`，页面用持仓浮盈 + 估算平仓盈亏 - 手续费兜底展示。
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
+- [x] 生产 order_page 时间字段已按前置新增的 `created_at/accepted_at/inserted_at` 回填旧订单委托时间；relay 对无时区时间按东八区解析，summary fill 在缺少真实成交明细时优先使用订单真实时间，并已修正 `314000046830` 当日 812 条 summary fill 的错误时间。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
 - [x] 绩效序列增加 Meridian bars 基准对照：`GET /v1/accounts/{account_id}/performance/series` 和 `.csv` 支持 `benchmark_security_id`，输出基准收益、基准回撤和超额收益字段；`/api-console`、`/trade#performance` 和 Python SDK `0.1.9` 已同步。
@@ -376,6 +377,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 优化 `/trade` 左侧导航和页面布局：移除独立“成交回报”入口，成交回报作为“订单监控”的 tab 展示；“订单监控”扩展为完整工作区并保留委托详情栏，“资金持仓”扩展为完整工作区并展示资金拆分和持仓表。
 - `2026-06-14`: 新增 `GET /v1/events/stream` SSE 实时事件流和内部事件 hub，9092 轻量 Redis 同步循环在订单、成交、资金、持仓落账后广播 `order.changed/fill.changed/asset.changed/positions.changed`；`/trade` 接入 EventSource 实时刷新并保留轮询兜底，`/api-console` 支持事件流连接预览。
 - `2026-06-14`: 新增订单/成交前置查询刷新：`POST /v1/accounts/{account_id}/orders/refresh` 和 `/fills/refresh` 写入 `order.list.query/fill.list.query`，`ledger-sync` 支持将非空 `order_page/fill_page` 合并到账本；`/trade` 和 `/api-console` 均已增加手动刷新入口。
+- `2026-06-15`: 前置生产 order_page 已补 `created_at/accepted_at/inserted_at` 和东八区时区；relay 修复订单冲突更新不回填 `created_at`、无时区时间按 UTC 解析、summary fill 优先使用订单查询更新时间的问题，并批量修正 `314000046830` 当日 summary fill 时间。最新 `fill.list.query` reply 仍为 `payload.items=[]`，若前置 `OnRspQryTrade` 有非空回调，需要前置继续排查“柜台成交回调 -> Redis fill_page.items”封装链路。
 - `2026-06-14`: 初始化 Python SDK 首版源码包 `sdk/python/relay_sdk`，实现标准库 HTTP 客户端、账户/资金/持仓/订单/成交查询、资金/持仓/订单/成交刷新、单笔/批量下单、撤单、等待订单终态、SSE 事件迭代、异常映射和 mock 9092 API 单元测试。
 - `2026-06-14`: 发布 Python SDK 内网安装包入口：新增 `scripts/build-python-sdk.py`、`public/sdk/relay-sdk-0.1.0.tar.gz` 和 `.sha256`，9092 文档门户通过 `/sdk/` 直接提供下载，已验证本地 tar.gz 可被 pip 安装。
 - `2026-06-14`: 完成 `/v1/status` 依赖健康检查：服务状态现在包含账户摘要和 PostgreSQL、Redis、订单服务、Meridian 行情代理、SSE 事件流、自动刷新状态；数据库/Redis ping 失败只返回通用错误摘要，避免泄露本地连接凭据。

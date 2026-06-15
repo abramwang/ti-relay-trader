@@ -219,15 +219,23 @@ func parseTime(value string) time.Time {
 	if value == "" {
 		return time.Time{}
 	}
-	layouts := []string{
+	zonedLayouts := []string{
 		time.RFC3339Nano,
 		time.RFC3339,
+	}
+	for _, layout := range zonedLayouts {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed
+		}
+	}
+	localLayouts := []string{
 		"2006-01-02 15:04:05.999999999",
 		"2006-01-02 15:04:05.999999",
 		"2006-01-02 15:04:05",
 	}
-	for _, layout := range layouts {
-		parsed, err := time.Parse(layout, value)
+	for _, layout := range localLayouts {
+		parsed, err := time.ParseInLocation(layout, value, timeutil.Location())
 		if err == nil {
 			return parsed
 		}

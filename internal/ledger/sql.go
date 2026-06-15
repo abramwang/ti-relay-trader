@@ -91,6 +91,7 @@ ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
     client_order_id = COALESCE(EXCLUDED.client_order_id, orders.client_order_id),
     order_id = COALESCE(EXCLUDED.order_id, orders.order_id),
     order_stream_id = COALESCE(EXCLUDED.order_stream_id, orders.order_stream_id),
+    created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END,
     symbol = EXCLUDED.symbol,
     name = EXCLUDED.name,
     exchange = EXCLUDED.exchange,

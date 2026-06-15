@@ -84,6 +84,7 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO orders")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, gateway_order_id)")
+	requireQueryContains(t, exec.query, "created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END")
 	requireQueryContains(t, exec.query, "status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END")
 	requireArgLen(t, exec.args, 38)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
