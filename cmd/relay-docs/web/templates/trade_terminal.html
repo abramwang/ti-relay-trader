@@ -11,7 +11,7 @@
     <header class="terminal-topbar">
       <div class="brand-block">
         <a class="brand-title" href="/">Relay Trader</a>
-        <span class="env-badge test" id="environmentBadge">测试环境</span>
+        <span class="env-badge {{.EnvironmentClass}}" id="environmentBadge" data-environment="{{.Environment}}">{{.EnvironmentLabel}}</span>
       </div>
       <div class="status-strip">
         <span class="status-pill" id="apiStatus"><i></i>API: checking</span>

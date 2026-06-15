@@ -69,7 +69,8 @@ var (
 	rootDir = flag.String("root", ".", "project root directory")
 	cfgPath = flag.String("config", os.Getenv(relayconfig.EnvPath), "optional relay config file path")
 
-	publicURL = "http://relay-trader.quantstage.com"
+	publicURL          = "http://relay-trader.quantstage.com"
+	serviceEnvironment = string(relayconfig.EnvironmentTest)
 
 	docs = []docPage{
 		{
@@ -189,6 +190,7 @@ func main() {
 	if cfg.Service.PublicURL != "" {
 		publicURL = cfg.Service.PublicURL
 	}
+	serviceEnvironment = string(cfg.Service.Environment)
 
 	logger, err := logging.New(os.Stdout, cfg.Service.LogLevel, cfg.Service.LogFormat)
 	if err != nil {
@@ -568,9 +570,17 @@ func (s *portalServer) handleTradeTerminal(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tradeTerminalTemplate.Execute(w, map[string]string{
-		"PublicURL": publicURL,
-	}); err != nil {
+	templateData := map[string]string{
+		"PublicURL":        publicURL,
+		"Environment":      serviceEnvironment,
+		"EnvironmentClass": "test",
+		"EnvironmentLabel": "测试环境",
+	}
+	if serviceEnvironment == string(relayconfig.EnvironmentProduction) {
+		templateData["EnvironmentClass"] = "production"
+		templateData["EnvironmentLabel"] = "生产环境"
+	}
+	if err := tradeTerminalTemplate.Execute(w, templateData); err != nil {
 		s.logger.Error("render_trade_terminal_failed", "error", err)
 	}
 }
