@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -359,6 +360,95 @@ func TestAccountPositions(t *testing.T) {
 	}
 }
 
+func TestAccountPositionsEnrichesInstrumentName(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metadata/instruments" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("security_ids"); got != "000767.SZ" {
+			t.Fatalf("security_ids = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"000767.SZ","name":"晋控电力"}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", Symbol: "000767", Exchange: trading.ExchangeSZ, Quantity: 100}},
+			Count:     1,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"name":"晋控电力"`) {
+		t.Fatalf("response missing instrument name: %s", rec.Body.String())
+	}
+}
+
+func TestAccountPositionsDerivesZeroAvgCostFromTodayBuyFills(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID:   "acct-1",
+				Symbol:      "688222",
+				Name:        "成都先导",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    800,
+				SellableQty: 0,
+				AvgCost:     0,
+			}},
+			Count: 1,
+		},
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{
+				{AccountID: "acct-1", Symbol: "688222", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, Price: 26.09, Qty: 300},
+				{AccountID: "acct-1", Symbol: "688222", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, Price: 26.10, Qty: 200},
+				{AccountID: "acct-1", Symbol: "688222", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, Price: 26.08, Qty: 300},
+			},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Positions []trading.Position `json:"positions"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Positions) != 1 {
+		t.Fatalf("positions = %#v", body.Data.Positions)
+	}
+	if diff := math.Abs(body.Data.Positions[0].AvgCost - 26.08875); diff > 0.000001 {
+		t.Fatalf("avg_cost = %.8f, want 26.08875", body.Data.Positions[0].AvgCost)
+	}
+	if service.fillQuery.AccountID != "acct-1" || service.fillQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
+		t.Fatalf("fill query = %#v", service.fillQuery)
+	}
+}
+
 func TestHistoricalAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		positionsResult: orderflow.ListPositionsResult{
@@ -380,6 +470,88 @@ func TestHistoricalAccountPositions(t *testing.T) {
 	}
 	if !service.positionQuery.History || service.positionQuery.TradeDate != "20260612" {
 		t.Fatalf("position query = %#v", service.positionQuery)
+	}
+}
+
+func TestHistoricalAccountPositionsDoesNotDeriveAvgCostFromTodayFills(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID:   "acct-1",
+				TradeDate:   "2026-06-12",
+				Symbol:      "688222",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    800,
+				SellableQty: 0,
+				AvgCost:     0,
+			}},
+			Count: 1,
+		},
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{{AccountID: "acct-1", Symbol: "688222", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, Price: 26.09, Qty: 800}},
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions/history?trade_date=20260612&limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Positions []trading.Position `json:"positions"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Positions) != 1 || body.Data.Positions[0].AvgCost != 0 {
+		t.Fatalf("positions = %#v", body.Data.Positions)
+	}
+	if service.fillQuery.AccountID != "" {
+		t.Fatalf("historical positions should not query current fills: %#v", service.fillQuery)
+	}
+}
+
+func TestHistoricalAccountPositionsEnrichesInstrumentName(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metadata/instruments" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("security_ids"); got != "601728.SH" {
+			t.Fatalf("security_ids = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"601728.XSHG","name":"中国电信"}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", TradeDate: "2026-06-12", Symbol: "601728", Exchange: trading.ExchangeSH, Quantity: 100}},
+			Count:     1,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions/history?trade_date=20260612&limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"name":"中国电信"`) {
+		t.Fatalf("response missing instrument name: %s", rec.Body.String())
 	}
 }
 

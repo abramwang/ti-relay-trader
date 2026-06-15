@@ -429,6 +429,104 @@ func (s *Server) enrichFillNames(ctx context.Context, fills []trading.Fill) {
 	}
 }
 
+func (s *Server) enrichPositionNames(ctx context.Context, positions []trading.Position) {
+	if len(positions) == 0 {
+		return
+	}
+	names := s.instrumentNames(ctx, positionSecurityIDs(positions))
+	if len(names) == 0 {
+		return
+	}
+	for i := range positions {
+		if strings.TrimSpace(positions[i].Name) != "" {
+			continue
+		}
+		if name := names[securityID(positions[i].Symbol, string(positions[i].Exchange))]; name != "" {
+			positions[i].Name = name
+		}
+	}
+}
+
+type positionFillCost struct {
+	symbol   string
+	exchange trading.Exchange
+	quantity int64
+	qty      int64
+	amount   float64
+}
+
+func (s *Server) enrichPositionCostsFromTodayFills(ctx context.Context, positions []trading.Position, query trading.PositionQuery) {
+	if s.orders == nil || len(positions) == 0 || query.History || query.TradeDate != "" || query.DateFrom != "" || query.DateTo != "" {
+		return
+	}
+	needed := make(map[string]positionFillCost)
+	for _, position := range positions {
+		if !positionNeedsFillDerivedCost(position) {
+			continue
+		}
+		if id := securityID(position.Symbol, string(position.Exchange)); id != "" {
+			target := needed[id]
+			target.symbol = position.Symbol
+			target.exchange = position.Exchange
+			if position.Quantity > target.quantity {
+				target.quantity = position.Quantity
+			}
+			needed[id] = target
+		}
+	}
+	if len(needed) == 0 {
+		return
+	}
+
+	costs := make(map[string]positionFillCost, len(needed))
+	tradeDate := timeutil.Now().Format("2006-01-02")
+	for id, target := range needed {
+		cursor := ""
+		for page := 0; page < 20; page++ {
+			result, err := s.orders.ListFills(ctx, trading.FillQuery{
+				AccountID: query.AccountID,
+				Symbol:    target.symbol,
+				Exchange:  target.exchange,
+				TradeDate: tradeDate,
+				Limit:     500,
+				Cursor:    cursor,
+			})
+			if err != nil {
+				s.logger.Warn("position_cost_enrichment_failed", "account_id", query.AccountID, "symbol", target.symbol, "exchange", target.exchange, "error", err)
+				return
+			}
+			cost := costs[id]
+			for _, fill := range result.Fills {
+				if fill.TradeSide != trading.TradeSideBuy || fill.Qty <= 0 || fill.Price <= 0 {
+					continue
+				}
+				cost.qty += fill.Qty
+				cost.amount += fill.Price * float64(fill.Qty)
+			}
+			costs[id] = cost
+			cursor = strings.TrimSpace(result.NextCursor)
+			if cursor == "" || cost.qty >= target.quantity {
+				break
+			}
+		}
+	}
+
+	for i := range positions {
+		if !positionNeedsFillDerivedCost(positions[i]) {
+			continue
+		}
+		cost := costs[securityID(positions[i].Symbol, string(positions[i].Exchange))]
+		if cost.qty < positions[i].Quantity || cost.amount <= 0 {
+			continue
+		}
+		positions[i].AvgCost = cost.amount / float64(cost.qty)
+	}
+}
+
+func positionNeedsFillDerivedCost(position trading.Position) bool {
+	return position.AvgCost == 0 && position.Quantity > 0 && position.SellableQty == 0
+}
+
 func (s *Server) instrumentNames(ctx context.Context, ids []string) map[string]string {
 	if s.market == nil || len(ids) == 0 {
 		return nil
@@ -474,6 +572,23 @@ func orderSecurityIDs(orders []trading.Order) []string {
 	seen := make(map[string]struct{}, len(orders))
 	for _, order := range orders {
 		id := securityID(order.Symbol, string(order.Exchange))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func positionSecurityIDs(positions []trading.Position) []string {
+	ids := make([]string, 0, len(positions))
+	seen := make(map[string]struct{}, len(positions))
+	for _, position := range positions {
+		id := securityID(position.Symbol, string(position.Exchange))
 		if id == "" {
 			continue
 		}
@@ -1026,6 +1141,8 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 		s.writeOrderError(w, r, err)
 		return
 	}
+	s.enrichPositionNames(r.Context(), result.Positions)
+	s.enrichPositionCostsFromTodayFills(r.Context(), result.Positions, query)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 

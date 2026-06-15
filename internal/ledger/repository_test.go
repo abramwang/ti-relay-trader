@@ -673,6 +673,29 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[15], `"source":"front"`)
 }
 
+func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.UpsertPosition(context.Background(), trading.Position{
+		AccountID:   "acct-1",
+		Symbol:      "600000",
+		Exchange:    trading.ExchangeSH,
+		Quantity:    100,
+		SellableQty: 0,
+		AvgCost:     9.54,
+		MarketValue: 954,
+	}, "query", nil, time.Date(2026, 6, 13, 10, 31, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("UpsertPosition() error = %v", err)
+	}
+
+	requireArgLen(t, exec.args, 17)
+	if exec.args[5] != int64(0) {
+		t.Fatalf("sellable_qty arg = %#v, want 0", exec.args[5])
+	}
+}
+
 func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

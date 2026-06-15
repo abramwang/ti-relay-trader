@@ -320,6 +320,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 当前测试/生产查询阶段仍使用同一 PostgreSQL DSN，账表主要按 `account_id` 区分。由于核心表尚未普遍把 `environment` 纳入唯一键，长期生产化建议改为生产/测试独立 DSN 或 schema；如果必须同库，需要补 migration 将 `environment` 纳入 accounts、orders、fills、asset/position snapshots 等核心账表约束。
 - 接口测试台当前可在 9092 文档门户同源发送 `/v1/*` 请求；资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接口需要启动时加载本地 PostgreSQL、测试 Redis 和账户路由配置。
 - 资金/持仓/订单/成交查询默认读取 PostgreSQL 本地账表；可通过刷新接口主动发前置 `cmd.query`，由 9092 轻量后台同步循环或正式 worker 合并 reply 到本地账表。
+- 持仓查询现在保留前置/柜台原始 `sellable_qty`，不会把 `sellable_qty=0` 自动改成 `quantity`；当前持仓 API 会 best-effort 通过 Meridian instruments 补齐 `name`。若前置持仓回包 `avg_cost=0` 且该证券当前持仓不可卖、当日买入成交数量覆盖当前持仓，API 返回会用本地成交账本加权均价临时补偿成本价，raw stream 和账本原始持仓仍保留前置给出的 0，便于后续排查前置字段。
 - `order_page/fill_page` 合并路径已实现并通过单元测试覆盖；测试前置返回非空查询页后，可继续补一组真实样例归档和回放记录。
 - 订单/成交事件会触发服务端自动刷新资金和持仓，但会按账户合并并限频，默认 `auto_refresh.debounce_seconds=2`、`auto_refresh.cooldown_seconds=20`；这能让 `/trade` 持仓跟随成交更新，同时避免每条订单推送都查询柜台。
 - 测试下单参考价不要硬编码；`/trade` 当前通过 relay 的 Meridian 薄代理读取 `/v1/market/snapshots` 和 level1 snapshot SSE，如果当天不是交易日会调用 Meridian `/v1/metadata/trading-day` 获取最近交易日后读取 historical 快照。当前交易日持仓现价、市值和浮动盈亏由 Meridian level1 SSE 推送更新，不通过前端轮询行情计算。
@@ -443,3 +444,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 前置补齐 `trade_side/business_type` 后，生产 `314000046830` 订单查询已正常落库；新增 Redis 入账账户号归一：若账户专属 stream routing account 为 `314000046830`，payload account 为 `31400004683001` 这类前后缀关系，relay 按 routing account 落账，并在 `adapter_context.relay_raw_account_id` 保留原始前置账户号。新版 9092 已重启，生产下单权限仍为 0。
 - `2026-06-15`: 修复 `/trade` 外部订单证券名称补齐：前端 instrument key 统一归一 `XSHG/SSE->SH`、`XSHE/SZSE->SZ`，并将 metadata 未命中缓存改为 60 秒重试，避免一次失败后外部订单名称长期显示 `--`；交易终端静态资源版本更新到 `20260615-0012` 并重启 9092。
 - `2026-06-15`: 进一步修复外部订单名称闪现后被轮询覆盖：`GET /v1/orders` 和 `/v1/fills` 现在会 best-effort 通过 Meridian instruments 批量补齐 `name` 字段，失败不影响主查询；已验证生产 `314000046830` 当日订单/成交响应直接返回 `000767.SZ -> 晋控电力`。
+- `2026-06-15`: 补齐资金持仓 API 的证券名称和 A 股 T+1 可用量语义：`GET /v1/accounts/{account_id}/positions` 与历史持仓查询现在会通过 Meridian instruments 补 `name`；移除账本层 `sellable_qty=0 -> quantity` 的兜底，生产 `314000046830` 回放后 51 条持仓保留 `sellable_qty != quantity`，持仓名称缺失数为 0。
+- `2026-06-15`: 排查生产 `314000046830` 持仓 `688222.SH` 成本价为 0：归档 raw `position_page` 原始字段即为 `avg_cost: 0.0`，无其它成本字段别名，因此不是 relay 字段映射错误。当前持仓 API 已增加保守补偿：当前持仓 `avg_cost=0`、`sellable_qty=0` 且当日买入成交覆盖持仓时，用本地成交账本加权均价补返回值；已验证 `688222.SH` 800 股按三笔买入成交返回 `avg_cost=26.08875`。

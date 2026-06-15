@@ -1724,9 +1724,6 @@ func normalizePosition(position trading.Position) (trading.Position, error) {
 	if !position.Exchange.Valid() {
 		return position, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
 	}
-	if position.SellableQty == 0 && position.Quantity > 0 {
-		position.SellableQty = position.Quantity
-	}
 	return position, nil
 }
 
