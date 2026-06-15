@@ -1518,10 +1518,18 @@
       return;
     }
     for (const account of state.accounts) {
+      const label = accountLabel(account);
+      const suffix = accountSuffix(account);
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = account.account_id === state.activeAccount ? "active" : "";
-      tab.textContent = account.account_id + (account.simulated ? " (模拟)" : "");
+      tab.title = label + " / " + suffix;
+      const strong = document.createElement("strong");
+      strong.textContent = label;
+      const small = document.createElement("small");
+      small.textContent = suffix;
+      tab.appendChild(strong);
+      tab.appendChild(small);
       tab.addEventListener("click", async () => {
         state.activeAccount = account.account_id;
         state.selectedOrderID = "";
@@ -1542,10 +1550,33 @@
 
       const option = document.createElement("option");
       option.value = account.account_id;
-      option.textContent = account.account_id;
+      option.textContent = label === account.account_id ? suffix : label + " - " + account.account_id;
       option.selected = account.account_id === state.activeAccount;
       els.orderAccount.appendChild(option);
     }
+  }
+
+  function accountLabel(account) {
+    return String(account && account.alias || account && account.account_id || "未命名账户").trim();
+  }
+
+  function accountSuffix(account) {
+    const parts = [];
+    if (account && account.account_id) {
+      parts.push(account.account_id);
+    }
+    if (account && account.trading_enabled === false) {
+      parts.push("只读");
+    }
+    if (account && account.simulated) {
+      parts.push("模拟");
+    }
+    return parts.join(" / ") || "--";
+  }
+
+  function activeAccountLabel() {
+    const account = state.accounts.find((item) => item.account_id === state.activeAccount);
+    return account ? accountLabel(account) : state.activeAccount;
   }
 
   function renderMetrics() {
@@ -2268,7 +2299,7 @@
     const latest = series[series.length - 1] || state.performanceDaily || {};
     const daily = state.performanceDaily || latest || {};
     els.performanceRangeHint.textContent = [
-      state.activeAccount || "未选择账户",
+      activeAccountLabel() || "未选择账户",
       summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       "Asia/Shanghai"

@@ -434,6 +434,7 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	for _, account := range s.cfg.Accounts {
 		accounts = append(accounts, AccountView{
 			AccountID:      account.AccountID,
+			Alias:          account.Alias,
 			BrokerID:       account.BrokerID,
 			GatewayID:      account.GatewayID,
 			Enabled:        account.Enabled,
@@ -2038,6 +2039,7 @@ type DependencyStatus struct {
 
 type AccountView struct {
 	AccountID      string `json:"account_id"`
+	Alias          string `json:"alias,omitempty"`
 	BrokerID       string `json:"broker_id"`
 	GatewayID      string `json:"gateway_id"`
 	Enabled        bool   `json:"enabled"`

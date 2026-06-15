@@ -152,6 +152,25 @@ button {
   font-weight: 650;
 }
 
+.account-tabs button strong,
+.account-tabs button small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-tabs button strong {
+  font-size: 13px;
+}
+
+.account-tabs button small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .account-tabs button.active {
   color: var(--buy);
   border-bottom-color: var(--buy);

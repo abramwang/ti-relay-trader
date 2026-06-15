@@ -38,7 +38,7 @@ chmod 600 /home/ti-relay-trader/config/relay.prod.yaml
 1. 9092 服务地址和最终服务口径。
 2. PostgreSQL 连接 DSN、连接池参数。
 3. Redis URL、env、broker、gateway。
-4. account 到 broker/gateway/stream prefix 的多账户路由。
+4. account 到 broker/gateway/stream prefix 的多账户路由，以及仅用于页面展示的账户别名 `alias`。
 5. 订单/成交事件驱动的资金持仓自动刷新限频参数。
 6. 服务业务时区，统一为 `Asia/Shanghai`。
 7. 日志级别和输出格式。
@@ -94,6 +94,7 @@ redis:
 
 accounts:
   - enabled: true
+    alias: "生产账户"
     trading_enabled: false
     simulated: false
 ```
@@ -120,6 +121,8 @@ accounts:
 ## SDK 与落库隔离
 
 Python SDK 和策略程序不承载测试/生产环境选择。SDK 只连接 relay 的 `base_url`，后端实际使用测试 Redis 还是生产 Redis，由 relay 服务端配置文件、账户路由和 `trading_enabled` 决定。策略侧应读取 `/v1/status.environment` 和 `/v1/accounts` 做运行前自检，但不要在 SDK 内维护另一套环境切换逻辑。
+
+`accounts[].alias` 只用于 UI 和人工识别，不参与 Redis Stream 命名、账本唯一键、幂等键或权限判断。多账户环境中建议为每个账户设置短别名，例如“生产查询账户”“一号量化”“高频测试”等；交易终端会优先显示别名，同时保留账号用于核对。
 
 当前账本 schema 中 `gateways` 和 `account_gateway_routes` 已有 `env` 维度，但 `accounts`、`orders`、`fills`、`asset_snapshots`、`positions` 等核心事实表仍主要按 `account_id` 唯一或索引。因此：
 

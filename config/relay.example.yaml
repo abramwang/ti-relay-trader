@@ -44,6 +44,7 @@ auto_refresh:
 
 accounts:
   - account_id: "<account_id>"
+    alias: "策略账户"
     broker_id: "huaxin"
     gateway_id: "<gateway_id>"
     stream_prefix: "relay:prod:v1:huaxin:<gateway_id>"

@@ -81,6 +81,7 @@ type AutoRefreshConfig struct {
 
 type AccountRouteConfig struct {
 	AccountID      string `yaml:"account_id"`
+	Alias          string `yaml:"alias"`
 	BrokerID       string `yaml:"broker_id"`
 	GatewayID      string `yaml:"gateway_id"`
 	StreamPrefix   string `yaml:"stream_prefix"`

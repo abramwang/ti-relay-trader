@@ -183,6 +183,7 @@ func TestAccountsFromConfig(t *testing.T) {
 	cfg.Accounts = []config.AccountRouteConfig{
 		{
 			AccountID:      "acct-1",
+			Alias:          "一号量化",
 			BrokerID:       "huaxin",
 			GatewayID:      "gw-1",
 			StreamPrefix:   "relay:prod:v1:huaxin:gw-1",
@@ -203,6 +204,17 @@ func TestAccountsFromConfig(t *testing.T) {
 	}
 	if !json.Valid(rec.Body.Bytes()) {
 		t.Fatalf("response is not json: %s", rec.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Accounts []AccountView `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode accounts: %v", err)
+	}
+	if len(envelope.Data.Accounts) != 1 || envelope.Data.Accounts[0].Alias != "一号量化" {
+		t.Fatalf("accounts = %#v", envelope.Data.Accounts)
 	}
 }
 
