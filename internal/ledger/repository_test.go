@@ -85,6 +85,7 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	requireQueryContains(t, exec.query, "INSERT INTO orders")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, gateway_order_id)")
 	requireQueryContains(t, exec.query, "created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END")
+	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN EXCLUDED.is_terminal = TRUE THEN EXCLUDED.cum_filled_qty ELSE GREATEST(orders.cum_filled_qty, EXCLUDED.cum_filled_qty) END")
 	requireQueryContains(t, exec.query, "status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END")
 	requireArgLen(t, exec.args, 38)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
@@ -122,6 +123,35 @@ func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
 	requireArgLen(t, exec.args, 38)
 	if exec.args[20] != trading.OrderStatusFilled || exec.args[21] != trading.GatewayStatusFilled || exec.args[24] != true {
 		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[20], exec.args[21], exec.args[24])
+	}
+}
+
+func TestUpdateOrderStatusAllowsTerminalCumFilledCorrection(t *testing.T) {
+	exec := &recordingExecutor{result: rowsAffectedResult(1)}
+	repo := NewRepository(exec)
+
+	err := repo.UpdateOrderStatus(context.Background(), trading.OrderEvent{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		Status:         trading.OrderStatusFilled,
+		GatewayStatus:  trading.GatewayStatusFilled,
+		IsTerminal:     true,
+		Order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-1",
+			CumFilledQty:   60,
+			LeavesQty:      0,
+		},
+		ProducedAt: time.Date(2026, 6, 15, 15, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("UpdateOrderStatus() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN $14 = TRUE THEN $6 ELSE GREATEST(cum_filled_qty, $6) END")
+	requireArgLen(t, exec.args, 19)
+	if exec.args[5] != int64(60) || exec.args[13] != true {
+		t.Fatalf("cum/terminal args = %#v/%#v", exec.args[5], exec.args[13])
 	}
 }
 
@@ -1006,6 +1036,7 @@ type recordingExecutor struct {
 	queries  []string
 	argsList [][]any
 	err      error
+	result   sql.Result
 }
 
 func (exec *recordingExecutor) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
@@ -1013,7 +1044,17 @@ func (exec *recordingExecutor) ExecContext(_ context.Context, query string, args
 	exec.args = append([]any(nil), args...)
 	exec.queries = append(exec.queries, query)
 	exec.argsList = append(exec.argsList, append([]any(nil), args...))
-	return nil, exec.err
+	return exec.result, exec.err
+}
+
+type rowsAffectedResult int64
+
+func (result rowsAffectedResult) LastInsertId() (int64, error) {
+	return 0, nil
+}
+
+func (result rowsAffectedResult) RowsAffected() (int64, error) {
+	return int64(result), nil
 }
 
 type recordingQueryExecutor struct {

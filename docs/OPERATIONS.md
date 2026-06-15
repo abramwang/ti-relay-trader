@@ -292,8 +292,8 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股交易日盘前初始化，08:25 Asia/Shanghai。
 25 8 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --persist --trigger cron --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
 
-# A 股交易日收盘后结算，15:45 Asia/Shanghai。
-45 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
+# A 股生产环境交易日收盘后结算，15:30 Asia/Shanghai。
+30 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
 # 研究侧绩效导出当前通过 9092 API / PostgreSQL view 查询，不需要单独 cron。
 ```

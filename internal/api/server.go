@@ -38,6 +38,11 @@ type Dependencies struct {
 
 type HealthCheckFunc func(context.Context) error
 
+const (
+	settlementPageLimit = 500
+	settlementMaxRows   = 20000
+)
+
 type OrderService interface {
 	SubmitOrder(ctx context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error)
 	BatchSubmitOrders(ctx context.Context, req trading.BatchSubmitOrderRequest, opts orderflow.BatchSubmitOptions) (orderflow.BatchSubmitOrderResult, error)
@@ -1922,11 +1927,11 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 	}
-	ordersResult, err := s.orders.ListOrders(ctx, trading.OrderQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: 500})
+	ordersResult, err := s.listAllSettlementOrders(ctx, accountID, tradeDate)
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("orders: %v", err))
 	}
-	fillsResult, err := s.orders.ListFills(ctx, trading.FillQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: 500})
+	fillsResult, err := s.listAllSettlementFills(ctx, accountID, tradeDate)
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
 	}
@@ -2017,6 +2022,46 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	out.ReconciliationBreaks = len(out.breaks)
 	out.Breaks = append(out.Breaks, out.breaks...)
 	return out
+}
+
+func (s *Server) listAllSettlementOrders(ctx context.Context, accountID string, tradeDate string) (orderflow.ListOrdersResult, error) {
+	query := trading.OrderQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: settlementPageLimit}
+	combined := orderflow.ListOrdersResult{Query: query}
+	for {
+		result, err := s.orders.ListOrders(ctx, query)
+		if err != nil {
+			return combined, err
+		}
+		combined.Orders = append(combined.Orders, result.Orders...)
+		combined.Count = len(combined.Orders)
+		if result.NextCursor == "" {
+			return combined, nil
+		}
+		if len(combined.Orders) >= settlementMaxRows {
+			return combined, fmt.Errorf("settlement order query exceeded %d rows", settlementMaxRows)
+		}
+		query.Cursor = result.NextCursor
+	}
+}
+
+func (s *Server) listAllSettlementFills(ctx context.Context, accountID string, tradeDate string) (orderflow.ListFillsResult, error) {
+	query := trading.FillQuery{AccountID: accountID, TradeDate: tradeDate, History: true, Limit: settlementPageLimit}
+	combined := orderflow.ListFillsResult{Query: query}
+	for {
+		result, err := s.orders.ListFills(ctx, query)
+		if err != nil {
+			return combined, err
+		}
+		combined.Fills = append(combined.Fills, result.Fills...)
+		combined.Count = len(combined.Fills)
+		if result.NextCursor == "" {
+			return combined, nil
+		}
+		if len(combined.Fills) >= settlementMaxRows {
+			return combined, fmt.Errorf("settlement fill query exceeded %d rows", settlementMaxRows)
+		}
+		query.Cursor = result.NextCursor
+	}
 }
 
 func reconciliationInput(runID string, source string, accountID string, inputType string, capturedAt time.Time, payload map[string]any) ledger.ReconciliationInput {

@@ -54,7 +54,7 @@ jobs:
     schedule: "25 8 * * 1-5"
   post_close_settlement:
     enabled: true
-    schedule: "45 15 * * 1-5"
+    schedule: "30 15 * * 1-5"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

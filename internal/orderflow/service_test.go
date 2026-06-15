@@ -490,6 +490,70 @@ func TestListOrdersReturnsNextCursor(t *testing.T) {
 	}
 }
 
+func TestListOrdersReturnsNextCursorAtMaxLimit(t *testing.T) {
+	orders := make([]trading.Order, maxOrderQueryLimit)
+	for i := range orders {
+		orders[i] = trading.Order{AccountID: "acct-1", GatewayOrderID: "gateway"}
+	}
+	ledgerWriter := &fakeLedger{listedOrders: orders}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: &fakePublisher{},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID: "acct-1",
+		Limit:     maxOrderQueryLimit,
+		Cursor:    "500",
+	})
+	if err != nil {
+		t.Fatalf("ListOrders() error = %v", err)
+	}
+	if ledgerWriter.lastOrderQuery.Limit != maxOrderQueryLimit || ledgerWriter.lastOrderQuery.Cursor != "500" {
+		t.Fatalf("ledger query = %#v", ledgerWriter.lastOrderQuery)
+	}
+	if result.Count != maxOrderQueryLimit || result.NextCursor != "1000" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestListFillsReturnsNextCursorAtMaxLimit(t *testing.T) {
+	fills := make([]trading.Fill, maxFillQueryLimit)
+	for i := range fills {
+		fills[i] = trading.Fill{AccountID: "acct-1", FillID: "fill"}
+	}
+	ledgerWriter := &fakeLedger{listedFills: fills}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: &fakePublisher{},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListFills(context.Background(), trading.FillQuery{
+		AccountID: "acct-1",
+		Limit:     maxFillQueryLimit,
+		Cursor:    "500",
+	})
+	if err != nil {
+		t.Fatalf("ListFills() error = %v", err)
+	}
+	if ledgerWriter.lastFillQuery.Limit != maxFillQueryLimit || ledgerWriter.lastFillQuery.Cursor != "500" {
+		t.Fatalf("ledger query = %#v", ledgerWriter.lastFillQuery)
+	}
+	if result.Count != maxFillQueryLimit || result.NextCursor != "1000" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestGetAssetAndListPositionsUseConfiguredAccount(t *testing.T) {
 	ledgerWriter := &fakeLedger{
 		asset: trading.Asset{
@@ -563,6 +627,37 @@ func TestListPositionsReturnsNextCursor(t *testing.T) {
 		t.Fatalf("ledger query = %#v", ledgerWriter.lastPositionSnapshotQuery)
 	}
 	if result.Count != 2 || len(result.Positions) != 2 || result.NextCursor != "4" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestListPositionsReturnsNextCursorAtMaxLimit(t *testing.T) {
+	positions := make([]trading.Position, maxPositionQueryLimit)
+	for i := range positions {
+		positions[i] = trading.Position{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH}
+	}
+	ledgerWriter := &fakeLedger{listedPositions: positions}
+	service, err := New(Options{
+		Config: testConfig(true, false),
+		Ledger: ledgerWriter,
+		Clock:  fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ListPositions(context.Background(), trading.PositionQuery{
+		AccountID: "acct-1",
+		Limit:     maxPositionQueryLimit,
+		Cursor:    "2000",
+	})
+	if err != nil {
+		t.Fatalf("ListPositions() error = %v", err)
+	}
+	if ledgerWriter.lastPositionQuery.Limit != maxPositionQueryLimit || ledgerWriter.lastPositionQuery.Cursor != "2000" {
+		t.Fatalf("ledger query = %#v", ledgerWriter.lastPositionQuery)
+	}
+	if result.Count != maxPositionQueryLimit || result.NextCursor != "4000" {
 		t.Fatalf("result = %#v", result)
 	}
 }

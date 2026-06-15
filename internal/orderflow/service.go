@@ -503,6 +503,8 @@ func (service *Service) ListOrders(ctx context.Context, query trading.OrderQuery
 	if len(orders) > normalized.Limit {
 		orders = orders[:normalized.Limit]
 		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	} else if normalized.Limit == maxOrderQueryLimit && len(orders) == normalized.Limit {
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
 	}
 	return ListOrdersResult{
 		Orders:     orders,
@@ -532,6 +534,8 @@ func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) 
 	nextCursor := ""
 	if len(fills) > normalized.Limit {
 		fills = fills[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	} else if normalized.Limit == maxFillQueryLimit && len(fills) == normalized.Limit {
 		nextCursor = strconv.Itoa(offset + normalized.Limit)
 	}
 	return ListFillsResult{
@@ -626,6 +630,8 @@ func (service *Service) ListPositions(ctx context.Context, query trading.Positio
 	nextCursor := ""
 	if len(positions) > normalized.Limit {
 		positions = positions[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	} else if normalized.Limit == maxPositionQueryLimit && len(positions) == normalized.Limit {
 		nextCursor = strconv.Itoa(offset + normalized.Limit)
 	}
 	return ListPositionsResult{
