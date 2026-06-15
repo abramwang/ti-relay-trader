@@ -4,6 +4,11 @@
     activeAccount: "",
     asset: null,
     positions: [],
+    allPositions: [],
+    allPositionsAccount: "",
+    allPositionsLoadedDate: "",
+    positionStatsDirty: true,
+    positionStatsSeq: 0,
     orders: [],
     fills: [],
     ordersPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
@@ -45,6 +50,11 @@
     eventSource: null,
     eventSourceAccount: "",
     streamConnected: false,
+    positionQuotes: new Map(),
+    positionQuoteStreams: [],
+    positionQuoteStreamKey: "",
+    positionQuoteLive: false,
+    positionQuoteStreamErrorAt: 0,
     streamRefreshTimer: 0,
     chartMarkerRefreshTimer: 0,
     chartLoadTimer: 0,
@@ -205,6 +215,9 @@
   }
 
   function formatNumber(value, digits = 2) {
+    if (value === null || value === undefined || value === "") {
+      return "--";
+    }
     const number = Number(value);
     if (!Number.isFinite(number)) {
       return "--";
@@ -426,6 +439,9 @@
   }
 
   function formatInt(value) {
+    if (value === null || value === undefined || value === "") {
+      return "--";
+    }
     const number = Number(value);
     if (!Number.isFinite(number)) {
       return "--";
@@ -727,6 +743,121 @@
     updateStreamFooter();
   }
 
+  function closeTerminalStreams() {
+    closeEventStream();
+    closePositionQuoteStreams();
+  }
+
+  function closePositionQuoteStreams() {
+    for (const source of state.positionQuoteStreams) {
+      source.close();
+    }
+    state.positionQuoteStreams = [];
+    state.positionQuoteStreamKey = "";
+    state.positionQuoteLive = false;
+  }
+
+  function resetPositionStats() {
+    closePositionQuoteStreams();
+    state.positionStatsSeq += 1;
+    state.allPositions = [];
+    state.allPositionsAccount = "";
+    state.allPositionsLoadedDate = "";
+    state.positionStatsDirty = true;
+    state.positionQuotes.clear();
+  }
+
+  function markPositionStatsDirty() {
+    state.positionStatsDirty = true;
+  }
+
+  function uniquePositionSecurityIDs(positions) {
+    const ids = [];
+    const seen = new Set();
+    for (const position of positions || []) {
+      const securityID = itemSecurityID(position);
+      if (!securityID || seen.has(securityID)) {
+        continue;
+      }
+      seen.add(securityID);
+      ids.push(securityID);
+    }
+    return ids;
+  }
+
+  function refreshPositionQuoteStreams() {
+    const tradeDate = selectedAssetTradeDateSafe();
+    if (!window.EventSource || !state.activeAccount || !isCurrentBusinessDate(tradeDate)) {
+      closePositionQuoteStreams();
+      return;
+    }
+    if (state.allPositionsAccount !== state.activeAccount || state.allPositionsLoadedDate !== tradeDate) {
+      closePositionQuoteStreams();
+      return;
+    }
+    const securityIDs = uniquePositionSecurityIDs(state.allPositions);
+    if (securityIDs.length === 0) {
+      closePositionQuoteStreams();
+      return;
+    }
+    const streamKey = state.activeAccount + "|" + tradeDate + "|" + securityIDs.join(",");
+    if (state.positionQuoteStreamKey === streamKey && state.positionQuoteStreams.length > 0) {
+      return;
+    }
+    closePositionQuoteStreams();
+    state.positionQuoteStreamKey = streamKey;
+
+    const chunkSize = 200;
+    for (let offset = 0; offset < securityIDs.length; offset += chunkSize) {
+      const chunk = securityIDs.slice(offset, offset + chunkSize);
+      const params = new URLSearchParams({
+        security_ids: chunk.join(","),
+        trade_date: tradeDate,
+        market_level: "level1",
+        include_existing: "true",
+        watch_interval_ms: "1000"
+      });
+      const source = new EventSource("/v1/meridian/stream/market/snapshots?" + params.toString());
+      source.addEventListener("open", () => {
+        state.positionQuoteLive = true;
+      });
+      source.addEventListener("market_snapshots", handlePositionQuoteEvent);
+      source.onerror = () => {
+        state.positionQuoteLive = false;
+        const now = Date.now();
+        if (now - state.positionQuoteStreamErrorAt > 10000) {
+          state.positionQuoteStreamErrorAt = now;
+          pushLog("warn", "持仓行情流重连中", "Meridian level1 SSE");
+        }
+      };
+      state.positionQuoteStreams.push(source);
+    }
+  }
+
+  function handlePositionQuoteEvent(event) {
+    let payload;
+    try {
+      payload = JSON.parse(event.data || "{}");
+    } catch (err) {
+      pushLog("warn", "持仓行情解析失败", err.message);
+      return;
+    }
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+    let changed = false;
+    for (const row of rows) {
+      const securityID = itemSecurityID(row);
+      if (!securityID) {
+        continue;
+      }
+      state.positionQuotes.set(securityID, row);
+      changed = true;
+    }
+    if (changed) {
+      renderMetrics();
+      renderPositions();
+    }
+  }
+
   function updateStreamFooter() {
     if (!els.footerRedis) {
       return;
@@ -758,6 +889,9 @@
     state.lastPayload = payload;
     updateStreamFooter();
     pushLog("info", "实时事件", type + (payload.last_stream_id ? " " + payload.last_stream_id : ""));
+    if (type === "asset.changed" || type === "positions.changed" || type === "fill.changed") {
+      markPositionStatsDirty();
+    }
     scheduleStreamRefresh();
     scheduleChartMarkerRefresh(type);
   }
@@ -848,6 +982,13 @@
       pushLog("warn", "成交读取失败", fillsResult.reason.message);
     }
 
+    try {
+      await refreshPositionStatsSource();
+    } catch (err) {
+      state.positionStatsDirty = true;
+      pushLog("warn", "全量持仓统计读取失败", err.message);
+    }
+
     renderAll();
   }
 
@@ -935,6 +1076,54 @@
       params.set("trade_date", tradeDate);
     }
     return request(path + "?" + params.toString());
+  }
+
+  async function refreshPositionStatsSource(options = {}) {
+    const tradeDate = selectedAssetTradeDateSafe();
+    const accountID = state.activeAccount;
+    const force = Boolean(options.force);
+    if (!accountID || !isCurrentBusinessDate(tradeDate)) {
+      closePositionQuoteStreams();
+      state.allPositions = [];
+      state.allPositionsAccount = accountID || "";
+      state.allPositionsLoadedDate = tradeDate;
+      state.positionStatsDirty = false;
+      return;
+    }
+    if (!force &&
+      !state.positionStatsDirty &&
+      state.allPositionsAccount === accountID &&
+      state.allPositionsLoadedDate === tradeDate) {
+      refreshPositionQuoteStreams();
+      return;
+    }
+
+    const seq = ++state.positionStatsSeq;
+    const allPositions = [];
+    let cursor = "";
+    for (let page = 0; page < 20; page += 1) {
+      const params = new URLSearchParams({ limit: "2000" });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const data = await request("/v1/accounts/" + encodeURIComponent(accountID) + "/positions?" + params.toString());
+      allPositions.push(...(data.positions || []));
+      cursor = data.next_cursor || "";
+      if (!cursor) {
+        break;
+      }
+    }
+    if (cursor) {
+      pushLog("warn", "全量持仓统计超过前端查询上限", "已读取 " + formatInt(allPositions.length) + " 条");
+    }
+    if (seq !== state.positionStatsSeq) {
+      return;
+    }
+    state.allPositions = allPositions;
+    state.allPositionsAccount = accountID;
+    state.allPositionsLoadedDate = tradeDate;
+    state.positionStatsDirty = false;
+    refreshPositionQuoteStreams();
   }
 
   async function fetchOrdersPage() {
@@ -1178,6 +1367,7 @@
         state.selectedOrderID = "";
         state.performanceLoaded = false;
         resetLedgerPages();
+        resetPositionStats();
         renderAccounts();
         connectEventStream();
         await refreshNow();
@@ -1200,16 +1390,20 @@
 
   function renderMetrics() {
     const asset = state.asset || {};
-    els.netAsset.textContent = formatNumber(asset.net_asset);
+    const liveTotals = livePortfolioTotals();
+    const marketValue = liveTotals ? liveTotals.marketValue : asset.market_value;
+    const positionProfit = liveTotals ? liveTotals.positionProfit : asset.position_profit;
+    const netAsset = liveTotals ? liveTotals.netAsset : asset.net_asset;
+    els.netAsset.textContent = formatNumber(netAsset);
     els.cashAvailable.textContent = formatNumber(asset.cash_available);
-    els.marketValue.textContent = formatNumber(asset.market_value);
+    els.marketValue.textContent = formatNumber(marketValue);
     els.dayProfit.textContent = formatSigned(asset.day_profit);
     els.dayProfit.className = Number(asset.day_profit) < 0 ? "down" : "up";
     els.cashTotal.textContent = formatNumber(asset.cash_total);
     els.stockValue.textContent = formatNumber(asset.stock_value);
     els.fundValue.textContent = formatNumber(asset.fund_value);
-    els.positionProfit.textContent = formatSigned(asset.position_profit);
-    els.positionProfit.className = Number(asset.position_profit) < 0 ? "down" : "up";
+    els.positionProfit.textContent = formatSigned(positionProfit);
+    els.positionProfit.className = Number(positionProfit) < 0 ? "down" : "up";
     els.closeProfit.textContent = formatSigned(asset.close_profit);
     els.closeProfit.className = Number(asset.close_profit) < 0 ? "down" : "up";
     els.commission.textContent = formatNumber(asset.commission);
@@ -1220,12 +1414,89 @@
   }
 
   function formatSigned(value) {
+    if (value === null || value === undefined || value === "") {
+      return "--";
+    }
     const number = Number(value);
     if (!Number.isFinite(number)) {
       return "--";
     }
     const prefix = number > 0 ? "+" : "";
     return prefix + formatNumber(number);
+  }
+
+  function quoteForPosition(position) {
+    const securityID = itemSecurityID(position);
+    if (!securityID) {
+      return null;
+    }
+    return state.positionQuotes.get(securityID) || null;
+  }
+
+  function finiteNumber(value) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function livePositionView(position) {
+    const quote = quoteForPosition(position);
+    const qty = finiteNumber(position.quantity);
+    const avgCost = finiteNumber(position.avg_cost);
+    const quotedLast = finiteNumber(quote && quote.last);
+    const ledgerLast = finiteNumber(position.last_price);
+    const price = quotedLast !== null && quotedLast > 0 ? quotedLast : ledgerLast;
+    const ledgerMarketValue = finiteNumber(position.market_value);
+    const marketValue = qty !== null && price !== null ? qty * price : ledgerMarketValue;
+    const costAmount = qty !== null && avgCost !== null ? qty * avgCost : null;
+    const ledgerPnl = finiteNumber(position.unrealized_pnl);
+    let pnl = ledgerPnl;
+    if (marketValue !== null && costAmount !== null) {
+      pnl = marketValue - costAmount;
+    }
+    let pnlRatio = null;
+    if (pnl !== null && costAmount !== null && costAmount !== 0) {
+      pnlRatio = pnl / costAmount * 100;
+    }
+    return {
+      quote,
+      quoteItem: quote || position,
+      price,
+      marketValue,
+      pnl,
+      pnlRatio
+    };
+  }
+
+  function livePortfolioTotals() {
+    const tradeDate = selectedAssetTradeDateSafe();
+    if (!isCurrentBusinessDate(tradeDate) ||
+      state.positionStatsDirty ||
+      state.allPositionsAccount !== state.activeAccount ||
+      state.allPositionsLoadedDate !== tradeDate) {
+      return null;
+    }
+    let marketValue = 0;
+    let positionProfit = 0;
+    for (const position of state.allPositions) {
+      const view = livePositionView(position);
+      const rowMarketValue = finiteNumber(view.marketValue);
+      const rowPnl = finiteNumber(view.pnl);
+      if (rowMarketValue !== null) {
+        marketValue += rowMarketValue;
+      }
+      if (rowPnl !== null) {
+        positionProfit += rowPnl;
+      }
+    }
+    const cashTotal = finiteNumber(state.asset && state.asset.cash_total);
+    return {
+      marketValue,
+      positionProfit,
+      netAsset: cashTotal !== null ? cashTotal + marketValue : (state.asset && state.asset.net_asset)
+    };
   }
 
   function renderPositions() {
@@ -1235,16 +1506,20 @@
       return;
     }
     els.positionsBody.innerHTML = state.positions.map((position) => {
-      const pnl = Number(position.unrealized_pnl || 0);
-      const pnlClass = pnl < 0 ? "down" : "up";
-      const pnlRatio = position.market_value ? pnl / Number(position.market_value) * 100 : 0;
+      const view = livePositionView(position);
+      const pnl = view.pnl;
+      const pnlClass = Number(pnl) < 0 ? "down" : "up";
+      const pnlRatio = view.pnlRatio;
+      const avgCost = finiteNumber(position.avg_cost);
+      const priceClass = view.price !== null && avgCost !== null && view.price < avgCost ? "down" : "up";
+      const pnlRatioText = pnlRatio === null ? "--" : formatSigned(pnlRatio) + "%";
       return `
         <tr>
           <td><span class="row-title"><strong>${escapeHTML(symbolText(position))}</strong><span>${escapeHTML(position.name || "")}</span></span></td>
           <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
-          <td class="num">${formatPrice(position.avg_cost, position)}<br><span class="${Number(position.last_price) < Number(position.avg_cost) ? "down" : "up"}">${formatPrice(position.last_price, position)}</span></td>
-          <td class="num">${formatNumber(position.market_value)}</td>
-          <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${formatSigned(pnlRatio)}%</td>
+          <td class="num">${formatPrice(position.avg_cost, view.quoteItem)}<br><span class="${priceClass}">${formatPrice(view.price, view.quoteItem)}</span></td>
+          <td class="num">${formatNumber(view.marketValue)}</td>
+          <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${pnlRatioText}</td>
           <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
         </tr>`;
     }).join("");
@@ -1867,6 +2142,7 @@
       syncBarsInputs(securityID, effectiveTradeDate);
       if (adopted.ledgerChanged && state.initialized && state.activeAccount) {
         resetLedgerPages();
+        resetPositionStats();
         loadAccountData().catch((err) => pushLog("warn", "交易日默认值刷新失败", err.message));
       }
       try {
@@ -2610,6 +2886,7 @@
     try {
       selectedAssetTradeDate();
       resetPage(state.positionsPage);
+      resetPositionStats();
       await loadPositionsOnly();
       showToast("资金持仓已更新");
     } catch (err) {
@@ -2677,6 +2954,12 @@
     } else {
       throw positionsResult.reason;
     }
+    try {
+      await refreshPositionStatsSource();
+    } catch (err) {
+      state.positionStatsDirty = true;
+      pushLog("warn", "全量持仓统计读取失败", err.message);
+    }
     renderMetrics();
     renderPositions();
     updateRisk();
@@ -2699,6 +2982,7 @@
       state.performanceLoaded = false;
       state.selectedOrderID = "";
       resetLedgerPages();
+      resetPositionStats();
       connectEventStream();
       await refreshNow();
       if (state.activeView === "trade") {
@@ -2903,7 +3187,7 @@
     window.setInterval(() => {
       loadQuoteForInput().catch((err) => pushLog("warn", "行情轮询失败", err.message));
     }, 5000);
-    window.addEventListener("beforeunload", closeEventStream);
+    window.addEventListener("beforeunload", closeTerminalStreams);
   }
 
   boot();

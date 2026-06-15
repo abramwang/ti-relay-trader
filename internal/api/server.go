@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -151,6 +152,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
 	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
+	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
 	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
@@ -320,6 +322,67 @@ func (s *Server) handleMeridianMarketBars(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.writeMeridianResponse(w, r, response, "meridian market request failed")
+}
+
+func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "streaming is not supported", nil)
+		return
+	}
+
+	response, err := s.market.MarketSnapshotStream(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_market_snapshot_stream_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian market stream request failed", err.Error())
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		code := httpx.CodeBadRequest
+		if response.StatusCode >= http.StatusInternalServerError {
+			code = httpx.CodeUnavailable
+		}
+		httpx.WriteError(w, r, response.StatusCode, code, "meridian market stream request failed", string(body))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+
+	reader := bufio.NewReader(response.Body)
+	for {
+		line, readErr := reader.ReadString('\n')
+		if line != "" {
+			if _, err := io.WriteString(w, line); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				s.logger.Warn("meridian_market_snapshot_stream_read_failed", "error", readErr)
+			}
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+		}
+	}
 }
 
 func (s *Server) writeMeridianResponse(w http.ResponseWriter, r *http.Request, response market.MeridianResponse, message string) {

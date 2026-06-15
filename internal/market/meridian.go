@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	instrumentsPath = "/v1/metadata/instruments"
-	barsPath        = "/v1/market/bars"
-	snapshotsPath   = "/v1/market/snapshots"
-	tradingDayPath  = "/v1/metadata/trading-day"
+	instrumentsPath    = "/v1/metadata/instruments"
+	barsPath           = "/v1/market/bars"
+	snapshotsPath      = "/v1/market/snapshots"
+	snapshotStreamPath = "/v1/stream/market/snapshots"
+	tradingDayPath     = "/v1/metadata/trading-day"
 )
 
 const (
@@ -36,6 +37,7 @@ type MeridianClient struct {
 	snapshotMarketLevel string
 	snapshotDataScope   string
 	httpClient          *http.Client
+	streamClient        *http.Client
 	now                 func() time.Time
 	barsGroup           singleflight.Group
 	cacheMu             sync.Mutex
@@ -79,6 +81,7 @@ func NewMeridianClient(cfg config.MarketConfig) (*MeridianClient, error) {
 		snapshotMarketLevel: marketLevel,
 		snapshotDataScope:   dataScope,
 		httpClient:          &http.Client{Timeout: timeout},
+		streamClient:        &http.Client{},
 		now:                 time.Now,
 		cache:               make(map[string]meridianCacheEntry),
 		barsCacheTTL:        marketBarsCacheTTL,
@@ -125,6 +128,36 @@ func (client *MeridianClient) MarketSnapshots(ctx context.Context, values url.Va
 		}
 	}
 	return response, nil
+}
+
+func (client *MeridianClient) MarketSnapshotStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	if client == nil {
+		return nil, errors.New("meridian client is nil")
+	}
+	query := cloneValues(values)
+	if strings.TrimSpace(query.Get("market_level")) == "" {
+		query.Set("market_level", client.snapshotMarketLevel)
+	}
+	if strings.TrimSpace(query.Get("include_existing")) == "" {
+		query.Set("include_existing", "true")
+	}
+	if strings.TrimSpace(query.Get("watch_interval_ms")) == "" {
+		query.Set("watch_interval_ms", "1000")
+	}
+	upstreamURL := client.baseURL + snapshotStreamPath
+	if encoded := query.Encode(); encoded != "" {
+		upstreamURL += "?" + encoded
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build meridian stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := client.streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("stream meridian snapshots: %w", err)
+	}
+	return resp, nil
 }
 
 func (client *MeridianClient) MetadataInstruments(ctx context.Context, values url.Values) (MeridianResponse, error) {

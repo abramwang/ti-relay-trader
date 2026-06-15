@@ -468,6 +468,43 @@ func TestMeridianMarketSnapshotsProxy(t *testing.T) {
 	}
 }
 
+func TestMeridianMarketSnapshotStreamProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/stream/market/snapshots" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("market_level") != "level1" {
+			t.Fatalf("market_level = %q", r.URL.Query().Get("market_level"))
+		}
+		if r.URL.Query().Get("include_existing") != "true" {
+			t.Fatalf("include_existing = %q", r.URL.Query().Get("include_existing"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: market_snapshots\n")
+		_, _ = io.WriteString(w, `data: {"data":[{"security_id":"600000.SH","last":9.66}]}`+"\n\n")
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/stream/market/snapshots?security_ids=600000.SH", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("content-type = %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), "event: market_snapshots") || !strings.Contains(rec.Body.String(), `"last":9.66`) {
+		t.Fatalf("response did not proxy sse payload: %s", rec.Body.String())
+	}
+}
+
 func TestEventsStreamPublishesSSE(t *testing.T) {
 	eventHub := events.NewHub()
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
