@@ -253,6 +253,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`，bars 同时使用 `data_scope=realtime`；只有非交易日才回退到最近交易日 historical。
 - [x] Meridian bars 代理新增短 TTL 缓存、同 key 并发请求合并和 stale fallback，降低读压下 `/v1/meridian/market/bars` 与绩效 `benchmark_security_id` 对上游的重复打穿。
 - [x] 新增 `GET /v1/meridian/stream/market/snapshots` 同源 SSE 薄代理，保留 Meridian `market_snapshots` 原始事件；`/trade` 当前交易日资金持仓会拉取全量持仓清单并按标的分片订阅 level1 SSE，用 Meridian `last` 实时计算现价、市值和全量浮动盈亏合计，历史日继续展示日终/历史账本字段。
+- [x] `/trade` 分页请求层增加非 JSON 响应保护，订单、成交和持仓分页失败时会展示具体请求路径、HTTP 状态和 content-type，并回滚 page/cursor，避免一次失败后分页状态错位。
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
@@ -410,3 +411,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 排查交易终端仍显示 `20260612` 行情：Meridian 交易日接口已确认 `20260615` 是交易日，但实时 snapshot/bars 不带当天过滤时会返回旧 Redis journal 的 `20260612` 数据；relay 已调整为交易日当天显式请求 `trade_date=当天`，bars 默认补 `data_scope=realtime`，避免交易终端误用旧行情。
 - `2026-06-15`: 跟进 `relay_sdk_019_trading_day_pressure` 报告：买卖双向交易主链路稳定，瓶颈集中在并发 bars/benchmark；relay 为 Meridian bars 代理增加 2 秒新鲜缓存、同 key singleflight 合并和 60 秒 stale fallback，并补并发合并与上游 5xx 回退单元测试。
 - `2026-06-15`: 新增 Meridian level1 snapshot SSE 同源代理 `/v1/meridian/stream/market/snapshots`，`/trade` 当前交易日资金持仓按全量持仓分片订阅行情流，实时刷新持仓现价、市值和全账户浮动盈亏合计；历史日期不使用实时行情重估。
+- `2026-06-15`: 排查 `/trade` 订单监控分页 `JSON Parse error: Unrecognized token '<'`：服务端订单/成交/持仓分页当前均返回 JSON，前端请求层已补非 JSON 响应诊断和分页失败状态回滚，后续若再遇到 HTML 错误页可直接看到具体 URL 与响应类型。

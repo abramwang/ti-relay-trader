@@ -202,7 +202,16 @@
     const text = await response.text();
     let payload = {};
     if (text) {
-      payload = JSON.parse(text);
+      try {
+        payload = JSON.parse(text);
+      } catch (err) {
+        const contentType = response.headers.get("content-type") || "unknown content-type";
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        const error = new Error((init.method || "GET") + " " + path + " 返回非 JSON：" + response.status + " " + contentType + (snippet ? "，响应片段：" + snippet : ""));
+        error.cause = err;
+        error.responseText = text;
+        throw error;
+      }
     }
     state.lastPayload = payload;
     if (!response.ok || payload.ok === false) {
@@ -2895,6 +2904,12 @@
   }
 
   async function gotoPage(page, direction, loader) {
+    const previousState = {
+      cursor: page.cursor,
+      previous: page.previous.slice(),
+      next: page.next,
+      page: page.page
+    };
     if (direction === "next") {
       if (!page.next) {
         return;
@@ -2914,6 +2929,15 @@
     try {
       await loader();
     } catch (err) {
+      page.cursor = previousState.cursor;
+      page.previous = previousState.previous;
+      page.next = previousState.next;
+      page.page = previousState.page;
+      if (page === state.positionsPage) {
+        renderPositionsPager();
+      } else {
+        renderBlotterPager();
+      }
       pushLog("error", "分页查询失败", err.message);
       showToast("分页查询失败：" + err.message, "error");
     }
