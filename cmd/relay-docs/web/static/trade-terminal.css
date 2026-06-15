@@ -177,6 +177,17 @@ button {
   background: #fff;
 }
 
+.account-tabs button.alias-edit {
+  min-width: 62px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.account-tabs button.alias-edit:hover {
+  color: var(--text);
+  background: #f8fafc;
+}
+
 .clock-block {
   flex-direction: column;
   align-items: flex-start;

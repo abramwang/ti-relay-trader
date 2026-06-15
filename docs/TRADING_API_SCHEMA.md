@@ -274,7 +274,8 @@ rejected
 | `GET` | `/healthz` | - | `StatusView` | 已有骨架 |
 | `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康、账户摘要、交易阶段和最近日流程任务状态 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
-| `GET` | `/v1/accounts` | - | `[]Account` | 已有配置态骨架 |
+| `GET` | `/v1/accounts` | - | `[]Account` | 已实现，配置账户列表并合并 PostgreSQL 账户别名 |
+| `PATCH` | `/v1/accounts/{account_id}/alias` | `{alias}` | `Account` | 已实现，写入 PostgreSQL `accounts.account_name` |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
 | `POST` | `/v1/accounts/{account_id}/asset/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，默认读取 PostgreSQL 当前持仓 |

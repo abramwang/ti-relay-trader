@@ -189,7 +189,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `config/relay.test.example.yaml` 和 `config/relay.prod.example.yaml`，测试/生产环境通过未跟踪配置文件和 `RELAY_CONFIG_PATH` 切换，生产模板默认关闭账户交易权限。
 - [x] 配置加载增加生产切换护栏：校验账户交易开关、生产模拟账户冲突和 Redis Stream 前缀与 `redis.env/broker/gateway` 一致性。
 - [x] 首页新增运行环境控制台，直观展示当前测试/生产环境、配置文件、Redis/数据库配置、账户路由、下单权限、自动刷新和切换 runbook 入口。
-- [x] 账户路由新增 `alias` 配置字段，`GET /v1/accounts` 返回账户别名，`/trade` 账户 tab、下单账户选择和绩效提示优先显示别名并保留账号。
+- [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
 - [x] 增加统一 JSON 响应 envelope 和标准错误码。
 - [x] 增加 API/worker 启动入口，API 模式已提供 `/healthz`、`/v1/status`、`/v1/accounts`。
@@ -315,7 +315,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 联调凭据只放本地配置或安全渠道，不写入仓库。
 - 测试/生产 Redis 不通过修改同一个配置文件来回切换；推荐使用未跟踪 `config/relay.test.yaml` 与 `config/relay.prod.yaml`，并通过 `RELAY_CONFIG_PATH` 选择。生产配置上线前必须先保持 `trading_enabled=false` 完成只读探测和 `/v1/status`、`/trade` 环境标识核对。
 - 2026-06-15 当前生产配置已加入账户 `501000114077`，保持 `trading_enabled=false` 且 `auto_refresh=false`；手动刷新接口可发布 `cmd.query`，订单/成交推送由 Redis `reply/event` 同步到账本和 SSE，交易写接口仍由账户交易权限拦截。
-- 账户别名只用于展示，不参与 Redis Stream 前缀、账本主键、下单幂等或权限判断；真实路由仍以 `account_id/broker_id/gateway_id/stream_prefix` 为准。
+- 账户别名只用于展示，不参与 Redis Stream 前缀、账本主键、下单幂等或权限判断；真实路由仍以 `account_id/broker_id/gateway_id/stream_prefix` 为准。配置 `accounts[].alias` 是默认值，交易终端修改后的别名写入 PostgreSQL `accounts.account_name` 并优先展示。
 - SDK 不参与测试/生产环境选择；SDK 只连接 `base_url`，实际后端是测试 Redis 还是生产 Redis 完全由 relay 服务端配置、账户路由和交易权限决定。
 - 当前测试/生产查询阶段仍使用同一 PostgreSQL DSN，账表主要按 `account_id` 区分。由于核心表尚未普遍把 `environment` 纳入唯一键，长期生产化建议改为生产/测试独立 DSN 或 schema；如果必须同库，需要补 migration 将 `environment` 纳入 accounts、orders、fills、asset/position snapshots 等核心账表约束。
 - 接口测试台当前可在 9092 文档门户同源发送 `/v1/*` 请求；资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接口需要启动时加载本地 PostgreSQL、测试 Redis 和账户路由配置。
@@ -431,4 +431,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 按用户给出的生产 Redis 凭据切入生产观察模式：生成未跟踪 `config/relay.prod.yaml`，账户路由为空、自动刷新关闭、下单权限未开放；只读扫描生产 Redis stream，识别前缀 `relay:prod:v1:huaxin:501000114077`，`cmd.trade/cmd.query` 为空且 `hb` 心跳正常。
 - `2026-06-15`: 按用户补充权限口径，将生产账户 `501000114077` 加入未跟踪 `config/relay.prod.yaml`，开启账户查询和订单/成交订阅，保持 `trading_enabled=false` 且 `auto_refresh=false`；交易终端环境 badge 改为服务端按当前环境直出。
 - `2026-06-15`: 明确 SDK 与环境切换解耦：SDK 只面向同一个 HTTP/SSE base URL，测试/生产由 relay 服务端配置控制；首页新增运行环境控制台，并记录当前数据库仍是同库按账户隔离，后续需做独立 DSN/schema 或环境维度 migration。
-- `2026-06-15`: 为多账户可读性新增账户别名：配置 `accounts[].alias`、`/v1/accounts.alias` 和 `/trade` 账户展示均已支持；当前生产账户 `501000114077` 本地别名设为 `生产查询账户`。
+- `2026-06-15`: 为多账户可读性新增账户别名：配置 `accounts[].alias`、`/v1/accounts.alias` 和 `/trade` 账户展示均已支持；当前生产账户 `501000114077` 配置默认别名为 `生产查询账户`。
+- `2026-06-15`: 账户别名从浏览器临时状态改为服务端持久化，新增 `PATCH /v1/accounts/{account_id}/alias`，写入 PostgreSQL `accounts.account_name`；`GET /v1/accounts` 会用落库别名覆盖配置默认值。

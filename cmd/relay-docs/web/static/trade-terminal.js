@@ -1554,10 +1554,19 @@
       option.selected = account.account_id === state.activeAccount;
       els.orderAccount.appendChild(option);
     }
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "alias-edit";
+    editButton.textContent = "别名";
+    editButton.title = "编辑当前账户的服务端显示别名";
+    editButton.disabled = !state.activeAccount;
+    editButton.addEventListener("click", editActiveAccountAlias);
+    els.accountTabs.appendChild(editButton);
   }
 
   function accountLabel(account) {
-    return String(account && account.alias || account && account.account_id || "未命名账户").trim();
+    const accountID = account && account.account_id ? String(account.account_id) : "";
+    return String(account && account.alias || accountID || "未命名账户").trim();
   }
 
   function accountSuffix(account) {
@@ -1577,6 +1586,39 @@
   function activeAccountLabel() {
     const account = state.accounts.find((item) => item.account_id === state.activeAccount);
     return account ? accountLabel(account) : state.activeAccount;
+  }
+
+  async function editActiveAccountAlias() {
+    const account = state.accounts.find((item) => item.account_id === state.activeAccount);
+    if (!account) {
+      showToast("请先选择账户", "error");
+      return;
+    }
+    const current = accountLabel(account) === account.account_id ? "" : accountLabel(account);
+    const next = window.prompt("账户别名：" + account.account_id + "\n留空则恢复配置默认别名", current);
+    if (next === null) {
+      return;
+    }
+    const alias = String(next).trim().slice(0, 24);
+    try {
+      const data = await request("/v1/accounts/" + encodeURIComponent(account.account_id) + "/alias", {
+        method: "PATCH",
+        body: { alias }
+      });
+      const updated = data.account || {};
+      state.accounts = state.accounts.map((item) => {
+        if (item.account_id !== account.account_id) {
+          return item;
+        }
+        return Object.assign({}, item, { alias: updated.alias || "" });
+      });
+      renderAccounts();
+      renderPerformance();
+      showToast(alias ? "账户别名已保存" : "已恢复配置默认别名");
+    } catch (err) {
+      pushLog("error", "账户别名保存失败", err.message);
+      showToast("账户别名保存失败：" + err.message, "error");
+    }
   }
 
   function renderMetrics() {

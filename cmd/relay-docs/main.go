@@ -346,6 +346,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		Orders:       orders,
 		Jobs:         repo,
 		Settlements:  repo,
+		Accounts:     repo,
 		DatabasePing: db.PingContext,
 	}
 	if redisPublisher != nil {

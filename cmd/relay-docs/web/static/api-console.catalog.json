@@ -4,6 +4,18 @@
   { "id": "schema", "group": "基础", "title": "Schema 发现", "method": "GET", "path": "/v1/schema", "status": "ready", "fields": [] },
   { "id": "accounts", "group": "账户", "title": "账户列表", "method": "GET", "path": "/v1/accounts", "status": "ready", "fields": [] },
   {
+    "id": "account-alias",
+    "group": "账户",
+    "title": "账户别名更新",
+    "method": "PATCH",
+    "path": "/v1/accounts/{account_id}/alias",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "alias", "label": "alias", "source": "body", "defaultValue": "测试账户" }
+    ]
+  },
+  {
     "id": "asset",
     "group": "账户",
     "title": "资金查询",

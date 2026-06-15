@@ -218,6 +218,91 @@ func TestAccountsFromConfig(t *testing.T) {
 	}
 }
 
+func TestAccountsPreferDatabaseAlias(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{
+			AccountID:      "acct-1",
+			Alias:          "配置别名",
+			BrokerID:       "huaxin",
+			GatewayID:      "gw-1",
+			StreamPrefix:   "relay:test:v1:huaxin:gw-1",
+			Enabled:        true,
+			TradingEnabled: false,
+			Simulated:      false,
+		},
+	}
+	store := &fakeAccountAliasStore{aliases: map[string]string{"acct-1": "落库别名"}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Accounts: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Source   string        `json:"source"`
+			Accounts []AccountView `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode accounts: %v", err)
+	}
+	if envelope.Data.Source != "config+database" {
+		t.Fatalf("source = %q", envelope.Data.Source)
+	}
+	if len(envelope.Data.Accounts) != 1 || envelope.Data.Accounts[0].Alias != "落库别名" {
+		t.Fatalf("accounts = %#v", envelope.Data.Accounts)
+	}
+	if len(store.aliasIDs) != 1 || store.aliasIDs[0] != "acct-1" {
+		t.Fatalf("alias ids = %#v", store.aliasIDs)
+	}
+}
+
+func TestUpdateAccountAliasPersistsToStore(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{
+			AccountID: "acct-1",
+			Alias:     "配置别名",
+			BrokerID:  "huaxin",
+			GatewayID: "gw-1",
+			Enabled:   true,
+		},
+	}
+	store := &fakeAccountAliasStore{}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Accounts: store,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/v1/accounts/acct-1/alias", strings.NewReader(`{"alias":"生产一号"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if store.savedAccountID != "acct-1" || store.savedBrokerID != "huaxin" || store.savedAlias != "生产一号" {
+		t.Fatalf("saved alias = account:%q broker:%q alias:%q", store.savedAccountID, store.savedBrokerID, store.savedAlias)
+	}
+	var envelope struct {
+		Data struct {
+			Account AccountView `json:"account"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode account alias: %v", err)
+	}
+	if envelope.Data.Account.Alias != "生产一号" {
+		t.Fatalf("alias = %q", envelope.Data.Account.Alias)
+	}
+}
+
 func TestAccountAsset(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		assetResult: orderflow.GetAssetResult{
@@ -1370,6 +1455,15 @@ type fakeJobRunStore struct {
 	err   error
 }
 
+type fakeAccountAliasStore struct {
+	aliases        map[string]string
+	aliasIDs       []string
+	savedAccountID string
+	savedBrokerID  string
+	savedAlias     string
+	err            error
+}
+
 type fakeSettlementStore struct {
 	assetSnapshots []struct {
 		asset        trading.Asset
@@ -1393,6 +1487,32 @@ type fakeSettlementStore struct {
 	performanceSeriesDateFrom  string
 	performanceSeriesDateTo    string
 	err                        error
+}
+
+func (store *fakeAccountAliasStore) AccountAliases(_ context.Context, accountIDs []string) (map[string]string, error) {
+	if store.err != nil {
+		return nil, store.err
+	}
+	store.aliasIDs = append([]string(nil), accountIDs...)
+	aliases := make(map[string]string, len(store.aliases))
+	for accountID, alias := range store.aliases {
+		aliases[accountID] = alias
+	}
+	return aliases, nil
+}
+
+func (store *fakeAccountAliasStore) UpsertAccountAlias(_ context.Context, accountID string, brokerID string, alias string) error {
+	if store.err != nil {
+		return store.err
+	}
+	store.savedAccountID = accountID
+	store.savedBrokerID = brokerID
+	store.savedAlias = alias
+	if store.aliases == nil {
+		store.aliases = map[string]string{}
+	}
+	store.aliases[accountID] = alias
+	return nil
 }
 
 func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, _ any, _ time.Time) error {

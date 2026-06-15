@@ -23,6 +23,24 @@ ON CONFLICT (account_id) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
 `
 
+const upsertAccountAliasSQL = `
+INSERT INTO accounts (
+    account_id,
+    broker_id,
+    account_name,
+    status,
+    enabled,
+    trading_enabled,
+    simulated,
+    updated_at
+) VALUES (
+    $1, $2, $3, 'readonly', TRUE, FALSE, FALSE, $4
+)
+ON CONFLICT (account_id) DO UPDATE SET
+    account_name = EXCLUDED.account_name,
+    updated_at = EXCLUDED.updated_at
+`
+
 const upsertOrderSQL = `
 INSERT INTO orders (
     account_id,

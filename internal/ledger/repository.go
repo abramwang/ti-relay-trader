@@ -229,6 +229,82 @@ func (repo *Repository) UpsertAccount(ctx context.Context, account trading.Accou
 	return nil
 }
 
+func (repo *Repository) UpsertAccountAlias(ctx context.Context, accountID string, brokerID string, alias string) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	brokerID = strings.TrimSpace(brokerID)
+	alias = strings.TrimSpace(alias)
+	if accountID == "" {
+		return fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if brokerID == "" {
+		return fmt.Errorf("%w: broker_id is required", ErrInvalidLedgerInput)
+	}
+	if _, err := repo.exec.ExecContext(ctx, upsertAccountAliasSQL, accountID, brokerID, alias, repo.now()); err != nil {
+		return fmt.Errorf("upsert account alias %s: %w", accountID, err)
+	}
+	return nil
+}
+
+func (repo *Repository) AccountAliases(ctx context.Context, accountIDs []string) (map[string]string, error) {
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	cleaned := make([]string, 0, len(accountIDs))
+	seen := make(map[string]struct{}, len(accountIDs))
+	for _, accountID := range accountIDs {
+		accountID = strings.TrimSpace(accountID)
+		if accountID == "" {
+			continue
+		}
+		if _, ok := seen[accountID]; ok {
+			continue
+		}
+		seen[accountID] = struct{}{}
+		cleaned = append(cleaned, accountID)
+	}
+	if len(cleaned) == 0 {
+		return map[string]string{}, nil
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString("SELECT account_id, account_name FROM accounts WHERE account_id IN (")
+	args := make([]any, 0, len(cleaned))
+	for i, accountID := range cleaned {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+		args = append(args, accountID)
+		builder.WriteString(fmt.Sprintf("$%d", len(args)))
+	}
+	builder.WriteString(")")
+
+	rows, err := queryer.QueryContext(ctx, builder.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("query account aliases: %w", err)
+	}
+	defer rows.Close()
+
+	aliases := make(map[string]string, len(cleaned))
+	for rows.Next() {
+		var accountID string
+		var alias string
+		if err := rows.Scan(&accountID, &alias); err != nil {
+			return nil, fmt.Errorf("scan account alias: %w", err)
+		}
+		if strings.TrimSpace(alias) != "" {
+			aliases[accountID] = strings.TrimSpace(alias)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("account alias rows: %w", err)
+	}
+	return aliases, nil
+}
+
 func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -1268,6 +1344,9 @@ func (repo *Repository) RawStreamSummary(ctx context.Context, accountID string, 
 }
 
 func (repo *Repository) queryer() (Queryer, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
 	queryer, ok := repo.exec.(Queryer)
 	if !ok {
 		return nil, fmt.Errorf("%w: repository executor does not support queries", ErrInvalidLedgerInput)

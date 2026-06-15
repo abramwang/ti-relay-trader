@@ -29,6 +29,7 @@ type Dependencies struct {
 	Orders       OrderService
 	Jobs         JobRunStore
 	Settlements  SettlementStore
+	Accounts     AccountAliasStore
 	Market       *market.MeridianClient
 	Events       *events.Hub
 	DatabasePing HealthCheckFunc
@@ -68,6 +69,11 @@ type SettlementStore interface {
 	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
 }
 
+type AccountAliasStore interface {
+	AccountAliases(ctx context.Context, accountIDs []string) (map[string]string, error)
+	UpsertAccountAlias(ctx context.Context, accountID string, brokerID string, alias string) error
+}
+
 type PerformanceSeriesSummary struct {
 	AccountID                string   `json:"account_id"`
 	DateFrom                 string   `json:"date_from"`
@@ -98,6 +104,7 @@ type Server struct {
 	orders  OrderService
 	jobs    JobRunStore
 	settles SettlementStore
+	aliases AccountAliasStore
 	market  *market.MeridianClient
 	events  *events.Hub
 	health  statusHealthChecks
@@ -132,6 +139,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		orders:  deps.Orders,
 		jobs:    deps.Jobs,
 		settles: deps.Settlements,
+		aliases: deps.Accounts,
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
@@ -430,11 +438,33 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accountIDs := make([]string, 0, len(s.cfg.Accounts))
+	for _, account := range s.cfg.Accounts {
+		accountIDs = append(accountIDs, account.AccountID)
+	}
+	aliasOverrides := map[string]string{}
+	source := "config"
+	if s.aliases != nil {
+		aliases, err := s.aliases.AccountAliases(r.Context(), accountIDs)
+		if err != nil {
+			s.logger.Warn("account_alias_lookup_failed", "error", err)
+		} else {
+			aliasOverrides = aliases
+			if len(aliases) > 0 {
+				source = "config+database"
+			}
+		}
+	}
+
 	accounts := make([]AccountView, 0, len(s.cfg.Accounts))
 	for _, account := range s.cfg.Accounts {
+		alias := strings.TrimSpace(account.Alias)
+		if override := strings.TrimSpace(aliasOverrides[account.AccountID]); override != "" {
+			alias = override
+		}
 		accounts = append(accounts, AccountView{
 			AccountID:      account.AccountID,
-			Alias:          account.Alias,
+			Alias:          alias,
 			BrokerID:       account.BrokerID,
 			GatewayID:      account.GatewayID,
 			Enabled:        account.Enabled,
@@ -444,7 +474,7 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
-		"source":   "config",
+		"source":   source,
 		"accounts": accounts,
 	})
 }
@@ -463,6 +493,16 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[1] {
+	case "alias":
+		if len(parts) != 2 {
+			httpx.WriteNotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPatch {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPatch)
+			return
+		}
+		s.handleAccountAlias(w, r, accountID)
 	case "asset":
 		if len(parts) == 3 {
 			if parts[2] != "refresh" {
@@ -549,6 +589,52 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpx.WriteNotFound(w, r)
 	}
+}
+
+func (s *Server) handleAccountAlias(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.aliases == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "account alias store is unavailable", nil)
+		return
+	}
+	account, ok := s.cfg.AccountRoute(accountID)
+	if !ok {
+		httpx.WriteNotFound(w, r)
+		return
+	}
+
+	defer r.Body.Close()
+	var req AccountAliasRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid request body", err.Error())
+		return
+	}
+	alias := strings.TrimSpace(req.Alias)
+	if len([]rune(alias)) > 24 {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "alias must be 24 characters or fewer", nil)
+		return
+	}
+
+	if err := s.aliases.UpsertAccountAlias(r.Context(), account.AccountID, account.BrokerID, alias); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "update account alias failed", err.Error())
+		return
+	}
+	effectiveAlias := alias
+	if effectiveAlias == "" {
+		effectiveAlias = strings.TrimSpace(account.Alias)
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"account": AccountView{
+			AccountID:      account.AccountID,
+			Alias:          effectiveAlias,
+			BrokerID:       account.BrokerID,
+			GatewayID:      account.GatewayID,
+			Enabled:        account.Enabled,
+			TradingEnabled: account.TradingEnabled,
+			Simulated:      account.Simulated,
+		},
+	})
 }
 
 func (s *Server) handleOrders(w http.ResponseWriter, r *http.Request) {
@@ -2045,6 +2131,10 @@ type AccountView struct {
 	Enabled        bool   `json:"enabled"`
 	TradingEnabled bool   `json:"trading_enabled"`
 	Simulated      bool   `json:"simulated"`
+}
+
+type AccountAliasRequest struct {
+	Alias string `json:"alias"`
 }
 
 type JobRunRequest struct {

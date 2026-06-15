@@ -39,6 +39,26 @@ func TestUpsertAccountBuildsAccountWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[6], `"desk":"live"`)
 }
 
+func TestUpsertAccountAliasBuildsAliasWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	repo.now = func() time.Time { return time.Unix(1700000000, 0).UTC() }
+
+	err := repo.UpsertAccountAlias(context.Background(), " acct-1 ", " huaxin ", " 生产一号 ")
+	if err != nil {
+		t.Fatalf("UpsertAccountAlias() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO accounts")
+	requireQueryContains(t, exec.query, "account_name")
+	requireQueryContains(t, exec.query, "ON CONFLICT (account_id) DO UPDATE SET")
+	requireQueryContains(t, exec.query, "account_name = EXCLUDED.account_name")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[0] != "acct-1" || exec.args[1] != "huaxin" || exec.args[2] != "生产一号" {
+		t.Fatalf("alias args = %#v", exec.args)
+	}
+}
+
 func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)
