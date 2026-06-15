@@ -456,7 +456,7 @@ func TestRefreshAccountOrders(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/orders/refresh", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/orders/refresh?trade_date=20260615", nil)
 	req.Header.Set("X-Request-ID", "req-refresh-orders")
 	rec := httptest.NewRecorder()
 
@@ -467,6 +467,9 @@ func TestRefreshAccountOrders(t *testing.T) {
 	}
 	if service.refreshOrdersAccountID != "acct-1" || service.refreshOrdersRequestID != "req-refresh-orders" {
 		t.Fatalf("refresh orders call = %q/%q", service.refreshOrdersAccountID, service.refreshOrdersRequestID)
+	}
+	if service.refreshOrdersTradeDate != "20260615" {
+		t.Fatalf("refresh orders trade_date = %q", service.refreshOrdersTradeDate)
 	}
 	if !strings.Contains(rec.Body.String(), redisstream.ActionOrderList) {
 		t.Fatalf("response missing action: %s", rec.Body.String())
@@ -486,7 +489,7 @@ func TestRefreshAccountFills(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/fills/refresh", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/fills/refresh?trade_date=2026-06-15", nil)
 	req.Header.Set("X-Request-ID", "req-refresh-fills")
 	rec := httptest.NewRecorder()
 
@@ -497,6 +500,9 @@ func TestRefreshAccountFills(t *testing.T) {
 	}
 	if service.refreshFillsAccountID != "acct-1" || service.refreshFillsRequestID != "req-refresh-fills" {
 		t.Fatalf("refresh fills call = %q/%q", service.refreshFillsAccountID, service.refreshFillsRequestID)
+	}
+	if service.refreshFillsTradeDate != "20260615" {
+		t.Fatalf("refresh fills trade_date = %q", service.refreshFillsTradeDate)
 	}
 	if !strings.Contains(rec.Body.String(), redisstream.ActionFillList) {
 		t.Fatalf("response missing action: %s", rec.Body.String())
@@ -1441,10 +1447,12 @@ type fakeOrderSubmitter struct {
 	refreshPositionsErr       error
 	refreshOrdersAccountID    string
 	refreshOrdersRequestID    string
+	refreshOrdersTradeDate    string
 	refreshOrdersResult       orderflow.RefreshQueryResult
 	refreshOrdersErr          error
 	refreshFillsAccountID     string
 	refreshFillsRequestID     string
+	refreshFillsTradeDate     string
 	refreshFillsResult        orderflow.RefreshQueryResult
 	refreshFillsErr           error
 }
@@ -1708,6 +1716,7 @@ func (submitter *fakeOrderSubmitter) RefreshPositions(_ context.Context, account
 func (submitter *fakeOrderSubmitter) RefreshOrders(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
 	submitter.refreshOrdersAccountID = accountID
 	submitter.refreshOrdersRequestID = opts.RequestID
+	submitter.refreshOrdersTradeDate = opts.TradeDate
 	if submitter.refreshOrdersErr != nil {
 		return orderflow.RefreshQueryResult{}, submitter.refreshOrdersErr
 	}
@@ -1717,6 +1726,7 @@ func (submitter *fakeOrderSubmitter) RefreshOrders(_ context.Context, accountID 
 func (submitter *fakeOrderSubmitter) RefreshFills(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
 	submitter.refreshFillsAccountID = accountID
 	submitter.refreshFillsRequestID = opts.RequestID
+	submitter.refreshFillsTradeDate = opts.TradeDate
 	if submitter.refreshFillsErr != nil {
 		return orderflow.RefreshQueryResult{}, submitter.refreshFillsErr
 	}

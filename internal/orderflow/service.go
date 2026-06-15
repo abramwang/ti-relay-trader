@@ -90,6 +90,7 @@ type CancelOptions struct {
 
 type RefreshOptions struct {
 	RequestID string
+	TradeDate string
 }
 
 type SubmitOrderResult struct {
@@ -672,6 +673,9 @@ func (service *Service) publishAccountQuery(ctx context.Context, accountID strin
 	}
 
 	payload := map[string]string{"account_id": accountID}
+	if tradeDate := strings.TrimSpace(opts.TradeDate); tradeDate != "" {
+		payload["trade_date"] = tradeDate
+	}
 	streamKey, err := redisstream.CommandStreamForAction(redisstream.NewStreams(route.StreamPrefix), action)
 	if err != nil {
 		return RefreshQueryResult{}, err

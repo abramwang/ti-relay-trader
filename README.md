@@ -437,3 +437,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: `/trade` 持仓、委托和成交表格新增独立“证券名称”列，前端通过 Meridian `metadata/instruments?security_ids=...` 批量补齐名称和 `instrument_type`，继续遵循 Meridian 字段标准，不在 relay 自建证券主数据。
 - `2026-06-15`: 优化 `/trade` 右下角 toast，从常驻提示改为新消息短暂弹出后自动隐藏，避免遮挡订单监控和资金持仓分页按钮。
 - `2026-06-15`: 按用户授权开放生产环境两个账户的订单查询和下单权限：未跟踪 `config/relay.prod.yaml` 中账户级 `trading_enabled=true`，9092 已重启；`/v1/status` 显示 production、enabled 2、trading_enabled 2、simulated 0。
+- `2026-06-15`: 排查生产账户 `314000046830` 当日成交为空：relay 手动触发 `order.list.query/fill.list.query` 后生产前置均返回 `completed + items=0`，Redis 仅存在 `cmd.query/reply/hb` 且无 `event` stream，本地账本全历史 `orders/fills=0`；relay 已补充 refresh 接口 `trade_date` 透传，带 `20260615` 再测前置仍返回空页，下一步需前置/券商侧确认该账户成交查询源。

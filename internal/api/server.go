@@ -1292,9 +1292,12 @@ func (s *Server) handleRefreshAsset(w http.ResponseWriter, r *http.Request, acco
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	result, err := s.orders.RefreshAsset(r.Context(), accountID, orderflow.RefreshOptions{
-		RequestID: httpx.RequestID(r),
-	})
+	opts, err := refreshOptionsFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid refresh query", err.Error())
+		return
+	}
+	result, err := s.orders.RefreshAsset(r.Context(), accountID, opts)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
@@ -1307,9 +1310,12 @@ func (s *Server) handleRefreshPositions(w http.ResponseWriter, r *http.Request, 
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	result, err := s.orders.RefreshPositions(r.Context(), accountID, orderflow.RefreshOptions{
-		RequestID: httpx.RequestID(r),
-	})
+	opts, err := refreshOptionsFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid refresh query", err.Error())
+		return
+	}
+	result, err := s.orders.RefreshPositions(r.Context(), accountID, opts)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
@@ -1322,9 +1328,12 @@ func (s *Server) handleRefreshOrders(w http.ResponseWriter, r *http.Request, acc
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	result, err := s.orders.RefreshOrders(r.Context(), accountID, orderflow.RefreshOptions{
-		RequestID: httpx.RequestID(r),
-	})
+	opts, err := refreshOptionsFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid refresh query", err.Error())
+		return
+	}
+	result, err := s.orders.RefreshOrders(r.Context(), accountID, opts)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
@@ -1337,14 +1346,31 @@ func (s *Server) handleRefreshFills(w http.ResponseWriter, r *http.Request, acco
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
-	result, err := s.orders.RefreshFills(r.Context(), accountID, orderflow.RefreshOptions{
-		RequestID: httpx.RequestID(r),
-	})
+	opts, err := refreshOptionsFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid refresh query", err.Error())
+		return
+	}
+	result, err := s.orders.RefreshFills(r.Context(), accountID, opts)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func refreshOptionsFromRequest(r *http.Request) (orderflow.RefreshOptions, error) {
+	opts := orderflow.RefreshOptions{RequestID: httpx.RequestID(r)}
+	rawTradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if rawTradeDate == "" {
+		return opts, nil
+	}
+	normalized, err := normalizeAPIDate(rawTradeDate)
+	if err != nil {
+		return orderflow.RefreshOptions{}, err
+	}
+	opts.TradeDate = strings.ReplaceAll(normalized, "-", "")
+	return opts, nil
 }
 
 func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {

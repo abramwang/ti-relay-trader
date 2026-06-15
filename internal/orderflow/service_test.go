@@ -659,6 +659,39 @@ func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 	}
 }
 
+func TestRefreshQueryIncludesTradeDate(t *testing.T) {
+	ledgerWriter := &fakeLedger{}
+	publisher := &fakePublisher{streamID: "1777100000300-0"}
+	service, err := New(Options{
+		Config:    testConfig(true, false),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"msg-fills-1"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = service.RefreshFills(context.Background(), "acct-1", RefreshOptions{
+		RequestID: "req-fills",
+		TradeDate: "20260615",
+	})
+	if err != nil {
+		t.Fatalf("RefreshFills() error = %v", err)
+	}
+	if len(publisher.commands) != 1 {
+		t.Fatalf("commands = %#v", publisher.commands)
+	}
+	payload, ok := publisher.commands[0].envelope.Payload.(map[string]string)
+	if !ok {
+		t.Fatalf("payload type = %T", publisher.commands[0].envelope.Payload)
+	}
+	if payload["account_id"] != "acct-1" || payload["trade_date"] != "20260615" {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func validSubmitRequest() trading.SubmitOrderRequest {
 	return trading.SubmitOrderRequest{
 		AccountID:    "acct-1",

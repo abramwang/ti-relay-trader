@@ -3282,7 +3282,10 @@
     if (!state.activeAccount) {
       return;
     }
-    const path = "/v1/accounts/" + encodeURIComponent(state.activeAccount) + "/" + kind + "/refresh";
+    let path = "/v1/accounts/" + encodeURIComponent(state.activeAccount) + "/" + kind + "/refresh";
+    if (kind === "orders" || kind === "fills") {
+      path += "?trade_date=" + encodeURIComponent(selectedOrdersTradeDateSafe());
+    }
     const labels = {
       asset: "资金",
       positions: "持仓",
