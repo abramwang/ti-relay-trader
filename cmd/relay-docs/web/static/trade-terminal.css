@@ -916,6 +916,17 @@ td {
   color: var(--muted);
 }
 
+.security-name {
+  min-width: 88px;
+  max-width: 160px;
+  overflow: hidden;
+  color: #344054;
+  font-family: inherit;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .row-title {
   display: grid;
   gap: 2px;

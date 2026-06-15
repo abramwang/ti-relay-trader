@@ -30,6 +30,8 @@
     marketSnapshot: null,
     symbolSuggestions: [],
     instrumentCache: new Map(),
+    instrumentBySecurityID: new Map(),
+    instrumentMisses: new Set(),
     activeSuggestion: -1,
     suggestionSeq: 0,
     quoteSeq: 0,
@@ -410,18 +412,42 @@
       return item.instrument_type;
     }
     const securityID = itemSecurityID(item);
+    const instrument = instrumentForSecurityID(securityID);
+    if (instrument && instrument.instrument_type) {
+      return instrument.instrument_type;
+    }
     if (securityID && state.marketSnapshot && state.marketSnapshot.security_id === securityID) {
       return state.marketSnapshot.instrument_type || "";
     }
-    if (securityID) {
-      for (const instruments of state.instrumentCache.values()) {
-        const match = instruments.find((instrument) => instrument.security_id === securityID);
-        if (match) {
-          return match.instrument_type || "";
-        }
-      }
-    }
     return "";
+  }
+
+  function instrumentForSecurityID(securityID) {
+    const normalized = normalizeSecurityID(securityID);
+    if (!normalized) {
+      return null;
+    }
+    return state.instrumentBySecurityID.get(normalized) || null;
+  }
+
+  function registerInstrument(instrument) {
+    if (!instrument) {
+      return null;
+    }
+    const securityID = normalizeSecurityID(instrument.security_id || "");
+    if (!securityID) {
+      return null;
+    }
+    const parsed = splitSecurityID(securityID);
+    const normalized = Object.assign({}, instrument, {
+      security_id: securityID,
+      symbol: instrument.symbol || parsed.symbol,
+      exchange: instrument.exchange || parsed.exchange,
+      name: instrument.name || ""
+    });
+    state.instrumentBySecurityID.set(securityID, normalized);
+    state.instrumentMisses.delete(securityID);
+    return normalized;
   }
 
   function itemSecurityID(item) {
@@ -485,7 +511,28 @@
     if (!item) {
       return "--";
     }
+    const securityID = itemSecurityID(item);
+    if (securityID) {
+      return securityID;
+    }
     return item.symbol + (item.exchange ? "." + item.exchange : "");
+  }
+
+  function securityNameText(item, fallback) {
+    const name = String(item && item.name || "").trim();
+    if (name) {
+      return name;
+    }
+    const instrument = instrumentForSecurityID(itemSecurityID(item));
+    if (instrument && instrument.name) {
+      return instrument.name;
+    }
+    const fallbackName = String(fallback && fallback.name || "").trim();
+    if (fallbackName) {
+      return fallbackName;
+    }
+    const fallbackInstrument = instrumentForSecurityID(itemSecurityID(fallback));
+    return fallbackInstrument && fallbackInstrument.name ? fallbackInstrument.name : "--";
   }
 
   function normalizeSymbol(value) {
@@ -835,6 +882,49 @@
     return ids;
   }
 
+  async function ensureInstrumentsForItems(items) {
+    const ids = [];
+    const seen = new Set();
+    for (const item of items || []) {
+      const securityID = itemSecurityID(item);
+      if (!securityID || seen.has(securityID)) {
+        continue;
+      }
+      seen.add(securityID);
+      if (!instrumentForSecurityID(securityID) && !state.instrumentMisses.has(securityID)) {
+        ids.push(securityID);
+      }
+    }
+    if (ids.length === 0) {
+      return;
+    }
+    const chunkSize = 100;
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      const chunk = ids.slice(offset, offset + chunkSize);
+      const params = new URLSearchParams({
+        security_ids: chunk.join(","),
+        limit: String(Math.max(chunk.length, 100))
+      });
+      const data = await request("/v1/meridian/metadata/instruments?" + params.toString());
+      if (data.error) {
+        throw new Error(data.error.message || data.error.code || "Meridian metadata error");
+      }
+      const rows = Array.isArray(data.data) ? data.data : [];
+      const found = new Set();
+      for (const row of rows) {
+        const instrument = registerInstrument(row);
+        if (instrument) {
+          found.add(instrument.security_id);
+        }
+      }
+      for (const securityID of chunk) {
+        if (!found.has(securityID)) {
+          state.instrumentMisses.add(securityID);
+        }
+      }
+    }
+  }
+
   function refreshPositionQuoteStreams() {
     const tradeDate = selectedAssetTradeDateSafe();
     if (!window.EventSource || !state.activeAccount || !isCurrentBusinessDate(tradeDate)) {
@@ -899,6 +989,7 @@
       if (!securityID) {
         continue;
       }
+      registerInstrument(row);
       state.positionQuotes.set(securityID, row);
       changed = true;
     }
@@ -1095,6 +1186,7 @@
       state.metricFillsDirty = true;
       pushLog("warn", "成交费用统计读取失败", err.message);
     }
+    await enrichVisibleLedgerInstruments();
 
     renderAll();
   }
@@ -1320,6 +1412,18 @@
     return request(path + "?" + params.toString());
   }
 
+  async function enrichVisibleLedgerInstruments() {
+    try {
+      await ensureInstrumentsForItems([
+        ...state.positions,
+        ...state.orders,
+        ...state.fills
+      ]);
+    } catch (err) {
+      pushLog("warn", "证券名称补齐失败", err.message);
+    }
+  }
+
   async function loadQuoteForInput(options = {}) {
     const securityID = options.securityID || currentSecurityID();
     if (!securityID) {
@@ -1344,6 +1448,7 @@
       }
       const items = Array.isArray(data.data) ? data.data : [];
       state.marketSnapshot = items[0] || null;
+      registerInstrument(state.marketSnapshot);
       const adopted = maybeAdoptMarketDefaultDate(state.marketSnapshot && state.marketSnapshot.trade_date, "snapshot");
       renderQuote();
       renderDepthBook();
@@ -1418,11 +1523,13 @@
         const items = Array.isArray(data.data) ? data.data : [];
         pages.push(...items.map((item) => {
           const parsed = splitSecurityID(item.security_id || "");
-          return {
+          const instrument = {
             ...item,
             symbol: parsed.symbol,
             exchange: parsed.exchange
           };
+          registerInstrument(instrument);
+          return instrument;
         }));
         cursor = data.meta && data.meta.next_cursor ? String(data.meta.next_cursor) : "";
         if (!cursor) {
@@ -1834,7 +1941,7 @@
 
   function renderPositions() {
     if (state.positions.length === 0) {
-      els.positionsBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+      els.positionsBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
       renderPositionsPager();
       return;
     }
@@ -1848,7 +1955,8 @@
       const pnlRatioText = pnlRatio === null ? "--" : formatSigned(pnlRatio) + "%";
       return `
         <tr>
-          <td><span class="row-title"><strong>${escapeHTML(symbolText(position))}</strong><span>${escapeHTML(position.name || "")}</span></span></td>
+          <td>${escapeHTML(symbolText(position))}</td>
+          <td class="security-name">${escapeHTML(securityNameText(position))}</td>
           <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
           <td class="num">${formatPrice(position.avg_cost, view.quoteItem)}<br><span class="${priceClass}">${formatPrice(view.price, view.quoteItem)}</span></td>
           <td class="num">${formatNumber(view.marketValue)}</td>
@@ -1935,6 +2043,7 @@
           <tr>
             <th>ReqID</th>
             <th>代码</th>
+            <th>证券名称</th>
             <th>方向</th>
             <th class="num">委托价格</th>
             <th class="num">委托/成交</th>
@@ -1958,6 +2067,7 @@
               <tr class="${className}" data-order-id="${escapeHTML(id)}">
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
                 <td>${escapeHTML(symbolText(order))}</td>
+                <td class="security-name">${escapeHTML(securityNameText(order))}</td>
                 <td class="${order.trade_side === "S" ? "down" : "up"}">${sideText(order.trade_side)}</td>
                 <td class="num">${formatPrice(order.limit_price, order)}</td>
                 <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
@@ -2021,6 +2131,7 @@
             <th>ReqID</th>
             <th>柜台/交易所</th>
             <th>代码</th>
+            <th>证券名称</th>
             <th>方向</th>
             <th class="num">成交价格</th>
             <th class="num">成交数量</th>
@@ -2036,6 +2147,7 @@
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || "--")}</strong><span>${escapeHTML(fill.gateway_order_id)}</span></span></td>
                 <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
                 <td>${escapeHTML(symbolText(fill))}</td>
+                <td class="security-name">${escapeHTML(securityNameText(fill, order))}</td>
                 <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
                 <td class="num">${formatPrice(fill.price, fill)}</td>
                 <td class="num">${formatInt(fill.qty)}</td>
@@ -3207,6 +3319,7 @@
       } else {
         pushLog("warn", "成交读取失败", fillsResult.reason.message);
       }
+      await enrichVisibleLedgerInstruments();
       renderMonitorSummary();
       renderBlotter();
       renderDetail();
@@ -3272,6 +3385,7 @@
     const data = await fetchOrdersPage();
     state.ordersPage.next = data.next_cursor || "";
     updateOrders(data.orders || []);
+    await enrichVisibleLedgerInstruments();
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
@@ -3281,6 +3395,7 @@
     const data = await fetchFillsPage();
     state.fillsPage.next = data.next_cursor || "";
     state.fills = data.fills || [];
+    await enrichVisibleLedgerInstruments();
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
@@ -3315,6 +3430,7 @@
       state.metricFillsDirty = true;
       pushLog("warn", "成交费用统计读取失败", err.message);
     }
+    await enrichVisibleLedgerInstruments();
     renderMetrics();
     renderPositions();
     updateRisk();
