@@ -441,3 +441,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 按用户要求暂时关闭生产环境下单权限：未跟踪 `config/relay.prod.yaml` 中两个生产账户 `trading_enabled=false`，9092 已重启；`/v1/status` 显示 production、enabled 2、trading_enabled 0、simulated 0，订单/成交查询能力保留。
 - `2026-06-15`: 前置更新后重查生产账户 `314000046830`：`order.list.query` 已返回多页外部订单，`gateway_order_id` 形如 `external-huaxin-31400004683001-110010180001038`，并带 `order_id/order_stream_id`；relay 未入库原因是订单页缺 `trade_side` 和 `business_type`，该字段按标准订单 schema 必填，应由前置补齐而不是 relay 猜测默认值。
 - `2026-06-15`: 前置补齐 `trade_side/business_type` 后，生产 `314000046830` 订单查询已正常落库；新增 Redis 入账账户号归一：若账户专属 stream routing account 为 `314000046830`，payload account 为 `31400004683001` 这类前后缀关系，relay 按 routing account 落账，并在 `adapter_context.relay_raw_account_id` 保留原始前置账户号。新版 9092 已重启，生产下单权限仍为 0。
+- `2026-06-15`: 修复 `/trade` 外部订单证券名称补齐：前端 instrument key 统一归一 `XSHG/SSE->SH`、`XSHE/SZSE->SZ`，并将 metadata 未命中缓存改为 60 秒重试，避免一次失败后外部订单名称长期显示 `--`；交易终端静态资源版本更新到 `20260615-0012` 并重启 9092。

@@ -31,7 +31,7 @@
     symbolSuggestions: [],
     instrumentCache: new Map(),
     instrumentBySecurityID: new Map(),
-    instrumentMisses: new Set(),
+    instrumentMisses: new Map(),
     activeSuggestion: -1,
     suggestionSeq: 0,
     quoteSeq: 0,
@@ -443,7 +443,7 @@
     const normalized = Object.assign({}, instrument, {
       security_id: securityID,
       symbol: instrument.symbol || parsed.symbol,
-      exchange: instrument.exchange || parsed.exchange,
+      exchange: normalizeExchangeCode(instrument.exchange || parsed.exchange, parsed.symbol),
       name: instrument.name || ""
     });
     state.instrumentBySecurityID.set(securityID, normalized);
@@ -451,19 +451,31 @@
     return normalized;
   }
 
+  function instrumentMissExpired(securityID) {
+    const missedAt = state.instrumentMisses.get(normalizeSecurityID(securityID));
+    return !missedAt || Date.now() - missedAt > 60000;
+  }
+
+  function rememberInstrumentMiss(securityID) {
+    const normalized = normalizeSecurityID(securityID);
+    if (normalized) {
+      state.instrumentMisses.set(normalized, Date.now());
+    }
+  }
+
   function itemSecurityID(item) {
     if (!item) {
       return "";
     }
     if (item.security_id) {
-      return String(item.security_id).toUpperCase();
+      return normalizeSecurityID(item.security_id);
     }
     if (item.symbol) {
       const symbol = normalizeSymbol(item.symbol);
       if (symbol.includes(".")) {
-        return symbol;
+        return normalizeSecurityID(symbol);
       }
-      return symbol + "." + String(item.exchange || inferExchange(symbol)).toUpperCase();
+      return symbol + "." + normalizeExchangeCode(item.exchange, symbol);
     }
     return "";
   }
@@ -545,8 +557,22 @@
     const parts = normalized.split(".");
     return {
       symbol: parts[0] || "",
-      exchange: parts[1] || inferExchange(parts[0] || "")
+      exchange: normalizeExchangeCode(parts[1], parts[0] || "")
     };
+  }
+
+  function normalizeExchangeCode(value, symbol = "") {
+    const raw = normalizeSymbol(value).replace(/\..*$/, "");
+    if (raw === "SH" || raw === "XSHG" || raw === "SHSE" || raw === "SSE") {
+      return "SH";
+    }
+    if (raw === "SZ" || raw === "XSHE" || raw === "SZSE") {
+      return "SZ";
+    }
+    if (raw === "BJ" || raw === "XBSE" || raw === "BSE") {
+      return "BJ";
+    }
+    return inferExchange(symbol || raw);
   }
 
   function inferExchange(symbol) {
@@ -569,9 +595,9 @@
       return "";
     }
     if (raw.includes(".")) {
-      return raw;
+      return normalizeSecurityID(raw);
     }
-    return raw + "." + (els.exchangeInput.value || inferExchange(raw));
+    return raw + "." + normalizeExchangeCode(els.exchangeInput.value, raw);
   }
 
   function normalizeSecurityID(value) {
@@ -580,7 +606,8 @@
       return "";
     }
     if (raw.includes(".")) {
-      return raw;
+      const parsed = splitSecurityID(raw);
+      return parsed.symbol ? parsed.symbol + "." + parsed.exchange : "";
     }
     return raw + "." + inferExchange(raw);
   }
@@ -898,7 +925,7 @@
         continue;
       }
       seen.add(securityID);
-      if (!instrumentForSecurityID(securityID) && !state.instrumentMisses.has(securityID)) {
+      if (!instrumentForSecurityID(securityID) && instrumentMissExpired(securityID)) {
         ids.push(securityID);
       }
     }
@@ -926,7 +953,7 @@
       }
       for (const securityID of chunk) {
         if (!found.has(securityID)) {
-          state.instrumentMisses.add(securityID);
+          rememberInstrumentMiss(securityID);
         }
       }
     }
