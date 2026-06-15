@@ -233,7 +233,7 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	defer stopLedgerSync()
 
 	mux := http.NewServeMux()
-	server := &portalServer{root: absRoot, logger: logger}
+	server := &portalServer{root: absRoot, logger: logger, cfg: cfg, configPath: strings.TrimSpace(*cfgPath)}
 	mux.HandleFunc("/", server.handleHome)
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.Handle("/v1/", api.NewWithDependencies(cfg, logger, apiDeps))
@@ -480,8 +480,10 @@ func exitError(format string, args ...any) {
 }
 
 type portalServer struct {
-	root   string
-	logger *slog.Logger
+	root       string
+	logger     *slog.Logger
+	cfg        relayconfig.Config
+	configPath string
 }
 
 func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -490,11 +492,35 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	envLabel, envClass := environmentView(s.cfg.Service.Environment)
+	accountSummary := summarizePortalAccounts(s.cfg.Accounts)
+	accountList := portalAccountList(s.cfg.Accounts)
+	configPath := strings.TrimSpace(s.configPath)
+	if configPath == "" {
+		configPath = "默认内置配置"
+	}
+	redisState := "未配置"
+	if strings.TrimSpace(s.cfg.Redis.URL) != "" {
+		redisState = "已配置"
+	}
+	databaseState := "未配置"
+	if strings.TrimSpace(s.cfg.Database.DSN) != "" {
+		databaseState = "已配置"
+	}
+	autoRefreshState := "关闭"
+	if s.cfg.AutoRefreshEnabled() {
+		autoRefreshState = "开启"
+	}
+	tradingState := "关闭"
+	if accountSummary.TradingEnabled > 0 {
+		tradingState = "开启"
+	}
+
 	content := `
 <section class="hero">
   <p class="eyebrow">relay documentation portal</p>
   <h1>TI Relay Trader</h1>
-  <p>9092 当前运行文档门户模式，用于查看项目框架、设计文档、接入手册和测试目录。该服务不连接实盘柜台，不处理交易命令。</p>
+  <p>9092 当前运行文档门户和同源 API，用于查看项目框架、设计文档、交易终端、接口测试台和运行状态。</p>
   <p>最终服务口径：<a href="` + publicURL + `">` + publicURL + `</a></p>
   <div class="actions">
     <a href="/docs">查看文档</a>
@@ -506,6 +532,32 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
     <a href="/tree">项目结构</a>
     <a href="/tests">测试目录</a>
     <a href="/healthz">健康检查</a>
+  </div>
+</section>
+<section class="env-console ` + envClass + `">
+  <div class="env-console-head">
+    <div>
+      <p class="eyebrow">runtime environment</p>
+      <h2>运行环境控制</h2>
+    </div>
+    <strong>` + html.EscapeString(envLabel) + `</strong>
+  </div>
+  <div class="env-metrics">
+    <div><span>配置文件</span><b>` + html.EscapeString(configPath) + `</b></div>
+    <div><span>Redis</span><b>` + redisState + `</b></div>
+    <div><span>数据库</span><b>` + databaseState + `</b></div>
+    <div><span>账户路由</span><b>` + fmt.Sprintf("%d", accountSummary.Configured) + ` 个</b></div>
+    <div><span>下单权限</span><b>` + tradingState + `</b></div>
+    <div><span>自动刷新</span><b>` + autoRefreshState + `</b></div>
+  </div>
+  <p class="env-note">SDK 与环境切换无关：SDK 只连接 ` + publicURL + `，测试/生产 Redis、账户路由和交易权限完全由 relay 服务端配置决定。</p>
+  <p class="env-note">当前账户：` + html.EscapeString(accountList) + `</p>
+  <p class="env-note">落库口径：当前账本主要按 <code>account_id</code> 隔离；短期不同测试/生产账户可区分，长期建议生产/测试使用独立 DSN 或 schema，或把 <code>environment</code> 纳入核心账表唯一键。</p>
+  <div class="actions">
+    <a href="/v1/status">查看状态 JSON</a>
+    <a href="/v1/accounts">查看账户路由</a>
+    <a href="/docs/operations">切换 Runbook</a>
+    <a href="/trade">进入交易终端</a>
   </div>
 </section>
 <section class="grid">
@@ -536,6 +588,50 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 		Content:    template.HTML(content),
 		ProjectDir: s.root,
 	})
+}
+
+type portalAccountSummary struct {
+	Configured     int
+	Enabled        int
+	TradingEnabled int
+}
+
+func environmentView(environment relayconfig.Environment) (string, string) {
+	if environment == relayconfig.EnvironmentProduction {
+		return "生产环境", "production"
+	}
+	return "测试环境", "test"
+}
+
+func summarizePortalAccounts(accounts []relayconfig.AccountRouteConfig) portalAccountSummary {
+	summary := portalAccountSummary{Configured: len(accounts)}
+	for _, account := range accounts {
+		if account.Enabled {
+			summary.Enabled++
+		}
+		if account.TradingEnabled {
+			summary.TradingEnabled++
+		}
+	}
+	return summary
+}
+
+func portalAccountList(accounts []relayconfig.AccountRouteConfig) string {
+	if len(accounts) == 0 {
+		return "无账户路由"
+	}
+	items := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		state := "disabled"
+		if account.Enabled && account.TradingEnabled {
+			state = "trading"
+		} else if account.Enabled {
+			state = "query-only"
+		}
+		items = append(items, fmt.Sprintf("%s/%s/%s(%s)", account.BrokerID, account.GatewayID, account.AccountID, state))
+	}
+	sort.Strings(items)
+	return strings.Join(items, ", ")
 }
 
 func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) {
@@ -1081,6 +1177,75 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     .hero {
       padding: 30px;
     }
+    .env-console {
+      margin-top: 16px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
+    }
+    .env-console.production {
+      border-color: #fecdd3;
+      background: #fff7f8;
+    }
+    .env-console.test {
+      border-color: #bfdbfe;
+      background: #f8fbff;
+    }
+    .env-console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .env-console-head h2 {
+      margin: 0;
+    }
+    .env-console-head strong {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 7px 12px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      white-space: nowrap;
+    }
+    .env-console.production .env-console-head strong {
+      background: #c8102e;
+    }
+    .env-metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin: 18px 0 14px;
+    }
+    .env-metrics div {
+      min-height: 64px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.8);
+    }
+    .env-metrics span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .env-metrics b {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 13px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .env-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
     .eyebrow {
       margin: 0 0 8px;
       color: var(--accent);
@@ -1195,6 +1360,8 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       nav { justify-content: flex-start; }
       main { width: min(100vw - 24px, 1180px); margin-top: 18px; }
       .grid, .doc-list { grid-template-columns: 1fr; }
+      .env-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .env-console-head { align-items: flex-start; flex-direction: column; }
       .hero, .panel, article { padding: 20px; }
     }
   </style>

@@ -117,6 +117,17 @@ accounts:
 
 注意：券商测试环境的 Redis Stream namespace 可能仍使用 `relay:prod:*`，所以 `redis.env=prod` 不能单独表示生产。以 `service.environment`、配置文件路径、账户权限和页面环境标识共同判断当前运行态。
 
+## SDK 与落库隔离
+
+Python SDK 和策略程序不承载测试/生产环境选择。SDK 只连接 relay 的 `base_url`，后端实际使用测试 Redis 还是生产 Redis，由 relay 服务端配置文件、账户路由和 `trading_enabled` 决定。策略侧应读取 `/v1/status.environment` 和 `/v1/accounts` 做运行前自检，但不要在 SDK 内维护另一套环境切换逻辑。
+
+当前账本 schema 中 `gateways` 和 `account_gateway_routes` 已有 `env` 维度，但 `accounts`、`orders`、`fills`、`asset_snapshots`、`positions` 等核心事实表仍主要按 `account_id` 唯一或索引。因此：
+
+1. 短期内，如果测试账户和生产账户 ID 不同，可以通过 `account_id` 区分。
+2. 长期生产化不建议只靠账户区分，推荐测试/生产使用独立 PostgreSQL DSN 或独立 schema。
+3. 如果必须共用一个库，需要补 migration，把 `environment` 纳入核心账表唯一键、索引和查询条件。
+4. 页面和 SDK 查询生产数据时必须显式选择账户，不能用无账户过滤的研究导出结果直接混用测试/生产。
+
 ## 时区口径
 
 relay 的业务时间统一使用 `Asia/Shanghai`，即东八区 UTC+8。A 股交易日、盘前初始化、收盘后结算、对账批次、报表展示、页面时间和 cron 调度都按这个时区解释。
