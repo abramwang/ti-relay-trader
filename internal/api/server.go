@@ -393,6 +393,185 @@ func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *ht
 	}
 }
 
+func (s *Server) enrichOrderNames(ctx context.Context, orders []trading.Order) {
+	if len(orders) == 0 {
+		return
+	}
+	names := s.instrumentNames(ctx, orderSecurityIDs(orders))
+	if len(names) == 0 {
+		return
+	}
+	for i := range orders {
+		if strings.TrimSpace(orders[i].Name) != "" {
+			continue
+		}
+		if name := names[securityID(orders[i].Symbol, string(orders[i].Exchange))]; name != "" {
+			orders[i].Name = name
+		}
+	}
+}
+
+func (s *Server) enrichFillNames(ctx context.Context, fills []trading.Fill) {
+	if len(fills) == 0 {
+		return
+	}
+	names := s.instrumentNames(ctx, fillSecurityIDs(fills))
+	if len(names) == 0 {
+		return
+	}
+	for i := range fills {
+		if strings.TrimSpace(fills[i].Name) != "" {
+			continue
+		}
+		if name := names[securityID(fills[i].Symbol, string(fills[i].Exchange))]; name != "" {
+			fills[i].Name = name
+		}
+	}
+}
+
+func (s *Server) instrumentNames(ctx context.Context, ids []string) map[string]string {
+	if s.market == nil || len(ids) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	names := make(map[string]string, len(ids))
+	const chunkSize = 100
+	for offset := 0; offset < len(ids); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		limit := end - offset
+		if limit < 100 {
+			limit = 100
+		}
+		response, err := s.market.MetadataInstruments(ctx, url.Values{
+			"security_ids": {strings.Join(ids[offset:end], ",")},
+			"limit":        {strconv.Itoa(limit)},
+		})
+		if err != nil {
+			s.logger.Warn("instrument_name_enrichment_failed", "error", err)
+			return names
+		}
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusBadRequest {
+			s.logger.Warn("instrument_name_enrichment_failed", "status", response.StatusCode, "url", response.URL)
+			continue
+		}
+		for _, row := range meridianRows(response.Payload) {
+			id := normalizeSecurityID(stringFromMap(row, "security_id"))
+			name := strings.TrimSpace(stringFromMap(row, "name"))
+			if id != "" && name != "" {
+				names[id] = name
+			}
+		}
+	}
+	return names
+}
+
+func orderSecurityIDs(orders []trading.Order) []string {
+	ids := make([]string, 0, len(orders))
+	seen := make(map[string]struct{}, len(orders))
+	for _, order := range orders {
+		id := securityID(order.Symbol, string(order.Exchange))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func fillSecurityIDs(fills []trading.Fill) []string {
+	ids := make([]string, 0, len(fills))
+	seen := make(map[string]struct{}, len(fills))
+	for _, fill := range fills {
+		id := securityID(fill.Symbol, string(fill.Exchange))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func securityID(symbol string, exchange string) string {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	exchange = normalizeExchange(exchange, symbol)
+	if symbol == "" || exchange == "" {
+		return ""
+	}
+	if strings.Contains(symbol, ".") {
+		return normalizeSecurityID(symbol)
+	}
+	return symbol + "." + exchange
+}
+
+func normalizeSecurityID(value string) string {
+	raw := strings.ToUpper(strings.TrimSpace(value))
+	if raw == "" {
+		return ""
+	}
+	parts := strings.SplitN(raw, ".", 2)
+	if len(parts) == 1 {
+		exchange := normalizeExchange("", parts[0])
+		if exchange == "" {
+			return ""
+		}
+		return parts[0] + "." + exchange
+	}
+	exchange := normalizeExchange(parts[1], parts[0])
+	if exchange == "" {
+		return ""
+	}
+	return parts[0] + "." + exchange
+}
+
+func normalizeExchange(value string, symbol string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "SH", "XSHG", "SHSE", "SSE":
+		return "SH"
+	case "SZ", "XSHE", "SZSE":
+		return "SZ"
+	case "BJ", "XBSE", "BSE":
+		return "BJ"
+	}
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	switch {
+	case strings.HasPrefix(symbol, "6"), strings.HasPrefix(symbol, "5"), strings.HasPrefix(symbol, "9"):
+		return "SH"
+	case strings.HasPrefix(symbol, "0"), strings.HasPrefix(symbol, "1"), strings.HasPrefix(symbol, "2"), strings.HasPrefix(symbol, "3"):
+		return "SZ"
+	case strings.HasPrefix(symbol, "4"), strings.HasPrefix(symbol, "8"):
+		return "BJ"
+	default:
+		return ""
+	}
+}
+
+func meridianRows(payload map[string]any) []map[string]any {
+	rows, ok := payload["data"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		values, ok := row.(map[string]any)
+		if ok {
+			out = append(out, values)
+		}
+	}
+	return out
+}
+
 func (s *Server) writeMeridianResponse(w http.ResponseWriter, r *http.Request, response market.MeridianResponse, message string) {
 	if response.StatusCode >= http.StatusBadRequest {
 		code := httpx.CodeBadRequest
@@ -788,6 +967,7 @@ func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		s.writeOrderError(w, r, err)
 		return
 	}
+	s.enrichOrderNames(r.Context(), result.Orders)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -811,6 +991,7 @@ func (s *Server) handleHistoryOrders(w http.ResponseWriter, r *http.Request) {
 		s.writeOrderError(w, r, err)
 		return
 	}
+	s.enrichOrderNames(r.Context(), result.Orders)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -1392,6 +1573,7 @@ func (s *Server) handleFills(w http.ResponseWriter, r *http.Request) {
 		s.writeOrderError(w, r, err)
 		return
 	}
+	s.enrichFillNames(r.Context(), result.Fills)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -1415,6 +1597,7 @@ func (s *Server) handleHistoryFills(w http.ResponseWriter, r *http.Request) {
 		s.writeOrderError(w, r, err)
 		return
 	}
+	s.enrichFillNames(r.Context(), result.Fills)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 

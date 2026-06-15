@@ -1048,6 +1048,48 @@ func TestListOrders(t *testing.T) {
 	}
 }
 
+func TestListOrdersEnrichesInstrumentName(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metadata/instruments" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("security_ids"); got != "000767.SZ" {
+			t.Fatalf("security_ids = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"000767.SZ","name":"晋控电力"}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{
+			Orders: []trading.Order{{
+				AccountID:      "acct-1",
+				GatewayOrderID: "external-1",
+				Symbol:         "000767",
+				Exchange:       trading.ExchangeSZ,
+			}},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"name":"晋控电力"`) {
+		t.Fatalf("response missing instrument name: %s", rec.Body.String())
+	}
+}
+
 func TestHistoryOrdersUsesExplicitDateRange(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		listOrdersResult: orderflow.ListOrdersResult{Count: 0},
@@ -1095,6 +1137,49 @@ func TestListFills(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestListFillsEnrichesInstrumentName(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metadata/instruments" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("security_ids"); got != "601728.SH" {
+			t.Fatalf("security_ids = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"601728.XSHG","name":"中国电信"}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	service := &fakeOrderSubmitter{
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{{
+				FillID:         "fill-1",
+				AccountID:      "acct-1",
+				GatewayOrderID: "external-1",
+				Symbol:         "601728",
+				Exchange:       trading.ExchangeSH,
+			}},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/fills?account_id=acct-1&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"name":"中国电信"`) {
+		t.Fatalf("response missing instrument name: %s", rec.Body.String())
 	}
 }
 
