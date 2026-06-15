@@ -106,6 +106,11 @@ class TradingDayJobTest(unittest.TestCase):
         )
         self.assertEqual(report["accounts"][0]["snapshot"]["positions_count"], 1)
         self.assertEqual(report["accounts"][0]["snapshot"]["non_terminal_orders"], 1)
+        self.assertEqual(len(client.settlement_calls), 1)
+        self.assertEqual(client.settlement_calls[0]["snapshot_type"], "open")
+        self.assertEqual(client.settlement_calls[0]["source"], "pre_open_init")
+        self.assertEqual(client.settlement_calls[0]["trade_date"], "20260615")
+        self.assertEqual(report["open_snapshot"]["result"]["status"], "completed")
 
     def test_non_trading_day_skips_without_error(self) -> None:
         client = FakeClient()

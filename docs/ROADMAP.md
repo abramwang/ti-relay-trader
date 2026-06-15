@@ -47,6 +47,7 @@
 
 - 明确账表计算只使用 Meridian `bars`，不接入实时 level2。
 - 为日终持仓读取目标交易日收盘价，补充按 bars close 的估值参考。
+- 后续绩效 v2 使用盘前 `asset_snapshots(open)` 作为日内收益和贡献 bps 的优先分母，区分隔夜调整和日内交易收益。
 - 为账户绩效序列增加可选基准行情输入，输出基准收益、超额收益和回撤对照的第一版字段。
 - 提供研究侧导出输入，当前已覆盖 CSV 和 PostgreSQL view；后续如需大批量离线消费再扩展批量文件。
 - 在 `/api-console` 和 `/trade#performance` 暴露可验证入口。
@@ -275,6 +276,7 @@
 - [x] `/v1/status` 暴露交易日、交易阶段和日流程最近运行状态。
 - [x] 新增 `/jobs` 后台任务状态监控页，展示任务状态、交易日、开始/完成时间、耗时、错误摘要和 report JSON。
 - [x] 拉取柜台资金、持仓、订单、成交查询结果。
+- [x] 盘前初始化写入 `asset_snapshots(open)` 日初资产快照，作为日内绩效基线；open 快照只写资产，不覆盖日终持仓快照。
 - [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
 - [x] 对比 Redis 原始消息窗口摘要和内部账表摘要。
 - [x] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。
@@ -288,6 +290,7 @@
 - [x] 计算账户日终权益。
 - [x] 计算第一版完整已实现盈亏、浮动盈亏、费用和收益率：保留 `settled_profit/unrealized_pnl/fee_total/return_rate`，新增 `realized_pnl/gross_pnl/net_pnl` 研究侧口径。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
+- [ ] 绩效 v2 接入当日 `asset_snapshots(open)`，展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。
 - [x] 在 `/trade` 交易测试主界面使用 Meridian `bars` 绘制当日分钟 K 线和成交量，辅助理解下单点位。
 - [x] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入：`benchmark_security_id` 输出基准收益、基准回撤、超额收益并进入 CSV。

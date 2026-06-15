@@ -61,6 +61,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/meridian/stream/market/snapshots", Response: "Meridian market_snapshots SSE", Description: "proxy Meridian level1 snapshot SSE without redefining fields"},
 			{Method: "GET", Path: "/v1/jobs/runs", Response: "[]JobRun", Description: "query latest daily job runs"},
 			{Method: "POST", Path: "/v1/jobs/runs", Request: "JobRunRequest", Response: "JobRun", Description: "persist daily job run report"},
+			{Method: "POST", Path: "/v1/settlements/snapshots", Request: "SettlementSnapshotRequest", Response: "SettlementSnapshotResult", Description: "persist open/close daily asset and settlement snapshots"},
 			{Method: "GET", Path: "/v1/reconciliations/breaks", Request: "ReconciliationBreakQuery", Response: "[]ReconciliationBreak", Description: "query settlement reconciliation breaks"},
 			{Method: "GET", Path: "/v1/schema", Response: "CatalogDocument", Description: "schema discovery"},
 		},

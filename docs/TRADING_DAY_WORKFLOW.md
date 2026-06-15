@@ -30,9 +30,10 @@ relay 每个交易日需要两个稳定流程：
 3. 检查 `stream_checkpoints`，追赶前一晚遗留的 `reply/event/hb/dlq`，避免开盘后先处理历史积压。
 4. 加载账户路由，确认 `enabled`、`trading_enabled`、`broker_id`、`gateway_id`、`stream_prefix` 与当日运行计划一致。
 5. 对每个启用账户执行资金、持仓、订单、成交查询刷新，将柜台当前状态合并到 PostgreSQL 账本。
-6. 校验前一交易日仍未终态的订单；如仍有 working 状态，标记为盘前异常，交由人工确认或前置补充查询。
-7. 建立当日风险基线：可用资金、可卖持仓、昨仓、冻结资金、冻结持仓、标的价格精度和涨跌停参考数据。
-8. 写入任务运行记录，记录交易日、账户数、依赖状态、刷新命令回执、异常摘要和完成时间。
+6. 写入 `asset_snapshots(open)` 日初资产快照，作为当日绩效的 open-to-close 分母，并用于识别逆回购回款、隔夜清算、占款释放和资金划转等隔夜调整。
+7. 校验前一交易日仍未终态的订单；如仍有 working 状态，标记为盘前异常，交由人工确认或前置补充查询。
+8. 建立当日风险基线：可用资金、可卖持仓、昨仓、冻结资金、冻结持仓、标的价格精度和涨跌停参考数据。
+9. 写入任务运行记录，记录交易日、账户数、依赖状态、刷新命令回执、日初资产快照、异常摘要和完成时间。
 
 盘前初始化不应主动发送交易委托。它只做依赖检查、账本追平、账户基线和风险输入准备。
 
@@ -76,8 +77,9 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 4. 对启用账户发布资金、持仓、订单、成交刷新命令。
 5. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
 6. 输出 JSON 报告，可通过 `--output` 写入文件。
-7. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
-8. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
+7. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)`；`open` 只写资产快照，不写持仓快照。
+8. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
+9. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 
 示例配置：
 

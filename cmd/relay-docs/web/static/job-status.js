@@ -111,7 +111,8 @@
     if (report.skipped) parts.push("skipped");
     if (Array.isArray(report.accounts)) parts.push(`accounts ${report.accounts.length}`);
     if (Array.isArray(report.errors) && report.errors.length) parts.push(`errors ${report.errors.length}`);
-    const snapshot = report.settlement_snapshot && report.settlement_snapshot.result;
+    const snapshotReport = report.settlement_snapshot || report.open_snapshot;
+    const snapshot = snapshotReport && snapshotReport.result;
     if (snapshot) {
       if (snapshot.asset_snapshots !== undefined) parts.push(`asset ${snapshot.asset_snapshots}`);
       if (snapshot.position_snapshots !== undefined) parts.push(`positions ${snapshot.position_snapshots}`);

@@ -1879,9 +1879,9 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	}
 	snapshotType := firstNonEmpty(req.SnapshotType, "close")
 	switch snapshotType {
-	case "intraday", "close", "reconcile":
+	case "intraday", "open", "close", "reconcile":
 	default:
-		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_type must be intraday, close, or reconcile")
+		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_type must be intraday, open, close, or reconcile")
 	}
 	source := firstNonEmpty(req.Source, "post_close_settlement")
 	accountIDs := settlementAccountIDs(req.AccountIDs, s.cfg.Accounts)
@@ -2053,20 +2053,22 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		assetRaw["asset"] = assetResult.Asset
 		if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, capturedAt); err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
-			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "asset_snapshot_missing", "critical", "asset", accountID, map[string]any{"error": err.Error()}, assetRaw, "asset close snapshot was not written"))
+			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "asset_snapshot_missing", "critical", "asset", accountID, map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, assetRaw, fmt.Sprintf("asset %s snapshot was not written", snapshotType)))
 		} else {
 			out.AssetSnapshotWritten = true
 		}
-		for _, position := range positionResult.Positions {
-			position.TradeDate = tradeDate
-			positionRaw := cloneMap(rawBase)
-			positionRaw["position"] = position
-			if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
-				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
-				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error()}, positionRaw, "position close snapshot was not written"))
-				continue
+		if snapshotType == "close" {
+			for _, position := range positionResult.Positions {
+				position.TradeDate = tradeDate
+				positionRaw := cloneMap(rawBase)
+				positionRaw["position"] = position
+				if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
+					out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
+					out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, positionRaw, "position close snapshot was not written"))
+					continue
+				}
+				out.PositionSnapshotsWritten++
 			}
-			out.PositionSnapshotsWritten++
 		}
 	}
 

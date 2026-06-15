@@ -26,7 +26,9 @@
 
 | 数据 | 来源 | 用途 |
 | --- | --- | --- |
-| 日终资产 | `asset_snapshots(snapshot_type=close)` | close 净资产、现金、证券市值、当日盈亏、收益率主线 |
+| 上日收盘资产 | `asset_snapshots(snapshot_type=close)` 的上一交易日记录 | 隔夜调整参考基准 |
+| 日初资产 | `asset_snapshots(snapshot_type=open)`；由 `pre_open_init` 在盘前刷新后写入 | 当日交易收益率和贡献 bps 的优先分母 |
+| 日终资产 | `asset_snapshots(snapshot_type=close)` | close 净资产、现金、证券市值、日内盈亏、收益率主线 |
 | 日终持仓 | `position_snapshots` | 持仓市值、权重、浮动盈亏、收盘持仓贡献 |
 | 当前持仓 | `positions` | 当天尚未结算时的临时查看口径，不作为历史绩效最终口径 |
 | 成交账本 | `fills` | 买卖金额、费用、成交数量、成交时间分布、按证券贡献估算 |
@@ -45,8 +47,11 @@
 | --- | --- |
 | 期末净资产 | 当日 close `net_asset` |
 | 上日净资产 | 上一交易日 close `net_asset` |
-| 当日盈亏 | `close_net_asset(today) - close_net_asset(previous_trading_day)`；后续现金流口径完善后升级 |
-| 当日收益率 | `daily_pnl / previous_close_net_asset` |
+| 日初净资产 | 当日 open `net_asset`；缺失时显示兜底来源和 `missing_open_asset` 标记 |
+| 隔夜调整 | `open_net_asset(today) - close_net_asset(previous_trading_day)`，用于识别逆回购回款、清算入账、占款释放、资金划转等非日内交易因素 |
+| 资产变动 | `close_net_asset(today) - close_net_asset(previous_trading_day)`，只作为资产桥展示，不直接等同日内交易收益 |
+| 日内盈亏 | `close_net_asset(today) - open_net_asset(today)`；缺少 open 快照时才兜底为 `close - previous_close` 并标明估算 |
+| 日内收益率 | `intraday_pnl / open_net_asset(today)` |
 | 累计收益率 | 区间内净值序列累计收益 |
 | 最大回撤 | 区间净值高点到低点的最大回撤 |
 | 基准收益 | Meridian `bars` 生成的基准 close 收益序列 |
@@ -95,7 +100,7 @@ net_pnl = gross_pnl - fee_total
 | `unrealized_pnl` | 浮动贡献 |
 | `fee` | 该证券成交费用 |
 | `net_contribution` | `realized_pnl + unrealized_pnl - fee` |
-| `contribution_bps` | `net_contribution / previous_close_net_asset * 10000` |
+| `contribution_bps` | 优先使用 `net_contribution / open_net_asset * 10000`；缺少日初资产时才兜底上一 close 净资产并标记 |
 | `quality_flags` | `estimated_cost`、`missing_close_price`、`missing_settled_profit` 等 |
 
 ### 交易质量
@@ -120,7 +125,7 @@ net_pnl = gross_pnl - fee_total
 
 1. 账户选择。
 2. 日期或日期范围。
-3. 基准证券选择，默认可使用主要指数或用户上次选择。
+3. 基准证券选择，默认使用上证指数 `000001.SH`，用户可临时切换其他指数或标的。
 4. 刷新按钮。
 5. CSV 导出。
 6. 数据状态标签：`settled`、`estimated`、`breaks`、`missing`。
@@ -130,13 +135,15 @@ net_pnl = gross_pnl - fee_total
 第一屏展示高密度账户指标：
 
 1. 期末净资产。
-2. 当日盈亏 / 当日收益率。
-3. 区间累计收益。
-4. 最大回撤。
-5. 基准收益 / 超额收益。
-6. 成交额。
-7. 手续费。
-8. 对账差异数量。
+2. 日初净资产。
+3. 隔夜调整。
+4. 日内盈亏 / 日内收益率。
+5. 区间累计收益。
+6. 最大回撤。
+7. 基准收益 / 超额收益。
+8. 成交额。
+9. 手续费。
+10. 对账差异数量。
 
 ### 主图
 
@@ -175,12 +182,43 @@ net_pnl = gross_pnl - fee_total
 展示：
 
 1. `post_close_settlement` 是否在目标交易日完成。
-2. `reconciliation_runs` 状态。
-3. `reconciliation_breaks` 未处理数量。
-4. 日终资产和持仓快照时间。
-5. 未终态订单数量。
-6. 缺失字段和估算字段清单。
-7. Meridian bars 是否命中目标交易日。
+2. `pre_open_init` 是否在目标交易日 08:55 之后完成，并是否写入日初资产。
+3. `reconciliation_runs` 状态。
+4. `reconciliation_breaks` 未处理数量。
+5. 日初资产、日终资产和持仓快照时间。
+6. 未终态订单数量。
+7. 缺失字段和估算字段清单，尤其是 `missing_open_asset`、`open_asset_fallback` 和 `overnight_adjustment_unclassified`。
+8. Meridian bars 是否命中目标交易日。
+
+## 日初资产与隔夜调整
+
+绩效页需要把“隔夜清算/资金变化”和“日内交易收益”分开。原因包括：
+
+1. 逆回购到期回款会在开盘前增加可用资金或净资产。
+2. 隔夜清算、费用、利息、红利、占款释放、资金划转等会让当日日初资产不同于上一日日终资产。
+3. 如果直接用上一日日终资产计算当日收益，会把这些非日内交易因素混入策略绩效。
+
+建议字段和口径：
+
+| 字段 | 口径 |
+| --- | --- |
+| `previous_close_net_asset` | 上一交易日 close 资产快照的 `net_asset` |
+| `open_net_asset` | 当日 `pre_open_init` 后写入的 open 资产快照 `net_asset` |
+| `close_net_asset` | 当日 close 资产快照 `net_asset` |
+| `overnight_adjustment` | `open_net_asset - previous_close_net_asset` |
+| `asset_change` | `close_net_asset - previous_close_net_asset` |
+| `intraday_pnl` | `close_net_asset - open_net_asset` |
+| `intraday_return` | `intraday_pnl / open_net_asset` |
+| `open_snapshot_source` | `open`、`first_intraday_after_pre_open`、`previous_close_fallback` 等 |
+| `quality_flags` | `missing_open_asset`、`estimated_open_asset`、`overnight_adjustment_unclassified` 等 |
+
+展示建议：
+
+1. KPI 区同时展示“上日收盘”“日初资产”“隔夜调整”“日终资产”“日内盈亏”。
+2. 净值曲线仍可使用 close-to-close 保持长期连续性，但单日收益解释优先使用 open-to-close。
+3. 收益贡献、贡献 bps 和当日交易绩效优先以 `open_net_asset` 为分母。
+4. 隔夜调整大于阈值时，在数据质量面板中提示人工复核，并在 tooltip 展示可能原因：逆回购回款、现金划转、清算入账、利息/红利等。
+5. 后续若能从柜台或资金流水拿到明确 cash flow 分类，再把 `overnight_adjustment` 分解为 `reverse_repo_repayment`、`cash_transfer`、`settlement_adjustment`、`interest_dividend`、`fee_tax_adjustment` 等。
 
 ## 接口规划
 
@@ -226,7 +264,7 @@ GET /v1/accounts/{account_id}/performance/contributions
 
 使用现有 performance、history、reconciliation 和 Meridian 接口重排 `/trade#performance`：
 
-1. 将当前 close 快照和表格整理成 KPI + 净值主图 + 数据质量面板。
+1. 将当前 close/open 快照和表格整理成 KPI + 净值主图 + 数据质量面板，明确展示日初资产、隔夜调整和日内盈亏。
 2. 将分钟 K 线从绩效页完全移除，只保留在交易测试页。
 3. 增加估算/缺失字段提示。
 4. 保留 CSV 下载。

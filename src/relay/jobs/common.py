@@ -130,6 +130,9 @@ def run_pre_open_init(options: JobOptions, *, client: Any | None = None, trading
         phase="pre_open_init",
         refresh_steps=("orders", "fills", "asset", "positions"),
         check_non_terminal_orders=True,
+        settle_snapshots=True,
+        snapshot_type="open",
+        snapshot_report_key="open_snapshot",
     )
 
 
@@ -142,6 +145,8 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
         refresh_steps=("orders", "fills", "asset", "positions"),
         check_non_terminal_orders=True,
         settle_snapshots=True,
+        snapshot_type="close",
+        snapshot_report_key="settlement_snapshot",
     )
 
 
@@ -154,6 +159,8 @@ def run_daily_job(
     refresh_steps: tuple[str, ...],
     check_non_terminal_orders: bool,
     settle_snapshots: bool = False,
+    snapshot_type: str = "close",
+    snapshot_report_key: str = "settlement_snapshot",
 ) -> dict[str, Any]:
     started_at = now_iso()
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
@@ -214,18 +221,19 @@ def run_daily_job(
 
     if settle_snapshots and accounts:
         settlement_run_id = f"{phase}-{trading_day.target_trade_date}"
-        report["settlement_run_id"] = settlement_run_id
+        run_id_key = "settlement_run_id" if snapshot_type == "close" else f"{snapshot_type}_snapshot_run_id"
+        report[run_id_key] = settlement_run_id
         settlement_value, settlement_report = capture_call(
             "record_settlement_snapshot",
             relay_client.record_settlement_snapshot,
             trade_date=trading_day.target_trade_date,
             account_ids=accounts,
             run_id=settlement_run_id,
-            snapshot_type="close",
+            snapshot_type=snapshot_type,
             source=phase,
             dry_run=options.dry_run,
         )
-        report["settlement_snapshot"] = settlement_report
+        report[snapshot_report_key] = settlement_report
         if settlement_report.get("error"):
             report["ok"] = False
             report["errors"].append(settlement_report["error"])
@@ -233,7 +241,7 @@ def run_daily_job(
             report["ok"] = False
             errors = settlement_value.get("errors")
             if errors:
-                report["errors"].append(f"settlement snapshot failed: {errors}")
+                report["errors"].append(f"{snapshot_type} snapshot failed: {errors}")
 
     return finish_report(report)
 

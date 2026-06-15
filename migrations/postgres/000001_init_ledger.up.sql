@@ -296,7 +296,7 @@ CREATE TABLE asset_snapshots (
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT asset_snapshots_unique UNIQUE (trade_date, account_id, snapshot_type),
-    CONSTRAINT asset_snapshots_type_check CHECK (snapshot_type IN ('intraday', 'close', 'reconcile'))
+    CONSTRAINT asset_snapshots_type_check CHECK (snapshot_type IN ('intraday', 'open', 'close', 'reconcile'))
 );
 
 CREATE INDEX asset_snapshots_account_date_idx ON asset_snapshots(account_id, trade_date);

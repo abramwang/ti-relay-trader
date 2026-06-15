@@ -1521,6 +1521,48 @@ func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
 	}
 }
 
+func TestSettlementSnapshotPostWritesOpenAssetOnly(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{
+			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, CashAvailable: 1100000, MarketValue: 200000},
+		},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+			Count:     1,
+		},
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}, Count: 0},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders:      service,
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"pre_open_init-20260615",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"open",
+		"source":"pre_open_init"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "open" || store.assetSnapshots[0].source != "pre_open_init" {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	if len(store.positionSnapshots) != 0 {
+		t.Fatalf("open snapshot should not write position snapshots: %#v", store.positionSnapshots)
+	}
+	if store.reconciliation.RunID != "pre_open_init-20260615" || store.reconciliation.Source != "pre_open_init" {
+		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
 func TestReconciliationBreaksQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		breaks: []ledger.ReconciliationBreak{{

@@ -125,6 +125,27 @@ func TestFillIDOrderScopeMigrationReplacesAccountScopedIndex(t *testing.T) {
 	}
 }
 
+func TestOpenAssetSnapshotMigrationExtendsSnapshotType(t *testing.T) {
+	upSQL := readMigration(t, "000007_open_asset_snapshots.up.sql")
+	for _, snippet := range []string{
+		"DROP CONSTRAINT IF EXISTS asset_snapshots_type_check",
+		"CHECK (snapshot_type IN ('intraday', 'open', 'close', 'reconcile'))",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("open asset snapshot migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000007_open_asset_snapshots.down.sql")
+	for _, snippet := range []string{
+		"DROP CONSTRAINT IF EXISTS asset_snapshots_type_check",
+		"CHECK (snapshot_type IN ('intraday', 'close', 'reconcile'))",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("open asset snapshot rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

@@ -132,7 +132,7 @@ migrations/postgres/000001_init_ledger.down.sql
 
 | 表 | 说明 |
 | --- | --- |
-| `asset_snapshots` | 账户资产快照，来自柜台查询和盘后结算 |
+| `asset_snapshots` | 账户资产快照，来自柜台查询、盘前日初快照和盘后结算；`snapshot_type` 包含 `intraday/open/close/reconcile` |
 | `positions` | 当前持仓 |
 | `position_snapshots` | 日终持仓快照 |
 | `cash_ledger` | 资金流水，记录冻结、解冻、成交扣款、费用、结算 |
@@ -145,8 +145,10 @@ migrations/postgres/000001_init_ledger.down.sql
 | `reconciliation_breaks` | 对账差异 |
 | `reconciliation_inputs` | 对账输入快照和来源信息 |
 
-当前第一版 `post_close_settlement` 会通过 9092 `POST /v1/settlements/snapshots` 写入：
+当前第一版 `pre_open_init` 和 `post_close_settlement` 会通过 9092 `POST /v1/settlements/snapshots` 写入：
 
+- `asset_snapshots(open)`：盘前刷新后写入当日账户日初资产，用于把逆回购回款、隔夜清算、占款释放和资金划转等隔夜调整从日内交易收益中拆开。`open` 快照只写资产，不写 `position_snapshots`，避免用盘前当前持仓覆盖日终历史持仓快照。
+- `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`：收盘后写入日终资产、日终持仓和对账批次。
 - `reconciliation_inputs`：按账户记录 relay 标准账本摘要、PnL 输入摘要、Redis raw stream 窗口摘要和柜台查询摘要。
 - `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。
 - `GET /v1/reconciliations/breaks`：按 `run_id/account_id/status` 查询待复核差异。
@@ -157,10 +159,10 @@ migrations/postgres/000001_init_ledger.down.sql
 
 | View | 用途 |
 | --- | --- |
-| `research_account_daily_performance_v1` | 按账户和交易日输出 close 净资产、上一 close 净资产、日盈亏、收益率、持仓市值、已实现/浮动/总/净 PnL、成交额和费用 |
+| `research_account_daily_performance_v1` | 按账户和交易日输出 close 净资产、上一 close 净资产、日盈亏、收益率、持仓市值、已实现/浮动/总/净 PnL、成交额和费用；当前 v1 仍是 close-to-close 口径 |
 | `research_order_fill_export_v1` | 输出订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息、成交价量和成交时间 |
 
-第一版 PnL 口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留，后续如前置或柜台提供更精细的已实现盈亏字段，再在 view 新版本中扩展。
+第一版 PnL 口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留。后续 v2 需要接入 `asset_snapshots(open)`，增加 `open_net_asset`、`overnight_adjustment`、`intraday_pnl` 和 `intraday_return`，避免把逆回购回款、占款释放等隔夜资产变化混进日内交易绩效。
 
 `/trade#performance` 的页面指标、收益贡献和数据质量展示设计见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。该页面第一版应优先复用上述 close 快照、成交账本、订单账本、对账结果和 Meridian bars，不主动查询柜台。
 

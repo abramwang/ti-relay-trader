@@ -227,7 +227,7 @@ client = RelayClient(
 | `watch_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 阻塞式订单状态回调 |
 | `watch_fills(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 阻塞式成交回调 |
 | `record_job_run(report, ...)` | `POST /v1/jobs/runs` | 日流程任务报告落盘 |
-| `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 收盘结算 close 资产/持仓快照和 reconciliation run 落盘 |
+| `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 盘前 open 资产快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
 
 `record_job_run()` 的标准状态枚举是 `running`、`succeeded`、`skipped`、`failed`；SDK 接受 `completed` 作为 `succeeded` 的兼容别名。
 

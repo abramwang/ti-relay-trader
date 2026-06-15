@@ -93,7 +93,7 @@
       { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "20260612" },
       { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" },
-      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000300.SH" }
+      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000001.SH" }
     ]
   },
   {
@@ -107,7 +107,7 @@
       { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "20260612" },
       { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "20260612" },
-      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000300.SH" }
+      { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000001.SH" }
     ]
   },
   {
@@ -285,14 +285,14 @@
   {
     "id": "settlement-snapshots",
     "group": "运维",
-    "title": "结算快照落盘",
+    "title": "日流程快照落盘",
     "method": "POST",
     "path": "/v1/settlements/snapshots",
     "status": "needs-config",
     "fields": [
       { "name": "run_id", "label": "run_id", "source": "body", "defaultValue": "post_close_settlement-20260612" },
       { "name": "trade_date", "label": "trade_date", "source": "body", "required": true, "defaultValue": "20260612" },
-      { "name": "snapshot_type", "label": "snapshot_type", "source": "body", "type": "select", "defaultValue": "close", "options": ["intraday", "close", "reconcile"] },
+      { "name": "snapshot_type", "label": "snapshot_type", "source": "body", "type": "select", "defaultValue": "close", "options": ["intraday", "open", "close", "reconcile"] },
       { "name": "source", "label": "source", "source": "body", "defaultValue": "post_close_settlement" },
       { "name": "dry_run", "label": "dry_run", "source": "body", "type": "checkbox", "defaultValue": "true" },
       {

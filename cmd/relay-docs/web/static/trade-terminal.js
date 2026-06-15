@@ -2354,7 +2354,7 @@
       els.perfDateTo.value = day;
     }
     if (els.perfBenchmarkInput && !els.perfBenchmarkInput.value) {
-      els.perfBenchmarkInput.value = "000300.SH";
+      els.perfBenchmarkInput.value = "000001.SH";
     }
     if (!els.barTradeDateInput.value) {
       els.barTradeDateInput.value = els.perfDateTo.value || day;
