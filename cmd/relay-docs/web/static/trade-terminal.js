@@ -63,8 +63,13 @@
     streamRefreshTimer: 0,
     chartMarkerRefreshTimer: 0,
     chartLoadTimer: 0,
+    chartAutoRefreshTimer: 0,
+    chartAutoRefreshRunning: false,
+    chartAutoRefreshErrorAt: 0,
     streamErrorLoggedAt: 0
   };
+
+  const chartAutoRefreshIntervalMs = 30000;
 
   const els = {
     shell: byID("terminalShell"),
@@ -639,7 +644,9 @@
       const securityID = currentSecurityID();
       const tradeDate = currentChartTradeDate();
       if (!state.barsLoaded || !barsMatch(securityID, tradeDate)) {
-        loadTradeChartBars({ silent: true }).catch((err) => pushLog("warn", "K线查询失败", err.message));
+        loadTradeChartBars({ silent: true })
+          .catch((err) => pushLog("warn", "K线查询失败", err.message))
+          .finally(() => scheduleChartAutoRefresh());
       } else {
         window.setTimeout(() => {
           refreshMinuteChartMarkers()
@@ -647,9 +654,12 @@
             .finally(() => {
               renderMinuteChart();
               resizeMinuteChart();
+              scheduleChartAutoRefresh();
             });
         }, 0);
       }
+    } else {
+      stopChartAutoRefresh();
     }
     if (view === "performance" && state.initialized) {
       ensurePerformanceDefaults();
@@ -760,6 +770,7 @@
   function closeTerminalStreams() {
     closeEventStream();
     closePositionQuoteStreams();
+    stopChartAutoRefresh();
   }
 
   function closePositionQuoteStreams() {
@@ -957,8 +968,56 @@
       return;
     }
     state.chartLoadTimer = window.setTimeout(() => {
-      loadTradeChartBars({ silent: true }).catch((err) => pushLog("warn", "K线查询失败", err.message));
+      loadTradeChartBars({ silent: true })
+        .catch((err) => pushLog("warn", "K线查询失败", err.message))
+        .finally(() => scheduleChartAutoRefresh());
     }, delay);
+  }
+
+  function stopChartAutoRefresh() {
+    window.clearTimeout(state.chartAutoRefreshTimer);
+    state.chartAutoRefreshTimer = 0;
+  }
+
+  function shouldAutoRefreshTradeChart() {
+    if (!state.initialized || state.activeView !== "trade" || document.hidden) {
+      return false;
+    }
+    const securityID = normalizeSecurityID(currentSecurityID());
+    const tradeDate = currentChartTradeDate();
+    return Boolean(securityID && tradeDate && isCurrentBusinessDate(tradeDate));
+  }
+
+  function scheduleChartAutoRefresh(delay = chartAutoRefreshIntervalMs) {
+    stopChartAutoRefresh();
+    if (!shouldAutoRefreshTradeChart()) {
+      return;
+    }
+    state.chartAutoRefreshTimer = window.setTimeout(refreshTradeChartAutomatically, delay);
+  }
+
+  async function refreshTradeChartAutomatically() {
+    if (!shouldAutoRefreshTradeChart()) {
+      stopChartAutoRefresh();
+      return;
+    }
+    if (state.chartAutoRefreshRunning) {
+      scheduleChartAutoRefresh();
+      return;
+    }
+    state.chartAutoRefreshRunning = true;
+    try {
+      await loadTradeChartBars({ silent: true, auto: true });
+    } catch (err) {
+      const now = Date.now();
+      if (now - state.chartAutoRefreshErrorAt > 30000) {
+        state.chartAutoRefreshErrorAt = now;
+        pushLog("warn", "分钟K线自动刷新失败", err.message);
+      }
+    } finally {
+      state.chartAutoRefreshRunning = false;
+      scheduleChartAutoRefresh();
+    }
   }
 
   async function refreshMinuteChartMarkers() {
@@ -2282,7 +2341,8 @@
       startTime: "09:30:00",
       endTime: "15:00:00",
       source: "trade",
-      silent: options.silent !== false
+      silent: options.silent !== false,
+      auto: Boolean(options.auto)
     });
   }
 
@@ -2308,7 +2368,7 @@
     if (options.source === "performance") {
       els.barsStatus.textContent = "查询中...";
       els.loadBarsButton.disabled = true;
-    } else if (els.minuteChartStatus) {
+    } else if (els.minuteChartStatus && !options.auto) {
       els.minuteChartStatus.textContent = securityID + " · K线查询中...";
     }
     try {
@@ -3183,6 +3243,13 @@
     window.addEventListener("hashchange", () => setActiveView(viewFromLocation()));
     window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
     window.addEventListener("resize", resizeMinuteChart);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopChartAutoRefresh();
+      } else {
+        scheduleChartAutoRefresh(1000);
+      }
+    });
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       state.performanceLoaded = false;
@@ -3193,6 +3260,7 @@
       await refreshNow();
       if (state.activeView === "trade") {
         await loadTradeChartBars({ silent: true });
+        scheduleChartAutoRefresh();
       }
       if (state.activeView === "performance") {
         await loadPerformance();
@@ -3300,10 +3368,16 @@
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
-    els.reloadChartButton.addEventListener("click", () => loadTradeChartBars({ silent: false }).catch((err) => showToast(err.message, "error")));
+    els.reloadChartButton.addEventListener("click", () => {
+      loadTradeChartBars({ silent: false })
+        .catch((err) => showToast(err.message, "error"))
+        .finally(() => scheduleChartAutoRefresh());
+    });
     els.chartTradeDateInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
-        loadTradeChartBars({ silent: false }).catch((err) => showToast(err.message, "error"));
+        loadTradeChartBars({ silent: false })
+          .catch((err) => showToast(err.message, "error"))
+          .finally(() => scheduleChartAutoRefresh());
       }
     });
     els.chartTradeDateInput.addEventListener("blur", () => {
@@ -3311,6 +3385,7 @@
       if (tradeDate) {
         els.chartTradeDateInput.value = tradeDate;
       }
+      scheduleChartAutoRefresh();
     });
     els.barSecurityInput.addEventListener("blur", () => {
       const securityID = normalizeSecurityID(els.barSecurityInput.value);
@@ -3379,6 +3454,7 @@
         await loadBars();
       } else if (state.activeView === "trade") {
         await loadTradeChartBars({ silent: true });
+        scheduleChartAutoRefresh();
       }
       pushLog("info", "交易终端初始化完成");
     } catch (err) {

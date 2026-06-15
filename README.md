@@ -249,6 +249,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `/trade` 交易测试视图压缩右侧持仓版面，保留资金持仓完整工作区的信息密度。
 - [x] `/trade` 交易测试主界面新增本地 ECharts 当日分钟 K 线，使用 Meridian bars 的 `open/high/low/close` 绘制 candlestick 并叠加成交量；若当天不是交易日，bars 请求会通过 Meridian 交易日接口回退到最近交易日。
 - [x] `/trade` 分钟 K 线支持当前账户、标的、交易日的买卖点标注：优先使用成交价/成交时间，未成交订单使用委托价/委托时间，并在代码切换、手动刷新和订单/成交 SSE 推送后刷新标注。
+- [x] `/trade` 分钟 K 线新增自动刷新：交易测试主界面、页面可见且 K 线日期为东八区当前交易日时，每 30 秒静默刷新 Meridian 1m bars 和买卖点；切到历史日期、隐藏页面或离开交易视图会暂停。
 - [x] `/trade` 交易终端所有默认交易日统一为东八区当前日期；当 Meridian snapshot/bars 返回最近交易日时，会自动回填仍处于默认值的资金持仓、订单监控、绩效和 K 线日期输入框。
 - [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`，bars 同时使用 `data_scope=realtime`；只有非交易日才回退到最近交易日 historical。
 - [x] Meridian bars 代理新增短 TTL 缓存、同 key 并发请求合并和 stale fallback，降低读压下 `/v1/meridian/market/bars` 与绩效 `benchmark_security_id` 对上游的重复打穿。
@@ -415,3 +416,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 新增 Meridian level1 snapshot SSE 同源代理 `/v1/meridian/stream/market/snapshots`，`/trade` 当前交易日资金持仓按全量持仓分片订阅行情流，实时刷新持仓现价、市值和全账户浮动盈亏合计；历史日期不使用实时行情重估。
 - `2026-06-15`: 排查 `/trade` 订单监控分页 `JSON Parse error: Unrecognized token '<'`：服务端订单/成交/持仓分页当前均返回 JSON，前端请求层已补非 JSON 响应诊断和分页失败状态回滚，后续若再遇到 HTML 错误页可直接看到具体 URL 与响应类型。
 - `2026-06-15`: 补齐 `/trade` 资金持仓页股票市值、ETF 基金市值、手续费、持仓盈亏和平仓/当日盈亏展示兜底；这些指标在测试前置资金快照缺字段时由全量持仓、Meridian level1 SSE 和当日全量成交账本计算。
+- `2026-06-15`: `/trade` 交易测试主界面分钟 K 线接入 30 秒自动刷新，使用现有 Meridian bars 薄代理；自动刷新只在当前交易日、交易视图和页面可见时运行，避免历史图和后台标签页持续打上游。
