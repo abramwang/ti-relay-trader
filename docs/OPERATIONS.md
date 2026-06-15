@@ -69,16 +69,23 @@ cp config/relay.prod.example.yaml config/relay.prod.yaml
 chmod 600 config/relay.test.yaml config/relay.prod.yaml
 ```
 
+9092 首页的“运行环境控制”会展示两类候选环境：
+
+1. 测试环境：优先读取 `config/relay.test.yaml`，如果不存在则读取历史兼容的 `config/relay.local.yaml`。
+2. 生产环境：读取 `config/relay.prod.yaml`。
+
+首页只展示配置摘要和本机命令，不提供公网可点击切换按钮。真实切换必须登录部署机执行脚本：
+
 切换测试环境：
 
 ```bash
-export RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.test.yaml
+scripts/switch-relay-env.sh test
 ```
 
 切换生产环境：
 
 ```bash
-export RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml
+scripts/switch-relay-env.sh production
 ```
 
 生产 Redis 的 host、port、auth、db 只写入 `config/relay.prod.yaml` 或进程环境变量，不写入 README、docs、示例配置、脚本或 Git commit。当前收到的生产 Redis 凭据尚未写入仓库。
@@ -108,7 +115,7 @@ accounts:
 5. 检查 `GET /v1/status`，确认 `environment=production`、Redis/PostgreSQL 为 `ok`，账户摘要符合预期。
 6. 打开 `/trade`，确认顶部显示“生产环境”红色标识，并核对账户号、broker、gateway。
 7. 手动评审 `accounts[].stream_prefix`，必须等于 `relay:<redis.env>:v1:<broker_id>:<gateway_id>`。
-8. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。
+8. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。切换脚本默认拒绝带生产下单权限的配置；确需开放时必须在服务器本机执行 `scripts/switch-relay-env.sh production --allow-production-trading` 并输入确认短语。
 9. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
 
 配置加载会阻止以下明显危险配置：

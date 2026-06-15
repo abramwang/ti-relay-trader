@@ -560,6 +560,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <p class="env-note">SDK 与环境切换无关：SDK 只连接 ` + publicURL + `，测试/生产 Redis、账户路由和交易权限完全由 relay 服务端配置决定。</p>
   <p class="env-note">当前账户：` + html.EscapeString(accountList) + `</p>
   <p class="env-note">落库口径：当前账本主要按 <code>account_id</code> 隔离；短期不同测试/生产账户可区分，长期建议生产/测试使用独立 DSN 或 schema，或把 <code>environment</code> 纳入核心账表唯一键。</p>
+  ` + s.environmentSwitchHTML() + `
   <div class="actions">
     <a href="/v1/status">查看状态 JSON</a>
     <a href="/v1/accounts">查看账户路由</a>
@@ -604,6 +605,23 @@ type portalAccountSummary struct {
 	TradingEnabled int
 }
 
+type environmentSwitchOption struct {
+	Label               string
+	Path                string
+	Command             string
+	StatusText          string
+	StatusClass         string
+	Warning             string
+	Current             bool
+	Exists              bool
+	RedisConfigured     bool
+	DatabaseConfigured  bool
+	AutoRefreshEnabled  bool
+	AccountSummary      portalAccountSummary
+	ExpectedEnvironment relayconfig.Environment
+	ServiceEnvironment  relayconfig.Environment
+}
+
 func environmentView(environment relayconfig.Environment) (string, string) {
 	if environment == relayconfig.EnvironmentProduction {
 		return "生产环境", "production"
@@ -640,6 +658,161 @@ func portalAccountList(accounts []relayconfig.AccountRouteConfig) string {
 	}
 	sort.Strings(items)
 	return strings.Join(items, ", ")
+}
+
+func (s *portalServer) environmentSwitchHTML() string {
+	options := s.environmentSwitchOptions()
+	var b strings.Builder
+	b.WriteString(`<div class="env-switch"><div class="env-switch-head"><strong>环境切换</strong><span>网页只展示状态和本机命令，真实切换必须登录服务器执行脚本。</span></div><div class="env-switch-grid">`)
+	for _, option := range options {
+		current := ""
+		if option.Current {
+			current = `<span class="env-current">当前运行</span>`
+		}
+		command := option.Command
+		if !option.Exists {
+			command = "先创建 " + option.Path
+		}
+		warning := ""
+		if option.Warning != "" {
+			warning = `<p class="env-warning">` + html.EscapeString(option.Warning) + `</p>`
+		}
+		b.WriteString(`<div class="env-switch-card ` + html.EscapeString(option.StatusClass) + `">`)
+		b.WriteString(`<div class="env-switch-title"><strong>` + html.EscapeString(option.Label) + `</strong><span class="env-status ` + html.EscapeString(option.StatusClass) + `">` + html.EscapeString(option.StatusText) + `</span>` + current + `</div>`)
+		b.WriteString(`<p><span>配置文件</span><b>` + html.EscapeString(option.Path) + `</b></p>`)
+		b.WriteString(`<div class="env-switch-metrics">`)
+		b.WriteString(`<div><span>账户</span><b>` + fmt.Sprintf("%d/%d", option.AccountSummary.Enabled, option.AccountSummary.Configured) + `</b></div>`)
+		b.WriteString(`<div><span>下单账户</span><b>` + fmt.Sprintf("%d", option.AccountSummary.TradingEnabled) + `</b></div>`)
+		b.WriteString(`<div><span>Redis</span><b>` + yesNo(option.RedisConfigured) + `</b></div>`)
+		b.WriteString(`<div><span>DB</span><b>` + yesNo(option.DatabaseConfigured) + `</b></div>`)
+		b.WriteString(`<div><span>自动刷新</span><b>` + yesNo(option.AutoRefreshEnabled) + `</b></div>`)
+		b.WriteString(`</div>`)
+		b.WriteString(`<pre class="env-command"><code>` + html.EscapeString(command) + `</code></pre>`)
+		b.WriteString(warning)
+		b.WriteString(`</div>`)
+	}
+	b.WriteString(`</div><p class="env-note">生产切换脚本默认拒绝 <code>trading_enabled=true</code> 的生产配置；确需开放生产交易时，需要在服务器本机显式追加安全确认参数。</p></div>`)
+	return b.String()
+}
+
+func (s *portalServer) environmentSwitchOptions() []environmentSwitchOption {
+	type optionDef struct {
+		label       string
+		expected    relayconfig.Environment
+		candidates  []string
+		commandArg  string
+		missingPath string
+	}
+	defs := []optionDef{
+		{
+			label:       "测试环境",
+			expected:    relayconfig.EnvironmentTest,
+			candidates:  []string{"config/relay.test.yaml", "config/relay.local.yaml"},
+			commandArg:  "test",
+			missingPath: "config/relay.test.yaml",
+		},
+		{
+			label:       "生产环境",
+			expected:    relayconfig.EnvironmentProduction,
+			candidates:  []string{"config/relay.prod.yaml"},
+			commandArg:  "production",
+			missingPath: "config/relay.prod.yaml",
+		},
+	}
+
+	options := make([]environmentSwitchOption, 0, len(defs))
+	currentPath := absPath(s.configPath)
+	for _, def := range defs {
+		path, exists := firstExistingProjectPath(s.root, def.candidates)
+		if path == "" {
+			path = filepath.Join(s.root, def.missingPath)
+		}
+		option := environmentSwitchOption{
+			Label:               def.label,
+			Path:                projectRelativePath(s.root, path),
+			Command:             filepath.Join(s.root, "scripts", "switch-relay-env.sh") + " " + def.commandArg,
+			ExpectedEnvironment: def.expected,
+			Exists:              exists,
+			StatusClass:         "missing",
+			StatusText:          "缺配置",
+		}
+		if !exists {
+			option.Warning = "未找到本地配置。请先按 example 模板创建未跟踪配置文件，并确认凭据不进入 Git。"
+			options = append(options, option)
+			continue
+		}
+		cfg, err := relayconfig.Load(path)
+		if err != nil {
+			option.StatusClass = "invalid"
+			option.StatusText = "校验失败"
+			option.Warning = err.Error()
+			options = append(options, option)
+			continue
+		}
+		option.ServiceEnvironment = cfg.Service.Environment
+		option.AccountSummary = summarizePortalAccounts(cfg.Accounts)
+		option.RedisConfigured = strings.TrimSpace(cfg.Redis.URL) != ""
+		option.DatabaseConfigured = strings.TrimSpace(cfg.Database.DSN) != ""
+		option.AutoRefreshEnabled = cfg.AutoRefreshEnabled()
+		option.Current = absPath(path) == currentPath
+		option.StatusClass = "ready"
+		option.StatusText = "可切换"
+		if option.Current {
+			option.StatusClass = "current"
+			option.StatusText = "运行中"
+		}
+		if cfg.Service.Environment != def.expected {
+			option.StatusClass = "invalid"
+			option.StatusText = "环境不符"
+			option.Warning = fmt.Sprintf("配置内 service.environment=%s，与目标 %s 不一致。", cfg.Service.Environment, def.expected)
+		}
+		if def.expected == relayconfig.EnvironmentProduction && option.AccountSummary.TradingEnabled > 0 {
+			option.Warning = "生产配置中存在 trading_enabled=true。切换脚本默认拒绝，除非服务器本机显式确认开放生产交易。"
+			if !option.Current {
+				option.StatusClass = "guarded"
+				option.StatusText = "需确认"
+			}
+		}
+		options = append(options, option)
+	}
+	return options
+}
+
+func yesNo(value bool) string {
+	if value {
+		return "是"
+	}
+	return "否"
+}
+
+func firstExistingProjectPath(root string, candidates []string) (string, bool) {
+	for _, candidate := range candidates {
+		path := filepath.Join(root, candidate)
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func absPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
+}
+
+func projectRelativePath(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return path
 }
 
 func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) {
@@ -1254,6 +1427,137 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       color: var(--muted);
       font-size: 13px;
     }
+    .env-switch {
+      margin: 16px 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.74);
+    }
+    .env-switch-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .env-switch-head strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+    .env-switch-head span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .env-switch-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .env-switch-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .env-switch-card.current {
+      border-color: #2563eb;
+      box-shadow: inset 0 0 0 1px rgba(37,99,235,0.18);
+    }
+    .env-switch-card.guarded {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+    .env-switch-card.invalid,
+    .env-switch-card.missing {
+      border-color: #fecaca;
+      background: #fff7f7;
+    }
+    .env-switch-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .env-switch-title strong {
+      font-size: 14px;
+    }
+    .env-status,
+    .env-current {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .env-status.current,
+    .env-current {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .env-status.guarded {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .env-status.invalid,
+    .env-status.missing {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .env-switch-card p {
+      margin: 8px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .env-switch-card p span {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .env-switch-card p b {
+      color: var(--text);
+      word-break: break-all;
+    }
+    .env-switch-metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+      margin: 10px 0;
+    }
+    .env-switch-metrics div {
+      min-height: 48px;
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+    }
+    .env-switch-metrics span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .env-switch-metrics b {
+      display: block;
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .env-command {
+      margin: 10px 0 0;
+      padding: 9px;
+      overflow-x: auto;
+      border-radius: 6px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 12px;
+    }
+    .env-warning {
+      color: #991b1b !important;
+      font-weight: 650;
+    }
     .eyebrow {
       margin: 0 0 8px;
       color: var(--accent);
@@ -1370,6 +1674,9 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       .grid, .doc-list { grid-template-columns: 1fr; }
       .env-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .env-console-head { align-items: flex-start; flex-direction: column; }
+      .env-switch-head { align-items: flex-start; flex-direction: column; }
+      .env-switch-grid { grid-template-columns: 1fr; }
+      .env-switch-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .hero, .panel, article { padding: 20px; }
     }
   </style>

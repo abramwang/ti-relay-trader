@@ -191,6 +191,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `config/relay.test.example.yaml` 和 `config/relay.prod.example.yaml`，测试/生产环境通过未跟踪配置文件和 `RELAY_CONFIG_PATH` 切换，生产模板默认关闭账户交易权限。
 - [x] 配置加载增加生产切换护栏：校验账户交易开关、生产模拟账户冲突和 Redis Stream 前缀与 `redis.env/broker/gateway` 一致性。
 - [x] 首页新增运行环境控制台，直观展示当前测试/生产环境、配置文件、Redis/数据库配置、账户路由、下单权限、自动刷新和切换 runbook 入口。
+- [x] 首页运行环境控制台新增测试/生产候选配置卡片和本机切换命令，真实切换通过 `scripts/switch-relay-env.sh` 执行，生产下单权限默认被脚本拦截。
 - [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
 - [x] P3 多账户路由收敛为 done：新增 `GET /v1/account-routes`，可只读查看每个账户的 broker/gateway/stream prefix、查询/交易权限、只读状态和 Redis stream key。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
@@ -319,7 +320,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 当前观察到的历史 `order.event.payload` 缺少 `trade_side` 和 `business_type`；relay 下单 API 已通过先写订单草稿解决新订单事件回流更新问题，但历史无草稿事件仍只能归档 raw。
 - API 下单只会在账户配置 `enabled=true` 且 `trading_enabled=true` 时发送 Redis 命令。
 - 联调凭据只放本地配置或安全渠道，不写入仓库。
-- 测试/生产 Redis 不通过修改同一个配置文件来回切换；推荐使用未跟踪 `config/relay.test.yaml` 与 `config/relay.prod.yaml`，并通过 `RELAY_CONFIG_PATH` 选择。生产配置上线前必须先保持 `trading_enabled=false` 完成只读探测和 `/v1/status`、`/trade` 环境标识核对。
+- 测试/生产 Redis 不通过修改同一个配置文件来回切换；推荐使用未跟踪 `config/relay.test.yaml` 与 `config/relay.prod.yaml`，并通过首页提示的 `scripts/switch-relay-env.sh test|production` 在服务器本机切换。生产配置上线前必须先保持 `trading_enabled=false` 完成只读探测和 `/v1/status`、`/trade` 环境标识核对；脚本默认拒绝 `trading_enabled=true` 的生产配置，除非显式使用 `--allow-production-trading` 并完成本机确认。
 - 2026-06-15 当前生产配置已加入账户 `501000114077`，保持 `trading_enabled=false` 且 `auto_refresh=false`；手动刷新接口可发布 `cmd.query`，订单/成交推送由 Redis `reply/event` 同步到账本和 SSE，交易写接口仍由账户交易权限拦截。
 - 账户别名只用于展示，不参与 Redis Stream 前缀、账本主键、下单幂等或权限判断；真实路由仍以 `account_id/broker_id/gateway_id/stream_prefix` 为准。配置 `accounts[].alias` 是默认值，交易终端修改后的别名写入 PostgreSQL `accounts.account_name` 并优先展示。
 - SDK 不参与测试/生产环境选择；SDK 只连接 `base_url`，实际后端是测试 Redis 还是生产 Redis 完全由 relay 服务端配置、账户路由和交易权限决定。
@@ -461,3 +462,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 排查生产账户 `501000114077` 订单监控“最近回报”显示 22:53:21：来源是两笔外部订单的 `orders.last_updated_at` 以及 relay 合成成交 `matched_at`，原始前置回包 `update_time` 为无时区 `2026-06-15 14:53:21.xxxxxx`，属于时区修复前按 UTC 解析的遗留数据。已删除对应两条 `relay-summary:*` 合成成交并小范围回放最新订单 reply，订单和合成成交时间均修正为 `2026-06-15T14:53:21+08:00`。
 - `2026-06-15`: 推进并收尾 P3 多账户路由：新增 `GET /v1/account-routes` 路由诊断接口，返回账户别名、broker/gateway、stream prefix、查询/交易/只读权限、环境和 Redis 六类 stream key；`/v1/schema` 和 API Console catalog 已同步。路线图中 P3 已标记为 done。
 - `2026-06-15`: 完成绩效分析页面第一版设计文档，明确 `/trade#performance` 后续聚焦日终净值、收益贡献、交易归因和数据质量，不再把分钟 K 线作为主图；文档门户新增 `/docs/performance-analysis` 入口。
+- `2026-06-15`: 首页运行环境控制台新增测试/生产候选配置卡片，展示配置文件、账户、下单账户、Redis/DB/自动刷新状态和服务器本机切换命令；新增 `scripts/switch-relay-env.sh`，默认拦截带下单权限的生产配置。
