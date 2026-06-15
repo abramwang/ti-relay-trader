@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-06-14`
+更新时间：`2026-06-15`
 
 ## 状态口径
 
@@ -17,7 +17,7 @@
 | P0 文档门户与恢复机制 | done | 9092 可访问项目框架、文档、测试目录和开发路线图 | Go 文档门户、README 恢复卡片、ROADMAP |
 | P1 工程化底座 | done | 建立正式服务骨架和配置体系 | 服务模式拆分、配置文件、日志、错误模型、基础测试 |
 | P2 标准交易接口设计 | doing | 定义统一 A 股交易 API 和 schema | 账户、资金、持仓、下单、撤单、订单、成交、事件 schema |
-| P3 多账户路由 | todo | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验 |
+| P3 多账户路由 | done | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验和路由诊断接口 |
 | P4 Redis Stream 前置对接 | doing | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | doing | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
@@ -97,10 +97,11 @@
 
 ### P3 多账户路由
 
-- [ ] 定义 `account_id -> broker_id + gateway_id + stream_prefix` 映射。
-- [ ] 定义账户启停、只读、可交易、账户环境类型等状态。
-- [ ] 增加路由冲突校验。
-- [ ] 增加多账户查询过滤。
+- [x] 定义 `account_id -> broker_id + gateway_id + stream_prefix` 映射。
+- [x] 定义账户启停、只读、可交易、账户环境类型等状态。
+- [x] 增加路由冲突校验。
+- [x] 增加多账户查询过滤。
+- [x] 增加 `GET /v1/account-routes` 路由诊断接口，展示账户权限、环境、stream prefix 和 Redis stream key。
 
 ### P4 Redis Stream 前置对接
 

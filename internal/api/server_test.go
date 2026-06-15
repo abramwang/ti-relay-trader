@@ -265,6 +265,80 @@ func TestAccountsPreferDatabaseAlias(t *testing.T) {
 	}
 }
 
+func TestAccountRoutesExposeRoutingAndPermissions(t *testing.T) {
+	cfg := config.Default()
+	cfg.Service.Environment = config.EnvironmentProduction
+	cfg.Redis.Env = "prod"
+	cfg.Accounts = []config.AccountRouteConfig{
+		{
+			AccountID:      "acct-1",
+			Alias:          "配置别名",
+			BrokerID:       "huaxin",
+			GatewayID:      "gw-1",
+			StreamPrefix:   "relay:prod:v1:huaxin:gw-1",
+			Enabled:        true,
+			TradingEnabled: false,
+			Simulated:      false,
+		},
+		{
+			AccountID:      "acct-2",
+			BrokerID:       "huaxin",
+			GatewayID:      "gw-2",
+			StreamPrefix:   "relay:prod:v1:huaxin:gw-2",
+			Enabled:        false,
+			TradingEnabled: false,
+			Simulated:      false,
+		},
+	}
+	store := &fakeAccountAliasStore{aliases: map[string]string{"acct-1": "落库别名"}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Accounts: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/account-routes", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Source      string               `json:"source"`
+			Environment string               `json:"environment"`
+			RedisEnv    string               `json:"redis_env"`
+			Protocol    string               `json:"protocol"`
+			Summary     AccountStatusSummary `json:"summary"`
+			Routes      []AccountRouteView   `json:"routes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode account routes: %v", err)
+	}
+	if envelope.Data.Source != "config+database" || envelope.Data.Environment != "production" || envelope.Data.RedisEnv != "prod" {
+		t.Fatalf("route metadata = %#v", envelope.Data)
+	}
+	if envelope.Data.Protocol != "relay.stream.v1" {
+		t.Fatalf("protocol = %q", envelope.Data.Protocol)
+	}
+	if envelope.Data.Summary.Configured != 2 || envelope.Data.Summary.Enabled != 1 || envelope.Data.Summary.TradingEnabled != 0 {
+		t.Fatalf("summary = %#v", envelope.Data.Summary)
+	}
+	if len(envelope.Data.Routes) != 2 {
+		t.Fatalf("routes = %#v", envelope.Data.Routes)
+	}
+	first := envelope.Data.Routes[0]
+	if first.Alias != "落库别名" || !first.QueryEnabled || !first.ReadOnly || first.TradingEnabled {
+		t.Fatalf("first route permissions = %#v", first)
+	}
+	if first.Streams.CmdQuery != "relay:prod:v1:huaxin:gw-1:cmd.query" || first.Streams.Reply != "relay:prod:v1:huaxin:gw-1:reply" {
+		t.Fatalf("first route streams = %#v", first.Streams)
+	}
+	if envelope.Data.Routes[1].QueryEnabled || envelope.Data.Routes[1].ReadOnly {
+		t.Fatalf("disabled route permissions = %#v", envelope.Data.Routes[1])
+	}
+}
+
 func TestUpdateAccountAliasPersistsToStore(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{

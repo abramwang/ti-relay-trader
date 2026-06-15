@@ -134,6 +134,7 @@ relay 的核心域对象建议如下：
 2. 下单、撤单、查询都必须带 `account_id`。
 3. `gateway_order_id` 由 relay 或调用方生成，但必须在账户维度唯一。
 4. 同一个 Redis 输出流可能有多账户消息，消费端必须按 `account_id`、`origin_message_id`、`gateway_order_id` 过滤。
+5. `GET /v1/account-routes` 是生产和测试环境的只读路由诊断入口，展示每个账户的查询/交易权限、只读状态、环境和 Redis `cmd.trade/cmd.query/reply/event/hb/dlq` key。
 
 ## Redis Stream 实现口径
 

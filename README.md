@@ -191,6 +191,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 配置加载增加生产切换护栏：校验账户交易开关、生产模拟账户冲突和 Redis Stream 前缀与 `redis.env/broker/gateway` 一致性。
 - [x] 首页新增运行环境控制台，直观展示当前测试/生产环境、配置文件、Redis/数据库配置、账户路由、下单权限、自动刷新和切换 runbook 入口。
 - [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
+- [x] P3 多账户路由收敛为 done：新增 `GET /v1/account-routes`，可只读查看每个账户的 broker/gateway/stream prefix、查询/交易权限、只读状态和 Redis stream key。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
 - [x] 增加统一 JSON 响应 envelope 和标准错误码。
 - [x] 增加 API/worker 启动入口，API 模式已提供 `/healthz`、`/v1/status`、`/v1/accounts`。
@@ -456,3 +457,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 修复终态订单纠错：非终态订单累计成交量仍采用只增不减保护；当后续柜台终态快照给出更正后的 `cum_filled_qty` 时允许覆盖，避免旧前置串号/脏字段长期影响订单成交一致性对账。
 - `2026-06-15`: 用新终态覆盖逻辑小范围回放生产订单 reply，修正两笔旧脏 `cum_filled_qty`；当日 filled 订单与成交汇总不一致数降为 0。因前置柜台已关闭，本次生产盘后结算以 `--skip-refresh --persist --trigger manual-after-counter-close` 完成，两账户合计订单 854、成交 858、close 资产快照 2 条、持仓快照 250 条、对账差异 0，`/v1/status.job_runs.post_close_settlement` 已显示 `2026-06-15 succeeded`。
 - `2026-06-15`: 排查生产账户 `501000114077` 订单监控“最近回报”显示 22:53:21：来源是两笔外部订单的 `orders.last_updated_at` 以及 relay 合成成交 `matched_at`，原始前置回包 `update_time` 为无时区 `2026-06-15 14:53:21.xxxxxx`，属于时区修复前按 UTC 解析的遗留数据。已删除对应两条 `relay-summary:*` 合成成交并小范围回放最新订单 reply，订单和合成成交时间均修正为 `2026-06-15T14:53:21+08:00`。
+- `2026-06-15`: 推进并收尾 P3 多账户路由：新增 `GET /v1/account-routes` 路由诊断接口，返回账户别名、broker/gateway、stream prefix、查询/交易/只读权限、环境和 Redis 六类 stream key；`/v1/schema` 和 API Console catalog 已同步。路线图中 P3 已标记为 done。

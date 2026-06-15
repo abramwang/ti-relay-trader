@@ -275,6 +275,7 @@ rejected
 | `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康、账户摘要、交易阶段和最近日流程任务状态 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已实现，配置账户列表并合并 PostgreSQL 账户别名 |
+| `GET` | `/v1/account-routes` | - | `[]AccountRoute` | 已实现，展示账户路由、查询/交易权限、环境和 Redis stream key |
 | `PATCH` | `/v1/accounts/{account_id}/alias` | `{alias}` | `Account` | 已实现，写入 PostgreSQL `accounts.account_name` |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
 | `POST` | `/v1/accounts/{account_id}/asset/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |

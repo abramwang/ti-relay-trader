@@ -21,6 +21,7 @@ import (
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/orderflow"
+	"ti-relay-trader/internal/redisstream"
 	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
@@ -160,6 +161,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/v1/status", server.handleStatus)
 	mux.HandleFunc("/v1/schema", server.handleSchema)
+	mux.HandleFunc("/v1/account-routes", server.handleAccountRoutes)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
@@ -737,33 +739,12 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accountIDs := make([]string, 0, len(s.cfg.Accounts))
-	for _, account := range s.cfg.Accounts {
-		accountIDs = append(accountIDs, account.AccountID)
-	}
-	aliasOverrides := map[string]string{}
-	source := "config"
-	if s.aliases != nil {
-		aliases, err := s.aliases.AccountAliases(r.Context(), accountIDs)
-		if err != nil {
-			s.logger.Warn("account_alias_lookup_failed", "error", err)
-		} else {
-			aliasOverrides = aliases
-			if len(aliases) > 0 {
-				source = "config+database"
-			}
-		}
-	}
-
+	aliasOverrides, source := s.accountAliasOverrides(r.Context())
 	accounts := make([]AccountView, 0, len(s.cfg.Accounts))
 	for _, account := range s.cfg.Accounts {
-		alias := strings.TrimSpace(account.Alias)
-		if override := strings.TrimSpace(aliasOverrides[account.AccountID]); override != "" {
-			alias = override
-		}
 		accounts = append(accounts, AccountView{
 			AccountID:      account.AccountID,
-			Alias:          alias,
+			Alias:          effectiveAccountAlias(account, aliasOverrides),
 			BrokerID:       account.BrokerID,
 			GatewayID:      account.GatewayID,
 			Enabled:        account.Enabled,
@@ -776,6 +757,77 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		"source":   source,
 		"accounts": accounts,
 	})
+}
+
+func (s *Server) handleAccountRoutes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+
+	aliasOverrides, source := s.accountAliasOverrides(r.Context())
+	routes := make([]AccountRouteView, 0, len(s.cfg.Accounts))
+	for _, account := range s.cfg.Accounts {
+		streams := redisstream.NewStreams(account.StreamPrefix)
+		routes = append(routes, AccountRouteView{
+			AccountID:      account.AccountID,
+			Alias:          effectiveAccountAlias(account, aliasOverrides),
+			BrokerID:       account.BrokerID,
+			GatewayID:      account.GatewayID,
+			StreamPrefix:   streams.Prefix,
+			Enabled:        account.Enabled,
+			TradingEnabled: account.TradingEnabled,
+			QueryEnabled:   account.Enabled,
+			ReadOnly:       account.Enabled && !account.TradingEnabled,
+			Simulated:      account.Simulated,
+			Environment:    string(s.cfg.Service.Environment),
+			Streams: AccountRouteStreamsView{
+				CmdTrade: streams.CmdTrade,
+				CmdQuery: streams.CmdQuery,
+				Reply:    streams.Reply,
+				Event:    streams.Event,
+				HB:       streams.HB,
+				DLQ:      streams.DLQ,
+			},
+		})
+	}
+
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"source":      source,
+		"environment": string(s.cfg.Service.Environment),
+		"redis_env":   s.cfg.Redis.Env,
+		"protocol":    redisstream.Protocol,
+		"summary":     summarizeAccounts(s.cfg.Accounts),
+		"routes":      routes,
+	})
+}
+
+func (s *Server) accountAliasOverrides(ctx context.Context) (map[string]string, string) {
+	accountIDs := make([]string, 0, len(s.cfg.Accounts))
+	for _, account := range s.cfg.Accounts {
+		accountIDs = append(accountIDs, account.AccountID)
+	}
+	aliasOverrides := map[string]string{}
+	source := "config"
+	if s.aliases != nil {
+		aliases, err := s.aliases.AccountAliases(ctx, accountIDs)
+		if err != nil {
+			s.logger.Warn("account_alias_lookup_failed", "error", err)
+		} else {
+			aliasOverrides = aliases
+			if len(aliases) > 0 {
+				source = "config+database"
+			}
+		}
+	}
+	return aliasOverrides, source
+}
+
+func effectiveAccountAlias(account config.AccountRouteConfig, aliasOverrides map[string]string) string {
+	if override := strings.TrimSpace(aliasOverrides[account.AccountID]); override != "" {
+		return override
+	}
+	return strings.TrimSpace(account.Alias)
 }
 
 func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
@@ -2502,6 +2554,30 @@ type AccountView struct {
 	Enabled        bool   `json:"enabled"`
 	TradingEnabled bool   `json:"trading_enabled"`
 	Simulated      bool   `json:"simulated"`
+}
+
+type AccountRouteView struct {
+	AccountID      string                  `json:"account_id"`
+	Alias          string                  `json:"alias,omitempty"`
+	BrokerID       string                  `json:"broker_id"`
+	GatewayID      string                  `json:"gateway_id"`
+	StreamPrefix   string                  `json:"stream_prefix"`
+	Enabled        bool                    `json:"enabled"`
+	TradingEnabled bool                    `json:"trading_enabled"`
+	QueryEnabled   bool                    `json:"query_enabled"`
+	ReadOnly       bool                    `json:"read_only"`
+	Simulated      bool                    `json:"simulated"`
+	Environment    string                  `json:"environment"`
+	Streams        AccountRouteStreamsView `json:"streams"`
+}
+
+type AccountRouteStreamsView struct {
+	CmdTrade string `json:"cmd_trade"`
+	CmdQuery string `json:"cmd_query"`
+	Reply    string `json:"reply"`
+	Event    string `json:"event"`
+	HB       string `json:"hb"`
+	DLQ      string `json:"dlq"`
 }
 
 type AccountAliasRequest struct {

@@ -37,6 +37,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/healthz", Response: "StatusView", Description: "service health check"},
 			{Method: "GET", Path: "/v1/status", Response: "StatusView", Description: "service status"},
 			{Method: "GET", Path: "/v1/accounts", Response: "[]Account", Description: "configured accounts"},
+			{Method: "GET", Path: "/v1/account-routes", Response: "[]AccountRoute", Description: "configured account routing, permissions, and Redis stream keys"},
 			{Method: "PATCH", Path: "/v1/accounts/{account_id}/alias", Request: "AccountAliasRequest", Response: "Account", Description: "persist account display alias"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/asset", Response: "Asset", Description: "account asset"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/asset/refresh", Response: "RefreshQueryResult", Description: "refresh account asset from front gateway"},
