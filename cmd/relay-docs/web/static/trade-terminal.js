@@ -9,6 +9,11 @@
     allPositionsLoadedDate: "",
     positionStatsDirty: true,
     positionStatsSeq: 0,
+    metricFills: [],
+    metricFillsAccount: "",
+    metricFillsLoadedDate: "",
+    metricFillsDirty: true,
+    metricFillsSeq: 0,
     orders: [],
     fills: [],
     ordersPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
@@ -769,15 +774,24 @@
   function resetPositionStats() {
     closePositionQuoteStreams();
     state.positionStatsSeq += 1;
+    state.metricFillsSeq += 1;
     state.allPositions = [];
     state.allPositionsAccount = "";
     state.allPositionsLoadedDate = "";
     state.positionStatsDirty = true;
     state.positionQuotes.clear();
+    state.metricFills = [];
+    state.metricFillsAccount = "";
+    state.metricFillsLoadedDate = "";
+    state.metricFillsDirty = true;
   }
 
   function markPositionStatsDirty() {
     state.positionStatsDirty = true;
+  }
+
+  function markMetricFillsDirty() {
+    state.metricFillsDirty = true;
   }
 
   function uniquePositionSecurityIDs(positions) {
@@ -901,6 +915,9 @@
     if (type === "asset.changed" || type === "positions.changed" || type === "fill.changed") {
       markPositionStatsDirty();
     }
+    if (type === "fill.changed") {
+      markMetricFillsDirty();
+    }
     scheduleStreamRefresh();
     scheduleChartMarkerRefresh(type);
   }
@@ -996,6 +1013,12 @@
     } catch (err) {
       state.positionStatsDirty = true;
       pushLog("warn", "全量持仓统计读取失败", err.message);
+    }
+    try {
+      await refreshMetricFillsSource();
+    } catch (err) {
+      state.metricFillsDirty = true;
+      pushLog("warn", "成交费用统计读取失败", err.message);
     }
 
     renderAll();
@@ -1133,6 +1156,59 @@
     state.allPositionsLoadedDate = tradeDate;
     state.positionStatsDirty = false;
     refreshPositionQuoteStreams();
+  }
+
+  async function refreshMetricFillsSource(options = {}) {
+    const tradeDate = selectedAssetTradeDateSafe();
+    const accountID = state.activeAccount;
+    const force = Boolean(options.force);
+    if (!accountID || !tradeDate) {
+      state.metricFills = [];
+      state.metricFillsAccount = accountID || "";
+      state.metricFillsLoadedDate = tradeDate || "";
+      state.metricFillsDirty = false;
+      return;
+    }
+    if (!force &&
+      !state.metricFillsDirty &&
+      state.metricFillsAccount === accountID &&
+      state.metricFillsLoadedDate === tradeDate) {
+      return;
+    }
+
+    const seq = ++state.metricFillsSeq;
+    const allFills = [];
+    let cursor = "";
+    for (let page = 0; page < 20; page += 1) {
+      const params = new URLSearchParams({
+        account_id: accountID,
+        limit: "500"
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      let path = "/v1/fills";
+      if (!isCurrentBusinessDate(tradeDate)) {
+        path = "/v1/history/fills";
+        params.set("trade_date", tradeDate);
+      }
+      const data = await request(path + "?" + params.toString());
+      allFills.push(...(data.fills || []));
+      cursor = data.next_cursor || "";
+      if (!cursor) {
+        break;
+      }
+    }
+    if (cursor) {
+      pushLog("warn", "成交费用统计超过前端查询上限", "已读取 " + formatInt(allFills.length) + " 条");
+    }
+    if (seq !== state.metricFillsSeq) {
+      return;
+    }
+    state.metricFills = allFills;
+    state.metricFillsAccount = accountID;
+    state.metricFillsLoadedDate = tradeDate;
+    state.metricFillsDirty = false;
   }
 
   async function fetchOrdersPage() {
@@ -1402,20 +1478,25 @@
     const liveTotals = livePortfolioTotals();
     const marketValue = liveTotals ? liveTotals.marketValue : asset.market_value;
     const positionProfit = liveTotals ? liveTotals.positionProfit : asset.position_profit;
+    const stockValue = liveTotals ? liveTotals.stockValue : asset.stock_value;
+    const fundValue = liveTotals ? liveTotals.fundValue : asset.fund_value;
+    const commission = metricCommission(asset);
+    const closeProfit = metricCloseProfit(asset);
+    const dayProfit = metricDayProfit(asset, positionProfit, closeProfit, commission);
     const netAsset = liveTotals ? liveTotals.netAsset : asset.net_asset;
     els.netAsset.textContent = formatNumber(netAsset);
     els.cashAvailable.textContent = formatNumber(asset.cash_available);
     els.marketValue.textContent = formatNumber(marketValue);
-    els.dayProfit.textContent = formatSigned(asset.day_profit);
-    els.dayProfit.className = Number(asset.day_profit) < 0 ? "down" : "up";
+    els.dayProfit.textContent = formatSigned(dayProfit);
+    els.dayProfit.className = Number(dayProfit) < 0 ? "down" : "up";
     els.cashTotal.textContent = formatNumber(asset.cash_total);
-    els.stockValue.textContent = formatNumber(asset.stock_value);
-    els.fundValue.textContent = formatNumber(asset.fund_value);
+    els.stockValue.textContent = formatNumber(stockValue);
+    els.fundValue.textContent = formatNumber(fundValue);
     els.positionProfit.textContent = formatSigned(positionProfit);
     els.positionProfit.className = Number(positionProfit) < 0 ? "down" : "up";
-    els.closeProfit.textContent = formatSigned(asset.close_profit);
-    els.closeProfit.className = Number(asset.close_profit) < 0 ? "down" : "up";
-    els.commission.textContent = formatNumber(asset.commission);
+    els.closeProfit.textContent = formatSigned(closeProfit);
+    els.closeProfit.className = Number(closeProfit) < 0 ? "down" : "up";
+    els.commission.textContent = formatNumber(commission);
     els.availableCash.textContent = formatNumber(asset.cash_available);
     const price = Number(els.priceInput.value);
     const maxBuy = price > 0 ? Math.floor(Number(asset.cash_available || 0) / price / 100) * 100 : 0;
@@ -1432,6 +1513,86 @@
     }
     const prefix = number > 0 ? "+" : "";
     return prefix + formatNumber(number);
+  }
+
+  function metricCommission(asset) {
+    const assetCommission = finiteNumber(asset && asset.commission);
+    if (assetCommission !== null) {
+      return assetCommission;
+    }
+    if (state.metricFillsAccount !== state.activeAccount ||
+      state.metricFillsLoadedDate !== selectedAssetTradeDateSafe() ||
+      state.metricFillsDirty) {
+      return null;
+    }
+    return state.metricFills.reduce((total, fill) => total + fillFee(fill), 0);
+  }
+
+  function fillFee(fill) {
+    const direct = finiteNumber(fill && fill.fee);
+    if (direct !== null) {
+      return direct;
+    }
+    const context = fill && fill.adapter_context;
+    const adapterFee = finiteNumber(context && (context.fee ?? context.nFee));
+    return adapterFee !== null ? adapterFee : 0;
+  }
+
+  function metricCloseProfit(asset) {
+    const assetCloseProfit = finiteNumber(asset && asset.close_profit);
+    if (assetCloseProfit !== null) {
+      return assetCloseProfit;
+    }
+    return estimatedCloseProfit();
+  }
+
+  function metricDayProfit(asset, positionProfit, closeProfit, commission) {
+    const assetDayProfit = finiteNumber(asset && asset.day_profit);
+    if (assetDayProfit !== null) {
+      return assetDayProfit;
+    }
+    const parts = [positionProfit, closeProfit, commission].map(finiteNumber);
+    if (parts.every((value) => value === null)) {
+      return null;
+    }
+    return (parts[0] || 0) + (parts[1] || 0) - (parts[2] || 0);
+  }
+
+  function estimatedCloseProfit() {
+    const tradeDate = selectedAssetTradeDateSafe();
+    if (state.metricFillsAccount !== state.activeAccount ||
+      state.metricFillsLoadedDate !== tradeDate ||
+      state.metricFillsDirty ||
+      state.allPositionsAccount !== state.activeAccount ||
+      state.allPositionsLoadedDate !== tradeDate ||
+      state.positionStatsDirty) {
+      return null;
+    }
+    const avgCostBySecurity = new Map();
+    for (const position of state.allPositions) {
+      const securityID = itemSecurityID(position);
+      const avgCost = finiteNumber(position.avg_cost);
+      if (securityID && avgCost !== null) {
+        avgCostBySecurity.set(securityID, avgCost);
+      }
+    }
+    let total = 0;
+    let hasEstimate = false;
+    for (const fill of state.metricFills) {
+      if (String(fill.trade_side || "").toUpperCase() !== "S") {
+        continue;
+      }
+      const securityID = itemSecurityID(fill);
+      const avgCost = avgCostBySecurity.get(securityID);
+      const price = finiteNumber(fill.price);
+      const qty = finiteNumber(fill.qty);
+      if (avgCost === undefined || price === null || qty === null) {
+        continue;
+      }
+      total += (price - avgCost) * qty;
+      hasEstimate = true;
+    }
+    return hasEstimate ? total : null;
   }
 
   function quoteForPosition(position) {
@@ -1489,6 +1650,9 @@
     }
     let marketValue = 0;
     let positionProfit = 0;
+    let stockValue = 0;
+    let fundValue = 0;
+    let unclassifiedValue = 0;
     for (const position of state.allPositions) {
       const view = livePositionView(position);
       const rowMarketValue = finiteNumber(view.marketValue);
@@ -1499,11 +1663,23 @@
       if (rowPnl !== null) {
         positionProfit += rowPnl;
       }
+      if (rowMarketValue !== null) {
+        const instrumentType = String(instrumentTypeForItem(view.quoteItem) || "").toLowerCase();
+        if (instrumentType === "etf") {
+          fundValue += rowMarketValue;
+        } else if (instrumentType) {
+          stockValue += rowMarketValue;
+        } else {
+          unclassifiedValue += rowMarketValue;
+        }
+      }
     }
     const cashTotal = finiteNumber(state.asset && state.asset.cash_total);
     return {
       marketValue,
       positionProfit,
+      stockValue: unclassifiedValue > 0 ? null : stockValue,
+      fundValue: unclassifiedValue > 0 ? null : fundValue,
       netAsset: cashTotal !== null ? cashTotal + marketValue : (state.asset && state.asset.net_asset)
     };
   }
@@ -2983,6 +3159,12 @@
     } catch (err) {
       state.positionStatsDirty = true;
       pushLog("warn", "全量持仓统计读取失败", err.message);
+    }
+    try {
+      await refreshMetricFillsSource();
+    } catch (err) {
+      state.metricFillsDirty = true;
+      pushLog("warn", "成交费用统计读取失败", err.message);
     }
     renderMetrics();
     renderPositions();

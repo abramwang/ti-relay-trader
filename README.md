@@ -254,6 +254,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] Meridian bars 代理新增短 TTL 缓存、同 key 并发请求合并和 stale fallback，降低读压下 `/v1/meridian/market/bars` 与绩效 `benchmark_security_id` 对上游的重复打穿。
 - [x] 新增 `GET /v1/meridian/stream/market/snapshots` 同源 SSE 薄代理，保留 Meridian `market_snapshots` 原始事件；`/trade` 当前交易日资金持仓会拉取全量持仓清单并按标的分片订阅 level1 SSE，用 Meridian `last` 实时计算现价、市值和全量浮动盈亏合计，历史日继续展示日终/历史账本字段。
 - [x] `/trade` 分页请求层增加非 JSON 响应保护，订单、成交和持仓分页失败时会展示具体请求路径、HTTP 状态和 content-type，并回滚 page/cursor，避免一次失败后分页状态错位。
+- [x] `/trade` 资金持仓页补齐测试前置缺失的资金指标展示：股票市值/基金市值按全量持仓和 Meridian `instrument_type` 拆分，其中基金市值只统计 ETF；手续费按资金持仓交易日的全量成交 `fee/adapter_context.fee/nFee` 汇总；当前日若前置未给 `day_profit`，页面用持仓浮盈 + 估算平仓盈亏 - 手续费兜底展示。
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
@@ -312,6 +313,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 订单/成交事件会触发服务端自动刷新资金和持仓，但会按账户合并并限频，默认 `auto_refresh.debounce_seconds=2`、`auto_refresh.cooldown_seconds=20`；这能让 `/trade` 持仓跟随成交更新，同时避免每条订单推送都查询柜台。
 - 测试下单参考价不要硬编码；`/trade` 当前通过 relay 的 Meridian 薄代理读取 `/v1/market/snapshots` 和 level1 snapshot SSE，如果当天不是交易日会调用 Meridian `/v1/metadata/trading-day` 获取最近交易日后读取 historical 快照。当前交易日持仓现价、市值和浮动盈亏由 Meridian level1 SSE 推送更新，不通过前端轮询行情计算。
 - 资金持仓汇总区的实时浮动盈亏按全量持仓清单求和，不按当前表格分页估算；页面表格仍保留服务端分页，切换账户、日期或收到持仓/成交 SSE 后会刷新本地全量持仓清单，再重新订阅 Meridian level1 SSE。
+- 当前测试前置 `asset` 快照未提供 `stock_value/fund_value/day_profit/commission/position_profit`，页面已做展示兜底。股票/ETF 市值拆分只使用 Meridian 的 `instrument_type`；若首批行情尚未返回，拆分字段暂显 `--`，避免把未知类型错分到股票或基金。后续前置补齐标准资金字段后，页面会优先使用前置字段。
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
@@ -412,3 +414,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 跟进 `relay_sdk_019_trading_day_pressure` 报告：买卖双向交易主链路稳定，瓶颈集中在并发 bars/benchmark；relay 为 Meridian bars 代理增加 2 秒新鲜缓存、同 key singleflight 合并和 60 秒 stale fallback，并补并发合并与上游 5xx 回退单元测试。
 - `2026-06-15`: 新增 Meridian level1 snapshot SSE 同源代理 `/v1/meridian/stream/market/snapshots`，`/trade` 当前交易日资金持仓按全量持仓分片订阅行情流，实时刷新持仓现价、市值和全账户浮动盈亏合计；历史日期不使用实时行情重估。
 - `2026-06-15`: 排查 `/trade` 订单监控分页 `JSON Parse error: Unrecognized token '<'`：服务端订单/成交/持仓分页当前均返回 JSON，前端请求层已补非 JSON 响应诊断和分页失败状态回滚，后续若再遇到 HTML 错误页可直接看到具体 URL 与响应类型。
+- `2026-06-15`: 补齐 `/trade` 资金持仓页股票市值、ETF 基金市值、手续费、持仓盈亏和平仓/当日盈亏展示兜底；这些指标在测试前置资金快照缺字段时由全量持仓、Meridian level1 SSE 和当日全量成交账本计算。
