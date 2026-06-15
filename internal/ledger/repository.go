@@ -998,6 +998,11 @@ func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, strea
 	if err != nil {
 		return fmt.Errorf("insert fill %s/%s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, normalized.FillID, err)
 	}
+	if !strings.HasPrefix(normalized.FillID, "relay-summary:") {
+		if _, err := repo.exec.ExecContext(ctx, deleteSummaryFillsForOrderSQL, normalized.AccountID, normalized.GatewayOrderID, nullString(normalized.OrderStreamID)); err != nil {
+			return fmt.Errorf("delete summary fills %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+		}
+	}
 	return nil
 }
 

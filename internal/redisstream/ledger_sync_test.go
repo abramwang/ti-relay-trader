@@ -236,25 +236,43 @@ func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
 				"qty":100,
 				"trade_side":"B",
 				"matched_at":"2026-06-13 10:00:02"
+			},{
+				"fill_id":"fill-page-2",
+				"gateway_order_id":"gw-page-2",
+				"order_id":1680002,
+				"order_stream_id":"110018100000002",
+				"account_id":"00030484",
+				"symbol":"600001",
+				"exchange":"SH",
+				"price":10.01,
+				"qty":200,
+				"trade_side":"S",
+				"matched_at":"2026-06-13T10:00:05+08:00"
 			}]}
 		}`,
 	})
 
-	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Fills != 1 {
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Fills != 2 {
 		t.Fatalf("result = %#v", result)
 	}
-	if len(writer.fills) != 1 {
+	if len(writer.fills) != 2 {
 		t.Fatalf("fills = %#v", writer.fills)
 	}
 	fill := writer.fills[0].fill
 	if fill.FillID != "fill-page-1" || fill.GatewayOrderID != "gw-page-1" || fill.MatchedAt.IsZero() {
 		t.Fatalf("fill = %#v", fill)
 	}
+	if fill.TradeDate != "2026-06-13" {
+		t.Fatalf("fill trade_date = %q", fill.TradeDate)
+	}
 	if got := fill.MatchedAt.In(timeutil.Location()).Format(time.RFC3339); got != "2026-06-13T10:00:02+08:00" {
 		t.Fatalf("fill matched_at = %s, want Asia/Shanghai local parse", got)
 	}
-	if writer.fills[0].stream.ID != "1-4" || writer.fills[0].source.OriginMessageID != "msg-fill-query-1" {
+	if writer.fills[0].stream.ID != "1-4:fill:fill-page-1" || writer.fills[0].source.OriginMessageID != "msg-fill-query-1" {
 		t.Fatalf("fill source = %#v", writer.fills[0])
+	}
+	if writer.fills[1].stream.ID != "1-4:fill:fill-page-2" {
+		t.Fatalf("second fill source = %#v", writer.fills[1])
 	}
 }
 

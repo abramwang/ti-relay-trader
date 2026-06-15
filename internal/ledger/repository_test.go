@@ -258,14 +258,25 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 		t.Fatalf("InsertFill() error = %v", err)
 	}
 
-	requireQueryContains(t, exec.query, "INSERT INTO fills")
-	requireQueryContains(t, exec.query, "ON CONFLICT DO NOTHING")
-	requireArgLen(t, exec.args, 22)
-	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
-		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[2])
+	if len(exec.queries) != 2 {
+		t.Fatalf("query count = %d, want insert + summary cleanup", len(exec.queries))
 	}
-	assertJSONContains(t, exec.args[20], `"fill_id":"fill-1"`)
-	assertJSONContains(t, exec.args[21], `"match_type":"counter"`)
+	requireQueryContains(t, exec.queries[0], "INSERT INTO fills")
+	requireQueryContains(t, exec.queries[0], "ON CONFLICT DO NOTHING")
+	requireArgLen(t, exec.argsList[0], 22)
+	if exec.argsList[0][0] != "acct-1" || exec.argsList[0][2] != "gateway-1" {
+		t.Fatalf("identity args = %#v %#v", exec.argsList[0][0], exec.argsList[0][2])
+	}
+	assertJSONContains(t, exec.argsList[0][20], `"fill_id":"fill-1"`)
+	assertJSONContains(t, exec.argsList[0][21], `"match_type":"counter"`)
+	requireQueryContains(t, exec.queries[1], "DELETE FROM fills")
+	requireArgLen(t, exec.argsList[1], 3)
+	if exec.argsList[1][0] != "acct-1" || exec.argsList[1][1] != "gateway-1" {
+		t.Fatalf("summary cleanup args = %#v", exec.argsList[1])
+	}
+	if orderStream, ok := exec.argsList[1][2].(sql.NullString); !ok || !orderStream.Valid || orderStream.String != "order-stream-1" {
+		t.Fatalf("summary cleanup order stream arg = %#v", exec.argsList[1][2])
+	}
 }
 
 func TestArchiveRawStreamMessageBuildsAuditWrite(t *testing.T) {
@@ -990,14 +1001,18 @@ func TestRepositoryValidation(t *testing.T) {
 }
 
 type recordingExecutor struct {
-	query string
-	args  []any
-	err   error
+	query    string
+	args     []any
+	queries  []string
+	argsList [][]any
+	err      error
 }
 
 func (exec *recordingExecutor) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	exec.query = query
 	exec.args = append([]any(nil), args...)
+	exec.queries = append(exec.queries, query)
+	exec.argsList = append(exec.argsList, append([]any(nil), args...))
 	return nil, exec.err
 }
 

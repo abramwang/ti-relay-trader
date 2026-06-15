@@ -262,6 +262,16 @@ INSERT INTO fills (
 ON CONFLICT DO NOTHING
 `
 
+const deleteSummaryFillsForOrderSQL = `
+DELETE FROM fills
+WHERE account_id = $1
+    AND fill_id LIKE 'relay-summary:%'
+    AND (
+        gateway_order_id = $2
+        OR ($3::text IS NOT NULL AND order_stream_id = $3)
+    )
+`
+
 const fillSelectColumns = `
 SELECT
     fill_id,

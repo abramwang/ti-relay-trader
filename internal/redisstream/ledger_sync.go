@@ -315,7 +315,7 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		for _, fill := range fills {
 			result.noteAccount(fill.AccountID)
-			if err := writer.InsertFill(ctx, fill, streamRef(envelope), sourceRef(envelope)); err != nil {
+			if err := writer.InsertFill(ctx, fill, fillPageStreamRef(envelope, fill), sourceRef(envelope)); err != nil {
 				result.LedgerErrors++
 				result.SkipReasons = append(result.SkipReasons, err.Error())
 				return result
@@ -589,6 +589,11 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		}
 		return trading.Fill{}, err
 	}
+	matchedAt := parseTime(payload.MatchedAt)
+	tradeDate := strings.TrimSpace(payload.TradeDate)
+	if tradeDate == "" && !matchedAt.IsZero() {
+		tradeDate = matchedAt.In(timeutil.Location()).Format("2006-01-02")
+	}
 	return trading.Fill{
 		FillID:         payload.FillID,
 		AccountID:      payload.AccountID,
@@ -602,9 +607,9 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		Price:          payload.Price,
 		Qty:            payload.Qty,
 		Fee:            payload.Fee,
-		TradeDate:      payload.TradeDate,
+		TradeDate:      tradeDate,
 		MatchTimestamp: payload.MatchTimestamp,
-		MatchedAt:      parseTime(payload.MatchedAt),
+		MatchedAt:      matchedAt,
 		ShareholderID:  payload.ShareholderID,
 		AdapterContext: withRawAccountID(envelope.AdapterContext, rawAccountID),
 	}, nil
@@ -834,6 +839,18 @@ func summaryFillStreamRef(envelope EntryEnvelope, gatewayOrderID string) ledger.
 	stream := streamRef(envelope)
 	if stream.ID != "" && gatewayOrderID != "" {
 		stream.ID = stream.ID + ":summary:" + gatewayOrderID
+	}
+	return stream
+}
+
+func fillPageStreamRef(envelope EntryEnvelope, fill trading.Fill) ledger.StreamRef {
+	stream := streamRef(envelope)
+	if stream.ID == "" {
+		return stream
+	}
+	suffix := firstNonEmpty(fill.FillID, fill.OrderStreamID, fill.GatewayOrderID)
+	if suffix != "" {
+		stream.ID = stream.ID + ":fill:" + suffix
 	}
 	return stream
 }
