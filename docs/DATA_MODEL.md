@@ -162,6 +162,8 @@ migrations/postgres/000001_init_ledger.down.sql
 
 第一版 PnL 口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留，后续如前置或柜台提供更精细的已实现盈亏字段，再在 view 新版本中扩展。
 
+`/trade#performance` 的页面指标、收益贡献和数据质量展示设计见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。该页面第一版应优先复用上述 close 快照、成交账本、订单账本、对账结果和 Meridian bars，不主动查询柜台。
+
 ## 关键约束
 
 1. `orders.account_id + orders.gateway_order_id` 必须唯一。

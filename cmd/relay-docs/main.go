@@ -122,6 +122,12 @@ var (
 			Description: "成熟交易软件风格手动测试台、页面结构、接口接入和实时刷新计划。",
 		},
 		{
+			Slug:        "performance-analysis",
+			Title:       "绩效分析设计",
+			Path:        "docs/PERFORMANCE_ANALYSIS_DESIGN.md",
+			Description: "交易终端绩效分析页的指标口径、数据来源、页面结构和分阶段实现计划。",
+		},
+		{
 			Slug:        "python-sdk",
 			Title:       "Python SDK",
 			Path:        "docs/PYTHON_SDK.md",
@@ -572,6 +578,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
   <a class="card" href="/trade"><strong>交易终端</strong><span>成熟交易软件风格手动测试台</span></a>
   <a class="card" href="/jobs"><strong>任务状态</strong><span>盘前初始化与盘后结算监控</span></a>
   <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
+  <a class="card" href="/docs/performance-analysis"><strong>绩效分析设计</strong><span>指标口径、归因与数据质量</span></a>
   <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
   <a class="card" href="/sdk/relay-sdk-0.1.9.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.9 tar.gz</span></a>
   <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>

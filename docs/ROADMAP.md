@@ -30,9 +30,10 @@
 
 1. 保持 9092 文档门户在线，继续将恢复状态沉淀在 README。
 2. 暂缓 P9 模拟柜台；relay 近期继续聚焦实盘/券商测试柜台接入、账本、审计、对账和策略交易 API。
-3. 增加 Playwright 页面交互冒烟测试。
-4. 增加批量下单测试视图。
-5. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+3. 按 `docs/PERFORMANCE_ANALYSIS_DESIGN.md` 重构 `/trade#performance`，先完成页面级日终复盘、收益贡献和数据质量展示。
+4. 增加 Playwright 页面交互冒烟测试。
+5. 增加批量下单测试视图。
+6. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
 
 ## 下一步任务
 
@@ -61,6 +62,23 @@
 状态：`todo`
 
 目标：补齐 `/trade` 的批量下单手动测试视图，并用 Playwright 覆盖交易终端关键页面交互，避免后续 UI 改动回归。
+
+### N8 绩效分析页面重构
+
+状态：`doing`
+
+目标：把 `/trade#performance` 从当前 P8 数据验证视图，整理为日终复盘、收益贡献、交易归因和数据质量工作区。
+
+当前已完成：
+
+- 新增 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`，明确指标口径、数据来源、页面结构、估算标记和分阶段实现计划。
+- 明确分钟 K 线只保留在交易测试页，绩效页主图改为净值、基准、超额收益、回撤和 PnL 分解。
+
+后续范围：
+
+- 先复用现有 performance、history、reconciliation、job_runs 和 Meridian 接口完成 UI 重排。
+- 如前端聚合过重，再新增只读 `performance/contributions` 聚合接口。
+- 精确成本引擎、FIFO/移动加权、分红派息、ETF 申赎和逆回购归因放到后续版本。
 
 ## 里程碑细化
 
@@ -275,6 +293,7 @@
 - [x] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入：`benchmark_security_id` 输出基准收益、基准回撤、超额收益并进入 CSV。
 - [x] 提供研究侧导出输入第一版：账户绩效序列 CSV。
 - [x] 生成研究侧数据库导出视图：`research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。
+- [x] 完成绩效分析页面第一版设计文档，明确净值曲线、收益贡献、交易归因和数据质量口径。
 
 ### P9 模拟柜台
 
