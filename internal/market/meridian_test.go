@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -341,4 +342,161 @@ func TestMarketBarsUsesRealtimeForCurrentTradingDay(t *testing.T) {
 	if barsQuery.Get("trade_date") != "20260615" || barsQuery.Get("data_scope") != "realtime" || barsQuery.Get("limit") != "300" {
 		t.Fatalf("bars query = %s", barsQuery.Encode())
 	}
+}
+
+func TestMarketBarsCoalescesConcurrentRequests(t *testing.T) {
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != barsPath {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id": "600000.SH",
+				"trade_date":  20260612,
+				"datetime":    "2026-06-12T09:31:00+08:00",
+				"frequency":   "1m",
+				"close":       9.67,
+			}},
+			"meta": map[string]any{"schema_version": "market_bar.v1"},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:        server.URL,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	values := url.Values{
+		"security_id": {"600000.SH"},
+		"trade_date":  {"20260612"},
+		"frequency":   {"1m"},
+		"adjustment":  {"none"},
+		"limit":       {"20"},
+	}
+	var wg sync.WaitGroup
+	errCh := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			response, err := client.MarketBars(context.Background(), values)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if response.StatusCode != http.StatusOK {
+				errCh <- http.ErrAbortHandler
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("MarketBars concurrent call: %v", err)
+		}
+	}
+	mu.Lock()
+	got := requests
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("upstream bars requests = %d, want 1", got)
+	}
+}
+
+func TestMarketBarsReturnsStaleCacheOnUpstreamFailure(t *testing.T) {
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != barsPath {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		requests++
+		current := requests
+		mu.Unlock()
+		if current > 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": "upstream_reset", "message": "connection reset"},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id": "600000.SH",
+				"trade_date":  20260612,
+				"datetime":    "2026-06-12T09:31:00+08:00",
+				"frequency":   "1m",
+				"close":       9.67,
+			}},
+			"meta": map[string]any{"schema_version": "market_bar.v1"},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:        server.URL,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	client.barsCacheTTL = 10 * time.Millisecond
+	client.barsStaleTTL = time.Minute
+	values := url.Values{
+		"security_id": {"600000.SH"},
+		"trade_date":  {"20260612"},
+		"frequency":   {"1m"},
+		"adjustment":  {"none"},
+		"limit":       {"20"},
+	}
+	if response, err := client.MarketBars(context.Background(), values); err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("initial MarketBars status=%d err=%v", response.StatusCode, err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	response, err := client.MarketBars(context.Background(), values)
+	if err != nil {
+		t.Fatalf("stale MarketBars: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("stale status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if closePrice := firstBarsClose(t, response); closePrice != 9.67 {
+		t.Fatalf("stale close = %v, want 9.67", closePrice)
+	}
+	mu.Lock()
+	got := requests
+	mu.Unlock()
+	if got != 2 {
+		t.Fatalf("upstream bars requests = %d, want 2", got)
+	}
+}
+
+func firstBarsClose(t *testing.T, response MeridianResponse) float64 {
+	t.Helper()
+	rows, ok := response.Payload["data"].([]any)
+	if !ok || len(rows) == 0 {
+		t.Fatalf("missing bars data: %#v", response.Payload)
+	}
+	row, ok := rows[0].(map[string]any)
+	if !ok {
+		t.Fatalf("invalid bars row: %#v", rows[0])
+	}
+	closePrice, ok := row["close"].(float64)
+	if !ok {
+		t.Fatalf("invalid close: %#v", row["close"])
+	}
+	return closePrice
 }

@@ -251,6 +251,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `/trade` 分钟 K 线支持当前账户、标的、交易日的买卖点标注：优先使用成交价/成交时间，未成交订单使用委托价/委托时间，并在代码切换、手动刷新和订单/成交 SSE 推送后刷新标注。
 - [x] `/trade` 交易终端所有默认交易日统一为东八区当前日期；当 Meridian snapshot/bars 返回最近交易日时，会自动回填仍处于默认值的资金持仓、订单监控、绩效和 K 线日期输入框。
 - [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`，bars 同时使用 `data_scope=realtime`；只有非交易日才回退到最近交易日 historical。
+- [x] Meridian bars 代理新增短 TTL 缓存、同 key 并发请求合并和 stale fallback，降低读压下 `/v1/meridian/market/bars` 与绩效 `benchmark_security_id` 对上游的重复打穿。
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
@@ -289,7 +290,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `GET /v1/accounts/{account_id}/performance/series` 当前以 close 净资产为主线计算累计收益和回撤，并支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，输出基准收益、回撤和超额收益。持仓复权估值和更精细交易归因仍需后续版本。
 - `GET /v1/accounts/{account_id}/performance/series.csv` 是轻量 CSV 导出；研究侧 PostgreSQL view 已提供 `research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。后续如需大批量离线消费，可再补 Parquet/批量文件任务。
 - P8 账表计算只接入 Meridian `bars`。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
-- `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，非交易日自动回退到最近交易日。绩效基准、交易测试主界面分钟 K 线和研究导出输入均基于该入口读取 `market_bar.v1`。
+- `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，交易日当天使用 `data_scope=realtime`，非交易日自动回退到最近交易日 historical。bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback，降低读压下直接 bars 查询和绩效 benchmark 对上游的重复冲击。
 - `/trade` 分钟 K 线图只用于手工测试与点位理解；买卖点来自本地订单/成交账本，不新增行情字段定义。成交点优先于委托点，同一订单已有成交时不会重复绘制委托价。`/trade#performance` 后续改为净值曲线、收益贡献和交易归因等绩效图。
 - 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
 - 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
@@ -405,3 +406,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 梳理整体文档，删除 `data/simdesk` 和 `src/relay/simdesk` 过时占位，压缩 README 恢复卡片；补全 Redis Stream 命名、command envelope、reply/event 合并、checkpoint、订单编号唯一性、下单幂等、成交订单作用域去重和终态保护说明。
 - `2026-06-15`: 统一 `/trade` 交易终端默认日期：前端以 `Asia/Shanghai` 当前日期初始化，Meridian snapshot/bars 如果回退到最近交易日，会只回填仍处于自动默认值的日期输入框；模板中移除固定样例日期占位符。
 - `2026-06-15`: 排查交易终端仍显示 `20260612` 行情：Meridian 交易日接口已确认 `20260615` 是交易日，但实时 snapshot/bars 不带当天过滤时会返回旧 Redis journal 的 `20260612` 数据；relay 已调整为交易日当天显式请求 `trade_date=当天`，bars 默认补 `data_scope=realtime`，避免交易终端误用旧行情。
+- `2026-06-15`: 跟进 `relay_sdk_019_trading_day_pressure` 报告：买卖双向交易主链路稳定，瓶颈集中在并发 bars/benchmark；relay 为 Meridian bars 代理增加 2 秒新鲜缓存、同 key singleflight 合并和 60 秒 stale fallback，并补并发合并与上游 5xx 回退单元测试。

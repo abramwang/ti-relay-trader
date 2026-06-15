@@ -9,7 +9,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/timeutil"
@@ -22,18 +25,36 @@ const (
 	tradingDayPath  = "/v1/metadata/trading-day"
 )
 
+const (
+	marketBarsCacheTTL   = 2 * time.Second
+	marketBarsStaleTTL   = 60 * time.Second
+	marketBarsCacheLimit = 256
+)
+
 type MeridianClient struct {
 	baseURL             string
 	snapshotMarketLevel string
 	snapshotDataScope   string
 	httpClient          *http.Client
 	now                 func() time.Time
+	barsGroup           singleflight.Group
+	cacheMu             sync.Mutex
+	cache               map[string]meridianCacheEntry
+	barsCacheTTL        time.Duration
+	barsStaleTTL        time.Duration
+	barsCacheLimit      int
 }
 
 type MeridianResponse struct {
 	StatusCode int
 	URL        string
 	Payload    map[string]any
+}
+
+type meridianCacheEntry struct {
+	response   MeridianResponse
+	expiresAt  time.Time
+	staleUntil time.Time
 }
 
 func NewMeridianClient(cfg config.MarketConfig) (*MeridianClient, error) {
@@ -59,6 +80,10 @@ func NewMeridianClient(cfg config.MarketConfig) (*MeridianClient, error) {
 		snapshotDataScope:   dataScope,
 		httpClient:          &http.Client{Timeout: timeout},
 		now:                 time.Now,
+		cache:               make(map[string]meridianCacheEntry),
+		barsCacheTTL:        marketBarsCacheTTL,
+		barsStaleTTL:        marketBarsStaleTTL,
+		barsCacheLimit:      marketBarsCacheLimit,
 	}, nil
 }
 
@@ -131,7 +156,114 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 			}
 		}
 	}
-	return client.getJSON(ctx, barsPath, query)
+	return client.cachedBars(ctx, query)
+}
+
+func (client *MeridianClient) cachedBars(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	key := cacheKey(barsPath, values)
+	if response, ok := client.cachedResponse(key, time.Now(), false); ok {
+		return response, nil
+	}
+	result, err, _ := client.barsGroup.Do(key, func() (any, error) {
+		now := time.Now()
+		if response, ok := client.cachedResponse(key, now, false); ok {
+			return response, nil
+		}
+		response, err := client.getJSON(context.WithoutCancel(ctx), barsPath, values)
+		if err != nil {
+			if cached, ok := client.cachedResponse(key, time.Now(), true); ok {
+				return cached, nil
+			}
+			return MeridianResponse{}, err
+		}
+		if response.StatusCode >= http.StatusInternalServerError {
+			if cached, ok := client.cachedResponse(key, time.Now(), true); ok {
+				return cached, nil
+			}
+			return response, nil
+		}
+		if shouldCacheMeridianResponse(response) {
+			client.storeCachedResponse(key, response, time.Now())
+		}
+		return response, nil
+	})
+	if err != nil {
+		return MeridianResponse{}, err
+	}
+	response, ok := result.(MeridianResponse)
+	if !ok {
+		return MeridianResponse{}, errors.New("invalid meridian bars cache result")
+	}
+	return response, nil
+}
+
+func cacheKey(path string, values url.Values) string {
+	if encoded := values.Encode(); encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
+}
+
+func shouldCacheMeridianResponse(response MeridianResponse) bool {
+	if response.StatusCode >= http.StatusInternalServerError {
+		return false
+	}
+	if _, ok := response.Payload["error"]; ok {
+		return false
+	}
+	return true
+}
+
+func (client *MeridianClient) cachedResponse(key string, now time.Time, allowStale bool) (MeridianResponse, bool) {
+	client.cacheMu.Lock()
+	defer client.cacheMu.Unlock()
+	entry, ok := client.cache[key]
+	if !ok {
+		return MeridianResponse{}, false
+	}
+	if now.Before(entry.expiresAt) || (allowStale && now.Before(entry.staleUntil)) {
+		return entry.response, true
+	}
+	return MeridianResponse{}, false
+}
+
+func (client *MeridianClient) storeCachedResponse(key string, response MeridianResponse, now time.Time) {
+	ttl := client.barsCacheTTL
+	if ttl <= 0 {
+		ttl = marketBarsCacheTTL
+	}
+	staleTTL := client.barsStaleTTL
+	if staleTTL < ttl {
+		staleTTL = ttl
+	}
+	limit := client.barsCacheLimit
+	if limit <= 0 {
+		limit = marketBarsCacheLimit
+	}
+	client.cacheMu.Lock()
+	defer client.cacheMu.Unlock()
+	if len(client.cache) >= limit {
+		client.pruneCacheLocked(now)
+	}
+	if len(client.cache) >= limit {
+		for existingKey := range client.cache {
+			delete(client.cache, existingKey)
+			break
+		}
+	}
+	client.cache[key] = meridianCacheEntry{
+		response:   response,
+		expiresAt:  now.Add(ttl),
+		staleUntil: now.Add(staleTTL),
+	}
+}
+
+func (client *MeridianClient) pruneCacheLocked(now time.Time) {
+	for key, entry := range client.cache {
+		if !now.Before(entry.staleUntil) {
+			delete(client.cache, key)
+		}
+	}
 }
 
 func (client *MeridianClient) getJSON(ctx context.Context, path string, values url.Values) (MeridianResponse, error) {
