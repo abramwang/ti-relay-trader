@@ -219,6 +219,12 @@ go run ./cmd/relayctl ledger-sync -config config/relay.local.yaml -count 20
 
 ## 字段缺口
 
+### 账户号归一
+
+生产前置可能在同一个账户专属 stream 中返回券商侧扩展账户号，例如 relay 路由账户为 `314000046830`，`order_page.items[].account_id` 为 `31400004683001`。relay 在入账时按 stream routing account 归一到配置账户 `314000046830`，并在 `adapter_context.relay_raw_account_id` 保留前置原始账户号。
+
+归一只在两者存在前后缀关系时生效；若 payload account 与 routing account 完全不同，relay 保留 payload account，避免误合并真实不同账户。
+
 当前观察到的 `order.event` payload 已包含：
 
 1. `gateway_order_id`

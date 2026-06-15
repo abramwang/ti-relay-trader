@@ -154,6 +154,55 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryNormalizesRoutedOrderPageAccount(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-31", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-order-page-routed-account",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"produced_at":"2026-06-15T13:00:00+08:00",
+			"payload":{"items":[{
+				"gateway_order_id":"external-huaxin-31400004683001-12001A180002899",
+				"order_id":884,
+				"order_stream_id":"12001A180002899",
+				"account_id":"31400004683001",
+				"symbol":"000767",
+				"exchange":"SZ",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":200,
+				"cum_filled_qty":200,
+				"leaves_qty":0,
+				"limit_price":4.8,
+				"gateway_status":"filled"
+			}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Orders != 1 || result.Fills != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 1 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	order := writer.orders[0]
+	if order.AccountID != "314000046830" {
+		t.Fatalf("order account_id = %q", order.AccountID)
+	}
+	if order.AdapterContext["relay_raw_account_id"] != "31400004683001" {
+		t.Fatalf("order context = %#v", order.AdapterContext)
+	}
+	fill := writer.fills[0].fill
+	if fill.AccountID != "314000046830" || fill.AdapterContext["relay_raw_account_id"] != "31400004683001" {
+		t.Fatalf("summary fill = %#v", fill)
+	}
+}
+
 func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-4", map[string]any{
@@ -195,6 +244,49 @@ func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
 	}
 	if writer.fills[0].stream.ID != "1-4" || writer.fills[0].source.OriginMessageID != "msg-fill-query-1" {
 		t.Fatalf("fill source = %#v", writer.fills[0])
+	}
+}
+
+func TestProcessLedgerEntryNormalizesRoutedFillPageAccount(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-41", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fill-page-routed-account",
+			"action":"fill.list.query",
+			"result_type":"fill_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"produced_at":"2026-06-15T13:00:01+08:00",
+			"payload":{"items":[{
+				"fill_id":"fill-page-routed-1",
+				"gateway_order_id":"external-huaxin-31400004683001-12001A180002899",
+				"order_id":884,
+				"order_stream_id":"12001A180002899",
+				"account_id":"31400004683001",
+				"symbol":"000767",
+				"exchange":"SZ",
+				"price":4.8,
+				"qty":200,
+				"trade_side":"B",
+				"matched_at":"2026-06-15 13:00:01"
+			}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Fills != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.fills) != 1 {
+		t.Fatalf("fills = %#v", writer.fills)
+	}
+	fill := writer.fills[0].fill
+	if fill.AccountID != "314000046830" {
+		t.Fatalf("fill account_id = %q", fill.AccountID)
+	}
+	if fill.AdapterContext["relay_raw_account_id"] != "31400004683001" {
+		t.Fatalf("fill context = %#v", fill.AdapterContext)
 	}
 }
 

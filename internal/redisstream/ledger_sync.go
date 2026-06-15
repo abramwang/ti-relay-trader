@@ -538,11 +538,13 @@ func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, bool, e
 		return trading.OrderEvent{}, false, fmt.Errorf("decode order.event payload: %w", err)
 	}
 	mergeEnvelopeFields(&payload, envelope)
+	rawAccountID := normalizeAccountIDFromRouting(&payload.AccountID, envelope)
 	if err := payload.validateOrderEventFields(); err != nil {
 		return trading.OrderEvent{}, false, err
 	}
 
 	order := payload.toOrder(envelope)
+	order.AdapterContext = withRawAccountID(order.AdapterContext, rawAccountID)
 	complete := payload.completeOrderLedgerFields()
 	event := trading.OrderEvent{
 		EventID:        envelope.MessageID,
@@ -571,6 +573,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 	if payload.AccountID == "" {
 		payload.AccountID = envelope.Routing.AccountID
 	}
+	rawAccountID := normalizeAccountIDFromRouting(&payload.AccountID, envelope)
 	if payload.GatewayOrderID == "" {
 		payload.GatewayOrderID = envelope.GatewayOrderID
 	}
@@ -603,7 +606,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		MatchTimestamp: payload.MatchTimestamp,
 		MatchedAt:      parseTime(payload.MatchedAt),
 		ShareholderID:  payload.ShareholderID,
-		AdapterContext: envelope.AdapterContext,
+		AdapterContext: withRawAccountID(envelope.AdapterContext, rawAccountID),
 	}, nil
 }
 
@@ -615,6 +618,7 @@ func assetFromReplyEnvelope(envelope EntryEnvelope) (trading.Asset, any, error) 
 	if payload.Account.AccountID == "" {
 		payload.Account.AccountID = envelope.Routing.AccountID
 	}
+	rawAccountID := normalizeAccountIDFromRouting(&payload.Account.AccountID, envelope)
 	if strings.TrimSpace(payload.Account.AccountID) == "" {
 		return trading.Asset{}, nil, fmt.Errorf("asset_page payload incomplete for ledger write: missing account_id")
 	}
@@ -633,6 +637,12 @@ func assetFromReplyEnvelope(envelope EntryEnvelope) (trading.Asset, any, error) 
 		Credit:         payload.Account.Credit,
 		UpdatedAt:      envelope.ProducedAt,
 	}
+	if rawAccountID != "" {
+		return asset, map[string]any{
+			"account":        payload.Account,
+			"raw_account_id": rawAccountID,
+		}, nil
+	}
 	return asset, payload.Account, nil
 }
 
@@ -647,6 +657,7 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 		if item.AccountID == "" {
 			item.AccountID = envelope.Routing.AccountID
 		}
+		rawAccountID := normalizeAccountIDFromRouting(&item.AccountID, envelope)
 		if strings.TrimSpace(item.AccountID) == "" {
 			return nil, nil, fmt.Errorf("position_page payload incomplete for ledger write: missing account_id")
 		}
@@ -673,6 +684,13 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 			ShareholderID: item.ShareholderID,
 			UpdatedAt:     envelope.ProducedAt,
 		})
+		if rawAccountID != "" {
+			raws = append(raws, map[string]any{
+				"position":       item,
+				"raw_account_id": rawAccountID,
+			})
+			continue
+		}
 		raws = append(raws, item)
 	}
 	return positions, raws, nil
@@ -689,10 +707,12 @@ func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {
 			item.AccountID = envelope.Routing.AccountID
 		}
 		mergeEnvelopeFields(&item, envelope)
+		rawAccountID := normalizeAccountIDFromRouting(&item.AccountID, envelope)
 		if err := item.validateOrderPageFields(); err != nil {
 			return nil, err
 		}
 		order := item.toOrder(envelope)
+		order.AdapterContext = withRawAccountID(order.AdapterContext, rawAccountID)
 		if order.LastUpdatedAt.IsZero() && !envelope.ProducedAt.IsZero() {
 			order.LastUpdatedAt = envelope.ProducedAt
 		}
@@ -1280,6 +1300,40 @@ func orderPayloadRejectInfo(envelope EntryEnvelope, payload orderPayload, status
 		return code, message
 	}
 	return "", ""
+}
+
+func normalizeAccountIDFromRouting(accountID *string, envelope EntryEnvelope) string {
+	if accountID == nil {
+		return ""
+	}
+	payloadAccountID := strings.TrimSpace(*accountID)
+	routingAccountID := strings.TrimSpace(envelope.Routing.AccountID)
+	if payloadAccountID == "" {
+		*accountID = routingAccountID
+		return ""
+	}
+	if routingAccountID == "" || payloadAccountID == routingAccountID {
+		*accountID = payloadAccountID
+		return ""
+	}
+	if strings.HasPrefix(payloadAccountID, routingAccountID) || strings.HasPrefix(routingAccountID, payloadAccountID) {
+		*accountID = routingAccountID
+		return payloadAccountID
+	}
+	*accountID = payloadAccountID
+	return ""
+}
+
+func withRawAccountID(context map[string]any, rawAccountID string) map[string]any {
+	if rawAccountID == "" {
+		return context
+	}
+	out := make(map[string]any, len(context)+1)
+	for key, value := range context {
+		out[key] = value
+	}
+	out["relay_raw_account_id"] = rawAccountID
+	return out
 }
 
 func orderErrorInfo(envelope EntryEnvelope) (string, string) {
