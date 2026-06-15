@@ -125,6 +125,57 @@ func TestMarketSnapshotsFallsBackWhenRealtimeUnavailable(t *testing.T) {
 	}
 }
 
+func TestMarketSnapshotsScopesRealtimeToCurrentTradingDay(t *testing.T) {
+	var snapshotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case tradingDayPath:
+			if r.URL.Query().Get("date") != "20260615" {
+				t.Fatalf("trading-day date = %q", r.URL.Query().Get("date"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"date":                             20260615,
+					"is_trading_day":                   true,
+					"previous_or_current_trading_date": 20260615,
+				},
+			})
+		case snapshotsPath:
+			snapshotQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id": "600000.SH",
+					"trade_date":  20260615,
+					"last":        9.72,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:             server.URL,
+		TimeoutSeconds:      1,
+		SnapshotMarketLevel: "level1",
+		SnapshotDataScope:   "realtime",
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	client.now = func() time.Time {
+		return time.Date(2026, 6, 15, 1, 0, 0, 0, time.UTC)
+	}
+
+	if _, err := client.MarketSnapshots(context.Background(), url.Values{"security_id": {"600000.SH"}}); err != nil {
+		t.Fatalf("MarketSnapshots: %v", err)
+	}
+	if snapshotQuery.Get("trade_date") != "20260615" || snapshotQuery.Get("data_scope") != "realtime" {
+		t.Fatalf("snapshot query = %s", snapshotQuery.Encode())
+	}
+}
+
 func TestMarketBarsPassesThroughQuery(t *testing.T) {
 	var barsQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +279,66 @@ func TestMarketBarsUsesPreviousTradingDayForToday(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
-	if barsQuery.Get("trade_date") != "20260612" || barsQuery.Get("limit") != "300" {
+	if barsQuery.Get("trade_date") != "20260612" || barsQuery.Get("data_scope") != "historical" || barsQuery.Get("limit") != "300" {
+		t.Fatalf("bars query = %s", barsQuery.Encode())
+	}
+}
+
+func TestMarketBarsUsesRealtimeForCurrentTradingDay(t *testing.T) {
+	var barsQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case tradingDayPath:
+			if r.URL.Query().Get("date") != "20260615" {
+				t.Fatalf("trading-day date = %q", r.URL.Query().Get("date"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"date":                             20260615,
+					"is_trading_day":                   true,
+					"previous_or_current_trading_date": 20260615,
+				},
+			})
+		case barsPath:
+			barsQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id": "600000.SH",
+					"trade_date":  20260615,
+					"datetime":    "2026-06-15T09:31:00+08:00",
+					"frequency":   "1m",
+					"close":       9.72,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:        server.URL,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	client.now = func() time.Time {
+		return time.Date(2026, 6, 15, 1, 0, 0, 0, time.UTC)
+	}
+	response, err := client.MarketBars(context.Background(), url.Values{
+		"security_id": {"600000.SH"},
+		"trade_date":  {"20260615"},
+		"frequency":   {"1m"},
+		"limit":       {"300"},
+	})
+	if err != nil {
+		t.Fatalf("MarketBars: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if barsQuery.Get("trade_date") != "20260615" || barsQuery.Get("data_scope") != "realtime" || barsQuery.Get("limit") != "300" {
 		t.Fatalf("bars query = %s", barsQuery.Encode())
 	}
 }

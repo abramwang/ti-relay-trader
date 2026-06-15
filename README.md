@@ -250,6 +250,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `/trade` 交易测试主界面新增本地 ECharts 当日分钟 K 线，使用 Meridian bars 的 `open/high/low/close` 绘制 candlestick 并叠加成交量；若当天不是交易日，bars 请求会通过 Meridian 交易日接口回退到最近交易日。
 - [x] `/trade` 分钟 K 线支持当前账户、标的、交易日的买卖点标注：优先使用成交价/成交时间，未成交订单使用委托价/委托时间，并在代码切换、手动刷新和订单/成交 SSE 推送后刷新标注。
 - [x] `/trade` 交易终端所有默认交易日统一为东八区当前日期；当 Meridian snapshot/bars 返回最近交易日时，会自动回填仍处于默认值的资金持仓、订单监控、绩效和 K 线日期输入框。
+- [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`，bars 同时使用 `data_scope=realtime`；只有非交易日才回退到最近交易日 historical。
 - [x] 订单事件/order_page 显示已全成但成交明细缺失时，向前补一条 `relay-summary:<gateway_order_id>` 汇总成交，标记 `adapter_context.relay_synthesized=true`，避免订单账本和成交账本数量口径断裂。
 - [x] Python SDK 升级到 `0.1.7`，封装 `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`。
 - [x] 修复成交账本去重范围：`fill_id/match_stream_id` 按 `account_id + gateway_order_id + fill_id` 处理，不再误丢不同订单复用成交流号的合法成交；Python SDK 升级到 `0.1.8`，成交回调采用同一唯一键。
@@ -403,3 +404,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-14`: 根据用户确认重新收敛 relay 边界：P9 内置模拟柜台暂缓，实盘联调用券商测试环境，基于历史行情的模拟撮合放回测引擎；relay 继续聚焦标准交易 API、账本落盘、事件流、对账、绩效和研究导出。
 - `2026-06-14`: 梳理整体文档，删除 `data/simdesk` 和 `src/relay/simdesk` 过时占位，压缩 README 恢复卡片；补全 Redis Stream 命名、command envelope、reply/event 合并、checkpoint、订单编号唯一性、下单幂等、成交订单作用域去重和终态保护说明。
 - `2026-06-15`: 统一 `/trade` 交易终端默认日期：前端以 `Asia/Shanghai` 当前日期初始化，Meridian snapshot/bars 如果回退到最近交易日，会只回填仍处于自动默认值的日期输入框；模板中移除固定样例日期占位符。
+- `2026-06-15`: 排查交易终端仍显示 `20260612` 行情：Meridian 交易日接口已确认 `20260615` 是交易日，但实时 snapshot/bars 不带当天过滤时会返回旧 Redis journal 的 `20260612` 数据；relay 已调整为交易日当天显式请求 `trade_date=当天`，bars 默认补 `data_scope=realtime`，避免交易终端误用旧行情。

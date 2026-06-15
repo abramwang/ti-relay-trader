@@ -67,6 +67,7 @@ func (client *MeridianClient) MarketSnapshots(ctx context.Context, values url.Va
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
 	query := cloneValues(values)
+	today := client.today()
 	if strings.TrimSpace(query.Get("market_level")) == "" {
 		query.Set("market_level", client.snapshotMarketLevel)
 	}
@@ -78,9 +79,11 @@ func (client *MeridianClient) MarketSnapshots(ctx context.Context, values url.Va
 	}
 
 	if shouldUsePreviousTradingDay(query) {
-		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, client.today()); err == nil && tradeDate != "" && tradeDate != client.today() {
+		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, today); err == nil && tradeDate != "" {
 			query.Set("trade_date", tradeDate)
-			query.Set("data_scope", "historical")
+			if tradeDate != today {
+				query.Set("data_scope", "historical")
+			}
 		}
 	}
 
@@ -88,8 +91,8 @@ func (client *MeridianClient) MarketSnapshots(ctx context.Context, values url.Va
 	if err != nil {
 		return MeridianResponse{}, err
 	}
-	if shouldFallbackToHistorical(query, response.Payload) {
-		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, client.today()); err == nil && tradeDate != "" {
+	if shouldFallbackToHistorical(query, response.Payload, today) {
+		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, today); err == nil && tradeDate != "" {
 			fallback := cloneValues(query)
 			fallback.Set("trade_date", tradeDate)
 			fallback.Set("data_scope", "historical")
@@ -111,13 +114,21 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
 	query := cloneValues(values)
-	if shouldUseBarsPreviousTradingDay(query, client.today()) {
+	today := client.today()
+	if shouldUseBarsPreviousTradingDay(query, today) {
 		date := strings.TrimSpace(query.Get("trade_date"))
 		if date == "" {
-			date = client.today()
+			date = today
 		}
 		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, date); err == nil && tradeDate != "" {
 			query.Set("trade_date", tradeDate)
+			if strings.TrimSpace(query.Get("data_scope")) == "" {
+				if tradeDate == today {
+					query.Set("data_scope", "realtime")
+				} else {
+					query.Set("data_scope", "historical")
+				}
+			}
 		}
 	}
 	return client.getJSON(ctx, barsPath, query)
@@ -184,11 +195,12 @@ func shouldUsePreviousTradingDay(values url.Values) bool {
 		strings.TrimSpace(values.Get("trade_date")) == ""
 }
 
-func shouldFallbackToHistorical(values url.Values, payload map[string]any) bool {
-	if strings.TrimSpace(values.Get("trade_date")) != "" {
+func shouldFallbackToHistorical(values url.Values, payload map[string]any, today string) bool {
+	if !strings.EqualFold(strings.TrimSpace(values.Get("data_scope")), "realtime") {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(values.Get("data_scope")), "realtime") {
+	tradeDate := compactMeridianDate(strings.TrimSpace(values.Get("trade_date")))
+	if tradeDate != "" && tradeDate != today {
 		return false
 	}
 	errorPayload, ok := payload["error"].(map[string]any)
