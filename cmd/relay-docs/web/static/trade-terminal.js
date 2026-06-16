@@ -1284,14 +1284,27 @@
   }
 
   function assetFromPerformance(performance) {
+    const positionMarketValue = finiteNumber(performance.position_market_value);
+    const rawMarketValue = finiteNumber(performance.market_value);
+    const marketValue = rawMarketValue !== null && rawMarketValue > 0
+      ? rawMarketValue
+      : (positionMarketValue !== null ? positionMarketValue : performance.market_value);
+    const cashTotal = finiteNumber(performance.cash_total);
+    const rawNetAsset = finiteNumber(performance.net_asset);
+    const effectiveNetAsset = positionMarketValue !== null && positionMarketValue > 0 &&
+      cashTotal !== null && (rawNetAsset === null || rawNetAsset <= cashTotal)
+      ? cashTotal + positionMarketValue
+      : performance.net_asset;
+    const stockValue = finiteNumber(performance.stock_value);
+    const fundValue = finiteNumber(performance.fund_value);
     return {
       account_id: performance.account_id,
       cash_available: performance.cash_available,
       cash_total: performance.cash_total,
-      net_asset: performance.net_asset,
-      market_value: performance.market_value || performance.position_market_value,
-      stock_value: performance.stock_value,
-      fund_value: performance.fund_value,
+      net_asset: effectiveNetAsset,
+      market_value: marketValue,
+      stock_value: stockValue !== null && stockValue > 0 ? stockValue : (fundValue ? 0 : marketValue),
+      fund_value: fundValue !== null && fundValue > 0 ? fundValue : 0,
       day_profit: performance.daily_pnl,
       position_profit: performance.position_profit || performance.unrealized_pnl,
       close_profit: performance.close_profit || performance.settled_profit,

@@ -473,3 +473,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-16`: 绩效分析 API 和 `/trade#performance` 接入日初 open 资产快照，新增 `open_net_asset`、`overnight_adjustment`、`intraday_pnl`、`intraday_return`、`open_snapshot_source` 和 `quality_flags`；CSV 同步导出 open-to-close 字段，close-to-close 字段继续保留兼容。
 - `2026-06-16`: 优化 `/jobs` 任务状态页的预期运行显示：任务预期时间刚到但今日 run 尚未回写时，5 分钟宽限窗口内显示“等待回写”，避免盘后结算 15:30 执行中的短暂误报失败。
 - `2026-06-17`: 生产 Redis 只读扫描发现新增账户前缀 `relay:prod:v1:huaxin:314000045768`，当前可见 `cmd.query/cmd.trade/hb` stream；已加入未跟踪 `config/relay.prod.yaml`，保持 `trading_enabled=false`，待前置产生 `reply/event` 后可进行查询落库验证。
+- `2026-06-17`: 修复交易终端资金持仓资产口径：当柜台资金页 `market_value/net_asset` 缺少持仓市值时，`GET /v1/accounts/{account_id}/asset` 会用当前持仓账本汇总补齐证券市值、浮盈和总资产；历史交易日资金页也会用 `position_market_value` 显示收盘持仓市值，避免盘后仍显示日初/现金口径。

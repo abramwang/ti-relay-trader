@@ -414,6 +414,49 @@ func TestAccountAsset(t *testing.T) {
 	}
 }
 
+func TestAccountAssetEnrichesMissingMarketValueFromPositions(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{
+			Asset: trading.Asset{
+				AccountID:     "acct-1",
+				CashAvailable: 900,
+				CashTotal:     1000,
+				NetAsset:      1000,
+				MarketValue:   0,
+			},
+		},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{
+				{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, MarketValue: 720, UnrealizedPnL: 20},
+				{AccountID: "acct-1", Symbol: "510300", Exchange: trading.ExchangeSH, Quantity: 1000, MarketValue: 4818, UnrealizedPnL: -10},
+			},
+			Count: 2,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"market_value":5538`,
+		`"stock_value":720`,
+		`"fund_value":4818`,
+		`"position_profit":10`,
+		`"net_asset":6538`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("response missing %s: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		positionsResult: orderflow.ListPositionsResult{

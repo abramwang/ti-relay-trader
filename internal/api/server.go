@@ -1177,7 +1177,92 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 		s.writeOrderError(w, r, err)
 		return
 	}
+	result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
 	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset trading.Asset) trading.Asset {
+	if s.orders == nil || strings.TrimSpace(asset.AccountID) == "" || asset.MarketValue != 0 {
+		return asset
+	}
+	positions, err := s.collectCurrentPositions(ctx, asset.AccountID)
+	if err != nil {
+		s.logger.Warn("asset_position_totals_unavailable", "account_id", asset.AccountID, "error", err)
+		return asset
+	}
+	totals := summarizePositionAssetTotals(positions)
+	if totals.marketValue <= 0 {
+		return asset
+	}
+	asset.MarketValue = totals.marketValue
+	asset.StockValue = totals.stockValue
+	asset.FundValue = totals.fundValue
+	asset.PositionProfit = totals.positionProfit
+	cashTotal := asset.CashTotal
+	if cashTotal == 0 {
+		cashTotal = asset.CashAvailable
+	}
+	if cashTotal != 0 {
+		asset.NetAsset = cashTotal + totals.marketValue
+	}
+	return asset
+}
+
+func (s *Server) collectCurrentPositions(ctx context.Context, accountID string) ([]trading.Position, error) {
+	const pageLimit = 2000
+	positions := make([]trading.Position, 0)
+	cursor := ""
+	for page := 0; page < 20; page++ {
+		result, err := s.orders.ListPositions(ctx, trading.PositionQuery{
+			AccountID: accountID,
+			Limit:     pageLimit,
+			Cursor:    cursor,
+		})
+		if err != nil {
+			return nil, err
+		}
+		positions = append(positions, result.Positions...)
+		if result.NextCursor == "" {
+			return positions, nil
+		}
+		cursor = result.NextCursor
+	}
+	return positions, nil
+}
+
+type assetPositionTotals struct {
+	marketValue    float64
+	stockValue     float64
+	fundValue      float64
+	positionProfit float64
+}
+
+func summarizePositionAssetTotals(positions []trading.Position) assetPositionTotals {
+	var totals assetPositionTotals
+	for _, position := range positions {
+		marketValue := position.MarketValue
+		if marketValue == 0 && position.Quantity != 0 && position.LastPrice != 0 {
+			marketValue = float64(position.Quantity) * position.LastPrice
+		}
+		totals.marketValue += marketValue
+		totals.positionProfit += position.UnrealizedPnL
+		if isFundLikePosition(position) {
+			totals.fundValue += marketValue
+		} else {
+			totals.stockValue += marketValue
+		}
+	}
+	return totals
+}
+
+func isFundLikePosition(position trading.Position) bool {
+	symbol := strings.TrimSpace(position.Symbol)
+	if symbol == "" {
+		return false
+	}
+	exchange := position.Exchange
+	return (exchange == trading.ExchangeSH && strings.HasPrefix(symbol, "5")) ||
+		(exchange == trading.ExchangeSZ && strings.HasPrefix(symbol, "1"))
 }
 
 func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, accountID string, forceHistory bool) {
