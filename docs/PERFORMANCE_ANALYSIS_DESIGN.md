@@ -182,7 +182,7 @@ net_pnl = gross_pnl - fee_total
 展示：
 
 1. `post_close_settlement` 是否在目标交易日完成。
-2. `pre_open_init` 是否在目标交易日 08:55 之后完成，并是否写入日初资产。
+2. `pre_open_init` 是否在目标交易日 09:01 之后完成，并是否写入日初资产。
 3. `reconciliation_runs` 状态。
 4. `reconciliation_breaks` 未处理数量。
 5. 日初资产、日终资产和持仓快照时间。

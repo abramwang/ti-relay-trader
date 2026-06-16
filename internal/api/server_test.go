@@ -53,6 +53,10 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	cfg.Service.Mode = config.ModeDocs
 	cfg.Database.DSN = "postgres://configured"
 	cfg.Redis.URL = "redis://configured"
+	cfg.Jobs = map[string]config.JobConfig{
+		"pre_open_init":         {Enabled: true, Schedule: "1 9 * * 1-5"},
+		"post_close_settlement": {Enabled: true, Schedule: "30 15 * * 1-5"},
+	}
 	cfg.Accounts = []config.AccountRouteConfig{
 		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:prod:v1:huaxin:gw-1", Enabled: true, TradingEnabled: true},
 		{AccountID: "acct-2", BrokerID: "huaxin", GatewayID: "gw-2", StreamPrefix: "relay:prod:v1:huaxin:gw-2", Enabled: true, Simulated: true},
@@ -114,6 +118,9 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 	if envelope.Data.JobRuns["pre_open_init"].RunID != "pre-open-1" {
 		t.Fatalf("job runs = %#v", envelope.Data.JobRuns)
+	}
+	if envelope.Data.Jobs["pre_open_init"].ExpectedTime != "09:01" || envelope.Data.Jobs["post_close_settlement"].ExpectedTime != "15:30" {
+		t.Fatalf("job schedules = %#v", envelope.Data.Jobs)
 	}
 }
 

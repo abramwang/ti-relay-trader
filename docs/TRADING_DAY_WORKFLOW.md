@@ -16,7 +16,7 @@ relay 每个交易日需要两个稳定流程：
 
 | 流程 | 建议任务名 | 建议窗口 | 目标 |
 | --- | --- | --- | --- |
-| 盘前初始化 | `pre_open_init` | 08:55-09:20 `Asia/Shanghai` | 确认交易日、依赖、账户、昨夜位点、初始资金持仓和风险基线 |
+| 盘前初始化 | `pre_open_init` | 09:01-09:20 `Asia/Shanghai` | 确认交易日、依赖、账户、昨夜位点、初始资金持仓和风险基线 |
 | 收盘后结算 | `post_close_settlement` | 生产默认 15:30 `Asia/Shanghai` | 追平回报、刷新终态账本、生成日终快照、对账和盈亏输入 |
 
 生产环境默认在交易日 15:30 执行，确保仍处在多数券商柜台查询可用窗口内。测试环境可按联调需要手工触发或调整 cron，但配置和日志都必须明确是 `Asia/Shanghai`。
@@ -90,7 +90,7 @@ service:
 jobs:
   pre_open_init:
     enabled: true
-    schedule: "55 8 * * 1-5"
+    schedule: "1 9 * * 1-5"
   post_close_settlement:
     enabled: true
     schedule: "30 15 * * 1-5"

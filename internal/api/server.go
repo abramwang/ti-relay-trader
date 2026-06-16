@@ -2391,6 +2391,7 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 		AccountsConfigured: len(s.cfg.Accounts),
 		Accounts:           summarizeAccounts(s.cfg.Accounts),
 		JobsConfigured:     len(s.cfg.Jobs),
+		Jobs:               jobScheduleViews(s.cfg.Jobs, s.cfg.Service.Timezone),
 	}
 	if includeDependencies {
 		view.Dependencies = s.dependencyStatus(ctx)
@@ -2499,6 +2500,36 @@ func summarizeAccounts(accounts []config.AccountRouteConfig) AccountStatusSummar
 	return summary
 }
 
+func jobScheduleViews(jobs map[string]config.JobConfig, timezone string) map[string]JobScheduleView {
+	if len(jobs) == 0 {
+		return nil
+	}
+	out := make(map[string]JobScheduleView, len(jobs))
+	for name, job := range jobs {
+		out[name] = JobScheduleView{
+			JobName:      name,
+			Enabled:      job.Enabled,
+			Schedule:     strings.TrimSpace(job.Schedule),
+			ExpectedTime: expectedTimeFromCron(job.Schedule),
+			Timezone:     timezone,
+		}
+	}
+	return out
+}
+
+func expectedTimeFromCron(schedule string) string {
+	fields := strings.Fields(schedule)
+	if len(fields) < 2 {
+		return ""
+	}
+	minute, errMinute := strconv.Atoi(fields[0])
+	hour, errHour := strconv.Atoi(fields[1])
+	if errMinute != nil || errHour != nil || minute < 0 || minute > 59 || hour < 0 || hour > 23 {
+		return ""
+	}
+	return fmt.Sprintf("%02d:%02d", hour, minute)
+}
+
 type StatusView struct {
 	Service            string                      `json:"service"`
 	Mode               string                      `json:"mode"`
@@ -2512,6 +2543,7 @@ type StatusView struct {
 	AccountsConfigured int                         `json:"accounts_configured"`
 	Accounts           AccountStatusSummary        `json:"accounts"`
 	JobsConfigured     int                         `json:"jobs_configured"`
+	Jobs               map[string]JobScheduleView  `json:"jobs,omitempty"`
 	Dependencies       map[string]DependencyStatus `json:"dependencies,omitempty"`
 	JobRuns            map[string]JobRunStatusView `json:"job_runs,omitempty"`
 }
@@ -2532,6 +2564,14 @@ type JobRunStatusView struct {
 	FinishedAt      string `json:"finished_at,omitempty"`
 	DurationMS      int64  `json:"duration_ms,omitempty"`
 	ErrorSummary    string `json:"error_summary,omitempty"`
+}
+
+type JobScheduleView struct {
+	JobName      string `json:"job_name"`
+	Enabled      bool   `json:"enabled"`
+	Schedule     string `json:"schedule,omitempty"`
+	ExpectedTime string `json:"expected_time,omitempty"`
+	Timezone     string `json:"timezone"`
 }
 
 type AccountStatusSummary struct {

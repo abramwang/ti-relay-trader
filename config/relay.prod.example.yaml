@@ -51,7 +51,7 @@ accounts:
 jobs:
   pre_open_init:
     enabled: true
-    schedule: "55 8 * * 1-5"
+    schedule: "1 9 * * 1-5"
   post_close_settlement:
     enabled: true
     schedule: "30 15 * * 1-5"

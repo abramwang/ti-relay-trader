@@ -89,6 +89,13 @@
   font-size: 18px;
 }
 
+.job-purpose {
+  min-height: 34px;
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .job-card .job-card-top {
   display: flex;
   align-items: flex-start;
@@ -113,6 +120,10 @@
   margin: 1px 0 0;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.job-card .wide {
+  grid-column: 1 / -1;
 }
 
 .status-badge {
@@ -188,6 +199,11 @@
 
 .jobs-table-wrap td:last-child {
   min-width: 180px;
+  white-space: normal;
+}
+
+.jobs-table-wrap td:nth-last-child(2) {
+  min-width: 260px;
   white-space: normal;
 }
 

@@ -180,7 +180,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 明确真实凭据可放在部署机本地配置文件，后台批处理可采用 cron 管理。
 - [x] 明确业务时间统一为 `Asia/Shanghai` 东八区，A 股交易日、cron、报表、页面和 API 业务字段都按该时区解释。
 - [x] 明确每日交易主流程包含 `pre_open_init` 盘前初始化和 `post_close_settlement` 收盘后结算。
-- [x] 生产盘前初始化时间调整为交易日 08:55 `Asia/Shanghai`，避免过早撞上券商柜台和交易所链路尚未初始化。
+- [x] 生产盘前初始化时间调整为交易日 09:01 `Asia/Shanghai`，等待 09:00 启动的前置程序可用后再查询。
 - [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:30 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
 - [x] 盘前初始化在资金/持仓/订单/成交刷新后写入 `asset_snapshots(open)` 日初资产快照，用于绩效分析区分隔夜调整和日内盈亏；open 快照只写资产，不覆盖日终持仓快照。
 - [x] 新增统一时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at` 和探测/同步报告生成时间按 `Asia/Shanghai` 输出。
@@ -302,7 +302,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:30 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
-- 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 08:55 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
+- 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。第一版 `daily_pnl/return_rate` 仍以相邻 close 净资产计算，后续绩效 v2 需要接入 `asset_snapshots(open)`，展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
@@ -469,3 +469,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 盘前初始化时间从 08:25 调整为 08:55 `Asia/Shanghai`；生产本地配置补齐 `pre_open_init` 和 `post_close_settlement`，root crontab 新增 `RELAY_TRADER_CRON` 管理块，08:55 盘前初始化、15:30 盘后结算。
 - `2026-06-15`: 根据绩效分析设计补充“日初资产”口径：新增 `asset_snapshots(open)` 约束和迁移，`pre_open_init` 在盘前刷新后写入 open 资产快照；open 快照只写资产，不覆盖 `position_snapshots`。后续绩效 v2 会用 open-to-close 区分隔夜调整和日内盈亏。
 - `2026-06-15`: 绩效基准默认改为上证指数 `000001.SH`：`/trade#performance` 和 API Console 的 `benchmark_security_id` 默认值已同步，仍保留用户自定义基准输入。
+- `2026-06-16`: 因生产前置程序 09:00 启动，盘前初始化从 08:55 调整到交易日 09:01 `Asia/Shanghai`；任务状态页新增预期运行时间、今日完成状态和最终运行结果摘要。
