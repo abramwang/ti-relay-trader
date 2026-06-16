@@ -152,6 +152,12 @@
     downloadPerformanceButton: byID("downloadPerformanceButton"),
     perfNetAsset: byID("perfNetAsset"),
     perfStartNetAsset: byID("perfStartNetAsset"),
+    perfOpenNetAsset: byID("perfOpenNetAsset"),
+    perfOpenSource: byID("perfOpenSource"),
+    perfOvernightAdjustment: byID("perfOvernightAdjustment"),
+    perfPreviousNetAsset: byID("perfPreviousNetAsset"),
+    perfIntradayPnl: byID("perfIntradayPnl"),
+    perfIntradayReturn: byID("perfIntradayReturn"),
     perfTotalPnl: byID("perfTotalPnl"),
     perfRows: byID("perfRows"),
     perfTotalReturn: byID("perfTotalReturn"),
@@ -2490,19 +2496,31 @@
       activeAccountLabel() || "未选择账户",
       summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
+      daily.open_snapshot_source ? "日初 " + daily.open_snapshot_source : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
     els.perfStartNetAsset.textContent = "期初 " + formatNumber(summary.start_net_asset);
+    els.perfOpenNetAsset.textContent = formatNumber(daily.open_net_asset);
+    els.perfOpenSource.textContent = [
+      daily.open_snapshot_source || "--",
+      daily.open_captured_at ? shortDateTime(daily.open_captured_at) : ""
+    ].filter(Boolean).join(" · ");
+    els.perfOvernightAdjustment.textContent = formatSigned(daily.overnight_adjustment);
+    els.perfOvernightAdjustment.className = classForNumber(daily.overnight_adjustment);
+    els.perfPreviousNetAsset.textContent = "上日 " + formatNumber(daily.previous_net_asset);
+    els.perfIntradayPnl.textContent = formatSigned(daily.intraday_pnl);
+    els.perfIntradayPnl.className = classForNumber(daily.intraday_pnl);
+    els.perfIntradayReturn.textContent = "收益 " + formatPercent(daily.intraday_return);
     els.perfTotalPnl.textContent = formatSigned(summary.total_pnl);
     els.perfTotalPnl.className = classForNumber(summary.total_pnl);
     els.perfRows.textContent = "样本 " + formatInt(summary.count);
     els.perfTotalReturn.textContent = formatPercent(summary.total_return);
     els.perfTotalReturn.className = classForNumber(summary.total_return);
-    els.perfDailyReturn.textContent = "当日 " + formatPercent(daily.return_rate);
+    els.perfDailyReturn.textContent = "close " + formatPercent(daily.return_rate);
     els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown);
     els.perfMaxDrawdown.className = classForNumber(summary.max_drawdown);
-    els.perfDailyPnl.textContent = "当日 " + formatSigned(daily.daily_pnl);
+    els.perfDailyPnl.textContent = "close " + formatSigned(daily.daily_pnl);
     els.perfBenchmarkReturn.textContent = formatPercent(summary.benchmark_total_return);
     els.perfBenchmarkReturn.className = classForNumber(summary.benchmark_total_return);
     els.perfBenchmarkID.textContent = "基准 " + (summary.benchmark_security_id || "--");
@@ -2522,14 +2540,18 @@
       ? "查询失败：" + state.performanceError
       : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
     if (series.length === 0) {
-      els.performanceSeriesBody.innerHTML = '<tr><td colspan="11"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
+      els.performanceSeriesBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
       return;
     }
     els.performanceSeriesBody.innerHTML = series.map((item) => `
       <tr>
         <td>${escapeHTML(displayDate(item.trade_date))}</td>
         <td class="num">${formatNumber(item.net_asset)}</td>
-        <td class="num ${classForNumber(item.daily_pnl)}">${formatSigned(item.daily_pnl)}</td>
+        <td class="num">${formatNumber(item.open_net_asset)}</td>
+        <td class="num ${classForNumber(item.overnight_adjustment)}">${formatSigned(item.overnight_adjustment)}</td>
+        <td class="num ${classForNumber(item.intraday_pnl)}">${formatSigned(item.intraday_pnl)}</td>
+        <td class="num ${classForNumber(item.intraday_return)}">${formatPercent(item.intraday_return)}</td>
+        <td class="num ${classForNumber(item.asset_change)}">${formatSigned(item.asset_change)}</td>
         <td class="num ${classForNumber(item.return_rate)}">${formatPercent(item.return_rate)}</td>
         <td class="num ${classForNumber(item.cumulative_return)}">${formatPercent(item.cumulative_return)}</td>
         <td class="num ${classForNumber(item.benchmark_cumulative_return)}">${formatPercent(item.benchmark_cumulative_return)}</td>

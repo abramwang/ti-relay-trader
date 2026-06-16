@@ -207,9 +207,9 @@ client = RelayClient(
 | `refresh_positions(account_id=None)` | `POST /v1/accounts/{account_id}/positions/refresh` | 触发持仓前置查询 |
 | `refresh_orders(account_id=None)` | `POST /v1/accounts/{account_id}/orders/refresh` | 触发订单前置查询 |
 | `refresh_fills(account_id=None)` | `POST /v1/accounts/{account_id}/fills/refresh` | 触发成交前置查询 |
-| `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益/PnL |
-| `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照 |
-| `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含基准收益和超额收益字段 |
+| `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
+| `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
+| `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
 | `list_reconciliation_breaks(...)` | `GET /v1/reconciliations/breaks` | 查询盘后差异 |
 | `get_meridian_bars(security_id=..., trade_date=...)` | `GET /v1/meridian/market/bars` | 查询 Meridian bars 薄代理，参数口径以 Meridian 为准，常用 `trade_date` 分钟线 |
 

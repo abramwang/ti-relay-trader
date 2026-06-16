@@ -347,6 +347,17 @@ previous_asset AS (
     ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
     LIMIT 1
 ),
+open_asset AS (
+    SELECT
+        net_asset,
+        captured_at
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date = $2::date
+        AND snapshot_type = 'open'
+    ORDER BY captured_at DESC, asset_snapshot_pk DESC
+    LIMIT 1
+),
 positions AS (
     SELECT
         count(*)::bigint AS positions_count,
@@ -377,6 +388,16 @@ SELECT
     asset.cash_total,
     asset.net_asset,
     COALESCE(previous_asset.net_asset, 0) AS previous_net_asset,
+    COALESCE(open_asset.net_asset, previous_asset.net_asset, 0) AS open_net_asset,
+    CASE WHEN open_asset.net_asset IS NOT NULL AND COALESCE(previous_asset.net_asset, 0) > 0 THEN open_asset.net_asset - previous_asset.net_asset ELSE 0 END AS overnight_adjustment,
+    CASE WHEN COALESCE(previous_asset.net_asset, 0) > 0 THEN asset.net_asset - previous_asset.net_asset ELSE 0 END AS asset_change,
+    CASE WHEN COALESCE(open_asset.net_asset, previous_asset.net_asset, 0) > 0 THEN asset.net_asset - COALESCE(open_asset.net_asset, previous_asset.net_asset, 0) ELSE 0 END AS intraday_pnl,
+    CASE WHEN COALESCE(open_asset.net_asset, previous_asset.net_asset, 0) > 0 THEN (asset.net_asset - COALESCE(open_asset.net_asset, previous_asset.net_asset, 0)) / COALESCE(open_asset.net_asset, previous_asset.net_asset, 0) ELSE 0 END AS intraday_return,
+    CASE
+        WHEN open_asset.net_asset IS NOT NULL THEN 'open'
+        WHEN previous_asset.net_asset IS NOT NULL THEN 'previous_close_fallback'
+        ELSE ''
+    END AS open_snapshot_source,
     CASE WHEN COALESCE(previous_asset.net_asset, 0) > 0 THEN asset.net_asset - previous_asset.net_asset ELSE 0 END AS daily_pnl,
     CASE WHEN COALESCE(previous_asset.net_asset, 0) > 0 THEN (asset.net_asset - previous_asset.net_asset) / previous_asset.net_asset ELSE 0 END AS return_rate,
     asset.market_value,
@@ -395,11 +416,13 @@ SELECT
     fills.sell_amount,
     fills.buy_amount + fills.sell_amount AS turnover,
     fills.fee_total,
+    open_asset.captured_at AS open_captured_at,
     asset.captured_at
 FROM asset
 CROSS JOIN positions
 CROSS JOIN fills
 LEFT JOIN previous_asset ON TRUE
+LEFT JOIN open_asset ON TRUE
 `
 
 const dailyPerformanceSeriesSQL = `
@@ -441,6 +464,26 @@ asset AS (
         credit,
         captured_at
     FROM asset_ranked
+    WHERE rn = 1
+),
+open_asset_ranked AS (
+    SELECT
+        trade_date,
+        net_asset,
+        captured_at,
+        row_number() OVER (PARTITION BY trade_date ORDER BY captured_at DESC, asset_snapshot_pk DESC) AS rn
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date >= $2::date
+        AND trade_date <= $3::date
+        AND snapshot_type = 'open'
+),
+open_asset AS (
+    SELECT
+        trade_date,
+        net_asset,
+        captured_at
+    FROM open_asset_ranked
     WHERE rn = 1
 ),
 positions AS (
@@ -489,6 +532,16 @@ SELECT
     asset.cash_total,
     asset.net_asset,
     asset.previous_net_asset,
+    COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0) AS open_net_asset,
+    CASE WHEN open_asset.net_asset IS NOT NULL AND asset.previous_net_asset > 0 THEN open_asset.net_asset - asset.previous_net_asset ELSE 0 END AS overnight_adjustment,
+    CASE WHEN asset.previous_net_asset > 0 THEN asset.net_asset - asset.previous_net_asset ELSE 0 END AS asset_change,
+    CASE WHEN COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0) > 0 THEN asset.net_asset - COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0) ELSE 0 END AS intraday_pnl,
+    CASE WHEN COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0) > 0 THEN (asset.net_asset - COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0)) / COALESCE(open_asset.net_asset, NULLIF(asset.previous_net_asset, 0), 0) ELSE 0 END AS intraday_return,
+    CASE
+        WHEN open_asset.net_asset IS NOT NULL THEN 'open'
+        WHEN asset.previous_net_asset > 0 THEN 'previous_close_fallback'
+        ELSE ''
+    END AS open_snapshot_source,
     CASE WHEN asset.previous_net_asset > 0 THEN asset.net_asset - asset.previous_net_asset ELSE 0 END AS daily_pnl,
     CASE WHEN asset.previous_net_asset > 0 THEN (asset.net_asset - asset.previous_net_asset) / asset.previous_net_asset ELSE 0 END AS return_rate,
     asset.market_value,
@@ -507,8 +560,10 @@ SELECT
     COALESCE(fills.sell_amount, 0) AS sell_amount,
     COALESCE(fills.buy_amount, 0) + COALESCE(fills.sell_amount, 0) AS turnover,
     COALESCE(fills.fee_total, 0) AS fee_total,
+    open_asset.captured_at AS open_captured_at,
     asset.captured_at
 FROM asset
+LEFT JOIN open_asset ON open_asset.trade_date = asset.trade_date
 LEFT JOIN positions ON positions.trade_date = asset.trade_date
 LEFT JOIN fills ON fills.fill_date = asset.trade_date
 WHERE asset.trade_date >= $2::date

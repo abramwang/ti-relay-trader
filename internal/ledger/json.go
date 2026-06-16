@@ -73,9 +73,11 @@ func (performance DailyPerformance) MarshalJSON() ([]byte, error) {
 	type dailyPerformanceAlias DailyPerformance
 	return json.Marshal(struct {
 		dailyPerformanceAlias
-		CapturedAt *string `json:"captured_at,omitempty"`
+		OpenCapturedAt *string `json:"open_captured_at,omitempty"`
+		CapturedAt     *string `json:"captured_at,omitempty"`
 	}{
 		dailyPerformanceAlias: dailyPerformanceAlias(performance),
+		OpenCapturedAt:        optionalBusinessTime(performance.OpenCapturedAt),
 		CapturedAt:            optionalBusinessTime(performance.CapturedAt),
 	})
 }

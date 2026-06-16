@@ -249,7 +249,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 账本 API 时间字段统一按 `Asia/Shanghai` 输出，订单、成交、资金、持仓、订单事件、成交事件和任务运行记录的零值时间字段不再展示为 `0001-01-01T00:00:00Z`。
 - [x] 新增 `POST /v1/settlements/snapshots`，按指定交易日将盘前资金写入 `asset_snapshots(open)`、收盘资金写入 `asset_snapshots(close)`、当前持仓写入 `position_snapshots`，并 upsert `reconciliation_runs` 批次；`pre_open_init` 和 `post_close_settlement` 已接入该接口。
 - [x] 新增盘后对账输入和差异记录第一版：`POST /v1/settlements/snapshots` 会写入 `reconciliation_inputs`、生成 `reconciliation_breaks`，并提供 `GET /v1/reconciliations/breaks` 查询入口。
-- [x] 进入 P8 历史数据与盈亏统计，新增 `GET /v1/accounts/{account_id}/performance/daily`，按交易日读取 close 资产快照、上一 close 净资产、持仓快照和成交账本，返回日终权益、日盈亏、收益率、浮动盈亏、成交额和费用汇总；API Console 已提供表单测试入口。
+- [x] 进入 P8 历史数据与盈亏统计，新增 `GET /v1/accounts/{account_id}/performance/daily`，按交易日读取 close/open 资产快照、上一 close 净资产、持仓快照和成交账本，返回日终权益、日初资产、隔夜调整、日内盈亏、close-to-close 收益、浮动盈亏、成交额和费用汇总；API Console 已提供表单测试入口。
 - [x] 新增 `GET /v1/meridian/market/bars` 同源薄代理，保留 Meridian `market_bar.v1` 原始字段，并在 API Console 提供 bars 表单测试入口。
 - [x] 新增 `GET /v1/accounts/{account_id}/performance/series`，按区间读取 close 资产快照，返回账户日绩效、累计收益和最大回撤；API Console 已提供表单测试入口。
 - [x] 新增 `GET /v1/accounts/{account_id}/performance/series.csv`，导出账户绩效序列 CSV，作为研究侧导出输入第一版。
@@ -305,7 +305,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
-- `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。第一版 `daily_pnl/return_rate` 仍以相邻 close 净资产计算，后续绩效 v2 需要接入 `asset_snapshots(open)`，展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
+- `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。API 和 `/trade#performance` 已接入 `asset_snapshots(open)`，返回并展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率；`daily_pnl/return_rate` 仍保留为相邻 close 净资产口径，方便长期净值序列兼容。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
 - `GET /v1/accounts/{account_id}/performance/series` 当前以 close 净资产为主线计算累计收益和回撤，并支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，输出基准收益、回撤和超额收益。页面默认与上证指数 `000001.SH` 涨跌对比，仍允许手动切换基准。持仓复权估值和更精细交易归因仍需后续版本。
 - `GET /v1/accounts/{account_id}/performance/series.csv` 是轻量 CSV 导出；研究侧 PostgreSQL view 已提供 `research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。后续如需大批量离线消费，可再补 Parquet/批量文件任务。
 - P8 账表计算只接入 Meridian `bars`。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
@@ -470,3 +470,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 根据绩效分析设计补充“日初资产”口径：新增 `asset_snapshots(open)` 约束和迁移，`pre_open_init` 在盘前刷新后写入 open 资产快照；open 快照只写资产，不覆盖 `position_snapshots`。后续绩效 v2 会用 open-to-close 区分隔夜调整和日内盈亏。
 - `2026-06-15`: 绩效基准默认改为上证指数 `000001.SH`：`/trade#performance` 和 API Console 的 `benchmark_security_id` 默认值已同步，仍保留用户自定义基准输入。
 - `2026-06-16`: 因生产前置程序 09:00 启动，盘前初始化从 08:55 调整到交易日 09:01 `Asia/Shanghai`；任务状态页新增预期运行时间、今日完成状态和最终运行结果摘要。
+- `2026-06-16`: 绩效分析 API 和 `/trade#performance` 接入日初 open 资产快照，新增 `open_net_asset`、`overnight_adjustment`、`intraday_pnl`、`intraday_return`、`open_snapshot_source` 和 `quality_flags`；CSV 同步导出 open-to-close 字段，close-to-close 字段继续保留兼容。

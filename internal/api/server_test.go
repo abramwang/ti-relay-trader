@@ -1608,6 +1608,9 @@ func TestDailyPerformanceQuery(t *testing.T) {
 			TradeDate:        "2026-06-12",
 			NetAsset:         1200000,
 			PreviousNetAsset: 1190000,
+			OpenNetAsset:     1195000,
+			IntradayPnL:      5000,
+			IntradayReturn:   0.0041841004,
 			DailyPnL:         10000,
 			ReturnRate:       0.0084033613,
 			FillsCount:       2,
@@ -1629,6 +1632,9 @@ func TestDailyPerformanceQuery(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"daily_pnl":10000`) {
 		t.Fatalf("response missing daily pnl: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"open_net_asset":1195000`) || !strings.Contains(rec.Body.String(), `"intraday_pnl":5000`) {
+		t.Fatalf("response missing open-to-close fields: %s", rec.Body.String())
 	}
 }
 
@@ -1789,6 +1795,9 @@ func TestPerformanceSeriesCSV(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "benchmark_security_id,benchmark_close") || !strings.Contains(rec.Body.String(), "acct-1,2026-06-12,1000") {
 		t.Fatalf("csv response missing row: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "open_net_asset,overnight_adjustment,asset_change,intraday_pnl,intraday_return") {
+		t.Fatalf("csv response missing open-to-close columns: %s", rec.Body.String())
 	}
 }
 

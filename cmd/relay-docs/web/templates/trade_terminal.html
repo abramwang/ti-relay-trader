@@ -242,6 +242,9 @@
 
         <div class="performance-summary">
           <div><span>期末净资产</span><strong id="perfNetAsset">--</strong><small id="perfStartNetAsset">期初 --</small></div>
+          <div><span>日初资产</span><strong id="perfOpenNetAsset">--</strong><small id="perfOpenSource">open --</small></div>
+          <div><span>隔夜调整</span><strong id="perfOvernightAdjustment">--</strong><small id="perfPreviousNetAsset">上日 --</small></div>
+          <div><span>日内盈亏</span><strong id="perfIntradayPnl">--</strong><small id="perfIntradayReturn">收益 --</small></div>
           <div><span>区间盈亏</span><strong id="perfTotalPnl">--</strong><small id="perfRows">样本 --</small></div>
           <div><span>累计收益</span><strong id="perfTotalReturn">--</strong><small id="perfDailyReturn">当日 --</small></div>
           <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong><small id="perfDailyPnl">当日 --</small></div>
@@ -261,8 +264,12 @@
                   <tr>
                     <th>交易日</th>
                     <th class="num">净资产</th>
-                    <th class="num">日盈亏</th>
-                    <th class="num">日收益</th>
+                    <th class="num">日初资产</th>
+                    <th class="num">隔夜调整</th>
+                    <th class="num">日内盈亏</th>
+                    <th class="num">日内收益</th>
+                    <th class="num">资产变动</th>
+                    <th class="num">close 收益</th>
                     <th class="num">累计收益</th>
                     <th class="num">基准累计</th>
                     <th class="num">超额累计</th>

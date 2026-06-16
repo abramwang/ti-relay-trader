@@ -1256,6 +1256,12 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"trade_date",
 		"net_asset",
 		"previous_net_asset",
+		"open_net_asset",
+		"overnight_adjustment",
+		"asset_change",
+		"intraday_pnl",
+		"intraday_return",
+		"open_snapshot_source",
 		"daily_pnl",
 		"return_rate",
 		"cumulative_return",
@@ -1281,6 +1287,7 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"sell_amount",
 		"turnover",
 		"fee_total",
+		"open_captured_at",
 		"captured_at",
 	})
 	for _, item := range series {
@@ -1289,6 +1296,12 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			item.TradeDate,
 			formatCSVFloat(item.NetAsset),
 			formatCSVFloat(item.PreviousNetAsset),
+			formatCSVFloat(item.OpenNetAsset),
+			formatCSVFloat(item.OvernightAdjustment),
+			formatCSVFloat(item.AssetChange),
+			formatCSVFloat(item.IntradayPnL),
+			formatCSVFloat(item.IntradayReturn),
+			item.OpenSnapshotSource,
 			formatCSVFloat(item.DailyPnL),
 			formatCSVFloat(item.ReturnRate),
 			formatCSVFloat(item.CumulativeReturn),
@@ -1314,6 +1327,7 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			formatCSVFloat(item.SellAmount),
 			formatCSVFloat(item.Turnover),
 			formatCSVFloat(item.FeeTotal),
+			formatCSVTime(item.OpenCapturedAt),
 			formatCSVTime(item.CapturedAt),
 		})
 	}

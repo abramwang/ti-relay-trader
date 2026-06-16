@@ -150,6 +150,12 @@ type DailyPerformance struct {
 	CashTotal           float64   `json:"cash_total"`
 	NetAsset            float64   `json:"net_asset"`
 	PreviousNetAsset    float64   `json:"previous_net_asset"`
+	OpenNetAsset        float64   `json:"open_net_asset"`
+	OvernightAdjustment float64   `json:"overnight_adjustment"`
+	AssetChange         float64   `json:"asset_change"`
+	IntradayPnL         float64   `json:"intraday_pnl"`
+	IntradayReturn      float64   `json:"intraday_return"`
+	OpenSnapshotSource  string    `json:"open_snapshot_source,omitempty"`
 	DailyPnL            float64   `json:"daily_pnl"`
 	ReturnRate          float64   `json:"return_rate"`
 	MarketValue         float64   `json:"market_value"`
@@ -180,6 +186,8 @@ type DailyPerformance struct {
 	BenchmarkDrawdown   *float64  `json:"benchmark_drawdown,omitempty"`
 	ExcessReturn        *float64  `json:"excess_return,omitempty"`
 	ExcessCumulative    *float64  `json:"excess_cumulative_return,omitempty"`
+	QualityFlags        []string  `json:"quality_flags,omitempty"`
+	OpenCapturedAt      time.Time `json:"open_captured_at,omitempty"`
 	CapturedAt          time.Time `json:"captured_at,omitempty"`
 }
 
@@ -2133,6 +2141,7 @@ func scanAsset(row rowScanner) (trading.Asset, error) {
 
 func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 	var performance DailyPerformance
+	var openCapturedAt sql.NullTime
 	var capturedAt sql.NullTime
 	err := row.Scan(
 		&performance.AccountID,
@@ -2141,6 +2150,12 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 		&performance.CashTotal,
 		&performance.NetAsset,
 		&performance.PreviousNetAsset,
+		&performance.OpenNetAsset,
+		&performance.OvernightAdjustment,
+		&performance.AssetChange,
+		&performance.IntradayPnL,
+		&performance.IntradayReturn,
+		&performance.OpenSnapshotSource,
 		&performance.DailyPnL,
 		&performance.ReturnRate,
 		&performance.MarketValue,
@@ -2159,10 +2174,14 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 		&performance.SellAmount,
 		&performance.Turnover,
 		&performance.FeeTotal,
+		&openCapturedAt,
 		&capturedAt,
 	)
 	if err != nil {
 		return DailyPerformance{}, err
+	}
+	if openCapturedAt.Valid {
+		performance.OpenCapturedAt = openCapturedAt.Time
 	}
 	performance.CapturedAt = capturedAt.Time
 	derivePerformancePnL(&performance)
@@ -2176,6 +2195,19 @@ func derivePerformancePnL(performance *DailyPerformance) {
 	performance.RealizedPnL = performance.SettledProfit
 	performance.GrossPnL = performance.RealizedPnL + performance.UnrealizedPnL
 	performance.NetPnL = performance.GrossPnL - performance.FeeTotal
+	if performance.OpenSnapshotSource == "" && performance.PreviousNetAsset > 0 {
+		performance.OpenNetAsset = performance.PreviousNetAsset
+		performance.OpenSnapshotSource = "previous_close_fallback"
+	}
+	if performance.OpenSnapshotSource == "previous_close_fallback" {
+		performance.QualityFlags = append(performance.QualityFlags, "missing_open_asset", "open_asset_fallback")
+	}
+	if performance.OpenSnapshotSource == "" {
+		performance.QualityFlags = append(performance.QualityFlags, "missing_open_asset")
+	}
+	if performance.OvernightAdjustment != 0 {
+		performance.QualityFlags = append(performance.QualityFlags, "overnight_adjustment_unclassified")
+	}
 }
 
 func scanPosition(row rowScanner) (trading.Position, error) {

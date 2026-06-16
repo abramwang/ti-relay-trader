@@ -515,6 +515,7 @@ func TestGetDailyPerformanceBuildsSnapshotRead(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "FROM asset_snapshots")
 	requireQueryContains(t, exec.query, "snapshot_type = 'close'")
+	requireQueryContains(t, exec.query, "snapshot_type = 'open'")
 	requireQueryContains(t, exec.query, "FROM position_snapshots")
 	requireQueryContains(t, exec.query, "FROM fills")
 	requireQueryContains(t, exec.query, "previous_asset")
@@ -536,6 +537,7 @@ func TestListDailyPerformanceBuildsSeriesRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "row_number() OVER")
 	requireQueryContains(t, exec.query, "lag(net_asset) OVER")
 	requireQueryContains(t, exec.query, "FROM asset_snapshots")
+	requireQueryContains(t, exec.query, "open_asset_ranked")
 	requireQueryContains(t, exec.query, "FROM position_snapshots")
 	requireQueryContains(t, exec.query, "FROM fills")
 	requireQueryContains(t, exec.query, "ORDER BY asset.trade_date ASC")

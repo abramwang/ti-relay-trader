@@ -290,7 +290,7 @@
 - [x] 计算账户日终权益。
 - [x] 计算第一版完整已实现盈亏、浮动盈亏、费用和收益率：保留 `settled_profit/unrealized_pnl/fee_total/return_rate`，新增 `realized_pnl/gross_pnl/net_pnl` 研究侧口径。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
-- [ ] 绩效 v2 接入当日 `asset_snapshots(open)`，展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。
+- [x] 绩效 v2 接入当日 `asset_snapshots(open)`，在日绩效、绩效序列、CSV 和 `/trade#performance` 展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。
 - [x] 在 `/trade` 交易测试主界面使用 Meridian `bars` 绘制当日分钟 K 线和成交量，辅助理解下单点位。
 - [x] 基于 Meridian `bars` 生成账户绩效序列、回撤和研究侧导出输入：`benchmark_security_id` 输出基准收益、基准回撤、超额收益并进入 CSV。
