@@ -471,3 +471,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-15`: 绩效基准默认改为上证指数 `000001.SH`：`/trade#performance` 和 API Console 的 `benchmark_security_id` 默认值已同步，仍保留用户自定义基准输入。
 - `2026-06-16`: 因生产前置程序 09:00 启动，盘前初始化从 08:55 调整到交易日 09:01 `Asia/Shanghai`；任务状态页新增预期运行时间、今日完成状态和最终运行结果摘要。
 - `2026-06-16`: 绩效分析 API 和 `/trade#performance` 接入日初 open 资产快照，新增 `open_net_asset`、`overnight_adjustment`、`intraday_pnl`、`intraday_return`、`open_snapshot_source` 和 `quality_flags`；CSV 同步导出 open-to-close 字段，close-to-close 字段继续保留兼容。
+- `2026-06-16`: 优化 `/jobs` 任务状态页的预期运行显示：任务预期时间刚到但今日 run 尚未回写时，5 分钟宽限窗口内显示“等待回写”，避免盘后结算 15:30 执行中的短暂误报失败。

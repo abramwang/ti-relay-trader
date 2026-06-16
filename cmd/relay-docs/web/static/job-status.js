@@ -17,6 +17,7 @@
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
     { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:30", purpose: "固化日终快照和对账输入" },
   ];
+  const expectedRunGraceMinutes = 5;
 
   function escapeHTML(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
@@ -180,6 +181,9 @@
     const now = currentMinutes(schedule.timezone);
     if (expected != null && now != null && now < expected) {
       return { label: "等待运行", className: "running" };
+    }
+    if (expected != null && now != null && now < expected + expectedRunGraceMinutes) {
+      return { label: "等待回写", className: "running" };
     }
     return { label: "今日未完成", className: "failed" };
   }
