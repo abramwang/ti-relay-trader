@@ -577,6 +577,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 	if payload.GatewayOrderID == "" {
 		payload.GatewayOrderID = envelope.GatewayOrderID
 	}
+	rawGatewayOrderID := normalizeReusableGatewayOrderID(&payload.GatewayOrderID, payload.OrderStreamID)
 	if payload.FillID == "" {
 		payload.FillID = stringFromMap(envelope.AdapterContext, "match_stream_id")
 	}
@@ -611,7 +612,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		MatchTimestamp: payload.MatchTimestamp,
 		MatchedAt:      matchedAt,
 		ShareholderID:  payload.ShareholderID,
-		AdapterContext: withRawAccountID(envelope.AdapterContext, rawAccountID),
+		AdapterContext: withRawGatewayOrderID(withRawAccountID(envelope.AdapterContext, rawAccountID), rawGatewayOrderID),
 	}, nil
 }
 
@@ -713,11 +714,12 @@ func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {
 		}
 		mergeEnvelopeFields(&item, envelope)
 		rawAccountID := normalizeAccountIDFromRouting(&item.AccountID, envelope)
+		rawGatewayOrderID := normalizeReusableGatewayOrderID(&item.GatewayOrderID, item.OrderStreamID)
 		if err := item.validateOrderPageFields(); err != nil {
 			return nil, err
 		}
 		order := item.toOrder(envelope)
-		order.AdapterContext = withRawAccountID(order.AdapterContext, rawAccountID)
+		order.AdapterContext = withRawGatewayOrderID(withRawAccountID(order.AdapterContext, rawAccountID), rawGatewayOrderID)
 		if order.LastUpdatedAt.IsZero() && !envelope.ProducedAt.IsZero() {
 			order.LastUpdatedAt = envelope.ProducedAt
 		}
@@ -1385,6 +1387,34 @@ func withRawAccountID(context map[string]any, rawAccountID string) map[string]an
 	}
 	out["relay_raw_account_id"] = rawAccountID
 	return out
+}
+
+func withRawGatewayOrderID(context map[string]any, rawGatewayOrderID string) map[string]any {
+	if rawGatewayOrderID == "" {
+		return context
+	}
+	out := make(map[string]any, len(context)+1)
+	for key, value := range context {
+		out[key] = value
+	}
+	out["relay_raw_gateway_order_id"] = rawGatewayOrderID
+	return out
+}
+
+func normalizeReusableGatewayOrderID(gatewayOrderID *string, orderStreamID string) string {
+	if gatewayOrderID == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(*gatewayOrderID)
+	orderStreamID = strings.TrimSpace(orderStreamID)
+	if raw == "" || orderStreamID == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "etfarb#") || strings.Contains(raw, orderStreamID) {
+		return ""
+	}
+	*gatewayOrderID = raw + "#" + orderStreamID
+	return raw
 }
 
 func orderErrorInfo(envelope EntryEnvelope) (string, string) {

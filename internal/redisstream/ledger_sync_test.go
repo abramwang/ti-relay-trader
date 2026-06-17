@@ -162,6 +162,75 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryScopesReusableBasketGatewayOrderID(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:reply", "1-30", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-order-page-basket",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"partial",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"501000114077"},
+			"produced_at":"2026-06-17T09:44:28+08:00",
+			"payload":{"items":[{
+				"gateway_order_id":"etfarb#159915.SZSE#094008#s",
+				"order_id":121,
+				"order_stream_id":"12001A180001681",
+				"account_id":"50100011407701",
+				"symbol":"300347",
+				"exchange":"SZ",
+				"trade_side":"S",
+				"business_type":"S",
+				"order_qty":300,
+				"cum_filled_qty":300,
+				"leaves_qty":0,
+				"limit_price":31.49,
+				"gateway_status":"filled",
+				"adapter_status":"dealt",
+				"created_at":"2026-06-17T09:40:39+08:00"
+			},{
+				"gateway_order_id":"etfarb#159915.SZSE#094008#s",
+				"order_id":122,
+				"order_stream_id":"12001A180001682",
+				"account_id":"50100011407701",
+				"symbol":"300308",
+				"exchange":"SZ",
+				"trade_side":"S",
+				"business_type":"S",
+				"order_qty":500,
+				"cum_filled_qty":500,
+				"leaves_qty":0,
+				"limit_price":998.47,
+				"gateway_status":"filled",
+				"adapter_status":"dealt",
+				"created_at":"2026-06-17T09:40:39+08:00"
+			}]}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Orders != 2 || result.Fills != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 2 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	first := writer.orders[0]
+	second := writer.orders[1]
+	if first.GatewayOrderID != "etfarb#159915.SZSE#094008#s#12001A180001681" ||
+		second.GatewayOrderID != "etfarb#159915.SZSE#094008#s#12001A180001682" {
+		t.Fatalf("scoped gateway ids = %q / %q", first.GatewayOrderID, second.GatewayOrderID)
+	}
+	if first.AdapterContext["relay_raw_gateway_order_id"] != "etfarb#159915.SZSE#094008#s" ||
+		second.AdapterContext["relay_raw_account_id"] != "50100011407701" {
+		t.Fatalf("adapter contexts = %#v / %#v", first.AdapterContext, second.AdapterContext)
+	}
+	if writer.fills[0].fill.GatewayOrderID != first.GatewayOrderID {
+		t.Fatalf("summary fill gateway id = %#v", writer.fills[0].fill)
+	}
+}
+
 func TestProcessLedgerEntryNormalizesRoutedOrderPageAccount(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-31", map[string]any{
@@ -723,6 +792,45 @@ func TestProcessLedgerEntryWritesFillEvent(t *testing.T) {
 	fill := writer.fills[0].fill
 	if fill.FillID != "fill-1" || fill.Fee != 1.23 {
 		t.Fatalf("fill = %#v", fill)
+	}
+}
+
+func TestProcessLedgerEntryScopesReusableBasketGatewayOrderIDForFillEvent(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:event", "4-10", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"fill-event-basket",
+			"event_type":"fill.event",
+			"gateway_order_id":"etfarb#159915.SZSE#094008#s",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"501000114077"},
+			"payload":{
+				"gateway_order_id":"etfarb#159915.SZSE#094008#s",
+				"fill_id":"01010000135897600000",
+				"order_id":121,
+				"order_stream_id":"12001A180001681",
+				"account_id":"50100011407701",
+				"symbol":"300347",
+				"exchange":"SZ",
+				"price":38.76,
+				"qty":100,
+				"matched_at":"2026-06-17T09:40:39+08:00",
+				"trade_side":"S"
+			}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Fills != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	fill := writer.fills[0].fill
+	if fill.GatewayOrderID != "etfarb#159915.SZSE#094008#s#12001A180001681" {
+		t.Fatalf("fill gateway id = %q", fill.GatewayOrderID)
+	}
+	if fill.AdapterContext["relay_raw_gateway_order_id"] != "etfarb#159915.SZSE#094008#s" ||
+		fill.AdapterContext["relay_raw_account_id"] != "50100011407701" {
+		t.Fatalf("fill context = %#v", fill.AdapterContext)
 	}
 }
 
