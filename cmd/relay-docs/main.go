@@ -494,6 +494,10 @@ type portalServer struct {
 }
 
 func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
+	if isTradeTerminalPath(r.URL.Path) || isTradeTerminalPath(r.URL.EscapedPath()) {
+		s.handleTradeTerminal(w, r)
+		return
+	}
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -841,7 +845,7 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *portalServer) handleTradeTerminal(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/trade" {
+	if !isTradeTerminalPath(r.URL.Path) && !isTradeTerminalPath(r.URL.EscapedPath()) {
 		http.NotFound(w, r)
 		return
 	}
@@ -860,6 +864,14 @@ func (s *portalServer) handleTradeTerminal(w http.ResponseWriter, r *http.Reques
 	if err := tradeTerminalTemplate.Execute(w, templateData); err != nil {
 		s.logger.Error("render_trade_terminal_failed", "error", err)
 	}
+}
+
+func isTradeTerminalPath(path string) bool {
+	path = strings.TrimSpace(path)
+	return path == "/trade" ||
+		strings.HasPrefix(path, "/trade#") ||
+		strings.HasPrefix(path, "/trade%23") ||
+		strings.HasPrefix(path, "/trade/")
 }
 
 func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
