@@ -395,7 +395,9 @@ func TestAccountAsset(t *testing.T) {
 			},
 		},
 	}
-	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+	cfg := config.Default()
+	cfg.Market.BaseURL = ""
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil)
@@ -433,7 +435,9 @@ func TestAccountAssetEnrichesMissingMarketValueFromPositions(t *testing.T) {
 			Count: 2,
 		},
 	}
-	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+	cfg := config.Default()
+	cfg.Market.BaseURL = ""
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil)
@@ -486,6 +490,11 @@ func TestAccountPositions(t *testing.T) {
 
 func TestAccountPositionsEnrichesInstrumentName(t *testing.T) {
 	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/market/snapshots" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":[],"meta":{"count":0}}`)
+			return
+		}
 		if r.URL.Path != "/v1/metadata/instruments" {
 			t.Fatalf("unexpected meridian path %s", r.URL.Path)
 		}
@@ -570,6 +579,78 @@ func TestAccountPositionsDerivesZeroAvgCostFromTodayBuyFills(t *testing.T) {
 	}
 	if service.fillQuery.AccountID != "acct-1" || service.fillQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
 		t.Fatalf("fill query = %#v", service.fillQuery)
+	}
+}
+
+func TestAccountPositionsComputesTotalAndDayPnLFromQuotesAndTodayFills(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/metadata/instruments":
+			_, _ = io.WriteString(w, `{"data":[{"security_id":"600000.SH","name":"浦发银行"}],"meta":{"count":1}}`)
+		case "/v1/market/snapshots":
+			if got := r.URL.Query().Get("security_ids"); got != "600000.SH" {
+				t.Fatalf("security_ids = %q", got)
+			}
+			_, _ = io.WriteString(w, `{"data":[{"security_id":"600000.SH","open":8.0,"last":11.0}],"meta":{"count":1}}`)
+		default:
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+	}))
+	defer meridian.Close()
+
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    300,
+				SellableQty: 200,
+				TodayQty:    100,
+				AvgCost:     9,
+			}},
+			Count: 1,
+		},
+		listFillsResult: orderflow.ListFillsResult{
+			Fills: []trading.Fill{
+				{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, Price: 10, Qty: 100},
+			},
+		},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Positions []trading.Position `json:"positions"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Positions) != 1 {
+		t.Fatalf("positions = %#v", body.Data.Positions)
+	}
+	position := body.Data.Positions[0]
+	for label, gotWant := range map[string][2]float64{
+		"market_value":       {position.MarketValue, 3300},
+		"unrealized_pnl":     {position.UnrealizedPnL, 600},
+		"day_unrealized_pnl": {position.DayUnrealizedPnL, 700},
+	} {
+		if diff := math.Abs(gotWant[0] - gotWant[1]); diff > 0.000001 {
+			t.Fatalf("%s = %.8f, want %.8f", label, gotWant[0], gotWant[1])
+		}
 	}
 }
 

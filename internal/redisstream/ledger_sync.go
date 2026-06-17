@@ -678,21 +678,22 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 			return nil, nil, fmt.Errorf("position_page payload incomplete for ledger write: missing exchange")
 		}
 		positions = append(positions, trading.Position{
-			AccountID:     item.AccountID,
-			Symbol:        item.Symbol,
-			Name:          item.Name,
-			Exchange:      trading.Exchange(item.Exchange),
-			Quantity:      item.Quantity,
-			SellableQty:   item.SellableQty,
-			InitialQty:    item.InitialQty,
-			TodayQty:      item.TodayQty,
-			AvgCost:       item.AvgCost,
-			LastPrice:     item.LastPrice,
-			MarketValue:   item.MarketValue,
-			UnrealizedPnL: item.UnrealizedPnL,
-			SettledProfit: item.SettledProfit,
-			ShareholderID: item.ShareholderID,
-			UpdatedAt:     envelope.ProducedAt,
+			AccountID:        item.AccountID,
+			Symbol:           item.Symbol,
+			Name:             item.Name,
+			Exchange:         trading.Exchange(item.Exchange),
+			Quantity:         item.Quantity,
+			SellableQty:      item.SellableQty,
+			InitialQty:       item.InitialQty,
+			TodayQty:         item.TodayQty,
+			AvgCost:          item.AvgCost,
+			LastPrice:        item.LastPrice,
+			MarketValue:      item.MarketValue,
+			UnrealizedPnL:    item.UnrealizedPnL,
+			DayUnrealizedPnL: item.DayUnrealizedPnL,
+			SettledProfit:    item.SettledProfit,
+			ShareholderID:    item.ShareholderID,
+			UpdatedAt:        envelope.ProducedAt,
 		})
 		if rawAccountID != "" {
 			raws = append(raws, map[string]any{
@@ -1039,20 +1040,21 @@ type fillPagePayload struct {
 }
 
 type positionPayload struct {
-	AccountID     string  `json:"account_id"`
-	Symbol        string  `json:"symbol"`
-	Name          string  `json:"name"`
-	Exchange      string  `json:"exchange"`
-	Quantity      int64   `json:"quantity"`
-	SellableQty   int64   `json:"sellable_qty"`
-	InitialQty    int64   `json:"initial_qty"`
-	TodayQty      int64   `json:"today_qty"`
-	AvgCost       float64 `json:"avg_cost"`
-	LastPrice     float64 `json:"last_price"`
-	MarketValue   float64 `json:"market_value"`
-	UnrealizedPnL float64 `json:"unrealized_pnl"`
-	SettledProfit float64 `json:"settled_profit"`
-	ShareholderID string  `json:"shareholder_id"`
+	AccountID        string  `json:"account_id"`
+	Symbol           string  `json:"symbol"`
+	Name             string  `json:"name"`
+	Exchange         string  `json:"exchange"`
+	Quantity         int64   `json:"quantity"`
+	SellableQty      int64   `json:"sellable_qty"`
+	InitialQty       int64   `json:"initial_qty"`
+	TodayQty         int64   `json:"today_qty"`
+	AvgCost          float64 `json:"avg_cost"`
+	LastPrice        float64 `json:"last_price"`
+	MarketValue      float64 `json:"market_value"`
+	UnrealizedPnL    float64 `json:"unrealized_pnl"`
+	DayUnrealizedPnL float64 `json:"day_unrealized_pnl"`
+	SettledProfit    float64 `json:"settled_profit"`
+	ShareholderID    string  `json:"shareholder_id"`
 }
 
 func mergeEnvelopeFields(payload *orderPayload, envelope EntryEnvelope) {

@@ -159,10 +159,10 @@ migrations/postgres/000001_init_ledger.down.sql
 
 | View | 用途 |
 | --- | --- |
-| `research_account_daily_performance_v1` | 按账户和交易日输出 close 净资产、上一 close 净资产、日盈亏、收益率、持仓市值、已实现/浮动/总/净 PnL、成交额和费用；当前 view v1 仍是 close-to-close 口径 |
+| `research_account_daily_performance_v1` | 按账户和交易日输出 close 净资产、上一 close 净资产、日盈亏、收益率、持仓市值、已实现/总持仓浮动/当日持仓浮动/总/净 PnL、成交额和费用 |
 | `research_order_fill_export_v1` | 输出订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息、成交价量和成交时间 |
 
-第一版 PnL 口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留。9092 API 已接入 `asset_snapshots(open)`，返回 `open_net_asset`、`overnight_adjustment`、`intraday_pnl` 和 `intraday_return`，避免把逆回购回款、占款释放等隔夜资产变化混进日内交易绩效；研究侧 PostgreSQL view 后续可新增 v2，避免破坏当前 v1。
+持仓 PnL 统一保留两套口径：`unrealized_pnl` 是按持仓买入成本计算的总持仓浮盈，`day_unrealized_pnl` 是当日持仓浮动贡献，老仓按今日开盘价作日内基准，当日买入按当日买入成交成本作基准。研究侧派生 PnL 使用日内口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + day_unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`day_unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留。9092 API 已接入 `asset_snapshots(open)`，返回 `open_net_asset`、`overnight_adjustment`、`intraday_pnl` 和 `intraday_return`，避免把逆回购回款、占款释放等隔夜资产变化混进日内交易绩效。
 
 `/trade#performance` 的页面指标、收益贡献和数据质量展示设计见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。该页面第一版应优先复用上述 close 快照、成交账本、订单账本、对账结果和 Meridian bars，不主动查询柜台。
 

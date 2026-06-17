@@ -146,6 +146,29 @@ func TestOpenAssetSnapshotMigrationExtendsSnapshotType(t *testing.T) {
 	}
 }
 
+func TestPositionDayPnLMigrationAddsColumnsAndViewMetric(t *testing.T) {
+	upSQL := readMigration(t, "000008_position_day_pnl.up.sql")
+	for _, snippet := range []string{
+		"ADD COLUMN IF NOT EXISTS day_unrealized_pnl",
+		"DROP VIEW IF EXISTS research_account_daily_performance_v1",
+		"COALESCE(sum(day_unrealized_pnl), 0) AS day_unrealized_pnl",
+		"COALESCE(positions.settled_profit, 0) + COALESCE(positions.day_unrealized_pnl, 0) AS gross_pnl",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("position day pnl migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000008_position_day_pnl.down.sql")
+	for _, snippet := range []string{
+		"DROP COLUMN IF EXISTS day_unrealized_pnl",
+		"COALESCE(positions.settled_profit, 0) + COALESCE(positions.unrealized_pnl, 0) AS gross_pnl",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("position day pnl rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

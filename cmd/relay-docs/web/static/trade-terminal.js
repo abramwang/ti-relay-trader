@@ -1836,11 +1836,12 @@
     const liveTotals = livePortfolioTotals();
     const marketValue = liveTotals ? liveTotals.marketValue : asset.market_value;
     const positionProfit = liveTotals ? liveTotals.positionProfit : asset.position_profit;
+    const dayPositionProfit = liveTotals ? liveTotals.dayPositionProfit : asset.day_unrealized_pnl;
     const stockValue = liveTotals ? liveTotals.stockValue : asset.stock_value;
     const fundValue = liveTotals ? liveTotals.fundValue : asset.fund_value;
     const commission = metricCommission(asset);
     const closeProfit = metricCloseProfit(asset);
-    const dayProfit = metricDayProfit(asset, positionProfit, closeProfit, commission);
+    const dayProfit = metricDayProfit(asset, dayPositionProfit, closeProfit, commission, Boolean(liveTotals));
     const netAsset = liveTotals ? liveTotals.netAsset : asset.net_asset;
     els.netAsset.textContent = formatNumber(netAsset);
     els.cashAvailable.textContent = formatNumber(asset.cash_available);
@@ -1904,14 +1905,14 @@
     return estimatedCloseProfit();
   }
 
-  function metricDayProfit(asset, positionProfit, closeProfit, commission) {
+  function metricDayProfit(asset, dayPositionProfit, closeProfit, commission, preferComputed = false) {
     const assetDayProfit = finiteNumber(asset && asset.day_profit);
-    if (assetDayProfit !== null) {
+    if (!preferComputed && assetDayProfit !== null) {
       return assetDayProfit;
     }
-    const parts = [positionProfit, closeProfit, commission].map(finiteNumber);
+    const parts = [dayPositionProfit, closeProfit, commission].map(finiteNumber);
     if (parts.every((value) => value === null)) {
-      return null;
+      return assetDayProfit;
     }
     return (parts[0] || 0) + (parts[1] || 0) - (parts[2] || 0);
   }
@@ -1988,14 +1989,55 @@
     if (pnl !== null && costAmount !== null && costAmount !== 0) {
       pnlRatio = pnl / costAmount * 100;
     }
+    const ledgerDayPnl = finiteNumber(position.day_unrealized_pnl);
+    let dayPnl = ledgerDayPnl;
+    let dayCostAmount = null;
+    if (ledgerMarketValue !== null && ledgerDayPnl !== null) {
+      dayCostAmount = ledgerMarketValue - ledgerDayPnl;
+    } else if (qty !== null && price !== null) {
+      const todayQty = effectiveTodayPositionQty(position);
+      const oldQty = Math.max(qty - todayQty, 0);
+      const openPrice = finiteNumber(quote && quote.open);
+      if (oldQty > 0 && openPrice !== null && openPrice > 0) {
+        dayCostAmount = oldQty * openPrice;
+      }
+      if (todayQty > 0 && avgCost !== null && avgCost > 0) {
+        dayCostAmount = (dayCostAmount || 0) + todayQty * avgCost;
+      }
+    }
+    if (marketValue !== null && dayCostAmount !== null && dayCostAmount > 0) {
+      dayPnl = marketValue - dayCostAmount;
+    }
+    let dayPnlRatio = null;
+    if (dayPnl !== null && dayCostAmount !== null && dayCostAmount !== 0) {
+      dayPnlRatio = dayPnl / dayCostAmount * 100;
+    }
     return {
       quote,
       quoteItem: quote || position,
       price,
       marketValue,
       pnl,
-      pnlRatio
+      pnlRatio,
+      dayPnl,
+      dayPnlRatio
     };
+  }
+
+  function effectiveTodayPositionQty(position) {
+    const qty = finiteNumber(position && position.quantity);
+    if (qty === null || qty <= 0) {
+      return 0;
+    }
+    const todayQty = finiteNumber(position.today_qty);
+    if (todayQty !== null && todayQty > 0) {
+      return Math.min(todayQty, qty);
+    }
+    const sellableQty = finiteNumber(position.sellable_qty);
+    if (sellableQty !== null && sellableQty >= 0 && sellableQty < qty) {
+      return qty - sellableQty;
+    }
+    return 0;
   }
 
   function livePortfolioTotals() {
@@ -2008,6 +2050,7 @@
     }
     let marketValue = 0;
     let positionProfit = 0;
+    let dayPositionProfit = 0;
     let stockValue = 0;
     let fundValue = 0;
     let unclassifiedValue = 0;
@@ -2020,6 +2063,10 @@
       }
       if (rowPnl !== null) {
         positionProfit += rowPnl;
+      }
+      const rowDayPnl = finiteNumber(view.dayPnl);
+      if (rowDayPnl !== null) {
+        dayPositionProfit += rowDayPnl;
       }
       if (rowMarketValue !== null) {
         const instrumentType = String(instrumentTypeForItem(view.quoteItem) || "").toLowerCase();
@@ -2036,6 +2083,7 @@
     return {
       marketValue,
       positionProfit,
+      dayPositionProfit,
       stockValue: unclassifiedValue > 0 ? null : stockValue,
       fundValue: unclassifiedValue > 0 ? null : fundValue,
       netAsset: cashTotal !== null ? cashTotal + marketValue : (state.asset && state.asset.net_asset)
@@ -2044,7 +2092,7 @@
 
   function renderPositions() {
     if (state.positions.length === 0) {
-      els.positionsBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+      els.positionsBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
       renderPositionsPager();
       return;
     }
@@ -2053,9 +2101,13 @@
       const pnl = view.pnl;
       const pnlClass = Number(pnl) < 0 ? "down" : "up";
       const pnlRatio = view.pnlRatio;
+      const dayPnl = view.dayPnl;
+      const dayPnlClass = Number(dayPnl) < 0 ? "down" : "up";
+      const dayPnlRatio = view.dayPnlRatio;
       const avgCost = finiteNumber(position.avg_cost);
       const priceClass = view.price !== null && avgCost !== null && view.price < avgCost ? "down" : "up";
       const pnlRatioText = pnlRatio === null ? "--" : formatSigned(pnlRatio) + "%";
+      const dayPnlRatioText = dayPnlRatio === null ? "--" : formatSigned(dayPnlRatio) + "%";
       return `
         <tr>
           <td>${escapeHTML(symbolText(position))}</td>
@@ -2064,6 +2116,7 @@
           <td class="num">${formatPrice(position.avg_cost, view.quoteItem)}<br><span class="${priceClass}">${formatPrice(view.price, view.quoteItem)}</span></td>
           <td class="num">${formatNumber(view.marketValue)}</td>
           <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${pnlRatioText}</td>
+          <td class="num ${dayPnlClass}">${formatSigned(dayPnl)}<br>${dayPnlRatioText}</td>
           <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
         </tr>`;
     }).join("");

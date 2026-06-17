@@ -710,11 +710,11 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO positions")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, symbol, exchange)")
-	requireArgLen(t, exec.args, 17)
+	requireArgLen(t, exec.args, 18)
 	if exec.args[0] != "acct-1" || exec.args[1] != "600000" || exec.args[3] != trading.ExchangeSH {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[3])
 	}
-	assertJSONContains(t, exec.args[15], `"source":"front"`)
+	assertJSONContains(t, exec.args[16], `"source":"front"`)
 }
 
 func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
@@ -734,7 +734,7 @@ func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
 		t.Fatalf("UpsertPosition() error = %v", err)
 	}
 
-	requireArgLen(t, exec.args, 17)
+	requireArgLen(t, exec.args, 18)
 	if exec.args[5] != int64(0) {
 		t.Fatalf("sellable_qty arg = %#v, want 0", exec.args[5])
 	}
@@ -761,11 +761,11 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO position_snapshots")
 	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, symbol, exchange)")
-	requireArgLen(t, exec.args, 18)
+	requireArgLen(t, exec.args, 19)
 	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" {
 		t.Fatalf("snapshot identity args = %#v %#v", exec.args[0], exec.args[1])
 	}
-	assertJSONContains(t, exec.args[16], `"source":"settlement"`)
+	assertJSONContains(t, exec.args[17], `"source":"settlement"`)
 }
 
 func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {

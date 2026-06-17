@@ -68,7 +68,7 @@
 
 ```text
 realized_pnl = settled_profit
-gross_pnl = realized_pnl + unrealized_pnl
+gross_pnl = realized_pnl + day_unrealized_pnl
 net_pnl = gross_pnl - fee_total
 ```
 
@@ -76,8 +76,9 @@ net_pnl = gross_pnl - fee_total
 
 1. `settled_profit` 来自前置/柜台或资产快照字段，优先级高于 relay 自行估算。
 2. 如果 `settled_profit` 缺失，页面可以展示 `estimated_realized_pnl`，但必须标明估算。
-3. `unrealized_pnl` 优先读取日终持仓快照；缺字段时可以用 Meridian close 与成本价估算，并标明估算。
-4. 后续精确版本需要引入成本引擎，覆盖 FIFO/移动加权、分红派息、除权除息、逆回购、ETF 申赎和特殊费用。
+3. `unrealized_pnl` 表示按买入成本计算的总持仓浮盈，用于持仓页和持仓贡献解释。
+4. `day_unrealized_pnl` 表示当日持仓浮动贡献：前一交易日已有持仓按今日开盘价计日内基准，当日买入持仓按当日买入成交成本计日内基准；缺字段时可以用 Meridian open/close 与成交账本估算，并标明估算。
+5. 后续精确版本需要引入成本引擎，覆盖 FIFO/移动加权、分红派息、除权除息、逆回购、ETF 申赎和特殊费用。
 
 ### 持仓贡献
 
@@ -97,9 +98,10 @@ net_pnl = gross_pnl - fee_total
 | `market_value` | 日终市值 |
 | `weight` | `market_value / account_net_asset` |
 | `realized_pnl` | 已实现贡献，第一版可为空或估算 |
-| `unrealized_pnl` | 浮动贡献 |
+| `unrealized_pnl` | 按买入成本计算的总持仓浮盈 |
+| `day_unrealized_pnl` | 当日持仓浮动贡献 |
 | `fee` | 该证券成交费用 |
-| `net_contribution` | `realized_pnl + unrealized_pnl - fee` |
+| `net_contribution` | `realized_pnl + day_unrealized_pnl - fee` |
 | `contribution_bps` | 优先使用 `net_contribution / open_net_asset * 10000`；缺少日初资产时才兜底上一 close 净资产并标记 |
 | `quality_flags` | `estimated_cost`、`missing_close_price`、`missing_settled_profit` 等 |
 

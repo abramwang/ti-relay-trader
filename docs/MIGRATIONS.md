@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-06-14`
+更新时间：`2026-06-17`
 
 ## 当前状态
 
@@ -19,6 +19,10 @@ migrations/postgres/000005_fill_id_order_scope.up.sql
 migrations/postgres/000005_fill_id_order_scope.down.sql
 migrations/postgres/000006_research_performance_views.up.sql
 migrations/postgres/000006_research_performance_views.down.sql
+migrations/postgres/000007_open_asset_snapshots.up.sql
+migrations/postgres/000007_open_asset_snapshots.down.sql
+migrations/postgres/000008_position_day_pnl.up.sql
+migrations/postgres/000008_position_day_pnl.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -33,7 +37,9 @@ migrations/postgres/000006_research_performance_views.down.sql
 4. `000004_reconciliation_idempotency` 已应用。
 5. `000005_fill_id_order_scope` 已应用。
 6. `000006_research_performance_views` 已应用。
-7. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `6:research_performance_views`。
+7. `000007_open_asset_snapshots` 已应用。
+8. `000008_position_day_pnl` 增加持仓当日浮盈字段，并更新研究侧绩效 view。
+9. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `8:position_day_pnl`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -68,6 +74,16 @@ Repository 当前覆盖：
 7. `UpsertStreamCheckpoint`
 8. `UpsertJobRun`
 9. `LatestJobRuns`
+10. `UpsertPosition`
+11. `UpsertAssetSnapshotForDate`
+12. `UpsertPositionSnapshot`
+13. `GetDailyPerformance`
+14. `ListDailyPerformance`
+15. `UpsertReconciliationRun`
+16. `UpsertReconciliationInput`
+17. `UpsertReconciliationBreak`
+18. `ListReconciliationBreaks`
+19. `RawStreamSummary`
 
 这些入口会把标准交易结构体、stream key、stream id、source/correlation 信息和原始 payload 写入 PostgreSQL。重复消费场景使用唯一约束和 `ON CONFLICT` 做幂等处理。
 
@@ -141,6 +157,8 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000001_init_ledger.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000002_stream_checkpoints.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000003_job_runs.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000006_research_performance_views.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000007_open_asset_snapshots.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000008_position_day_pnl.up.sql
 ```
 
 使用 relayctl：

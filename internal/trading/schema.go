@@ -131,22 +131,23 @@ type Asset struct {
 }
 
 type Position struct {
-	AccountID     string    `json:"account_id"`
-	TradeDate     string    `json:"trade_date,omitempty"`
-	Symbol        string    `json:"symbol"`
-	Name          string    `json:"name,omitempty"`
-	Exchange      Exchange  `json:"exchange"`
-	Quantity      int64     `json:"quantity"`
-	SellableQty   int64     `json:"sellable_qty"`
-	InitialQty    int64     `json:"initial_qty,omitempty"`
-	TodayQty      int64     `json:"today_qty,omitempty"`
-	AvgCost       float64   `json:"avg_cost"`
-	LastPrice     float64   `json:"last_price,omitempty"`
-	MarketValue   float64   `json:"market_value"`
-	UnrealizedPnL float64   `json:"unrealized_pnl,omitempty"`
-	SettledProfit float64   `json:"settled_profit,omitempty"`
-	ShareholderID string    `json:"shareholder_id,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at,omitempty"`
+	AccountID        string    `json:"account_id"`
+	TradeDate        string    `json:"trade_date,omitempty"`
+	Symbol           string    `json:"symbol"`
+	Name             string    `json:"name,omitempty"`
+	Exchange         Exchange  `json:"exchange"`
+	Quantity         int64     `json:"quantity"`
+	SellableQty      int64     `json:"sellable_qty"`
+	InitialQty       int64     `json:"initial_qty,omitempty"`
+	TodayQty         int64     `json:"today_qty,omitempty"`
+	AvgCost          float64   `json:"avg_cost"`
+	LastPrice        float64   `json:"last_price,omitempty"`
+	MarketValue      float64   `json:"market_value"`
+	UnrealizedPnL    float64   `json:"unrealized_pnl,omitempty"`
+	DayUnrealizedPnL float64   `json:"day_unrealized_pnl,omitempty"`
+	SettledProfit    float64   `json:"settled_profit,omitempty"`
+	ShareholderID    string    `json:"shareholder_id,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitempty"`
 }
 
 type SubmitOrderRequest struct {

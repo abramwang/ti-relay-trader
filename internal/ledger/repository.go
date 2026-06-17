@@ -168,6 +168,7 @@ type DailyPerformance struct {
 	PositionsCount      int64     `json:"positions_count"`
 	PositionMarketValue float64   `json:"position_market_value"`
 	UnrealizedPnL       float64   `json:"unrealized_pnl"`
+	DayUnrealizedPnL    float64   `json:"day_unrealized_pnl"`
 	SettledProfit       float64   `json:"settled_profit"`
 	RealizedPnL         float64   `json:"realized_pnl"`
 	GrossPnL            float64   `json:"gross_pnl"`
@@ -900,6 +901,7 @@ func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Pos
 		nullFloat64(normalized.LastPrice),
 		normalized.MarketValue,
 		normalized.UnrealizedPnL,
+		normalized.DayUnrealizedPnL,
 		normalized.SettledProfit,
 		nullString(normalized.ShareholderID),
 		source,
@@ -950,6 +952,7 @@ func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position tra
 		nullFloat64(normalized.LastPrice),
 		normalized.MarketValue,
 		normalized.UnrealizedPnL,
+		normalized.DayUnrealizedPnL,
 		normalized.SettledProfit,
 		nullString(normalized.ShareholderID),
 		source,
@@ -1737,6 +1740,12 @@ func normalizePosition(position trading.Position) (trading.Position, error) {
 	if !position.Exchange.Valid() {
 		return position, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
 	}
+	if position.MarketValue == 0 && position.Quantity > 0 && position.LastPrice > 0 {
+		position.MarketValue = float64(position.Quantity) * position.LastPrice
+	}
+	if position.UnrealizedPnL == 0 && position.MarketValue > 0 && position.AvgCost > 0 && position.Quantity > 0 {
+		position.UnrealizedPnL = position.MarketValue - position.AvgCost*float64(position.Quantity)
+	}
 	return position, nil
 }
 
@@ -2168,6 +2177,7 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 		&performance.PositionsCount,
 		&performance.PositionMarketValue,
 		&performance.UnrealizedPnL,
+		&performance.DayUnrealizedPnL,
 		&performance.SettledProfit,
 		&performance.FillsCount,
 		&performance.BuyAmount,
@@ -2193,7 +2203,7 @@ func derivePerformancePnL(performance *DailyPerformance) {
 		return
 	}
 	performance.RealizedPnL = performance.SettledProfit
-	performance.GrossPnL = performance.RealizedPnL + performance.UnrealizedPnL
+	performance.GrossPnL = performance.RealizedPnL + performance.DayUnrealizedPnL
 	performance.NetPnL = performance.GrossPnL - performance.FeeTotal
 	if performance.OpenSnapshotSource == "" && performance.PreviousNetAsset > 0 {
 		performance.OpenNetAsset = performance.PreviousNetAsset
@@ -2230,6 +2240,7 @@ func scanPosition(row rowScanner) (trading.Position, error) {
 		&lastPrice,
 		&position.MarketValue,
 		&position.UnrealizedPnL,
+		&position.DayUnrealizedPnL,
 		&position.SettledProfit,
 		&shareholderID,
 		&updatedAt,

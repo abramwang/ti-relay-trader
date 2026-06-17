@@ -363,6 +363,7 @@ positions AS (
         count(*)::bigint AS positions_count,
         COALESCE(sum(market_value), 0) AS position_market_value,
         COALESCE(sum(unrealized_pnl), 0) AS unrealized_pnl,
+        COALESCE(sum(day_unrealized_pnl), 0) AS day_unrealized_pnl,
         COALESCE(sum(settled_profit), 0) AS settled_profit
     FROM position_snapshots
     WHERE account_id = $1
@@ -410,6 +411,7 @@ SELECT
     positions.positions_count,
     positions.position_market_value,
     positions.unrealized_pnl,
+    positions.day_unrealized_pnl,
     positions.settled_profit,
     fills.fills_count,
     fills.buy_amount,
@@ -492,6 +494,7 @@ positions AS (
         count(*)::bigint AS positions_count,
         COALESCE(sum(market_value), 0) AS position_market_value,
         COALESCE(sum(unrealized_pnl), 0) AS unrealized_pnl,
+        COALESCE(sum(day_unrealized_pnl), 0) AS day_unrealized_pnl,
         COALESCE(sum(settled_profit), 0) AS settled_profit
     FROM position_snapshots
     WHERE account_id = $1
@@ -554,6 +557,7 @@ SELECT
     COALESCE(positions.positions_count, 0) AS positions_count,
     COALESCE(positions.position_market_value, 0) AS position_market_value,
     COALESCE(positions.unrealized_pnl, 0) AS unrealized_pnl,
+    COALESCE(positions.day_unrealized_pnl, 0) AS day_unrealized_pnl,
     COALESCE(positions.settled_profit, 0) AS settled_profit,
     COALESCE(fills.fills_count, 0) AS fills_count,
     COALESCE(fills.buy_amount, 0) AS buy_amount,
@@ -729,6 +733,7 @@ SELECT
     last_price,
     market_value,
     unrealized_pnl,
+    day_unrealized_pnl,
     settled_profit,
     shareholder_id,
     updated_at
@@ -750,6 +755,7 @@ SELECT
     last_price,
     market_value,
     unrealized_pnl,
+    day_unrealized_pnl,
     settled_profit,
     shareholder_id,
     captured_at
@@ -770,6 +776,7 @@ INSERT INTO positions (
     last_price,
     market_value,
     unrealized_pnl,
+    day_unrealized_pnl,
     settled_profit,
     shareholder_id,
     source,
@@ -777,7 +784,7 @@ INSERT INTO positions (
     updated_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17
+    $11, $12, $13, $14, $15, $16, $17, $18
 )
 ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     name = EXCLUDED.name,
@@ -789,6 +796,7 @@ ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     last_price = EXCLUDED.last_price,
     market_value = EXCLUDED.market_value,
     unrealized_pnl = EXCLUDED.unrealized_pnl,
+    day_unrealized_pnl = EXCLUDED.day_unrealized_pnl,
     settled_profit = EXCLUDED.settled_profit,
     shareholder_id = EXCLUDED.shareholder_id,
     source = EXCLUDED.source,
@@ -811,6 +819,7 @@ INSERT INTO position_snapshots (
     last_price,
     market_value,
     unrealized_pnl,
+    day_unrealized_pnl,
     settled_profit,
     shareholder_id,
     source,
@@ -818,7 +827,7 @@ INSERT INTO position_snapshots (
     captured_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18
+    $11, $12, $13, $14, $15, $16, $17, $18, $19
 )
 ON CONFLICT (trade_date, account_id, symbol, exchange) DO UPDATE SET
     name = EXCLUDED.name,
@@ -830,6 +839,7 @@ ON CONFLICT (trade_date, account_id, symbol, exchange) DO UPDATE SET
     last_price = EXCLUDED.last_price,
     market_value = EXCLUDED.market_value,
     unrealized_pnl = EXCLUDED.unrealized_pnl,
+    day_unrealized_pnl = EXCLUDED.day_unrealized_pnl,
     settled_profit = EXCLUDED.settled_profit,
     shareholder_id = EXCLUDED.shareholder_id,
     source = EXCLUDED.source,

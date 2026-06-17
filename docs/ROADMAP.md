@@ -220,6 +220,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.7.tar.gz` 和 SHA256 校验文件，支持 performance、Meridian bars 和 reconciliation helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.8.tar.gz` 和 SHA256 校验文件，修复不同订单复用 `fill_id` 时的成交回调去重。
 - [x] 发布 `public/sdk/relay-sdk-0.1.9.tar.gz` 和 SHA256 校验文件，支持绩效序列 `benchmark_security_id` 基准对照。
+- [x] 发布 `public/sdk/relay-sdk-0.1.10.tar.gz` 和 SHA256 校验文件，`Position` 增加 `day_unrealized_pnl` 当日持仓浮盈字段。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -288,7 +289,7 @@
 - [x] `bars` 请求当天或空日期时通过 Meridian 交易日接口回退到最近交易日。
 - [x] 接入 Meridian `metadata/instruments` 和 `snapshots` 作为 `/trade` 代码补全和行情刷新薄代理。
 - [x] 计算账户日终权益。
-- [x] 计算第一版完整已实现盈亏、浮动盈亏、费用和收益率：保留 `settled_profit/unrealized_pnl/fee_total/return_rate`，新增 `realized_pnl/gross_pnl/net_pnl` 研究侧口径。
+- [x] 计算第一版完整已实现盈亏、浮动盈亏、费用和收益率：保留 `settled_profit/unrealized_pnl/day_unrealized_pnl/fee_total/return_rate`，新增 `realized_pnl/gross_pnl/net_pnl` 研究侧口径，其中 `gross_pnl` 使用当日持仓浮动贡献。
 - [x] 提供第一版日终 PnL 输入汇总：上一 close 净资产、日盈亏、收益率、持仓快照汇总和成交汇总。
 - [x] 绩效 v2 接入当日 `asset_snapshots(open)`，在日绩效、绩效序列、CSV 和 `/trade#performance` 展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率。
 - [x] 提供账户 close 净值绩效序列：日收益、累计收益和最大回撤。

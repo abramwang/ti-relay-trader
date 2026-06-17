@@ -111,6 +111,7 @@ class Position:
     last_price: float = 0.0
     market_value: float = 0.0
     unrealized_pnl: float = 0.0
+    day_unrealized_pnl: float = 0.0
     shareholder_id: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -130,6 +131,7 @@ class Position:
             last_price=_float(data, "last_price"),
             market_value=_float(data, "market_value"),
             unrealized_pnl=_float(data, "unrealized_pnl"),
+            day_unrealized_pnl=_float(data, "day_unrealized_pnl"),
             shareholder_id=_text(data, "shareholder_id"),
             raw=dict(data),
         )

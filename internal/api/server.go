@@ -462,13 +462,55 @@ type positionFillCost struct {
 	amount   float64
 }
 
-func (s *Server) enrichPositionCostsFromTodayFills(ctx context.Context, positions []trading.Position, query trading.PositionQuery) {
-	if s.orders == nil || len(positions) == 0 || query.History || query.TradeDate != "" || query.DateFrom != "" || query.DateTo != "" {
+func (cost positionFillCost) averageCost() (float64, bool) {
+	if cost.qty <= 0 || cost.amount <= 0 {
+		return 0, false
+	}
+	return cost.amount / float64(cost.qty), true
+}
+
+func (s *Server) enrichPositionsForPnL(ctx context.Context, positions []trading.Position, query trading.PositionQuery) {
+	if len(positions) == 0 {
 		return
+	}
+	tradeDate := positionPnLTradeDate(query)
+	costs := map[string]positionFillCost{}
+	if !query.History {
+		costs = s.todayBuyCostsForPositions(ctx, positions, query.AccountID, tradeDate)
+	}
+	for i := range positions {
+		if positionNeedsFillDerivedCost(positions[i]) {
+			cost := costs[securityID(positions[i].Symbol, string(positions[i].Exchange))]
+			if avgCost, ok := cost.averageCost(); ok && cost.qty >= positions[i].Quantity {
+				positions[i].AvgCost = avgCost
+			}
+		}
+	}
+
+	quotes := map[string]positionMarketQuote{}
+	if !query.History && tradeDate == timeutil.Now().Format("2006-01-02") {
+		quotes = s.positionMarketQuotes(ctx, positions, tradeDate)
+	}
+	for i := range positions {
+		id := securityID(positions[i].Symbol, string(positions[i].Exchange))
+		applyPositionPnL(&positions[i], quotes[id], costs[id])
+	}
+}
+
+func positionPnLTradeDate(query trading.PositionQuery) string {
+	if normalized, err := normalizeAPIDate(query.TradeDate); err == nil && normalized != "" {
+		return normalized
+	}
+	return timeutil.Now().Format("2006-01-02")
+}
+
+func (s *Server) todayBuyCostsForPositions(ctx context.Context, positions []trading.Position, accountID string, tradeDate string) map[string]positionFillCost {
+	if s.orders == nil || len(positions) == 0 || strings.TrimSpace(accountID) == "" {
+		return nil
 	}
 	needed := make(map[string]positionFillCost)
 	for _, position := range positions {
-		if !positionNeedsFillDerivedCost(position) {
+		if position.Quantity <= 0 {
 			continue
 		}
 		if id := securityID(position.Symbol, string(position.Exchange)); id != "" {
@@ -482,16 +524,15 @@ func (s *Server) enrichPositionCostsFromTodayFills(ctx context.Context, position
 		}
 	}
 	if len(needed) == 0 {
-		return
+		return nil
 	}
 
 	costs := make(map[string]positionFillCost, len(needed))
-	tradeDate := timeutil.Now().Format("2006-01-02")
 	for id, target := range needed {
 		cursor := ""
 		for page := 0; page < 20; page++ {
 			result, err := s.orders.ListFills(ctx, trading.FillQuery{
-				AccountID: query.AccountID,
+				AccountID: accountID,
 				Symbol:    target.symbol,
 				Exchange:  target.exchange,
 				TradeDate: tradeDate,
@@ -499,12 +540,12 @@ func (s *Server) enrichPositionCostsFromTodayFills(ctx context.Context, position
 				Cursor:    cursor,
 			})
 			if err != nil {
-				s.logger.Warn("position_cost_enrichment_failed", "account_id", query.AccountID, "symbol", target.symbol, "exchange", target.exchange, "error", err)
-				return
+				s.logger.Warn("position_cost_enrichment_failed", "account_id", accountID, "symbol", target.symbol, "exchange", target.exchange, "error", err)
+				return costs
 			}
 			cost := costs[id]
 			for _, fill := range result.Fills {
-				if fill.TradeSide != trading.TradeSideBuy || fill.Qty <= 0 || fill.Price <= 0 {
+				if (fill.TradeSide != trading.TradeSideBuy && fill.TradeSide != trading.TradeSidePurchase) || fill.Qty <= 0 || fill.Price <= 0 {
 					continue
 				}
 				cost.qty += fill.Qty
@@ -517,17 +558,125 @@ func (s *Server) enrichPositionCostsFromTodayFills(ctx context.Context, position
 			}
 		}
 	}
+	return costs
+}
 
-	for i := range positions {
-		if !positionNeedsFillDerivedCost(positions[i]) {
-			continue
-		}
-		cost := costs[securityID(positions[i].Symbol, string(positions[i].Exchange))]
-		if cost.qty < positions[i].Quantity || cost.amount <= 0 {
-			continue
-		}
-		positions[i].AvgCost = cost.amount / float64(cost.qty)
+type positionMarketQuote struct {
+	open    float64
+	last    float64
+	hasOpen bool
+	hasLast bool
+}
+
+func (s *Server) positionMarketQuotes(ctx context.Context, positions []trading.Position, tradeDate string) map[string]positionMarketQuote {
+	if s.market == nil || len(positions) == 0 {
+		return nil
 	}
+	ids := positionSecurityIDs(positions)
+	quotes := make(map[string]positionMarketQuote, len(ids))
+	const chunkSize = 200
+	for offset := 0; offset < len(ids); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[offset:end]
+		values := url.Values{}
+		values.Set("security_ids", strings.Join(chunk, ","))
+		values.Set("trade_date", strings.ReplaceAll(tradeDate, "-", ""))
+		values.Set("market_level", "level1")
+		values.Set("limit", strconv.Itoa(len(chunk)))
+		response, err := s.market.MarketSnapshots(ctx, values)
+		if err != nil {
+			s.logger.Warn("position_market_quotes_failed", "trade_date", tradeDate, "error", err)
+			continue
+		}
+		if response.StatusCode >= http.StatusBadRequest {
+			s.logger.Warn("position_market_quotes_bad_status", "trade_date", tradeDate, "status", response.StatusCode)
+			continue
+		}
+		for _, row := range meridianRows(response.Payload) {
+			id := normalizeSecurityID(stringFromAny(row["security_id"]))
+			if id == "" {
+				continue
+			}
+			var quote positionMarketQuote
+			if openPrice, ok := floatFromAny(row["open"]); ok && openPrice > 0 {
+				quote.open = openPrice
+				quote.hasOpen = true
+			}
+			if lastPrice, ok := floatFromAny(row["last"]); ok && lastPrice > 0 {
+				quote.last = lastPrice
+				quote.hasLast = true
+			}
+			if quote.hasOpen || quote.hasLast {
+				quotes[id] = quote
+			}
+		}
+	}
+	return quotes
+}
+
+func applyPositionPnL(position *trading.Position, quote positionMarketQuote, todayCost positionFillCost) {
+	if position == nil || position.Quantity <= 0 {
+		return
+	}
+	price := position.LastPrice
+	if quote.hasLast {
+		price = quote.last
+		position.LastPrice = price
+	}
+	if price <= 0 && position.Quantity > 0 && position.MarketValue > 0 {
+		price = position.MarketValue / float64(position.Quantity)
+	}
+	if price > 0 {
+		position.MarketValue = price * float64(position.Quantity)
+	}
+	if position.AvgCost > 0 && position.MarketValue > 0 {
+		position.UnrealizedPnL = position.MarketValue - position.AvgCost*float64(position.Quantity)
+	}
+
+	todayQty := effectiveTodayPositionQty(*position)
+	oldQty := position.Quantity - todayQty
+	if oldQty < 0 {
+		oldQty = 0
+	}
+	openPrice := 0.0
+	if quote.hasOpen {
+		openPrice = quote.open
+	}
+	if openPrice <= 0 && oldQty > 0 && price > 0 {
+		openPrice = price
+	}
+	todayCostPrice := position.AvgCost
+	if avgCost, ok := todayCost.averageCost(); ok {
+		todayCostPrice = avgCost
+	}
+	dayCostAmount := 0.0
+	if oldQty > 0 && openPrice > 0 {
+		dayCostAmount += float64(oldQty) * openPrice
+	}
+	if todayQty > 0 && todayCostPrice > 0 {
+		dayCostAmount += float64(todayQty) * todayCostPrice
+	}
+	if dayCostAmount <= 0 || position.MarketValue <= 0 {
+		return
+	}
+	position.DayUnrealizedPnL = position.MarketValue - dayCostAmount
+}
+
+func effectiveTodayPositionQty(position trading.Position) int64 {
+	todayQty := position.TodayQty
+	if todayQty <= 0 && position.SellableQty >= 0 && position.SellableQty < position.Quantity {
+		todayQty = position.Quantity - position.SellableQty
+	}
+	if todayQty < 0 {
+		return 0
+	}
+	if todayQty > position.Quantity {
+		return position.Quantity
+	}
+	return todayQty
 }
 
 func positionNeedsFillDerivedCost(position trading.Position) bool {
@@ -1190,6 +1339,7 @@ func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset tradin
 		s.logger.Warn("asset_position_totals_unavailable", "account_id", asset.AccountID, "error", err)
 		return asset
 	}
+	s.enrichPositionsForPnL(ctx, positions, trading.PositionQuery{AccountID: asset.AccountID})
 	totals := summarizePositionAssetTotals(positions)
 	if totals.marketValue <= 0 {
 		return asset
@@ -1198,6 +1348,7 @@ func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset tradin
 	asset.StockValue = totals.stockValue
 	asset.FundValue = totals.fundValue
 	asset.PositionProfit = totals.positionProfit
+	asset.DayProfit = totals.dayPositionProfit + asset.CloseProfit - asset.Commission
 	cashTotal := asset.CashTotal
 	if cashTotal == 0 {
 		cashTotal = asset.CashAvailable
@@ -1231,10 +1382,11 @@ func (s *Server) collectCurrentPositions(ctx context.Context, accountID string) 
 }
 
 type assetPositionTotals struct {
-	marketValue    float64
-	stockValue     float64
-	fundValue      float64
-	positionProfit float64
+	marketValue       float64
+	stockValue        float64
+	fundValue         float64
+	positionProfit    float64
+	dayPositionProfit float64
 }
 
 func summarizePositionAssetTotals(positions []trading.Position) assetPositionTotals {
@@ -1246,6 +1398,7 @@ func summarizePositionAssetTotals(positions []trading.Position) assetPositionTot
 		}
 		totals.marketValue += marketValue
 		totals.positionProfit += position.UnrealizedPnL
+		totals.dayPositionProfit += position.DayUnrealizedPnL
 		if isFundLikePosition(position) {
 			totals.fundValue += marketValue
 		} else {
@@ -1284,7 +1437,7 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	s.enrichPositionNames(r.Context(), result.Positions)
-	s.enrichPositionCostsFromTodayFills(r.Context(), result.Positions, query)
+	s.enrichPositionsForPnL(r.Context(), result.Positions, query)
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -1363,6 +1516,7 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"market_value",
 		"position_market_value",
 		"unrealized_pnl",
+		"day_unrealized_pnl",
 		"settled_profit",
 		"realized_pnl",
 		"gross_pnl",
@@ -1403,6 +1557,7 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			formatCSVFloat(item.MarketValue),
 			formatCSVFloat(item.PositionMarketValue),
 			formatCSVFloat(item.UnrealizedPnL),
+			formatCSVFloat(item.DayUnrealizedPnL),
 			formatCSVFloat(item.SettledProfit),
 			formatCSVFloat(item.RealizedPnL),
 			formatCSVFloat(item.GrossPnL),
@@ -2078,6 +2233,9 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 	}
+	if len(positionResult.Positions) > 0 {
+		s.enrichPositionsForPnL(ctx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
+	}
 	ordersResult, err := s.listAllSettlementOrders(ctx, accountID, tradeDate)
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("orders: %v", err))
@@ -2267,6 +2425,10 @@ func pnlInputSummaryPayload(asset trading.Asset, positions []trading.Position, f
 	for _, position := range positions {
 		positionMarketValue += position.MarketValue
 	}
+	var dayUnrealizedPnL float64
+	for _, position := range positions {
+		dayUnrealizedPnL += position.DayUnrealizedPnL
+	}
 	var buyAmount float64
 	var sellAmount float64
 	var feeTotal float64
@@ -2290,8 +2452,9 @@ func pnlInputSummaryPayload(asset trading.Asset, positions []trading.Position, f
 			"close_profit":    asset.CloseProfit,
 		},
 		"positions": map[string]any{
-			"count":        len(positions),
-			"market_value": positionMarketValue,
+			"count":              len(positions),
+			"market_value":       positionMarketValue,
+			"day_unrealized_pnl": dayUnrealizedPnL,
 		},
 		"fills": map[string]any{
 			"count":       len(fills),

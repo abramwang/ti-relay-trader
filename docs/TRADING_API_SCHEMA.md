@@ -126,11 +126,14 @@ rejected
   "avg_cost": 9.54,
   "market_value": 954.0,
   "unrealized_pnl": 0.0,
+  "day_unrealized_pnl": 0.0,
   "shareholder_id": "A00030484"
 }
 ```
 
 `sellable_qty` 当前按前置/柜台 `position_page` 原样落盘和返回，relay 不在账本层重新计算 A 股 T+1 可卖数量。券商测试环境或外部前置如果返回同日买入可卖/不可卖差异，页面和 SDK 会如实展示；需要统一 T+1 规则时应优先在前置持仓回报中统一字段语义。
+
+持仓盈亏统一保留两列：`unrealized_pnl` 是按买入成本计算的总持仓浮盈；`day_unrealized_pnl` 是当日持仓浮动贡献，老仓按今日开盘价作日内基准，当日买入按当日买入成交成本作基准。当前持仓查询会在账本字段缺失或行情更新时结合 Meridian level1 snapshot 和当日成交账本重算，历史持仓查询只读取 `position_snapshots` 已落盘字段。
 
 ### SubmitOrderRequest
 
@@ -334,11 +337,11 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 订单、成交、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 
-`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots` 的持仓市值/浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径仍保留 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
+`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots` 的持仓市值、总持仓浮盈、当日持仓浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+day_unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 返回账户 close 净值绩效序列，并在每个交易日返回同样的日初资产、隔夜调整、日内盈亏和日内收益率字段。服务读取区间内 `asset_snapshots(snapshot_type=close)` 形成长期净值主线，按上一条 close 净资产计算兼容的单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。绩效页面和 API Console 默认用上证指数 `000001.SH` 作为基准；如果传入其他 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 
-`GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、上一 close 净资产、日初资产、隔夜调整、日内盈亏、日内收益率、close-to-close 收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现/浮动/总/净 PnL、成交额、费用和快照时间等列。
+`GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、上一 close 净资产、日初资产、隔夜调整、日内盈亏、日内收益率、close-to-close 收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现 PnL、总持仓浮盈、当日持仓浮盈、总/净 PnL、成交额、费用和快照时间等列。
 
 研究侧 PostgreSQL 导出 view 已通过 `000006_research_performance_views` 提供：
 
