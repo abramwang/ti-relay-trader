@@ -841,6 +841,7 @@ OC 行为：
 | `BAD_COMMAND_BODY` | `body` 不是合法 JSON | 修复消息序列化 |
 | `MISSING_MESSAGE_ID` | 缺少 `message_id` | 修复命令 envelope |
 | `UNKNOWN_ACTION` | 未知 action | 检查 action 拼写和 stream |
+| `BROKER_NOT_READY` | OC 已启动但华鑫柜台登录尚未完成，或断线重连中 | 稍后重试；不要把它当作业务拒单 |
 | `ORDER_SUBMIT_REJECTED` | 本地字段校验失败或下单接口调用失败 | 检查 symbol/exchange/price/qty |
 | `INVALID_BATCH` | 批量请求缺少 `payload.orders[]` | 修复 payload |
 | `BATCH_REJECTED` | 批量订单全部失败 | 检查每笔订单参数 |
