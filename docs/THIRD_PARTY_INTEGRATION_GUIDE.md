@@ -89,7 +89,7 @@ HX_ACCOUNT_ID=00030484
 1. 不要把 Redis 密码、账户密码、柜台密码写入代码仓库。
 2. 第三方日志中不要打印完整密码或账户密码。
 3. Redis 连接建议启用白名单、防火墙或专线隔离。
-4. 交易测试前必须确认使用券商测试环境账户或其他明确隔离的测试账户。
+4. 交易测试前必须确认使用测试账户或模拟账户。
 
 ## 4. Redis Stream 命名
 
@@ -172,6 +172,7 @@ XADD relay:prod:v1:huaxin:00030484:cmd.query * body '<json>'
 | `reply` | `origin_message_id` |
 | `order.event` | `payload.gateway_order_id` 或 top-level `gateway_order_id` |
 | `fill.event` | `payload.gateway_order_id` |
+| `transfer.event` | `payload.gateway_order_id + payload.order_stream_id + payload.component_symbol` |
 | `deadletter` | `payload.original_message_id` 或 top-level `origin_message_id` |
 
 生产接入建议每个 gateway/account 由一个状态机消费，测试接入建议串行执行验收脚本。
@@ -318,7 +319,7 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.trade
 }
 ```
 
-批量下单的回包只表示这一批提交到 OC 的接收结果。每一笔子订单仍会独立产生自己的 `order.event` 和 `fill.event`。
+批量下单的回包只表示这一批提交到 OC 的接收结果。每一笔子订单仍会独立产生自己的 `order.event` 和 `fill.event`。如果 ETF 申赎产生 `price=0` 的成分股划转，则推送为 `transfer.event`，不进入普通成交账本。
 
 ### 7.3 撤单：`order.cancel`
 
@@ -392,7 +393,7 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.query
 | `account.asset.query` | `asset_page` | `payload.account` |
 | `account.positions.query` | `position_page` | `payload.items[]` |
 | `order.list.query` | `order_page` | `payload.items[]` |
-| `fill.list.query` | `fill_page` | `payload.items[]` |
+| `fill.list.query` | `fill_page` | `payload.items[]` 普通成交，`payload.component_transfers[]` ETF 成分股划转 |
 
 查询分页规则：
 
@@ -638,7 +639,10 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.query
     "price": 9.54,
     "qty": 100,
     "match_timestamp": 1777103459957,
-    "trade_side": "B"
+    "trade_side": "B",
+    "business_type": "S",
+    "record_type": "trade_fill",
+    "is_transfer": false
   },
   "adapter_context": {
     "order_id": 1680001,
@@ -655,11 +659,56 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.query
 
 成交去重规则：
 
-1. 优先使用 `account_id + gateway_order_id + adapter_context.match_stream_id` 或 `account_id + gateway_order_id + payload.fill_id` 去重。
+1. 优先使用 `adapter_context.match_stream_id` 或 `payload.fill_id` 去重。
 2. 如果柜台没有稳定成交流号，可以使用 `order_stream_id + match_timestamp + qty + price` 组合去重。
 3. 不要从订单累计成交差分反推成交明细；成交事实以 `fill.event` 为准。
 
-前置程序发送 `fill.event` 时应尽量携带 `gateway_order_id`、`order_id` 和 `order_stream_id`。Relay 支持 `fill_id/match_stream_id` 在不同订单间复用，但同一订单内的成交编号应保持稳定。
+实时 `gateway_order_id` 规则：
+
+1. Relay 下单产生的本地订单继续使用命令里的 `gateway_order_id`。
+2. 外部订单或 ETF 篮子子单如果有柜台 `order_stream_id`，OC 使用 `external-huaxin-{account_id}-{order_stream_id}` 作为单笔委托级 `gateway_order_id`。
+3. `order.event` 与 `fill.event` 必须使用同一个 `gateway_order_id/order_stream_id` 组合。
+
+如果普通成交先于订单状态回调到达，OC 会先推一个最小 `order.event`，其 `payload.synthetic_from_fill=true`、`adapter_context.synthetic_from_fill=true`。该事件只用于保证成交外键可关联；后续真实 `order.event` 到达后应以真实订单事件覆盖。
+
+## 11.1 ETF 成分股划转事件：`transfer.event`
+
+ETF 申赎过程中，华鑫可能返回 `price=0` 的成分股划转记录。OC 不把这类记录作为普通 `fill.event` 推送，而是发布 `transfer.event`：
+
+```json
+{
+  "protocol": "relay.stream.v1",
+  "message_type": "event",
+  "event_type": "transfer.event",
+  "event_name": "etf_component_transfer.event",
+  "gateway_order_id": "external-huaxin-50100011407701-12001A180003508",
+  "payload": {
+    "gateway_order_id": "external-huaxin-50100011407701-12001A180003508",
+    "fill_id": "01010000135897600000",
+    "order_id": 121,
+    "order_stream_id": "12001A180003508",
+    "account_id": "50100011407701",
+    "symbol": "300001",
+    "exchange": "SZ",
+    "price": 0,
+    "qty": 300,
+    "trade_side": "R",
+    "business_type": "E",
+    "record_type": "etf_component_transfer",
+    "transfer_type": "etf_redemption_component_transfer",
+    "is_transfer": true,
+    "component_symbol": "300001",
+    "component_exchange": "SZ",
+    "component_qty": 300,
+    "component_value": null,
+    "cash_substitution": false,
+    "broker_trade_side": "S",
+    "broker_business_type": "S"
+  }
+}
+```
+
+第三方应将 `transfer.event` 写入 ETF 申赎/篮子明细或划转流水，不应写入普通成交表，也不应要求 `price > 0`。
 
 ## 12. Heartbeat 心跳
 
@@ -913,7 +962,51 @@ rejected
 
 ### 17.4 成交查询 `fill_page`
 
-`payload.items[]` 与 `fill.event.payload` 接近。
+`payload.items[]` 与 `fill.event.payload` 接近，只放普通成交明细。普通成交必须满足 `price > 0`，并带 `record_type=trade_fill`、`is_transfer=false`。
+
+ETF 申赎过程中，华鑫可能返回 `price=0` 的成分股划转记录。这类记录不是普通成交，不进入 `payload.items[]`，统一放入 `payload.component_transfers[]`：
+
+```json
+{
+  "payload": {
+    "items": [],
+    "item_count": 0,
+    "component_transfers": [
+      {
+        "gateway_order_id": "external-huaxin-50100011407701-12001A180001681",
+        "fill_id": "01010000135897600000",
+        "order_id": 121,
+        "order_stream_id": "12001A180001681",
+        "account_id": "50100011407701",
+        "symbol": "300347",
+        "exchange": "SZ",
+        "price": 0,
+        "qty": 300,
+        "trade_side": "R",
+        "business_type": "E",
+        "record_type": "etf_component_transfer",
+        "transfer_type": "etf_redemption_component_transfer",
+        "is_transfer": true,
+        "component_symbol": "300347",
+        "component_exchange": "SZ",
+        "component_qty": 300,
+        "component_value": null,
+        "cash_substitution": false,
+        "broker_trade_side": "S",
+        "broker_business_type": "S"
+      }
+    ],
+    "component_transfer_count": 1
+  }
+}
+```
+
+第三方落库建议：
+
+1. `payload.items[]` 按普通成交账本处理。
+2. `payload.component_transfers[]` 按 ETF 成分股划转/篮子执行明细处理，不应按普通成交价校验。
+3. `component_value=null` 表示前置没有提供可用于估值的金额，不应被解释为金额为 0。
+4. 柜台原始方向保留在 `broker_trade_side/broker_business_type`；前置会把划转语义规范化为 `business_type=E`，ETF 赎回成分股默认为 `trade_side=R`。
 
 ## 18. 验收脚本
 
