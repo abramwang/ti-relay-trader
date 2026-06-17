@@ -484,3 +484,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-17`: 修复交易终端 hash 路由兼容：服务端现在会把 `/trade#asset`、`/trade%23asset` 和 `/trade/asset` 都返回交易终端 HTML，避免入口或反代把 hash 当作 path 透传时出现 404；页面 smoke 增加 hash path 与子路径覆盖，9092 已重启验证通过，生产 `trading_enabled=0` 保持关闭。
 - `2026-06-17`: 优化 `/trade` 分钟 K 线买卖点标注：普通买卖继续按成交价/委托价绘制；`trade_side=P/R` 的申购/赎回订单和成交按方向归类为买/卖标记，但标注价格改用对应分钟 K 线 close，并在 tooltip 中提示 `K线收盘`，避免 ETF 申赎的柜台价格 `1.0/0` 误导点位。
 - `2026-06-18`: 接入 OC 新增 `BROKER_NOT_READY` 错误码：Relay 同步层会把它视为柜台登录未完成/重连中的瞬时状态，只归档 raw reply，不把订单草稿写成业务拒单；Python SDK 新增 `RelayBrokerNotReadyError`，策略端可单独捕获后稍后重试。
+- `2026-06-18`: 生产新增账户 `314000045768` 已确认开放只读：`/v1/account-routes` 显示三户 `read_only=true`、`trading_enabled=false`，9092 状态为 `production ok`、启用账户 3、下单账户 0；已向该账户发送资金、持仓、订单、成交刷新命令，07:46 左右因尚未到 OC 正常启动窗口暂未收到新 reply。
