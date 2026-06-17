@@ -624,8 +624,58 @@
     els.exchangeInput.value = parsed.exchange;
   }
 
-  function sideText(side) {
-    return side === "S" ? "卖出" : "买入";
+  function sideCode(item) {
+    if (typeof item === "string") {
+      return item.toUpperCase();
+    }
+    return String(item && item.trade_side || "").toUpperCase();
+  }
+
+  function businessTypeCode(item, linkedOrder) {
+    return String(
+      item && (item.business_type || adapterText(item, "business_type")) ||
+      linkedOrder && (linkedOrder.business_type || adapterText(linkedOrder, "business_type")) ||
+      ""
+    ).toUpperCase();
+  }
+
+  function sideText(item, linkedOrder) {
+    const side = sideCode(item);
+    const businessType = businessTypeCode(item, linkedOrder);
+    if (side === "R") {
+      return businessType === "E" ? "ETF赎回" : "赎回";
+    }
+    if (side === "P") {
+      return businessType === "E" ? "ETF申购" : "申购";
+    }
+    if (side === "S") {
+      return "卖出";
+    }
+    if (side === "B") {
+      return "买入";
+    }
+    return side || "--";
+  }
+
+  function sideKind(item, linkedOrder) {
+    const side = sideCode(item);
+    const businessType = businessTypeCode(item, linkedOrder);
+    if (side === "R") {
+      return businessType === "E" ? "redeem" : "sell";
+    }
+    if (side === "P") {
+      return businessType === "E" ? "create" : "buy";
+    }
+    if (side === "S") {
+      return "sell";
+    }
+    return "buy";
+  }
+
+  function sideBadge(item, linkedOrder) {
+    const kind = sideKind(item, linkedOrder);
+    const label = sideText(item, linkedOrder);
+    return '<span class="side-badge ' + escapeHTML(kind) + '">' + escapeHTML(label) + "</span>";
   }
 
   function statusText(status) {
@@ -2121,7 +2171,7 @@
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
                 <td>${escapeHTML(symbolText(order))}</td>
                 <td class="security-name">${escapeHTML(securityNameText(order))}</td>
-                <td class="${order.trade_side === "S" ? "down" : "up"}">${sideText(order.trade_side)}</td>
+                <td>${sideBadge(order)}</td>
                 <td class="num">${formatPrice(order.limit_price, order)}</td>
                 <td class="num">${formatInt(order.order_qty)} / ${formatInt(order.cum_filled_qty)}</td>
                 <td><span class="row-title"><strong>${escapeHTML(order.order_id || "--")}</strong><span>${escapeHTML(order.order_stream_id || "--")}</span></span></td>
@@ -2201,7 +2251,7 @@
                 <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
                 <td>${escapeHTML(symbolText(fill))}</td>
                 <td class="security-name">${escapeHTML(securityNameText(fill, order))}</td>
-                <td class="${fill.trade_side === "S" ? "down" : "up"}">${sideText(fill.trade_side)}</td>
+                <td>${sideBadge(fill, order)}</td>
                 <td class="num">${formatPrice(fill.price, fill)}</td>
                 <td class="num">${formatInt(fill.qty)}</td>
                 <td>${formatTime(fill.matched_at)}</td>
@@ -2330,10 +2380,11 @@
     }
     els.executionList.innerHTML = `
       <table>
-        <thead><tr><th>成交编号</th><th>订单 ID</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
+        <thead><tr><th>成交编号</th><th>方向</th><th>订单 ID</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
         <tbody>${fills.map((fill) => `
           <tr>
             <td>${escapeHTML(fill.fill_id)}</td>
+            <td>${sideBadge(fill, order)}</td>
             <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
             <td class="num">${formatPrice(fill.price, fill)}</td>
             <td class="num">${formatInt(fill.qty)}</td>
@@ -2926,7 +2977,7 @@
     const fillOrderIDs = new Set();
     const buy = [];
     const sell = [];
-    const appendMarker = (side, label, price, meta) => {
+    const appendMarker = (item, label, price, meta) => {
       if (!Number.isFinite(price) || price <= 0 || !label) {
         return;
       }
@@ -2935,7 +2986,8 @@
         return;
       }
       const marker = { value: [snapped, price], meta };
-      if (side === "S") {
+      const kind = sideKind(item);
+      if (kind === "sell" || kind === "redeem") {
         sell.push(marker);
       } else {
         buy.push(marker);
@@ -2947,8 +2999,8 @@
       if (id) {
         fillOrderIDs.add(id);
       }
-      appendMarker(fill.trade_side, minuteLabel(fill.matched_at || fill.match_timestamp), Number(fill.price), {
-        kind: "成交",
+      appendMarker(fill, minuteLabel(fill.matched_at || fill.match_timestamp), Number(fill.price), {
+        kind: sideText(fill) + "成交",
         id: fill.fill_id || id,
         qty: fill.qty,
         price: fill.price,
@@ -2960,8 +3012,8 @@
       if (id && fillOrderIDs.has(id)) {
         continue;
       }
-      appendMarker(order.trade_side, minuteLabel(order.created_at || order.inserted_at || order.accepted_at || order.last_updated_at), Number(order.limit_price), {
-        kind: "委托",
+      appendMarker(order, minuteLabel(order.created_at || order.inserted_at || order.accepted_at || order.last_updated_at), Number(order.limit_price), {
+        kind: sideText(order) + "委托",
         id,
         qty: order.order_qty,
         price: order.limit_price,

@@ -130,6 +130,8 @@ action 到 stream 的映射：
 
 订单事件按整单快照处理。前置如果同一订单状态变化，会推送完整订单信息，relay 对 `orders(account_id, gateway_order_id)` 做 upsert。终态保护在 SQL 层实现：已 `filled/cancelled/rejected` 的订单不会被后续非终态事件回退，`terminal_at` 也不会被非终态覆盖。
 
+成交事件和成交页中的 `business_type`、`record_type`、`is_transfer` 会保存在 `fills.adapter_context`。这用于保留 ETF 申购/赎回等非普通买卖的业务语义，而不改变现有 `fills` 事实表主键和金额字段。普通成交仍要求 `price > 0`、`qty > 0`；ETF 赎回如果前置按标准成交返回 `trade_side=R`、`business_type=E`、正数价格和数量，relay 会作为真实成交入库，并由交易终端显示为 `ETF赎回`。
+
 如果订单事件显示已全成，但缺少完整逐笔成交，relay 会生成一条 `fill_id=relay-summary:<gateway_order_id>` 的汇总成交，`adapter_context.relay_synthesized=true`。这只用于保持订单/成交数量口径一致，不代表柜台真实逐笔成交。
 
 ## Checkpoint 与重放

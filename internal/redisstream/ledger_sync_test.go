@@ -816,7 +816,10 @@ func TestProcessLedgerEntryScopesReusableBasketGatewayOrderIDForFillEvent(t *tes
 				"price":38.76,
 				"qty":100,
 				"matched_at":"2026-06-17T09:40:39+08:00",
-				"trade_side":"S"
+				"trade_side":"R",
+				"business_type":"E",
+				"record_type":"trade_fill",
+				"is_transfer":false
 			}
 		}`,
 	})
@@ -831,6 +834,12 @@ func TestProcessLedgerEntryScopesReusableBasketGatewayOrderIDForFillEvent(t *tes
 	if fill.AdapterContext["relay_raw_gateway_order_id"] != "etfarb#159915.SZSE#094008#s" ||
 		fill.AdapterContext["relay_raw_account_id"] != "50100011407701" {
 		t.Fatalf("fill context = %#v", fill.AdapterContext)
+	}
+	if fill.TradeSide != trading.TradeSideRedemption ||
+		fill.AdapterContext["business_type"] != "E" ||
+		fill.AdapterContext["record_type"] != "trade_fill" ||
+		fill.AdapterContext["is_transfer"] != false {
+		t.Fatalf("fill semantics = %#v/%#v", fill.TradeSide, fill.AdapterContext)
 	}
 }
 

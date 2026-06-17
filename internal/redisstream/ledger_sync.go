@@ -595,6 +595,10 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 	if tradeDate == "" && !matchedAt.IsZero() {
 		tradeDate = matchedAt.In(timeutil.Location()).Format("2006-01-02")
 	}
+	adapterContext := withFillPayloadContext(
+		withRawGatewayOrderID(withRawAccountID(envelope.AdapterContext, rawAccountID), rawGatewayOrderID),
+		payload,
+	)
 	return trading.Fill{
 		FillID:         payload.FillID,
 		AccountID:      payload.AccountID,
@@ -612,7 +616,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		MatchTimestamp: payload.MatchTimestamp,
 		MatchedAt:      matchedAt,
 		ShareholderID:  payload.ShareholderID,
-		AdapterContext: withRawGatewayOrderID(withRawAccountID(envelope.AdapterContext, rawAccountID), rawGatewayOrderID),
+		AdapterContext: adapterContext,
 	}, nil
 }
 
@@ -991,6 +995,9 @@ type fillPayload struct {
 	Name           string  `json:"name"`
 	Exchange       string  `json:"exchange"`
 	TradeSide      string  `json:"trade_side"`
+	BusinessType   string  `json:"business_type"`
+	RecordType     string  `json:"record_type"`
+	IsTransfer     *bool   `json:"is_transfer"`
 	Price          float64 `json:"price"`
 	Qty            int64   `json:"qty"`
 	Fee            float64 `json:"fee"`
@@ -1398,6 +1405,32 @@ func withRawGatewayOrderID(context map[string]any, rawGatewayOrderID string) map
 		out[key] = value
 	}
 	out["relay_raw_gateway_order_id"] = rawGatewayOrderID
+	return out
+}
+
+func withFillPayloadContext(context map[string]any, payload fillPayload) map[string]any {
+	extra := make(map[string]any, 3)
+	if businessType := strings.TrimSpace(payload.BusinessType); businessType != "" {
+		extra["business_type"] = businessType
+	}
+	if recordType := strings.TrimSpace(payload.RecordType); recordType != "" {
+		extra["record_type"] = recordType
+	}
+	if payload.IsTransfer != nil {
+		extra["is_transfer"] = *payload.IsTransfer
+	}
+	if len(extra) == 0 {
+		return context
+	}
+	out := make(map[string]any, len(context)+len(extra))
+	for key, value := range context {
+		out[key] = value
+	}
+	for key, value := range extra {
+		if _, exists := out[key]; !exists {
+			out[key] = value
+		}
+	}
 	return out
 }
 
