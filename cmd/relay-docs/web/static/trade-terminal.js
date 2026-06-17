@@ -2892,7 +2892,7 @@
       value: numericOrNull(row.volume) || 0,
       itemStyle: { color: isUpBar(row) ? "rgba(200,16,46,0.52)" : "rgba(0,138,99,0.52)" }
     }));
-    const markers = chartMarkers(labels);
+    const markers = chartMarkers(labels, chartRows);
     const latest = chartRows[chartRows.length - 1] || {};
     const tradeDate = effectiveBarsTradeDate(state.barsTradeDate || currentChartTradeDate());
     const securityID = normalizeSecurityID(state.barsSecurityID || currentSecurityID());
@@ -3026,19 +3026,32 @@
     }
   }
 
-  function chartMarkers(labels) {
+  function chartMarkers(labels, chartRows) {
     const fillOrderIDs = new Set();
     const buy = [];
     const sell = [];
+    const rowsByLabel = new Map((chartRows || []).map((row) => [minuteLabel(row.datetime || row.trade_date), row]));
     const appendMarker = (item, label, price, meta) => {
-      if (!Number.isFinite(price) || price <= 0 || !label) {
+      if (!label) {
         return;
       }
       const snapped = nearestChartLabel(label, labels);
       if (!snapped) {
         return;
       }
-      const marker = { value: [snapped, price], meta };
+      const markerRow = rowsByLabel.get(snapped) || {};
+      const markerPrice = markerPlotPrice(item, price, markerRow);
+      if (!Number.isFinite(markerPrice) || markerPrice <= 0) {
+        return;
+      }
+      const marker = {
+        value: [snapped, markerPrice],
+        meta: {
+          ...meta,
+          price: markerPrice,
+          price_note: isCreateRedeemSide(item) ? "K线收盘" : ""
+        }
+      };
       const kind = sideKind(item);
       if (kind === "sell" || kind === "redeem") {
         sell.push(marker);
@@ -3076,6 +3089,18 @@
     return { buy, sell };
   }
 
+  function markerPlotPrice(item, fallbackPrice, row) {
+    if (isCreateRedeemSide(item)) {
+      return numericOrNull(row && row.close);
+    }
+    return Number(fallbackPrice);
+  }
+
+  function isCreateRedeemSide(item) {
+    const side = sideCode(item);
+    return side === "P" || side === "R";
+  }
+
   function minuteTooltip(params, rows) {
     const items = Array.isArray(params) ? params : [params];
     const label = items[0] && items[0].axisValueLabel ? items[0].axisValueLabel : "";
@@ -3097,7 +3122,7 @@
         escapeHTML(meta.kind || item.seriesName),
         escapeHTML(meta.id || ""),
         escapeHTML(meta.status || ""),
-        "价 " + escapeHTML(formatPrice(meta.price, priceItem)),
+        "价 " + escapeHTML(formatPrice(meta.price, priceItem)) + (meta.price_note ? " (" + escapeHTML(meta.price_note) + ")" : ""),
         "量 " + escapeHTML(formatInt(meta.qty))
       ].filter(Boolean).join(" · "));
     }
