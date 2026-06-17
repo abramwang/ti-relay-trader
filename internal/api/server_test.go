@@ -1613,6 +1613,50 @@ func TestSettlementSnapshotPostWritesOpenAssetOnly(t *testing.T) {
 	}
 }
 
+func TestSettlementSnapshotAccountErrorIsNonFatal(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetErr: errors.New("asset snapshot not found"),
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{},
+			Count:     0,
+		},
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}, Count: 0},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders:      service,
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"pre_open_init-20260617",
+		"trade_date":"20260617",
+		"account_ids":["acct-new"],
+		"snapshot_type":"open",
+		"source":"pre_open_init"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 0 {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	if store.reconciliation.Status != "completed" || store.reconciliation.ErrorMessage != "" {
+		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+	if len(store.breaks) != 1 || store.breaks[0].BreakType != "account_refresh_failed" || store.breaks[0].AccountID != "acct-new" {
+		t.Fatalf("breaks = %#v", store.breaks)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"status":"completed"`) || !strings.Contains(body, `"account_error_count":1`) || !strings.Contains(body, `"warnings"`) {
+		t.Fatalf("response missing nonfatal account warning: %s", body)
+	}
+}
+
 func TestReconciliationBreaksQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		breaks: []ledger.ReconciliationBreak{{

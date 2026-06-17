@@ -206,6 +206,7 @@ def run_daily_job(
 
     accounts = select_accounts(accounts_value or [], options.account_ids)
     report["accounts"] = []
+    account_errors: list[dict[str, Any]] = []
     for account_id in accounts:
         account_report = run_account_flow(
             relay_client,
@@ -217,7 +218,10 @@ def run_daily_job(
         )
         report["accounts"].append(account_report)
         if account_report.get("errors"):
-            report["ok"] = False
+            account_errors.append({"account_id": account_id, "errors": list(account_report["errors"])})
+    if account_errors:
+        report["account_error_count"] = len(account_errors)
+        report["account_errors"] = account_errors
 
     if settle_snapshots and accounts:
         settlement_run_id = f"{phase}-{trading_day.target_trade_date}"

@@ -150,7 +150,7 @@ migrations/postgres/000001_init_ledger.down.sql
 - `asset_snapshots(open)`：盘前刷新后写入当日账户日初资产，用于把逆回购回款、隔夜清算、占款释放和资金划转等隔夜调整从日内交易收益中拆开。`open` 快照只写资产，不写 `position_snapshots`，避免用盘前当前持仓覆盖日终历史持仓快照。
 - `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`：收盘后写入日终资产、日终持仓和对账批次。
 - `reconciliation_inputs`：按账户记录 relay 标准账本摘要、PnL 输入摘要、Redis raw stream 窗口摘要和柜台查询摘要。
-- `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。
+- `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。账户级查询异常只影响该账户的 break/warning，不直接把整个 `pre_open_init` 或 `post_close_settlement` 任务标为失败。
 - `GET /v1/reconciliations/breaks`：按 `run_id/account_id/status` 查询待复核差异。
 
 ### 研究导出 view

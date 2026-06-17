@@ -200,6 +200,35 @@
     return accounts.reduce((total, account) => total + Number(account.snapshot && account.snapshot[field] || 0), 0);
   }
 
+  function accountErrorCountFromList(accounts) {
+    if (!Array.isArray(accounts)) return 0;
+    return accounts.reduce((total, account) => total + (Array.isArray(account.errors) && account.errors.length ? 1 : 0), 0);
+  }
+
+  function accountErrorCount(run) {
+    if (!run || !run.report) return 0;
+    const report = run.report;
+    const snapshot = snapshotResult(run);
+    const snapshotCount = snapshot && Number(snapshot.account_error_count || 0);
+    if (snapshotCount) return snapshotCount;
+    const reportCount = Number(report.account_error_count || 0);
+    if (reportCount) return reportCount;
+    return accountErrorCountFromList(report.accounts) || accountErrorCountFromList(snapshot && snapshot.accounts);
+  }
+
+  function accountErrorSummary(run) {
+    const count = accountErrorCount(run);
+    if (!count) return "";
+    const reportErrors = run && run.report && Array.isArray(run.report.account_errors) ? run.report.account_errors : [];
+    const first = reportErrors.find((item) => item && item.account_id && Array.isArray(item.errors) && item.errors.length);
+    if (first) return `账户异常 ${count}: ${first.account_id} ${first.errors[0]}`;
+    const snapshot = snapshotResult(run);
+    const accounts = snapshot && Array.isArray(snapshot.accounts) ? snapshot.accounts : [];
+    const item = accounts.find((account) => account && account.account_id && Array.isArray(account.errors) && account.errors.length);
+    if (item) return `账户异常 ${count}: ${item.account_id} ${item.errors[0]}`;
+    return `账户异常 ${count}`;
+  }
+
   function finalResult(run) {
     if (!run) return "--";
     const report = run.report || {};
@@ -214,6 +243,8 @@
       if (snapshot.fills_count !== undefined) parts.push(`成交 ${snapshot.fills_count}`);
       if (snapshot.non_terminal_orders !== undefined) parts.push(`未终态 ${snapshot.non_terminal_orders}`);
       if (snapshot.reconciliation_breaks !== undefined) parts.push(`差异 ${snapshot.reconciliation_breaks}`);
+      const accountErrors = accountErrorCount(run);
+      if (accountErrors) parts.push(`账户异常 ${accountErrors}`);
       return parts.join(" · ") || snapshot.status || "--";
     }
     const accounts = Array.isArray(report.accounts) ? report.accounts.length : 0;
@@ -226,6 +257,8 @@
     if (fills) parts.push(`成交 ${fills}`);
     if (positions) parts.push(`持仓 ${positions}`);
     if (nonTerminal) parts.push(`未终态 ${nonTerminal}`);
+    const accountErrors = accountErrorCount(run);
+    if (accountErrors) parts.push(`账户异常 ${accountErrors}`);
     return parts.join(" · ") || "--";
   }
 
@@ -290,7 +323,7 @@
     }
     els.body.innerHTML = runs.map((run, index) => {
       const status = statusLabel(run.status, run.skipped);
-      const error = run.error_summary || (Array.isArray(run.report && run.report.errors) ? run.report.errors.join("; ") : "");
+      const error = run.error_summary || accountErrorSummary(run) || (Array.isArray(run.report && run.report.errors) ? run.report.errors.join("; ") : "");
       const schedule = jobSchedule(statusView, run.job_name);
       return `
         <tr data-index="${index}">

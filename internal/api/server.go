@@ -2012,8 +2012,8 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		result.ReconciliationInputs += accountResult.ReconciliationInputs
 		result.ReconciliationBreaks += accountResult.ReconciliationBreaks
 		if len(accountResult.Errors) > 0 {
-			result.Status = "failed"
-			result.Errors = append(result.Errors, accountResult.Errors...)
+			result.AccountErrors++
+			result.Warnings = append(result.Warnings, accountWarnings(accountResult)...)
 		}
 	}
 
@@ -2765,8 +2765,10 @@ type SettlementSnapshotResult struct {
 	NonTerminalOrders    int                               `json:"non_terminal_orders"`
 	ReconciliationInputs int                               `json:"reconciliation_inputs"`
 	ReconciliationBreaks int                               `json:"reconciliation_breaks"`
+	AccountErrors        int                               `json:"account_error_count,omitempty"`
 	Accounts             []SettlementSnapshotAccountResult `json:"accounts"`
 	ReconciliationRun    *ledger.ReconciliationRun         `json:"reconciliation_run,omitempty"`
+	Warnings             []string                          `json:"warnings,omitempty"`
 	Errors               []string                          `json:"errors,omitempty"`
 }
 
@@ -2802,7 +2804,9 @@ func (result SettlementSnapshotResult) summary() map[string]any {
 		"non_terminal_orders":   result.NonTerminalOrders,
 		"reconciliation_inputs": result.ReconciliationInputs,
 		"reconciliation_breaks": result.ReconciliationBreaks,
+		"account_error_count":   result.AccountErrors,
 		"accounts":              result.Accounts,
+		"warnings":              result.Warnings,
 		"errors":                result.Errors,
 	}
 }
@@ -2989,6 +2993,14 @@ func reconciliationStatus(status string) string {
 		return "failed"
 	}
 	return "completed"
+}
+
+func accountWarnings(account SettlementSnapshotAccountResult) []string {
+	warnings := make([]string, 0, len(account.Errors))
+	for _, errText := range account.Errors {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", account.AccountID, errText))
+	}
+	return warnings
 }
 
 func firstErrorSummary(errors []string) string {

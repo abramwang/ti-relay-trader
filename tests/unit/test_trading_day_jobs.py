@@ -22,15 +22,17 @@ class FakeClient:
     def __init__(self) -> None:
         self.refresh_calls: list[tuple[str, str]] = []
         self.settlement_calls: list[dict[str, object]] = []
+        self.accounts = [
+            SimpleNamespace(account_id="acct-1", enabled=True),
+            SimpleNamespace(account_id="acct-disabled", enabled=False),
+        ]
+        self.asset_errors: set[str] = set()
 
     def status(self):
         return {"status": "ok", "timezone": "Asia/Shanghai"}
 
     def list_accounts(self):
-        return [
-            SimpleNamespace(account_id="acct-1", enabled=True),
-            SimpleNamespace(account_id="acct-disabled", enabled=False),
-        ]
+        return self.accounts
 
     def refresh_orders(self, account_id: str):
         return self._refresh(account_id, "order.list.query")
@@ -45,6 +47,8 @@ class FakeClient:
         return self._refresh(account_id, "account.positions.query")
 
     def get_asset(self, account_id: str):
+        if account_id in self.asset_errors:
+            raise RuntimeError("asset snapshot not found")
         return SimpleNamespace(account_id=account_id, net_asset=1000.0, cash_available=500.0, market_value=500.0)
 
     def get_positions(self, account_id: str):
@@ -61,12 +65,24 @@ class FakeClient:
 
     def record_settlement_snapshot(self, **kwargs):
         self.settlement_calls.append(dict(kwargs))
+        account_ids = list(kwargs.get("account_ids") or [])
+        account_reports = []
+        warnings = []
+        for account_id in account_ids:
+            errors = []
+            if account_id in self.asset_errors:
+                errors.append("asset: asset snapshot not found")
+                warnings.append(f"{account_id}: asset: asset snapshot not found")
+            account_reports.append({"account_id": account_id, "errors": errors})
         return {
             "run_id": kwargs.get("run_id"),
             "trade_date": kwargs.get("trade_date"),
             "status": "completed",
-            "asset_snapshots": 1,
+            "asset_snapshots": len([account_id for account_id in account_ids if account_id not in self.asset_errors]),
             "position_snapshots": 1,
+            "account_error_count": len(self.asset_errors.intersection(account_ids)),
+            "accounts": account_reports,
+            "warnings": warnings,
         }
 
     def _refresh(self, account_id: str, action: str) -> FakeReceipt:
@@ -123,6 +139,27 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertTrue(report["skipped"])
         self.assertEqual(client.refresh_calls, [])
+
+    def test_account_query_errors_are_reported_without_failing_job(self) -> None:
+        client = FakeClient()
+        client.accounts = [
+            SimpleNamespace(account_id="acct-1", enabled=True),
+            SimpleNamespace(account_id="acct-new", enabled=True),
+        ]
+        client.asset_errors = {"acct-new"}
+        report = run_pre_open_init(
+            JobOptions(job_name="pre_open_init", refresh_wait_seconds=0),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report.get("errors"), [])
+        self.assertEqual(report["account_error_count"], 1)
+        self.assertEqual(report["account_errors"][0]["account_id"], "acct-new")
+        self.assertIn("get_asset", report["accounts"][1]["errors"][0])
+        self.assertEqual(report["open_snapshot"]["result"]["status"], "completed")
+        self.assertEqual(report["open_snapshot"]["result"]["account_error_count"], 1)
 
     def test_post_close_can_run_for_selected_account_on_non_trading_day(self) -> None:
         client = FakeClient()
