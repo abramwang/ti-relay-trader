@@ -681,6 +681,35 @@ func TestProcessLedgerEntryUpdatesDraftForRejectedOrderReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryDoesNotRejectOrderForBrokerNotReadyReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "2-30", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-broker-not-ready",
+			"origin_message_id":"msg-submit-1",
+			"request_id":"req-submit-1",
+			"action":"order.submit",
+			"status":"failed",
+			"code":"BROKER_NOT_READY",
+			"message":"华鑫柜台登录尚未完成",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"gateway_order_id":"gw-broker-not-ready"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Skipped != 1 || result.Orders != 0 || result.OrderEvents != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
+		t.Fatalf("transient broker readiness should not reject order: %#v / %#v", writer.orderUpdates, writer.orderEvents)
+	}
+	if len(result.SkipReasons) != 1 || !strings.Contains(result.SkipReasons[0], "BROKER_NOT_READY") {
+		t.Fatalf("skip reasons = %#v", result.SkipReasons)
+	}
+}
+
 func TestProcessLedgerEntryDoesNotRejectOrderForRejectedCancelReply(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:reply", "2-4", map[string]any{

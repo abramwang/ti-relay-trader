@@ -46,6 +46,10 @@ class RelayTimeoutError(RelayError):
     """Raised when an HTTP request or wait operation times out."""
 
 
+class RelayBrokerNotReadyError(RelayError):
+    """Raised when OC is running but the broker counter session is not ready."""
+
+
 class RelayRejectedError(RelayError):
     """Raised when relay or the front gateway rejects a command."""
 
@@ -83,6 +87,8 @@ def error_from_payload(
         "status_code": status_code,
         "raw_response": payload,
     }
+    if code == "BROKER_NOT_READY":
+        return RelayBrokerNotReadyError(message, **kwargs)
     if code == "IDEMPOTENCY_CONFLICT":
         return RelayIdempotencyError(message, **kwargs)
     if code in {"ORDER_TERMINAL_NOT_CANCELABLE", "ORDER_NOT_READY_FOR_CANCEL", "CONFLICT"}:

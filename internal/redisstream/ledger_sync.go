@@ -204,6 +204,11 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 
 func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
 	if envelope.Status == string(trading.ReplyStatusRejected) || envelope.Status == string(trading.ReplyStatusFailed) {
+		if isTransientCommandError(envelope) {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, transientCommandSkipReason(envelope))
+			return result
+		}
 		return processRejectedOrderReply(ctx, writer, envelope, result)
 	}
 
@@ -326,6 +331,19 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 	default:
 		return result
 	}
+}
+
+func isTransientCommandError(envelope EntryEnvelope) bool {
+	code, _ := orderErrorInfo(envelope)
+	return trading.ErrorCode(strings.TrimSpace(code)) == trading.ErrorBrokerNotReady
+}
+
+func transientCommandSkipReason(envelope EntryEnvelope) string {
+	code, message := orderErrorInfo(envelope)
+	if strings.TrimSpace(message) == "" {
+		message = "broker not ready"
+	}
+	return fmt.Sprintf("transient command failure %s: %s", strings.TrimSpace(code), strings.TrimSpace(message))
 }
 
 func processRejectedOrderReply(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {

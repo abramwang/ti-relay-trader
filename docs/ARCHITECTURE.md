@@ -179,7 +179,7 @@ output stream 消费由 `internal/redisstream` 统一解析。所有消息先归
 2. `reply + position_page` 写入 `positions`。
 3. `reply + order_page` upsert `orders`，必要时补 `relay-summary:<gateway_order_id>` 汇总成交。
 4. `reply + fill_page` 幂等写入 `fills`。
-5. `reply.status=rejected/failed` 且 action 为下单类时，回写草稿订单为 `rejected` 并保留 `reject_code/reject_message/adapter_context`。
+5. `reply.status=rejected/failed` 且 action 为下单类时，回写草稿订单为 `rejected` 并保留 `reject_code/reject_message/adapter_context`；`BROKER_NOT_READY` 属于柜台会话未就绪的瞬时状态，只归档原始回包，不写业务拒单。
 6. `event + order.event` 更新订单主表并追加 `order_events`。
 7. `event + fill.event` 写入 `fills`。
 8. `hb/dlq` 当前原始归档，后续进入 gateway 状态和告警页面。

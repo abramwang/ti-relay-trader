@@ -323,7 +323,7 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 
 涨跌停等柜台规则当前以异步回报为准。relay 同步层只做 schema、账户路由、重复订单和已知 unsupported 交易类型校验；超涨跌停价格可能先返回 `202 Accepted`，随后通过订单账本/SSE 进入 `rejected`。策略端必须订阅订单状态或轮询账本判断最终结果。若需要同步涨跌停预校验，应以后续接入 Meridian 涨跌停/交易规则数据后单独实现。
 
-拒绝/失败的下单 reply 会被归档到 `raw_stream_messages`，同时回写对应草稿订单为 `rejected`。同步层会从 reply 顶层 `code/message`、payload 的 `reject_code/reject_message/error_* /message` 和 `adapter_context.error_text/broker_status_text` 等字段抽取柜台错误，写入订单的 `reject_code`、`reject_message`，并在 `adapter_context.relay_error_code`、`adapter_context.relay_error_message` 保留归一化后的排错信息。`/trade` 订单监控表展示摘要，订单详情 raw JSON 保留完整上下文。
+拒绝/失败的下单 reply 会被归档到 `raw_stream_messages`，同时回写对应草稿订单为 `rejected`。同步层会从 reply 顶层 `code/message`、payload 的 `reject_code/reject_message/error_* /message` 和 `adapter_context.error_text/broker_status_text` 等字段抽取柜台错误，写入订单的 `reject_code`、`reject_message`，并在 `adapter_context.relay_error_code`、`adapter_context.relay_error_message` 保留归一化后的排错信息。`BROKER_NOT_READY` 是例外：它表示 OC 已启动但券商柜台未登录完成或正在重连，Relay 只归档原始回包，不把订单账本改成 `rejected`。`/trade` 订单监控表展示摘要，订单详情 raw JSON 保留完整上下文。
 
 ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business_type=S`、`trade_side=B/S`，价格精度按 Meridian `instrument_type=etf` 保留 3 位。ETF 申购/赎回不是普通买卖参数，涉及最小申赎单位、申赎清单等数据，当前 relay `/v1/orders` 未实现，`business_type=E` 会返回 `NOT_IMPLEMENTED`。
 

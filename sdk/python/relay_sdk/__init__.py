@@ -2,6 +2,7 @@
 
 from .client import CallbackSubscription, RelayClient
 from .errors import (
+    RelayBrokerNotReadyError,
     RelayConnectionError,
     RelayError,
     RelayIdempotencyError,
@@ -28,6 +29,7 @@ __all__ = [
     "Order",
     "Position",
     "RelayClient",
+    "RelayBrokerNotReadyError",
     "RelayConnectionError",
     "RelayError",
     "RelayEvent",

@@ -98,6 +98,7 @@ const (
 	ErrorQuerySubmitFailed          ErrorCode = "QUERY_SUBMIT_FAILED"
 	ErrorQueryFailed                ErrorCode = "QUERY_FAILED"
 	ErrorIdempotencyConflict        ErrorCode = "IDEMPOTENCY_CONFLICT"
+	ErrorBrokerNotReady             ErrorCode = "BROKER_NOT_READY"
 	ErrorBrokerRejected             ErrorCode = "BROKER_REJECTED"
 )
 

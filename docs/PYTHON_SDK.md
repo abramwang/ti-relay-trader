@@ -278,6 +278,7 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | --- | --- |
 | `RelayConnectionError` | 网络连接失败 |
 | `RelayTimeoutError` | 请求或等待事件超时 |
+| `RelayBrokerNotReadyError` | OC 已启动但券商柜台未登录完成或重连中，可稍后重试 |
 | `RelayRejectedError` | relay 或前置服务拒绝命令 |
 | `RelayIdempotencyError` | 幂等键冲突 |
 | `RelayOrderStateError` | 订单状态不满足操作条件 |

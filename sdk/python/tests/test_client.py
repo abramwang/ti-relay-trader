@@ -7,7 +7,7 @@ from io import BytesIO
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
-from relay_sdk import RelayClient, RelayIdempotencyError
+from relay_sdk import RelayBrokerNotReadyError, RelayClient, RelayIdempotencyError
 from relay_sdk.streaming import iter_sse_events
 
 
@@ -250,6 +250,12 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
+        if parsed.path == "/v1/broker-not-ready":
+            self._json(
+                {"ok": False, "error": {"code": "BROKER_NOT_READY", "message": "broker counter is reconnecting"}},
+                status=503,
+            )
+            return
         self.send_error(404)
 
     def log_message(self, *_args):
@@ -385,6 +391,8 @@ class RelayClientTest(unittest.TestCase):
     def test_error_mapping(self):
         with self.assertRaises(RelayIdempotencyError):
             self.client._request("POST", "/v1/error", json_body={})
+        with self.assertRaises(RelayBrokerNotReadyError):
+            self.client._request("POST", "/v1/broker-not-ready", json_body={})
 
     def test_sse_parser(self):
         stream = BytesIO(

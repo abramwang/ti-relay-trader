@@ -1,6 +1,6 @@
 # Redis Stream 到 PostgreSQL 账本同步
 
-更新时间：`2026-06-14`
+更新时间：`2026-06-18`
 
 ## 当前状态
 
@@ -12,11 +12,11 @@
 
 同日新增自动资金持仓刷新：当同步循环处理到 `order.event` 或 `fill.event` 后，会按账户调度 `account.asset.query` 和 `account.positions.query`。调度器默认 2 秒合并、20 秒冷却，只向前置写入查询命令，后续仍由 `asset_page/position_page` reply 合并到 PostgreSQL。
 
-当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`，便于 `/trade` 和策略端排查拒单原因。
+当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`，便于 `/trade` 和策略端排查拒单原因。例外是 `BROKER_NOT_READY`：它表示 OC 已启动但柜台登录未完成或断线重连中，Relay 只归档原始回包并记录同步跳过原因，不把草稿订单写成业务拒单。
 
 首批同步范围：
 
-1. `reply`：完整归档到 `raw_stream_messages`，并合并 `asset_page/position_page/order_page/fill_page`；下单类 `rejected/failed` reply 会回写订单终态和错误信息。
+1. `reply`：完整归档到 `raw_stream_messages`，并合并 `asset_page/position_page/order_page/fill_page`；下单类 `rejected/failed` reply 会回写订单终态和错误信息，`BROKER_NOT_READY` 只作为可重试基础设施状态归档。
 2. `event`：完整归档到 `raw_stream_messages`。
 3. `order.event`：payload 字段足够时写入 `accounts`、`orders`、`order_events`。
 4. `fill.event`：payload 字段足够时写入 `accounts`、`fills`。
@@ -119,7 +119,8 @@ action 到 stream 的映射：
 | 持仓页 | `action=account.positions.query` 或 `result_type=position_page` | `positions` 当前持仓 |
 | 委托页 | `action=order.list.query` 或 `result_type=order_page` | `orders`，并在需要时补汇总成交 |
 | 成交页 | `action=fill.list.query` 或 `result_type=fill_page` | `fills` |
-| 下单拒绝/失败 | `status=rejected/failed` 且 action 为 `order.submit/order.batch.submit` | 更新草稿订单为 `rejected`，保留柜台错误 |
+| 下单拒绝/失败 | `status=rejected/failed` 且 action 为 `order.submit/order.batch.submit` | 更新草稿订单为 `rejected`，保留柜台错误；`BROKER_NOT_READY` 除外 |
+| 柜台未就绪 | `code=BROKER_NOT_READY` | 归档原始回包并跳过账本状态更新，策略/任务稍后重试 |
 
 `event` 合并：
 
