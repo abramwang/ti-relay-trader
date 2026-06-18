@@ -960,6 +960,18 @@ td {
   font-weight: 800;
 }
 
+.position-row {
+  cursor: pointer;
+}
+
+.position-row:hover td {
+  background: #f8fbff;
+}
+
+.position-row:focus-within td {
+  background: #f0f6ff;
+}
+
 .blotter-panel {
   grid-column: 1 / -1;
   display: grid;

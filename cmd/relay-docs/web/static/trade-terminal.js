@@ -624,6 +624,24 @@
     els.exchangeInput.value = parsed.exchange;
   }
 
+  function focusTradeSymbol(securityID, options = {}) {
+    const normalized = normalizeSecurityID(securityID);
+    if (!normalized) {
+      return;
+    }
+    setSymbolFromSecurityID(normalized);
+    state.priceEdited = false;
+    hideSuggestions();
+    navigateView("trade");
+    if (options.side) {
+      updateSide(options.side);
+    }
+    loadQuoteForInput({ securityID: normalized }).catch((err) => pushLog("warn", "行情刷新失败", err.message));
+    loadTradeChartBars({ securityID: normalized, tradeDate: currentChartTradeDate(), silent: true })
+      .catch((err) => pushLog("warn", "K线查询失败", err.message))
+      .finally(() => scheduleChartAutoRefresh());
+  }
+
   function sideCode(item) {
     if (typeof item === "string") {
       return item.toUpperCase();
@@ -2108,8 +2126,9 @@
       const priceClass = view.price !== null && avgCost !== null && view.price < avgCost ? "down" : "up";
       const pnlRatioText = pnlRatio === null ? "--" : formatSigned(pnlRatio) + "%";
       const dayPnlRatioText = dayPnlRatio === null ? "--" : formatSigned(dayPnlRatio) + "%";
+      const securityID = itemSecurityID(position);
       return `
-        <tr>
+        <tr class="position-row" data-position-security-id="${escapeHTML(securityID)}">
           <td>${escapeHTML(symbolText(position))}</td>
           <td class="security-name">${escapeHTML(securityNameText(position))}</td>
           <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
@@ -2117,7 +2136,7 @@
           <td class="num">${formatNumber(view.marketValue)}</td>
           <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${pnlRatioText}</td>
           <td class="num ${dayPnlClass}">${formatSigned(dayPnl)}<br>${dayPnlRatioText}</td>
-          <td><button type="button" class="row-action" data-sell-symbol="${escapeHTML(position.symbol)}" data-sell-exchange="${escapeHTML(position.exchange)}">卖出</button></td>
+          <td><button type="button" class="row-action" data-sell-security-id="${escapeHTML(securityID)}">卖出</button></td>
         </tr>`;
     }).join("");
     renderPositionsPager();
@@ -3822,17 +3841,15 @@
       }
     });
     els.positionsBody.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-sell-symbol]");
-      if (!button) {
+      const button = event.target.closest("button[data-sell-security-id]");
+      if (button) {
+        focusTradeSymbol(button.dataset.sellSecurityId || "", { side: "S" });
         return;
       }
-      els.symbolInput.value = button.dataset.sellSymbol || "";
-      els.exchangeInput.value = button.dataset.sellExchange || "SH";
-      state.priceEdited = false;
-      navigateView("trade");
-      updateSide("S");
-      loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
-      scheduleTradeChartLoad(120);
+      const row = event.target.closest("tr[data-position-security-id]");
+      if (row) {
+        focusTradeSymbol(row.dataset.positionSecurityId || "");
+      }
     });
     els.closeDetailButton.addEventListener("click", () => {
       state.selectedOrderID = "";
