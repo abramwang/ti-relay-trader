@@ -1,7 +1,7 @@
 .api-console-v2 {
   display: grid;
   gap: 18px;
-  margin: -26px;
+  margin: 0;
   min-width: 0;
 }
 
@@ -11,8 +11,10 @@
   gap: 18px;
   align-items: flex-start;
   padding: 24px;
-  border-bottom: 1px solid var(--line);
-  background: #fbfcfd;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
 }
 
 .lead {
@@ -47,6 +49,11 @@
   grid-template-columns: 260px minmax(360px, 1fr) minmax(360px, 0.95fr);
   gap: 0;
   min-height: 680px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
 }
 
 .api-console-nav,
@@ -57,7 +64,7 @@
 
 .api-console-nav {
   border-right: 1px solid var(--line);
-  background: #f8fafc;
+  background: #f8f9ff;
   overflow: auto;
 }
 
@@ -92,6 +99,7 @@
 .endpoint-item.active {
   border-color: var(--accent);
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .method {
@@ -107,7 +115,7 @@
 }
 
 .method.get {
-  background: #0f766e;
+  background: var(--accent);
 }
 
 .method.post {
@@ -174,7 +182,7 @@
   grid-template-rows: auto auto minmax(160px, auto) minmax(260px, 1fr);
   gap: 12px;
   padding: 18px;
-  background: #f8fafc;
+  background: #f8f9ff;
 }
 
 .api-section-head h2 {
@@ -263,6 +271,18 @@
   cursor: pointer;
 }
 
+.request-line-v2 button:hover,
+.form-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.request-line-v2 button:hover {
+  color: #fff;
+  background: var(--accent-strong);
+}
+
 .request-line-v2 button:disabled {
   border-color: var(--line);
   background: #e4e7ec;
@@ -317,7 +337,7 @@
   border: 1px dashed var(--line);
   border-radius: 6px;
   color: var(--muted);
-  background: #fbfcfd;
+  background: #fbfcff;
   font-weight: 700;
 }
 
@@ -356,7 +376,7 @@
 .result-table th {
   position: sticky;
   top: 0;
-  background: #f1f5f9;
+  background: var(--panel-soft);
   z-index: 1;
 }
 
@@ -383,13 +403,14 @@
   min-height: 260px;
   max-height: 520px;
   margin: 0;
+  border: 1px solid #27313f;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 @media (max-width: 860px) {
   .api-console-v2 {
-    margin: -20px;
+    margin: 0;
   }
 
   .api-console-head {

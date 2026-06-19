@@ -486,3 +486,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-18`: 接入 OC 新增 `BROKER_NOT_READY` 错误码：Relay 同步层会把它视为柜台登录未完成/重连中的瞬时状态，只归档 raw reply，不把订单草稿写成业务拒单；Python SDK 新增 `RelayBrokerNotReadyError`，策略端可单独捕获后稍后重试。
 - `2026-06-18`: 生产新增账户 `314000045768` 已确认开放只读：`/v1/account-routes` 显示三户 `read_only=true`、`trading_enabled=false`，9092 状态为 `production ok`、启用账户 3、下单账户 0；已向该账户发送资金、持仓、订单、成交刷新命令，07:46 左右因尚未到 OC 正常启动窗口暂未收到新 reply。
 - `2026-06-18`: 优化 `/trade` 交易终端持仓联动：右侧持仓表行点击会自动把左侧交易标的和行情/K线切换到该证券；“卖出”按钮复用同一逻辑并切到卖出方向，静态资源版本更新到 `20260618-0013`。
+- `2026-06-19`: 参考 `/home/tmp/stitch_quantstage` 的 QuantStage Engineering 视觉模板，统一门户、API Console、任务页和交易终端的前端视觉语言：浅冷灰背景、白色模块、teal 主色、低对比边框、工程化表格和 36px 控件；首页/API/任务页改为独立工作区外壳，交易终端保留既有交易布局并更新静态资源版本到 `20260619-0014`。

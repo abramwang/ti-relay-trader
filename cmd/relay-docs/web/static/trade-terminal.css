@@ -1,18 +1,24 @@
 :root {
-  --navy: #0b1829;
-  --navy-2: #10223a;
-  --bg: #f4f7fb;
+  --navy: #121c2a;
+  --navy-2: #27313f;
+  --primary: #00685f;
+  --primary-strong: #008378;
+  --primary-soft: #e4f5f1;
+  --bg: #f8f9ff;
   --panel: #ffffff;
-  --panel-soft: #eef3f9;
-  --line: #cfd7e3;
-  --line-soft: #e4e9f0;
-  --text: #101828;
-  --muted: #667085;
+  --panel-soft: #eff4ff;
+  --panel-high: #dee9fc;
+  --line: #bcc9c6;
+  --line-soft: #d9e3f6;
+  --text: #121c2a;
+  --muted: #3d4947;
+  --muted-soft: #6d7a77;
   --buy: #c8102e;
   --buy-soft: #fff0f2;
   --sell: #008a63;
   --sell-soft: #eaf8f2;
   --code: #101b2d;
+  --shadow: 0 2px 8px rgba(18, 28, 42, 0.05);
 }
 
 * {
@@ -29,7 +35,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font: 14px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 button,
@@ -48,7 +54,7 @@ button {
   grid-template-rows: 56px minmax(0, 1fr) 28px;
   height: 100vh;
   min-width: 1730px;
-  background: var(--line);
+  background: var(--line-soft);
 }
 
 .terminal-topbar {
@@ -57,9 +63,9 @@ button {
   grid-template-columns: 250px 360px minmax(360px, 1fr) 190px 54px;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfe;
+  background: rgba(255,255,255,0.98);
   overflow: hidden;
 }
 
@@ -82,6 +88,7 @@ button {
   font-size: 22px;
   font-weight: 800;
   text-decoration: none;
+  letter-spacing: 0;
 }
 
 .env-badge {
@@ -89,8 +96,9 @@ button {
   align-items: center;
   min-height: 28px;
   padding: 4px 9px;
-  background: #dbeafe;
-  color: #164e63;
+  border-radius: 6px;
+  background: #d8e2ff;
+  color: #004395;
   font-size: 12px;
   font-weight: 750;
 }
@@ -101,8 +109,8 @@ button {
 }
 
 .env-badge.test {
-  background: #dbeafe;
-  color: #164e63;
+  background: #d8e2ff;
+  color: #004395;
 }
 
 .status-strip {
@@ -172,8 +180,8 @@ button {
 }
 
 .account-tabs button.active {
-  color: var(--buy);
-  border-bottom-color: var(--buy);
+  color: var(--primary);
+  border-bottom-color: var(--primary);
   background: #fff;
 }
 
@@ -212,7 +220,7 @@ button {
   height: 36px;
   margin-left: 8px;
   border-radius: 999px;
-  background: var(--navy);
+  background: var(--primary);
   color: #fff;
   font-weight: 800;
 }
@@ -225,7 +233,7 @@ button {
   min-height: 0;
   padding: 16px 10px;
   background: var(--navy);
-  color: #c8d4e3;
+  color: #eaf1ff;
 }
 
 .terminal-nav {
@@ -239,7 +247,8 @@ button {
   gap: 12px;
   min-height: 44px;
   padding: 0 14px;
-  color: #7f8da3;
+  border-radius: 8px;
+  color: #b8c4d6;
   text-decoration: none;
   font-size: 16px;
   font-weight: 700;
@@ -254,7 +263,7 @@ button {
 
 .terminal-nav a.active,
 .terminal-nav a:hover {
-  background: var(--buy);
+  background: var(--primary);
   color: #fff;
 }
 
@@ -267,7 +276,7 @@ button {
 .sidebar-footer a {
   display: block;
   margin: 8px 0;
-  color: #7f8da3;
+  color: #b8c4d6;
   text-decoration: none;
   font-weight: 650;
 }
@@ -288,7 +297,7 @@ button {
   gap: 1px;
   min-width: 0;
   min-height: 0;
-  background: var(--line);
+  background: var(--line-soft);
   overflow: hidden;
 }
 
@@ -359,6 +368,7 @@ button {
   min-height: 0;
   background: var(--panel);
   overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
 .performance-panel {
@@ -413,7 +423,7 @@ button {
 
 .quote-head span {
   display: block;
-  color: var(--muted);
+  color: var(--muted-soft);
   font-size: 13px;
 }
 
@@ -471,10 +481,12 @@ button {
 
 .depth-row.best-ask {
   background: var(--buy-soft);
+  border-radius: 6px;
 }
 
 .depth-row.best-bid {
   background: var(--sell-soft);
+  border-radius: 6px;
 }
 
 .depth-row .qty {
@@ -495,12 +507,14 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .side-switch button {
   height: 38px;
   border: 0;
-  background: #eef2f6;
+  background: var(--panel-soft);
   color: var(--text);
   font-weight: 800;
 }
@@ -532,8 +546,8 @@ button {
 .order-form select {
   width: 100%;
   min-height: 36px;
-  border: 1px solid #bfc7d3;
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   padding: 6px 10px;
   background: #fff;
   color: var(--text);
@@ -551,6 +565,7 @@ button {
   max-height: 210px;
   overflow-y: auto;
   border: 1px solid #aab4c1;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 12px 24px rgba(16, 24, 40, 0.16);
 }
@@ -582,7 +597,7 @@ button {
 
 .symbol-option:hover,
 .symbol-option.active {
-  background: #eef3f9;
+  background: var(--panel-soft);
 }
 
 .symbol-option span {
@@ -608,7 +623,9 @@ button {
   display: grid;
   gap: 4px;
   padding: 9px 10px;
-  background: #f1f4f8;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #f8fbff;
   color: #475467;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -623,6 +640,7 @@ button {
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid #ff9aa6;
+  border-radius: 8px;
   background: var(--buy-soft);
   color: var(--buy);
   font-weight: 750;
@@ -638,6 +656,7 @@ button {
 .section-toolbar button {
   min-height: 36px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   background: #fff;
   color: var(--text);
   font-weight: 750;
@@ -667,6 +686,7 @@ button {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
+  background: #fff;
 }
 
 .asset-detail-strip,
@@ -746,7 +766,7 @@ button {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
-  background: #fbfcfe;
+  background: #fbfcff;
 }
 
 .asset-detail-strip div,
@@ -791,7 +811,7 @@ button {
   gap: 12px;
   padding: 0 14px;
   border-bottom: 1px solid var(--line);
-  background: #f3f6fa;
+  background: #fbfcff;
 }
 
 .section-toolbar h2 {
@@ -834,7 +854,7 @@ button {
   width: 92px;
   min-height: 28px;
   border: 1px solid #bfc7d3;
-  border-radius: 0;
+  border-radius: 6px;
   padding: 4px 7px;
   background: #fff;
   color: var(--text);
@@ -850,7 +870,7 @@ button {
   min-height: 36px;
   padding: 0 12px;
   border-top: 1px solid var(--line);
-  background: #f8fafc;
+  background: #fbfcff;
   color: #475467;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -864,8 +884,9 @@ button {
 .pager-bar button {
   min-height: 26px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   background: #fff;
-  color: var(--navy);
+  color: var(--text);
   font-size: 12px;
   font-weight: 800;
 }
@@ -873,7 +894,7 @@ button {
 .pager-bar button:disabled {
   cursor: not-allowed;
   color: #98a2b3;
-  background: #eef2f6;
+  background: var(--panel-soft);
 }
 
 .table-wrap,
@@ -897,8 +918,8 @@ td {
 }
 
 th {
-  background: #eef2f6;
-  color: #344054;
+  background: var(--panel-soft);
+  color: var(--text);
   font-size: 12px;
   font-weight: 800;
 }
@@ -982,14 +1003,14 @@ td {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
-  background: #fbfcfe;
+  background: #fbfcff;
 }
 
 .blotter-tabs {
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--line);
-  background: #eaf0f8;
+  background: var(--panel-soft);
 }
 
 .blotter-tabs button {
@@ -1002,21 +1023,21 @@ td {
 }
 
 .blotter-tabs button.active {
-	background: #fff;
-	color: var(--text);
-	border-bottom: 2px solid var(--navy);
+  background: #fff;
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
 }
 
 .blotter-actions {
-	display: flex;
-	margin-left: auto;
+  display: flex;
+  margin-left: auto;
 }
 
 .blotter-actions button {
-	min-width: 86px;
-	border-left: 1px solid var(--line);
-	background: #f8fafc;
-	color: var(--navy);
+  min-width: 86px;
+  border-left: 1px solid var(--line);
+  background: #fbfcff;
+  color: var(--text);
 }
 
 .status-badge {
@@ -1163,8 +1184,8 @@ tr.flash {
 .bars-query select {
   width: 112px;
   min-height: 32px;
-  border: 1px solid #bfc7d3;
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   padding: 5px 8px;
   background: #fff;
   color: var(--text);
@@ -1341,7 +1362,7 @@ tr.flash {
   align-items: end;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line-soft);
-  background: #f8fafc;
+  background: #fbfcff;
 }
 
 .bars-summary {

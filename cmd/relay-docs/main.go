@@ -837,9 +837,9 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Title:      "接口测试台",
 		Active:     "console",
 		Summary:    "Form-based API console",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260619-0014">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/api-console.js"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260619-0014"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -892,9 +892,9 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Title:      "任务状态",
 		Active:     "jobs",
 		Summary:    "Daily jobs and background process monitor",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260619-0014">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/job-status.js"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260619-0014"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -1281,22 +1281,28 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
   <title>{{.Title}} - relay</title>
   <style>
     :root {
-      --bg: #f5f7fa;
+      --bg: #f8f9ff;
       --panel: #ffffff;
-      --text: #18202a;
-      --muted: #667085;
-      --line: #d8dee8;
-      --accent: #0f766e;
-      --accent-soft: #e7f6f3;
-      --code: #f0f3f7;
-      --shadow: 0 12px 32px rgba(16, 24, 40, 0.08);
+      --panel-soft: #eff4ff;
+      --surface-high: #dee9fc;
+      --text: #121c2a;
+      --muted: #3d4947;
+      --muted-2: #6d7a77;
+      --line: #bcc9c6;
+      --line-soft: #d9e3f6;
+      --accent: #00685f;
+      --accent-strong: #008378;
+      --accent-soft: #e5f5f2;
+      --blue: #0058be;
+      --code: #edf2f8;
+      --shadow: 0 2px 8px rgba(18, 28, 42, 0.05);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 15px/1.6 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
     header {
       position: sticky;
@@ -1306,11 +1312,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       align-items: center;
       justify-content: space-between;
       gap: 18px;
-      height: 58px;
-      padding: 0 28px;
+      height: 56px;
+      padding: 0 32px;
       border-bottom: 1px solid var(--line);
-      background: rgba(255,255,255,0.96);
-      backdrop-filter: blur(8px);
+      background: rgba(255,255,255,0.98);
+      backdrop-filter: blur(10px);
     }
     .brand {
       display: flex;
@@ -1319,38 +1325,53 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       color: var(--text);
       text-decoration: none;
       font-weight: 800;
+      font-size: 20px;
+      letter-spacing: 0;
     }
     .brand span {
-      color: var(--muted);
+      color: var(--muted-2);
       font-size: 12px;
       font-weight: 600;
     }
     nav {
       display: flex;
-      gap: 6px;
+      gap: 20px;
       flex-wrap: wrap;
       justify-content: flex-end;
     }
     nav a, .actions a, .doc-tools a {
       display: inline-flex;
       align-items: center;
-      min-height: 34px;
-      padding: 7px 11px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      min-height: 36px;
+      padding: 7px 0;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
       color: var(--text);
-      background: #fff;
+      background: transparent;
       text-decoration: none;
       font-weight: 650;
-      font-size: 13px;
+      font-size: 14px;
     }
     nav a:hover, nav a.active, .actions a:hover, .doc-tools a:hover {
-      border-color: var(--accent);
       color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: transparent;
+    }
+    .actions a, .doc-tools a {
+      min-height: 36px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      font-size: 13px;
+    }
+    .actions a:hover, .doc-tools a:hover {
+      border-color: var(--accent);
       background: var(--accent-soft);
     }
     main {
-      width: min(1180px, calc(100vw - 36px));
+      width: min(1280px, calc(100vw - 64px));
       margin: 28px auto 56px;
     }
     .meta {
@@ -1358,8 +1379,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       flex-wrap: wrap;
       gap: 10px 18px;
       margin-bottom: 18px;
-      color: var(--muted);
+      color: var(--muted-2);
       font-size: 13px;
+    }
+    .app-page {
+      min-width: 0;
     }
     .hero, .panel {
       border: 1px solid var(--line);
@@ -1368,7 +1392,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       box-shadow: var(--shadow);
     }
     .hero {
-      padding: 30px;
+      padding: 28px 30px;
     }
     .env-console {
       margin-top: 16px;
@@ -1379,11 +1403,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       box-shadow: var(--shadow);
     }
     .env-console.production {
-      border-color: #fecdd3;
-      background: #fff7f8;
+      border-color: #f3b8bf;
+      background: #fff8f9;
     }
     .env-console.test {
-      border-color: #bfdbfe;
+      border-color: #adc6ff;
       background: #f8fbff;
     }
     .env-console-head {
@@ -1419,12 +1443,12 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       padding: 10px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: rgba(255,255,255,0.8);
+      background: rgba(255,255,255,0.86);
     }
     .env-metrics span {
       display: block;
       margin-bottom: 6px;
-      color: var(--muted);
+      color: var(--muted-2);
       font-size: 12px;
     }
     .env-metrics b {
@@ -1436,7 +1460,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       white-space: nowrap;
     }
     .env-note {
-      color: var(--muted);
+      color: var(--muted-2);
       font-size: 13px;
     }
     .env-switch {
@@ -1444,7 +1468,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       padding: 14px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255,255,255,0.74);
+      background: rgba(255,255,255,0.78);
     }
     .env-switch-head {
       display: flex;
@@ -1473,8 +1497,8 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       background: #fff;
     }
     .env-switch-card.current {
-      border-color: #2563eb;
-      box-shadow: inset 0 0 0 1px rgba(37,99,235,0.18);
+      border-color: var(--blue);
+      box-shadow: inset 0 0 0 1px rgba(0,88,190,0.12);
     }
     .env-switch-card.guarded {
       border-color: #f59e0b;
@@ -1508,8 +1532,8 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     }
     .env-status.current,
     .env-current {
-      background: #dbeafe;
-      color: #1d4ed8;
+      background: #d8e2ff;
+      color: #004395;
     }
     .env-status.guarded {
       background: #fef3c7;
@@ -1576,10 +1600,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       font-size: 12px;
       font-weight: 800;
       text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
     h1, h2, h3, h4 { line-height: 1.25; }
-    h1 { margin: 0 0 12px; font-size: 30px; }
-    h2 { margin-top: 28px; font-size: 22px; }
+    h1 { margin: 0 0 12px; font-size: 32px; letter-spacing: 0; }
+    h2 { margin-top: 28px; font-size: 22px; letter-spacing: 0; }
     h3 { margin-top: 22px; font-size: 18px; }
     p { margin: 10px 0; }
     .actions {
@@ -1608,6 +1633,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     }
     .card:hover, .doc-item:hover {
       border-color: var(--accent);
+      box-shadow: var(--shadow);
     }
     .card span, .doc-item span {
       color: var(--muted);
@@ -1664,17 +1690,26 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       border-collapse: collapse;
       font-size: 14px;
     }
+    tr:nth-child(even) td {
+      background: #fbfcff;
+    }
     td, th {
-      border: 1px solid var(--line);
+      border: 1px solid var(--line-soft);
       padding: 8px 10px;
       vertical-align: top;
+    }
+    th {
+      background: var(--panel-soft);
+      color: var(--text);
+      font-size: 12px;
+      text-transform: uppercase;
     }
     td:first-child {
       font-weight: 650;
       white-space: nowrap;
     }
     footer {
-      width: min(1180px, calc(100vw - 36px));
+      width: min(1280px, calc(100vw - 64px));
       margin: 0 auto 24px;
       color: var(--muted);
       font-size: 12px;
@@ -1682,7 +1717,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
     @media (max-width: 860px) {
       header { height: auto; align-items: flex-start; padding: 14px 18px; flex-direction: column; }
       nav { justify-content: flex-start; }
-      main { width: min(100vw - 24px, 1180px); margin-top: 18px; }
+      main { width: min(100vw - 24px, 1280px); margin-top: 18px; }
       .grid, .doc-list { grid-template-columns: 1fr; }
       .env-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .env-console-head { align-items: flex-start; flex-direction: column; }
@@ -1696,11 +1731,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
 </head>
 <body>
   <header>
-    <a class="brand" href="/">relay <span>9092 docs</span></a>
+    <a class="brand" href="/">Relay Trader <span>9092</span></a>
     <nav>
       <a class="{{if eq .Active "home"}}active{{end}}" href="/">首页</a>
       <a class="{{if eq .Active "docs"}}active{{end}}" href="/docs">文档</a>
-      <a class="{{if eq .Active "console"}}active{{end}}" href="/api-console">接口</a>
+      <a class="{{if eq .Active "console"}}active{{end}}" href="/api-console">API Console</a>
       <a href="/trade">交易终端</a>
       <a class="{{if eq .Active "jobs"}}active{{end}}" href="/jobs">任务</a>
       <a href="/docs/python-sdk">SDK</a>
@@ -1715,7 +1750,11 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
       <span>生成时间: {{.Generated}}</span>
       {{if .Summary}}<span>{{.Summary}}</span>{{end}}
     </div>
-    <article>{{.Content}}</article>
+    {{if or (eq .Active "home") (eq .Active "console") (eq .Active "jobs")}}
+      <div class="app-page {{.Active}}-page">{{.Content}}</div>
+    {{else}}
+      <article>{{.Content}}</article>
+    {{end}}
   </main>
   <footer>relay documentation portal. Basic API discovery is available here; trading and ledger routes follow the loaded local config.</footer>
   {{.Scripts}}
