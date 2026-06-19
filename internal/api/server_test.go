@@ -24,6 +24,32 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
+func statusConfigWithTradingDay(t *testing.T, isTradingDay bool) config.Config {
+	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metadata/trading-day" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("date") == "" {
+			t.Fatal("missing trading-day date query")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"date":                             20260619,
+				"is_trading_day":                   isTradingDay,
+				"previous_or_current_trading_date": 20260618,
+			},
+			"meta": map[string]any{"schema_version": "metadata_trading_day_status.v1"},
+		})
+	}))
+	t.Cleanup(upstream.Close)
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	return cfg
+}
+
 func TestHealthzEnvelope(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -49,7 +75,7 @@ func TestHealthzEnvelope(t *testing.T) {
 }
 
 func TestStatusIncludesDependencyHealth(t *testing.T) {
-	cfg := config.Default()
+	cfg := statusConfigWithTradingDay(t, false)
 	cfg.Service.Mode = config.ModeDocs
 	cfg.Database.DSN = "postgres://configured"
 	cfg.Redis.URL = "redis://configured"
@@ -116,6 +142,12 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	if envelope.Data.TradingDay.Timezone != "Asia/Shanghai" || envelope.Data.TradingDay.Phase == "" {
 		t.Fatalf("trading day = %#v", envelope.Data.TradingDay)
 	}
+	if envelope.Data.TradingDay.IsTradingDay == nil || *envelope.Data.TradingDay.IsTradingDay {
+		t.Fatalf("trading day is_trading_day = %#v, want false", envelope.Data.TradingDay.IsTradingDay)
+	}
+	if envelope.Data.TradingDay.PreviousOrCurrentTradingDate != "20260618" || envelope.Data.TradingDay.Source != "meridian" {
+		t.Fatalf("trading day meridian fields = %#v", envelope.Data.TradingDay)
+	}
 	if envelope.Data.JobRuns["pre_open_init"].RunID != "pre-open-1" {
 		t.Fatalf("job runs = %#v", envelope.Data.JobRuns)
 	}
@@ -125,7 +157,7 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 }
 
 func TestStatusDegradedAndDoesNotLeakDependencyErrors(t *testing.T) {
-	cfg := config.Default()
+	cfg := statusConfigWithTradingDay(t, true)
 	cfg.Database.DSN = "postgres://configured"
 	cfg.Redis.URL = "redis://configured"
 	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
@@ -159,7 +191,7 @@ func TestStatusDegradedAndDoesNotLeakDependencyErrors(t *testing.T) {
 }
 
 func TestStatusJobRunErrorDoesNotEmitZeroTime(t *testing.T) {
-	cfg := config.Default()
+	cfg := statusConfigWithTradingDay(t, true)
 	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: &fakeOrderSubmitter{},
 		Jobs:   &fakeJobRunStore{err: errors.New("job store down")},

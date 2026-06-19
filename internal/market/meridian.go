@@ -53,6 +53,13 @@ type MeridianResponse struct {
 	Payload    map[string]any
 }
 
+type TradingDayStatus struct {
+	Date                         string
+	IsTradingDay                 bool
+	IsTradingDayKnown            bool
+	PreviousOrCurrentTradingDate string
+}
+
 type meridianCacheEntry struct {
 	response   MeridianResponse
 	expiresAt  time.Time
@@ -326,21 +333,46 @@ func (client *MeridianClient) getJSON(ctx context.Context, path string, values u
 }
 
 func (client *MeridianClient) previousOrCurrentTradingDate(ctx context.Context, date string) (string, error) {
-	values := url.Values{}
-	values.Set("date", date)
-	response, err := client.getJSON(ctx, tradingDayPath, values)
+	status, err := client.TradingDayStatus(ctx, date)
 	if err != nil {
 		return "", err
 	}
-	data, ok := response.Payload["data"].(map[string]any)
-	if !ok {
-		return "", errors.New("meridian trading-day response missing data")
-	}
-	value, ok := data["previous_or_current_trading_date"]
-	if !ok {
+	if status.PreviousOrCurrentTradingDate == "" {
 		return "", errors.New("meridian trading-day response missing previous_or_current_trading_date")
 	}
-	return meridianDateString(value), nil
+	return status.PreviousOrCurrentTradingDate, nil
+}
+
+func (client *MeridianClient) TradingDayStatus(ctx context.Context, date string) (TradingDayStatus, error) {
+	if client == nil {
+		return TradingDayStatus{}, errors.New("meridian client is nil")
+	}
+	values := url.Values{}
+	queryDate := compactMeridianDate(strings.TrimSpace(date))
+	if queryDate == "" {
+		queryDate = client.today()
+	}
+	values.Set("date", queryDate)
+	response, err := client.getJSON(ctx, tradingDayPath, values)
+	if err != nil {
+		return TradingDayStatus{}, err
+	}
+	data, ok := response.Payload["data"].(map[string]any)
+	if !ok {
+		return TradingDayStatus{}, errors.New("meridian trading-day response missing data")
+	}
+	status := TradingDayStatus{
+		Date:                         meridianDateString(data["date"]),
+		PreviousOrCurrentTradingDate: meridianDateString(data["previous_or_current_trading_date"]),
+	}
+	if status.Date == "" {
+		status.Date = queryDate
+	}
+	if isTradingDay, ok := meridianBool(data["is_trading_day"]); ok {
+		status.IsTradingDay = isTradingDay
+		status.IsTradingDayKnown = true
+	}
+	return status, nil
 }
 
 func (client *MeridianClient) today() string {
@@ -394,6 +426,28 @@ func meridianDateString(value any) string {
 	default:
 		return ""
 	}
+}
+
+func meridianBool(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		normalized := strings.TrimSpace(strings.ToLower(typed))
+		switch normalized {
+		case "true", "1", "yes", "y":
+			return true, true
+		case "false", "0", "no", "n":
+			return false, true
+		}
+	case float64:
+		return typed != 0, true
+	case int:
+		return typed != 0, true
+	case int64:
+		return typed != 0, true
+	}
+	return false, false
 }
 
 func compactMeridianDate(value string) string {

@@ -331,7 +331,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。`pre_open_init` 会在刷新后写入 `open_snapshot` 日初资产快照，`post_close_settlement` 会写入 `settlement_snapshot` 日终资产/持仓快照。单个账户柜台未就绪、查询为空或资金快照缺失时，任务会在 `account_errors`、快照 `account_error_count/warnings` 和 `reconciliation_breaks(account_refresh_failed)` 中独立标注该账户，整体任务仍可成功完成；Relay 状态异常、交易日解析失败、快照接口不可用或数据库写入失败等系统级问题才会让任务失败。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
 
-任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。
+任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`，当 Meridian 明确当天不是交易日且没有当天任务记录时，预期运行结果显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 
 ## 待增强项
 

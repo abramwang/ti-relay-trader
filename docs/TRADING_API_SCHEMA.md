@@ -275,7 +275,7 @@ rejected
 | 方法 | 路径 | 请求 | 响应 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | `GET` | `/healthz` | - | `StatusView` | 已有骨架 |
-| `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康、账户摘要、交易阶段和最近日流程任务状态 |
+| `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康、账户摘要、交易阶段、Meridian 交易日状态和最近日流程任务状态 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已实现，配置账户列表并合并 PostgreSQL 账户别名 |
 | `GET` | `/v1/account-routes` | - | `[]AccountRoute` | 已实现，展示账户路由、查询/交易权限、环境和 Redis stream key |

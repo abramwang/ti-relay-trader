@@ -2656,10 +2656,32 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 		Jobs:               jobScheduleViews(s.cfg.Jobs, s.cfg.Service.Timezone),
 	}
 	if includeDependencies {
+		view.TradingDay = s.meridianTradingDayStatus(ctx, view.TradingDay)
 		view.Dependencies = s.dependencyStatus(ctx)
 		view.Status = statusFromDependencies(view.Dependencies)
 		view.JobRuns = s.latestJobRunStatus(ctx)
 	}
+	return view
+}
+
+func (s *Server) meridianTradingDayStatus(ctx context.Context, view TradingDayStatusView) TradingDayStatusView {
+	if s.market == nil {
+		return view
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	status, err := s.market.TradingDayStatus(checkCtx, view.Date)
+	if err != nil {
+		s.logger.Warn("meridian_trading_day_status_failed", "error", err)
+		view.CalendarError = "meridian trading-day unavailable"
+		return view
+	}
+	view.Source = "meridian"
+	if status.IsTradingDayKnown {
+		isTradingDay := status.IsTradingDay
+		view.IsTradingDay = &isTradingDay
+	}
+	view.PreviousOrCurrentTradingDate = status.PreviousOrCurrentTradingDate
 	return view
 }
 
@@ -2811,9 +2833,13 @@ type StatusView struct {
 }
 
 type TradingDayStatusView struct {
-	Date     string `json:"date"`
-	Timezone string `json:"timezone"`
-	Phase    string `json:"phase"`
+	Date                         string `json:"date"`
+	Timezone                     string `json:"timezone"`
+	Phase                        string `json:"phase"`
+	IsTradingDay                 *bool  `json:"is_trading_day,omitempty"`
+	PreviousOrCurrentTradingDate string `json:"previous_or_current_trading_date,omitempty"`
+	Source                       string `json:"source,omitempty"`
+	CalendarError                string `json:"calendar_error,omitempty"`
 }
 
 type JobRunStatusView struct {
@@ -3024,6 +3050,7 @@ func currentTradingDayStatus() TradingDayStatusView {
 		Date:     now.Format("2006-01-02"),
 		Timezone: timeutil.LocationName,
 		Phase:    tradingPhase(now),
+		Source:   "local",
 	}
 }
 

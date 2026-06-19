@@ -135,6 +135,26 @@
     return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
   }
 
+  function isNonTradingDay(status) {
+    return status && status.trading_day && status.trading_day.is_trading_day === false;
+  }
+
+  function tradingDayLabel(status) {
+    const tradingDay = status && status.trading_day || {};
+    const parts = [tradingDay.date, tradingDay.phase].filter(Boolean);
+    if (tradingDay.is_trading_day === true) {
+      parts.push("交易日");
+    } else if (tradingDay.is_trading_day === false) {
+      parts.push("非交易日");
+    }
+    const previous = normalizeDate(tradingDay.previous_or_current_trading_date);
+    const current = normalizeDate(tradingDay.date);
+    if (previous && previous !== current) {
+      parts.push(`最近交易日 ${previous}`);
+    }
+    return parts.join(" / ") || "--";
+  }
+
   function minutesOfDay(value) {
     const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
     if (!match) return null;
@@ -176,6 +196,9 @@
       if (label === "running") return { label: "运行中", className: "running" };
       if (label === "failed" || label === "error") return { label: "今日失败", className: "failed" };
       return { label, className: statusClass(run.status, run.skipped) };
+    }
+    if (isNonTradingDay(status)) {
+      return { label: "非交易日跳过", className: "skipped" };
     }
     const expected = minutesOfDay(schedule.expectedTime);
     const now = currentMinutes(schedule.timezone);
@@ -264,8 +287,7 @@
 
   function renderOverview(status) {
     els.serviceStatus.textContent = status.status || "--";
-    const tradingDay = status.trading_day || {};
-    els.tradingPhase.textContent = [tradingDay.date, tradingDay.phase].filter(Boolean).join(" / ") || "--";
+    els.tradingPhase.textContent = tradingDayLabel(status);
     els.dependencies.textContent = dependencySummary(status.dependencies);
     els.refreshTime.textContent = formatTime(new Date().toISOString());
   }

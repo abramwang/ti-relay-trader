@@ -344,6 +344,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.10.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；收盘任务现在会通过 `/v1/settlements/snapshots` 写入日终持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
+- `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
 
 ## 工作日志
 
@@ -487,3 +488,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-18`: 生产新增账户 `314000045768` 已确认开放只读：`/v1/account-routes` 显示三户 `read_only=true`、`trading_enabled=false`，9092 状态为 `production ok`、启用账户 3、下单账户 0；已向该账户发送资金、持仓、订单、成交刷新命令，07:46 左右因尚未到 OC 正常启动窗口暂未收到新 reply。
 - `2026-06-18`: 优化 `/trade` 交易终端持仓联动：右侧持仓表行点击会自动把左侧交易标的和行情/K线切换到该证券；“卖出”按钮复用同一逻辑并切到卖出方向，静态资源版本更新到 `20260618-0013`。
 - `2026-06-19`: 参考 `/home/tmp/stitch_quantstage` 的 QuantStage Engineering 视觉模板，统一门户、API Console、任务页和交易终端的前端视觉语言：浅冷灰背景、白色模块、teal 主色、低对比边框、工程化表格和 36px 控件；首页/API/任务页改为独立工作区外壳，交易终端保留既有交易布局并更新静态资源版本到 `20260619-0014`。
+- `2026-06-19`: 修复后台任务状态的非交易日误报：`/v1/status` 接入 Meridian `/v1/metadata/trading-day`，返回 `is_trading_day/previous_or_current_trading_date`；`/jobs` 在非交易日无当天 run 时显示“非交易日跳过”，不再把工作日休市误判为任务失败。
