@@ -75,11 +75,13 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 2. 通过 Meridian 交易日接口解析目标交易日。
 3. 非交易日默认跳过账户刷新，返回 `ok=true, skipped=true`。
 4. 对启用账户发布资金、持仓、订单、成交刷新命令。
-5. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
-6. 输出 JSON 报告，可通过 `--output` 写入文件。
-7. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)`；`open` 只写资产快照，不写持仓快照。
-8. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
-9. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
+5. 刷新命令发出后默认最多等待 45 秒，轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间；不会在等待阶段反复查询柜台。
+6. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
+7. 输出 JSON 报告，可通过 `--output` 写入文件。
+8. 若某账户资金/持仓刷新未确认，则该账户进入 `snapshot_blocked_accounts`，不参与本次 open/close 快照落盘，避免把早盘或旧持仓固化为日终持仓。
+9. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)`；`open` 只写资产快照，不写持仓快照。
+10. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
+11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 
 示例配置：
 

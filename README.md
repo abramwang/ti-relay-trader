@@ -306,7 +306,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
-- 盘前/盘后任务的账户级查询异常不会再直接把整体任务置为失败：例如新账户柜台未准备好、某账户暂时没有资产快照，会在 report 的 `account_errors`、快照结果的 `account_error_count/warnings` 和 `reconciliation_breaks(account_refresh_failed)` 中独立标注。整体任务失败只保留给 Relay 状态异常、交易日解析失败、快照接口不可用或数据库写入失败等系统级问题。
+- 盘前/盘后任务的账户级查询异常不会再直接把整体任务置为失败：例如新账户柜台未准备好、某账户暂时没有资产快照，会在 report 的 `account_errors` 中独立标注。若资金/持仓刷新未在本地账本确认，该账户会进入 `snapshot_blocked_accounts` 并从本次 open/close 快照账户列表中剔除，避免把早盘或旧持仓固化为日终持仓。整体任务失败只保留给 Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题。
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。API 和 `/trade#performance` 已接入 `asset_snapshots(open)`，返回并展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率；`daily_pnl/return_rate` 仍保留为相邻 close 净资产口径，方便长期净值序列兼容。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
 - `GET /v1/accounts/{account_id}/performance/series` 当前以 close 净资产为主线计算累计收益和回撤，并支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，输出基准收益、回撤和超额收益。页面默认与上证指数 `000001.SH` 涨跌对比，仍允许手动切换基准。持仓复权估值和更精细交易归因仍需后续版本。
 - `GET /v1/accounts/{account_id}/performance/series.csv` 是轻量 CSV 导出；研究侧 PostgreSQL view 已提供 `research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。后续如需大批量离线消费，可再补 Parquet/批量文件任务。
@@ -493,3 +493,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-19`: 按交易终端视觉反馈，将 `/trade` 左侧栏导航按钮的激活/悬停色恢复为交易红色，并更新静态资源版本到 `20260619-0015`。
 - `2026-06-22`: 排查生产账户 `314000046830` 持仓多出 `000543.SZ/000601.SZ/000703.SZ/000983.SZ/002164.SZ/002171.SZ/300397.SZ/600011.SH/600601.SH/601677.SH`：这些行均为 2026-06-17 旧 `positions` 记录，今天最新 `position_page` 未返回，并非前置字段映射错误。修复 `position_page completed` 后清理本批次缺失旧持仓的账本语义，生产触发持仓刷新后当前持仓从 315 行收敛到 223 行，上述十只已从 API/DB 消失。
 - `2026-06-22`: 优化 `/trade` 表格排序：资金持仓表支持按代码、证券名称、持仓股数、成本、市值、盈亏、当日盈亏和更新时间排序，并新增更新时间列；订单监控的委托/成交表支持按代码、数量、价格、状态和时间等字段排序，表头显示当前升降序状态。
+- `2026-06-22`: 修复盘后结算可能固化早盘持仓的问题：`pre_open_init/post_close_settlement` 在发布资金、持仓刷新命令后，会轮询 Relay 本地账本确认资产和持仓时间戳已晚于本轮刷新开始时间；未确认的账户会进入 `snapshot_blocked_accounts` 并跳过本次 open/close 快照落盘，所有账户都未确认时任务失败，避免写入陈旧日终持仓。
