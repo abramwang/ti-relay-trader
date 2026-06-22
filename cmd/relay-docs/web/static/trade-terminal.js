@@ -70,7 +70,12 @@
     chartAutoRefreshRunning: false,
     chartAutoRefreshErrorAt: 0,
     streamErrorLoggedAt: 0,
-    toastTimer: 0
+    toastTimer: 0,
+    tableSorts: {
+      positions: { key: "market_value", direction: "desc" },
+      orders: { key: "created_at", direction: "desc" },
+      fills: { key: "matched_at", direction: "desc" }
+    }
   };
 
   const chartAutoRefreshIntervalMs = 30000;
@@ -524,6 +529,22 @@
       return String(value);
     }
     return date.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  function formatShortDateTime(value) {
+    if (!value) {
+      return "--";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    const compact = businessDateCompact(date);
+    const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+    if (compact === currentBusinessDate()) {
+      return time;
+    }
+    return compact.slice(4, 6) + "-" + compact.slice(6, 8) + " " + time;
   }
 
   function symbolText(item) {
@@ -2058,6 +2079,193 @@
     return 0;
   }
 
+  function sortedRows(rows, table) {
+    const sort = state.tableSorts[table];
+    if (!sort || !sort.key) {
+      return rows.slice();
+    }
+    return rows.map((row, index) => ({ row, index }))
+      .sort((left, right) => {
+        const compared = compareSortValues(
+          tableSortValue(left.row, table, sort.key),
+          tableSortValue(right.row, table, sort.key),
+          sort.direction
+        );
+        return compared || left.index - right.index;
+      })
+      .map((item) => item.row);
+  }
+
+  function compareSortValues(left, right, direction) {
+    const dir = direction === "asc" ? 1 : -1;
+    const leftEmpty = left === null || left === undefined || left === "";
+    const rightEmpty = right === null || right === undefined || right === "";
+    if (leftEmpty && rightEmpty) {
+      return 0;
+    }
+    if (leftEmpty) {
+      return 1;
+    }
+    if (rightEmpty) {
+      return -1;
+    }
+    if (typeof left === "number" && typeof right === "number") {
+      return (left - right) * dir;
+    }
+    return String(left).localeCompare(String(right), "zh-CN", {
+      numeric: true,
+      sensitivity: "base"
+    }) * dir;
+  }
+
+  function tableSortValue(row, table, key) {
+    if (table === "positions") {
+      return positionSortValue(row, key);
+    }
+    if (table === "orders") {
+      return orderSortValue(row, key);
+    }
+    if (table === "fills") {
+      return fillSortValue(row, key);
+    }
+    return "";
+  }
+
+  function positionSortValue(position, key) {
+    const view = livePositionView(position);
+    switch (key) {
+    case "symbol":
+      return symbolText(position);
+    case "name":
+      return securityNameText(position);
+    case "quantity":
+      return finiteNumber(position.quantity);
+    case "sellable_qty":
+      return finiteNumber(position.sellable_qty);
+    case "avg_cost":
+      return finiteNumber(position.avg_cost);
+    case "last_price":
+      return finiteNumber(view.price);
+    case "market_value":
+      return finiteNumber(view.marketValue);
+    case "pnl":
+      return finiteNumber(view.pnl);
+    case "day_pnl":
+      return finiteNumber(view.dayPnl);
+    case "updated_at":
+      return timeSortValue(position.updated_at);
+    default:
+      return "";
+    }
+  }
+
+  function orderSortValue(order, key) {
+    switch (key) {
+    case "req_id":
+      return order.client_order_id || order.gateway_order_id || "";
+    case "symbol":
+      return symbolText(order);
+    case "name":
+      return securityNameText(order);
+    case "side":
+      return String(order.trade_side || "");
+    case "price":
+      return finiteNumber(order.limit_price);
+    case "quantity":
+      return finiteNumber(order.order_qty);
+    case "filled_qty":
+      return finiteNumber(order.cum_filled_qty);
+    case "counter":
+      return String(order.order_id || order.order_stream_id || "");
+    case "status":
+      return String(order.status || "");
+    case "created_at":
+      return timeSortValue(order.created_at || order.inserted_at);
+    case "updated_at":
+      return timeSortValue(order.last_updated_at || order.terminal_at || order.accepted_at || order.created_at || order.inserted_at);
+    default:
+      return "";
+    }
+  }
+
+  function fillSortValue(fill, key) {
+    const order = orderForFill(fill);
+    switch (key) {
+    case "fill_id":
+      return fill.fill_id || "";
+    case "req_id":
+      return order.client_order_id || fill.gateway_order_id || "";
+    case "counter":
+      return String(fill.order_id || order.order_id || fill.order_stream_id || order.order_stream_id || "");
+    case "symbol":
+      return symbolText(fill);
+    case "name":
+      return securityNameText(fill, order);
+    case "side":
+      return String(fill.trade_side || order.trade_side || "");
+    case "price":
+      return finiteNumber(fill.price);
+    case "quantity":
+      return finiteNumber(fill.qty);
+    case "matched_at":
+      return timeSortValue(fill.matched_at);
+    default:
+      return "";
+    }
+  }
+
+  function timeSortValue(value) {
+    if (!value) {
+      return null;
+    }
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  function defaultSortDirection(_table, key) {
+    if (key === "symbol" || key === "name" || key === "req_id" || key === "fill_id" || key === "side" || key === "status") {
+      return "asc";
+    }
+    return "desc";
+  }
+
+  function setTableSort(table, key) {
+    if (!state.tableSorts[table]) {
+      return;
+    }
+    const current = state.tableSorts[table];
+    if (current.key === key) {
+      current.direction = current.direction === "asc" ? "desc" : "asc";
+    } else {
+      state.tableSorts[table] = {
+        key,
+        direction: defaultSortDirection(table, key)
+      };
+    }
+    if (table === "positions") {
+      if (clientPositionPagingEnabled()) {
+        state.positionsPage.page = 1;
+      }
+      renderPositions();
+      return;
+    }
+    if (table === "orders" || table === "fills") {
+      renderBlotter();
+    }
+  }
+
+  function updateSortHeaders(table) {
+    const sort = state.tableSorts[table];
+    const headers = document.querySelectorAll('th.sortable[data-sort-table="' + table + '"]');
+    for (const header of headers) {
+      const active = sort && header.dataset.sortKey === sort.key;
+      header.classList.toggle("sorted", active);
+      header.classList.toggle("asc", active && sort.direction === "asc");
+      header.classList.toggle("desc", active && sort.direction === "desc");
+      header.setAttribute("aria-sort", active ? (sort.direction === "asc" ? "ascending" : "descending") : "none");
+    }
+  }
+
   function livePortfolioTotals() {
     const tradeDate = selectedAssetTradeDateSafe();
     if (!isCurrentBusinessDate(tradeDate) ||
@@ -2109,12 +2317,14 @@
   }
 
   function renderPositions() {
-    if (state.positions.length === 0) {
-      els.positionsBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+    const rows = positionTableRows();
+    if (rows.length === 0) {
+      els.positionsBody.innerHTML = '<tr><td colspan="9"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+      updateSortHeaders("positions");
       renderPositionsPager();
       return;
     }
-    els.positionsBody.innerHTML = state.positions.map((position) => {
+    els.positionsBody.innerHTML = rows.map((position) => {
       const view = livePositionView(position);
       const pnl = view.pnl;
       const pnlClass = Number(pnl) < 0 ? "down" : "up";
@@ -2136,10 +2346,33 @@
           <td class="num">${formatNumber(view.marketValue)}</td>
           <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${pnlRatioText}</td>
           <td class="num ${dayPnlClass}">${formatSigned(dayPnl)}<br>${dayPnlRatioText}</td>
+          <td class="time-cell">${formatShortDateTime(position.updated_at)}</td>
           <td><button type="button" class="row-action" data-sell-security-id="${escapeHTML(securityID)}">卖出</button></td>
         </tr>`;
     }).join("");
+    updateSortHeaders("positions");
     renderPositionsPager();
+  }
+
+  function positionTableRows() {
+    const source = clientPositionPagingEnabled() ? state.allPositions : state.positions;
+    const sorted = sortedRows(source, "positions");
+    if (!clientPositionPagingEnabled()) {
+      return sorted;
+    }
+    const totalPages = Math.max(1, Math.ceil(sorted.length / state.positionsPage.pageSize));
+    state.positionsPage.page = Math.min(Math.max(1, state.positionsPage.page), totalPages);
+    const start = (state.positionsPage.page - 1) * state.positionsPage.pageSize;
+    return sorted.slice(start, start + state.positionsPage.pageSize);
+  }
+
+  function clientPositionPagingEnabled() {
+    const tradeDate = selectedAssetTradeDateSafe();
+    return isCurrentBusinessDate(tradeDate) &&
+      !state.positionStatsDirty &&
+      state.allPositionsAccount === state.activeAccount &&
+      state.allPositionsLoadedDate === tradeDate &&
+      state.allPositions.length >= state.positions.length;
   }
 
   function renderMonitorSummary() {
@@ -2216,21 +2449,21 @@
       <table>
         <thead>
           <tr>
-            <th>ReqID</th>
-            <th>代码</th>
-            <th>证券名称</th>
-            <th>方向</th>
-            <th class="num">委托价格</th>
-            <th class="num">委托/成交</th>
-            <th>柜台/交易所</th>
-            <th>状态</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="req_id">ReqID</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="symbol">代码</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="name">证券名称</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="side">方向</th>
+            <th class="num sortable" data-sort-table="orders" data-sort-key="price">委托价格</th>
+            <th class="num sortable" data-sort-table="orders" data-sort-key="quantity">委托/成交</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="counter">柜台/交易所</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="status">状态</th>
             <th>错误/柜台信息</th>
-            <th>委托时间</th>
+            <th class="sortable" data-sort-table="orders" data-sort-key="created_at">委托时间</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          ${state.orders.map((order) => {
+          ${sortedRows(state.orders, "orders").map((order) => {
             const id = order.gateway_order_id || order.client_order_id || "";
             const changedAt = state.changedOrders.get(id) || 0;
             const className = [
@@ -2255,6 +2488,7 @@
           }).join("")}
         </tbody>
       </table>`;
+    updateSortHeaders("orders");
   }
 
   function orderDebugText(order) {
@@ -2302,19 +2536,19 @@
       <table>
         <thead>
           <tr>
-            <th>成交编号</th>
-            <th>ReqID</th>
-            <th>柜台/交易所</th>
-            <th>代码</th>
-            <th>证券名称</th>
-            <th>方向</th>
-            <th class="num">成交价格</th>
-            <th class="num">成交数量</th>
-            <th>成交时间</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="fill_id">成交编号</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="req_id">ReqID</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="counter">柜台/交易所</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="symbol">代码</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="name">证券名称</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="side">方向</th>
+            <th class="num sortable" data-sort-table="fills" data-sort-key="price">成交价格</th>
+            <th class="num sortable" data-sort-table="fills" data-sort-key="quantity">成交数量</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="matched_at">成交时间</th>
           </tr>
         </thead>
         <tbody>
-          ${state.fills.map((fill) => {
+          ${sortedRows(state.fills, "fills").map((fill) => {
             const order = orderForFill(fill);
             return `
               <tr>
@@ -2331,6 +2565,7 @@
           }).join("")}
         </tbody>
       </table>`;
+    updateSortHeaders("fills");
   }
 
   function selectedOrdersTradeDateSafe() {
@@ -2350,6 +2585,21 @@
   }
 
   function renderPositionsPager() {
+    if (clientPositionPagingEnabled()) {
+      const total = state.allPositions.length;
+      const start = total > 0 ? (state.positionsPage.page - 1) * state.positionsPage.pageSize + 1 : 0;
+      const end = total > 0 ? Math.min(start + state.positionsPage.pageSize - 1, total) : 0;
+      els.positionsPageInfo.textContent = [
+        displayDate(selectedAssetTradeDateSafe()),
+        "持仓",
+        "第 " + state.positionsPage.page + " 页",
+        total > 0 ? start + "-" + end + " / " + total : "0 条",
+        end < total ? "还有下一页" : "已到末页"
+      ].join(" · ");
+      els.positionsPrevPage.disabled = state.positionsPage.page <= 1;
+      els.positionsNextPage.disabled = end >= total;
+      return;
+    }
     renderPager({
       page: state.positionsPage,
       count: state.positions.length,
@@ -3602,6 +3852,20 @@
     }
   }
 
+  function gotoPositionsPage(direction) {
+    if (!clientPositionPagingEnabled()) {
+      gotoPage(state.positionsPage, direction, loadPositionsOnly);
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(state.allPositions.length / state.positionsPage.pageSize));
+    if (direction === "next") {
+      state.positionsPage.page = Math.min(totalPages, state.positionsPage.page + 1);
+    } else {
+      state.positionsPage.page = Math.max(1, state.positionsPage.page - 1);
+    }
+    renderPositions();
+  }
+
   async function loadOrdersOnly() {
     const data = await fetchOrdersPage();
     state.ordersPage.next = data.next_cursor || "";
@@ -3675,6 +3939,14 @@
       } else {
         scheduleChartAutoRefresh(1000);
       }
+    });
+    document.addEventListener("click", (event) => {
+      const target = event.target && event.target.closest ? event.target : event.target && event.target.parentElement;
+      const header = target && target.closest ? target.closest("th.sortable[data-sort-table][data-sort-key]") : null;
+      if (!header) {
+        return;
+      }
+      setTableSort(header.dataset.sortTable, header.dataset.sortKey);
     });
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
@@ -3779,8 +4051,8 @@
         queryOrdersForDate();
       }
     });
-    els.positionsPrevPage.addEventListener("click", () => gotoPage(state.positionsPage, "prev", loadPositionsOnly));
-    els.positionsNextPage.addEventListener("click", () => gotoPage(state.positionsPage, "next", loadPositionsOnly));
+    els.positionsPrevPage.addEventListener("click", () => gotoPositionsPage("prev"));
+    els.positionsNextPage.addEventListener("click", () => gotoPositionsPage("next"));
     els.ordersPrevPage.addEventListener("click", () => {
       const page = state.selectedTab === "fills" ? state.fillsPage : state.ordersPage;
       const loader = state.selectedTab === "fills" ? loadFillsOnly : loadOrdersOnly;

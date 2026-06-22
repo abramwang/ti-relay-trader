@@ -924,6 +924,35 @@ th {
   font-weight: 800;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.sortable::after {
+  content: "↕";
+  display: inline-block;
+  margin-left: 5px;
+  color: var(--muted-soft);
+  font-size: 10px;
+}
+
+th.sortable.sorted {
+  color: var(--primary);
+  background: #e8f4f2;
+}
+
+th.sortable.sorted.asc::after {
+  content: "↑";
+  color: var(--primary);
+}
+
+th.sortable.sorted.desc::after {
+  content: "↓";
+  color: var(--primary);
+}
+
 td {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
@@ -946,6 +975,12 @@ td {
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.time-cell {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .row-title {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260619-0015">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260622-0016">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -162,13 +162,14 @@
           <table>
             <thead>
               <tr>
-                <th>代码</th>
-                <th>证券名称</th>
-                <th class="num">持仓/可用</th>
-                <th class="num">成本/现价</th>
-                <th class="num">市值</th>
-                <th class="num">盈亏/%</th>
-                <th class="num">当日盈亏/%</th>
+                <th class="sortable" data-sort-table="positions" data-sort-key="symbol">代码</th>
+                <th class="sortable" data-sort-table="positions" data-sort-key="name">证券名称</th>
+                <th class="num sortable" data-sort-table="positions" data-sort-key="quantity">持仓/可用</th>
+                <th class="num sortable" data-sort-table="positions" data-sort-key="avg_cost">成本/现价</th>
+                <th class="num sortable" data-sort-table="positions" data-sort-key="market_value">市值</th>
+                <th class="num sortable" data-sort-table="positions" data-sort-key="pnl">盈亏/%</th>
+                <th class="num sortable" data-sort-table="positions" data-sort-key="day_pnl">当日盈亏/%</th>
+                <th class="sortable" data-sort-table="positions" data-sort-key="updated_at">更新时间</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -407,6 +408,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260619-0014"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260622-0016"></script>
 </body>
 </html>
