@@ -617,6 +617,7 @@ func TestListPositionsBuildsFilteredRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "account_id = $1")
 	requireQueryContains(t, exec.query, "symbol = $2")
 	requireQueryContains(t, exec.query, "exchange = $3")
+	requireQueryContains(t, exec.query, "quantity > 0")
 	requireQueryContains(t, exec.query, "LIMIT $4")
 	requireArgLen(t, exec.args, 4)
 	if exec.args[3] != 20 {
@@ -737,6 +738,28 @@ func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
 	requireArgLen(t, exec.args, 18)
 	if exec.args[5] != int64(0) {
 		t.Fatalf("sellable_qty arg = %#v, want 0", exec.args[5])
+	}
+}
+
+func TestDeleteStalePositionsBuildsCleanup(t *testing.T) {
+	exec := &recordingExecutor{result: rowsAffectedResult(3)}
+	repo := NewRepository(exec)
+	cutoff := time.Date(2026, 6, 22, 9, 2, 46, 0, time.UTC)
+
+	deleted, err := repo.DeleteStalePositions(context.Background(), " acct-1 ", cutoff)
+	if err != nil {
+		t.Fatalf("DeleteStalePositions() error = %v", err)
+	}
+
+	if deleted != 3 {
+		t.Fatalf("deleted = %d, want 3", deleted)
+	}
+	requireQueryContains(t, exec.query, "DELETE FROM positions")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "updated_at < $2")
+	requireArgLen(t, exec.args, 2)
+	if exec.args[0] != "acct-1" || exec.args[1] != cutoff {
+		t.Fatalf("args = %#v", exec.args)
 	}
 }
 

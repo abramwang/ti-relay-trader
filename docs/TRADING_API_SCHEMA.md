@@ -133,6 +133,8 @@ rejected
 
 `sellable_qty` 当前按前置/柜台 `position_page` 原样落盘和返回，relay 不在账本层重新计算 A 股 T+1 可卖数量。券商测试环境或外部前置如果返回同日买入可卖/不可卖差异，页面和 SDK 会如实展示；需要统一 T+1 规则时应优先在前置持仓回报中统一字段语义。
 
+当前持仓账本只展示 `quantity > 0` 的 `positions` 行。`position_page` 被视为账户全量快照批次：同一 `origin_message_id/correlation_id` 下的 `partial` 回包逐条 upsert，`completed` 回包到达后清理该账户本次查询开始前仍未更新的旧当前持仓，避免旧批次残留标的被误认为仍持有。历史持仓查询仍读取 `position_snapshots`，不受当前表清理影响。
+
 持仓盈亏统一保留两列：`unrealized_pnl` 是按买入成本计算的总持仓浮盈；`day_unrealized_pnl` 是当日持仓浮动贡献，老仓按今日开盘价作日内基准，当日买入按当日买入成交成本作基准。当前持仓查询会在账本字段缺失或行情更新时结合 Meridian level1 snapshot 和当日成交账本重算，历史持仓查询只读取 `position_snapshots` 已落盘字段。
 
 ### SubmitOrderRequest

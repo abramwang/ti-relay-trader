@@ -12,7 +12,7 @@
 
 同日新增自动资金持仓刷新：当同步循环处理到 `order.event` 或 `fill.event` 后，会按账户调度 `account.asset.query` 和 `account.positions.query`。调度器默认 2 秒合并、20 秒冷却，只向前置写入查询命令，后续仍由 `asset_page/position_page` reply 合并到 PostgreSQL。
 
-当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`，便于 `/trade` 和策略端排查拒单原因。例外是 `BROKER_NOT_READY`：它表示 OC 已启动但柜台登录未完成或断线重连中，Relay 只归档原始回包并记录同步跳过原因，不把草稿订单写成业务拒单。
+当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`，便于 `/trade` 和策略端排查拒单原因。例外是 `BROKER_NOT_READY`：它表示 OC 已启动但柜台登录未完成或断线重连中，Relay 只归档原始回包并记录同步跳过原因，不把草稿订单写成业务拒单。
 
 首批同步范围：
 
@@ -116,7 +116,7 @@ action 到 stream 的映射：
 | Reply 类型 | 判定字段 | 落盘目标 |
 | --- | --- | --- |
 | 资金页 | `action=account.asset.query` 或 `result_type=asset_page` | `asset_snapshots(snapshot_type=intraday)` |
-| 持仓页 | `action=account.positions.query` 或 `result_type=position_page` | `positions` 当前持仓 |
+| 持仓页 | `action=account.positions.query` 或 `result_type=position_page` | `positions` 当前持仓；completed 后清理同账户旧批次残留 |
 | 委托页 | `action=order.list.query` 或 `result_type=order_page` | `orders`，并在需要时补汇总成交 |
 | 成交页 | `action=fill.list.query` 或 `result_type=fill_page` | `fills` |
 | 下单拒绝/失败 | `status=rejected/failed` 且 action 为 `order.submit/order.batch.submit` | 更新草稿订单为 `rejected`，保留柜台错误；`BROKER_NOT_READY` 除外 |

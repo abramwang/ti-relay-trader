@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type LedgerWriter interface {
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error
+	DeleteStalePositions(ctx context.Context, accountID string, cutoff time.Time) (int64, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 }
 
@@ -71,6 +73,7 @@ type LedgerProcessResult struct {
 	Fills          int      `json:"fills"`
 	Assets         int      `json:"assets"`
 	Positions      int      `json:"positions"`
+	StalePositions int64    `json:"stale_positions,omitempty"`
 	Replies        int      `json:"replies"`
 	Skipped        int      `json:"skipped"`
 	SkipReasons    []string `json:"skip_reasons,omitempty"`
@@ -263,6 +266,18 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 			result.Positions++
+		}
+		if isCompletedPositionPage(envelope) && accountID != "" {
+			cutoff := positionQueryStaleCutoff(envelope)
+			if !cutoff.IsZero() {
+				deleted, err := writer.DeleteStalePositions(ctx, accountID, cutoff)
+				if err != nil {
+					result.LedgerErrors++
+					result.SkipReasons = append(result.SkipReasons, err.Error())
+					return result
+				}
+				result.StalePositions += deleted
+			}
 		}
 		return result
 	case envelope.Action == ActionOrderList || envelope.ResultType == "order_page":
@@ -723,6 +738,62 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 		raws = append(raws, item)
 	}
 	return positions, raws, nil
+}
+
+func isCompletedPositionPage(envelope EntryEnvelope) bool {
+	return (envelope.Action == ActionAccountPositions || envelope.ResultType == "position_page") &&
+		envelope.Status == string(trading.ReplyStatusCompleted)
+}
+
+func positionQueryStaleCutoff(envelope EntryEnvelope) time.Time {
+	for _, value := range []string{
+		envelope.OriginMessageID,
+		envelope.CorrelationID,
+		envelope.RequestCorrelationID,
+		envelope.MessageID,
+		envelope.RequestID,
+	} {
+		if parsed := timestampFromIdentifier(value); !parsed.IsZero() {
+			return parsed
+		}
+	}
+	if !envelope.ProducedAt.IsZero() {
+		return envelope.ProducedAt.Add(-30 * time.Minute)
+	}
+	return time.Time{}
+}
+
+func timestampFromIdentifier(value string) time.Time {
+	digits := strings.Builder{}
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			digits.WriteRune(char)
+			continue
+		}
+		if parsed := timestampFromDigits(digits.String()); !parsed.IsZero() {
+			return parsed
+		}
+		digits.Reset()
+	}
+	return timestampFromDigits(digits.String())
+}
+
+func timestampFromDigits(digits string) time.Time {
+	if len(digits) < 13 {
+		return time.Time{}
+	}
+	value, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	switch {
+	case len(digits) >= 18:
+		return time.Unix(0, value).UTC()
+	case len(digits) >= 16:
+		return time.UnixMicro(value).UTC()
+	default:
+		return time.UnixMilli(value).UTC()
+	}
 }
 
 func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {

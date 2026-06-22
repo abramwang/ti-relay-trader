@@ -333,6 +333,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 接口测试台当前可在 9092 文档门户同源发送 `/v1/*` 请求；资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接口需要启动时加载本地 PostgreSQL、测试 Redis 和账户路由配置。
 - 资金/持仓/订单/成交查询默认读取 PostgreSQL 本地账表；可通过刷新接口主动发前置 `cmd.query`，由 9092 轻量后台同步循环或正式 worker 合并 reply 到本地账表。
 - 持仓查询现在保留前置/柜台原始 `sellable_qty`，不会把 `sellable_qty=0` 自动改成 `quantity`；当前持仓 API 会 best-effort 通过 Meridian instruments 补齐 `name`。若前置持仓回包 `avg_cost=0` 且该证券当前持仓不可卖、当日买入成交数量覆盖当前持仓，API 返回会用本地成交账本加权均价临时补偿成本价，raw stream 和账本原始持仓仍保留前置给出的 0，便于后续排查前置字段。
+- `position_page` 按账户全量持仓批次处理：`partial` reply 逐条 upsert，收到同一 `origin_message_id/correlation_id` 的 `completed` reply 后，Relay 会清理本次查询开始前仍未更新的旧 `positions` 行；当前持仓查询也会过滤 `quantity <= 0`，避免已经卖空或旧批次残留的标的继续污染资金持仓页。
 - `order_page/fill_page` 合并路径已实现并通过单元测试覆盖；测试前置返回非空查询页后，可继续补一组真实样例归档和回放记录。
 - 订单/成交事件会触发服务端自动刷新资金和持仓，但会按账户合并并限频，默认 `auto_refresh.debounce_seconds=2`、`auto_refresh.cooldown_seconds=20`；这能让 `/trade` 持仓跟随成交更新，同时避免每条订单推送都查询柜台。
 - 测试下单参考价不要硬编码；`/trade` 当前通过 relay 的 Meridian 薄代理读取 `/v1/market/snapshots` 和 level1 snapshot SSE，如果当天不是交易日会调用 Meridian `/v1/metadata/trading-day` 获取最近交易日后读取 historical 快照。当前交易日持仓现价、市值和浮动盈亏由 Meridian level1 SSE 推送更新，不通过前端轮询行情计算。
@@ -490,3 +491,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-19`: 参考 `/home/tmp/stitch_quantstage` 的 QuantStage Engineering 视觉模板，统一门户、API Console、任务页和交易终端的前端视觉语言：浅冷灰背景、白色模块、teal 主色、低对比边框、工程化表格和 36px 控件；首页/API/任务页改为独立工作区外壳，交易终端保留既有交易布局并更新静态资源版本到 `20260619-0014`。
 - `2026-06-19`: 修复后台任务状态的非交易日误报：`/v1/status` 接入 Meridian `/v1/metadata/trading-day`，返回 `is_trading_day/previous_or_current_trading_date`；`/jobs` 在非交易日无当天 run 时显示“非交易日跳过”，不再把工作日休市误判为任务失败。
 - `2026-06-19`: 按交易终端视觉反馈，将 `/trade` 左侧栏导航按钮的激活/悬停色恢复为交易红色，并更新静态资源版本到 `20260619-0015`。
+- `2026-06-22`: 排查生产账户 `314000046830` 持仓多出 `000543.SZ/000601.SZ/000703.SZ/000983.SZ/002164.SZ/002171.SZ/300397.SZ/600011.SH/600601.SH/601677.SH`：这些行均为 2026-06-17 旧 `positions` 记录，今天最新 `position_page` 未返回，并非前置字段映射错误。修复 `position_page completed` 后清理本批次缺失旧持仓的账本语义，生产触发持仓刷新后当前持仓从 315 行收敛到 223 行，上述十只已从 API/DB 消失。

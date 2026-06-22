@@ -92,6 +92,39 @@ func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryClearsStalePositionsOnCompletedReply(t *testing.T) {
+	writer := &fakeLedgerWriter{stalePositionsDeleted: 7}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-20", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-position-completed-1",
+			"origin_message_id":"msg-positions-query-1782090166477198918-19",
+			"action":"account.positions.query",
+			"result_type":"position_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-06-22T09:02:55+08:00",
+			"payload":{"items":[]}
+		}`,
+	})
+
+	if result.LedgerErrors != 0 || result.StalePositions != 7 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.stalePositionClears) != 1 {
+		t.Fatalf("stale clears = %#v", writer.stalePositionClears)
+	}
+	clear := writer.stalePositionClears[0]
+	if clear.accountID != "00030484" {
+		t.Fatalf("account_id = %q", clear.accountID)
+	}
+	wantCutoff := time.Unix(0, 1782090166477198918).UTC()
+	if !clear.cutoff.Equal(wantCutoff) {
+		t.Fatalf("cutoff = %s, want %s", clear.cutoff, wantCutoff)
+	}
+}
+
 func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-3", map[string]any{
@@ -887,14 +920,16 @@ func TestProcessLedgerEntryArchivesParseError(t *testing.T) {
 }
 
 type fakeLedgerWriter struct {
-	accounts     []trading.Account
-	orders       []trading.Order
-	orderUpdates []trading.OrderEvent
-	orderEvents  []recordedOrderEvent
-	fills        []recordedFill
-	assets       []recordedAsset
-	positions    []recordedPosition
-	raw          []ledger.RawStreamMessage
+	accounts              []trading.Account
+	orders                []trading.Order
+	orderUpdates          []trading.OrderEvent
+	orderEvents           []recordedOrderEvent
+	fills                 []recordedFill
+	assets                []recordedAsset
+	positions             []recordedPosition
+	stalePositionClears   []recordedStalePositionClear
+	stalePositionsDeleted int64
+	raw                   []ledger.RawStreamMessage
 }
 
 type recordedOrderEvent struct {
@@ -918,6 +953,11 @@ type recordedAsset struct {
 type recordedPosition struct {
 	position trading.Position
 	source   string
+}
+
+type recordedStalePositionClear struct {
+	accountID string
+	cutoff    time.Time
 }
 
 func (writer *fakeLedgerWriter) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -968,6 +1008,14 @@ func (writer *fakeLedgerWriter) UpsertAssetSnapshot(_ context.Context, asset tra
 func (writer *fakeLedgerWriter) UpsertPosition(_ context.Context, position trading.Position, source string, _ any, _ time.Time) error {
 	writer.positions = append(writer.positions, recordedPosition{position: position, source: source})
 	return nil
+}
+
+func (writer *fakeLedgerWriter) DeleteStalePositions(_ context.Context, accountID string, cutoff time.Time) (int64, error) {
+	writer.stalePositionClears = append(writer.stalePositionClears, recordedStalePositionClear{
+		accountID: accountID,
+		cutoff:    cutoff,
+	})
+	return writer.stalePositionsDeleted, nil
 }
 
 func (writer *fakeLedgerWriter) ArchiveRawStreamMessage(_ context.Context, message ledger.RawStreamMessage) error {

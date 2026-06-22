@@ -804,6 +804,12 @@ ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
 `
 
+const deleteStalePositionsSQL = `
+DELETE FROM positions
+WHERE account_id = $1
+  AND updated_at < $2
+`
+
 const upsertPositionSnapshotSQL = `
 INSERT INTO position_snapshots (
     trade_date,

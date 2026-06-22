@@ -914,6 +914,28 @@ func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Pos
 	return nil
 }
 
+func (repo *Repository) DeleteStalePositions(ctx context.Context, accountID string, cutoff time.Time) (int64, error) {
+	if repo == nil || repo.exec == nil {
+		return 0, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if cutoff.IsZero() {
+		return 0, fmt.Errorf("%w: cutoff is required", ErrInvalidLedgerInput)
+	}
+	result, err := repo.exec.ExecContext(ctx, deleteStalePositionsSQL, accountID, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("delete stale positions %s before %s: %w", accountID, cutoff.Format(time.RFC3339Nano), err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("delete stale positions rows affected: %w", err)
+	}
+	return rows, nil
+}
+
 func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -1839,6 +1861,7 @@ func buildListPositionsSQL(query trading.PositionQuery) (string, []any) {
 	if query.Exchange != "" {
 		appendFilter("exchange", query.Exchange)
 	}
+	where = append(where, "quantity > 0")
 
 	builder := strings.Builder{}
 	builder.WriteString(positionSelectColumns)
