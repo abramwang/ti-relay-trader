@@ -181,7 +181,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 明确业务时间统一为 `Asia/Shanghai` 东八区，A 股交易日、cron、报表、页面和 API 业务字段都按该时区解释。
 - [x] 明确每日交易主流程包含 `pre_open_init` 盘前初始化和 `post_close_settlement` 收盘后结算。
 - [x] 生产盘前初始化时间调整为交易日 09:01 `Asia/Shanghai`，等待 09:00 启动的前置程序可用后再查询。
-- [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:30 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
+- [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:05 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
 - [x] 盘前初始化在资金/持仓/订单/成交刷新后写入 `asset_snapshots(open)` 日初资产快照，用于绩效分析区分隔夜调整和日内盈亏；open 快照只写资产，不覆盖日终持仓快照。
 - [x] 新增统一时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at` 和探测/同步报告生成时间按 `Asia/Shanghai` 输出。
 - [x] 新增 Python 日流程任务入口：`python -m relay.jobs.pre_open_init` 和 `python -m relay.jobs.post_close_settlement`，支持交易日判断、依赖检查、账户刷新、账本快照摘要和 JSON 报告输出。
@@ -302,7 +302,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 ## 阻塞与风险
 
 - 当前无阻塞。
-- 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:30 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
+- 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:05 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
@@ -494,3 +494,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-22`: 排查生产账户 `314000046830` 持仓多出 `000543.SZ/000601.SZ/000703.SZ/000983.SZ/002164.SZ/002171.SZ/300397.SZ/600011.SH/600601.SH/601677.SH`：这些行均为 2026-06-17 旧 `positions` 记录，今天最新 `position_page` 未返回，并非前置字段映射错误。修复 `position_page completed` 后清理本批次缺失旧持仓的账本语义，生产触发持仓刷新后当前持仓从 315 行收敛到 223 行，上述十只已从 API/DB 消失。
 - `2026-06-22`: 优化 `/trade` 表格排序：资金持仓表支持按代码、证券名称、持仓股数、成本、市值、盈亏、当日盈亏和更新时间排序，并新增更新时间列；订单监控的委托/成交表支持按代码、数量、价格、状态和时间等字段排序，表头显示当前升降序状态。
 - `2026-06-22`: 修复盘后结算可能固化早盘持仓的问题：`pre_open_init/post_close_settlement` 在发布资金、持仓刷新命令后，会轮询 Relay 本地账本确认资产和持仓时间戳已晚于本轮刷新开始时间；未确认的账户会进入 `snapshot_blocked_accounts` 并跳过本次 open/close 快照落盘，所有账户都未确认时任务失败，避免写入陈旧日终持仓。
+- `2026-06-23`: 根据生产 OC heartbeat 在 15:15 左右停止的现场情况，将生产 `post_close_settlement` 从 15:30 提前到 15:05 `Asia/Shanghai`；同步更新生产配置、示例配置、运维文档和 root crontab。
