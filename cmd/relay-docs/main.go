@@ -892,9 +892,9 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Title:      "任务状态",
 		Active:     "jobs",
 		Summary:    "Daily jobs and background process monitor",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260619-0014">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260624-0016">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260619-0015"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260624-0016"></script>`),
 		ProjectDir: s.root,
 	})
 }

@@ -92,6 +92,24 @@
   font-size: 18px;
 }
 
+.jobs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 2px -4px;
+}
+
+.jobs-section-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.jobs-section-head span {
+  color: var(--muted-2);
+  font-size: 13px;
+}
+
 .job-card {
   min-height: 168px;
   padding: 16px;
@@ -236,6 +254,10 @@
   }
   .jobs-actions input {
     width: 100%;
+  }
+  .jobs-section-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .jobs-overview,
   .job-cards {

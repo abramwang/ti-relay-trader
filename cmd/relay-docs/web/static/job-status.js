@@ -4,6 +4,7 @@
     tradingPhase: document.getElementById("jobsTradingPhase"),
     dependencies: document.getElementById("jobsDependencies"),
     refreshTime: document.getElementById("jobsRefreshTime"),
+    planHint: document.getElementById("jobPlanHint"),
     cards: document.getElementById("jobCards"),
     count: document.getElementById("jobCount"),
     body: document.getElementById("jobRunsBody"),
@@ -15,7 +16,7 @@
 
   const knownJobs = [
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
-    { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:30", purpose: "固化日终快照和对账输入" },
+    { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:05", purpose: "固化日终快照和对账输入" },
   ];
   const expectedRunGraceMinutes = 5;
 
@@ -211,6 +212,22 @@
     return { label: "今日未完成", className: "failed" };
   }
 
+  function currentTradeDate(status) {
+    return status && status.trading_day && normalizeDate(status.trading_day.date) || "";
+  }
+
+  function sameTradeDate(run, status) {
+    return runMatchesTradeDate(run, currentTradeDate(status));
+  }
+
+  function compactRunSummary(run) {
+    if (!run) return "--";
+    const status = statusLabel(run.status, run.skipped);
+    const date = run.target_trade_date || "--";
+    const start = formatTime(run.started_at);
+    return `${date} / ${status} / ${start}`;
+  }
+
   function snapshotResult(run) {
     const report = run && run.report;
     if (!report || typeof report !== "object") return null;
@@ -290,6 +307,9 @@
     els.tradingPhase.textContent = tradingDayLabel(status);
     els.dependencies.textContent = dependencySummary(status.dependencies);
     els.refreshTime.textContent = formatTime(new Date().toISOString());
+    if (els.planHint) {
+      els.planHint.textContent = `当前交易日 ${currentTradeDate(status) || "--"} · ${status.timezone || "Asia/Shanghai"}`;
+    }
   }
 
   function renderCards(statusView, runs) {
@@ -297,41 +317,25 @@
     const names = [...knownJobs.map((item) => item.name), ...runs.map((run) => run.job_name)]
       .filter((name, index, array) => name && array.indexOf(name) === index);
     els.cards.innerHTML = names.map((name) => {
-      const run = byName.get(name);
+      const latestRun = byName.get(name);
+      const todayRun = sameTradeDate(latestRun, statusView) ? latestRun : null;
       const schedule = jobSchedule(statusView, name);
-      const state = dailyState(run, schedule, statusView);
-      if (!run) {
-        return `
-          <article class="job-card">
-            <div class="job-card-top">
-              <h2>${escapeHTML(jobTitle(name))}</h2>
-              <span class="status-badge ${escapeHTML(state.className)}">${escapeHTML(state.label)}</span>
-            </div>
-            <p class="job-purpose">${escapeHTML(schedule.purpose || "--")}</p>
-            <dl>
-              <div><dt>预期运行</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
-              <div><dt>cron</dt><dd>${escapeHTML(schedule.schedule || "--")}</dd></div>
-              <div><dt>目标交易日</dt><dd>${escapeHTML(statusView.trading_day && statusView.trading_day.date || "--")}</dd></div>
-              <div><dt>最近运行</dt><dd>--</dd></div>
-            </dl>
-          </article>`;
-      }
-      const status = statusLabel(run.status, run.skipped);
+      const state = dailyState(todayRun, schedule, statusView);
+      const status = todayRun ? statusLabel(todayRun.status, todayRun.skipped) : "";
       return `
         <article class="job-card">
           <div class="job-card-top">
             <h2>${escapeHTML(jobTitle(name))}</h2>
-            <span class="status-badge ${escapeHTML(state.className || statusClass(run.status, run.skipped))}">${escapeHTML(state.label || status)}</span>
+            <span class="status-badge ${escapeHTML(state.className || statusClass(todayRun && todayRun.status, todayRun && todayRun.skipped))}">${escapeHTML(state.label || status)}</span>
           </div>
           <p class="job-purpose">${escapeHTML(schedule.purpose || "--")}</p>
           <dl>
-            <div><dt>预期运行</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
-            <div><dt>交易日</dt><dd>${escapeHTML(run.target_trade_date || "--")}</dd></div>
-            <div><dt>开始</dt><dd>${escapeHTML(formatTime(run.started_at))}</dd></div>
-            <div><dt>完成</dt><dd>${escapeHTML(formatTime(run.finished_at))}</dd></div>
-            <div><dt>耗时</dt><dd>${escapeHTML(formatDuration(run.duration_ms))}</dd></div>
-            <div><dt>运行状态</dt><dd>${escapeHTML(status)}</dd></div>
-            <div class="wide"><dt>最终结果</dt><dd>${escapeHTML(finalResult(run))}</dd></div>
+            <div><dt>计划时间</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
+            <div><dt>cron</dt><dd>${escapeHTML(schedule.schedule || "--")}</dd></div>
+            <div><dt>今日交易日</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
+            <div><dt>今日运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
+            <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>
+            <div class="wide"><dt>今日最终结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>
           </dl>
         </article>`;
     }).join("");
@@ -340,17 +344,15 @@
   function renderTable(statusView, runs) {
     els.count.textContent = `${runs.length} 条`;
     if (!runs.length) {
-      els.body.innerHTML = '<tr><td colspan="10">暂无任务运行记录</td></tr>';
+      els.body.innerHTML = '<tr><td colspan="9">暂无任务运行记录</td></tr>';
       return;
     }
     els.body.innerHTML = runs.map((run, index) => {
       const status = statusLabel(run.status, run.skipped);
       const error = run.error_summary || accountErrorSummary(run) || (Array.isArray(run.report && run.report.errors) ? run.report.errors.join("; ") : "");
-      const schedule = jobSchedule(statusView, run.job_name);
       return `
         <tr data-index="${index}">
           <td>${escapeHTML(jobTitle(run.job_name))}<br><code>${escapeHTML(run.run_id || "")}</code></td>
-          <td>${escapeHTML(expectedLabel(schedule))}</td>
           <td><span class="status-badge ${statusClass(run.status, run.skipped)}">${escapeHTML(status)}</span></td>
           <td>${escapeHTML(run.target_trade_date || "--")}</td>
           <td>${escapeHTML(run.trigger || "--")}</td>
@@ -382,7 +384,7 @@
 
   function renderError(error) {
     els.cards.innerHTML = `<article class="job-card"><div class="job-card-top"><h2>加载失败</h2><span class="status-badge failed">failed</span></div><p>${escapeHTML(error.message)}</p></article>`;
-    els.body.innerHTML = `<tr><td colspan="10">${escapeHTML(error.message)}</td></tr>`;
+    els.body.innerHTML = `<tr><td colspan="9">${escapeHTML(error.message)}</td></tr>`;
   }
 
   async function loadJobs() {
