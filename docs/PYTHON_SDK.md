@@ -1,6 +1,6 @@
 # relay Python SDK 当前实现
 
-更新时间：`2026-06-14`
+更新时间：`2026-06-25`
 
 ## 目标
 
@@ -176,6 +176,106 @@ fill_sub.stop()
 
 当前后端 SSE 事件只说明订单或成交账本发生变化，不直接携带完整订单/成交对象。SDK 收到 `order.changed` 后会自动调用 `list_orders()` 拉取账本并按订单状态去重触发回调；收到 `fill.changed` 后会调用 `list_fills()` 并按 `account_id + gateway_order_id + fill_id` 成交唯一键去重触发回调。
 
+## 写入和变更类方法
+
+SDK 中所有会改变 relay 状态、发布 Redis 指令或写入 PostgreSQL 的方法都集中在下表。策略端需要特别区分“命令发布成功”和“账本最终状态完成”。
+
+| 方法 | 写入目标 | 语义 | 典型调用方 |
+| --- | --- | --- | --- |
+| `submit_order(...)` | Redis `cmd.trade` + relay 订单账本草稿 | 发布单笔下单命令；返回成功只代表 relay 接受命令，不代表柜台或交易所最终接单 | 策略、人工测试 |
+| `submit_orders(...)` | Redis `cmd.trade` + relay 订单账本草稿 | 批量发布下单命令；每笔订单仍有独立 `gateway_order_id`/`idempotency_key` | 策略批量调仓 |
+| `cancel_order(...)` | Redis `cmd.trade` | 发布撤单命令；最终撤单、已成或拒撤仍以订单账本/SSE 为准 | 策略、人工测试 |
+| `refresh_asset()` | Redis `cmd.query` | 触发前置查询资金；不会直接写账本，等 OC reply 被 relay 同步后更新资产 | 日流程任务、调试 |
+| `refresh_positions()` | Redis `cmd.query` | 触发前置查询持仓；完整持仓页完成后会清理本批次缺失的旧持仓 | 日流程任务、调试 |
+| `refresh_orders()` | Redis `cmd.query` | 触发前置查询订单；用于追平外部订单和终态 | 日流程任务、调试 |
+| `refresh_fills()` | Redis `cmd.query` | 触发前置查询成交；用于追平成交账本 | 日流程任务、调试 |
+| `record_job_run(report, ...)` | PostgreSQL `job_runs` | 写入盘前/盘后任务 report JSON 和摘要状态 | Python 日流程任务 |
+| `record_settlement_snapshot(...)` | PostgreSQL `asset_snapshots`、`position_snapshots`、`reconciliation_runs` 等 | 固化 open/close 资产和持仓快照；该接口不向前置发查询，调用前必须先 refresh 并等待本地账本回写 | Python 日流程任务 |
+
+### 下单和撤单
+
+```python
+receipt = client.submit_order(
+    symbol="600000",
+    exchange="SH",
+    side="B",
+    price=9.67,
+    qty=100,
+    client_order_id="strategy-a-0001",
+    gateway_order_id="strategy-a-0001",
+    idempotency_key="strategy-a-0001-submit",
+)
+
+if receipt.replayed:
+    print("same command replayed, no new Redis order command was published")
+
+final_order = client.wait_order_terminal(receipt.gateway_order_id, timeout=30)
+print(final_order.status, final_order.filled_qty)
+
+cancel = client.cancel_order(
+    receipt.gateway_order_id,
+    cancel_id="strategy-a-0001-cancel",
+    idempotency_key="strategy-a-0001-cancel",
+)
+```
+
+`submit_order()` 的 `side` 是 `trade_side` 的兼容别名；二者同时传入时优先使用 `trade_side`。SDK 会在未传入时自动生成 `gateway_order_id`、`client_order_id` 和 `idempotency_key`，但生产策略建议由策略侧持久化生成，便于重启后防重复下单。
+
+批量下单示例：
+
+```python
+receipt = client.submit_orders(
+    [
+        {"symbol": "600000", "exchange": "SH", "trade_side": "B", "price": 9.67, "qty": 100},
+        {"symbol": "000001", "exchange": "SZ", "trade_side": "S", "price": 11.20, "qty": 100},
+    ],
+    idempotency_key="rebalance-20260625-001",
+)
+```
+
+### 查询刷新
+
+```python
+client.refresh_asset()
+client.refresh_positions()
+client.refresh_orders()
+client.refresh_fills()
+```
+
+刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。盘后结算任务会在刷新后轮询本地账本时间戳，确认资产和持仓已晚于本轮刷新开始时间；如果未确认，会把账户加入 `snapshot_blocked_accounts`，避免写入旧日终持仓。
+
+### 任务报告和结算快照落库
+
+```python
+report = {
+    "run_id": "post_close_settlement-20260625",
+    "started_at": "2026-06-25T15:05:01+08:00",
+    "finished_at": "2026-06-25T15:06:20+08:00",
+    "ok": True,
+}
+
+client.record_job_run(
+    report,
+    job_name="post_close_settlement",
+    trigger="cron",
+    status="succeeded",
+    target_trade_date="20260625",
+    timezone="Asia/Shanghai",
+    duration_ms=79000,
+)
+
+client.record_settlement_snapshot(
+    trade_date="20260625",
+    account_ids=["501000114077", "314000046830"],
+    run_id="post_close_settlement-20260625",
+    snapshot_type="close",
+    source="post_close_settlement",
+    dry_run=False,
+)
+```
+
+`record_settlement_snapshot(snapshot_type="open")` 只写日初资产快照；`snapshot_type="close"` 会写收盘资产、当前持仓快照和 reconciliation run。`dry_run=True` 可用于检查输入和返回摘要，不写库。
+
 ## 接口清单
 
 ### 客户端
@@ -226,6 +326,11 @@ client = RelayClient(
 | `on_fill(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 后台成交回调 |
 | `watch_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 阻塞式订单状态回调 |
 | `watch_fills(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 阻塞式成交回调 |
+
+### 任务和账表写入
+
+| SDK 方法 | HTTP API | 说明 |
+| --- | --- | --- |
 | `record_job_run(report, ...)` | `POST /v1/jobs/runs` | 日流程任务报告落盘 |
 | `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 盘前 open 资产快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
 

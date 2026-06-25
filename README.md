@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P1/P2/P4/P5/P6/P7 底座已可用于券商测试环境联调，P8 历史数据与盈亏统计已完成第一版。9092 当前以文档门户同源挂载 `/v1/*` API，接入测试 PostgreSQL、测试 Redis 和测试账户 `00030484`；已实现单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、Redis reply/event 到 PostgreSQL 账本同步、SSE 事件流、Python SDK 0.1.10、盘前/盘后任务、open/close 快照、对账输入/差异表、绩效序列、Meridian bars 基准对照、Meridian level1 SSE 持仓实时估值、研究侧 PostgreSQL 导出 view，以及测试/生产运行环境显式切换护栏。P9 内置模拟柜台已明确暂缓，当前优先按绩效分析设计重构 `/trade#performance`，随后补批量下单测试视图、Playwright 页面回归测试、worker 心跳状态建模和 DLQ 告警。
+- 当前状态: P1/P2/P4/P5/P6/P7 底座已可用于券商测试环境联调，P8 历史数据与盈亏统计已完成第一版。9092 当前以文档门户同源挂载 `/v1/*` API，接入测试 PostgreSQL、测试 Redis 和测试账户 `00030484`；已实现单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、Redis reply/event 到 PostgreSQL 账本同步、SSE 事件流、Python SDK 0.1.10、盘前/盘后任务、open/close 快照、对账输入/差异表、绩效序列、Meridian bars 基准对照、Meridian level1 SSE 持仓实时估值、研究侧 PostgreSQL 导出 view，以及测试/生产运行环境显式切换护栏。SDK 文档已同步写入/变更类方法说明，包括下单、撤单、刷新查询、任务报告和结算快照落库。P9 内置模拟柜台已明确暂缓，当前优先按绩效分析设计重构 `/trade#performance`，随后补批量下单测试视图、Playwright 页面回归测试、worker 心跳状态建模和 DLQ 告警。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。生产账户 `314000045768` 为新接入账户，当前柜台侧暂未准备好，盘前/盘后任务会把该账户查询失败记录为账户级 warning/break，不再导致整个任务失败。生产账户 `314000046830` 当日成交已能通过前置 `fill.list.query` 返回并落库；relay 已修复 `fill_page` 多成交共享 stream id 导致只入库第一条的问题，并清理同订单真实成交与 `relay-summary:*` 合成成交重复。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-06-17`
+- 最近更新时间: `2026-06-25`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -187,6 +187,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 Python 日流程任务入口：`python -m relay.jobs.pre_open_init` 和 `python -m relay.jobs.post_close_settlement`，支持交易日判断、依赖检查、账户刷新、账本快照摘要和 JSON 报告输出。
 - [x] 已封装 Python SDK 给策略开发使用。
 - [x] 参考 Meridian SDK，relay SDK 当前通过内网 HTTP 安装包供策略机 pip 安装。
+- [x] Python SDK 文档补齐写入和变更类方法，明确 `submit_order/submit_orders/cancel_order`、刷新查询、任务报告和结算快照的写入目标、返回语义和调用示例。
 - [x] 定义服务运行模式 `docs`、`api`、`worker`。
 - [x] 增加基础配置加载，支持 `RELAY_CONFIG_PATH` 和 `config/relay.example.yaml` 模板。
 - [x] 增加 `service.environment=test|production` 运行环境字段，`/v1/status` 和 `/trade` 顶部环境标识会展示实际加载环境。
@@ -496,3 +497,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-22`: 修复盘后结算可能固化早盘持仓的问题：`pre_open_init/post_close_settlement` 在发布资金、持仓刷新命令后，会轮询 Relay 本地账本确认资产和持仓时间戳已晚于本轮刷新开始时间；未确认的账户会进入 `snapshot_blocked_accounts` 并跳过本次 open/close 快照落盘，所有账户都未确认时任务失败，避免写入陈旧日终持仓。
 - `2026-06-23`: 根据生产 OC heartbeat 在 15:15 左右停止的现场情况，将生产 `post_close_settlement` 从 15:30 提前到 15:05 `Asia/Shanghai`；同步更新生产配置、示例配置、运维文档和 root crontab。
 - `2026-06-24`: 优化 `/jobs` 任务状态页的信息分层：上方卡片改为“今日与未来计划”，只展示服务端当前配置、今日交易日和今日运行状态；最近一次历史 run 单独作为“上次运行记录”展示，下面表格改为“历史运行记录”，避免把昨天失败的 15:30 运行和今天 15:05 待执行计划混在一起。
+- `2026-06-25`: 同步 Python SDK 文档的写入/变更方法：`docs/PYTHON_SDK.md` 和 `sdk/python/README.md` 现在单独说明下单、撤单、批量下单、资金/持仓/订单/成交刷新、任务报告和结算快照落库的目标、命令接受语义、最终状态确认方式和示例代码；结算快照文档明确调用前需要先刷新并等待 OC reply 合并到账本。

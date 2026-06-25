@@ -68,6 +68,52 @@ and `"failed"`. The SDK accepts `status="completed"` as an alias for
 `"succeeded"` and exposes `target_trade_date`, `timezone`, and `duration_ms`
 as explicit keyword arguments.
 
+## Write Methods
+
+Methods that publish commands or persist relay ledger records:
+
+| Method | Target | Notes |
+| --- | --- | --- |
+| `submit_order(...)` | Redis `cmd.trade` + draft order ledger | Single order command. Success means relay accepted the command, not final broker/exchange status. |
+| `submit_orders(...)` | Redis `cmd.trade` + draft order ledger | Batch order command. Each child order still needs its own durable idempotency identity. |
+| `cancel_order(...)` | Redis `cmd.trade` | Cancel command. Final result still comes from order callbacks, `wait_order_terminal()`, or `list_orders()`. |
+| `refresh_asset()` | Redis `cmd.query` | Ask OC to query broker asset. Ledger updates after OC reply is merged. |
+| `refresh_positions()` | Redis `cmd.query` | Ask OC to query broker positions. A completed full page clears stale current positions not returned by the broker. |
+| `refresh_orders()` | Redis `cmd.query` | Ask OC to query broker orders. Useful for external orders and final status reconciliation. |
+| `refresh_fills()` | Redis `cmd.query` | Ask OC to query broker fills. Useful for end-of-day reconciliation. |
+| `record_job_run(report, ...)` | PostgreSQL `job_runs` | Persist daily job report JSON and summary status. |
+| `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset snapshots, close position snapshots, and reconciliation run inputs. |
+
+Example settlement write:
+
+```python
+client.refresh_asset()
+client.refresh_positions()
+client.refresh_orders()
+client.refresh_fills()
+
+client.record_job_run(
+    {"run_id": "post_close_settlement-20260625", "ok": True},
+    job_name="post_close_settlement",
+    trigger="cron",
+    status="succeeded",
+    target_trade_date="20260625",
+    timezone="Asia/Shanghai",
+)
+
+client.record_settlement_snapshot(
+    trade_date="20260625",
+    account_ids=["501000114077"],
+    run_id="post_close_settlement-20260625",
+    snapshot_type="close",
+    source="post_close_settlement",
+    dry_run=False,
+)
+```
+
+`record_settlement_snapshot()` does not query OC by itself. Run refresh commands
+first and wait until the local ledger has merged fresh asset/position replies.
+
 P8 helper methods are available for strategy and research tooling:
 
 - `get_performance_daily(trade_date=...)`
