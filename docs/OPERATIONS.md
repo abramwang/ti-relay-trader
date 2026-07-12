@@ -200,6 +200,36 @@ RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/rela
 
 生产化建议将 API/docs 进程和 worker 进程拆开部署，避免 HTTP 重启影响 Redis 消费位点推进。
 
+### 9092 常驻服务脚本
+
+容器内 9092 由 `scripts/relay-docs-service.sh` 管理。默认读取未提交的 `config/relay.prod.yaml`，监听 `0.0.0.0:9092`，日志写入 `/tmp/relay-docs.log`，PID 写入 `/tmp/relay-docs.pid`。
+
+常用命令：
+
+```bash
+scripts/relay-docs-service.sh status
+scripts/relay-docs-service.sh start
+scripts/relay-docs-service.sh stop
+scripts/relay-docs-service.sh restart
+```
+
+安装容器启动自恢复和进程健康守护：
+
+```bash
+scripts/relay-docs-service.sh install-cron
+```
+
+该命令会在 root crontab 中维护 `RELAY_DOCS_AUTOSTART` 块：
+
+```cron
+# RELAY_DOCS_AUTOSTART_BEGIN
+@reboot cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-docs-service.sh start >> /var/log/relay/relay-docs-service-cron.log 2>&1
+* * * * * cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-docs-service.sh start >> /var/log/relay/relay-docs-service-cron.log 2>&1
+# RELAY_DOCS_AUTOSTART_END
+```
+
+脚本启动前会做生产护栏检查：当 `RELAY_EXPECTED_ENV=production` 时，配置必须声明 `service.environment=production`；如果配置里存在 `trading_enabled: true`，脚本默认拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true`。因此生产下单权限不会因为容器重启被静默放开。
+
 ## 日志与响应
 
 当前 Go 服务使用结构化日志：

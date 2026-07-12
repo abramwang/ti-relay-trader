@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P1/P2/P4/P5/P6/P7 底座已可用于券商测试环境联调，P8 历史数据与盈亏统计已完成第一版。9092 当前以文档门户同源挂载 `/v1/*` API，接入测试 PostgreSQL、测试 Redis 和测试账户 `00030484`；已实现单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、Redis reply/event 到 PostgreSQL 账本同步、SSE 事件流、Python SDK 0.1.10、盘前/盘后任务、open/close 快照、对账输入/差异表、绩效序列、Meridian bars 基准对照、Meridian level1 SSE 持仓实时估值、研究侧 PostgreSQL 导出 view，以及测试/生产运行环境显式切换护栏。SDK 文档已同步写入/变更类方法说明，包括下单、撤单、刷新查询、任务报告和结算快照落库。P9 内置模拟柜台已明确暂缓，当前优先按绩效分析设计重构 `/trade#performance`，随后补批量下单测试视图、Playwright 页面回归测试、worker 心跳状态建模和 DLQ 告警。
-- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。生产账户 `314000045768` 为新接入账户，当前柜台侧暂未准备好，盘前/盘后任务会把该账户查询失败记录为账户级 warning/break，不再导致整个任务失败。生产账户 `314000046830` 当日成交已能通过前置 `fill.list.query` 返回并落库；relay 已修复 `fill_page` 多成交共享 stream id 导致只入库第一条的问题，并清理同订单真实成交与 `relay-summary:*` 合成成交重复。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-06-25`
+- 当前状态: P1/P2/P4/P5/P6/P7 底座已可用于券商测试环境联调，P8 历史数据与盈亏统计已完成第一版。9092 当前以文档门户同源挂载 `/v1/*` API，接入测试 PostgreSQL、测试 Redis 和测试账户 `00030484`；已实现单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、Redis reply/event 到 PostgreSQL 账本同步、SSE 事件流、Python SDK 0.1.10、盘前/盘后任务、open/close 快照、对账输入/差异表、绩效序列、Meridian bars 基准对照、Meridian level1 SSE 持仓实时估值、研究侧 PostgreSQL 导出 view，以及测试/生产运行环境显式切换护栏。9092 常驻进程已由 `scripts/relay-docs-service.sh` 管理，并写入 root crontab 的 `RELAY_DOCS_AUTOSTART` 自启动/健康守护块。SDK 文档已同步写入/变更类方法说明，包括下单、撤单、刷新查询、任务报告和结算快照落库。P9 内置模拟柜台已明确暂缓，当前优先按绩效分析设计重构 `/trade#performance`，随后补批量下单测试视图、Playwright 页面回归测试、worker 心跳状态建模和 DLQ 告警。
+- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
+- 最近更新时间: `2026-07-12`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -195,6 +195,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 配置加载增加生产切换护栏：校验账户交易开关、生产模拟账户冲突和 Redis Stream 前缀与 `redis.env/broker/gateway` 一致性。
 - [x] 首页新增运行环境控制台，直观展示当前测试/生产环境、配置文件、Redis/数据库配置、账户路由、下单权限、自动刷新和切换 runbook 入口。
 - [x] 首页运行环境控制台新增测试/生产候选配置卡片和本机切换命令，真实切换通过 `scripts/switch-relay-env.sh` 执行，生产下单权限默认被脚本拦截。
+- [x] 新增 `scripts/relay-docs-service.sh` 管理 9092 常驻进程，并安装 root crontab `RELAY_DOCS_AUTOSTART` 块，容器启动和进程异常退出后会自动恢复生产只读服务。
 - [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
 - [x] P3 多账户路由收敛为 done：新增 `GET /v1/account-routes`，可只读查看每个账户的 broker/gateway/stream prefix、查询/交易权限、只读状态和 Redis stream key。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
@@ -305,6 +306,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 当前无阻塞。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:05 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
+- 9092 常驻进程已安装到 root crontab 的 `RELAY_DOCS_AUTOSTART` 管理块，`@reboot` 和每分钟 watchdog 都调用 `scripts/relay-docs-service.sh start`。该脚本默认读取 `config/relay.prod.yaml`，生产配置若出现 `trading_enabled=true` 会拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true` 完成人工风险确认。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；下一步需要输出更完整的人工复核报告。
 - 盘前/盘后任务的账户级查询异常不会再直接把整体任务置为失败：例如新账户柜台未准备好、某账户暂时没有资产快照，会在 report 的 `account_errors` 中独立标注。若资金/持仓刷新未在本地账本确认，该账户会进入 `snapshot_blocked_accounts` 并从本次 open/close 快照账户列表中剔除，避免把早盘或旧持仓固化为日终持仓。整体任务失败只保留给 Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题。
@@ -498,3 +500,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-23`: 根据生产 OC heartbeat 在 15:15 左右停止的现场情况，将生产 `post_close_settlement` 从 15:30 提前到 15:05 `Asia/Shanghai`；同步更新生产配置、示例配置、运维文档和 root crontab。
 - `2026-06-24`: 优化 `/jobs` 任务状态页的信息分层：上方卡片改为“今日与未来计划”，只展示服务端当前配置、今日交易日和今日运行状态；最近一次历史 run 单独作为“上次运行记录”展示，下面表格改为“历史运行记录”，避免把昨天失败的 15:30 运行和今天 15:05 待执行计划混在一起。
 - `2026-06-25`: 同步 Python SDK 文档的写入/变更方法：`docs/PYTHON_SDK.md` 和 `sdk/python/README.md` 现在单独说明下单、撤单、批量下单、资金/持仓/订单/成交刷新、任务报告和结算快照落库的目标、命令接受语义、最终状态确认方式和示例代码；结算快照文档明确调用前需要先刷新并等待 OC reply 合并到账本。
+- `2026-07-12`: 容器重启后恢复 9092 生产只读服务，确认 `/v1/status` 为 `production ok`、账户 3 个、`trading_enabled=0`、Redis/PostgreSQL 依赖 ok；新增 `scripts/relay-docs-service.sh` 并安装 root crontab `RELAY_DOCS_AUTOSTART` 自启动/每分钟健康守护块，后续容器重启或进程退出会自动拉起 9092。
