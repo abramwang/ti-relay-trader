@@ -83,12 +83,16 @@ func NewMeridianClient(cfg config.MarketConfig) (*MeridianClient, error) {
 	if dataScope == "" {
 		dataScope = "realtime"
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	streamTransport := http.DefaultTransport.(*http.Transport).Clone()
+	streamTransport.Proxy = nil
 	return &MeridianClient{
 		baseURL:             baseURL,
 		snapshotMarketLevel: marketLevel,
 		snapshotDataScope:   dataScope,
-		httpClient:          &http.Client{Timeout: timeout},
-		streamClient:        &http.Client{},
+		httpClient:          &http.Client{Timeout: timeout, Transport: transport},
+		streamClient:        &http.Client{Transport: streamTransport},
 		now:                 time.Now,
 		cache:               make(map[string]meridianCacheEntry),
 		barsCacheTTL:        marketBarsCacheTTL,

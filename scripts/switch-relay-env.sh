@@ -23,6 +23,17 @@ die() {
   exit 1
 }
 
+prepare_relay_env() {
+  unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
+  local bypass="localhost,127.0.0.1,.quantstage.com,quantstage.com"
+  if [[ -n "${NO_PROXY:-}" ]]; then
+    export NO_PROXY="$NO_PROXY,$bypass"
+  else
+    export NO_PROXY="$bypass"
+  fi
+  export no_proxy="$NO_PROXY"
+}
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:-}"
 ALLOW_PROD_TRADING=false
@@ -127,8 +138,10 @@ fi
 
 printf 'Starting relay 9092 with %s...\n' "$(realpath --relative-to="$ROOT" "$CONFIG" 2>/dev/null || printf '%s' "$CONFIG")"
 if [[ -n "$ADDR" ]]; then
+  prepare_relay_env
   setsid "$BIN" -config "$CONFIG" -root "$ROOT" -addr "$ADDR" > "$LOG_FILE" 2>&1 < /dev/null &
 else
+  prepare_relay_env
   setsid "$BIN" -config "$CONFIG" -root "$ROOT" > "$LOG_FILE" 2>&1 < /dev/null &
 fi
 new_pid=$!

@@ -308,7 +308,14 @@
     els.dependencies.textContent = dependencySummary(status.dependencies);
     els.refreshTime.textContent = formatTime(new Date().toISOString());
     if (els.planHint) {
-      els.planHint.textContent = `当前交易日 ${currentTradeDate(status) || "--"} · ${status.timezone || "Asia/Shanghai"}`;
+      const tradingDay = status && status.trading_day || {};
+      const current = currentTradeDate(status) || "--";
+      const previous = normalizeDate(tradingDay.previous_or_current_trading_date);
+      if (isNonTradingDay(status)) {
+        els.planHint.textContent = `当前日期 ${current} 非交易日 · 交易日任务跳过 · 最近交易日 ${previous || "--"}`;
+      } else {
+        els.planHint.textContent = `当前交易日 ${current} · ${status.timezone || "Asia/Shanghai"}`;
+      }
     }
   }
 
@@ -332,7 +339,7 @@
           <dl>
             <div><dt>计划时间</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
             <div><dt>cron</dt><dd>${escapeHTML(schedule.schedule || "--")}</dd></div>
-            <div><dt>今日交易日</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
+            <div><dt>当前日期</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
             <div><dt>今日运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
             <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>
             <div class="wide"><dt>今日最终结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>

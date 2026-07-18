@@ -230,6 +230,8 @@ scripts/relay-docs-service.sh install-cron
 
 脚本启动前会做生产护栏检查：当 `RELAY_EXPECTED_ENV=production` 时，配置必须声明 `service.environment=production`；如果配置里存在 `trading_enabled: true`，脚本默认拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true`。因此生产下单权限不会因为容器重启被静默放开。
 
+分钟级 watchdog 的 `start` 路径只检查 `/healthz` 和 9092 进程参数，不会每分钟请求 `/v1/status`。`/v1/status` 会查询 Meridian 交易日信息，如果容器中存在临时 `HTTP_PROXY/HTTPS_PROXY`，可能让内网 Meridian 请求走失效代理；`relay-docs-service.sh`、`switch-relay-env.sh` 和 Go Meridian 客户端都会避免继承这些代理环境。
+
 ## 日志与响应
 
 当前 Go 服务使用结构化日志：
@@ -242,7 +244,7 @@ scripts/relay-docs-service.sh install-cron
 ## 健康检查口径
 
 1. `GET /healthz` 只用于进程存活探测，不做数据库或 Redis ping。
-2. `GET /v1/status` 用于服务状态和依赖健康检查，包含账户摘要、PostgreSQL、Redis、订单服务、Meridian 行情代理、SSE 事件流和自动刷新状态。
+2. `GET /v1/status` 用于服务状态和依赖健康检查，包含账户摘要、PostgreSQL、Redis、订单服务、Meridian 行情代理、SSE 事件流和自动刷新状态；任务状态页依赖这里的 Meridian 交易日结果判断“交易日任务运行/非交易日跳过”。
 3. PostgreSQL 和 Redis 已配置时会执行短超时 ping；未配置时返回 `not_configured`，已配置但不可用时返回 `error`、`timeout` 或 `unavailable`。
 4. 健康检查响应不返回 DSN、密码、Token、Redis URL 或底层错误原文，只返回通用摘要，避免把本地配置泄露到页面和日志里。
 

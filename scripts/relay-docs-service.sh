@@ -36,7 +36,22 @@ is_service_pid() {
   local pid="${1:-}"
   [[ -n "$pid" ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  ps -p "$pid" -o args= 2>/dev/null | grep -F -- "$BIN" >/dev/null
+  process_args "$pid" | grep -F -- "$BIN" >/dev/null
+}
+
+process_args() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 1
+  ps -p "$pid" -o args= 2>/dev/null || true
+}
+
+is_expected_service_pid() {
+  local pid="${1:-}"
+  local args
+  is_service_pid "$pid" || return 1
+  args="$(process_args "$pid")"
+  grep -F -- "-config $CONFIG" <<<"$args" >/dev/null || return 1
+  grep -F -- "-root $ROOT_DIR" <<<"$args" >/dev/null
 }
 
 running_pids() {
@@ -63,6 +78,17 @@ print("{} {} trading_enabled={} redis={} database={}".format(
     deps.get("redis", {}).get("status", ""),
     deps.get("database", {}).get("status", ""),
 ))' 2>/dev/null || true
+}
+
+prepare_relay_env() {
+  unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
+  local bypass="localhost,127.0.0.1,.quantstage.com,quantstage.com"
+  if [[ -n "${NO_PROXY:-}" ]]; then
+    export NO_PROXY="$NO_PROXY,$bypass"
+  else
+    export NO_PROXY="$bypass"
+  fi
+  export no_proxy="$NO_PROXY"
 }
 
 validate_config() {
@@ -100,10 +126,14 @@ build_binary() {
 
 write_pid_from_existing() {
   local pid
-  pid="$(running_pids | head -n 1 || true)"
-  if [[ -n "$pid" ]]; then
-    printf '%s\n' "$pid" > "$PID_FILE"
-  fi
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if is_expected_service_pid "$pid"; then
+      printf '%s\n' "$pid" > "$PID_FILE"
+      return 0
+    fi
+  done < <(running_pids)
+  return 1
 }
 
 start_service() {
@@ -112,18 +142,24 @@ start_service() {
 
   local pid env
   pid="$(pid_value || true)"
-  env="$(current_environment)"
-  if health_ok && [[ "$env" == "$EXPECTED_ENV" ]]; then
-    if ! is_service_pid "$pid"; then
-      write_pid_from_existing
+  if health_ok; then
+    if ! is_expected_service_pid "$pid"; then
+      write_pid_from_existing || true
       pid="$(pid_value || true)"
     fi
-    echo "$SERVICE_NAME already healthy pid=${pid:-unknown} $(status_summary)"
-    return 0
+    if is_expected_service_pid "$pid"; then
+      echo "$SERVICE_NAME already healthy pid=${pid:-unknown}"
+      return 0
+    fi
+    env="$(current_environment)"
+    if [[ "$env" == "$EXPECTED_ENV" ]]; then
+      echo "$SERVICE_NAME already healthy pid=${pid:-unknown} $(status_summary)"
+      return 0
+    fi
   fi
 
   if is_service_pid "$pid"; then
-    echo "$SERVICE_NAME pid=$pid is running but unhealthy or environment=$env; restarting"
+    echo "$SERVICE_NAME pid=$pid is running but unhealthy or not using expected config; restarting"
     stop_service
   fi
 
@@ -131,6 +167,7 @@ start_service() {
   echo "$SERVICE_NAME starting config=$CONFIG addr=$ADDR"
   (
     cd "$ROOT_DIR"
+    prepare_relay_env
     setsid "$BIN" -config "$CONFIG" -root "$ROOT_DIR" -addr "$ADDR" >> "$LOG_FILE" 2>&1 < /dev/null &
     echo $! > "$PID_FILE"
   )
