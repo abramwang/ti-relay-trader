@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.13"
+SDK_VERSION = "0.1.14"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -348,6 +348,44 @@ class RelayClient:
             json_body={"trade_date": trade_date, "status": status},
         )
         return data.get("economic_nav", data)
+
+    def preview_economic_nav_reconciliation(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+        observed_trade_date: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Preview T+1 observed-open-asset reconciliation without writing."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/economic-nav/reconcile",
+            query={"trade_date": trade_date, "observed_trade_date": observed_trade_date},
+        )
+        return data.get("economic_nav_reconciliation", data)
+
+    def rebuild_economic_nav_reconciliation(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+        observed_trade_date: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Persist T+1 observed-open-asset reconciliation.
+
+        Relay only accepts this request when server-side
+        ``performance.settings_write_enabled`` is enabled.
+        """
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "POST",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/economic-nav/reconcile",
+            json_body={"trade_date": trade_date, "observed_trade_date": observed_trade_date},
+        )
+        return data.get("economic_nav_reconciliation", data)
 
     def list_economic_nav(
         self,

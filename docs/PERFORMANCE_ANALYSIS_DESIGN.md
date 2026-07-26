@@ -580,7 +580,7 @@ provisional_close_economic_nav =
 3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
 4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。
 5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
-6. `performance_nav_reconciliations` 当前先写 same-day provisional 对账记录，T+1 盘前 observed open assets 更新和人工确认流程后续补齐。
+6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认、自动 finalized 推进和页面告警展示后续补齐。
 
 ### 资产对账辅线
 
@@ -606,6 +606,13 @@ reconciliation_residual =
 4. `reconciliation_residual` 回写原交易日的独立 `settlement_adjustment`，不静默摊给股票截面、ETF 截面或 ETF T0。
 5. 建议默认阈值配置化：绝对差异不超过 `max(50 CNY, open_nav * 0.1 bp)` 时自动完成；不超过 `max(500 CNY, open_nav * 1 bp)` 时保留警告并等待人工确认；更大差异保持 `provisional`，不得进入正式累计净值。
 6. 周五或节假日前的记录在下一个交易日盘前再最终确认，不按自然日强行结算。
+
+当前接口实现：
+
+1. `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览。`observed_trade_date` 为空时通过 Meridian 交易日历取 T 日后的下一个交易日；若没有已落库 current NAV，preview 会临时试算 `economic-nav/preview` 作为对账基准并打 `economic_nav_preview_source` 标记。
+2. `POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 受 `performance.settings_write_enabled` 保护，要求已存在 current `performance_nav_versions`，然后按 `performance_nav_pk` 幂等 upsert 对账记录。
+3. 第一版 `observed_open_assets = open.cash_total + sum(open_positions.market_value)`；盘前 `external_flow` 和 `income_expense` 只纳入 09:30 及以前的已确认手工流水，09:30 后发生的流水会被排除并打质量标记。
+4. 本轮只更新 `performance_nav_reconciliations.status` 为 `auto_completed/review_required/blocked`，不自动把 NAV 改成 `finalized`；正式 finalized 仍等待人工确认和告警页面闭环。
 
 该模式让小额清算误差在 T+1 被吸收且不跨日累积，同时保留可追溯的估算值、校正值和误差来源。
 
@@ -668,6 +675,8 @@ repo_receivable =
 | 基准行情 | `GET /v1/meridian/market/bars` |
 | 证券主数据 | `GET /v1/meridian/metadata/instruments` |
 | 复权因子 | `GET /v1/meridian/metadata/adjust-factors` |
+| 经济净值 | `GET /v1/accounts/{account_id}/performance/economic-nav/preview`、`POST /v1/accounts/{account_id}/performance/economic-nav/rebuild` |
+| T+1 净值对账 | `GET/POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` |
 
 规划中的绩效配置写接口：
 

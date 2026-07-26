@@ -380,7 +380,7 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 - `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。
 - `cash_ledger` 扩展为可人工维护的资金流水，支持 `external` 外部入出金、`internal_transfer` 极速/普通柜台内部划转、`settlement_income` 清算收入、`fee` 和 `adjustment`。外部净流入修正收益率，内部划转成对记录但不计入账户净收益。
 - `performance_nav_baselines` 记录手工确认的日初经济净值基线，解决逆回购回款、占款释放和柜台间划转导致的前一日日终资产与当日日初资产差异。
-- `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。`economic-nav/preview` 可无写权限试算，`economic-nav/rebuild` 会把同账户同交易日旧 current 版本退役并插入新 current 版本；策略归因尚未拆分完成的账户日收益写入 `pnl_components.unattributed`。
+- `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。`economic-nav/preview` 可无写权限试算，`economic-nav/rebuild` 会把同账户同交易日旧 current 版本退役并插入新 current 版本；`economic-nav/reconcile` 读取下一交易日 open 资产/持仓快照，计算 T+1 观测资产残差并可受写开关保护落库；策略归因尚未拆分完成的账户日收益写入 `pnl_components.unattributed`。
 - `reverse_repo_accruals` 保存 `204001.SH` 逆回购应计结果。估算口径为 `principal=qty*100`，`gross_interest=principal*(成交年化利率/100)*实际占款天数/365`，费用优先取成交实际费用，其次取账户费率规则，缺失时标记 `missing_repo_fee`。实际占款天数由 Meridian 交易日接口向后取两个交易日计算，跨周末会自然得到 3 天。
 
 `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的第一版公式为：
@@ -392,6 +392,8 @@ daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_fl
 ```
 
 其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`；逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算。当前策略归因尚未完全拆分，`cash_management` 会承接逆回购净息和已知 `income_expense`，剩余 `account_day_pnl` 暂记 `unattributed` 并标记 `strategy_attribution_pending`。
+
+`GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览 T+1 对账；`POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 持久化对账结果，仍由 `performance.settings_write_enabled` 控制。`observed_trade_date` 为空时会通过 Meridian 交易日接口向后取下一交易日。第一版公式为 `observed_open_assets = asset_snapshots(open).cash_total + sum(position_snapshots(open).market_value)`，再扣减 `provisional_close_economic_nav`、盘前已确认 `external_flow` 和盘前已确认 `income_expense` 后得到 `residual`；状态按配置阈值写为 `auto_completed/review_required/blocked`。当前不会自动把 NAV 版本转为 `finalized`，人工确认闭环后续补齐。
 
 人工输入类写接口默认关闭，由配置 `performance.settings_write_enabled` 控制。生产 9092 当前应保持 `false`，仅在服务器侧明确切换配置后才能通过 `/trade#performance-settings` 或 API Console 新增费率、资金流水、日初净值和持久化逆回购估算。
 

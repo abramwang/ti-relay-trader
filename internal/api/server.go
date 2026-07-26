@@ -95,6 +95,7 @@ type PerformanceService interface {
 	CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error)
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVOptions) (relayperformance.EconomicNAVResult, error)
+	ReconcileEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVReconcileOptions) (relayperformance.EconomicNAVReconcileResult, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 }
@@ -1228,6 +1229,17 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 				s.handleCalculateEconomicNAV(w, r, accountID, true)
 				return
 			}
+			if len(parts) == 4 && parts[3] == "reconcile" {
+				switch r.Method {
+				case http.MethodGet:
+					s.handleReconcileEconomicNAV(w, r, accountID, false)
+				case http.MethodPost:
+					s.handleReconcileEconomicNAV(w, r, accountID, true)
+				default:
+					httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+				}
+				return
+			}
 			httpx.WriteNotFound(w, r)
 		case "nav-reconciliations":
 			if len(parts) != 3 || r.Method != http.MethodGet {
@@ -2002,6 +2014,48 @@ func (s *Server) handleCalculateEconomicNAV(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"economic_nav": result})
+}
+
+func (s *Server) handleReconcileEconomicNAV(w http.ResponseWriter, r *http.Request, accountID string, persist bool) {
+	if persist && !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	req := EconomicNAVRequest{
+		TradeDate:         strings.TrimSpace(r.URL.Query().Get("trade_date")),
+		ObservedTradeDate: strings.TrimSpace(r.URL.Query().Get("observed_trade_date")),
+	}
+	if persist && r.Body != nil {
+		defer r.Body.Close()
+		var body EconomicNAVRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid economic nav reconciliation body", err.Error())
+			return
+		}
+		if strings.TrimSpace(body.TradeDate) != "" {
+			req.TradeDate = strings.TrimSpace(body.TradeDate)
+		}
+		if strings.TrimSpace(body.ObservedTradeDate) != "" {
+			req.ObservedTradeDate = strings.TrimSpace(body.ObservedTradeDate)
+		}
+	}
+	if req.TradeDate == "" {
+		req.TradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	result, err := s.perf.ReconcileEconomicNAV(r.Context(), accountID, req.TradeDate, relayperformance.EconomicNAVReconcileOptions{
+		Persist:           persist,
+		ObservedTradeDate: req.ObservedTradeDate,
+	})
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"economic_nav_reconciliation": result})
 }
 
 func (s *Server) handleListPerformanceNAVs(w http.ResponseWriter, r *http.Request, accountID string) {
@@ -3476,8 +3530,9 @@ type PerformanceOperatorRequest struct {
 }
 
 type EconomicNAVRequest struct {
-	TradeDate string `json:"trade_date,omitempty"`
-	Status    string `json:"status,omitempty"`
+	TradeDate         string `json:"trade_date,omitempty"`
+	ObservedTradeDate string `json:"observed_trade_date,omitempty"`
+	Status            string `json:"status,omitempty"`
 }
 
 type JobRunRequest struct {

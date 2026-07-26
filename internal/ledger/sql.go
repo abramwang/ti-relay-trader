@@ -359,6 +359,54 @@ ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
 LIMIT 1
 `
 
+const assetPositionObservationSQL = `
+WITH asset AS (
+    SELECT
+        account_id,
+        trade_date,
+        snapshot_type,
+        cash_available,
+        cash_total,
+        net_asset,
+        market_value,
+        stock_value,
+        fund_value,
+        captured_at
+    FROM asset_snapshots
+    WHERE account_id = $1
+        AND trade_date = $2::date
+        AND snapshot_type = $3
+    ORDER BY captured_at DESC, asset_snapshot_pk DESC
+    LIMIT 1
+),
+positions AS (
+    SELECT
+        count(*)::bigint AS positions_count,
+        COALESCE(sum(market_value), 0) AS position_market_value,
+        max(captured_at) AS position_captured_at
+    FROM position_snapshots
+    WHERE account_id = $1
+        AND trade_date = $2::date
+        AND snapshot_type = $3
+)
+SELECT
+    asset.account_id,
+    asset.trade_date::text,
+    asset.snapshot_type,
+    asset.cash_available,
+    asset.cash_total,
+    asset.net_asset,
+    asset.market_value,
+    asset.stock_value,
+    asset.fund_value,
+    positions.positions_count,
+    positions.position_market_value,
+    asset.captured_at,
+    positions.position_captured_at
+FROM asset
+CROSS JOIN positions
+`
+
 const dailyPerformanceSQL = `
 WITH asset AS (
     SELECT

@@ -241,11 +241,80 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 	}
 }
 
+func TestReconcileEconomicNAVUsesNextOpenObservation(t *testing.T) {
+	store := &fakePerformanceStore{
+		navs: []ledger.PerformanceNAV{{
+			PerformanceNAVPK: 42,
+			AccountID:        "acct-1",
+			TradeDate:        "2026-07-24",
+			Version:          2,
+			Status:           "provisional",
+			FormulaVersion:   "performance_economic_nav.unit",
+			CloseEconomicNAV: 1000000,
+			QualityFlags:     []string{"strategy_attribution_pending"},
+		}},
+		observation: ledger.AssetPositionObservation{
+			AccountID:           "acct-1",
+			TradeDate:           "2026-07-27",
+			SnapshotType:        "open",
+			CashTotal:           880000,
+			PositionMarketValue: 120020,
+			PositionsCount:      3,
+		},
+		cashByClass: map[string][]ledger.CashLedgerEntry{
+			"external_flow": {{
+				EntryID:     "deposit-1",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-07-27",
+				Amount:      100,
+				EffectiveAt: time.Date(2026, 7, 27, 9, 1, 0, 0, time.FixedZone("CST", 8*3600)),
+				Status:      "confirmed",
+			}},
+			"income_expense": {{
+				EntryID:     "interest-1",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-07-27",
+				Amount:      -80,
+				EffectiveAt: time.Date(2026, 7, 27, 9, 1, 0, 0, time.FixedZone("CST", 8*3600)),
+				Status:      "confirmed",
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, Calendar: weekdayCalendar{}})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ReconcileEconomicNAV(context.Background(), "acct-1", "20260724", EconomicNAVReconcileOptions{Persist: true})
+	if err != nil {
+		t.Fatalf("ReconcileEconomicNAV() error = %v", err)
+	}
+
+	if !result.Persisted {
+		t.Fatal("Persisted = false, want true")
+	}
+	if result.ObservedTradeDate != "2026-07-27" {
+		t.Fatalf("observed date = %q", result.ObservedTradeDate)
+	}
+	assertClose(t, result.Reconciliation.ObservedOpenAssets, 1000020)
+	assertClose(t, result.Reconciliation.OvernightExternalNetFlow, 100)
+	assertClose(t, result.Reconciliation.KnownOvernightIncomeExpense, -80)
+	assertClose(t, result.Reconciliation.Residual, 0)
+	if result.Status != "auto_completed" {
+		t.Fatalf("status = %q", result.Status)
+	}
+	if len(store.reconciliationUpserts) != 1 || store.reconciliationUpserts[0].PerformanceNAVPK != 42 {
+		t.Fatalf("reconciliation upserts = %#v", store.reconciliationUpserts)
+	}
+}
+
 type fakePerformanceStore struct {
 	fills                 []trading.Fill
 	fillQueries           []trading.FillQuery
 	daily                 ledger.DailyPerformance
 	dailyErr              error
+	observation           ledger.AssetPositionObservation
+	observationErr        error
 	repoRule              ledger.FeeRule
 	repoRuleErr           error
 	cashByClass           map[string][]ledger.CashLedgerEntry
@@ -269,6 +338,13 @@ func (store *fakePerformanceStore) GetDailyPerformance(_ context.Context, _, _ s
 		return ledger.DailyPerformance{}, store.dailyErr
 	}
 	return store.daily, nil
+}
+
+func (store *fakePerformanceStore) GetAssetPositionObservation(_ context.Context, _, _, _ string) (ledger.AssetPositionObservation, error) {
+	if store.observationErr != nil {
+		return ledger.AssetPositionObservation{}, store.observationErr
+	}
+	return store.observation, nil
 }
 
 func (store *fakePerformanceStore) CreateFeeRule(_ context.Context, rule ledger.FeeRule) (ledger.FeeRule, error) {

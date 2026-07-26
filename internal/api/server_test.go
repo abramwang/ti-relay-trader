@@ -2162,6 +2162,34 @@ func TestEconomicNAVPreviewEndpoint(t *testing.T) {
 	}
 }
 
+func TestEconomicNAVReconcilePreviewEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		economicNAVReconciliation: relayperformance.EconomicNAVReconcileResult{
+			AccountID:         "acct-1",
+			TradeDate:         "2026-07-24",
+			ObservedTradeDate: "2026-07-27",
+			Status:            "auto_completed",
+			Reconciliation:    ledger.NAVReconciliation{AccountID: "acct-1", TradeDate: "2026-07-24", Status: "auto_completed"},
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/economic-nav/reconcile?trade_date=20260724&observed_trade_date=20260727", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.economicNAVReconcileAccountID != "acct-1" || perf.economicNAVReconcileTradeDate != "20260724" || perf.economicNAVReconcileOptions.Persist || perf.economicNAVReconcileOptions.ObservedTradeDate != "20260727" {
+		t.Fatalf("economic nav reconcile args account=%q date=%q options=%#v", perf.economicNAVReconcileAccountID, perf.economicNAVReconcileTradeDate, perf.economicNAVReconcileOptions)
+	}
+}
+
 func TestEconomicNAVRebuildRequiresWriteEnabled(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -2179,6 +2207,26 @@ func TestEconomicNAVRebuildRequiresWriteEnabled(t *testing.T) {
 	}
 	if perf.economicNAVAccountID != "" {
 		t.Fatalf("economic nav rebuild was called: %q", perf.economicNAVAccountID)
+	}
+}
+
+func TestEconomicNAVReconcileRebuildRequiresWriteEnabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/performance/economic-nav/reconcile", strings.NewReader(`{"trade_date":"20260724","observed_trade_date":"20260727"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if perf.economicNAVReconcileAccountID != "" {
+		t.Fatalf("economic nav reconcile rebuild was called: %q", perf.economicNAVReconcileAccountID)
 	}
 }
 
@@ -2207,6 +2255,35 @@ func TestEconomicNAVRebuildEndpoint(t *testing.T) {
 	}
 	if perf.economicNAVAccountID != "acct-1" || perf.economicNAVTradeDate != "20260724" || !perf.economicNAVOptions.Persist || perf.economicNAVOptions.Status != "finalized" {
 		t.Fatalf("economic nav args account=%q date=%q options=%#v", perf.economicNAVAccountID, perf.economicNAVTradeDate, perf.economicNAVOptions)
+	}
+}
+
+func TestEconomicNAVReconcileRebuildEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Performance.SettingsWriteEnabled = true
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		economicNAVReconciliation: relayperformance.EconomicNAVReconcileResult{
+			AccountID:         "acct-1",
+			TradeDate:         "2026-07-24",
+			ObservedTradeDate: "2026-07-27",
+			Status:            "review_required",
+			Persisted:         true,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/performance/economic-nav/reconcile", strings.NewReader(`{"trade_date":"20260724","observed_trade_date":"20260727"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.economicNAVReconcileAccountID != "acct-1" || perf.economicNAVReconcileTradeDate != "20260724" || !perf.economicNAVReconcileOptions.Persist || perf.economicNAVReconcileOptions.ObservedTradeDate != "20260727" {
+		t.Fatalf("economic nav reconcile args account=%q date=%q options=%#v", perf.economicNAVReconcileAccountID, perf.economicNAVReconcileTradeDate, perf.economicNAVReconcileOptions)
 	}
 }
 
@@ -2271,24 +2348,28 @@ type fakeAccountAliasStore struct {
 }
 
 type fakePerformanceService struct {
-	createdRule          ledger.FeeRule
-	rules                []ledger.FeeRule
-	createdCash          ledger.CashLedgerEntry
-	cashEntries          []ledger.CashLedgerEntry
-	createdBaseline      ledger.NavBaseline
-	baselines            []ledger.NavBaseline
-	reverseRepo          relayperformance.ReverseRepoResult
-	reverseRepoAccountID string
-	reverseRepoTradeDate string
-	reverseRepoPersist   bool
-	economicNAV          relayperformance.EconomicNAVResult
-	economicNAVAccountID string
-	economicNAVTradeDate string
-	economicNAVOptions   relayperformance.EconomicNAVOptions
-	accruals             []ledger.ReverseRepoAccrual
-	navs                 []ledger.PerformanceNAV
-	reconciliations      []ledger.NAVReconciliation
-	err                  error
+	createdRule                   ledger.FeeRule
+	rules                         []ledger.FeeRule
+	createdCash                   ledger.CashLedgerEntry
+	cashEntries                   []ledger.CashLedgerEntry
+	createdBaseline               ledger.NavBaseline
+	baselines                     []ledger.NavBaseline
+	reverseRepo                   relayperformance.ReverseRepoResult
+	reverseRepoAccountID          string
+	reverseRepoTradeDate          string
+	reverseRepoPersist            bool
+	economicNAV                   relayperformance.EconomicNAVResult
+	economicNAVAccountID          string
+	economicNAVTradeDate          string
+	economicNAVOptions            relayperformance.EconomicNAVOptions
+	economicNAVReconciliation     relayperformance.EconomicNAVReconcileResult
+	economicNAVReconcileAccountID string
+	economicNAVReconcileTradeDate string
+	economicNAVReconcileOptions   relayperformance.EconomicNAVReconcileOptions
+	accruals                      []ledger.ReverseRepoAccrual
+	navs                          []ledger.PerformanceNAV
+	reconciliations               []ledger.NAVReconciliation
+	err                           error
 }
 
 func (service *fakePerformanceService) CreateFeeRule(_ context.Context, rule ledger.FeeRule) (ledger.FeeRule, error) {
@@ -2375,6 +2456,16 @@ func (service *fakePerformanceService) CalculateEconomicNAV(_ context.Context, a
 	service.economicNAVTradeDate = tradeDate
 	service.economicNAVOptions = options
 	return service.economicNAV, nil
+}
+
+func (service *fakePerformanceService) ReconcileEconomicNAV(_ context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVReconcileOptions) (relayperformance.EconomicNAVReconcileResult, error) {
+	if service.err != nil {
+		return relayperformance.EconomicNAVReconcileResult{}, service.err
+	}
+	service.economicNAVReconcileAccountID = accountID
+	service.economicNAVReconcileTradeDate = tradeDate
+	service.economicNAVReconcileOptions = options
+	return service.economicNAVReconciliation, nil
 }
 
 func (service *fakePerformanceService) ListPerformanceNAVs(_ context.Context, _, _, _ string) ([]ledger.PerformanceNAV, error) {

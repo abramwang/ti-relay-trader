@@ -552,6 +552,25 @@ func TestGetDailyPerformanceBuildsSnapshotRead(t *testing.T) {
 	}
 }
 
+func TestGetAssetPositionObservationBuildsSnapshotRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetAssetPositionObservation(context.Background(), "acct-1", "20260612", "open")
+	if err == nil {
+		t.Fatal("GetAssetPositionObservation() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM asset_snapshots")
+	requireQueryContains(t, exec.query, "FROM position_snapshots")
+	requireQueryContains(t, exec.query, "snapshot_type = $3")
+	requireQueryContains(t, exec.query, "sum(market_value)")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" || exec.args[2] != "open" {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
 func TestListDailyPerformanceBuildsSeriesRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)

@@ -228,6 +228,32 @@
     ]
   },
   {
+    "id": "economic-nav-reconcile-preview",
+    "group": "绩效",
+    "title": "T+1 净值对账预览",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/economic-nav/reconcile",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260724" },
+      { "name": "observed_trade_date", "label": "observed_trade_date", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "economic-nav-reconcile-rebuild",
+    "group": "绩效",
+    "title": "T+1 净值对账落库",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/economic-nav/reconcile",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "body", "defaultValue": "20260724" },
+      { "name": "observed_trade_date", "label": "observed_trade_date", "source": "body", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "economic-nav-list",
     "group": "绩效",
     "title": "经济净值版本查询",

@@ -63,6 +63,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/economic-nav/reconcile":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "economic_nav_reconciliation": {
+                            "account_id": "acct-1",
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "observed_trade_date": query.get("observed_trade_date", [""])[0],
+                            "persisted": False,
+                            "status": "auto_completed",
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/accounts/acct-1/performance/economic-nav":
             self._json({"ok": True, "data": {"navs": [{"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "status": "provisional"}]}})
             return
@@ -300,6 +316,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/economic-nav/reconcile":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "economic_nav_reconciliation": {
+                            "account_id": "acct-1",
+                            "trade_date": body.get("trade_date"),
+                            "observed_trade_date": body.get("observed_trade_date"),
+                            "persisted": True,
+                            "status": "review_required",
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
@@ -391,6 +423,11 @@ class RelayClientTest(unittest.TestCase):
         self.assertFalse(preview["persisted"])
         rebuilt = self.client.rebuild_economic_nav(trade_date="20260612", status="finalized")
         self.assertTrue(rebuilt["persisted"])
+        reconcile_preview = self.client.preview_economic_nav_reconciliation(trade_date="20260612", observed_trade_date="20260615")
+        self.assertFalse(reconcile_preview["persisted"])
+        self.assertEqual(reconcile_preview["observed_trade_date"], "20260615")
+        reconcile_rebuild = self.client.rebuild_economic_nav_reconciliation(trade_date="20260612", observed_trade_date="20260615")
+        self.assertTrue(reconcile_rebuild["persisted"])
         navs = self.client.list_economic_nav(trade_date="20260612")
         self.assertEqual(navs[0]["status"], "provisional")
         reconciliations = self.client.list_nav_reconciliations(trade_date="20260612")

@@ -84,6 +84,8 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/accounts/{account_id}/performance/reverse-repo/accruals` | 查询已落库逆回购应计结果 |
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav/preview` | 只读试算 economic NAV、现金桥、逆回购和质量标记 |
 | `POST` | `/v1/accounts/{account_id}/performance/economic-nav/rebuild` | 重建并落库 current economic NAV 版本和对账记录；仅写入开关开启时允许 |
+| `GET` | `/v1/accounts/{account_id}/performance/economic-nav/reconcile` | 只读预览 T+1 observed open assets 净值对账 |
+| `POST` | `/v1/accounts/{account_id}/performance/economic-nav/reconcile` | 落库 T+1 净值对账结果；仅写入开关开启时允许 |
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | 查询版本化经济净资产结果 |
 | `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | 查询 T+1 经济净值对账结果 |
 | `GET` | `/v1/meridian/market/bars` | Meridian bars 薄代理，保留 `market_bar.v1` 原始字段 |

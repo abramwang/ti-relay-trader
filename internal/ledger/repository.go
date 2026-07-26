@@ -192,6 +192,22 @@ type DailyPerformance struct {
 	CapturedAt          time.Time `json:"captured_at,omitempty"`
 }
 
+type AssetPositionObservation struct {
+	AccountID           string     `json:"account_id"`
+	TradeDate           string     `json:"trade_date"`
+	SnapshotType        string     `json:"snapshot_type"`
+	CashAvailable       float64    `json:"cash_available"`
+	CashTotal           float64    `json:"cash_total"`
+	NetAsset            float64    `json:"net_asset"`
+	MarketValue         float64    `json:"market_value"`
+	StockValue          float64    `json:"stock_value"`
+	FundValue           float64    `json:"fund_value"`
+	PositionsCount      int64      `json:"positions_count"`
+	PositionMarketValue float64    `json:"position_market_value"`
+	CapturedAt          time.Time  `json:"captured_at,omitempty"`
+	PositionCapturedAt  *time.Time `json:"position_captured_at,omitempty"`
+}
+
 func NewRepository(exec Executor) *Repository {
 	return &Repository{
 		exec: exec,
@@ -686,6 +702,53 @@ func (repo *Repository) GetDailyPerformance(ctx context.Context, accountID strin
 		return DailyPerformance{}, fmt.Errorf("scan daily performance %s/%s: %w", accountID, tradeDate, err)
 	}
 	return performance, nil
+}
+
+func (repo *Repository) GetAssetPositionObservation(ctx context.Context, accountID string, tradeDate string, snapshotType string) (AssetPositionObservation, error) {
+	if repo == nil || repo.exec == nil {
+		return AssetPositionObservation{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return AssetPositionObservation{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	tradeDate, err := normalizeTradeDate(tradeDate)
+	if err != nil {
+		return AssetPositionObservation{}, err
+	}
+	if tradeDate == "" {
+		return AssetPositionObservation{}, fmt.Errorf("%w: trade_date is required", ErrInvalidLedgerInput)
+	}
+	snapshotType = strings.TrimSpace(snapshotType)
+	if snapshotType == "" {
+		snapshotType = "open"
+	}
+	switch snapshotType {
+	case "intraday", "open", "close", "reconcile":
+	default:
+		return AssetPositionObservation{}, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
+	}
+
+	queryer, err := repo.queryer()
+	if err != nil {
+		return AssetPositionObservation{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, assetPositionObservationSQL, accountID, tradeDate, snapshotType)
+	if err != nil {
+		return AssetPositionObservation{}, fmt.Errorf("get asset position observation %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return AssetPositionObservation{}, fmt.Errorf("get asset position observation %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+		}
+		return AssetPositionObservation{}, fmt.Errorf("%w: %s asset snapshot %s/%s", ErrAssetNotFound, snapshotType, accountID, tradeDate)
+	}
+	observation, err := scanAssetPositionObservation(rows)
+	if err != nil {
+		return AssetPositionObservation{}, fmt.Errorf("scan asset position observation %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+	}
+	return observation, nil
 }
 
 func (repo *Repository) ListDailyPerformance(ctx context.Context, accountID string, dateFrom string, dateTo string) ([]DailyPerformance, error) {
@@ -2367,6 +2430,37 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 	performance.CapturedAt = capturedAt.Time
 	derivePerformancePnL(&performance)
 	return performance, nil
+}
+
+func scanAssetPositionObservation(row rowScanner) (AssetPositionObservation, error) {
+	var observation AssetPositionObservation
+	var capturedAt sql.NullTime
+	var positionCapturedAt sql.NullTime
+	err := row.Scan(
+		&observation.AccountID,
+		&observation.TradeDate,
+		&observation.SnapshotType,
+		&observation.CashAvailable,
+		&observation.CashTotal,
+		&observation.NetAsset,
+		&observation.MarketValue,
+		&observation.StockValue,
+		&observation.FundValue,
+		&observation.PositionsCount,
+		&observation.PositionMarketValue,
+		&capturedAt,
+		&positionCapturedAt,
+	)
+	if err != nil {
+		return AssetPositionObservation{}, err
+	}
+	if capturedAt.Valid {
+		observation.CapturedAt = capturedAt.Time
+	}
+	if positionCapturedAt.Valid {
+		observation.PositionCapturedAt = &positionCapturedAt.Time
+	}
+	return observation, nil
 }
 
 func derivePerformancePnL(performance *DailyPerformance) {

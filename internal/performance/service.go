@@ -36,6 +36,7 @@ const (
 type Store interface {
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
+	GetAssetPositionObservation(ctx context.Context, accountID string, tradeDate string, snapshotType string) (ledger.AssetPositionObservation, error)
 	CreateFeeRule(ctx context.Context, rule ledger.FeeRule) (ledger.FeeRule, error)
 	ListFeeRules(ctx context.Context, query ledger.FeeRuleQuery) ([]ledger.FeeRule, error)
 	EffectiveRepoFeeRule(ctx context.Context, accountID, tradeDate string) (ledger.FeeRule, error)
@@ -117,6 +118,24 @@ type EconomicNAVResult struct {
 	CashFlows        EconomicNAVCashFlowSummary    `json:"cash_flows"`
 	ReverseRepo      EconomicNAVReverseRepoSummary `json:"reverse_repo"`
 	QualityFlags     []string                      `json:"quality_flags,omitempty"`
+}
+
+type EconomicNAVReconcileOptions struct {
+	Persist           bool   `json:"persist"`
+	ObservedTradeDate string `json:"observed_trade_date,omitempty"`
+}
+
+type EconomicNAVReconcileResult struct {
+	AccountID         string                          `json:"account_id"`
+	TradeDate         string                          `json:"trade_date"`
+	ObservedTradeDate string                          `json:"observed_trade_date"`
+	Status            string                          `json:"status"`
+	FormulaVersion    string                          `json:"formula_version"`
+	Persisted         bool                            `json:"persisted"`
+	NAV               ledger.PerformanceNAV           `json:"nav"`
+	Reconciliation    ledger.NAVReconciliation        `json:"reconciliation"`
+	Observation       ledger.AssetPositionObservation `json:"observation"`
+	QualityFlags      []string                        `json:"quality_flags,omitempty"`
 }
 
 type ReverseRepoResult struct {
@@ -424,6 +443,101 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	return result, nil
 }
 
+func (service *Service) ReconcileEconomicNAV(ctx context.Context, accountID, tradeDate string, options EconomicNAVReconcileOptions) (EconomicNAVReconcileResult, error) {
+	accountID = strings.TrimSpace(accountID)
+	normalizedDate, parsedDate, err := parseTradeDate(tradeDate)
+	if err != nil {
+		return EconomicNAVReconcileResult{}, err
+	}
+	if accountID == "" {
+		return EconomicNAVReconcileResult{}, errors.New("account_id is required")
+	}
+
+	observedDate := strings.TrimSpace(options.ObservedTradeDate)
+	var parsedObservedDate time.Time
+	if observedDate == "" {
+		if service.calendar == nil {
+			return EconomicNAVReconcileResult{}, errors.New("meridian trading calendar is unavailable")
+		}
+		parsedObservedDate, err = service.nextTradingDay(ctx, parsedDate)
+		if err != nil {
+			return EconomicNAVReconcileResult{}, fmt.Errorf("resolve observed trade date: %w", err)
+		}
+		observedDate = parsedObservedDate.Format("2006-01-02")
+	} else {
+		observedDate, parsedObservedDate, err = parseTradeDate(observedDate)
+		if err != nil {
+			return EconomicNAVReconcileResult{}, err
+		}
+	}
+	if !parsedObservedDate.After(parsedDate) {
+		return EconomicNAVReconcileResult{}, fmt.Errorf("observed_trade_date must be after trade_date")
+	}
+
+	nav, found, err := service.currentEconomicNAV(ctx, accountID, normalizedDate)
+	if err != nil {
+		return EconomicNAVReconcileResult{}, err
+	}
+	flags := make([]string, 0)
+	if !found {
+		if options.Persist {
+			return EconomicNAVReconcileResult{}, fmt.Errorf("current economic nav not found for %s/%s; rebuild economic NAV before persisting reconciliation", accountID, normalizedDate)
+		}
+		preview, err := service.CalculateEconomicNAV(ctx, accountID, normalizedDate, EconomicNAVOptions{Persist: false})
+		if err != nil {
+			return EconomicNAVReconcileResult{}, err
+		}
+		nav = preview.NAV
+		flags = appendUnique(flags, preview.QualityFlags...)
+		flags = appendUnique(flags, "economic_nav_preview_source")
+	}
+	flags = appendUnique(flags, nav.QualityFlags...)
+
+	observation, err := service.store.GetAssetPositionObservation(ctx, accountID, observedDate, "open")
+	if err != nil {
+		return EconomicNAVReconcileResult{}, err
+	}
+	if observation.PositionsCount == 0 {
+		flags = appendUnique(flags, "observed_open_positions_empty")
+	}
+
+	externalFlows, err := service.listConfirmedCash(ctx, accountID, observedDate, "external_flow")
+	if err != nil {
+		return EconomicNAVReconcileResult{}, err
+	}
+	incomeExpenseFlows, err := service.listConfirmedCash(ctx, accountID, observedDate, "income_expense")
+	if err != nil {
+		return EconomicNAVReconcileResult{}, err
+	}
+	overnightExternalNetFlow, externalCount, externalFlags := overnightCashAmount(externalFlows, parsedObservedDate, "external_flow")
+	knownIncomeExpense, incomeExpenseCount, incomeExpenseFlags := overnightCashAmount(incomeExpenseFlows, parsedObservedDate, "income_expense")
+	flags = appendUnique(flags, externalFlags...)
+	flags = appendUnique(flags, incomeExpenseFlags...)
+
+	reconciliation := service.buildObservedNAVReconciliation(accountID, normalizedDate, observedDate, nav, observation, overnightExternalNetFlow, knownIncomeExpense, externalCount, incomeExpenseCount, flags)
+	result := EconomicNAVReconcileResult{
+		AccountID:         accountID,
+		TradeDate:         normalizedDate,
+		ObservedTradeDate: observedDate,
+		Status:            reconciliation.Status,
+		FormulaVersion:    nav.FormulaVersion,
+		NAV:               nav,
+		Reconciliation:    reconciliation,
+		Observation:       observation,
+		QualityFlags:      flags,
+	}
+	if options.Persist {
+		savedReconciliation, err := service.store.UpsertNAVReconciliation(ctx, reconciliation)
+		if err != nil {
+			return EconomicNAVReconcileResult{}, err
+		}
+		result.Reconciliation = savedReconciliation
+		result.Status = savedReconciliation.Status
+		result.Persisted = true
+	}
+	return result, nil
+}
+
 func (service *Service) CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (ReverseRepoResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	normalizedDate, parsedDate, err := parseTradeDate(tradeDate)
@@ -644,6 +758,19 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 	return previous, sameDateVersion, flags, nil
 }
 
+func (service *Service) currentEconomicNAV(ctx context.Context, accountID, tradeDate string) (ledger.PerformanceNAV, bool, error) {
+	items, err := service.store.ListPerformanceNAVs(ctx, accountID, tradeDate, tradeDate)
+	if err != nil {
+		return ledger.PerformanceNAV{}, false, err
+	}
+	for _, item := range items {
+		if item.TradeDate == tradeDate {
+			return item, true, nil
+		}
+	}
+	return ledger.PerformanceNAV{}, false, nil
+}
+
 func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry, tradeDate time.Time) (float64, []map[string]any, []string) {
 	denominator := openNAV
 	details := make([]map[string]any, 0, len(flows))
@@ -684,6 +811,29 @@ func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry,
 		denominator = openNAV
 	}
 	return roundMoney(denominator), details, flags
+}
+
+func overnightCashAmount(items []ledger.CashLedgerEntry, observedDate time.Time, flowClass string) (float64, int, []string) {
+	total := 0.0
+	count := 0
+	flags := make([]string, 0)
+	cutoff := time.Date(observedDate.Year(), observedDate.Month(), observedDate.Day(), 9, 30, 0, 0, timeutil.Location())
+	for _, item := range items {
+		if item.EffectiveAt.IsZero() {
+			total += item.Amount
+			count++
+			flags = appendUnique(flags, flowClass+"_missing_effective_at_assumed_overnight")
+			continue
+		}
+		effectiveAt := item.EffectiveAt.In(timeutil.Location())
+		if effectiveAt.After(cutoff) {
+			flags = appendUnique(flags, flowClass+"_after_open_excluded")
+			continue
+		}
+		total += item.Amount
+		count++
+	}
+	return roundMoney(total), count, flags
 }
 
 func (service *Service) buildNAVReconciliation(accountID, tradeDate string, nav ledger.PerformanceNAV, daily ledger.DailyPerformance, knownIncomeExpense float64) ledger.NAVReconciliation {
@@ -733,6 +883,81 @@ func (service *Service) buildNAVReconciliation(accountID, tradeDate string, nav 
 			"quality_flags":            nav.QualityFlags,
 			"note":                     "same-day provisional reconciliation; T+1 observed open asset can update this record later",
 		},
+	}
+}
+
+func (service *Service) buildObservedNAVReconciliation(
+	accountID string,
+	tradeDate string,
+	observedTradeDate string,
+	nav ledger.PerformanceNAV,
+	observation ledger.AssetPositionObservation,
+	overnightExternalNetFlow float64,
+	knownIncomeExpense float64,
+	externalFlowCount int,
+	incomeExpenseCount int,
+	qualityFlags []string,
+) ledger.NAVReconciliation {
+	observedPositionValue := observation.PositionMarketValue
+	if observedPositionValue == 0 {
+		observedPositionValue = observation.MarketValue
+	}
+	observedOpenAssets := roundMoney(observation.CashTotal + observedPositionValue)
+	invisibleCounterCash := 0.0
+	outstandingSettlementAssets := 0.0
+	residual := roundMoney(observedOpenAssets - nav.CloseEconomicNAV - overnightExternalNetFlow - knownIncomeExpense)
+	autoThreshold := roundMoney(math.Max(service.autoToleranceCNY, math.Abs(nav.CloseEconomicNAV)*service.autoToleranceBP/10000))
+	warningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(nav.CloseEconomicNAV)*service.warningToleranceBP/10000))
+	status := "auto_completed"
+	if nav.Status == "blocked" {
+		status = "blocked"
+	} else if math.Abs(residual) > warningThreshold {
+		status = "blocked"
+	} else if math.Abs(residual) > autoThreshold {
+		status = "review_required"
+	}
+	version := nav.Version
+	if version <= 0 {
+		version = 1
+	}
+	reconciliationID := fmt.Sprintf("nav-recon-%s-%s-v%d", sanitizeIDPart(accountID), strings.ReplaceAll(tradeDate, "-", ""), version)
+	details := map[string]any{
+		"formula_version":       nav.FormulaVersion,
+		"source":                "relay.economic_nav.t1_observed_open",
+		"observed_net_asset":    roundMoney(observation.NetAsset),
+		"observed_market_value": roundMoney(observation.MarketValue),
+		"observed_stock_value":  roundMoney(observation.StockValue),
+		"observed_fund_value":   roundMoney(observation.FundValue),
+		"external_flow_count":   externalFlowCount,
+		"income_expense_count":  incomeExpenseCount,
+		"quality_flags":         qualityFlags,
+		"note":                  "T+1 observed open asset reconciliation; finalized/manual review flow is kept explicit",
+	}
+	if !observation.CapturedAt.IsZero() {
+		details["asset_snapshot_captured_at"] = observation.CapturedAt
+	}
+	if observation.PositionCapturedAt != nil {
+		details["position_snapshot_captured_at"] = *observation.PositionCapturedAt
+	}
+	return ledger.NAVReconciliation{
+		ReconciliationID:            reconciliationID,
+		PerformanceNAVPK:            nav.PerformanceNAVPK,
+		AccountID:                   accountID,
+		TradeDate:                   tradeDate,
+		ObservedTradeDate:           observedTradeDate,
+		Status:                      status,
+		ObservedVisibleCash:         roundMoney(observation.CashTotal),
+		ObservedPositionValue:       roundMoney(observedPositionValue),
+		InvisibleCounterCash:        invisibleCounterCash,
+		OutstandingSettlementAssets: outstandingSettlementAssets,
+		ObservedOpenAssets:          observedOpenAssets,
+		ProvisionalCloseNAV:         roundMoney(nav.CloseEconomicNAV),
+		OvernightExternalNetFlow:    roundMoney(overnightExternalNetFlow),
+		KnownOvernightIncomeExpense: roundMoney(knownIncomeExpense),
+		Residual:                    residual,
+		AutoThreshold:               autoThreshold,
+		WarningThreshold:            warningThreshold,
+		Details:                     details,
 	}
 }
 
