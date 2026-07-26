@@ -141,6 +141,41 @@ Meridian `etf-pcf-status` 显示 `2026-07-24` 同步成功。相关 PCF：
 
 目前可以确认申赎交易链路闭合，但不能直接把“成分股卖出金额 + PCF cash_component - ETF 买入金额”定义为正式盈利。仍需确认最终现金差额、必须现金替代结算、交易费用、印花税和其它清算调整。
 
+### ETF 申赎 T0 估算盈亏口径
+
+由于跨市场成分不会全部划入证券账户，部分成分由基金管理人代买代卖；基金网站披露的实际成交价、现金替代、现金差额和回款周期又没有统一标准接口，因此 Relay 暂不追求从成分成交还原精确清算盈亏。Meridian PCF 只用于校验最小申赎单位、篮子结构和实物成分数量，不作为基金管理人最终清算单。
+
+已确认采用 `estimated_iopv_15bp` 近似口径。对每笔赎回：
+
+```text
+estimated_redemption_value = redemption_qty * iopv_at_redemption
+estimated_friction_cost = estimated_redemption_value * 0.0015
+estimated_etf_t0_pnl =
+    estimated_redemption_value
+    - attributed_etf_buy_cost
+    - estimated_friction_cost
+```
+
+其中：
+
+1. `redemption_qty` 取赎回终态成交数量，不使用柜台赎回记录中的名义价格 `1.0/0`。
+2. `iopv_at_redemption` 优先取 Meridian 历史 Level1 中时间不晚于赎回成交时刻的最近一条有效 `iopv`。必须同时保存 `iopv_timestamp` 和 `iopv_lag_ms`，禁止使用赎回时刻之后的快照。
+3. Level1 缺失时，可以降级使用赎回前最后一个完整 1 分钟 bar 的 `iopv`，并标记 `minute_iopv_fallback`；仍无有效值时不计算该笔盈亏，标记 `missing_iopv`。
+4. `attributed_etf_buy_cost` 来自当日实际 ETF 买入成交。买入数量等于赎回数量时使用全部实际买入金额；买入数量大于赎回数量且同时存在 ETF 截面持仓时，暂按当日 ETF 买入加权均价分配赎回数量，并标记 `weighted_cost_allocation`。未来有策略标签后优先按 `strategy_id/basket_id` 精确配对。
+5. 固定成本率 `0.0015` 以 IOPV 估算的一篮子价值为基数，统一覆盖 ETF 买入、赎回后成分卖出手续费以及成交价差异的冲击成本。该参数必须配置化、版本化并随结果输出，不能作为无来源常量隐藏在公式中。
+6. 实物成分股成交、现金替代和后续回款只用于链路对账与数据质量检查，不再重复计入本估算公式，避免双重计算。
+7. 输出必须使用 `estimated_etf_t0_pnl` 等估算字段，不得写入或展示为券商 `settled_profit`。
+
+`2026-07-22` 至 `2026-07-24` 的 19 笔赎回均能命中不晚于成交时刻的 Meridian 历史 Level1 IOPV，最大快照滞后约 2.23 秒。按 IOPV 计算的赎回价值和 15bp 估算成本如下，尚未扣除归属的 ETF 实际买入成本：
+
+| 交易日 | 账户 | 赎回笔数 | 赎回数量 | IOPV 估算赎回价值 | 15bp 估算成本 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `2026-07-22` | `314000045768` | 7 | 23,000,000 | 42,230,600.00 | 63,345.90 |
+| `2026-07-22` | `501000114077` | 2 | 2,000,000 | 7,292,100.00 | 10,938.15 |
+| `2026-07-23` | `314000045768` | 1 | 4,500,000 | 5,735,250.00 | 8,602.88 |
+| `2026-07-24` | `314000045768` | 7 | 8,000,000 | 23,584,800.00 | 35,377.20 |
+| `2026-07-24` | `501000114077` | 2 | 2,000,000 | 7,149,400.00 | 10,724.10 |
+
 ### 股票篮子截面策略
 
 `2026-07-24` 没有识别到独立股票篮子调仓：
@@ -183,6 +218,7 @@ Meridian `etf-pcf-status` 显示 `2026-07-24` 同步成功。相关 PCF：
 | 对账批次 | `reconciliation_runs` | 目标交易日是否完成对账/结算 |
 | 对账差异 | `reconciliation_breaks` | 未终态订单、订单成交数量不一致、快照缺失、刷新失败等质量问题 |
 | Meridian bars | `/v1/meridian/market/bars` | 基准收益、收盘价参考、后续持仓估值补充 |
+| Meridian Level1 | `/v1/meridian/market/snapshots` | ETF 赎回成交时点 IOPV；使用不晚于赎回时刻的最近快照 |
 | Meridian instruments | `/v1/meridian/metadata/instruments` | 证券名称、证券类型、ETF/股票分类和价格精度 |
 
 ## 核心指标
