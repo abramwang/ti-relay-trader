@@ -47,6 +47,10 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/daily", Request: "trade_date", Response: "DailyPerformance", Description: "daily account equity and PnL summary"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series", Request: "date_from/date_to/benchmark_security_id", Response: "PerformanceSeries", Description: "daily account equity, benchmark, excess return, and drawdown series"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series.csv", Request: "date_from/date_to/benchmark_security_id", Response: "text/csv", Description: "CSV export for account performance and benchmark series"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/economic-nav/preview", Request: "trade_date/status", Response: "EconomicNAVResult", Description: "calculate economic NAV without writing ledger"},
+			{Method: "POST", Path: "/v1/accounts/{account_id}/performance/economic-nav/rebuild", Request: "EconomicNAVRequest", Response: "EconomicNAVResult", Description: "calculate and persist current economic NAV version"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/economic-nav", Request: "trade_date/date_from/date_to", Response: "[]PerformanceNAV", Description: "query current versioned economic NAV rows"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/nav-reconciliations", Request: "trade_date/date_from/date_to", Response: "[]NAVReconciliation", Description: "query economic NAV reconciliation rows"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/orders/refresh", Response: "RefreshQueryResult", Description: "refresh account orders from front gateway"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fills/refresh", Response: "RefreshQueryResult", Description: "refresh account fills from front gateway"},
 			{Method: "POST", Path: "/v1/orders", Request: "SubmitOrderRequest", Response: "Order", Description: "submit one order"},
@@ -105,6 +109,9 @@ func Catalog() CatalogDocument {
 			"JobRunRequest",
 			"DailyPerformance",
 			"PerformanceSeries",
+			"EconomicNAVResult",
+			"PerformanceNAV",
+			"NAVReconciliation",
 		},
 	}
 }

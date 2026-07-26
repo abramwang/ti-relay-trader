@@ -146,18 +146,129 @@ func TestCalculateReverseRepoMarksMissingFeeRule(t *testing.T) {
 	}
 }
 
+func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
+	now := time.Date(2026, 7, 24, 16, 0, 0, 0, time.UTC)
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:           "acct-1",
+			TradeDate:           "2026-07-24",
+			CashTotal:           900000,
+			NetAsset:            1000000,
+			OpenNetAsset:        980000,
+			OpenSnapshotSource:  "open",
+			PositionMarketValue: 100000,
+			FillsCount:          2,
+			BuyAmount:           30000,
+			SellAmount:          35000,
+			Turnover:            65000,
+			FeeTotal:            12.3,
+		},
+		baselines: []ledger.NavBaseline{{
+			AccountID:          "acct-1",
+			EffectiveDate:      "2026-07-01",
+			Status:             "confirmed",
+			InitialEconomicNAV: 950000,
+		}},
+		cashByClass: map[string][]ledger.CashLedgerEntry{
+			"external_flow": {{
+				EntryID:     "flow-1",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-07-24",
+				Amount:      10000,
+				EffectiveAt: time.Date(2026, 7, 24, 10, 0, 0, 0, time.FixedZone("CST", 8*3600)),
+				Status:      "confirmed",
+			}},
+			"income_expense": {{
+				EntryID:   "income-1",
+				AccountID: "acct-1",
+				TradeDate: "2026-07-24",
+				Amount:    5,
+				Status:    "confirmed",
+			}},
+		},
+		repoAccruals: []ledger.ReverseRepoAccrual{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-24",
+			GatewayOrderID: "repo-1",
+			Principal:      100000,
+			NetInterest:    10,
+			Receivable:     100010,
+			EffectiveFee:   1,
+			Status:         "estimated",
+		}},
+		navs: []ledger.PerformanceNAV{{
+			AccountID:        "acct-1",
+			TradeDate:        "2026-07-23",
+			CumulativeNAV:    1.02,
+			CloseEconomicNAV: 980000,
+		}},
+		now: now,
+	}
+	service, err := New(Options{
+		Store:          store,
+		FormulaVersion: "performance_economic_nav.unit",
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260724", EconomicNAVOptions{Persist: true})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	if !result.Persisted {
+		t.Fatal("Persisted = false, want true")
+	}
+	assertClose(t, result.NAV.OpenEconomicNAV, 980000)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1100010)
+	assertClose(t, result.NAV.ExternalNetFlow, 10000)
+	assertClose(t, result.NAV.AccountDayPnL, 110010)
+	if result.NAV.FormulaVersion != "performance_economic_nav.unit" {
+		t.Fatalf("formula = %q", result.NAV.FormulaVersion)
+	}
+	if len(store.navUpserts) != 1 || len(store.reconciliationUpserts) != 1 {
+		t.Fatalf("upserts nav=%d reconciliation=%d", len(store.navUpserts), len(store.reconciliationUpserts))
+	}
+	if result.ReverseRepo.Orders != 1 || result.ReverseRepo.Source != "ledger" {
+		t.Fatalf("reverse repo summary = %#v", result.ReverseRepo)
+	}
+	if result.NAV.PnLComponents["cash_management"] == nil {
+		t.Fatalf("missing cash management component: %#v", result.NAV.PnLComponents)
+	}
+}
+
 type fakePerformanceStore struct {
-	fills       []trading.Fill
-	fillQueries []trading.FillQuery
-	repoRule    ledger.FeeRule
-	repoRuleErr error
-	upserts     []ledger.ReverseRepoAccrual
-	now         time.Time
+	fills                 []trading.Fill
+	fillQueries           []trading.FillQuery
+	daily                 ledger.DailyPerformance
+	dailyErr              error
+	repoRule              ledger.FeeRule
+	repoRuleErr           error
+	cashByClass           map[string][]ledger.CashLedgerEntry
+	cashQueries           []ledger.CashLedgerQuery
+	baselines             []ledger.NavBaseline
+	repoAccruals          []ledger.ReverseRepoAccrual
+	navs                  []ledger.PerformanceNAV
+	upserts               []ledger.ReverseRepoAccrual
+	navUpserts            []ledger.PerformanceNAV
+	reconciliationUpserts []ledger.NAVReconciliation
+	now                   time.Time
 }
 
 func (store *fakePerformanceStore) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	store.fillQueries = append(store.fillQueries, query)
 	return store.fills, nil
+}
+
+func (store *fakePerformanceStore) GetDailyPerformance(_ context.Context, _, _ string) (ledger.DailyPerformance, error) {
+	if store.dailyErr != nil {
+		return ledger.DailyPerformance{}, store.dailyErr
+	}
+	return store.daily, nil
 }
 
 func (store *fakePerformanceStore) CreateFeeRule(_ context.Context, rule ledger.FeeRule) (ledger.FeeRule, error) {
@@ -179,8 +290,12 @@ func (store *fakePerformanceStore) CreateCashLedgerEntry(_ context.Context, entr
 	return entry, nil
 }
 
-func (store *fakePerformanceStore) ListCashLedgerEntries(_ context.Context, _ ledger.CashLedgerQuery) ([]ledger.CashLedgerEntry, error) {
-	return nil, nil
+func (store *fakePerformanceStore) ListCashLedgerEntries(_ context.Context, query ledger.CashLedgerQuery) ([]ledger.CashLedgerEntry, error) {
+	store.cashQueries = append(store.cashQueries, query)
+	if store.cashByClass == nil {
+		return nil, nil
+	}
+	return store.cashByClass[query.FlowClass], nil
 }
 
 func (store *fakePerformanceStore) ConfirmCashLedgerEntry(_ context.Context, _, _, _ string, _ time.Time) (ledger.CashLedgerEntry, error) {
@@ -196,7 +311,7 @@ func (store *fakePerformanceStore) CreateNavBaseline(_ context.Context, baseline
 }
 
 func (store *fakePerformanceStore) ListNavBaselines(_ context.Context, _ string) ([]ledger.NavBaseline, error) {
-	return nil, nil
+	return store.baselines, nil
 }
 
 func (store *fakePerformanceStore) UpsertReverseRepoAccrual(_ context.Context, accrual ledger.ReverseRepoAccrual) error {
@@ -205,15 +320,31 @@ func (store *fakePerformanceStore) UpsertReverseRepoAccrual(_ context.Context, a
 }
 
 func (store *fakePerformanceStore) ListReverseRepoAccruals(_ context.Context, _, _ string) ([]ledger.ReverseRepoAccrual, error) {
-	return nil, nil
+	return store.repoAccruals, nil
 }
 
 func (store *fakePerformanceStore) ListPerformanceNAVs(_ context.Context, _, _, _ string) ([]ledger.PerformanceNAV, error) {
-	return nil, nil
+	return store.navs, nil
 }
 
 func (store *fakePerformanceStore) ListNAVReconciliations(_ context.Context, _, _, _ string) ([]ledger.NAVReconciliation, error) {
 	return nil, nil
+}
+
+func (store *fakePerformanceStore) UpsertPerformanceNAV(_ context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error) {
+	if nav.PerformanceNAVPK == 0 {
+		nav.PerformanceNAVPK = int64(len(store.navUpserts) + 1)
+	}
+	if nav.Version == 0 {
+		nav.Version = len(store.navUpserts) + 1
+	}
+	store.navUpserts = append(store.navUpserts, nav)
+	return nav, nil
+}
+
+func (store *fakePerformanceStore) UpsertNAVReconciliation(_ context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error) {
+	store.reconciliationUpserts = append(store.reconciliationUpserts, item)
+	return item, nil
 }
 
 type weekdayCalendar struct{}

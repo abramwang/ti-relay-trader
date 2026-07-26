@@ -40,6 +40,7 @@
     performanceSummary: null,
     performanceSeries: [],
     performanceDaily: null,
+    performanceEconomicNAV: null,
     performanceLoaded: false,
     performanceError: "",
     performanceSettings: null,
@@ -164,6 +165,12 @@
     downloadPerformanceButton: byID("downloadPerformanceButton"),
     perfNetAsset: byID("perfNetAsset"),
     perfStartNetAsset: byID("perfStartNetAsset"),
+    perfEconomicNav: byID("perfEconomicNav"),
+    perfEconomicStatus: byID("perfEconomicStatus"),
+    perfEconomicReturn: byID("perfEconomicReturn"),
+    perfEconomicPnl: byID("perfEconomicPnl"),
+    perfExternalFlow: byID("perfExternalFlow"),
+    perfQualityFlags: byID("perfQualityFlags"),
     perfOpenNetAsset: byID("perfOpenNetAsset"),
     perfOpenSource: byID("perfOpenSource"),
     perfOvernightAdjustment: byID("perfOvernightAdjustment"),
@@ -2891,6 +2898,7 @@
     try {
       const data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
       state.performanceError = "";
+      state.performanceEconomicNAV = null;
       state.performanceSummary = data.summary || null;
       state.performanceSeries = Array.isArray(data.series) ? data.series : [];
       state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
@@ -2901,12 +2909,20 @@
       } catch (err) {
         pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + err.message);
       }
+      try {
+        const economicData = await request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate));
+        state.performanceEconomicNAV = economicData.economic_nav || null;
+      } catch (err) {
+        state.performanceEconomicNAV = null;
+        pushLog("warn", "经济净值预览失败", displayDate(dailyDate) + " " + err.message);
+      }
       state.performanceLoaded = true;
       renderPerformance();
       showToast("绩效数据已更新");
     } catch (err) {
       state.performanceLoaded = false;
       state.performanceError = err.message;
+      state.performanceEconomicNAV = null;
       pushLog("error", "绩效查询失败", err.message);
       showToast("绩效查询失败：" + err.message, "error");
       renderPerformance();
@@ -2945,15 +2961,32 @@
     const series = state.performanceSeries || [];
     const latest = series[series.length - 1] || state.performanceDaily || {};
     const daily = state.performanceDaily || latest || {};
+    const economic = state.performanceEconomicNAV || {};
+    const nav = economic.nav || {};
+    const cashFlows = economic.cash_flows || {};
+    const navFlags = Array.isArray(economic.quality_flags) ? economic.quality_flags : (Array.isArray(nav.quality_flags) ? nav.quality_flags : []);
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
       summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       daily.open_snapshot_source ? "日初 " + daily.open_snapshot_source : "",
+      nav.status ? "经济净值 " + nav.status : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
     els.perfStartNetAsset.textContent = "期初 " + formatNumber(summary.start_net_asset);
+    els.perfEconomicNav.textContent = formatNumber(nav.close_economic_nav);
+    els.perfEconomicStatus.textContent = [
+      nav.status || "preview --",
+      economic.persisted ? "persisted" : (nav.close_economic_nav ? "preview" : "")
+    ].filter(Boolean).join(" · ");
+    els.perfEconomicReturn.textContent = formatPercent(nav.daily_return);
+    els.perfEconomicReturn.className = classForNumber(nav.daily_return);
+    els.perfEconomicPnl.textContent = "PnL " + formatSigned(nav.account_day_pnl);
+    els.perfEconomicPnl.className = classForNumber(nav.account_day_pnl);
+    els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
+    els.perfExternalFlow.className = classForNumber(cashFlows.external_net_flow);
+    els.perfQualityFlags.textContent = navFlags.length ? navFlags.slice(0, 2).join(" / ") + (navFlags.length > 2 ? " +" + (navFlags.length - 2) : "") : "质量 ok";
     els.perfOpenNetAsset.textContent = formatNumber(daily.open_net_asset);
     els.perfOpenSource.textContent = [
       daily.open_snapshot_source || "--",

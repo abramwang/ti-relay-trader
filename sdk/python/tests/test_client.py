@@ -48,6 +48,27 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/accounts/acct-1/performance/series":
             self._json({"ok": True, "data": {"account_id": "acct-1", "series": [{"trade_date": "20260612", "net_asset": 123.45}]}})
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/economic-nav/preview":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "economic_nav": {
+                            "account_id": "acct-1",
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "persisted": False,
+                            "nav": {"status": query.get("status", ["provisional"])[0]},
+                        }
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/economic-nav":
+            self._json({"ok": True, "data": {"navs": [{"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "status": "provisional"}]}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/nav-reconciliations":
+            self._json({"ok": True, "data": {"reconciliations": [{"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "status": "auto_completed"}]}})
+            return
         if parsed.path == "/v1/accounts/acct-1/performance/series.csv":
             body = b"account_id,trade_date,net_asset\nacct-1,20260612,123.45\n"
             self.send_response(200)
@@ -264,6 +285,21 @@ class RelayHandler(BaseHTTPRequestHandler):
                 status=202,
             )
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/economic-nav/rebuild":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "economic_nav": {
+                            "account_id": "acct-1",
+                            "trade_date": body.get("trade_date"),
+                            "persisted": True,
+                            "nav": {"status": body.get("status")},
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
@@ -351,6 +387,14 @@ class RelayClientTest(unittest.TestCase):
         self.assertIn("account_id,trade_date,net_asset", csv_text)
         self.assertEqual(RelayHandler.requests[-2][2]["benchmark_security_id"], ["000300.SH"])
         self.assertEqual(RelayHandler.requests[-1][2]["benchmark_security_id"], ["000300.SH"])
+        preview = self.client.preview_economic_nav(trade_date="20260612")
+        self.assertFalse(preview["persisted"])
+        rebuilt = self.client.rebuild_economic_nav(trade_date="20260612", status="finalized")
+        self.assertTrue(rebuilt["persisted"])
+        navs = self.client.list_economic_nav(trade_date="20260612")
+        self.assertEqual(navs[0]["status"], "provisional")
+        reconciliations = self.client.list_nav_reconciliations(trade_date="20260612")
+        self.assertEqual(reconciliations[0]["status"], "auto_completed")
         breaks = self.client.list_reconciliation_breaks(run_id="run-1", status="open")
         self.assertEqual(breaks[0]["run_id"], "run-1")
         bars = self.client.get_meridian_bars(security_id="600000.SH", trade_date="20260612")

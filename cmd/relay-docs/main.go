@@ -345,8 +345,13 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		logger.Warn("relay_api_market_client_unavailable", "error", err)
 	}
 	perf, err := relayperformance.New(relayperformance.Options{
-		Store:    repo,
-		Calendar: marketClient,
+		Store:               repo,
+		Calendar:            marketClient,
+		FormulaVersion:      cfg.Performance.FormulaVersion,
+		AutoToleranceCNY:    cfg.Performance.AutoToleranceCNY,
+		AutoToleranceBP:     cfg.Performance.AutoToleranceBP,
+		WarningToleranceCNY: cfg.Performance.WarningToleranceCNY,
+		WarningToleranceBP:  cfg.Performance.WarningToleranceBP,
 	})
 	if err != nil {
 		cleanup()

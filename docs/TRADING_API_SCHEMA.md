@@ -314,8 +314,10 @@ rejected
 | `GET` | `/v1/accounts/{account_id}/performance/reverse-repo` | `trade_date` query | `ReverseRepoResult` | 已实现，从成交账本估算 `204001.SH` 逆回购本金、占款天数、毛息、费用和净息，不落库 |
 | `POST` | `/v1/accounts/{account_id}/performance/reverse-repo/rebuild` | `trade_date` query | `ReverseRepoResult` | 已实现，重建并落库逆回购应计结果；默认写入关闭 |
 | `GET` | `/v1/accounts/{account_id}/performance/reverse-repo/accruals` | `trade_date` query | `[]ReverseRepoAccrual` | 已实现，查询已落库逆回购应计结果 |
-| `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | `trade_date` 或 `date_from/date_to` query | `[]PerformanceNAV` | 已实现查询结构；策略归因完成后写入当前版本 |
-| `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | `trade_date` 或 `date_from/date_to` query | `[]NAVReconciliation` | 已实现查询结构，用于 T+1 经济净值对账 |
+| `GET` | `/v1/accounts/{account_id}/performance/economic-nav/preview` | `trade_date/status` query | `EconomicNAVResult` | 已实现，按当前账本试算经济净值，不写库 |
+| `POST` | `/v1/accounts/{account_id}/performance/economic-nav/rebuild` | `{trade_date,status}` | `EconomicNAVResult` | 已实现，重建并落库当前 economic NAV 版本和对账记录；默认写入关闭 |
+| `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | `trade_date` 或 `date_from/date_to` query | `[]PerformanceNAV` | 已实现，查询当前版本化经济净值结果 |
+| `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | `trade_date` 或 `date_from/date_to` query | `[]NAVReconciliation` | 已实现，查询经济净值对账结果 |
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
@@ -378,8 +380,18 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 - `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。
 - `cash_ledger` 扩展为可人工维护的资金流水，支持 `external` 外部入出金、`internal_transfer` 极速/普通柜台内部划转、`settlement_income` 清算收入、`fee` 和 `adjustment`。外部净流入修正收益率，内部划转成对记录但不计入账户净收益。
 - `performance_nav_baselines` 记录手工确认的日初经济净值基线，解决逆回购回款、占款释放和柜台间划转导致的前一日日终资产与当日日初资产差异。
-- `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。当前 API 已提供查询结构，策略归因写入将在后续阶段补齐。
+- `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。`economic-nav/preview` 可无写权限试算，`economic-nav/rebuild` 会把同账户同交易日旧 current 版本退役并插入新 current 版本；策略归因尚未拆分完成的账户日收益写入 `pnl_components.unattributed`。
 - `reverse_repo_accruals` 保存 `204001.SH` 逆回购应计结果。估算口径为 `principal=qty*100`，`gross_interest=principal*(成交年化利率/100)*实际占款天数/365`，费用优先取成交实际费用，其次取账户费率规则，缺失时标记 `missing_repo_fee`。实际占款天数由 Meridian 交易日接口向后取两个交易日计算，跨周末会自然得到 3 天。
+
+`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的第一版公式为：
+
+```text
+close_economic_nav = close_visible_net_asset + reverse_repo_receivable
+account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment
+daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_flow_i))
+```
+
+其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`；逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算。当前策略归因尚未完全拆分，`cash_management` 会承接逆回购净息和已知 `income_expense`，剩余 `account_day_pnl` 暂记 `unattributed` 并标记 `strategy_attribution_pending`。
 
 人工输入类写接口默认关闭，由配置 `performance.settings_write_enabled` 控制。生产 9092 当前应保持 `false`，仅在服务器侧明确切换配置后才能通过 `/trade#performance-settings` 或 API Console 新增费率、资金流水、日初净值和持久化逆回购估算。
 

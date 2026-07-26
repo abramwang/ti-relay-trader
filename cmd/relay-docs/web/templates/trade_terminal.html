@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260726-0001">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260726-0002">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -245,6 +245,9 @@
 
         <div class="performance-summary">
           <div><span>期末净资产</span><strong id="perfNetAsset">--</strong><small id="perfStartNetAsset">期初 --</small></div>
+          <div><span>经济净值</span><strong id="perfEconomicNav">--</strong><small id="perfEconomicStatus">preview --</small></div>
+          <div><span>经济收益</span><strong id="perfEconomicReturn">--</strong><small id="perfEconomicPnl">PnL --</small></div>
+          <div><span>资金桥</span><strong id="perfExternalFlow">--</strong><small id="perfQualityFlags">质量 --</small></div>
           <div><span>日初资产</span><strong id="perfOpenNetAsset">--</strong><small id="perfOpenSource">open --</small></div>
           <div><span>隔夜调整</span><strong id="perfOvernightAdjustment">--</strong><small id="perfPreviousNetAsset">上日 --</small></div>
           <div><span>日内盈亏</span><strong id="perfIntradayPnl">--</strong><small id="perfIntradayReturn">收益 --</small></div>
@@ -519,6 +522,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260726-0001"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260726-0002"></script>
 </body>
 </html>

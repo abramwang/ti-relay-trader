@@ -202,6 +202,60 @@
     ]
   },
   {
+    "id": "economic-nav-preview",
+    "group": "绩效",
+    "title": "经济净值预览",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/economic-nav/preview",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260724" },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "provisional", "options": ["provisional", "finalized", "blocked"] }
+    ]
+  },
+  {
+    "id": "economic-nav-rebuild",
+    "group": "绩效",
+    "title": "经济净值重建落库",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/economic-nav/rebuild",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "body", "defaultValue": "20260724" },
+      { "name": "status", "label": "status", "source": "body", "type": "select", "defaultValue": "provisional", "options": ["provisional", "finalized"] }
+    ]
+  },
+  {
+    "id": "economic-nav-list",
+    "group": "绩效",
+    "title": "经济净值版本查询",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/economic-nav",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "nav-reconciliations",
+    "group": "绩效",
+    "title": "经济净值对账查询",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/nav-reconciliations",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "positions-refresh",
     "group": "账户",
     "title": "持仓刷新",

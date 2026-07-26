@@ -574,6 +574,82 @@ func TestListDailyPerformanceBuildsSeriesRead(t *testing.T) {
 	}
 }
 
+func TestUpsertPerformanceNAVBuildsVersionedWrite(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.UpsertPerformanceNAV(context.Background(), PerformanceNAV{
+		AccountID:            "acct-1",
+		TradeDate:            "20260724",
+		Status:               "provisional",
+		FormulaVersion:       "performance_economic_nav.test",
+		OpenEconomicNAV:      1000000,
+		ExternalNetFlow:      10000,
+		AccountDayPnL:        1200,
+		SettlementAdjustment: 50,
+		CloseEconomicNAV:     1011250,
+		ReturnDenominator:    1005000,
+		DailyReturn:          0.001194,
+		CumulativeNAV:        1.001194,
+		PnLComponents:        map[string]any{"unattributed": map[string]any{"pnl": 1200}},
+		QualityFlags:         []string{"strategy_attribution_pending"},
+		Source:               "unit",
+	})
+	if err == nil {
+		t.Fatal("UpsertPerformanceNAV() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "UPDATE performance_nav_versions")
+	requireQueryContains(t, exec.query, "INSERT INTO performance_nav_versions")
+	requireQueryContains(t, exec.query, "RETURNING")
+	requireArgLen(t, exec.args, 17)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-07-24" {
+		t.Fatalf("identity args = %#v/%#v", exec.args[0], exec.args[1])
+	}
+	if exec.args[3] != "provisional" || exec.args[4] != "performance_economic_nav.test" {
+		t.Fatalf("status/formula args = %#v/%#v", exec.args[3], exec.args[4])
+	}
+	assertJSONContains(t, exec.args[13], `"unattributed"`)
+	assertJSONContains(t, exec.args[14], `"strategy_attribution_pending"`)
+}
+
+func TestUpsertNAVReconciliationBuildsIdempotentWrite(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.UpsertNAVReconciliation(context.Background(), NAVReconciliation{
+		ReconciliationID:            "nav-recon-1",
+		PerformanceNAVPK:            42,
+		AccountID:                   "acct-1",
+		TradeDate:                   "20260724",
+		ObservedTradeDate:           "20260725",
+		Status:                      "review_required",
+		ObservedVisibleCash:         1000,
+		ObservedPositionValue:       2000,
+		InvisibleCounterCash:        300,
+		OutstandingSettlementAssets: 400,
+		ObservedOpenAssets:          5000,
+		ProvisionalCloseNAV:         3700,
+		OvernightExternalNetFlow:    100,
+		KnownOvernightIncomeExpense: 20,
+		Residual:                    8,
+		AutoThreshold:               5,
+		WarningThreshold:            50,
+		Details:                     map[string]any{"source": "unit"},
+	})
+	if err == nil {
+		t.Fatal("UpsertNAVReconciliation() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO performance_nav_reconciliations")
+	requireQueryContains(t, exec.query, "ON CONFLICT (performance_nav_pk) DO UPDATE")
+	requireArgLen(t, exec.args, 20)
+	if exec.args[0] != "nav-recon-1" || exec.args[1] != int64(42) || exec.args[3] != "2026-07-24" {
+		t.Fatalf("identity args = %#v", exec.args[:4])
+	}
+	assertJSONContains(t, exec.args[17], `"source":"unit"`)
+}
+
 func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

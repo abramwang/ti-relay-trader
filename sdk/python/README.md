@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz"
 ```
 
 ## Quick Start
@@ -91,6 +91,7 @@ Methods that publish commands or persist relay ledger records:
 | `refresh_fills()` | Redis `cmd.query` | Ask OC to query broker fills. Useful for end-of-day reconciliation. |
 | `record_job_run(report, ...)` | PostgreSQL `job_runs` | Persist daily job report JSON and summary status. |
 | `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset and position snapshots, and reconciliation run inputs. |
+| `rebuild_economic_nav(trade_date=..., status=...)` | PostgreSQL `performance_nav_versions` + `performance_nav_reconciliations` | Persist the current economic NAV version; server-side performance write permission must be enabled. |
 
 Example settlement write:
 
@@ -127,6 +128,10 @@ P8 helper methods are available for strategy and research tooling:
 - `get_performance_daily(trade_date=...)`
 - `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)`
 - `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)`
+- `preview_economic_nav(trade_date=...)`
+- `rebuild_economic_nav(trade_date=..., status="provisional")`
+- `list_economic_nav(trade_date=...)`
+- `list_nav_reconciliations(trade_date=...)`
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
 - `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)`

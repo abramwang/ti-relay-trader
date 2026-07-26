@@ -86,8 +86,9 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 3. `/v1/performance/fee-rules`、`/v1/accounts/{account_id}/cash-ledger` 和 `/v1/accounts/{account_id}/performance/baselines` 提供费率、手工资金流水和日初经济净值基线的查询/新增接口。
 4. `/v1/accounts/{account_id}/performance/reverse-repo` 从成交账本预览 `204001.SH` 应计利息；`/reverse-repo/rebuild` 可在写入开关开启时重建并落库；`/reverse-repo/accruals` 查询已落库结果。
 5. `/trade#performance-settings` 新增绩效设置工作区，展示配置状态、费率规则、手工资金流水、日初经济净值和逆回购估算结果。该页面是运营/研究侧人工输入入口，不主动查询柜台。
+6. `/v1/accounts/{account_id}/performance/economic-nav/preview` 已提供只读 economic NAV 试算；`/economic-nav/rebuild` 在写入开关开启时写入新的 current NAV 版本和 same-day NAV 对账记录。
 
-下一步是在上述输入层基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因和 `performance_nav_versions` 写入；再补 T+1 对账流程和数据质量阈值告警。
+下一步是在上述输入层和 NAV 容器基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因分量；再补 T+1 observed open assets 更新、人工确认流程和页面告警展示。
 
 ### 第二批实现状态
 
@@ -571,6 +572,15 @@ provisional_close_economic_nav =
 3. 单日收益优先使用 Modified Dietz 近似：`daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_flow_i))`，其中 `weight_i` 按资金发生后剩余的交易时段计算。没有盘中外部资金时退化为 `account_day_pnl / open_economic_nav`。
 4. 区间净值使用 `product(1 + daily_return)` 连乘，不让入出金改变累计收益曲线。
 5. 输出字段使用 `performance_economic_nav`，并保留 `provisional/finalized` 和估算来源；不得覆盖原始 `asset_snapshots.net_asset`，也不得宣称为券商会计总资产。
+
+当前实现第一版已经落地为：
+
+1. `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD`：只读试算，不写库，生产环境可安全使用。
+2. `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild`：受 `performance.settings_write_enabled` 保护，写入新的 current `performance_nav_versions`，并把同账户同交易日旧 current 版本退役。
+3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
+4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。
+5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
+6. `performance_nav_reconciliations` 当前先写 same-day provisional 对账记录，T+1 盘前 observed open assets 更新和人工确认流程后续补齐。
 
 ### 资产对账辅线
 

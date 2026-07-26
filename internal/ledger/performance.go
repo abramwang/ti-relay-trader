@@ -565,6 +565,62 @@ func (repo *Repository) ListPerformanceNAVs(ctx context.Context, accountID, date
 	return items, rows.Err()
 }
 
+func (repo *Repository) UpsertPerformanceNAV(ctx context.Context, nav PerformanceNAV) (PerformanceNAV, error) {
+	if repo == nil || repo.exec == nil {
+		return PerformanceNAV{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePerformanceNAV(nav)
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	pnlComponents, err := marshalJSONObject(normalized.PnLComponents)
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	qualityFlags, err := json.Marshal(normalized.QualityFlags)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("%w: marshal quality flags: %w", ErrInvalidLedgerInput, err)
+	}
+	if normalized.QualityFlags == nil {
+		qualityFlags = []byte("[]")
+	}
+	rows, err := queryer.QueryContext(ctx, upsertPerformanceNAVSQL,
+		normalized.AccountID,
+		normalized.TradeDate,
+		normalized.Version,
+		normalized.Status,
+		normalized.FormulaVersion,
+		normalized.OpenEconomicNAV,
+		normalized.ExternalNetFlow,
+		normalized.AccountDayPnL,
+		normalized.SettlementAdjustment,
+		normalized.CloseEconomicNAV,
+		normalized.ReturnDenominator,
+		normalized.DailyReturn,
+		normalized.CumulativeNAV,
+		pnlComponents,
+		qualityFlags,
+		normalized.Source,
+		nullableTime(normalized.FinalizedAt),
+	)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("upsert performance nav %s/%s: %w", normalized.AccountID, normalized.TradeDate, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return PerformanceNAV{}, fmt.Errorf("upsert performance nav %s/%s: no row returned", normalized.AccountID, normalized.TradeDate)
+	}
+	saved, err := scanPerformanceNAV(rows)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("scan performance nav %s/%s: %w", normalized.AccountID, normalized.TradeDate, err)
+	}
+	return saved, nil
+}
+
 func (repo *Repository) ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]NAVReconciliation, error) {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {
@@ -592,6 +648,58 @@ func (repo *Repository) ListNAVReconciliations(ctx context.Context, accountID, d
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) UpsertNAVReconciliation(ctx context.Context, item NAVReconciliation) (NAVReconciliation, error) {
+	if repo == nil || repo.exec == nil {
+		return NAVReconciliation{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeNAVReconciliation(item)
+	if err != nil {
+		return NAVReconciliation{}, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return NAVReconciliation{}, err
+	}
+	details, err := marshalJSONObject(normalized.Details)
+	if err != nil {
+		return NAVReconciliation{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, upsertNAVReconciliationSQL,
+		normalized.ReconciliationID,
+		normalized.PerformanceNAVPK,
+		normalized.AccountID,
+		normalized.TradeDate,
+		normalized.ObservedTradeDate,
+		normalized.Status,
+		normalized.ObservedVisibleCash,
+		normalized.ObservedPositionValue,
+		normalized.InvisibleCounterCash,
+		normalized.OutstandingSettlementAssets,
+		normalized.ObservedOpenAssets,
+		normalized.ProvisionalCloseNAV,
+		normalized.OvernightExternalNetFlow,
+		normalized.KnownOvernightIncomeExpense,
+		normalized.Residual,
+		normalized.AutoThreshold,
+		normalized.WarningThreshold,
+		details,
+		nullString(normalized.ReviewedBy),
+		nullableTime(normalized.ReviewedAt),
+	)
+	if err != nil {
+		return NAVReconciliation{}, fmt.Errorf("upsert nav reconciliation %s/%s: %w", normalized.AccountID, normalized.TradeDate, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return NAVReconciliation{}, fmt.Errorf("upsert nav reconciliation %s/%s: no row returned", normalized.AccountID, normalized.TradeDate)
+	}
+	saved, err := scanNAVReconciliation(rows)
+	if err != nil {
+		return NAVReconciliation{}, fmt.Errorf("scan nav reconciliation %s/%s: %w", normalized.AccountID, normalized.TradeDate, err)
+	}
+	return saved, nil
 }
 
 func normalizeFeeRule(rule FeeRule) (FeeRule, error) {
@@ -779,6 +887,89 @@ func normalizeReverseRepoAccrual(accrual ReverseRepoAccrual) (ReverseRepoAccrual
 		accrual.CalculatedAt = time.Now()
 	}
 	return accrual, nil
+}
+
+func normalizePerformanceNAV(nav PerformanceNAV) (PerformanceNAV, error) {
+	nav.AccountID = strings.TrimSpace(nav.AccountID)
+	nav.TradeDate = strings.TrimSpace(nav.TradeDate)
+	nav.Status = strings.TrimSpace(nav.Status)
+	nav.FormulaVersion = strings.TrimSpace(nav.FormulaVersion)
+	nav.Source = strings.TrimSpace(nav.Source)
+	if nav.AccountID == "" {
+		return PerformanceNAV{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	normalizedDate, err := normalizeTradeDate(nav.TradeDate)
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	nav.TradeDate = normalizedDate
+	if nav.Version < 0 {
+		return PerformanceNAV{}, fmt.Errorf("%w: nav version must be non-negative", ErrInvalidLedgerInput)
+	}
+	if nav.Status == "" {
+		nav.Status = "provisional"
+	}
+	switch nav.Status {
+	case "provisional", "finalized", "blocked":
+	default:
+		return PerformanceNAV{}, fmt.Errorf("%w: invalid nav status", ErrInvalidLedgerInput)
+	}
+	if nav.FormulaVersion == "" {
+		nav.FormulaVersion = "performance_economic_nav.v1"
+	}
+	if nav.Source == "" {
+		nav.Source = "relay"
+	}
+	if nav.OpenEconomicNAV <= 0 || nav.CloseEconomicNAV <= 0 {
+		return PerformanceNAV{}, fmt.Errorf("%w: open_economic_nav and close_economic_nav must be positive", ErrInvalidLedgerInput)
+	}
+	if nav.ReturnDenominator < 0 {
+		return PerformanceNAV{}, fmt.Errorf("%w: return_denominator must be non-negative", ErrInvalidLedgerInput)
+	}
+	if nav.CumulativeNAV <= 0 {
+		nav.CumulativeNAV = 1
+	}
+	if nav.Status == "finalized" && nav.FinalizedAt.IsZero() {
+		nav.FinalizedAt = time.Now()
+	}
+	if nav.Status != "finalized" {
+		nav.FinalizedAt = time.Time{}
+	}
+	return nav, nil
+}
+
+func normalizeNAVReconciliation(item NAVReconciliation) (NAVReconciliation, error) {
+	item.ReconciliationID = strings.TrimSpace(item.ReconciliationID)
+	item.AccountID = strings.TrimSpace(item.AccountID)
+	item.TradeDate = strings.TrimSpace(item.TradeDate)
+	item.ObservedTradeDate = strings.TrimSpace(item.ObservedTradeDate)
+	item.Status = strings.TrimSpace(item.Status)
+	item.ReviewedBy = strings.TrimSpace(item.ReviewedBy)
+	if item.ReconciliationID == "" || item.PerformanceNAVPK <= 0 || item.AccountID == "" {
+		return NAVReconciliation{}, fmt.Errorf("%w: reconciliation_id, performance_nav_pk and account_id are required", ErrInvalidLedgerInput)
+	}
+	var err error
+	if item.TradeDate, err = normalizeTradeDate(item.TradeDate); err != nil {
+		return NAVReconciliation{}, err
+	}
+	if item.ObservedTradeDate == "" {
+		item.ObservedTradeDate = item.TradeDate
+	}
+	if item.ObservedTradeDate, err = normalizeTradeDate(item.ObservedTradeDate); err != nil {
+		return NAVReconciliation{}, err
+	}
+	if item.Status == "" {
+		item.Status = "review_required"
+	}
+	switch item.Status {
+	case "auto_completed", "review_required", "blocked", "confirmed":
+	default:
+		return NAVReconciliation{}, fmt.Errorf("%w: invalid nav reconciliation status", ErrInvalidLedgerInput)
+	}
+	if item.AutoThreshold < 0 || item.WarningThreshold < 0 {
+		return NAVReconciliation{}, fmt.Errorf("%w: reconciliation thresholds must be non-negative", ErrInvalidLedgerInput)
+	}
+	return item, nil
 }
 
 func wildcardDefault(value string) string {

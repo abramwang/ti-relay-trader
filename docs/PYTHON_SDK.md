@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.12`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.13`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,9 +35,9 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.12.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.13.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
-18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照。
+18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 
 尚未完成：
@@ -86,15 +86,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.12.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.13.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -317,6 +317,10 @@ client = RelayClient(
 | `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
 | `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
+| `preview_economic_nav(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/economic-nav/preview` | 只读试算 economic NAV、现金桥、逆回购和质量标记 |
+| `rebuild_economic_nav(trade_date=..., status=...)` | `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild` | 重建并落库 current economic NAV 版本和对账记录；需要服务器开启绩效写入 |
+| `list_economic_nav(...)` | `GET /v1/accounts/{account_id}/performance/economic-nav` | 查询已落库 current economic NAV 版本 |
+| `list_nav_reconciliations(...)` | `GET /v1/accounts/{account_id}/performance/nav-reconciliations` | 查询 economic NAV 对账记录 |
 | `list_reconciliation_breaks(...)` | `GET /v1/reconciliations/breaks` | 查询盘后差异 |
 | `get_meridian_bars(security_id=..., trade_date=...)` | `GET /v1/meridian/market/bars` | 查询 Meridian bars 薄代理，参数口径以 Meridian 为准，常用 `trade_date` 分钟线 |
 | `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)` | `GET /v1/meridian/metadata/adjust-factors` | 查询 Meridian 复权因子薄代理，响应字段以 Meridian 为准 |

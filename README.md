@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 已进入绩效分析 Phase 2/3，P10 已完成 9092 容器自启动和健康守护底座。2026-07-26 生产账本审计确认：当前 `asset_page.net_asset` 主要是资金余额，证券市值恒为 0，费用/资金流水/已实现盈亏缺失，逆回购和 ETF 申赎不能按普通成交额或资产差直接计算。`2026-07-22` 至 `2026-07-24` 的订单、成交、ETF 成分划转与 Meridian PCF 已完成事实核对：三类策略均找到清晰样本，`314000046830` 在 22 日买入并于 23 日逐证券等量卖出 155 只股票，`501000114077` 和 `314000045768` 存在 ETF 申赎 T0，后者同时进行 ETF 截面调仓。ETF 申赎 T0、股票/ETF 截面及公司行为口径已经确认；费用采用账户级版本化规则，资金流水暂由用户人工维护，极速/普通柜台内部划转不计入收益。经济净资产采用“绩效滚动主线 + T+1 资产对账辅线”，逆回购按 `qty*100` 本金、年化利率、Meridian 交易日历实际占款天数和账户费用规则估算。`000009_performance_accounting` 已提供费率规则、手工资金流水、日初经济净值、版本化 NAV/对账表和逆回购应计表；`000010_strategy_attribution_keys` 已提供订单/成交策略归因字段和交易日业务键底座；`000011_position_snapshot_types` 已让盘前 open 持仓和盘后 close 持仓共存，并新增 Meridian `metadata/adjust-factors` 薄代理与 SDK `0.1.12`。其余主线为策略归因落库、gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 已进入绩效分析 Phase 2/3，P10 已完成 9092 容器自启动和健康守护底座。2026-07-26 生产账本审计确认：当前 `asset_page.net_asset` 主要是资金余额，证券市值恒为 0，费用/资金流水/已实现盈亏缺失，逆回购和 ETF 申赎不能按普通成交额或资产差直接计算。`2026-07-22` 至 `2026-07-24` 的订单、成交、ETF 成分划转与 Meridian PCF 已完成事实核对：三类策略均找到清晰样本，`314000046830` 在 22 日买入并于 23 日逐证券等量卖出 155 只股票，`501000114077` 和 `314000045768` 存在 ETF 申赎 T0，后者同时进行 ETF 截面调仓。ETF 申赎 T0、股票/ETF 截面及公司行为口径已经确认；费用采用账户级版本化规则，资金流水暂由用户人工维护，极速/普通柜台内部划转不计入收益。经济净资产采用“绩效滚动主线 + T+1 资产对账辅线”，逆回购按 `qty*100` 本金、年化利率、Meridian 交易日历实际占款天数和账户费用规则估算。`000009_performance_accounting` 已提供费率规则、手工资金流水、日初经济净值、版本化 NAV/对账表和逆回购应计表；`000010_strategy_attribution_keys` 已提供订单/成交策略归因字段和交易日业务键底座；`000011_position_snapshot_types` 已让盘前 open 持仓和盘后 close 持仓共存，并新增 Meridian `metadata/adjust-factors` 薄代理。本轮新增 economic NAV 预览/重建 API、版本化 NAV 写入和 NAV 对账写入底座，SDK 升至 `0.1.13`；策略归因仍先以 `unattributed` 承接。其余主线为策略归因落库、gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-26`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -137,8 +137,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -284,11 +284,12 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 实现正式交易服务模式下的 9092 健康检查接口。
 - [x] 每日盘前/盘后任务支持账户级异常隔离：单个账户柜台未就绪或资金快照缺失时，任务整体保持成功完成，并在 report、任务状态页和 `reconciliation_breaks` 中标记异常账户。
 - [x] 新增 `000009_performance_accounting`：账户级费率规则、扩展版 `cash_ledger`、日初经济净值基线、版本化经济 NAV、T+1 对账和逆回购应计表。
-- [x] 新增绩效输入 API：`/v1/performance/settings`、`/v1/performance/fee-rules`、`/v1/accounts/{account_id}/cash-ledger`、`/performance/baselines`、`/performance/reverse-repo`、`/performance/economic-nav` 和 `/performance/nav-reconciliations`；人工写入默认由 `performance.settings_write_enabled=false` 关闭。
+- [x] 新增绩效输入 API：`/v1/performance/settings`、`/v1/performance/fee-rules`、`/v1/accounts/{account_id}/cash-ledger`、`/performance/baselines`、`/performance/reverse-repo`、`/performance/economic-nav/preview`、`/performance/economic-nav/rebuild`、`/performance/economic-nav` 和 `/performance/nav-reconciliations`；人工/绩效写入默认由 `performance.settings_write_enabled=false` 关闭。
 - [x] `/trade#performance-settings` 新增绩效设置工作区，支持查看/维护费率规则、手工资金流水、日初经济净值，并预览/持久化 `204001.SH` 逆回购估算。
 - [x] `204001.SH` 逆回购归因第一版已实现：按成交账本聚合、排除 `relay-summary` 重复成交、用 Meridian 交易日历计算实际占款天数、实际费用优先、费率估算兜底并标记缺失质量。
 - [x] 新增 `000010_strategy_attribution_keys`：订单、订单事件和成交保存 `trade_date` 与策略归因字段，新增 `orders(account_id, trade_date, gateway_order_id)` 唯一索引和 `performance_attribution_links` 归因链接表；`SubmitOrderRequest`、Redis order/fill 解析、订单/成交查询过滤和 Python SDK `0.1.11` 已同步。
-- [x] 新增 `000011_position_snapshot_types`：`position_snapshots` 增加 `snapshot_type`，盘前初始化写入 open 持仓快照，盘后绩效和研究 view 只聚合 close 持仓；新增 `/v1/meridian/metadata/adjust-factors` 同源薄代理，Python SDK `0.1.12` 已同步。
+- [x] 新增 `000011_position_snapshot_types`：`position_snapshots` 增加 `snapshot_type`，盘前初始化写入 open 持仓快照，盘后绩效和研究 view 只聚合 close 持仓；新增 `/v1/meridian/metadata/adjust-factors` 同源薄代理，Python SDK 已同步。
+- [x] 新增 economic NAV 第一版闭环：`preview` 只读试算，`rebuild` 版本化落库并写 NAV 对账记录，未拆策略收益先进入 `pnl_components.unattributed`。
 
 ## 待办事项
 
@@ -358,7 +359,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.13.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -527,3 +528,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-26`: 用户确认经济净值和逆回购方案后开始落地第一批绩效输入能力：新增 `000009_performance_accounting`，扩展 `cash_ledger` 并增加 `performance_fee_rules/performance_nav_baselines/performance_nav_versions/performance_nav_reconciliations/reverse_repo_accruals`；新增绩效输入 API 和 `/trade#performance-settings` 工作区；逆回购服务按成交账本聚合、排除 summary 重复、用 Meridian 交易日历计算占款天数并按实际费用/费率规则估算净息。写入类接口默认由 `performance.settings_write_enabled=false` 关闭，生产仍保持只读设置。
 - `2026-07-26`: 落地策略归因和交易日业务键底座：新增 `000010_strategy_attribution_keys`，回填 `orders.trade_date`，为 `orders/order_events/fills` 增加策略归因字段，为订单新增 `account_id + trade_date + gateway_order_id` 唯一索引，并建立 `performance_attribution_links`；Go API、Redis 同步链路和 `relay-sdk 0.1.11` 已支持 `strategy_type/strategy_id/basket_id/parent_order_id/t0_order_group_id`。当前旧二元唯一约束仍保留给现有外键使用，后续 N10 再切换主冲突目标。
 - `2026-07-26`: 新增 `000011_position_snapshot_types`，将 `position_snapshots` 拆分 `open/close/intraday/reconcile` 口径，`pre_open_init` 现在固化日初持仓快照，历史持仓默认读 close 且支持 `snapshot_type=open`；新增 Meridian `/v1/metadata/adjust-factors` 薄代理和 `relay-sdk 0.1.12` 的 `get_meridian_adjust_factors()`。
+- `2026-07-26`: 推进 N8 economic NAV 第一版闭环：新增 `GET /v1/accounts/{account_id}/performance/economic-nav/preview` 只读试算和 `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild` 版本化落库；repository 支持写入 `performance_nav_versions` current 版本和 `performance_nav_reconciliations` same-day 对账记录。公式使用日初 open NAV、已确认外部资金流水 Modified Dietz 分母、手工结算调整、逆回购 receivable 和现金管理分量，策略未拆部分暂写 `pnl_components.unattributed`。API Console、`/v1/schema`、`/trade#performance` 摘要区、文档和 `relay-sdk 0.1.13` 已同步。

@@ -26,10 +26,16 @@ const (
 	fillPageLimit           = 500
 	maxFillPages            = 40
 	maxCalendarSearchDays   = 20
+	defaultFormulaVersion   = "performance_economic_nav.v1"
+	defaultAutoToleranceCNY = 50.0
+	defaultAutoToleranceBP  = 0.1
+	defaultWarnToleranceCNY = 500.0
+	defaultWarnToleranceBP  = 1.0
 )
 
 type Store interface {
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
+	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
 	CreateFeeRule(ctx context.Context, rule ledger.FeeRule) (ledger.FeeRule, error)
 	ListFeeRules(ctx context.Context, query ledger.FeeRuleQuery) ([]ledger.FeeRule, error)
 	EffectiveRepoFeeRule(ctx context.Context, accountID, tradeDate string) (ledger.FeeRule, error)
@@ -42,7 +48,9 @@ type Store interface {
 	UpsertReverseRepoAccrual(ctx context.Context, accrual ledger.ReverseRepoAccrual) error
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
+	UpsertPerformanceNAV(ctx context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
+	UpsertNAVReconciliation(ctx context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error)
 }
 
 type TradingCalendar interface {
@@ -50,16 +58,65 @@ type TradingCalendar interface {
 }
 
 type Options struct {
-	Store    Store
-	Calendar TradingCalendar
-	Now      func() time.Time
+	Store               Store
+	Calendar            TradingCalendar
+	Now                 func() time.Time
+	FormulaVersion      string
+	AutoToleranceCNY    float64
+	AutoToleranceBP     float64
+	WarningToleranceCNY float64
+	WarningToleranceBP  float64
 }
 
 type Service struct {
-	store    Store
-	calendar TradingCalendar
-	now      func() time.Time
-	ids      atomic.Uint64
+	store               Store
+	calendar            TradingCalendar
+	now                 func() time.Time
+	formulaVersion      string
+	autoToleranceCNY    float64
+	autoToleranceBP     float64
+	warningToleranceCNY float64
+	warningToleranceBP  float64
+	ids                 atomic.Uint64
+}
+
+type EconomicNAVOptions struct {
+	Persist bool   `json:"persist"`
+	Status  string `json:"status,omitempty"`
+}
+
+type EconomicNAVCashFlowSummary struct {
+	ExternalNetFlow    float64 `json:"external_net_flow"`
+	SettlementAdjust   float64 `json:"settlement_adjustment"`
+	IncomeExpense      float64 `json:"income_expense"`
+	InternalTransfer   float64 `json:"internal_transfer"`
+	ExternalFlowCount  int     `json:"external_flow_count"`
+	SettlementCount    int     `json:"settlement_count"`
+	IncomeExpenseCount int     `json:"income_expense_count"`
+	InternalFlowCount  int     `json:"internal_flow_count"`
+}
+
+type EconomicNAVReverseRepoSummary struct {
+	Orders      int     `json:"orders"`
+	Principal   float64 `json:"principal"`
+	NetInterest float64 `json:"net_interest"`
+	Receivable  float64 `json:"receivable"`
+	Fee         float64 `json:"fee"`
+	Source      string  `json:"source,omitempty"`
+}
+
+type EconomicNAVResult struct {
+	AccountID        string                        `json:"account_id"`
+	TradeDate        string                        `json:"trade_date"`
+	Status           string                        `json:"status"`
+	FormulaVersion   string                        `json:"formula_version"`
+	Persisted        bool                          `json:"persisted"`
+	NAV              ledger.PerformanceNAV         `json:"nav"`
+	Reconciliation   ledger.NAVReconciliation      `json:"reconciliation,omitempty"`
+	DailyPerformance ledger.DailyPerformance       `json:"daily_performance"`
+	CashFlows        EconomicNAVCashFlowSummary    `json:"cash_flows"`
+	ReverseRepo      EconomicNAVReverseRepoSummary `json:"reverse_repo"`
+	QualityFlags     []string                      `json:"quality_flags,omitempty"`
 }
 
 type ReverseRepoResult struct {
@@ -93,10 +150,30 @@ func New(options Options) (*Service, error) {
 	if options.Now == nil {
 		options.Now = timeutil.Now
 	}
+	if strings.TrimSpace(options.FormulaVersion) == "" {
+		options.FormulaVersion = defaultFormulaVersion
+	}
+	if options.AutoToleranceCNY == 0 {
+		options.AutoToleranceCNY = defaultAutoToleranceCNY
+	}
+	if options.AutoToleranceBP == 0 {
+		options.AutoToleranceBP = defaultAutoToleranceBP
+	}
+	if options.WarningToleranceCNY == 0 {
+		options.WarningToleranceCNY = defaultWarnToleranceCNY
+	}
+	if options.WarningToleranceBP == 0 {
+		options.WarningToleranceBP = defaultWarnToleranceBP
+	}
 	return &Service{
-		store:    options.Store,
-		calendar: options.Calendar,
-		now:      options.Now,
+		store:               options.Store,
+		calendar:            options.Calendar,
+		now:                 options.Now,
+		formulaVersion:      strings.TrimSpace(options.FormulaVersion),
+		autoToleranceCNY:    options.AutoToleranceCNY,
+		autoToleranceBP:     options.AutoToleranceBP,
+		warningToleranceCNY: options.WarningToleranceCNY,
+		warningToleranceBP:  options.WarningToleranceBP,
 	}, nil
 }
 
@@ -151,6 +228,200 @@ func (service *Service) ListNAVReconciliations(ctx context.Context, accountID, d
 
 func (service *Service) ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error) {
 	return service.store.ListReverseRepoAccruals(ctx, accountID, tradeDate)
+}
+
+func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options EconomicNAVOptions) (EconomicNAVResult, error) {
+	accountID = strings.TrimSpace(accountID)
+	normalizedDate, parsedDate, err := parseTradeDate(tradeDate)
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	if accountID == "" {
+		return EconomicNAVResult{}, errors.New("account_id is required")
+	}
+	status := strings.TrimSpace(options.Status)
+	if status == "" {
+		status = "provisional"
+	}
+	switch status {
+	case "provisional", "finalized", "blocked":
+	default:
+		return EconomicNAVResult{}, fmt.Errorf("invalid economic nav status %q", status)
+	}
+
+	daily, err := service.store.GetDailyPerformance(ctx, accountID, normalizedDate)
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	result := EconomicNAVResult{
+		AccountID:        accountID,
+		TradeDate:        normalizedDate,
+		Status:           status,
+		FormulaVersion:   service.formulaVersion,
+		DailyPerformance: daily,
+	}
+	result.QualityFlags = appendUnique(result.QualityFlags, daily.QualityFlags...)
+
+	openEconomicNAV, baselineFlags, err := service.openEconomicNAV(ctx, accountID, normalizedDate, daily)
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	result.QualityFlags = appendUnique(result.QualityFlags, baselineFlags...)
+
+	externalFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "external_flow")
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	settlementFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "settlement_adjustment")
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	incomeExpenseFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "income_expense")
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	internalFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "internal_transfer")
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+
+	externalNetFlow := sumCashAmounts(externalFlows)
+	settlementAdjustment := sumCashAmounts(settlementFlows)
+	incomeExpense := sumCashAmounts(incomeExpenseFlows)
+	internalTransfer := sumCashAmounts(internalFlows)
+	result.CashFlows = EconomicNAVCashFlowSummary{
+		ExternalNetFlow:    roundMoney(externalNetFlow),
+		SettlementAdjust:   roundMoney(settlementAdjustment),
+		IncomeExpense:      roundMoney(incomeExpense),
+		InternalTransfer:   roundMoney(internalTransfer),
+		ExternalFlowCount:  len(externalFlows),
+		SettlementCount:    len(settlementFlows),
+		IncomeExpenseCount: len(incomeExpenseFlows),
+		InternalFlowCount:  len(internalFlows),
+	}
+	if math.Abs(internalTransfer) > 0.000001 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "internal_transfer_unbalanced")
+	}
+
+	repoSummary, repoFlags := service.reverseRepoForEconomicNAV(ctx, accountID, normalizedDate)
+	result.ReverseRepo = repoSummary
+	result.QualityFlags = appendUnique(result.QualityFlags, repoFlags...)
+
+	closeEconomicNAV := roundMoney(daily.NetAsset + repoSummary.Receivable)
+	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
+		result.Status = "blocked"
+		result.QualityFlags = appendUnique(result.QualityFlags, "missing_positive_economic_nav")
+		result.NAV = ledger.PerformanceNAV{
+			AccountID:        accountID,
+			TradeDate:        normalizedDate,
+			Status:           "blocked",
+			FormulaVersion:   service.formulaVersion,
+			OpenEconomicNAV:  roundMoney(openEconomicNAV),
+			CloseEconomicNAV: closeEconomicNAV,
+			Source:           "relay.economic_nav.preview",
+			QualityFlags:     result.QualityFlags,
+		}
+		return result, nil
+	}
+
+	accountDayPnL := roundMoney(closeEconomicNAV - openEconomicNAV - externalNetFlow - settlementAdjustment)
+	returnDenominator, weightedFlowDetails, denominatorFlags := calculateReturnDenominator(openEconomicNAV, externalFlows, parsedDate)
+	result.QualityFlags = appendUnique(result.QualityFlags, denominatorFlags...)
+	dailyReturn := 0.0
+	if returnDenominator > 0 {
+		dailyReturn = accountDayPnL / returnDenominator
+	}
+	previousNAV, sameDateVersion, navFlags, err := service.previousNAVContext(ctx, accountID, normalizedDate)
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	result.QualityFlags = appendUnique(result.QualityFlags, navFlags...)
+	previousCumulative := 1.0
+	if previousNAV.CumulativeNAV > 0 {
+		previousCumulative = previousNAV.CumulativeNAV
+	}
+	cumulativeNAV := roundRatio(previousCumulative * (1 + dailyReturn))
+	cashManagementPnL := roundMoney(repoSummary.NetInterest + incomeExpense)
+	unattributedPnL := roundMoney(accountDayPnL - cashManagementPnL)
+	if math.Abs(unattributedPnL) > 0.000001 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "strategy_attribution_pending")
+	}
+
+	now := service.now()
+	nav := ledger.PerformanceNAV{
+		AccountID:            accountID,
+		TradeDate:            normalizedDate,
+		Version:              sameDateVersion + 1,
+		IsCurrent:            true,
+		Status:               status,
+		FormulaVersion:       service.formulaVersion,
+		OpenEconomicNAV:      roundMoney(openEconomicNAV),
+		ExternalNetFlow:      roundMoney(externalNetFlow),
+		AccountDayPnL:        accountDayPnL,
+		SettlementAdjustment: roundMoney(settlementAdjustment),
+		CloseEconomicNAV:     closeEconomicNAV,
+		ReturnDenominator:    roundMoney(returnDenominator),
+		DailyReturn:          roundRatio(dailyReturn),
+		CumulativeNAV:        cumulativeNAV,
+		PnLComponents: map[string]any{
+			"unattributed": map[string]any{
+				"pnl":   unattributedPnL,
+				"scope": "strategy_components_pending",
+			},
+			"cash_management": map[string]any{
+				"pnl":                         cashManagementPnL,
+				"known_income_expense":        roundMoney(incomeExpense),
+				"reverse_repo_net_interest":   repoSummary.NetInterest,
+				"reverse_repo_receivable":     repoSummary.Receivable,
+				"reverse_repo_principal":      repoSummary.Principal,
+				"reverse_repo_effective_fee":  repoSummary.Fee,
+				"reverse_repo_orders":         repoSummary.Orders,
+				"reverse_repo_accrual_source": repoSummary.Source,
+			},
+			"trading_observation": map[string]any{
+				"fills_count": daily.FillsCount,
+				"buy_amount":  roundMoney(daily.BuyAmount),
+				"sell_amount": roundMoney(daily.SellAmount),
+				"turnover":    roundMoney(daily.Turnover),
+				"fee_total":   roundMoney(daily.FeeTotal),
+			},
+			"cash_bridge": map[string]any{
+				"visible_close_net_asset":        roundMoney(daily.NetAsset),
+				"open_economic_nav":              roundMoney(openEconomicNAV),
+				"external_net_flow":              roundMoney(externalNetFlow),
+				"settlement_adjustment":          roundMoney(settlementAdjustment),
+				"internal_transfer_net":          roundMoney(internalTransfer),
+				"weighted_external_flow_details": weightedFlowDetails,
+			},
+		},
+		QualityFlags: result.QualityFlags,
+		Source:       "relay.economic_nav.preview",
+	}
+	if status == "finalized" {
+		nav.FinalizedAt = now
+	}
+	reconciliation := service.buildNAVReconciliation(accountID, normalizedDate, nav, daily, incomeExpense)
+	result.NAV = nav
+	result.Reconciliation = reconciliation
+
+	if options.Persist {
+		nav.Source = "relay.economic_nav.rebuild"
+		savedNAV, err := service.store.UpsertPerformanceNAV(ctx, nav)
+		if err != nil {
+			return EconomicNAVResult{}, err
+		}
+		result.NAV = savedNAV
+		reconciliation.PerformanceNAVPK = savedNAV.PerformanceNAVPK
+		savedReconciliation, err := service.store.UpsertNAVReconciliation(ctx, reconciliation)
+		if err != nil {
+			return EconomicNAVResult{}, err
+		}
+		result.Reconciliation = savedReconciliation
+		result.Persisted = true
+	}
+	result.Status = result.NAV.Status
+	result.QualityFlags = result.NAV.QualityFlags
+	return result, nil
 }
 
 func (service *Service) CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (ReverseRepoResult, error) {
@@ -247,6 +518,222 @@ func (service *Service) listTradeDateFills(ctx context.Context, accountID, trade
 		}
 	}
 	return nil, fmt.Errorf("reverse repo fill scan exceeded %d rows", fillPageLimit*maxFillPages)
+}
+
+func (service *Service) openEconomicNAV(ctx context.Context, accountID, tradeDate string, daily ledger.DailyPerformance) (float64, []string, error) {
+	flags := make([]string, 0)
+	openNAV := daily.OpenNetAsset
+	if daily.OpenSnapshotSource != "open" {
+		flags = appendUnique(flags, "open_nav_not_from_open_snapshot")
+	}
+
+	baselines, err := service.store.ListNavBaselines(ctx, accountID)
+	if err != nil {
+		return 0, nil, err
+	}
+	baseline, hasBaseline := latestConfirmedBaseline(baselines, tradeDate)
+	if !hasBaseline {
+		flags = appendUnique(flags, "missing_nav_baseline")
+	}
+	if openNAV <= 0 && hasBaseline {
+		openNAV = baseline.InitialEconomicNAV
+		flags = appendUnique(flags, "open_nav_from_baseline")
+	}
+	if hasBaseline && baseline.EffectiveDate == tradeDate && openNAV > 0 {
+		diff := math.Abs(openNAV - baseline.InitialEconomicNAV)
+		threshold := math.Max(service.autoToleranceCNY, openNAV*service.autoToleranceBP/10000)
+		if diff > threshold {
+			flags = appendUnique(flags, "baseline_open_nav_diff")
+		}
+	}
+	return roundMoney(openNAV), flags, nil
+}
+
+func latestConfirmedBaseline(items []ledger.NavBaseline, tradeDate string) (ledger.NavBaseline, bool) {
+	var latest ledger.NavBaseline
+	found := false
+	for _, item := range items {
+		if item.Status != "confirmed" || item.EffectiveDate == "" || item.EffectiveDate > tradeDate {
+			continue
+		}
+		if !found || item.EffectiveDate > latest.EffectiveDate {
+			latest = item
+			found = true
+		}
+	}
+	return latest, found
+}
+
+func (service *Service) listConfirmedCash(ctx context.Context, accountID, tradeDate, flowClass string) ([]ledger.CashLedgerEntry, error) {
+	return service.store.ListCashLedgerEntries(ctx, ledger.CashLedgerQuery{
+		AccountID: accountID,
+		TradeDate: tradeDate,
+		FlowClass: flowClass,
+		Status:    "confirmed",
+		Limit:     1000,
+	})
+}
+
+func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
+	total := 0.0
+	for _, item := range items {
+		total += item.Amount
+	}
+	return roundMoney(total)
+}
+
+func (service *Service) reverseRepoForEconomicNAV(ctx context.Context, accountID, tradeDate string) (EconomicNAVReverseRepoSummary, []string) {
+	flags := make([]string, 0)
+	accruals, err := service.store.ListReverseRepoAccruals(ctx, accountID, tradeDate)
+	source := "ledger"
+	if err != nil {
+		return EconomicNAVReverseRepoSummary{Source: "unavailable"}, appendUnique(flags, "reverse_repo_accrual_list_failed")
+	}
+	if len(accruals) == 0 {
+		result, err := service.CalculateReverseRepo(ctx, accountID, tradeDate, false)
+		if err != nil {
+			return EconomicNAVReverseRepoSummary{Source: "unavailable"}, appendUnique(flags, "reverse_repo_accrual_preview_failed")
+		}
+		accruals = result.Accruals
+		if len(accruals) > 0 {
+			source = "preview"
+			flags = appendUnique(flags, "reverse_repo_accrual_preview")
+			flags = appendUnique(flags, result.QualityFlags...)
+		} else {
+			source = "none"
+		}
+	}
+	summary := EconomicNAVReverseRepoSummary{Orders: len(accruals), Source: source}
+	for _, accrual := range accruals {
+		if accrual.Status == "voided" {
+			continue
+		}
+		summary.Principal += accrual.Principal
+		summary.NetInterest += accrual.NetInterest
+		summary.Receivable += accrual.Receivable
+		summary.Fee += accrual.EffectiveFee
+		flags = appendUnique(flags, accrual.QualityFlags...)
+	}
+	summary.Principal = roundMoney(summary.Principal)
+	summary.NetInterest = roundMoney(summary.NetInterest)
+	summary.Receivable = roundMoney(summary.Receivable)
+	summary.Fee = roundMoney(summary.Fee)
+	return summary, flags
+}
+
+func (service *Service) previousNAVContext(ctx context.Context, accountID, tradeDate string) (ledger.PerformanceNAV, int, []string, error) {
+	items, err := service.store.ListPerformanceNAVs(ctx, accountID, "", tradeDate)
+	if err != nil {
+		return ledger.PerformanceNAV{}, 0, nil, err
+	}
+	var previous ledger.PerformanceNAV
+	sameDateVersion := 0
+	for _, item := range items {
+		if item.TradeDate == tradeDate && item.Version > sameDateVersion {
+			sameDateVersion = item.Version
+			continue
+		}
+		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 {
+			previous = item
+		}
+	}
+	flags := make([]string, 0)
+	if previous.AccountID == "" {
+		flags = appendUnique(flags, "missing_previous_economic_nav")
+	}
+	return previous, sameDateVersion, flags, nil
+}
+
+func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry, tradeDate time.Time) (float64, []map[string]any, []string) {
+	denominator := openNAV
+	details := make([]map[string]any, 0, len(flows))
+	flags := make([]string, 0)
+	if len(flows) > 0 {
+		flags = appendUnique(flags, "modified_dietz_external_flow_weighting")
+	}
+	sessionStart := time.Date(tradeDate.Year(), tradeDate.Month(), tradeDate.Day(), 9, 30, 0, 0, timeutil.Location())
+	sessionEnd := time.Date(tradeDate.Year(), tradeDate.Month(), tradeDate.Day(), 15, 0, 0, 0, timeutil.Location())
+	sessionSeconds := sessionEnd.Sub(sessionStart).Seconds()
+	for _, flow := range flows {
+		weight := 0.5
+		if !flow.EffectiveAt.IsZero() {
+			effectiveAt := flow.EffectiveAt.In(timeutil.Location())
+			switch {
+			case !effectiveAt.After(sessionStart):
+				weight = 1
+			case !effectiveAt.Before(sessionEnd):
+				weight = 0
+			default:
+				weight = sessionEnd.Sub(effectiveAt).Seconds() / sessionSeconds
+			}
+		} else {
+			flags = appendUnique(flags, "external_flow_missing_effective_at")
+		}
+		weighted := flow.Amount * weight
+		denominator += weighted
+		details = append(details, map[string]any{
+			"entry_id":     flow.EntryID,
+			"amount":       roundMoney(flow.Amount),
+			"weight":       roundRatio(weight),
+			"weighted":     roundMoney(weighted),
+			"effective_at": flow.EffectiveAt,
+		})
+	}
+	if denominator <= 0 {
+		flags = appendUnique(flags, "return_denominator_fallback_open_nav")
+		denominator = openNAV
+	}
+	return roundMoney(denominator), details, flags
+}
+
+func (service *Service) buildNAVReconciliation(accountID, tradeDate string, nav ledger.PerformanceNAV, daily ledger.DailyPerformance, knownIncomeExpense float64) ledger.NAVReconciliation {
+	outstandingSettlementAssets := roundMoney(nav.CloseEconomicNAV - daily.NetAsset)
+	if math.Abs(outstandingSettlementAssets) < 0.000001 {
+		outstandingSettlementAssets = 0
+	}
+	residual := roundMoney(nav.CloseEconomicNAV - daily.NetAsset - outstandingSettlementAssets)
+	autoThreshold := roundMoney(math.Max(service.autoToleranceCNY, math.Abs(nav.CloseEconomicNAV)*service.autoToleranceBP/10000))
+	warningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(nav.CloseEconomicNAV)*service.warningToleranceBP/10000))
+	status := "auto_completed"
+	if nav.Status == "blocked" {
+		status = "blocked"
+	} else if math.Abs(residual) > warningThreshold {
+		status = "blocked"
+	} else if math.Abs(residual) > autoThreshold {
+		status = "review_required"
+	}
+	observedPositionValue := daily.PositionMarketValue
+	if observedPositionValue == 0 {
+		observedPositionValue = daily.MarketValue
+	}
+	version := nav.Version
+	if version <= 0 {
+		version = 1
+	}
+	reconciliationID := fmt.Sprintf("nav-recon-%s-%s-v%d", sanitizeIDPart(accountID), strings.ReplaceAll(tradeDate, "-", ""), version)
+	return ledger.NAVReconciliation{
+		ReconciliationID:            reconciliationID,
+		PerformanceNAVPK:            nav.PerformanceNAVPK,
+		AccountID:                   accountID,
+		TradeDate:                   tradeDate,
+		ObservedTradeDate:           tradeDate,
+		Status:                      status,
+		ObservedVisibleCash:         roundMoney(daily.CashTotal),
+		ObservedPositionValue:       roundMoney(observedPositionValue),
+		OutstandingSettlementAssets: outstandingSettlementAssets,
+		ObservedOpenAssets:          roundMoney(nav.OpenEconomicNAV),
+		ProvisionalCloseNAV:         roundMoney(nav.CloseEconomicNAV),
+		KnownOvernightIncomeExpense: roundMoney(knownIncomeExpense),
+		Residual:                    residual,
+		AutoThreshold:               autoThreshold,
+		WarningThreshold:            warningThreshold,
+		Details: map[string]any{
+			"formula_version":          nav.FormulaVersion,
+			"observed_close_net_asset": roundMoney(daily.NetAsset),
+			"quality_flags":            nav.QualityFlags,
+			"note":                     "same-day provisional reconciliation; T+1 observed open asset can update this record later",
+		},
+	}
 }
 
 func (service *Service) nextTradingDay(ctx context.Context, after time.Time) (time.Time, error) {
@@ -399,6 +886,28 @@ func (service *Service) newID(prefix string) string {
 
 func roundMoney(value float64) float64 {
 	return math.Round(value*1_000_000) / 1_000_000
+}
+
+func roundRatio(value float64) float64 {
+	return math.Round(value*1_000_000_000_000) / 1_000_000_000_000
+}
+
+func sanitizeIDPart(value string) string {
+	value = strings.TrimSpace(value)
+	var builder strings.Builder
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z':
+			builder.WriteRune(char)
+		case char >= 'A' && char <= 'Z':
+			builder.WriteRune(char)
+		case char >= '0' && char <= '9':
+			builder.WriteRune(char)
+		default:
+			builder.WriteByte('-')
+		}
+	}
+	return strings.Trim(builder.String(), "-")
 }
 
 func appendUnique(values []string, extras ...string) []string {

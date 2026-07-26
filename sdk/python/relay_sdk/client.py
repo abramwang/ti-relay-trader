@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.12"
+SDK_VERSION = "0.1.13"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -310,6 +310,82 @@ class RelayClient:
                 "benchmark_security_id": benchmark_security_id,
             },
         )
+
+    def preview_economic_nav(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+        status: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Calculate economic NAV without writing relay's ledger."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/economic-nav/preview",
+            query={"trade_date": trade_date, "status": status},
+        )
+        return data.get("economic_nav", data)
+
+    def rebuild_economic_nav(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+        status: str = "provisional",
+    ) -> Mapping[str, Any]:
+        """Recalculate and persist the current economic NAV version.
+
+        Relay only accepts this request when server-side
+        ``performance.settings_write_enabled`` is enabled.
+        """
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "POST",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/economic-nav/rebuild",
+            json_body={"trade_date": trade_date, "status": status},
+        )
+        return data.get("economic_nav", data)
+
+    def list_economic_nav(
+        self,
+        *,
+        account_id: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[Mapping[str, Any]]:
+        """Return current versioned economic NAV rows from relay's ledger."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/economic-nav",
+            query={"trade_date": trade_date, "date_from": date_from, "date_to": date_to},
+        )
+        navs = data.get("navs", [])
+        return [item for item in navs if isinstance(item, Mapping)]
+
+    def list_nav_reconciliations(
+        self,
+        *,
+        account_id: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[Mapping[str, Any]]:
+        """Return economic NAV reconciliation rows from relay's ledger."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/nav-reconciliations",
+            query={"trade_date": trade_date, "date_from": date_from, "date_to": date_to},
+        )
+        items = data.get("reconciliations", [])
+        return [item for item in items if isinstance(item, Mapping)]
 
     def list_reconciliation_breaks(
         self,

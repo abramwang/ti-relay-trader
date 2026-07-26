@@ -413,6 +413,68 @@ WHERE account_id = $1
 ORDER BY trade_date
 `
 
+const upsertPerformanceNAVSQL = `
+WITH retire_current AS (
+    UPDATE performance_nav_versions
+    SET
+        is_current = FALSE,
+        updated_at = now()
+    WHERE account_id = $1
+        AND trade_date = $2::date
+        AND is_current
+    RETURNING 1
+),
+next_version AS (
+    SELECT COALESCE(max(version), 0) + 1 AS version
+    FROM performance_nav_versions
+    WHERE account_id = $1
+        AND trade_date = $2::date
+),
+retire_count AS (
+    SELECT count(*) FROM retire_current
+)
+INSERT INTO performance_nav_versions (
+    account_id,
+    trade_date,
+    version,
+    is_current,
+    status,
+    formula_version,
+    open_economic_nav,
+    external_net_flow,
+    account_day_pnl,
+    settlement_adjustment,
+    close_economic_nav,
+    return_denominator,
+    daily_return,
+    cumulative_nav,
+    pnl_components,
+    quality_flags,
+    source,
+    finalized_at
+)
+SELECT
+    $1,
+    $2::date,
+    CASE WHEN $3::integer > 0 THEN $3::integer ELSE next_version.version END,
+    TRUE,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14::jsonb,
+    $15::jsonb,
+    $16,
+    $17
+FROM next_version, retire_count
+RETURNING ` + performanceNAVColumns
+
 const navReconciliationColumns = `
     reconciliation_id,
     performance_nav_pk,
@@ -446,3 +508,70 @@ WHERE account_id = $1
     AND ($3::date IS NULL OR trade_date <= $3::date)
 ORDER BY trade_date DESC
 `
+
+const upsertNAVReconciliationSQL = `
+INSERT INTO performance_nav_reconciliations (
+    reconciliation_id,
+    performance_nav_pk,
+    account_id,
+    trade_date,
+    observed_trade_date,
+    status,
+    observed_visible_cash,
+    observed_position_value,
+    invisible_counter_cash,
+    outstanding_settlement_assets,
+    observed_open_assets,
+    provisional_close_nav,
+    overnight_external_net_flow,
+    known_overnight_income_expense,
+    residual,
+    auto_threshold,
+    warning_threshold,
+    details,
+    reviewed_by,
+    reviewed_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4::date,
+    $5::date,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17,
+    $18::jsonb,
+    $19,
+    $20
+)
+ON CONFLICT (performance_nav_pk) DO UPDATE SET
+    reconciliation_id = EXCLUDED.reconciliation_id,
+    account_id = EXCLUDED.account_id,
+    trade_date = EXCLUDED.trade_date,
+    observed_trade_date = EXCLUDED.observed_trade_date,
+    status = EXCLUDED.status,
+    observed_visible_cash = EXCLUDED.observed_visible_cash,
+    observed_position_value = EXCLUDED.observed_position_value,
+    invisible_counter_cash = EXCLUDED.invisible_counter_cash,
+    outstanding_settlement_assets = EXCLUDED.outstanding_settlement_assets,
+    observed_open_assets = EXCLUDED.observed_open_assets,
+    provisional_close_nav = EXCLUDED.provisional_close_nav,
+    overnight_external_net_flow = EXCLUDED.overnight_external_net_flow,
+    known_overnight_income_expense = EXCLUDED.known_overnight_income_expense,
+    residual = EXCLUDED.residual,
+    auto_threshold = EXCLUDED.auto_threshold,
+    warning_threshold = EXCLUDED.warning_threshold,
+    details = EXCLUDED.details,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    updated_at = now()
+RETURNING ` + navReconciliationColumns

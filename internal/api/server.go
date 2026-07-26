@@ -94,6 +94,7 @@ type PerformanceService interface {
 	ListNavBaselines(ctx context.Context, accountID string) ([]ledger.NavBaseline, error)
 	CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error)
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
+	CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVOptions) (relayperformance.EconomicNAVResult, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 }
@@ -1203,11 +1204,31 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			}
 			httpx.WriteNotFound(w, r)
 		case "economic-nav":
-			if len(parts) != 3 || r.Method != http.MethodGet {
-				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			if len(parts) == 3 {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleListPerformanceNAVs(w, r, accountID)
 				return
 			}
-			s.handleListPerformanceNAVs(w, r, accountID)
+			if len(parts) == 4 && parts[3] == "preview" {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleCalculateEconomicNAV(w, r, accountID, false)
+				return
+			}
+			if len(parts) == 4 && parts[3] == "rebuild" {
+				if r.Method != http.MethodPost {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+					return
+				}
+				s.handleCalculateEconomicNAV(w, r, accountID, true)
+				return
+			}
+			httpx.WriteNotFound(w, r)
 		case "nav-reconciliations":
 			if len(parts) != 3 || r.Method != http.MethodGet {
 				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -1939,6 +1960,48 @@ func (s *Server) handleListReverseRepoAccruals(w http.ResponseWriter, r *http.Re
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"accruals": accruals, "count": len(accruals)})
+}
+
+func (s *Server) handleCalculateEconomicNAV(w http.ResponseWriter, r *http.Request, accountID string, persist bool) {
+	if persist && !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	req := EconomicNAVRequest{
+		TradeDate: strings.TrimSpace(r.URL.Query().Get("trade_date")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+	}
+	if persist && r.Body != nil {
+		defer r.Body.Close()
+		var body EconomicNAVRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid economic nav body", err.Error())
+			return
+		}
+		if strings.TrimSpace(body.TradeDate) != "" {
+			req.TradeDate = strings.TrimSpace(body.TradeDate)
+		}
+		if strings.TrimSpace(body.Status) != "" {
+			req.Status = strings.TrimSpace(body.Status)
+		}
+	}
+	if req.TradeDate == "" {
+		req.TradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	result, err := s.perf.CalculateEconomicNAV(r.Context(), accountID, req.TradeDate, relayperformance.EconomicNAVOptions{
+		Persist: persist,
+		Status:  req.Status,
+	})
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"economic_nav": result})
 }
 
 func (s *Server) handleListPerformanceNAVs(w http.ResponseWriter, r *http.Request, accountID string) {
@@ -3117,6 +3180,8 @@ func (s *Server) writePerformanceError(w http.ResponseWriter, r *http.Request, e
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "performance service is unavailable", nil)
 	case errors.Is(err, sql.ErrNoRows):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "performance record not found", err.Error())
+	case errors.Is(err, ledger.ErrAssetNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "asset snapshot not found", err.Error())
 	case errors.Is(err, orderflow.ErrRouteNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", err.Error())
 	case errors.Is(err, ledger.ErrInvalidLedgerInput):
@@ -3408,6 +3473,11 @@ type AccountAliasRequest struct {
 
 type PerformanceOperatorRequest struct {
 	Operator string `json:"operator,omitempty"`
+}
+
+type EconomicNAVRequest struct {
+	TradeDate string `json:"trade_date,omitempty"`
+	Status    string `json:"status,omitempty"`
 }
 
 type JobRunRequest struct {
