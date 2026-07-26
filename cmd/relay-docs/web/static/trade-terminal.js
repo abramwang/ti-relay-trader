@@ -42,6 +42,8 @@
     performanceDaily: null,
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
+    performanceReviewBusy: false,
+    performanceReviewSettingsError: "",
     performanceLoaded: false,
     performanceError: "",
     performanceSettings: null,
@@ -202,6 +204,24 @@
     perfTurnover: byID("perfTurnover"),
     perfFee: byID("perfFee"),
     perfCapturedAt: byID("perfCapturedAt"),
+    navReconciliationPanel: byID("navReconciliationPanel"),
+    navReconciliationStatus: byID("navReconciliationStatus"),
+    navReconciliationHeadline: byID("navReconciliationHeadline"),
+    navReconciliationDates: byID("navReconciliationDates"),
+    navReconciliationBookNAV: byID("navReconciliationBookNAV"),
+    navReconciliationObservedNAV: byID("navReconciliationObservedNAV"),
+    navReconciliationResidual: byID("navReconciliationResidual"),
+    navReconciliationResidualBar: byID("navReconciliationResidualBar"),
+    navReconciliationThresholds: byID("navReconciliationThresholds"),
+    navReconciliationCash: byID("navReconciliationCash"),
+    navReconciliationPositions: byID("navReconciliationPositions"),
+    navReconciliationReviewMeta: byID("navReconciliationReviewMeta"),
+    navReconciliationWriteState: byID("navReconciliationWriteState"),
+    navReviewOperator: byID("navReviewOperator"),
+    navReviewNote: byID("navReviewNote"),
+    navReviewForce: byID("navReviewForce"),
+    blockNAVReconciliationButton: byID("blockNAVReconciliationButton"),
+    confirmNAVReconciliationButton: byID("confirmNAVReconciliationButton"),
     barSecurityInput: byID("barSecurityInput"),
     barTradeDateInput: byID("barTradeDateInput"),
     barFrequencyInput: byID("barFrequencyInput"),
@@ -912,18 +932,6 @@
       ensurePerformanceDefaults();
       if (state.activeAccount && !state.performanceLoaded) {
         loadPerformance().catch((err) => pushLog("warn", "绩效查询失败", err.message));
-      }
-      if (!state.barsLoaded) {
-        loadBars().catch((err) => pushLog("warn", "Bars 查询失败", err.message));
-      } else {
-        window.setTimeout(() => {
-          refreshMinuteChartMarkers()
-            .catch((err) => pushLog("warn", "图表买卖点刷新失败", err.message))
-            .finally(() => {
-              renderBars();
-              resizeMinuteChart();
-            });
-        }, 0);
       }
     }
     if (view === "performance-settings" && state.initialized) {
@@ -2906,6 +2914,14 @@
       state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
       const dailyDate = compactDate(state.performanceDaily && state.performanceDaily.trade_date) || params.dateTo;
       try {
+        state.performanceSettings = await request("/v1/performance/settings");
+        state.performanceReviewSettingsError = "";
+      } catch (err) {
+        state.performanceSettings = null;
+        state.performanceReviewSettingsError = err.message;
+        pushLog("warn", "绩效写权限读取失败", err.message);
+      }
+      try {
         const dailyData = await request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate));
         state.performanceDaily = dailyData.performance || state.performanceDaily;
       } catch (err) {
@@ -2981,6 +2997,90 @@
       .sort((a, b) => (priority[a && a.status] ?? 9) - (priority[b && b.status] ?? 9))[0] || null;
   }
 
+  function navReconciliationStatusInfo(status) {
+    switch (status) {
+    case "auto_completed":
+      return { label: "自动通过", headline: "对账差异在自动阈值内" };
+    case "review_required":
+      return { label: "待人工确认", headline: "对账差异需要人工复核" };
+    case "blocked":
+      return { label: "已阻断", headline: "经济净值已被阻断" };
+    case "confirmed":
+      return { label: "已确认", headline: "对账已确认，经济净值已定稿" };
+    default:
+      return { label: "暂无记录", headline: "当前交易日暂无 NAV 对账记录" };
+    }
+  }
+
+  function renderNAVReconciliation(reconciliation, nav) {
+    if (!els.navReconciliationPanel) {
+      return;
+    }
+    const item = reconciliation && reconciliation.reconciliation_id ? reconciliation : {};
+    const status = item.status || "missing";
+    const statusInfo = navReconciliationStatusInfo(status);
+    const autoThreshold = Number(item.auto_threshold);
+    const warningThreshold = Number(item.warning_threshold);
+    const residual = Number(item.residual);
+    const thresholdForBar = Number.isFinite(warningThreshold) && warningThreshold > 0
+      ? warningThreshold
+      : (Number.isFinite(autoThreshold) && autoThreshold > 0 ? autoThreshold : 0);
+    const residualRatio = thresholdForBar > 0 && Number.isFinite(residual)
+      ? Math.min(Math.abs(residual) / thresholdForBar * 100, 100)
+      : 0;
+    const writeEnabled = Boolean(state.performanceSettings && state.performanceSettings.settings_write_enabled);
+    const hasRecord = Boolean(item.reconciliation_id);
+    const reviewedBy = item.reviewed_by || "";
+    const reviewedAt = item.reviewed_at ? shortDateTime(item.reviewed_at) : "";
+    const reviewedText = reviewedBy
+      ? "复核 " + reviewedBy + (reviewedAt ? " · " + reviewedAt : "")
+      : "尚未人工复核";
+
+    els.navReconciliationPanel.dataset.status = status;
+    els.navReconciliationStatus.textContent = statusInfo.label;
+    els.navReconciliationHeadline.textContent = statusInfo.headline;
+    els.navReconciliationDates.textContent = hasRecord
+      ? [
+        "归属 " + displayDate(item.trade_date),
+        "观测 " + displayDate(item.observed_trade_date),
+        item.reconciliation_id
+      ].filter(Boolean).join(" · ")
+      : "--";
+    els.navReconciliationBookNAV.textContent = formatNumber(item.provisional_close_nav ?? nav.close_economic_nav);
+    els.navReconciliationObservedNAV.textContent = formatNumber(item.observed_open_assets);
+    els.navReconciliationResidual.textContent = formatSigned(item.residual);
+    els.navReconciliationResidualBar.style.width = residualRatio.toFixed(2) + "%";
+    els.navReconciliationThresholds.textContent = formatNumber(item.auto_threshold) + " / " + formatNumber(item.warning_threshold);
+    els.navReconciliationCash.textContent = formatNumber(item.observed_visible_cash);
+    els.navReconciliationPositions.textContent = formatNumber(item.observed_position_value);
+    els.navReconciliationReviewMeta.textContent = reviewedText;
+
+    els.navReconciliationWriteState.className = "";
+    if (state.performanceReviewSettingsError) {
+      els.navReconciliationWriteState.textContent = "权限读取失败";
+      els.navReconciliationWriteState.classList.add("error");
+    } else if (writeEnabled) {
+      els.navReconciliationWriteState.textContent = "允许复核写入";
+    } else {
+      els.navReconciliationWriteState.textContent = "只读模式";
+      els.navReconciliationWriteState.classList.add("readonly");
+    }
+
+    const disabledReason = state.performanceReviewSettingsError
+      ? "绩效写权限读取失败"
+      : (!writeEnabled ? "服务端未开启 performance.settings_write_enabled" : (!hasRecord ? "当前交易日暂无可复核记录" : ""));
+    const commonDisabled = state.performanceReviewBusy || !writeEnabled || !hasRecord;
+    els.navReviewOperator.disabled = commonDisabled;
+    els.navReviewNote.disabled = commonDisabled;
+    els.navReviewForce.disabled = commonDisabled || status === "confirmed";
+    els.confirmNAVReconciliationButton.disabled = commonDisabled || status === "confirmed";
+    els.blockNAVReconciliationButton.disabled = commonDisabled || status === "blocked";
+    els.confirmNAVReconciliationButton.textContent = state.performanceReviewBusy ? "处理中..." : "确认并定稿";
+    els.blockNAVReconciliationButton.textContent = state.performanceReviewBusy ? "处理中..." : "阻断";
+    els.confirmNAVReconciliationButton.title = disabledReason;
+    els.blockNAVReconciliationButton.title = disabledReason;
+  }
+
   function renderPerformance() {
     if (!els.performanceSeriesBody) {
       return;
@@ -3053,6 +3153,7 @@
     els.perfTurnover.textContent = formatNumber(daily.turnover);
     els.perfFee.textContent = formatNumber(daily.fee_total);
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
+    renderNAVReconciliation(reconciliation, nav);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
       : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
@@ -3079,6 +3180,83 @@
         <td>${escapeHTML(shortDateTime(item.captured_at))}</td>
       </tr>
     `).join("");
+  }
+
+  async function reviewNAVReconciliation(action) {
+    const item = state.performanceNAVReconciliation || {};
+    const writeEnabled = Boolean(state.performanceSettings && state.performanceSettings.settings_write_enabled);
+    if (!writeEnabled) {
+      throw new Error("服务端未开启绩效复核写权限");
+    }
+    if (!state.activeAccount || !item.reconciliation_id) {
+      throw new Error("当前交易日暂无可复核的 NAV 对账记录");
+    }
+    const operator = els.navReviewOperator.value.trim();
+    const note = els.navReviewNote.value.trim();
+    const force = els.navReviewForce.checked;
+    if (!operator) {
+      throw new Error("请输入复核人");
+    }
+    if (action === "block" && !note) {
+      throw new Error("阻断操作需要填写复核说明");
+    }
+    const residual = Math.abs(Number(item.residual));
+    const warningThreshold = Number(item.warning_threshold);
+    const forceRequired = action === "confirm" && (
+      item.status === "blocked" ||
+      (Number.isFinite(residual) && Number.isFinite(warningThreshold) && warningThreshold > 0 && residual > warningThreshold)
+    );
+    if (forceRequired && !force) {
+      throw new Error("残差超过警告阈值或记录已阻断，请完成复核后勾选强制确认");
+    }
+    const tradeDate = compactDate(item.trade_date);
+    if (!tradeDate) {
+      throw new Error("对账记录缺少有效交易日");
+    }
+    const confirmationText = action === "block"
+      ? "确认阻断 " + displayDate(tradeDate) + " 的经济净值？"
+      : (force
+        ? "确认强制定稿 " + displayDate(tradeDate) + " 的经济净值？"
+        : "确认定稿 " + displayDate(tradeDate) + " 的经济净值？");
+    if (!window.confirm(confirmationText)) {
+      return;
+    }
+
+    state.performanceReviewBusy = true;
+    renderNAVReconciliation(item, (state.performanceEconomicNAV && state.performanceEconomicNAV.nav) || {});
+    try {
+      const accountID = encodeURIComponent(state.activeAccount);
+      const data = await request(
+        "/v1/accounts/" + accountID + "/performance/nav-reconciliations/" + action,
+        {
+          method: "POST",
+          body: {
+            trade_date: tradeDate,
+            reconciliation_id: item.reconciliation_id,
+            operator,
+            note,
+            force
+          }
+        }
+      );
+      const result = data.nav_reconciliation_review || {};
+      state.performanceNAVReconciliation = result.reconciliation || item;
+      state.performanceEconomicNAV = Object.assign({}, state.performanceEconomicNAV || {}, {
+        nav: result.nav || ((state.performanceEconomicNAV && state.performanceEconomicNAV.nav) || {}),
+        reconciliation: result.reconciliation || item,
+        persisted: true
+      });
+      els.navReviewNote.value = "";
+      els.navReviewForce.checked = false;
+      pushLog("info", action === "confirm" ? "NAV 对账已确认" : "NAV 对账已阻断", tradeDate + " · " + operator);
+      showToast(action === "confirm" ? "NAV 对账已确认并定稿" : "NAV 对账已阻断");
+    } catch (err) {
+      pushLog("error", "NAV 对账复核失败", err.message);
+      throw err;
+    } finally {
+      state.performanceReviewBusy = false;
+      renderPerformance();
+    }
   }
 
   function ensurePerformanceSettingsDefaults() {
@@ -4521,6 +4699,8 @@
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
+    els.confirmNAVReconciliationButton.addEventListener("click", () => reviewNAVReconciliation("confirm").catch((err) => showToast(err.message, "error")));
+    els.blockNAVReconciliationButton.addEventListener("click", () => reviewNAVReconciliation("block").catch((err) => showToast(err.message, "error")));
     els.loadPerformanceSettingsButton.addEventListener("click", () => loadPerformanceSettings().catch((err) => showToast(err.message, "error")));
     els.previewRepoButton.addEventListener("click", () => calculateReverseRepo(false).catch((err) => showToast(err.message, "error")));
     els.persistRepoButton.addEventListener("click", () => calculateReverseRepo(true).catch((err) => showToast(err.message, "error")));
@@ -4619,7 +4799,6 @@
       state.initialized = true;
       if (state.activeView === "performance") {
         await loadPerformance();
-        await loadBars();
       } else if (state.activeView === "performance-settings") {
         await loadPerformanceSettings();
       } else if (state.activeView === "trade") {

@@ -60,7 +60,7 @@
 - [x] 增加版本化 economic NAV 预览/重建 API、`performance_nav_versions` current 版本写入、`provisional/finalized` 状态、same-day NAV 对账记录和阈值判断；策略未拆部分先写入 `pnl_components.unattributed`。
 - [x] 补 T+1 盘前 observed open assets 预览/落库接口：读取 next trading day `asset_snapshots(open)` 与 `position_snapshots(open)` 聚合，计算 overnight 外部资金/已知损益、残差和阈值状态，并回写 `performance_nav_reconciliations`。
 - [x] 补 `performance_nav_reconciliations` 人工确认/finalized 推进和阻断 API；`/trade#performance` 轻量展示当前交易日 NAV 对账状态。
-- [ ] 补 NAV 对账正式告警展示和页面人工确认/阻断操作流。
+- [x] 补 NAV 对账正式告警展示和页面人工确认/阻断操作流：展示账面/观测 NAV、残差、自动/警告阈值、复核信息和写权限状态；页面确认/阻断受服务端写开关、强制确认和二次确认保护。
 - [x] 按 `qty*100`、年化利率、实际占款天数和账户费用规则实现 `204001.SH` 逆回购归因。
 
 范围：
@@ -375,7 +375,7 @@
 - [x] 提供研究侧导出输入第一版：账户绩效序列 CSV。
 - [x] 生成研究侧数据库导出视图：`research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。
 - [x] 完成绩效分析页面第一版设计文档，明确净值曲线、收益贡献、交易归因和数据质量口径。
-- [ ] 完成 `/trade#performance` Phase 2 UI：净值、基准、超额收益、回撤和数据质量。
+- [ ] 完成 `/trade#performance` Phase 2 UI：已完成经济净值摘要和 NAV 对账工作区；继续补净值/基准/超额收益/回撤主图和正式数据质量区。
 - [ ] 增加 `performance/contributions` 只读聚合接口和按证券贡献表。
 - [ ] 增加交易质量统计：成交率、撤单率、拒单率、未终态和异常订单。
 - [ ] 后续按数据完整度评估精确成本引擎、现金流水、逆回购、ETF 申赎和公司行为归因。

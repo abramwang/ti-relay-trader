@@ -111,7 +111,7 @@ def build_checks(sdk_version: str) -> list[Check]:
         Check("docs-readme", "/docs/readme", "text", ("线程恢复卡片", "当前进展")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),
         Check("api-console", "/api-console", "text", ("接口测试台", "api-console-v2", "api-console.js")),
-        Check("trade-terminal", "/trade", "text", ("Relay Trader", "trade-terminal.js", "绩效分析")),
+        Check("trade-terminal", "/trade", "text", ("Relay Trader", "trade-terminal.js", "绩效分析", "NAV 对账")),
         Check("trade-terminal-hash-path", "/trade%23asset", "text", ("Relay Trader", "trade-terminal.js", "资金持仓")),
         Check("trade-terminal-subpath", "/trade/asset", "text", ("Relay Trader", "trade-terminal.js", "资金持仓")),
         Check("job-status", "/jobs", "text", ("后台任务状态", "job-status.js", "盘前初始化")),

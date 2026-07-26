@@ -88,7 +88,7 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 5. `/trade#performance-settings` 新增绩效设置工作区，展示配置状态、费率规则、手工资金流水、日初经济净值和逆回购估算结果。该页面是运营/研究侧人工输入入口，不主动查询柜台。
 6. `/v1/accounts/{account_id}/performance/economic-nav/preview` 已提供只读 economic NAV 试算；`/economic-nav/rebuild` 在写入开关开启时写入新的 current NAV 版本和 same-day NAV 对账记录。
 
-下一步是在上述输入层和 NAV 容器基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因分量；再补 T+1 observed open assets 更新、人工确认流程和页面告警展示。
+下一步是在上述输入层和 NAV 容器基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因分量；T+1 observed open assets 更新、人工确认流程和页面告警展示已经形成第一版闭环。
 
 ### 第二批实现状态
 
@@ -580,7 +580,7 @@ provisional_close_economic_nav =
 3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
 4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。
 5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
-6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，正式页面操作流和告警展示后续补齐。
+6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，`/trade#performance` 已提供正式状态告警和页面复核操作流。
 
 ### 资产对账辅线
 
@@ -614,7 +614,7 @@ reconciliation_residual =
 3. 第一版 `observed_open_assets = open.cash_total + sum(open_positions.market_value)`；盘前 `external_flow` 和 `income_expense` 只纳入 09:30 及以前的已确认手工流水，09:30 后发生的流水会被排除并打质量标记。
 4. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/confirm` 受写开关保护，要求传入 `trade_date/operator`，将同一 current NAV 对应的对账记录改为 `confirmed` 并写入 `reviewed_by/reviewed_at`，同时把 current `performance_nav_versions.status` 就地推进为 `finalized`。如果 residual 超过 warning threshold 或记录已 blocked，需要 `force=true`。
 5. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/block` 受写开关保护，写入阻断复核信息，并把 current NAV 标记为 `blocked`，避免进入正式累计净值。
-6. `/trade#performance` 已轻量读取当前交易日的 NAV 对账记录，并在经济净值状态旁展示 `confirmed/auto_completed/review_required/blocked`；正式告警卡片和页面人工确认/阻断操作流后续补齐。
+6. `/trade#performance` 读取当前交易日 NAV 对账记录，按 `confirmed/auto_completed/review_required/blocked` 展示状态告警、账面/观测 NAV、残差、自动/警告阈值、资金/持仓观测值和复核信息。确认/阻断按钮读取 `/v1/performance/settings` 的服务端写开关；超警告阈值或已阻断记录需要显式勾选强制确认，阻断要求填写说明，两类动作均二次确认。生产写开关关闭时完整保留只读监控，但所有复核输入和按钮禁用。
 
 该模式让小额清算误差在 T+1 被吸收且不跨日累积，同时保留可追溯的估算值、校正值和误差来源。
 

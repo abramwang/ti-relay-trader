@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260726-0002">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260726-0003">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -307,7 +307,56 @@
               <p id="perfCapturedAt">captured_at --</p>
             </section>
 
-            <section class="performance-section bars-section">
+            <section class="performance-section nav-reconciliation-section" id="navReconciliationPanel" data-status="missing">
+              <div class="section-toolbar">
+                <h2>NAV 对账</h2>
+                <span class="nav-reconciliation-status" id="navReconciliationStatus">暂无记录</span>
+              </div>
+              <div class="nav-reconciliation-content">
+                <div class="nav-reconciliation-alert" id="navReconciliationAlert" role="status" aria-live="polite">
+                  <strong id="navReconciliationHeadline">等待对账数据</strong>
+                  <span id="navReconciliationDates">--</span>
+                </div>
+                <div class="nav-reconciliation-grid">
+                  <div><span>账面净值</span><strong id="navReconciliationBookNAV">--</strong></div>
+                  <div><span>观测日初</span><strong id="navReconciliationObservedNAV">--</strong></div>
+                  <div class="nav-residual-cell">
+                    <span>对账残差</span>
+                    <strong id="navReconciliationResidual">--</strong>
+                    <i><b id="navReconciliationResidualBar"></b></i>
+                  </div>
+                  <div><span>自动 / 警告阈值</span><strong id="navReconciliationThresholds">--</strong></div>
+                  <div><span>可见资金</span><strong id="navReconciliationCash">--</strong></div>
+                  <div><span>持仓市值</span><strong id="navReconciliationPositions">--</strong></div>
+                </div>
+                <div class="nav-reconciliation-review">
+                  <div class="nav-review-meta">
+                    <span id="navReconciliationReviewMeta">尚未人工复核</span>
+                    <strong id="navReconciliationWriteState">读取权限中</strong>
+                  </div>
+                  <div class="nav-review-fields">
+                    <label>
+                      <span>复核人</span>
+                      <input id="navReviewOperator" autocomplete="name" placeholder="operator">
+                    </label>
+                    <label>
+                      <span>复核说明</span>
+                      <input id="navReviewNote" autocomplete="off" placeholder="note">
+                    </label>
+                  </div>
+                  <div class="nav-review-actions">
+                    <label class="nav-force-option">
+                      <input type="checkbox" id="navReviewForce">
+                      <span>强制确认</span>
+                    </label>
+                    <button type="button" class="nav-block-button" id="blockNAVReconciliationButton">阻断</button>
+                    <button type="button" class="nav-confirm-button" id="confirmNAVReconciliationButton">确认并定稿</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="performance-section bars-section performance-bars-legacy" aria-hidden="true">
               <div class="section-toolbar">
                 <h2>Meridian Bars</h2>
                 <span id="barsStatus">market_bar.v1</span>
@@ -522,6 +571,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260726-0002"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260726-0003"></script>
 </body>
 </html>
