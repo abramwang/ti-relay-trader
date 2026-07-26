@@ -40,7 +40,7 @@ N8 已进入绩效计算前的数据审计阶段。当前只完成代码和生�
 
 1. 三账户共检查到 376 个非空 `asset_page.account` 回包，`market_value` 全为 0，`net_asset` 全部等于 `cash_total`，且均未提供 `commission/day_profit/stock_value/fund_value`。
 2. `post_close_settlement` 写 open/close 快照时调用内部 `GetAsset()`，没有复用 `GET /asset` 的持仓市值补全。因此现有 `asset_snapshots.net_asset` 主要是资金余额，不是可直接使用的账户经济净资产。
-3. 现有成交中有 126 笔逆回购。回报 `price` 表现为年化利率，不能用 `price * qty` 作为成交额；现场数值显示本金可能与 `qty * 100` 相关，但该规则必须由 OC 明确后才能进入标准计算。
+3. 现有成交中有 126 笔逆回购。回报 `price` 是年化利率，不能用 `price * qty` 作为成交额；上交所现行规则和生产资金桥均确认 `204001.SH` 首次结算价为 100 元，本金按 `qty * 100` 计算。
 4. 现有成交中有 188 笔 `P/R` 申购赎回记录。ETF 赎回主记录常见 `price=1`，该价格不代表赎回资产价值，不能计入普通卖出金额。
 5. 已归档 13,766 条 `transfer.event`，每条均有唯一 `fill_id`，但 `component_value` 当前为空。事件尚未进入标准 transfer 账表，只保存在 raw stream 归档。
 6. 三账户 47,993 条成交的 `fee` 全为 0；`cash_ledger` 当前为 0 行；日终持仓 `settled_profit` 当前也全部为 0。现有 `realized_pnl/net_pnl/fee_total` 不能作为正式口径。
@@ -69,11 +69,11 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 
 正式计算前需要继续确认或落实：
 
-1. OC 是否可以直接提供完整总资产/净资产、证券市值、冻结资金、逆回购在途资产、ETF 待结算款、手续费和当日盈亏，并明确每个字段对应 `TiRspAccountInfo` 的来源。
+1. OC 后续若能提供完整总资产/净资产、证券市值、冻结资金、逆回购在途资产、ETF 待结算款、手续费和当日盈亏，可作为更高优先级的对账来源，但不再作为第一版绩效的阻塞条件。
 2. OC 暂不提供完整资金流水时，Relay 使用人工维护的资金流水账区分入金、出金、柜台间划转、红利、利息、费用、逆回购回款和清算调整；后续 OC 增加接口时仍落入同一标准账表。
-3. 逆回购本金、计息天数、年化利率、应计利息和费用由 OC 提供，还是由 Relay 根据明确协议派生。
-4. ETF 申赎是否由 OC 补充篮子总价值、现金替代、现金差额和成分划转价值；如由 Meridian 提供 PCF/清单，需要明确历史可用范围。
-5. 在完整字段到位前，页面是否允许展示“估算净值”，以及估算数据是否禁止参与累计收益、回撤和基准排名。
+3. `204001.SH` 逆回购由 Relay 按交易所规则、OC 成交和 Meridian 交易日历派生；后续 OC 提供实际应计利息或费用时，以实际值对账并替换估算来源。
+4. ETF 申赎 T0 使用已经确认的 IOPV + 15bp 估算口径；OC 后续补充现金差额或清算价值时只提高对账精度。
+5. 完整字段到位前允许展示 `provisional` 估算净值；T+1 校正且差异通过阈值后转为 `finalized`，只有 `finalized` 进入正式累计收益、回撤和基准比较。
 
 在以上口径确认前，N8 暂停新增绩效聚合接口和历史回填；页面后续可以先建设数据质量状态，但不能把现有净资产序列标记为正式绩效。
 
@@ -519,6 +519,106 @@ OC 当前没有完整资金流水接口，外部入出金和柜台资金变化�
 
 第一版页面建议在 `/trade#performance-settings` 提供“费用规则”和“资金流水”两个 tab。资金流水支持账户、日期、分类和状态过滤，提供新增、确认、冲正、CSV 导入导出及未配平内部划转提示。该页面是生产敏感写入口，不复用交易权限开关，需要独立的绩效配置写权限和完整审计。
 
+## 经济净资产与净值滚动方案
+
+当前柜台 `asset_page.net_asset` 主要是可见资金，无法直接覆盖证券市值、逆回购本金、ETF 申赎待结算款和柜台间不可见资金。Relay 采用“绩效滚动主线 + 资产对账辅线”，不把不完整的柜台资金差直接当作收益。
+
+### 绩效滚动主线
+
+每个账户先人工确认一个起始日的 `initial_economic_nav`，后续按已经确认的策略盈亏和资金事件滚动：
+
+```text
+account_day_pnl =
+    etf_t0_estimated_pnl
+    + stock_cross_section_net_pnl
+    + etf_cross_section_net_pnl
+    + reverse_repo_net_interest
+    + other_income_expense
+    + settlement_adjustment
+
+provisional_close_economic_nav =
+    open_economic_nav
+    + account_day_pnl
+    + intraday_external_net_flow
+```
+
+规则：
+
+1. `internal_transfer` 不进入公式；极速柜台与普通柜台之间搬账不改变账户经济净资产。
+2. 盘前发生的外部入出金直接进入当日 `open_economic_nav`；盘中外部资金单独进入 `intraday_external_net_flow`，不计入 `account_day_pnl`。
+3. 单日收益优先使用 Modified Dietz 近似：`daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_flow_i))`，其中 `weight_i` 按资金发生后剩余的交易时段计算。没有盘中外部资金时退化为 `account_day_pnl / open_economic_nav`。
+4. 区间净值使用 `product(1 + daily_return)` 连乘，不让入出金改变累计收益曲线。
+5. 输出字段使用 `performance_economic_nav`，并保留 `provisional/finalized` 和估算来源；不得覆盖原始 `asset_snapshots.net_asset`，也不得宣称为券商会计总资产。
+
+### 资产对账辅线
+
+T 日 15:05 先发布 `provisional`，T+1 交易日 09:01 盘前初始化后校正：
+
+```text
+observed_next_open_assets =
+    next_open_visible_cash
+    + next_open_position_value
+    + confirmed_invisible_counter_cash
+    + outstanding_settlement_assets
+
+reconciliation_residual =
+    observed_next_open_assets
+    - provisional_close_economic_nav
+    - overnight_external_net_flow
+    - known_overnight_income_expense
+```
+
+1. `next_open_position_value` 使用盘前持仓数量和当日 Meridian `pre_close`；因此盘前任务必须保存 open 持仓快照。
+2. 只能看到一个柜台资金仓位时，由已确认的内部划转和人工仓位余额生成 `confirmed_invisible_counter_cash`。
+3. 逆回购本金及预计利息、ETF 清算在途款只在尚未进入可见资金时列入 `outstanding_settlement_assets`，转为现金后立即冲销，避免重复计入。
+4. `reconciliation_residual` 回写原交易日的独立 `settlement_adjustment`，不静默摊给股票截面、ETF 截面或 ETF T0。
+5. 建议默认阈值配置化：绝对差异不超过 `max(50 CNY, open_nav * 0.1 bp)` 时自动完成；不超过 `max(500 CNY, open_nav * 1 bp)` 时保留警告并等待人工确认；更大差异保持 `provisional`，不得进入正式累计净值。
+6. 周五或节假日前的记录在下一个交易日盘前再最终确认，不按自然日强行结算。
+
+该模式让小额清算误差在 T+1 被吸收且不跨日累积，同时保留可追溯的估算值、校正值和误差来源。
+
+## 逆回购近似口径
+
+第一版只处理已经在生产样本中验证的上交所一天期通用质押式回购 `204001.SH`。OC 回报方向为 `S`，`price` 是年化利率百分数，`qty` 是百元资金单位。
+
+规则依据为上交所现行有效的[债券通用质押式回购交易指引](https://www.sse.com.cn/lawandrules/sselawsrules2025/bond/trading/currency/c/c_20250606_10781048.shtml)：`204***` 为通用回购代码，逆回购方向为卖出，首次结算价为 100 元，购回价按实际占款天数和 365 天年基准计算。
+
+同一账户、交易日和 `gateway_order_id` 的去重成交先聚合，再逐成交计算：
+
+```text
+repo_principal_i = fill_qty_i * 100
+repo_gross_interest_i =
+    repo_principal_i
+    * (fill_price_i / 100)
+    * actual_occupation_days
+    / 365
+
+reverse_repo_net_interest =
+    sum(repo_gross_interest_i)
+    - effective_repo_fee
+
+repo_receivable =
+    sum(repo_principal_i)
+    + reverse_repo_net_interest
+```
+
+其中：
+
+1. `actual_occupation_days` 按交易所实际占款天数计算，使用 Meridian 交易日历推导首次交收日和到期交收日之间的自然日天数；不能固定写成名义期限 1 天。
+2. `effective_repo_fee` 优先使用柜台实际费用，缺失时读取账户级逆回购费用规则，不复用股票、ETF 或 ETF T0 费率。
+3. 逆回购本金不进入股票卖出额、普通成交额或策略利润；只有净利息进入 `reverse_repo_net_interest`。
+4. T 日 close 将本金和预计净利息记为应收资产，T+1 资金可用后冲销本金应收；实际到账差异进入前述 `settlement_adjustment`。
+5. 缺少交易日历、数量乘数不通过现金桥校验或出现非 `204001.SH` 品种时标记 `unsupported_repo_contract`，不猜测计算。
+
+现有生产样本验证：
+
+| 交易日 | 账户 | 本金 | 加权年化利率 | 实际占款天数 | 预计毛利息 | 次日资金桥增加额 | 未扣费残差 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `2026-07-22` | `314000046830` | 3,809,000.00 | 1.355% | 1 | 141.40 | 156.97 | 15.57 |
+| `2026-07-23` | `314000046830` | 5,375,000.00 | 1.400% | 3 | 618.49 | 634.86 | 16.36 |
+
+该账户两日没有 ETF 申赎清算干扰，公式与次日盘前资金桥只差十几元，适合作为第一版逆回购回归样本。其它两个账户同日存在 ETF 申赎待结算，不用单一现金差反推逆回购收入。
+
 ## 接口规划
 
 第一版页面尽量复用现有接口：
@@ -543,6 +643,7 @@ GET/POST /v1/performance/fee-rules
 GET/POST /v1/accounts/{account_id}/cash-ledger
 POST /v1/accounts/{account_id}/cash-ledger/{entry_id}/confirm
 POST /v1/accounts/{account_id}/cash-ledger/{entry_id}/void
+GET /v1/accounts/{account_id}/performance/nav-reconciliations
 ```
 
 所有写接口使用独立权限、幂等键和审计日志。生产环境默认只读，不能因为开放交易下单权限而自动开放绩效配置写权限。
@@ -594,9 +695,11 @@ GET /v1/accounts/{account_id}/performance/contributions
 1. 明确已实现盈亏字段来源。
 2. 增加账户级费用规则版本、费用设置页和实际/估算费用对账。
 3. 扩展 `cash_ledger`，提供人工资金流水、柜台间成对划转和审计页面。
-4. 支持 FIFO 或移动加权成本。
-5. 处理逆回购、ETF 申赎、分红派息、除权除息。
-6. 给研究侧导出 view 增加 v2 版本，避免破坏 v1。
+4. 新增 `performance_economic_nav` 滚动结果、T+1 对账状态和结算差异账表。
+5. 实现 `204001.SH` 逆回购本金、实际占款天数、预计利息和回款对账。
+6. 支持 FIFO 或移动加权成本。
+7. 处理 ETF 申赎、分红派息、除权除息。
+8. 给研究侧导出 view 增加 v2 版本，避免破坏 v1。
 
 ## 第一版边界
 
