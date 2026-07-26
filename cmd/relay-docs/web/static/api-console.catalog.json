@@ -282,6 +282,37 @@
     ]
   },
   {
+    "id": "nav-reconciliation-confirm",
+    "group": "绩效",
+    "title": "经济净值对账确认",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/nav-reconciliations/confirm",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "body", "defaultValue": "20260724" },
+      { "name": "operator", "label": "operator", "source": "body", "defaultValue": "api-console" },
+      { "name": "note", "label": "note", "source": "body", "defaultValue": "" },
+      { "name": "force", "label": "force", "source": "body", "type": "checkbox", "defaultValue": "" },
+      { "name": "reconciliation_id", "label": "reconciliation_id", "source": "body", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "nav-reconciliation-block",
+    "group": "绩效",
+    "title": "经济净值对账阻断",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/nav-reconciliations/block",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "body", "defaultValue": "20260724" },
+      { "name": "operator", "label": "operator", "source": "body", "defaultValue": "api-console" },
+      { "name": "note", "label": "note", "source": "body", "defaultValue": "" },
+      { "name": "reconciliation_id", "label": "reconciliation_id", "source": "body", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "positions-refresh",
     "group": "账户",
     "title": "持仓刷新",

@@ -621,6 +621,56 @@ func (repo *Repository) UpsertPerformanceNAV(ctx context.Context, nav Performanc
 	return saved, nil
 }
 
+func (repo *Repository) UpdatePerformanceNAVStatus(ctx context.Context, nav PerformanceNAV) (PerformanceNAV, error) {
+	if repo == nil || repo.exec == nil {
+		return PerformanceNAV{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	if nav.PerformanceNAVPK <= 0 {
+		return PerformanceNAV{}, fmt.Errorf("%w: performance_nav_pk is required", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizePerformanceNAV(nav)
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	pnlComponents, err := marshalJSONObject(normalized.PnLComponents)
+	if err != nil {
+		return PerformanceNAV{}, err
+	}
+	qualityFlags, err := json.Marshal(normalized.QualityFlags)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("%w: marshal quality flags: %w", ErrInvalidLedgerInput, err)
+	}
+	if normalized.QualityFlags == nil {
+		qualityFlags = []byte("[]")
+	}
+	rows, err := queryer.QueryContext(ctx, updatePerformanceNAVStatusSQL,
+		normalized.PerformanceNAVPK,
+		normalized.AccountID,
+		normalized.TradeDate,
+		normalized.Status,
+		normalized.Source,
+		nullableTime(normalized.FinalizedAt),
+		qualityFlags,
+		pnlComponents,
+	)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("update performance nav status %s/%s/%d: %w", normalized.AccountID, normalized.TradeDate, normalized.PerformanceNAVPK, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return PerformanceNAV{}, fmt.Errorf("%w: current performance nav %s/%s/%d", sql.ErrNoRows, normalized.AccountID, normalized.TradeDate, normalized.PerformanceNAVPK)
+	}
+	saved, err := scanPerformanceNAV(rows)
+	if err != nil {
+		return PerformanceNAV{}, fmt.Errorf("scan updated performance nav %s/%s/%d: %w", normalized.AccountID, normalized.TradeDate, normalized.PerformanceNAVPK, err)
+	}
+	return saved, nil
+}
+
 func (repo *Repository) ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]NAVReconciliation, error) {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {

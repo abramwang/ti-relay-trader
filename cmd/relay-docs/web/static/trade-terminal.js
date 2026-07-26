@@ -41,6 +41,7 @@
     performanceSeries: [],
     performanceDaily: null,
     performanceEconomicNAV: null,
+    performanceNAVReconciliation: null,
     performanceLoaded: false,
     performanceError: "",
     performanceSettings: null,
@@ -2899,6 +2900,7 @@
       const data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
       state.performanceError = "";
       state.performanceEconomicNAV = null;
+      state.performanceNAVReconciliation = null;
       state.performanceSummary = data.summary || null;
       state.performanceSeries = Array.isArray(data.series) ? data.series : [];
       state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
@@ -2916,6 +2918,13 @@
         state.performanceEconomicNAV = null;
         pushLog("warn", "经济净值预览失败", displayDate(dailyDate) + " " + err.message);
       }
+      try {
+        const reconciliationData = await request("/v1/accounts/" + accountID + "/performance/nav-reconciliations?trade_date=" + encodeURIComponent(dailyDate));
+        state.performanceNAVReconciliation = selectPerformanceNAVReconciliation(reconciliationData.reconciliations, state.performanceEconomicNAV && state.performanceEconomicNAV.nav);
+      } catch (err) {
+        state.performanceNAVReconciliation = null;
+        pushLog("warn", "经济净值对账读取失败", displayDate(dailyDate) + " " + err.message);
+      }
       state.performanceLoaded = true;
       renderPerformance();
       showToast("绩效数据已更新");
@@ -2923,6 +2932,7 @@
       state.performanceLoaded = false;
       state.performanceError = err.message;
       state.performanceEconomicNAV = null;
+      state.performanceNAVReconciliation = null;
       pushLog("error", "绩效查询失败", err.message);
       showToast("绩效查询失败：" + err.message, "error");
       renderPerformance();
@@ -2953,6 +2963,24 @@
     window.open("/v1/accounts/" + accountID + "/performance/series.csv?" + query.toString(), "_blank", "noopener");
   }
 
+  function selectPerformanceNAVReconciliation(items, nav) {
+    const rows = Array.isArray(items) ? items : [];
+    if (rows.length === 0) {
+      return null;
+    }
+    const navPK = nav && nav.performance_nav_pk;
+    if (navPK) {
+      const matched = rows.find((item) => item && item.performance_nav_pk === navPK);
+      if (matched) {
+        return matched;
+      }
+    }
+    const priority = { blocked: 0, review_required: 1, auto_completed: 2, confirmed: 3 };
+    return rows
+      .slice()
+      .sort((a, b) => (priority[a && a.status] ?? 9) - (priority[b && b.status] ?? 9))[0] || null;
+  }
+
   function renderPerformance() {
     if (!els.performanceSeriesBody) {
       return;
@@ -2963,6 +2991,7 @@
     const daily = state.performanceDaily || latest || {};
     const economic = state.performanceEconomicNAV || {};
     const nav = economic.nav || {};
+    const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
     const cashFlows = economic.cash_flows || {};
     const navFlags = Array.isArray(economic.quality_flags) ? economic.quality_flags : (Array.isArray(nav.quality_flags) ? nav.quality_flags : []);
     els.performanceRangeHint.textContent = [
@@ -2971,6 +3000,7 @@
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       daily.open_snapshot_source ? "日初 " + daily.open_snapshot_source : "",
       nav.status ? "经济净值 " + nav.status : "",
+      reconciliation.status ? "对账 " + reconciliation.status : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
@@ -2978,6 +3008,7 @@
     els.perfEconomicNav.textContent = formatNumber(nav.close_economic_nav);
     els.perfEconomicStatus.textContent = [
       nav.status || "preview --",
+      reconciliation.status ? "对账 " + reconciliation.status : "",
       economic.persisted ? "persisted" : (nav.close_economic_nav ? "preview" : "")
     ].filter(Boolean).join(" · ");
     els.perfEconomicReturn.textContent = formatPercent(nav.daily_return);

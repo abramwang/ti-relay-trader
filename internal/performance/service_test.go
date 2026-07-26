@@ -308,6 +308,126 @@ func TestReconcileEconomicNAVUsesNextOpenObservation(t *testing.T) {
 	}
 }
 
+func TestReviewNAVReconciliationConfirmsAndFinalizesNAV(t *testing.T) {
+	now := time.Date(2026, 7, 27, 9, 8, 0, 0, time.UTC)
+	store := &fakePerformanceStore{
+		navs: []ledger.PerformanceNAV{{
+			PerformanceNAVPK:  42,
+			AccountID:         "acct-1",
+			TradeDate:         "2026-07-24",
+			Version:           1,
+			IsCurrent:         true,
+			Status:            "provisional",
+			FormulaVersion:    "performance_economic_nav.unit",
+			OpenEconomicNAV:   1000000,
+			CloseEconomicNAV:  1000100,
+			ReturnDenominator: 1000000,
+			CumulativeNAV:     1.0001,
+			QualityFlags:      []string{"strategy_attribution_pending"},
+			Source:            "unit",
+		}},
+		reconciliations: []ledger.NAVReconciliation{{
+			ReconciliationID:    "nav-recon-acct-1-20260724-v1",
+			PerformanceNAVPK:    42,
+			AccountID:           "acct-1",
+			TradeDate:           "2026-07-24",
+			ObservedTradeDate:   "2026-07-27",
+			Status:              "auto_completed",
+			ObservedOpenAssets:  1000108,
+			ProvisionalCloseNAV: 1000100,
+			Residual:            8,
+			AutoThreshold:       50,
+			WarningThreshold:    500,
+			Details:             map[string]any{"source": "unit"},
+		}},
+		now: now,
+	}
+	service, err := New(Options{Store: store, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ReviewNAVReconciliation(context.Background(), "acct-1", "20260724", NAVReconciliationReviewOptions{
+		Action:   "confirm",
+		Operator: "tester",
+		Note:     "residual ok",
+	})
+	if err != nil {
+		t.Fatalf("ReviewNAVReconciliation() error = %v", err)
+	}
+
+	if !result.Persisted || result.Status != "confirmed" {
+		t.Fatalf("result persisted/status = %v/%q", result.Persisted, result.Status)
+	}
+	if len(store.reconciliationUpserts) != 1 || store.reconciliationUpserts[0].ReviewedBy != "tester" || store.reconciliationUpserts[0].Status != "confirmed" {
+		t.Fatalf("reconciliation upserts = %#v", store.reconciliationUpserts)
+	}
+	if len(store.navStatusUpdates) != 1 || store.navStatusUpdates[0].Status != "finalized" {
+		t.Fatalf("nav updates = %#v", store.navStatusUpdates)
+	}
+	if store.navStatusUpdates[0].FinalizedAt.IsZero() {
+		t.Fatalf("finalized_at not set: %#v", store.navStatusUpdates[0])
+	}
+	if !containsString(store.navStatusUpdates[0].QualityFlags, "nav_reconciliation_confirmed") {
+		t.Fatalf("quality flags = %#v", store.navStatusUpdates[0].QualityFlags)
+	}
+}
+
+func TestReviewNAVReconciliationBlocksNAV(t *testing.T) {
+	now := time.Date(2026, 7, 27, 9, 8, 0, 0, time.UTC)
+	store := &fakePerformanceStore{
+		navs: []ledger.PerformanceNAV{{
+			PerformanceNAVPK:  42,
+			AccountID:         "acct-1",
+			TradeDate:         "2026-07-24",
+			Version:           1,
+			IsCurrent:         true,
+			Status:            "provisional",
+			FormulaVersion:    "performance_economic_nav.unit",
+			OpenEconomicNAV:   1000000,
+			CloseEconomicNAV:  1000100,
+			ReturnDenominator: 1000000,
+			CumulativeNAV:     1.0001,
+			Source:            "unit",
+		}},
+		reconciliations: []ledger.NAVReconciliation{{
+			ReconciliationID:    "nav-recon-acct-1-20260724-v1",
+			PerformanceNAVPK:    42,
+			AccountID:           "acct-1",
+			TradeDate:           "2026-07-24",
+			ObservedTradeDate:   "2026-07-27",
+			Status:              "review_required",
+			ProvisionalCloseNAV: 1000100,
+			Residual:            800,
+			WarningThreshold:    500,
+		}},
+		now: now,
+	}
+	service, err := New(Options{Store: store, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.ReviewNAVReconciliation(context.Background(), "acct-1", "20260724", NAVReconciliationReviewOptions{
+		Action:   "block",
+		Operator: "risk",
+		Note:     "large residual",
+	})
+	if err != nil {
+		t.Fatalf("ReviewNAVReconciliation() error = %v", err)
+	}
+
+	if result.Status != "blocked" {
+		t.Fatalf("status = %q, want blocked", result.Status)
+	}
+	if len(store.navStatusUpdates) != 1 || store.navStatusUpdates[0].Status != "blocked" {
+		t.Fatalf("nav updates = %#v", store.navStatusUpdates)
+	}
+	if !containsString(store.navStatusUpdates[0].QualityFlags, "nav_finalization_blocked") {
+		t.Fatalf("quality flags = %#v", store.navStatusUpdates[0].QualityFlags)
+	}
+}
+
 type fakePerformanceStore struct {
 	fills                 []trading.Fill
 	fillQueries           []trading.FillQuery
@@ -322,8 +442,10 @@ type fakePerformanceStore struct {
 	baselines             []ledger.NavBaseline
 	repoAccruals          []ledger.ReverseRepoAccrual
 	navs                  []ledger.PerformanceNAV
+	reconciliations       []ledger.NAVReconciliation
 	upserts               []ledger.ReverseRepoAccrual
 	navUpserts            []ledger.PerformanceNAV
+	navStatusUpdates      []ledger.PerformanceNAV
 	reconciliationUpserts []ledger.NAVReconciliation
 	now                   time.Time
 }
@@ -404,7 +526,7 @@ func (store *fakePerformanceStore) ListPerformanceNAVs(_ context.Context, _, _, 
 }
 
 func (store *fakePerformanceStore) ListNAVReconciliations(_ context.Context, _, _, _ string) ([]ledger.NAVReconciliation, error) {
-	return nil, nil
+	return store.reconciliations, nil
 }
 
 func (store *fakePerformanceStore) UpsertPerformanceNAV(_ context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error) {
@@ -418,9 +540,23 @@ func (store *fakePerformanceStore) UpsertPerformanceNAV(_ context.Context, nav l
 	return nav, nil
 }
 
+func (store *fakePerformanceStore) UpdatePerformanceNAVStatus(_ context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error) {
+	store.navStatusUpdates = append(store.navStatusUpdates, nav)
+	return nav, nil
+}
+
 func (store *fakePerformanceStore) UpsertNAVReconciliation(_ context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error) {
 	store.reconciliationUpserts = append(store.reconciliationUpserts, item)
 	return item, nil
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 type weekdayCalendar struct{}

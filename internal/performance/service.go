@@ -50,6 +50,7 @@ type Store interface {
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
 	UpsertPerformanceNAV(ctx context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error)
+	UpdatePerformanceNAVStatus(ctx context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 	UpsertNAVReconciliation(ctx context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error)
 }
@@ -136,6 +137,25 @@ type EconomicNAVReconcileResult struct {
 	Reconciliation    ledger.NAVReconciliation        `json:"reconciliation"`
 	Observation       ledger.AssetPositionObservation `json:"observation"`
 	QualityFlags      []string                        `json:"quality_flags,omitempty"`
+}
+
+type NAVReconciliationReviewOptions struct {
+	Action           string `json:"action,omitempty"`
+	ReconciliationID string `json:"reconciliation_id,omitempty"`
+	Operator         string `json:"operator,omitempty"`
+	Note             string `json:"note,omitempty"`
+	Force            bool   `json:"force,omitempty"`
+}
+
+type NAVReconciliationReviewResult struct {
+	AccountID      string                   `json:"account_id"`
+	TradeDate      string                   `json:"trade_date"`
+	Action         string                   `json:"action"`
+	Status         string                   `json:"status"`
+	Persisted      bool                     `json:"persisted"`
+	NAV            ledger.PerformanceNAV    `json:"nav"`
+	Reconciliation ledger.NAVReconciliation `json:"reconciliation"`
+	QualityFlags   []string                 `json:"quality_flags,omitempty"`
 }
 
 type ReverseRepoResult struct {
@@ -538,6 +558,106 @@ func (service *Service) ReconcileEconomicNAV(ctx context.Context, accountID, tra
 	return result, nil
 }
 
+func (service *Service) ReviewNAVReconciliation(ctx context.Context, accountID, tradeDate string, options NAVReconciliationReviewOptions) (NAVReconciliationReviewResult, error) {
+	accountID = strings.TrimSpace(accountID)
+	normalizedDate, _, err := parseTradeDate(tradeDate)
+	if err != nil {
+		return NAVReconciliationReviewResult{}, err
+	}
+	if accountID == "" {
+		return NAVReconciliationReviewResult{}, errors.New("account_id is required")
+	}
+	action := strings.TrimSpace(options.Action)
+	if action == "" {
+		action = "confirm"
+	}
+	switch action {
+	case "confirm", "block":
+	default:
+		return NAVReconciliationReviewResult{}, fmt.Errorf("%w: review action must be confirm or block", ledger.ErrInvalidLedgerInput)
+	}
+	operator := strings.TrimSpace(options.Operator)
+	if operator == "" {
+		operator = "operator"
+	}
+
+	nav, found, err := service.currentEconomicNAV(ctx, accountID, normalizedDate)
+	if err != nil {
+		return NAVReconciliationReviewResult{}, err
+	}
+	if !found || nav.PerformanceNAVPK <= 0 {
+		return NAVReconciliationReviewResult{}, fmt.Errorf("%w: current economic nav %s/%s", sql.ErrNoRows, accountID, normalizedDate)
+	}
+	reconciliation, found, err := service.currentNAVReconciliation(ctx, accountID, normalizedDate, nav.PerformanceNAVPK, options.ReconciliationID)
+	if err != nil {
+		return NAVReconciliationReviewResult{}, err
+	}
+	if !found {
+		return NAVReconciliationReviewResult{}, fmt.Errorf("%w: nav reconciliation %s/%s", sql.ErrNoRows, accountID, normalizedDate)
+	}
+	if action == "confirm" && !options.Force {
+		if nav.Status == "blocked" || reconciliation.Status == "blocked" {
+			return NAVReconciliationReviewResult{}, fmt.Errorf("%w: blocked economic NAV requires force=true to confirm", ledger.ErrInvalidLedgerInput)
+		}
+		if math.Abs(reconciliation.Residual) > reconciliation.WarningThreshold && reconciliation.WarningThreshold > 0 {
+			return NAVReconciliationReviewResult{}, fmt.Errorf("%w: reconciliation residual exceeds warning threshold; use force=true only after manual review", ledger.ErrInvalidLedgerInput)
+		}
+	}
+
+	now := service.now()
+	note := strings.TrimSpace(options.Note)
+	nextReconciliation := reconciliation
+	nextReconciliation.ReviewedBy = operator
+	nextReconciliation.ReviewedAt = now
+	nextReconciliation.Details = reviewDetails(reconciliation.Details, action, operator, note, options.Force, now)
+	nextNAV := nav
+	nextNAV.PnLComponents = reviewDetails(nav.PnLComponents, action, operator, note, options.Force, now)
+	nextNAV.Source = "relay.economic_nav.review_" + action
+	reviewFlag := "nav_reconciliation_blocked"
+	if action == "confirm" {
+		reviewFlag = "nav_reconciliation_confirmed"
+	}
+	flags := appendUnique(nav.QualityFlags, reviewFlag)
+	if options.Force {
+		flags = appendUnique(flags, "manual_force_"+action+"ed")
+	}
+	if action == "confirm" && reconciliation.Status == "review_required" {
+		flags = appendUnique(flags, "manual_review_confirmed")
+	}
+
+	switch action {
+	case "confirm":
+		nextReconciliation.Status = "confirmed"
+		nextNAV.Status = "finalized"
+		nextNAV.FinalizedAt = now
+	case "block":
+		nextReconciliation.Status = "blocked"
+		nextNAV.Status = "blocked"
+		nextNAV.FinalizedAt = time.Time{}
+		flags = appendUnique(flags, "nav_finalization_blocked")
+	}
+	nextNAV.QualityFlags = flags
+
+	savedReconciliation, err := service.store.UpsertNAVReconciliation(ctx, nextReconciliation)
+	if err != nil {
+		return NAVReconciliationReviewResult{}, err
+	}
+	savedNAV, err := service.store.UpdatePerformanceNAVStatus(ctx, nextNAV)
+	if err != nil {
+		return NAVReconciliationReviewResult{}, err
+	}
+	return NAVReconciliationReviewResult{
+		AccountID:      accountID,
+		TradeDate:      normalizedDate,
+		Action:         action,
+		Status:         savedReconciliation.Status,
+		Persisted:      true,
+		NAV:            savedNAV,
+		Reconciliation: savedReconciliation,
+		QualityFlags:   savedNAV.QualityFlags,
+	}, nil
+}
+
 func (service *Service) CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (ReverseRepoResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	normalizedDate, parsedDate, err := parseTradeDate(tradeDate)
@@ -769,6 +889,50 @@ func (service *Service) currentEconomicNAV(ctx context.Context, accountID, trade
 		}
 	}
 	return ledger.PerformanceNAV{}, false, nil
+}
+
+func (service *Service) currentNAVReconciliation(ctx context.Context, accountID, tradeDate string, performanceNAVPK int64, reconciliationID string) (ledger.NAVReconciliation, bool, error) {
+	items, err := service.store.ListNAVReconciliations(ctx, accountID, tradeDate, tradeDate)
+	if err != nil {
+		return ledger.NAVReconciliation{}, false, err
+	}
+	reconciliationID = strings.TrimSpace(reconciliationID)
+	for _, item := range items {
+		if item.TradeDate != tradeDate {
+			continue
+		}
+		if reconciliationID != "" {
+			if item.ReconciliationID == reconciliationID {
+				if item.PerformanceNAVPK != performanceNAVPK {
+					return ledger.NAVReconciliation{}, false, fmt.Errorf("%w: reconciliation_id does not match current economic nav", ledger.ErrInvalidLedgerInput)
+				}
+				return item, true, nil
+			}
+			continue
+		}
+		if item.PerformanceNAVPK == performanceNAVPK {
+			return item, true, nil
+		}
+	}
+	if reconciliationID != "" {
+		return ledger.NAVReconciliation{}, false, fmt.Errorf("%w: reconciliation_id does not match current economic nav", ledger.ErrInvalidLedgerInput)
+	}
+	return ledger.NAVReconciliation{}, false, nil
+}
+
+func reviewDetails(details map[string]any, action, operator, note string, force bool, reviewedAt time.Time) map[string]any {
+	next := make(map[string]any, len(details)+1)
+	for key, value := range details {
+		next[key] = value
+	}
+	next["review"] = map[string]any{
+		"action":      action,
+		"operator":    operator,
+		"note":        note,
+		"force":       force,
+		"reviewed_at": reviewedAt,
+	}
+	return next
 }
 
 func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry, tradeDate time.Time) (float64, []map[string]any, []string) {

@@ -332,6 +332,38 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/nav-reconciliations/confirm":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "nav_reconciliation_review": {
+                            "account_id": "acct-1",
+                            "trade_date": body.get("trade_date"),
+                            "action": "confirm",
+                            "status": "confirmed",
+                            "persisted": True,
+                        }
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/nav-reconciliations/block":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "nav_reconciliation_review": {
+                            "account_id": "acct-1",
+                            "trade_date": body.get("trade_date"),
+                            "action": "block",
+                            "status": "blocked",
+                            "persisted": True,
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/error":
             self._json({"ok": False, "error": {"code": "IDEMPOTENCY_CONFLICT", "message": "duplicate"}}, status=409)
             return
@@ -428,6 +460,10 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(reconcile_preview["observed_trade_date"], "20260615")
         reconcile_rebuild = self.client.rebuild_economic_nav_reconciliation(trade_date="20260612", observed_trade_date="20260615")
         self.assertTrue(reconcile_rebuild["persisted"])
+        confirmed = self.client.confirm_nav_reconciliation(trade_date="20260612", operator="tester", note="ok", force=True)
+        self.assertEqual(confirmed["status"], "confirmed")
+        blocked = self.client.block_nav_reconciliation(trade_date="20260612", operator="risk", reconciliation_id="nav-recon-1")
+        self.assertEqual(blocked["status"], "blocked")
         navs = self.client.list_economic_nav(trade_date="20260612")
         self.assertEqual(navs[0]["status"], "provisional")
         reconciliations = self.client.list_nav_reconciliations(trade_date="20260612")

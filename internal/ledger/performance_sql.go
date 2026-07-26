@@ -475,6 +475,21 @@ SELECT
 FROM next_version, retire_count
 RETURNING ` + performanceNAVColumns
 
+const updatePerformanceNAVStatusSQL = `
+UPDATE performance_nav_versions
+SET
+    status = $4,
+    source = $5,
+    finalized_at = $6,
+    quality_flags = $7::jsonb,
+    pnl_components = $8::jsonb,
+    updated_at = now()
+WHERE performance_nav_pk = $1
+    AND account_id = $2
+    AND trade_date = $3::date
+    AND is_current
+RETURNING ` + performanceNAVColumns
+
 const navReconciliationColumns = `
     reconciliation_id,
     performance_nav_pk,

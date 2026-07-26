@@ -632,6 +632,44 @@ func TestUpsertPerformanceNAVBuildsVersionedWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[14], `"strategy_attribution_pending"`)
 }
 
+func TestUpdatePerformanceNAVStatusBuildsCurrentVersionUpdate(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.UpdatePerformanceNAVStatus(context.Background(), PerformanceNAV{
+		PerformanceNAVPK:  42,
+		AccountID:         "acct-1",
+		TradeDate:         "20260724",
+		Version:           1,
+		Status:            "finalized",
+		FormulaVersion:    "performance_economic_nav.test",
+		OpenEconomicNAV:   1000000,
+		CloseEconomicNAV:  1010000,
+		ReturnDenominator: 1000000,
+		CumulativeNAV:     1.01,
+		PnLComponents:     map[string]any{"review": map[string]any{"operator": "tester"}},
+		QualityFlags:      []string{"nav_reconciliation_confirmed"},
+		Source:            "unit",
+		FinalizedAt:       time.Date(2026, 7, 24, 16, 0, 0, 0, time.UTC),
+	})
+	if err == nil {
+		t.Fatal("UpdatePerformanceNAVStatus() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "UPDATE performance_nav_versions")
+	requireQueryContains(t, exec.query, "performance_nav_pk = $1")
+	requireQueryContains(t, exec.query, "account_id = $2")
+	requireQueryContains(t, exec.query, "trade_date = $3::date")
+	requireQueryContains(t, exec.query, "AND is_current")
+	requireQueryContains(t, exec.query, "RETURNING")
+	requireArgLen(t, exec.args, 8)
+	if exec.args[0] != int64(42) || exec.args[1] != "acct-1" || exec.args[2] != "2026-07-24" || exec.args[3] != "finalized" {
+		t.Fatalf("identity/status args = %#v", exec.args[:4])
+	}
+	assertJSONContains(t, exec.args[6], `"nav_reconciliation_confirmed"`)
+	assertJSONContains(t, exec.args[7], `"review"`)
+}
+
 func TestUpsertNAVReconciliationBuildsIdempotentWrite(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)

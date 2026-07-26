@@ -53,6 +53,8 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/accounts/{account_id}/performance/economic-nav/reconcile", Request: "EconomicNAVRequest", Response: "EconomicNAVReconcileResult", Description: "persist T+1 observed open asset reconciliation"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/economic-nav", Request: "trade_date/date_from/date_to", Response: "[]PerformanceNAV", Description: "query current versioned economic NAV rows"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/nav-reconciliations", Request: "trade_date/date_from/date_to", Response: "[]NAVReconciliation", Description: "query economic NAV reconciliation rows"},
+			{Method: "POST", Path: "/v1/accounts/{account_id}/performance/nav-reconciliations/confirm", Request: "NAVReconciliationReviewRequest", Response: "NAVReconciliationReviewResult", Description: "confirm reconciliation and finalize current economic NAV"},
+			{Method: "POST", Path: "/v1/accounts/{account_id}/performance/nav-reconciliations/block", Request: "NAVReconciliationReviewRequest", Response: "NAVReconciliationReviewResult", Description: "block reconciliation and current economic NAV"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/orders/refresh", Response: "RefreshQueryResult", Description: "refresh account orders from front gateway"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fills/refresh", Response: "RefreshQueryResult", Description: "refresh account fills from front gateway"},
 			{Method: "POST", Path: "/v1/orders", Request: "SubmitOrderRequest", Response: "Order", Description: "submit one order"},
@@ -115,6 +117,7 @@ func Catalog() CatalogDocument {
 			"EconomicNAVReconcileResult",
 			"PerformanceNAV",
 			"NAVReconciliation",
+			"NAVReconciliationReviewResult",
 		},
 	}
 }

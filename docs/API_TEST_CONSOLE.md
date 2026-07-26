@@ -88,6 +88,8 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `POST` | `/v1/accounts/{account_id}/performance/economic-nav/reconcile` | 落库 T+1 净值对账结果；仅写入开关开启时允许 |
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | 查询版本化经济净资产结果 |
 | `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | 查询 T+1 经济净值对账结果 |
+| `POST` | `/v1/accounts/{account_id}/performance/nav-reconciliations/confirm` | 人工确认 T+1 对账并 finalized current economic NAV；仅写入开关开启时允许 |
+| `POST` | `/v1/accounts/{account_id}/performance/nav-reconciliations/block` | 阻断 T+1 对账并 blocked current economic NAV；仅写入开关开启时允许 |
 | `GET` | `/v1/meridian/market/bars` | Meridian bars 薄代理，保留 `market_bar.v1` 原始字段 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian 复权因子薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |

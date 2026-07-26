@@ -59,7 +59,8 @@
 - [x] 增加 `/trade#performance-settings`，提供账户级费用规则、人工资金流水、日初经济净值和逆回购估算维护。
 - [x] 增加版本化 economic NAV 预览/重建 API、`performance_nav_versions` current 版本写入、`provisional/finalized` 状态、same-day NAV 对账记录和阈值判断；策略未拆部分先写入 `pnl_components.unattributed`。
 - [x] 补 T+1 盘前 observed open assets 预览/落库接口：读取 next trading day `asset_snapshots(open)` 与 `position_snapshots(open)` 聚合，计算 overnight 外部资金/已知损益、残差和阈值状态，并回写 `performance_nav_reconciliations`。
-- [ ] 补 `performance_nav_reconciliations` 人工确认/finalized 推进、阻断流程和页面告警展示。
+- [x] 补 `performance_nav_reconciliations` 人工确认/finalized 推进和阻断 API；`/trade#performance` 轻量展示当前交易日 NAV 对账状态。
+- [ ] 补 NAV 对账正式告警展示和页面人工确认/阻断操作流。
 - [x] 按 `qty*100`、年化利率、实际占款天数和账户费用规则实现 `204001.SH` 逆回购归因。
 
 范围：
@@ -286,6 +287,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.12.tar.gz` 和 SHA256 校验文件，`get_positions()` 支持 `snapshot_type`，新增 `get_meridian_adjust_factors()`。
 - [x] 发布 `public/sdk/relay-sdk-0.1.13.tar.gz` 和 SHA256 校验文件，新增 economic NAV 预览/重建、NAV 查询和 NAV 对账查询 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.14.tar.gz` 和 SHA256 校验文件，新增 T+1 economic NAV reconciliation 预览/落库 helper。
+- [x] 发布 `public/sdk/relay-sdk-0.1.15.tar.gz` 和 SHA256 校验文件，新增 NAV 对账人工确认/阻断 helper。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

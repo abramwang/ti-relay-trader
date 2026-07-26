@@ -2287,6 +2287,84 @@ func TestEconomicNAVReconcileRebuildEndpoint(t *testing.T) {
 	}
 }
 
+func TestNAVReconciliationConfirmRequiresWriteEnabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/performance/nav-reconciliations/confirm", strings.NewReader(`{"trade_date":"20260724","operator":"tester"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if perf.navReviewAccountID != "" {
+		t.Fatalf("nav reconciliation review was called: %q", perf.navReviewAccountID)
+	}
+}
+
+func TestNAVReconciliationConfirmEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Performance.SettingsWriteEnabled = true
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		navReview: relayperformance.NAVReconciliationReviewResult{
+			AccountID: "acct-1",
+			TradeDate: "2026-07-24",
+			Action:    "confirm",
+			Status:    "confirmed",
+			Persisted: true,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/performance/nav-reconciliations/confirm", strings.NewReader(`{"trade_date":"20260724","operator":"tester","note":"ok","force":true,"reconciliation_id":"nav-recon-1"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.navReviewAccountID != "acct-1" || perf.navReviewTradeDate != "20260724" || perf.navReviewOptions.Action != "confirm" || perf.navReviewOptions.Operator != "tester" || !perf.navReviewOptions.Force || perf.navReviewOptions.ReconciliationID != "nav-recon-1" {
+		t.Fatalf("nav review args account=%q date=%q options=%#v", perf.navReviewAccountID, perf.navReviewTradeDate, perf.navReviewOptions)
+	}
+}
+
+func TestNAVReconciliationBlockEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Performance.SettingsWriteEnabled = true
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		navReview: relayperformance.NAVReconciliationReviewResult{
+			AccountID: "acct-1",
+			TradeDate: "2026-07-24",
+			Action:    "block",
+			Status:    "blocked",
+			Persisted: true,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/performance/nav-reconciliations/block?trade_date=20260724&operator=risk", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.navReviewOptions.Action != "block" || perf.navReviewOptions.Operator != "risk" || perf.navReviewTradeDate != "20260724" {
+		t.Fatalf("nav review args account=%q date=%q options=%#v", perf.navReviewAccountID, perf.navReviewTradeDate, perf.navReviewOptions)
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string
@@ -2366,6 +2444,10 @@ type fakePerformanceService struct {
 	economicNAVReconcileAccountID string
 	economicNAVReconcileTradeDate string
 	economicNAVReconcileOptions   relayperformance.EconomicNAVReconcileOptions
+	navReview                     relayperformance.NAVReconciliationReviewResult
+	navReviewAccountID            string
+	navReviewTradeDate            string
+	navReviewOptions              relayperformance.NAVReconciliationReviewOptions
 	accruals                      []ledger.ReverseRepoAccrual
 	navs                          []ledger.PerformanceNAV
 	reconciliations               []ledger.NAVReconciliation
@@ -2466,6 +2548,16 @@ func (service *fakePerformanceService) ReconcileEconomicNAV(_ context.Context, a
 	service.economicNAVReconcileTradeDate = tradeDate
 	service.economicNAVReconcileOptions = options
 	return service.economicNAVReconciliation, nil
+}
+
+func (service *fakePerformanceService) ReviewNAVReconciliation(_ context.Context, accountID, tradeDate string, options relayperformance.NAVReconciliationReviewOptions) (relayperformance.NAVReconciliationReviewResult, error) {
+	if service.err != nil {
+		return relayperformance.NAVReconciliationReviewResult{}, service.err
+	}
+	service.navReviewAccountID = accountID
+	service.navReviewTradeDate = tradeDate
+	service.navReviewOptions = options
+	return service.navReview, nil
 }
 
 func (service *fakePerformanceService) ListPerformanceNAVs(_ context.Context, _, _, _ string) ([]ledger.PerformanceNAV, error) {

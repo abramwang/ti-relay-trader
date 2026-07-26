@@ -96,6 +96,7 @@ type PerformanceService interface {
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVOptions) (relayperformance.EconomicNAVResult, error)
 	ReconcileEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVReconcileOptions) (relayperformance.EconomicNAVReconcileResult, error)
+	ReviewNAVReconciliation(ctx context.Context, accountID, tradeDate string, options relayperformance.NAVReconciliationReviewOptions) (relayperformance.NAVReconciliationReviewResult, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 }
@@ -1242,11 +1243,23 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			}
 			httpx.WriteNotFound(w, r)
 		case "nav-reconciliations":
-			if len(parts) != 3 || r.Method != http.MethodGet {
-				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			if len(parts) == 3 {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleListNAVReconciliations(w, r, accountID)
 				return
 			}
-			s.handleListNAVReconciliations(w, r, accountID)
+			if len(parts) == 4 && (parts[3] == "confirm" || parts[3] == "block") {
+				if r.Method != http.MethodPost {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+					return
+				}
+				s.handleReviewNAVReconciliation(w, r, accountID, parts[3])
+				return
+			}
+			httpx.WriteNotFound(w, r)
 		default:
 			httpx.WriteNotFound(w, r)
 		}
@@ -2092,6 +2105,63 @@ func (s *Server) handleListNAVReconciliations(w http.ResponseWriter, r *http.Req
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"reconciliations": items, "count": len(items)})
+}
+
+func (s *Server) handleReviewNAVReconciliation(w http.ResponseWriter, r *http.Request, accountID string, action string) {
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	query := r.URL.Query()
+	req := NAVReconciliationReviewRequest{
+		TradeDate:        strings.TrimSpace(query.Get("trade_date")),
+		ReconciliationID: strings.TrimSpace(query.Get("reconciliation_id")),
+		Operator:         strings.TrimSpace(query.Get("operator")),
+		Note:             strings.TrimSpace(query.Get("note")),
+		Force:            parseBool(query.Get("force")),
+	}
+	if r.Body != nil {
+		defer r.Body.Close()
+		var body NAVReconciliationReviewRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid nav reconciliation review body", err.Error())
+			return
+		}
+		if strings.TrimSpace(body.TradeDate) != "" {
+			req.TradeDate = strings.TrimSpace(body.TradeDate)
+		}
+		if strings.TrimSpace(body.ReconciliationID) != "" {
+			req.ReconciliationID = strings.TrimSpace(body.ReconciliationID)
+		}
+		if strings.TrimSpace(body.Operator) != "" {
+			req.Operator = strings.TrimSpace(body.Operator)
+		}
+		if strings.TrimSpace(body.Note) != "" {
+			req.Note = strings.TrimSpace(body.Note)
+		}
+		req.Force = req.Force || body.Force
+	}
+	if req.TradeDate == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "trade_date is required", nil)
+		return
+	}
+	result, err := s.perf.ReviewNAVReconciliation(r.Context(), accountID, req.TradeDate, relayperformance.NAVReconciliationReviewOptions{
+		Action:           action,
+		ReconciliationID: req.ReconciliationID,
+		Operator:         req.Operator,
+		Note:             req.Note,
+		Force:            req.Force,
+	})
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"nav_reconciliation_review": result})
 }
 
 func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string) ([]ledger.DailyPerformance, PerformanceSeriesSummary, error) {
@@ -3533,6 +3603,14 @@ type EconomicNAVRequest struct {
 	TradeDate         string `json:"trade_date,omitempty"`
 	ObservedTradeDate string `json:"observed_trade_date,omitempty"`
 	Status            string `json:"status,omitempty"`
+}
+
+type NAVReconciliationReviewRequest struct {
+	TradeDate        string `json:"trade_date,omitempty"`
+	ReconciliationID string `json:"reconciliation_id,omitempty"`
+	Operator         string `json:"operator,omitempty"`
+	Note             string `json:"note,omitempty"`
+	Force            bool   `json:"force,omitempty"`
 }
 
 type JobRunRequest struct {

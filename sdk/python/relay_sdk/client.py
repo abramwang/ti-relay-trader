@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.14"
+SDK_VERSION = "0.1.15"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -425,6 +425,49 @@ class RelayClient:
         items = data.get("reconciliations", [])
         return [item for item in items if isinstance(item, Mapping)]
 
+    def confirm_nav_reconciliation(
+        self,
+        *,
+        trade_date: str,
+        operator: str,
+        account_id: str | None = None,
+        reconciliation_id: str | None = None,
+        note: str | None = None,
+        force: bool = False,
+    ) -> Mapping[str, Any]:
+        """Confirm T+1 reconciliation and finalize the current economic NAV."""
+
+        return self._review_nav_reconciliation(
+            "confirm",
+            trade_date=trade_date,
+            operator=operator,
+            account_id=account_id,
+            reconciliation_id=reconciliation_id,
+            note=note,
+            force=force,
+        )
+
+    def block_nav_reconciliation(
+        self,
+        *,
+        trade_date: str,
+        operator: str,
+        account_id: str | None = None,
+        reconciliation_id: str | None = None,
+        note: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Block T+1 reconciliation and mark the current economic NAV blocked."""
+
+        return self._review_nav_reconciliation(
+            "block",
+            trade_date=trade_date,
+            operator=operator,
+            account_id=account_id,
+            reconciliation_id=reconciliation_id,
+            note=note,
+            force=False,
+        )
+
     def list_reconciliation_breaks(
         self,
         *,
@@ -796,6 +839,31 @@ class RelayClient:
         account_id = self._resolve_account(account_id)
         data = self._request("POST", f"/v1/accounts/{parse.quote(account_id)}/{kind}/refresh")
         return CommandReceipt.from_dict(data)
+
+    def _review_nav_reconciliation(
+        self,
+        action: str,
+        *,
+        trade_date: str,
+        operator: str,
+        account_id: str | None,
+        reconciliation_id: str | None,
+        note: str | None,
+        force: bool,
+    ) -> Mapping[str, Any]:
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "POST",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/nav-reconciliations/{parse.quote(action)}",
+            json_body={
+                "trade_date": trade_date,
+                "operator": operator,
+                "reconciliation_id": reconciliation_id,
+                "note": note,
+                "force": force,
+            },
+        )
+        return data.get("nav_reconciliation_review", data)
 
     def _resolve_account(self, account_id: str | None) -> str:
         resolved = account_id or self.account_id

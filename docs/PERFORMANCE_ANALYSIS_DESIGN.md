@@ -580,7 +580,7 @@ provisional_close_economic_nav =
 3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
 4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。
 5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
-6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认、自动 finalized 推进和页面告警展示后续补齐。
+6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，正式页面操作流和告警展示后续补齐。
 
 ### 资产对账辅线
 
@@ -612,7 +612,9 @@ reconciliation_residual =
 1. `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览。`observed_trade_date` 为空时通过 Meridian 交易日历取 T 日后的下一个交易日；若没有已落库 current NAV，preview 会临时试算 `economic-nav/preview` 作为对账基准并打 `economic_nav_preview_source` 标记。
 2. `POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 受 `performance.settings_write_enabled` 保护，要求已存在 current `performance_nav_versions`，然后按 `performance_nav_pk` 幂等 upsert 对账记录。
 3. 第一版 `observed_open_assets = open.cash_total + sum(open_positions.market_value)`；盘前 `external_flow` 和 `income_expense` 只纳入 09:30 及以前的已确认手工流水，09:30 后发生的流水会被排除并打质量标记。
-4. 本轮只更新 `performance_nav_reconciliations.status` 为 `auto_completed/review_required/blocked`，不自动把 NAV 改成 `finalized`；正式 finalized 仍等待人工确认和告警页面闭环。
+4. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/confirm` 受写开关保护，要求传入 `trade_date/operator`，将同一 current NAV 对应的对账记录改为 `confirmed` 并写入 `reviewed_by/reviewed_at`，同时把 current `performance_nav_versions.status` 就地推进为 `finalized`。如果 residual 超过 warning threshold 或记录已 blocked，需要 `force=true`。
+5. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/block` 受写开关保护，写入阻断复核信息，并把 current NAV 标记为 `blocked`，避免进入正式累计净值。
+6. `/trade#performance` 已轻量读取当前交易日的 NAV 对账记录，并在经济净值状态旁展示 `confirmed/auto_completed/review_required/blocked`；正式告警卡片和页面人工确认/阻断操作流后续补齐。
 
 该模式让小额清算误差在 T+1 被吸收且不跨日累积，同时保留可追溯的估算值、校正值和误差来源。
 
