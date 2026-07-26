@@ -100,6 +100,7 @@ class Asset:
 class Position:
     account_id: str = ""
     trade_date: str = ""
+    snapshot_type: str = ""
     symbol: str = ""
     name: str = ""
     exchange: str = ""
@@ -120,6 +121,7 @@ class Position:
         return cls(
             account_id=_text(data, "account_id"),
             trade_date=_text(data, "trade_date"),
+            snapshot_type=_text(data, "snapshot_type"),
             symbol=_text(data, "symbol"),
             name=_text(data, "name"),
             exchange=_text(data, "exchange"),

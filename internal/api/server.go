@@ -68,7 +68,7 @@ type JobRunStore interface {
 
 type SettlementStore interface {
 	UpsertAssetSnapshotForDate(ctx context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
-	UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error
+	UpsertPositionSnapshotWithType(ctx context.Context, position trading.Position, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertReconciliationRun(ctx context.Context, run ledger.ReconciliationRun) (ledger.ReconciliationRun, error)
 	UpsertReconciliationInput(ctx context.Context, input ledger.ReconciliationInput) error
 	UpsertReconciliationBreak(ctx context.Context, item ledger.ReconciliationBreak) error
@@ -188,6 +188,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
 	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
+	mux.HandleFunc("/v1/meridian/metadata/adjust-factors", server.handleMeridianMetadataAdjustFactors)
 	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
@@ -320,6 +321,24 @@ func (s *Server) handleMeridianMetadataInstruments(w http.ResponseWriter, r *htt
 	response, err := s.market.MetadataInstruments(r.Context(), r.URL.Query())
 	if err != nil {
 		s.logger.Warn("meridian_metadata_instruments_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian metadata request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian metadata request failed")
+}
+
+func (s *Server) handleMeridianMetadataAdjustFactors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MetadataAdjustFactors(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_metadata_adjust_factors_failed", "error", err)
 		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian metadata request failed", err.Error())
 		return
 	}
@@ -2695,18 +2714,17 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		} else {
 			out.AssetSnapshotWritten = true
 		}
-		if snapshotType == "close" {
-			for _, position := range positionResult.Positions {
-				position.TradeDate = tradeDate
-				positionRaw := cloneMap(rawBase)
-				positionRaw["position"] = position
-				if err := s.settles.UpsertPositionSnapshot(ctx, position, source, positionRaw, capturedAt); err != nil {
-					out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s.%s: %v", position.Symbol, position.Exchange, err))
-					out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, positionRaw, "position close snapshot was not written"))
-					continue
-				}
-				out.PositionSnapshotsWritten++
+		for _, position := range positionResult.Positions {
+			position.TradeDate = tradeDate
+			position.SnapshotType = snapshotType
+			positionRaw := cloneMap(rawBase)
+			positionRaw["position"] = position
+			if err := s.settles.UpsertPositionSnapshotWithType(ctx, position, snapshotType, source, positionRaw, capturedAt); err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s/%s.%s: %v", snapshotType, position.Symbol, position.Exchange, err))
+				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, positionRaw, fmt.Sprintf("position %s snapshot was not written", snapshotType)))
+				continue
 			}
+			out.PositionSnapshotsWritten++
 		}
 	}
 
@@ -2973,15 +2991,16 @@ func parsePositionQuery(accountID string, values url.Values) (trading.PositionQu
 		return trading.PositionQuery{}, err
 	}
 	return trading.PositionQuery{
-		AccountID: accountID,
-		Symbol:    values.Get("symbol"),
-		Exchange:  trading.Exchange(values.Get("exchange")),
-		TradeDate: values.Get("trade_date"),
-		DateFrom:  values.Get("date_from"),
-		DateTo:    values.Get("date_to"),
-		History:   parseBool(values.Get("history")),
-		Limit:     limit,
-		Cursor:    values.Get("cursor"),
+		AccountID:    accountID,
+		Symbol:       values.Get("symbol"),
+		Exchange:     trading.Exchange(values.Get("exchange")),
+		TradeDate:    values.Get("trade_date"),
+		DateFrom:     values.Get("date_from"),
+		DateTo:       values.Get("date_to"),
+		SnapshotType: values.Get("snapshot_type"),
+		History:      parseBool(values.Get("history")),
+		Limit:        limit,
+		Cursor:       values.Get("cursor"),
 	}, nil
 }
 

@@ -412,6 +412,7 @@ positions AS (
     FROM position_snapshots
     WHERE account_id = $1
         AND trade_date = $2::date
+        AND snapshot_type = 'close'
 ),
 fills AS (
     SELECT
@@ -544,6 +545,7 @@ positions AS (
     WHERE account_id = $1
         AND trade_date >= $2::date
         AND trade_date <= $3::date
+        AND snapshot_type = 'close'
     GROUP BY trade_date
 ),
 fills AS (
@@ -788,6 +790,7 @@ const positionSnapshotSelectColumns = `
 SELECT
     account_id,
     trade_date::text,
+    snapshot_type,
     symbol,
     name,
     exchange,
@@ -858,6 +861,7 @@ const upsertPositionSnapshotSQL = `
 INSERT INTO position_snapshots (
     trade_date,
     account_id,
+    snapshot_type,
     symbol,
     name,
     exchange,
@@ -877,9 +881,9 @@ INSERT INTO position_snapshots (
     captured_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
 )
-ON CONFLICT (trade_date, account_id, symbol, exchange) DO UPDATE SET
+ON CONFLICT (trade_date, account_id, snapshot_type, symbol, exchange) DO UPDATE SET
     name = EXCLUDED.name,
     quantity = EXCLUDED.quantity,
     sellable_qty = EXCLUDED.sellable_qty,

@@ -298,7 +298,7 @@ rejected
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
 | `POST` | `/v1/accounts/{account_id}/asset/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，默认读取 PostgreSQL 当前持仓 |
-| `GET` | `/v1/accounts/{account_id}/positions/history` | `PositionQuery` | `[]Position` | 已实现，读取 `position_snapshots` 历史快照 |
+| `GET` | `/v1/accounts/{account_id}/positions/history` | `PositionQuery` | `[]Position` | 已实现，读取 `position_snapshots` 历史快照，默认 `snapshot_type=close`，可传 `snapshot_type=open` |
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | `trade_date` query | `DailyPerformance` | 已实现，读取日初 open、日终 close、持仓快照和成交汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | `date_from/date_to/benchmark_security_id` query | `PerformanceSeries` | 已实现，读取 close 资产快照生成净值序列，同时返回 open-to-close 日内绩效字段，并可用 Meridian bars 增加基准和超额收益 |
 | `GET` | `/v1/accounts/{account_id}/performance/series.csv` | `date_from/date_to/benchmark_security_id` query | `text/csv` | 已实现，导出账户绩效、基准和超额收益 CSV |
@@ -328,6 +328,7 @@ rejected
 | `GET` | `/v1/history/fills` | `FillQuery` | `[]Fill` | 已实现，显式历史成交查询 |
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
 | `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
+| `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian query | Meridian payload | 已实现，同源薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | `job_name` query | `[]JobRun` | 已实现，查询最近任务运行 |
 | `POST` | `/v1/jobs/runs` | `JobRunRequest` | `JobRun` | 已实现，日流程任务报告落盘 |
 | `POST` | `/v1/settlements/snapshots` | `SettlementSnapshotRequest` | `SettlementSnapshotResult` | 已实现，盘前 open 资产快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
@@ -362,11 +363,11 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 轻量同步循环、`relayctl ledger-sync` 或后续正式 worker 把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL。
 
-`GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为日终 `position_snapshots`。
+`GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 
 订单、成交、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 
-`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots` 的持仓市值、总持仓浮盈、当日持仓浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+day_unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
+`GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots(snapshot_type=close)` 的持仓市值、总持仓浮盈、当日持仓浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+day_unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 返回账户 close 净值绩效序列，并在每个交易日返回同样的日初资产、隔夜调整、日内盈亏和日内收益率字段。服务读取区间内 `asset_snapshots(snapshot_type=close)` 形成长期净值主线，按上一条 close 净资产计算兼容的单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。绩效页面和 API Console 默认用上证指数 `000001.SH` 作为基准；如果传入其他 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 
@@ -389,9 +390,11 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260615&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`。当 `trade_date` 为空或等于东八区当天时，relay 会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，交易日当天默认使用 `data_scope=realtime`，非交易日自动读取最近交易日 historical bars。为降低读压和 benchmark 重复查询，bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback；该缓存只作用于 relay 到 Meridian 的代理层，不改变响应字段结构。
 
+`GET /v1/meridian/metadata/adjust-factors` 是 Meridian `GET /v1/metadata/adjust-factors` 的同源薄代理，用于股票/ETF 截面绩效中的除权除息、分红和 ETF 份额折算校验。relay 只透传 `security_id/security_ids/trade_date/start_date/end_date/limit` 等 Meridian 参数并保留上游 `data/meta/error` 结构，不在本项目内另建复权因子标准。
+
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 
-`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source` 和可选 `dry_run`，其中 `snapshot_type` 支持 `intraday/open/close/reconcile`。`pre_open_init` 使用 `snapshot_type=open` 写入 `asset_snapshots(open)` 日初资产快照，用于绩效分析区分隔夜调整和日内盈亏；`open` 不写 `position_snapshots`。`post_close_settlement` 使用 `snapshot_type=close`，服务会从本地账本读取指定账户的最新资金、当前持仓、目标交易日订单和成交，将资金写入 `asset_snapshots(close)`，将持仓写入 `position_snapshots`，并 upsert `reconciliation_runs`。该接口不向前置发送查询命令；调用前应先执行资金/持仓/订单/成交 refresh 并等待账本合并。
+`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source` 和可选 `dry_run`，其中 `snapshot_type` 支持 `intraday/open/close/reconcile`。`pre_open_init` 使用 `snapshot_type=open` 写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`，用于绩效分析区分隔夜调整、公司行为后的实际持仓和日内盈亏；`post_close_settlement` 使用 `snapshot_type=close` 写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`。该接口不向前置发送查询命令；调用前应先执行资金/持仓/订单/成交 refresh 并等待账本合并。
 
 ## 后续工作
 

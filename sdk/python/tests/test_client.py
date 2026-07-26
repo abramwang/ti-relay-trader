@@ -40,7 +40,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100}]}})
             return
         if parsed.path == "/v1/accounts/acct-1/positions/history":
-            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "trade_date": "2026-06-12", "symbol": "600000", "quantity": 100}]}})
+            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "trade_date": "2026-06-12", "snapshot_type": query.get("snapshot_type", ["close"])[0], "symbol": "600000", "quantity": 100}]}})
             return
         if parsed.path == "/v1/accounts/acct-1/performance/daily":
             self._json({"ok": True, "data": {"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "net_asset": 123.45}})
@@ -73,6 +73,23 @@ class RelayHandler(BaseHTTPRequestHandler):
                             }
                         ],
                         "meta": {"schema_version": "market_bar.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/metadata/adjust-factors":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["600000.SH"])[0],
+                                "trade_date": 20260612,
+                                "adj_factor": 1.2345,
+                            }
+                        ],
+                        "meta": {"schema_version": "metadata_adjust_factor.v1"},
                     },
                 }
             )
@@ -297,10 +314,13 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
 
     def test_history_queries_use_history_endpoints(self):
-        self.assertEqual(self.client.get_positions(history=True, trade_date="20260612")[0].trade_date, "2026-06-12")
+        open_position = self.client.get_positions(history=True, trade_date="20260612", snapshot_type="open")[0]
+        self.assertEqual(open_position.trade_date, "2026-06-12")
+        self.assertEqual(open_position.snapshot_type, "open")
         self.assertEqual(self.client.list_orders(history=True, date_from="20260612")[0].gateway_order_id, "gw-history")
         self.assertEqual(self.client.list_fills(history=True, trade_date="20260612")[0].fill_id, "fill-history")
         self.assertEqual(RelayHandler.requests[-3][1], "/v1/accounts/acct-1/positions/history")
+        self.assertEqual(RelayHandler.requests[-3][2]["snapshot_type"], ["open"])
         self.assertEqual(RelayHandler.requests[-2][1], "/v1/history/orders")
         self.assertEqual(RelayHandler.requests[-1][1], "/v1/history/fills")
 
@@ -335,9 +355,13 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(breaks[0]["run_id"], "run-1")
         bars = self.client.get_meridian_bars(security_id="600000.SH", trade_date="20260612")
         self.assertEqual(bars["data"][0]["close"], 9.46)
+        factors = self.client.get_meridian_adjust_factors(security_id="600000.SH", start_date="20260601", end_date="20260612")
+        self.assertEqual(factors["data"][0]["adj_factor"], 1.2345)
 
-        self.assertEqual(RelayHandler.requests[-1][1], "/v1/meridian/market/bars")
-        self.assertEqual(RelayHandler.requests[-1][2]["trade_date"], ["20260612"])
+        self.assertEqual(RelayHandler.requests[-2][1], "/v1/meridian/market/bars")
+        self.assertEqual(RelayHandler.requests[-2][2]["trade_date"], ["20260612"])
+        self.assertEqual(RelayHandler.requests[-1][1], "/v1/meridian/metadata/adjust-factors")
+        self.assertEqual(RelayHandler.requests[-1][2]["start_date"], ["20260601"])
 
     def test_record_settlement_snapshot(self):
         result = self.client.record_settlement_snapshot(

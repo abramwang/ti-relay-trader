@@ -54,7 +54,7 @@
 - [x] 确认 OC 暂无完整资金流水时由用户人工维护；外部入出金修正收益率，极速/普通柜台内部划转成对记录且不计入收益。
 - [x] 确认“绩效滚动主线 + T+1 资产对账辅线”的正式经济净资产方案，以及 `204001.SH` 逆回购近似口径。
 - [x] 设计跨账户、跨策略归因标识，并修正订单“账户内当日唯一”业务键没有包含交易日的问题：新增 `trade_date`、策略归因字段、交易日唯一索引和 `performance_attribution_links`；旧二元唯一约束暂作为外键兼容锚点保留。
-- [ ] 增加 Meridian `metadata/adjust-factors` 同源薄代理，并让盘前初始化保存公司行为后的 open 持仓快照。
+- [x] 增加 Meridian `metadata/adjust-factors` 同源薄代理，并让盘前初始化保存公司行为后的 open 持仓快照。
 - [x] 扩展 `cash_ledger` 的分类、发生时间、柜台资金仓位、成对划转、确认/冲正和审计字段。
 - [x] 增加 `/trade#performance-settings`，提供账户级费用规则、人工资金流水、日初经济净值和逆回购估算维护。
 - [ ] 增加版本化 `performance_economic_nav`、`provisional/finalized` 状态、T+1 结算差异和阈值告警。
@@ -281,6 +281,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.9.tar.gz` 和 SHA256 校验文件，支持绩效序列 `benchmark_security_id` 基准对照。
 - [x] 发布 `public/sdk/relay-sdk-0.1.10.tar.gz` 和 SHA256 校验文件，`Position` 增加 `day_unrealized_pnl` 当日持仓浮盈字段。
 - [x] 发布 `public/sdk/relay-sdk-0.1.11.tar.gz` 和 SHA256 校验文件，`submit_order()` 增加策略归因字段，`Order/Fill` 解析 `trade_date/business_type/strategy_*`。
+- [x] 发布 `public/sdk/relay-sdk-0.1.12.tar.gz` 和 SHA256 校验文件，`get_positions()` 支持 `snapshot_type`，新增 `get_meridian_adjust_factors()`。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

@@ -1671,7 +1671,7 @@ func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
 	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].tradeDate != "2026-06-12" || store.assetSnapshots[0].snapshotType != "close" {
 		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
 	}
-	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.TradeDate != "2026-06-12" {
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.TradeDate != "2026-06-12" || store.positionSnapshots[0].snapshotType != "close" {
 		t.Fatalf("position snapshots = %#v", store.positionSnapshots)
 	}
 	if store.reconciliation.RunID != "settlement-20260612" || store.reconciliation.Status != "completed" {
@@ -1691,7 +1691,7 @@ func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
 	}
 }
 
-func TestSettlementSnapshotPostWritesOpenAssetOnly(t *testing.T) {
+func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		assetResult: orderflow.GetAssetResult{
 			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, CashAvailable: 1100000, MarketValue: 200000},
@@ -1725,8 +1725,8 @@ func TestSettlementSnapshotPostWritesOpenAssetOnly(t *testing.T) {
 	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "open" || store.assetSnapshots[0].source != "pre_open_init" {
 		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
 	}
-	if len(store.positionSnapshots) != 0 {
-		t.Fatalf("open snapshot should not write position snapshots: %#v", store.positionSnapshots)
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].snapshotType != "open" || store.positionSnapshots[0].position.SnapshotType != "open" {
+		t.Fatalf("open position snapshots = %#v", store.positionSnapshots)
 	}
 	if store.reconciliation.RunID != "pre_open_init-20260615" || store.reconciliation.Source != "pre_open_init" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
@@ -1887,6 +1887,46 @@ func TestMeridianMarketBarsProxy(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"schema_version":"market_bar.v1"`) || !strings.Contains(rec.Body.String(), `"close":9.67`) {
 		t.Fatalf("response did not preserve meridian bars payload: %s", rec.Body.String())
+	}
+}
+
+func TestMeridianAdjustFactorsProxy(t *testing.T) {
+	var factorQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/metadata/adjust-factors":
+			factorQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id": "600000.SH",
+					"trade_date":  20260612,
+					"adj_factor":  1.2345,
+				}},
+				"meta": map[string]any{"schema_version": "metadata_adjust_factor.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/metadata/adjust-factors?security_id=600000.SH&start_date=20260601&end_date=20260612", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(factorQuery, "security_id=600000.SH") || !strings.Contains(factorQuery, "start_date=20260601") {
+		t.Fatalf("query not passed through: %s", factorQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"schema_version":"metadata_adjust_factor.v1"`) || !strings.Contains(rec.Body.String(), `"adj_factor":1.2345`) {
+		t.Fatalf("response did not preserve meridian adjust factor payload: %s", rec.Body.String())
 	}
 }
 
@@ -2271,8 +2311,9 @@ type fakeSettlementStore struct {
 		source       string
 	}
 	positionSnapshots []struct {
-		position trading.Position
-		source   string
+		position     trading.Position
+		snapshotType string
+		source       string
 	}
 	reconciliation             ledger.ReconciliationRun
 	inputs                     []ledger.ReconciliationInput
@@ -2327,14 +2368,15 @@ func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, 
 	return nil
 }
 
-func (store *fakeSettlementStore) UpsertPositionSnapshot(_ context.Context, position trading.Position, source string, _ any, _ time.Time) error {
+func (store *fakeSettlementStore) UpsertPositionSnapshotWithType(_ context.Context, position trading.Position, snapshotType string, source string, _ any, _ time.Time) error {
 	if store.err != nil {
 		return store.err
 	}
 	store.positionSnapshots = append(store.positionSnapshots, struct {
-		position trading.Position
-		source   string
-	}{position: position, source: source})
+		position     trading.Position
+		snapshotType string
+		source       string
+	}{position: position, snapshotType: snapshotType, source: source})
 	return nil
 }
 

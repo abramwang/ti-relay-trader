@@ -843,11 +843,24 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
 	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
 	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
+	normalized.SnapshotType = strings.TrimSpace(normalized.SnapshotType)
 	if normalized.AccountID == "" {
 		return normalized, fmt.Errorf("%w: account_id is required", trading.ErrInvalidSchema)
 	}
 	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
 		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
+	}
+	if normalized.History || normalized.TradeDate != "" || normalized.DateFrom != "" || normalized.DateTo != "" {
+		if normalized.SnapshotType == "" {
+			normalized.SnapshotType = "close"
+		}
+	}
+	if normalized.SnapshotType != "" {
+		switch normalized.SnapshotType {
+		case "intraday", "open", "close", "reconcile":
+		default:
+			return normalized, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", trading.ErrInvalidSchema)
+		}
 	}
 	if normalized.Limit <= 0 {
 		normalized.Limit = 500

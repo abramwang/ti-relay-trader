@@ -67,6 +67,7 @@
       { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260612" },
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
       { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
+      { "name": "snapshot_type", "label": "snapshot_type", "source": "query", "type": "select", "defaultValue": "close", "options": ["", "open", "close", "intraday", "reconcile"] },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
@@ -472,6 +473,22 @@
       { "name": "status", "label": "status", "source": "query", "defaultValue": "active" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" },
       { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "meridian-adjust-factors",
+    "group": "行情",
+    "title": "Meridian 复权因子",
+    "method": "GET",
+    "path": "/v1/meridian/metadata/adjust-factors",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "600000.SH" },
+      { "name": "security_ids", "label": "security_ids", "source": "query", "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "start_date", "label": "start_date", "source": "query", "defaultValue": "20260601" },
+      { "name": "end_date", "label": "end_date", "source": "query", "defaultValue": "20260612" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
   {

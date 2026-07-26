@@ -25,6 +25,10 @@ migrations/postgres/000008_position_day_pnl.up.sql
 migrations/postgres/000008_position_day_pnl.down.sql
 migrations/postgres/000009_performance_accounting.up.sql
 migrations/postgres/000009_performance_accounting.down.sql
+migrations/postgres/000010_strategy_attribution_keys.up.sql
+migrations/postgres/000010_strategy_attribution_keys.down.sql
+migrations/postgres/000011_position_snapshot_types.up.sql
+migrations/postgres/000011_position_snapshot_types.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -43,6 +47,7 @@ migrations/postgres/000009_performance_accounting.down.sql
 8. `000008_position_day_pnl` 增加持仓当日浮盈字段，并更新研究侧绩效 view。
 9. `000009_performance_accounting` 新增绩效输入层、版本化经济 NAV、T+1 对账和逆回购应计表，并扩展 `cash_ledger`。
 10. `000010_strategy_attribution_keys` 新增订单/成交策略归因字段、订单交易日索引和 `performance_attribution_links`。
+11. `000011_position_snapshot_types` 为 `position_snapshots` 增加 `snapshot_type`，支持盘前 open 持仓快照和盘后 close 持仓快照共存。
 11. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `10:strategy_attribution_keys`。
 
 当前环境已安装 PostgreSQL client：
@@ -81,15 +86,16 @@ Repository 当前覆盖：
 10. `UpsertPosition`
 11. `UpsertAssetSnapshotForDate`
 12. `UpsertPositionSnapshot`
-13. `GetDailyPerformance`
-14. `ListDailyPerformance`
-15. `UpsertReconciliationRun`
-16. `UpsertReconciliationInput`
-17. `UpsertReconciliationBreak`
-18. `ListReconciliationBreaks`
-19. `RawStreamSummary`
-20. `CreateFeeRule`
-21. `ListFeeRules`
+13. `UpsertPositionSnapshotWithType`
+14. `GetDailyPerformance`
+15. `ListDailyPerformance`
+16. `UpsertReconciliationRun`
+17. `UpsertReconciliationInput`
+18. `UpsertReconciliationBreak`
+19. `ListReconciliationBreaks`
+20. `RawStreamSummary`
+21. `CreateFeeRule`
+22. `ListFeeRules`
 22. `EffectiveRepoFeeRule`
 23. `CreateCashLedgerEntry`
 24. `ListCashLedgerEntries`

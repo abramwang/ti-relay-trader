@@ -955,12 +955,25 @@ func (repo *Repository) DeleteStalePositions(ctx context.Context, accountID stri
 }
 
 func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position trading.Position, source string, rawPayload any, capturedAt time.Time) error {
+	return repo.UpsertPositionSnapshotWithType(ctx, position, "close", source, rawPayload, capturedAt)
+}
+
+func (repo *Repository) UpsertPositionSnapshotWithType(ctx context.Context, position trading.Position, snapshotType string, source string, rawPayload any, capturedAt time.Time) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
 	}
 	normalized, err := normalizePosition(position)
 	if err != nil {
 		return err
+	}
+	snapshotType = strings.TrimSpace(snapshotType)
+	if snapshotType == "" {
+		snapshotType = firstNonEmpty(normalized.SnapshotType, "close")
+	}
+	switch snapshotType {
+	case "intraday", "open", "close", "reconcile":
+	default:
+		return fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
 	}
 	if capturedAt.IsZero() {
 		capturedAt = repo.now()
@@ -971,7 +984,7 @@ func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position tra
 	}
 	source = strings.TrimSpace(source)
 	if source == "" {
-		source = "close"
+		source = snapshotType
 	}
 	body, err := marshalJSONObject(rawPayload)
 	if err != nil {
@@ -981,6 +994,7 @@ func (repo *Repository) UpsertPositionSnapshot(ctx context.Context, position tra
 	_, err = repo.exec.ExecContext(ctx, upsertPositionSnapshotSQL,
 		tradeDate,
 		normalized.AccountID,
+		snapshotType,
 		normalized.Symbol,
 		normalized.Name,
 		normalized.Exchange,
@@ -1484,6 +1498,7 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	query.AccountID = strings.TrimSpace(query.AccountID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	query.SnapshotType = strings.TrimSpace(query.SnapshotType)
 	var err error
 	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
 	if err != nil {
@@ -1494,6 +1509,18 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	}
 	if query.Exchange != "" && !query.Exchange.Valid() {
 		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if query.History || query.TradeDate != "" || query.DateFrom != "" || query.DateTo != "" {
+		if query.SnapshotType == "" {
+			query.SnapshotType = "close"
+		}
+	}
+	if query.SnapshotType != "" {
+		switch query.SnapshotType {
+		case "intraday", "open", "close", "reconcile":
+		default:
+			return query, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
+		}
 	}
 	if _, err := queryCursorOffset(query.Cursor); err != nil {
 		return query, err
@@ -1951,6 +1978,9 @@ func buildListPositionSnapshotsSQL(query trading.PositionQuery) (string, []any) 
 	if query.Exchange != "" {
 		appendFilter("exchange", query.Exchange)
 	}
+	if query.SnapshotType != "" {
+		appendFilter("snapshot_type", query.SnapshotType)
+	}
 	if query.DateFrom != "" {
 		args = append(args, query.DateFrom)
 		where = append(where, fmt.Sprintf("trade_date >= $%d::date", len(args)))
@@ -2397,7 +2427,41 @@ func scanPosition(row rowScanner) (trading.Position, error) {
 }
 
 func scanPositionSnapshot(row rowScanner) (trading.Position, error) {
-	return scanPosition(row)
+	var position trading.Position
+	var tradeDate sql.NullString
+	var snapshotType sql.NullString
+	var lastPrice sql.NullFloat64
+	var shareholderID sql.NullString
+	var updatedAt sql.NullTime
+	err := row.Scan(
+		&position.AccountID,
+		&tradeDate,
+		&snapshotType,
+		&position.Symbol,
+		&position.Name,
+		&position.Exchange,
+		&position.Quantity,
+		&position.SellableQty,
+		&position.InitialQty,
+		&position.TodayQty,
+		&position.AvgCost,
+		&lastPrice,
+		&position.MarketValue,
+		&position.UnrealizedPnL,
+		&position.DayUnrealizedPnL,
+		&position.SettledProfit,
+		&shareholderID,
+		&updatedAt,
+	)
+	if err != nil {
+		return trading.Position{}, err
+	}
+	position.TradeDate = tradeDate.String
+	position.SnapshotType = snapshotType.String
+	position.LastPrice = lastPrice.Float64
+	position.ShareholderID = shareholderID.String
+	position.UpdatedAt = updatedAt.Time
+	return position, nil
 }
 
 func scanStreamCheckpoint(row rowScanner) (StreamCheckpoint, error) {

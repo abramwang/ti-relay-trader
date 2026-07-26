@@ -687,12 +687,13 @@ func TestListPositionSnapshotsBuildsHistoricalRead(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "FROM position_snapshots")
 	requireQueryContains(t, exec.query, "account_id = $1")
-	requireQueryContains(t, exec.query, "trade_date >= $2::date")
-	requireQueryContains(t, exec.query, "trade_date < $3::date")
-	requireQueryContains(t, exec.query, "LIMIT $4")
-	requireArgLen(t, exec.args, 4)
-	if exec.args[1] != "2026-06-12" {
-		t.Fatalf("trade date arg = %#v", exec.args[1])
+	requireQueryContains(t, exec.query, "snapshot_type = $2")
+	requireQueryContains(t, exec.query, "trade_date >= $3::date")
+	requireQueryContains(t, exec.query, "trade_date < $4::date")
+	requireQueryContains(t, exec.query, "LIMIT $5")
+	requireArgLen(t, exec.args, 5)
+	if exec.args[1] != "close" || exec.args[2] != "2026-06-12" {
+		t.Fatalf("snapshot args = %#v", exec.args)
 	}
 }
 
@@ -710,9 +711,9 @@ func TestListPositionSnapshotsBuildsCursorOffset(t *testing.T) {
 		t.Fatal("ListPositionSnapshots() expected query error")
 	}
 
-	requireQueryContains(t, exec.query, "LIMIT $4 OFFSET $5")
-	requireArgLen(t, exec.args, 5)
-	if exec.args[3] != 20 || exec.args[4] != 50 {
+	requireQueryContains(t, exec.query, "LIMIT $5 OFFSET $6")
+	requireArgLen(t, exec.args, 6)
+	if exec.args[4] != 20 || exec.args[5] != 50 {
 		t.Fatalf("args = %#v", exec.args)
 	}
 }
@@ -795,7 +796,7 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 	repo := NewRepository(exec)
 	capturedAt := time.Date(2026, 6, 14, 16, 5, 0, 0, time.UTC)
 
-	err := repo.UpsertPositionSnapshot(context.Background(), trading.Position{
+	err := repo.UpsertPositionSnapshotWithType(context.Background(), trading.Position{
 		AccountID:   "acct-1",
 		TradeDate:   "20260612",
 		Symbol:      "600000",
@@ -804,18 +805,21 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 		SellableQty: 100,
 		AvgCost:     9.54,
 		MarketValue: 954,
-	}, "close", map[string]any{"source": "settlement"}, capturedAt)
+	}, "close", "post_close_settlement", map[string]any{"source": "settlement"}, capturedAt)
 	if err != nil {
 		t.Fatalf("UpsertPositionSnapshot() error = %v", err)
 	}
 
 	requireQueryContains(t, exec.query, "INSERT INTO position_snapshots")
-	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, symbol, exchange)")
-	requireArgLen(t, exec.args, 19)
-	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" {
-		t.Fatalf("snapshot identity args = %#v %#v", exec.args[0], exec.args[1])
+	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, snapshot_type, symbol, exchange)")
+	requireArgLen(t, exec.args, 20)
+	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" || exec.args[2] != "close" {
+		t.Fatalf("snapshot identity args = %#v", exec.args[:3])
 	}
-	assertJSONContains(t, exec.args[17], `"source":"settlement"`)
+	if exec.args[17] != "post_close_settlement" {
+		t.Fatalf("source arg = %#v", exec.args[17])
+	}
+	assertJSONContains(t, exec.args[18], `"source":"settlement"`)
 }
 
 func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {

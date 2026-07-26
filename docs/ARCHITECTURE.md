@@ -99,7 +99,7 @@ SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)�
 | 交易日任务 | `GET /v1/jobs/runs`、`POST /v1/jobs/runs`、`POST /v1/settlements/snapshots` |
 | 绩效与研究 | `GET /v1/accounts/{account_id}/performance/daily`、`GET /v1/accounts/{account_id}/performance/series`、`GET /v1/accounts/{account_id}/performance/series.csv` |
 | 对账 | `GET /v1/reconciliations/breaks` |
-| 行情薄代理 | `GET /v1/meridian/metadata/instruments`、`GET /v1/meridian/market/snapshots`、`GET /v1/meridian/stream/market/snapshots`、`GET /v1/meridian/market/bars` |
+| 行情薄代理 | `GET /v1/meridian/metadata/instruments`、`GET /v1/meridian/metadata/adjust-factors`、`GET /v1/meridian/market/snapshots`、`GET /v1/meridian/stream/market/snapshots`、`GET /v1/meridian/market/bars` |
 | 监控 | `GET /v1/status`，当前覆盖 PostgreSQL、Redis、订单服务、行情代理、事件流、自动刷新、交易阶段和日流程任务摘要 |
 
 ## Python 任务职责
@@ -232,7 +232,7 @@ PostgreSQL 是 relay 账表主库：
 | `order_events` | 订单状态事件流水 |
 | `fills` | 成交流水 |
 | `positions` | 当前持仓 |
-| `position_snapshots` | 日终持仓快照 |
+| `position_snapshots` | 持仓快照，按 `snapshot_type=open/close/intraday/reconcile` 区分盘前、盘后等口径 |
 | `cash_ledger` | 资金流水 |
 | `asset_snapshots` | 账户资产快照 |
 | `reconciliation_runs` | 对账批次 |

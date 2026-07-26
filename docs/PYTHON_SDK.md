@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.11`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.12`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.11.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.12.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -86,15 +86,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.11.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.12.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -281,7 +281,7 @@ client.record_settlement_snapshot(
 )
 ```
 
-`record_settlement_snapshot(snapshot_type="open")` 只写日初资产快照；`snapshot_type="close"` 会写收盘资产、当前持仓快照和 reconciliation run。`dry_run=True` 可用于检查输入和返回摘要，不写库。
+`record_settlement_snapshot(snapshot_type="open")` 会写日初资产快照和日初持仓快照；`snapshot_type="close"` 会写收盘资产、日终持仓快照和 reconciliation run。`dry_run=True` 可用于检查输入和返回摘要，不写库。
 
 ## 接口清单
 
@@ -305,7 +305,7 @@ client = RelayClient(
 | `list_accounts()` | `GET /v1/accounts` | 查询可用账户 |
 | `get_asset(account_id=None)` | `GET /v1/accounts/{account_id}/asset` | 查询资金资产 |
 | `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询当前持仓 |
-| `get_positions(history=True, trade_date=...)` | `GET /v1/accounts/{account_id}/positions/history` | 查询历史持仓快照 |
+| `get_positions(history=True, trade_date=..., snapshot_type="close")` | `GET /v1/accounts/{account_id}/positions/history` | 查询历史持仓快照；默认 close，可传 open 读取盘前持仓 |
 | `list_orders(...)` | `GET /v1/orders` | 默认查询当日订单 |
 | `list_orders(history=True, ...)` | `GET /v1/history/orders` | 查询历史订单 |
 | `list_fills(...)` | `GET /v1/fills` | 默认查询当日成交 |
@@ -319,6 +319,7 @@ client = RelayClient(
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
 | `list_reconciliation_breaks(...)` | `GET /v1/reconciliations/breaks` | 查询盘后差异 |
 | `get_meridian_bars(security_id=..., trade_date=...)` | `GET /v1/meridian/market/bars` | 查询 Meridian bars 薄代理，参数口径以 Meridian 为准，常用 `trade_date` 分钟线 |
+| `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)` | `GET /v1/meridian/metadata/adjust-factors` | 查询 Meridian 复权因子薄代理，响应字段以 Meridian 为准 |
 
 ### 交易
 
@@ -339,7 +340,7 @@ client = RelayClient(
 | SDK 方法 | HTTP API | 说明 |
 | --- | --- | --- |
 | `record_job_run(report, ...)` | `POST /v1/jobs/runs` | 日流程任务报告落盘 |
-| `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 盘前 open 资产快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
+| `record_settlement_snapshot(...)` | `POST /v1/settlements/snapshots` | 盘前 open 资产/持仓快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
 
 `record_job_run()` 的标准状态枚举是 `running`、`succeeded`、`skipped`、`failed`；SDK 接受 `completed` 作为 `succeeded` 的兼容别名。
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,6 +71,45 @@ func TestMarketSnapshotsUsesPreviousTradingDayForNonTradingDay(t *testing.T) {
 	}
 	if snapshotQuery.Get("trade_date") != "20260612" || snapshotQuery.Get("data_scope") != "historical" {
 		t.Fatalf("snapshot query = %s", snapshotQuery.Encode())
+	}
+}
+
+func TestMetadataAdjustFactorsPassesThrough(t *testing.T) {
+	var rawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != adjustFactorsPath {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		rawQuery = r.URL.RawQuery
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id": "600000.SH",
+				"trade_date":  20260612,
+				"adj_factor":  1.2345,
+			}},
+			"meta": map[string]any{"schema_version": "metadata_adjust_factor.v1"},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+
+	response, err := client.MetadataAdjustFactors(context.Background(), url.Values{
+		"security_id": {"600000.SH"},
+		"start_date":  {"20260601"},
+		"end_date":    {"20260612"},
+	})
+	if err != nil {
+		t.Fatalf("MetadataAdjustFactors: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if !strings.Contains(rawQuery, "security_id=600000.SH") || !strings.Contains(rawQuery, "start_date=20260601") || !strings.Contains(rawQuery, "end_date=20260612") {
+		t.Fatalf("query not passed through: %s", rawQuery)
 	}
 }
 

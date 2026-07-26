@@ -85,6 +85,7 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | 查询版本化经济净资产结果 |
 | `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | 查询 T+1 经济净值对账结果 |
 | `GET` | `/v1/meridian/market/bars` | Meridian bars 薄代理，保留 `market_bar.v1` 原始字段 |
+| `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian 复权因子薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |
 | `GET` | `/v1/events/stream` | SSE 实时事件流，支持按 `account_id` 过滤订单、成交、资金和持仓变化 |
 

@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.11"
+SDK_VERSION = "0.1.12"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -103,6 +103,7 @@ class RelayClient:
         trade_date: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        snapshot_type: str | None = None,
         history: bool | None = None,
     ) -> list[Position]:
         account_id = self._resolve_account(account_id)
@@ -118,6 +119,7 @@ class RelayClient:
                 "trade_date": trade_date,
                 "date_from": date_from,
                 "date_to": date_to,
+                "snapshot_type": snapshot_type,
                 "history": history,
             },
         )
@@ -363,6 +365,38 @@ class RelayClient:
         }
         query.update(extra_query)
         return self._request("GET", "/v1/meridian/market/bars", query=query)
+
+    def get_meridian_adjust_factors(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        trade_date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int | None = None,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Proxy Meridian adjustment factors through relay.
+
+        Relay forwards Meridian's metadata parameters as-is and preserves the
+        upstream response shape.
+        """
+
+        if isinstance(security_ids, str) or security_ids is None:
+            joined_security_ids = security_ids
+        else:
+            joined_security_ids = ",".join(str(item) for item in security_ids)
+        query = {
+            "security_id": security_id,
+            "security_ids": joined_security_ids,
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/metadata/adjust-factors", query=query)
 
     def submit_order(
         self,

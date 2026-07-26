@@ -134,6 +134,7 @@ type Asset struct {
 type Position struct {
 	AccountID        string    `json:"account_id"`
 	TradeDate        string    `json:"trade_date,omitempty"`
+	SnapshotType     string    `json:"snapshot_type,omitempty"`
 	Symbol           string    `json:"symbol"`
 	Name             string    `json:"name,omitempty"`
 	Exchange         Exchange  `json:"exchange"`
@@ -318,13 +319,14 @@ type FillQuery struct {
 }
 
 type PositionQuery struct {
-	AccountID string   `json:"account_id"`
-	Symbol    string   `json:"symbol,omitempty"`
-	Exchange  Exchange `json:"exchange,omitempty"`
-	TradeDate string   `json:"trade_date,omitempty"`
-	DateFrom  string   `json:"date_from,omitempty"`
-	DateTo    string   `json:"date_to,omitempty"`
-	History   bool     `json:"history,omitempty"`
-	Limit     int      `json:"limit,omitempty"`
-	Cursor    string   `json:"cursor,omitempty"`
+	AccountID    string   `json:"account_id"`
+	Symbol       string   `json:"symbol,omitempty"`
+	Exchange     Exchange `json:"exchange,omitempty"`
+	TradeDate    string   `json:"trade_date,omitempty"`
+	DateFrom     string   `json:"date_from,omitempty"`
+	DateTo       string   `json:"date_to,omitempty"`
+	SnapshotType string   `json:"snapshot_type,omitempty"`
+	History      bool     `json:"history,omitempty"`
+	Limit        int      `json:"limit,omitempty"`
+	Cursor       string   `json:"cursor,omitempty"`
 }

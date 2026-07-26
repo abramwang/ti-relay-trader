@@ -96,7 +96,7 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 1. `000010_strategy_attribution_keys` 为 `orders/order_events/fills` 增加 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id` 和 `t0_order_group_id`；`fills` 额外保存 `business_type`。
 2. `orders_account_trade_date_gateway_order_unique` 体现 OC/券商订单号“账户内当日唯一”的业务语义。当前 `orders_gateway_order_unique` 暂时保留，用于兼容现有 `fills/order_events` 外键；后续 N10 生产化迁移再切换外键和 upsert 冲突目标。
 3. `performance_attribution_links` 作为可追溯链接表，后续把订单、成交、ETF 成分划转、持仓、现金流水和 NAV 分量连接到策略归因结果。
-4. `SubmitOrderRequest`、Redis order/fill 解析、HTTP 查询过滤和 Python SDK `0.1.11` 已支持策略归因字段。未来新策略单应显式携带这些字段；历史订单仍可由归因任务推断后写入链接表。
+4. `SubmitOrderRequest`、Redis order/fill 解析、HTTP 查询过滤和 Python SDK `0.1.12` 已支持策略归因字段。未来新策略单应显式携带这些字段；历史订单仍可由归因任务推断后写入链接表。
 
 ## 2026-07-22 至 2026-07-24 三类策略交易事实样本
 
@@ -252,14 +252,14 @@ cross_section_net_pnl =
 
 1. `ordinary_buy/sell_amount` 只包含该截面策略成本池中的普通二级市场成交；同一 ETF 中已经归入 T0 订单组的买入成本不得再次进入。
 2. `meridian_pre_close` 使用目标交易日 Meridian `1d, adjustment=none` bar 的 `pre_close`。交易所在除权日提供的该字段已经换算到当日价格单位，可用于承接昨日持仓，不直接拿昨日原始 close 与今日除权后价格比较。
-3. `adjusted_open_qty` 优先取盘前初始化完成后的券商持仓数量。当前 Relay 只保存 open 资产、未保存 open 持仓，正式实现前需要扩展 `position_snapshots` 或新增日初持仓快照口径。
+3. `adjusted_open_qty` 优先取盘前初始化完成后的券商持仓数量，对应 `position_snapshots(snapshot_type=open)`。若目标日缺少 open 持仓快照，只能降级到上一交易日 close 持仓并标记质量问题。
 4. `close_qty/meridian_close` 取当日日终持仓和 Meridian 原始收盘价。缺少日终快照时只能展示临时估算，不能固化为正式日绩效。
 5. `actual_fee` 优先使用柜台实际费用；缺失时按该账户、交易日和业务类型的有效费用规则生成 `estimated_fee`。两者都不可用时标记 `missing_cross_section_fee`，且普通截面交易不沿用 ETF T0 的 15bp 参数。
 6. 账户日总盈亏以以上现金流恒等式为准。页面需要拆分已实现/浮动时，可在经过公司行为调整后的成本池内使用移动加权成本，但两部分之和必须回到同一总盈亏。
 
 股票和 ETF 都可能发生除权除息、分红、送转、拆并份或 ETF 份额折算。公司行为处理规则：
 
-1. 统一查询 Meridian `/v1/metadata/adjust-factors`，读取 `ex_date/ex_factor/ex_cum_factor`；Relay 后续只增加同源薄代理，不重新定义因子。
+1. 统一查询 Meridian `/v1/metadata/adjust-factors`，读取 `ex_date/ex_factor/ex_cum_factor`；Relay 通过同源薄代理转发，不重新定义因子。
 2. 物理持仓数量始终以券商盘前持仓为准，不能对所有 `ex_factor` 机械乘数量。现金分红通常不改变股份，送转、拆分和 ETF 份额折算才改变数量。
 3. 数量变化用持仓桥校验：优先直接比较上一 close 与当日 open；缺少 open 快照时，使用 `close_qty - ordinary_buy_qty + ordinary_sell_qty` 反推公司行为后的日初数量。ETF 还需先剥离已闭合的 T0 买入/赎回数量。
 4. 若反推数量比与 Meridian 因子相符，按数量变化修正单位成本，持仓总成本保持不变：`adjusted_unit_cost = previous_total_cost / adjusted_open_qty`。
@@ -290,7 +290,8 @@ cross_section_net_pnl =
 | 日初资产 | `asset_snapshots(snapshot_type=open)`；由 `pre_open_init` 在盘前刷新后写入 | 当日交易收益率和贡献 bps 的优先分母 |
 | 日终资产 | `asset_snapshots(snapshot_type=close)` | close 净资产、现金、证券市值、日内盈亏、收益率主线 |
 | 日初持仓 | 规划中的 open 持仓快照；由 `pre_open_init` 在盘前刷新后写入 | 公司行为后的权威日初数量、昨日持仓成本承接 |
-| 日终持仓 | `position_snapshots` | 持仓市值、权重、浮动盈亏、收盘持仓贡献 |
+| 日初持仓 | `position_snapshots(snapshot_type=open)` | 公司行为后的券商实际数量、开盘持仓贡献和截面策略昨仓基准 |
+| 日终持仓 | `position_snapshots(snapshot_type=close)` | 持仓市值、权重、浮动盈亏、收盘持仓贡献 |
 | 当前持仓 | `positions` | 当天尚未结算时的临时查看口径，不作为历史绩效最终口径 |
 | 成交账本 | `fills` | 买卖金额、费用、成交数量、成交时间分布、按证券贡献估算 |
 | 费用规则 | 规划中的账户级费用规则版本 | 柜台未返回实际费用时的估算手续费；保留规则版本和估算标记 |
@@ -301,7 +302,7 @@ cross_section_net_pnl =
 | 对账差异 | `reconciliation_breaks` | 未终态订单、订单成交数量不一致、快照缺失、刷新失败等质量问题 |
 | Meridian bars | `/v1/meridian/market/bars` | 基准收益、收盘价参考、后续持仓估值补充 |
 | Meridian Level1 | `/v1/meridian/market/snapshots` | ETF 赎回成交时点 IOPV；使用不晚于赎回时刻的最近快照 |
-| Meridian adjust factors | 规划中的 `/v1/meridian/metadata/adjust-factors` 薄代理 | 股票/ETF 公司行为日期、复权因子和持仓成本调整 |
+| Meridian adjust factors | `/v1/meridian/metadata/adjust-factors` 薄代理 | 股票/ETF 公司行为日期、复权因子和持仓成本调整 |
 | Meridian instruments | `/v1/meridian/metadata/instruments` | 证券名称、证券类型、ETF/股票分类和价格精度 |
 
 ## 核心指标
@@ -656,6 +657,7 @@ repo_receivable =
 | 任务状态 | `GET /v1/status`、`GET /v1/jobs/runs` |
 | 基准行情 | `GET /v1/meridian/market/bars` |
 | 证券主数据 | `GET /v1/meridian/metadata/instruments` |
+| 复权因子 | `GET /v1/meridian/metadata/adjust-factors` |
 
 规划中的绩效配置写接口：
 

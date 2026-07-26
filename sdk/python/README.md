@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.12.tar.gz"
 ```
 
 ## Quick Start
@@ -90,7 +90,7 @@ Methods that publish commands or persist relay ledger records:
 | `refresh_orders()` | Redis `cmd.query` | Ask OC to query broker orders. Useful for external orders and final status reconciliation. |
 | `refresh_fills()` | Redis `cmd.query` | Ask OC to query broker fills. Useful for end-of-day reconciliation. |
 | `record_job_run(report, ...)` | PostgreSQL `job_runs` | Persist daily job report JSON and summary status. |
-| `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset snapshots, close position snapshots, and reconciliation run inputs. |
+| `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset and position snapshots, and reconciliation run inputs. |
 
 Example settlement write:
 
@@ -129,6 +129,7 @@ P8 helper methods are available for strategy and research tooling:
 - `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)`
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
+- `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)`
 
 Meridian bars parameters follow Meridian's API. The relay SDK exposes common
 `trade_date` minute-bar arguments and forwards extra query parameters when
