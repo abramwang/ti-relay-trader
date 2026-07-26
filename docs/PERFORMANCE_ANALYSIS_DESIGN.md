@@ -67,10 +67,10 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 2. **日内资产桥**：解释上一 close、当日 open、外部现金流、逆回购/申赎待结算和当日 close 之间的变化。
 3. **证券贡献与交易归因**：按普通股票/ETF 二级市场、逆回购、ETF 申赎、费用和其它调整分别计算。
 
-正式计算前需要决定：
+正式计算前需要继续确认或落实：
 
 1. OC 是否可以直接提供完整总资产/净资产、证券市值、冻结资金、逆回购在途资产、ETF 待结算款、手续费和当日盈亏，并明确每个字段对应 `TiRspAccountInfo` 的来源。
-2. 是否新增资金流水接口，用于区分入金、出金、红利、利息、费用、逆回购回款和清算调整。
+2. OC 暂不提供完整资金流水时，Relay 使用人工维护的资金流水账区分入金、出金、柜台间划转、红利、利息、费用、逆回购回款和清算调整；后续 OC 增加接口时仍落入同一标准账表。
 3. 逆回购本金、计息天数、年化利率、应计利息和费用由 OC 提供，还是由 Relay 根据明确协议派生。
 4. ETF 申赎是否由 OC 补充篮子总价值、现金替代、现金差额和成分划转价值；如由 Meridian 提供 PCF/清单，需要明确历史可用范围。
 5. 在完整字段到位前，页面是否允许展示“估算净值”，以及估算数据是否禁止参与累计收益、回撤和基准排名。
@@ -214,6 +214,7 @@ estimated_etf_t0_pnl =
 ```text
 adjusted_open_value = adjusted_open_qty * meridian_pre_close
 close_position_value = close_qty * meridian_close
+effective_fee = actual_fee if fee_complete else estimated_fee
 
 cross_section_gross_pnl =
     close_position_value
@@ -223,7 +224,7 @@ cross_section_gross_pnl =
 
 cross_section_net_pnl =
     cross_section_gross_pnl
-    - actual_fee
+    - effective_fee
 ```
 
 其中：
@@ -232,7 +233,7 @@ cross_section_net_pnl =
 2. `meridian_pre_close` 使用目标交易日 Meridian `1d, adjustment=none` bar 的 `pre_close`。交易所在除权日提供的该字段已经换算到当日价格单位，可用于承接昨日持仓，不直接拿昨日原始 close 与今日除权后价格比较。
 3. `adjusted_open_qty` 优先取盘前初始化完成后的券商持仓数量。当前 Relay 只保存 open 资产、未保存 open 持仓，正式实现前需要扩展 `position_snapshots` 或新增日初持仓快照口径。
 4. `close_qty/meridian_close` 取当日日终持仓和 Meridian 原始收盘价。缺少日终快照时只能展示临时估算，不能固化为正式日绩效。
-5. `actual_fee` 优先使用柜台实际费用。字段缺失时标记 `missing_cross_section_fee`，不沿用 ETF T0 的 15bp 估算参数。
+5. `actual_fee` 优先使用柜台实际费用；缺失时按该账户、交易日和业务类型的有效费用规则生成 `estimated_fee`。两者都不可用时标记 `missing_cross_section_fee`，且普通截面交易不沿用 ETF T0 的 15bp 参数。
 6. 账户日总盈亏以以上现金流恒等式为准。页面需要拆分已实现/浮动时，可在经过公司行为调整后的成本池内使用移动加权成本，但两部分之和必须回到同一总盈亏。
 
 股票和 ETF 都可能发生除权除息、分红、送转、拆并份或 ETF 份额折算。公司行为处理规则：
@@ -271,6 +272,8 @@ cross_section_net_pnl =
 | 日终持仓 | `position_snapshots` | 持仓市值、权重、浮动盈亏、收盘持仓贡献 |
 | 当前持仓 | `positions` | 当天尚未结算时的临时查看口径，不作为历史绩效最终口径 |
 | 成交账本 | `fills` | 买卖金额、费用、成交数量、成交时间分布、按证券贡献估算 |
+| 费用规则 | 规划中的账户级费用规则版本 | 柜台未返回实际费用时的估算手续费；保留规则版本和估算标记 |
+| 人工资金流水 | 扩展后的 `cash_ledger` | 外部入出金、柜台间内部划转、收益性现金流和结算调整 |
 | 委托账本 | `orders` | 下单数、成交率、撤单率、拒单率、未终态订单和异常订单 |
 | 任务运行 | `job_runs` | 盘前初始化、收盘结算是否完成，运行耗时和错误摘要 |
 | 对账批次 | `reconciliation_runs` | 目标交易日是否完成对账/结算 |
@@ -300,7 +303,7 @@ cross_section_net_pnl =
 | 成交额 | `sum(fill.price * fill.qty)` |
 | 买入金额 | `sum(fill.price * fill.qty where trade_side=B)` |
 | 卖出金额 | `sum(fill.price * fill.qty where trade_side=S)` |
-| 手续费 | `sum(fill.fee)`，缺字段时尝试读取 `adapter_context.fee/nFee` |
+| 手续费 | 实际柜台费用优先；缺失时按账户有效费用规则估算，并分别展示 `actual_fee/estimated_fee` |
 | 数据质量 | 结算任务状态、对账差异数量、未终态订单数量、估算字段数量 |
 
 ### PnL 分解
@@ -461,7 +464,60 @@ net_pnl = gross_pnl - fee_total
 2. 净值曲线仍可使用 close-to-close 保持长期连续性，但单日收益解释优先使用 open-to-close。
 3. 收益贡献、贡献 bps 和当日交易绩效优先以 `open_net_asset` 为分母。
 4. 隔夜调整大于阈值时，在数据质量面板中提示人工复核，并在 tooltip 展示可能原因：逆回购回款、现金划转、清算入账、利息/红利等。
-5. 后续若能从柜台或资金流水拿到明确 cash flow 分类，再把 `overnight_adjustment` 分解为 `reverse_repo_repayment`、`cash_transfer`、`settlement_adjustment`、`interest_dividend`、`fee_tax_adjustment` 等。
+5. 使用人工资金流水先把 `overnight_adjustment` 分解为 `external_flow`、`internal_transfer`、`settlement_adjustment`、`interest_dividend`、`fee_tax_adjustment` 等；后续柜台提供同类接口时复用相同分类并对账。
+
+## 账户级费用规则
+
+不同账户、券商和业务类型的费用可能不同，绩效设置中预留“费用规则”页面。费用规则只用于柜台没有返回实际费用时的研究侧估算，不覆盖 OC 或券商返回的原始费用。
+
+规则按账户和生效区间版本化，至少支持：
+
+1. 适用范围：账户、市场、证券类型、业务类型和买卖方向；账户默认规则可以被更具体的规则覆盖。
+2. 费率项：佣金率、最低佣金、印花税、过户费、经手费、其它固定或比例费用。
+3. ETF 申赎 T0 的 `estimated_friction_rate=0.0015` 单独配置，不与普通股票/ETF 二级市场手续费混用。
+4. `effective_from/effective_to` 使用 `Asia/Shanghai` 交易日。已用于结算的规则不可原地修改，只能创建新版本。
+5. 每次计算保存 `fee_rule_id/version`、估算基数、各费用分项和总额，保证历史结果可复现。
+
+费用取值优先级：
+
+```text
+OC/柜台实际费用
+> 人工确认的单笔费用调整
+> 账户级有效费用规则估算
+> missing_fee
+```
+
+实际费用和估算费用必须分字段保存。成交费用为 0 不能单独证明“真实免佣”，还需要 `fee_source/fee_complete` 标记区分真实零费用和字段未返回。后续收到实际费用时生成对账差异并替换研究结果来源，但不删除旧估算及其规则版本。页面需要展示账户、规则状态、生效区间、费率明细、最近修改人和试算结果；生产环境修改需要确认并写审计记录。
+
+## 人工资金流水与柜台间划转
+
+OC 当前没有完整资金流水接口，外部入出金和柜台资金变化先由用户在绩效设置中人工维护。现有 `cash_ledger` 作为统一账本，后续通过 migration 扩展分类和审计字段，不另建一套平行口径。
+
+资金事件分为：
+
+| 分类 | 示例 | 绩效处理 |
+| --- | --- | --- |
+| `external_flow` | 银证入金、银证出金、账户外部调拨 | 改变资产规模，不计入策略盈亏；用于修正时间加权收益率 |
+| `internal_transfer` | 极速柜台与普通柜台之间划转 | 账户级净流入为 0，只解释不同资金仓位的可见余额变化 |
+| `income_expense` | 利息、红利、税费、逆回购收益 | 属于账户收益或费用，进入相应归因，不作为外部资金 |
+| `settlement_adjustment` | ETF 申赎现金差额、在途款、清算修正 | 进入资产桥并等待明确归因，不自动视为盈利 |
+
+人工记录至少包含：
+
+1. `account_id`、发生时间 `effective_at`、交易日、币种和带符号金额。
+2. `flow_class/ledger_type`、极速或普通柜台资金仓位、说明和可选附件/外部流水号。
+3. `source=manual`、录入人、录入时间、确认人、确认时间和幂等键。
+4. `draft/confirmed/voided` 状态；只有 `confirmed` 进入绩效计算，修改已确认记录使用冲正或作废记录，禁止物理删除。
+5. 柜台间划转使用同一 `transfer_group_id` 记录转出和转入两条腿。两条腿金额不一致、缺失或币种不同均标记 `internal_transfer_unbalanced`。
+
+资金计时规则：
+
+1. 盘前 open 快照之前生效的外部资金已经包含在日初资产中，只解释隔夜调整，不在日内收益中再次扣减。
+2. open 与 close 之间生效的外部资金用于修正当日收益；close 之后的记录归入下一交易日。
+3. 内部柜台划转无论何时发生都不改变账户经济净资产。若 Relay 暂时只能看到一侧余额，使用人工记录补齐资产桥并标记 `partial_counter_visibility`，不得把可见资金下降当作亏损。
+4. 红利若已通过 Meridian `pre_close` 进入证券日收益，不得在证券贡献中重复增加；实际红利现金只用于账户资产桥和分类核对。
+
+第一版页面建议在 `/trade#performance-settings` 提供“费用规则”和“资金流水”两个 tab。资金流水支持账户、日期、分类和状态过滤，提供新增、确认、冲正、CSV 导入导出及未配平内部划转提示。该页面是生产敏感写入口，不复用交易权限开关，需要独立的绩效配置写权限和完整审计。
 
 ## 接口规划
 
@@ -479,6 +535,17 @@ net_pnl = gross_pnl - fee_total
 | 任务状态 | `GET /v1/status`、`GET /v1/jobs/runs` |
 | 基准行情 | `GET /v1/meridian/market/bars` |
 | 证券主数据 | `GET /v1/meridian/metadata/instruments` |
+
+规划中的绩效配置写接口：
+
+```text
+GET/POST /v1/performance/fee-rules
+GET/POST /v1/accounts/{account_id}/cash-ledger
+POST /v1/accounts/{account_id}/cash-ledger/{entry_id}/confirm
+POST /v1/accounts/{account_id}/cash-ledger/{entry_id}/void
+```
+
+所有写接口使用独立权限、幂等键和审计日志。生产环境默认只读，不能因为开放交易下单权限而自动开放绩效配置写权限。
 
 如果前端聚合过重，再新增只读聚合接口：
 
@@ -525,10 +592,11 @@ GET /v1/accounts/{account_id}/performance/contributions
 在前置/柜台字段和账本数据足够后推进：
 
 1. 明确已实现盈亏字段来源。
-2. 补现金流水和成本调整。
-3. 支持 FIFO 或移动加权成本。
-4. 处理逆回购、ETF 申赎、分红派息、除权除息。
-5. 给研究侧导出 view 增加 v2 版本，避免破坏 v1。
+2. 增加账户级费用规则版本、费用设置页和实际/估算费用对账。
+3. 扩展 `cash_ledger`，提供人工资金流水、柜台间成对划转和审计页面。
+4. 支持 FIFO 或移动加权成本。
+5. 处理逆回购、ETF 申赎、分红派息、除权除息。
+6. 给研究侧导出 view 增加 v2 版本，避免破坏 v1。
 
 ## 第一版边界
 
