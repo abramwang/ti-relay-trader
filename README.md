@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P1/P2/P4/P5/P6/P7 底座已可用于券商测试环境联调，P8 历史数据与盈亏统计已完成第一版。9092 当前以文档门户同源挂载 `/v1/*` API，接入测试 PostgreSQL、测试 Redis 和测试账户 `00030484`；已实现单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、Redis reply/event 到 PostgreSQL 账本同步、SSE 事件流、Python SDK 0.1.10、盘前/盘后任务、open/close 快照、对账输入/差异表、绩效序列、Meridian bars 基准对照、Meridian level1 SSE 持仓实时估值、研究侧 PostgreSQL 导出 view，以及测试/生产运行环境显式切换护栏。9092 常驻进程已由 `scripts/relay-docs-service.sh` 管理，并写入 root crontab 的 `RELAY_DOCS_AUTOSTART` 自启动/健康守护块；watchdog 现在只用 `/healthz` 做幂等存活检查，Meridian 内网访问不继承容器代理环境。SDK 文档已同步写入/变更类方法说明，包括下单、撤单、刷新查询、任务报告和结算快照落库。P9 内置模拟柜台已明确暂缓，当前优先按绩效分析设计重构 `/trade#performance`，随后补批量下单测试视图、Playwright 页面回归测试、worker 心跳状态建模和 DLQ 告警。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 第一版绩效数据接口已完成但绩效工作区仍在重构，P10 已完成 9092 容器自启动和健康守护底座。系统已覆盖单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、多账户路由、Redis reply/event 到 PostgreSQL 账本同步、SSE 回调、Python SDK 0.1.10、交易日盘前/盘后任务、open/close 快照、对账差异、Meridian bars/level1 行情、持仓实时估值和研究导出。下一主线是 `/trade#performance` 的收益贡献与数据质量、gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-07-18`
+- 最近更新时间: `2026-07-26`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -197,6 +197,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 首页运行环境控制台新增测试/生产候选配置卡片和本机切换命令，真实切换通过 `scripts/switch-relay-env.sh` 执行，生产下单权限默认被脚本拦截。
 - [x] 新增 `scripts/relay-docs-service.sh` 管理 9092 常驻进程，并安装 root crontab `RELAY_DOCS_AUTOSTART` 块，容器启动和进程异常退出后会自动恢复生产只读服务。
 - [x] `/jobs` 任务页在非交易日明确展示“交易日任务跳过”；9092 watchdog 不再每分钟请求 `/v1/status`，Meridian 客户端和启动脚本均避免继承容器代理环境。
+- [x] 2026-07-26 重新审计开发路线图：P2 标准接口标记完成，P8/P10 调整为持续优化阶段，并把绩效归因、stream 可观测、账本环境隔离、人工复核、回归测试和发布运维拆成可验收任务。
 - [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
 - [x] P3 多账户路由收敛为 done：新增 `GET /v1/account-routes`，可只读查看每个账户的 broker/gateway/stream prefix、查询/交易权限、只读状态和 Redis stream key。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
@@ -285,9 +286,12 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 增加 `/trade` 批量下单测试视图。
-2. 增加 Playwright 页面交互冒烟测试。
-3. 补充 worker 心跳状态建模、DLQ 告警和正式部署脚本。
+1. 重构 `/trade#performance`：完成净值/基准/超额收益/回撤主图、收益贡献、交易质量和数据质量面板。
+2. 将 Redis `hb` 合并为 gateway 在线状态，增加 stream lag、DLQ 告警和处置状态。
+3. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+4. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
+5. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
+6. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、告警、回滚和发布检查清单。
 
 ## README 状态维护规则
 
@@ -504,3 +508,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-06-25`: 同步 Python SDK 文档的写入/变更方法：`docs/PYTHON_SDK.md` 和 `sdk/python/README.md` 现在单独说明下单、撤单、批量下单、资金/持仓/订单/成交刷新、任务报告和结算快照落库的目标、命令接受语义、最终状态确认方式和示例代码；结算快照文档明确调用前需要先刷新并等待 OC reply 合并到账本。
 - `2026-07-12`: 容器重启后恢复 9092 生产只读服务，确认 `/v1/status` 为 `production ok`、账户 3 个、`trading_enabled=0`、Redis/PostgreSQL 依赖 ok；新增 `scripts/relay-docs-service.sh` 并安装 root crontab `RELAY_DOCS_AUTOSTART` 自启动/每分钟健康守护块，后续容器重启或进程退出会自动拉起 9092。
 - `2026-07-18`: 排查非交易日任务页告警：确认 2026-07-18 为非交易日且 `pre_open_init/post_close_settlement` cron 均为 `1-5`，今天没有交易日任务运行，最近 job_run 停在 2026-07-17 成功；页面改为“交易日任务计划/交易日任务跳过”，并修复 9092 继承失效 `HTTP_PROXY` 导致 `/v1/status` 查询 Meridian 交易日接口刷 WARN 的问题。
+- `2026-07-26`: 重新审计开发路线图和运行态：9092 仍为生产只读、3 个账户、下单账户 0、Redis/PostgreSQL 正常，最近交易日 2026-07-24 的盘前和盘后任务均成功。路线图将下一主线收敛为绩效分析 Phase 2/3、gateway/stream/DLQ 可观测、账本环境隔离与数据库幂等、人工复核报告、回归测试和正式发布/备份；同时记录非交易日 `trading_day.phase` 仍按钟点显示 `continuous` 的待修语义。
