@@ -205,6 +205,52 @@ estimated_etf_t0_pnl =
 
 该部分具备“前一日持仓 + 当日普通 ETF 成交 + 当日日终持仓”的基本归因条件，但手续费和外部现金流仍缺失。
 
+### 股票与 ETF 截面策略盈亏口径
+
+股票截面和 ETF 截面均按普通二级市场持仓、买入、卖出和费用计算。ETF 申赎 T0 订单组及其 `P/R`、成分划转和成分卖出先按前述规则从 ETF 截面成本池中剥离；逆回购也单独归因。
+
+单证券单日毛盈亏使用资产现金流恒等式：
+
+```text
+adjusted_open_value = adjusted_open_qty * meridian_pre_close
+close_position_value = close_qty * meridian_close
+
+cross_section_gross_pnl =
+    close_position_value
+    + ordinary_sell_amount
+    - ordinary_buy_amount
+    - adjusted_open_value
+
+cross_section_net_pnl =
+    cross_section_gross_pnl
+    - actual_fee
+```
+
+其中：
+
+1. `ordinary_buy/sell_amount` 只包含该截面策略成本池中的普通二级市场成交；同一 ETF 中已经归入 T0 订单组的买入成本不得再次进入。
+2. `meridian_pre_close` 使用目标交易日 Meridian `1d, adjustment=none` bar 的 `pre_close`。交易所在除权日提供的该字段已经换算到当日价格单位，可用于承接昨日持仓，不直接拿昨日原始 close 与今日除权后价格比较。
+3. `adjusted_open_qty` 优先取盘前初始化完成后的券商持仓数量。当前 Relay 只保存 open 资产、未保存 open 持仓，正式实现前需要扩展 `position_snapshots` 或新增日初持仓快照口径。
+4. `close_qty/meridian_close` 取当日日终持仓和 Meridian 原始收盘价。缺少日终快照时只能展示临时估算，不能固化为正式日绩效。
+5. `actual_fee` 优先使用柜台实际费用。字段缺失时标记 `missing_cross_section_fee`，不沿用 ETF T0 的 15bp 估算参数。
+6. 账户日总盈亏以以上现金流恒等式为准。页面需要拆分已实现/浮动时，可在经过公司行为调整后的成本池内使用移动加权成本，但两部分之和必须回到同一总盈亏。
+
+股票和 ETF 都可能发生除权除息、分红、送转、拆并份或 ETF 份额折算。公司行为处理规则：
+
+1. 统一查询 Meridian `/v1/metadata/adjust-factors`，读取 `ex_date/ex_factor/ex_cum_factor`；Relay 后续只增加同源薄代理，不重新定义因子。
+2. 物理持仓数量始终以券商盘前持仓为准，不能对所有 `ex_factor` 机械乘数量。现金分红通常不改变股份，送转、拆分和 ETF 份额折算才改变数量。
+3. 数量变化用持仓桥校验：优先直接比较上一 close 与当日 open；缺少 open 快照时，使用 `close_qty - ordinary_buy_qty + ordinary_sell_qty` 反推公司行为后的日初数量。ETF 还需先剥离已闭合的 T0 买入/赎回数量。
+4. 若反推数量比与 Meridian 因子相符，按数量变化修正单位成本，持仓总成本保持不变：`adjusted_unit_cost = previous_total_cost / adjusted_open_qty`。
+5. 若因子发生变化但券商数量不变，按现金分红/价格除权处理：物理数量不变，日收益通过当日 `pre_close` 基准体现；后续若拿到明确红利资金流水，不得再重复计入。
+6. 因子、`pre_close`、盘前数量或持仓桥无法一致时标记 `corporate_action_mismatch`，不得用异常价格跳变直接生成策略巨额盈亏。
+7. 研究侧可以保留 `performance_adjusted_cost`，但不能覆盖券商原始持仓数量和原始成本字段。
+
+现有样本：
+
+1. `588200.SH` 在 `2026-07-21` 有 Meridian `ex_factor=3`。前一 close 持仓 93,700 份，折算后为 281,100 份；当日买入 9,000,000、赎回 4,500,000、普通卖出 181,100 后，日终正好为 4,600,000 份，数量桥完全闭合。
+2. `600000.SH` 在 `2026-07-16` 的前一日原始 close 为 9.31，当日 bar `pre_close=8.89`，与 `ex_factor=1.0472451375925815` 对应；该类现金除权不能把实际股份数乘以因子。
+3. `314000046830` 股票篮子在 `2026-07-22` 从空仓建仓，按日终市值计算毛盈亏 -14,016.88；`2026-07-23` 以 155 只股票的 Meridian `pre_close` 汇总日初基准 1,568,765，全部卖出后的毛盈亏 -1,558.66。两日合计 -15,575.54，与未扣费买卖金额差完全一致。
+
 ### 其它交易与数据质量
 
 1. `314000045768` 在 14:56:46 有一笔 `204001.SH` 逆回购，回报 `qty=358,280`、`price=1.005`。Meridian instruments 当前未返回该标的元数据，逆回购本金与利息规则需要单独建模。
@@ -221,6 +267,7 @@ estimated_etf_t0_pnl =
 | 上日收盘资产 | `asset_snapshots(snapshot_type=close)` 的上一交易日记录 | 隔夜调整参考基准 |
 | 日初资产 | `asset_snapshots(snapshot_type=open)`；由 `pre_open_init` 在盘前刷新后写入 | 当日交易收益率和贡献 bps 的优先分母 |
 | 日终资产 | `asset_snapshots(snapshot_type=close)` | close 净资产、现金、证券市值、日内盈亏、收益率主线 |
+| 日初持仓 | 规划中的 open 持仓快照；由 `pre_open_init` 在盘前刷新后写入 | 公司行为后的权威日初数量、昨日持仓成本承接 |
 | 日终持仓 | `position_snapshots` | 持仓市值、权重、浮动盈亏、收盘持仓贡献 |
 | 当前持仓 | `positions` | 当天尚未结算时的临时查看口径，不作为历史绩效最终口径 |
 | 成交账本 | `fills` | 买卖金额、费用、成交数量、成交时间分布、按证券贡献估算 |
@@ -230,6 +277,7 @@ estimated_etf_t0_pnl =
 | 对账差异 | `reconciliation_breaks` | 未终态订单、订单成交数量不一致、快照缺失、刷新失败等质量问题 |
 | Meridian bars | `/v1/meridian/market/bars` | 基准收益、收盘价参考、后续持仓估值补充 |
 | Meridian Level1 | `/v1/meridian/market/snapshots` | ETF 赎回成交时点 IOPV；使用不晚于赎回时刻的最近快照 |
+| Meridian adjust factors | 规划中的 `/v1/meridian/metadata/adjust-factors` 薄代理 | 股票/ETF 公司行为日期、复权因子和持仓成本调整 |
 | Meridian instruments | `/v1/meridian/metadata/instruments` | 证券名称、证券类型、ETF/股票分类和价格精度 |
 
 ## 核心指标
