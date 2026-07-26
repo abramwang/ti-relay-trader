@@ -70,6 +70,20 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | 日终权益、日初资产、隔夜调整、日内盈亏和 PnL 输入汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | 账户 close 净值绩效序列、open-to-close 日内绩效、累计收益和回撤 |
 | `GET` | `/v1/accounts/{account_id}/performance/series.csv` | 账户绩效序列 CSV 导出 |
+| `GET` | `/v1/performance/settings` | 绩效公式版本、T+1 对账阈值和人工设置写入开关 |
+| `GET` | `/v1/performance/fee-rules` | 账户级、生效区间版本化费率规则 |
+| `POST` | `/v1/performance/fee-rules` | 新增费率规则；仅 `performance.settings_write_enabled=true` 时允许 |
+| `GET` | `/v1/accounts/{account_id}/cash-ledger` | 手工资金流水、外部入出金和柜台间资金划转查询 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger` | 新增手工资金流水；仅写入开关开启时允许 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger/{entry_id}/confirm` | 确认 draft 资金流水 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger/{entry_id}/void` | 作废资金流水 |
+| `GET` | `/v1/accounts/{account_id}/performance/baselines` | 日初经济净值基线查询 |
+| `POST` | `/v1/accounts/{account_id}/performance/baselines` | 新增日初经济净值基线；仅写入开关开启时允许 |
+| `GET` | `/v1/accounts/{account_id}/performance/reverse-repo` | 按成交账本预览 `204001.SH` 逆回购应计利息 |
+| `POST` | `/v1/accounts/{account_id}/performance/reverse-repo/rebuild` | 重建并落库逆回购应计结果；仅写入开关开启时允许 |
+| `GET` | `/v1/accounts/{account_id}/performance/reverse-repo/accruals` | 查询已落库逆回购应计结果 |
+| `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | 查询版本化经济净资产结果 |
+| `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | 查询 T+1 经济净值对账结果 |
 | `GET` | `/v1/meridian/market/bars` | Meridian bars 薄代理，保留 `market_bar.v1` 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |
 | `GET` | `/v1/events/stream` | SSE 实时事件流，支持按 `account_id` 过滤订单、成交、资金和持仓变化 |

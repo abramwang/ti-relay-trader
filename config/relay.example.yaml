@@ -33,6 +33,16 @@ market:
   snapshot_market_level: "level1"
   snapshot_data_scope: "realtime"
 
+performance:
+  # Keep this false until the 9092 endpoint is protected by trusted access
+  # control. Read-only performance and reconciliation APIs remain available.
+  settings_write_enabled: false
+  formula_version: "performance_economic_nav.v1"
+  auto_tolerance_cny: 50
+  auto_tolerance_bp: 0.1
+  warning_tolerance_cny: 500
+  warning_tolerance_bp: 1
+
 auto_refresh:
   # When order/fill events arrive from Redis, relay coalesces one asset query and
   # one positions query per account. This keeps /trade fresh without polling the

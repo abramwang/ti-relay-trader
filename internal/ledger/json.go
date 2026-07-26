@@ -81,3 +81,93 @@ func (performance DailyPerformance) MarshalJSON() ([]byte, error) {
 		CapturedAt:            optionalBusinessTime(performance.CapturedAt),
 	})
 }
+
+func (rule FeeRule) MarshalJSON() ([]byte, error) {
+	type feeRuleAlias FeeRule
+	return json.Marshal(struct {
+		feeRuleAlias
+		ActivatedAt *string `json:"activated_at,omitempty"`
+		CreatedAt   *string `json:"created_at,omitempty"`
+		UpdatedAt   *string `json:"updated_at,omitempty"`
+	}{
+		feeRuleAlias: feeRuleAlias(rule),
+		ActivatedAt:  optionalBusinessTime(rule.ActivatedAt),
+		CreatedAt:    optionalBusinessTime(rule.CreatedAt),
+		UpdatedAt:    optionalBusinessTime(rule.UpdatedAt),
+	})
+}
+
+func (entry CashLedgerEntry) MarshalJSON() ([]byte, error) {
+	type cashLedgerEntryAlias CashLedgerEntry
+	return json.Marshal(struct {
+		cashLedgerEntryAlias
+		EffectiveAt *string `json:"effective_at,omitempty"`
+		ConfirmedAt *string `json:"confirmed_at,omitempty"`
+		VoidedAt    *string `json:"voided_at,omitempty"`
+		CreatedAt   *string `json:"created_at,omitempty"`
+	}{
+		cashLedgerEntryAlias: cashLedgerEntryAlias(entry),
+		EffectiveAt:          optionalBusinessTime(entry.EffectiveAt),
+		ConfirmedAt:          optionalBusinessTime(entry.ConfirmedAt),
+		VoidedAt:             optionalBusinessTime(entry.VoidedAt),
+		CreatedAt:            optionalBusinessTime(entry.CreatedAt),
+	})
+}
+
+func (baseline NavBaseline) MarshalJSON() ([]byte, error) {
+	type navBaselineAlias NavBaseline
+	return json.Marshal(struct {
+		navBaselineAlias
+		ConfirmedAt *string `json:"confirmed_at,omitempty"`
+		CreatedAt   *string `json:"created_at,omitempty"`
+		UpdatedAt   *string `json:"updated_at,omitempty"`
+	}{
+		navBaselineAlias: navBaselineAlias(baseline),
+		ConfirmedAt:      optionalBusinessTime(baseline.ConfirmedAt),
+		CreatedAt:        optionalBusinessTime(baseline.CreatedAt),
+		UpdatedAt:        optionalBusinessTime(baseline.UpdatedAt),
+	})
+}
+
+func (nav PerformanceNAV) MarshalJSON() ([]byte, error) {
+	type performanceNAVAlias PerformanceNAV
+	return json.Marshal(struct {
+		performanceNAVAlias
+		FinalizedAt *string `json:"finalized_at,omitempty"`
+		CreatedAt   *string `json:"created_at,omitempty"`
+		UpdatedAt   *string `json:"updated_at,omitempty"`
+	}{
+		performanceNAVAlias: performanceNAVAlias(nav),
+		FinalizedAt:         optionalBusinessTime(nav.FinalizedAt),
+		CreatedAt:           optionalBusinessTime(nav.CreatedAt),
+		UpdatedAt:           optionalBusinessTime(nav.UpdatedAt),
+	})
+}
+
+func (item NAVReconciliation) MarshalJSON() ([]byte, error) {
+	type navReconciliationAlias NAVReconciliation
+	return json.Marshal(struct {
+		navReconciliationAlias
+		ReviewedAt *string `json:"reviewed_at,omitempty"`
+		CreatedAt  *string `json:"created_at,omitempty"`
+		UpdatedAt  *string `json:"updated_at,omitempty"`
+	}{
+		navReconciliationAlias: navReconciliationAlias(item),
+		ReviewedAt:             optionalBusinessTime(item.ReviewedAt),
+		CreatedAt:              optionalBusinessTime(item.CreatedAt),
+		UpdatedAt:              optionalBusinessTime(item.UpdatedAt),
+	})
+}
+
+func (accrual ReverseRepoAccrual) MarshalJSON() ([]byte, error) {
+	type reverseRepoAccrualAlias ReverseRepoAccrual
+	return json.Marshal(struct {
+		reverseRepoAccrualAlias
+		CalculatedAt *string `json:"calculated_at,omitempty"`
+		SettledAt    *string `json:"settled_at,omitempty"`
+	}{
+		reverseRepoAccrualAlias: reverseRepoAccrualAlias(accrual),
+		CalculatedAt:            optionalBusinessTime(accrual.CalculatedAt),
+		SettledAt:               optionalBusinessTime(accrual.SettledAt),
+	})
+}

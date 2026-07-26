@@ -30,6 +30,16 @@ market:
   snapshot_market_level: "level1"
   snapshot_data_scope: "realtime"
 
+performance:
+  # Manual fee/cash writes are independent from account trading permissions.
+  # Enable only behind trusted operator access control.
+  settings_write_enabled: false
+  formula_version: "performance_economic_nav.v1"
+  auto_tolerance_cny: 50
+  auto_tolerance_bp: 0.1
+  warning_tolerance_cny: 500
+  warning_tolerance_bp: 1
+
 auto_refresh:
   enabled: true
   debounce_seconds: 2

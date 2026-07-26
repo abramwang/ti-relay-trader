@@ -28,6 +28,7 @@ type Config struct {
 	Database    DatabaseConfig       `yaml:"database"`
 	Redis       RedisConfig          `yaml:"redis"`
 	Market      MarketConfig         `yaml:"market"`
+	Performance PerformanceConfig    `yaml:"performance"`
 	AutoRefresh AutoRefreshConfig    `yaml:"auto_refresh"`
 	Accounts    []AccountRouteConfig `yaml:"accounts"`
 	Jobs        map[string]JobConfig `yaml:"jobs"`
@@ -70,6 +71,15 @@ type MarketConfig struct {
 	TimeoutSeconds      int    `yaml:"timeout_seconds"`
 	SnapshotMarketLevel string `yaml:"snapshot_market_level"`
 	SnapshotDataScope   string `yaml:"snapshot_data_scope"`
+}
+
+type PerformanceConfig struct {
+	SettingsWriteEnabled bool    `yaml:"settings_write_enabled"`
+	FormulaVersion       string  `yaml:"formula_version"`
+	AutoToleranceCNY     float64 `yaml:"auto_tolerance_cny"`
+	AutoToleranceBP      float64 `yaml:"auto_tolerance_bp"`
+	WarningToleranceCNY  float64 `yaml:"warning_tolerance_cny"`
+	WarningToleranceBP   float64 `yaml:"warning_tolerance_bp"`
 }
 
 type AutoRefreshConfig struct {
@@ -190,6 +200,21 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Market.SnapshotDataScope == "" {
 		cfg.Market.SnapshotDataScope = "realtime"
 	}
+	if cfg.Performance.FormulaVersion == "" {
+		cfg.Performance.FormulaVersion = "performance_economic_nav.v1"
+	}
+	if cfg.Performance.AutoToleranceCNY == 0 {
+		cfg.Performance.AutoToleranceCNY = 50
+	}
+	if cfg.Performance.AutoToleranceBP == 0 {
+		cfg.Performance.AutoToleranceBP = 0.1
+	}
+	if cfg.Performance.WarningToleranceCNY == 0 {
+		cfg.Performance.WarningToleranceCNY = 500
+	}
+	if cfg.Performance.WarningToleranceBP == 0 {
+		cfg.Performance.WarningToleranceBP = 1
+	}
 	if cfg.AutoRefresh.DebounceSeconds == 0 {
 		cfg.AutoRefresh.DebounceSeconds = 2
 	}
@@ -228,6 +253,16 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Market.TimeoutSeconds < 0 {
 		return fmt.Errorf("market.timeout_seconds must be non-negative")
+	}
+	if strings.TrimSpace(cfg.Performance.FormulaVersion) == "" {
+		return fmt.Errorf("performance.formula_version is required")
+	}
+	if cfg.Performance.AutoToleranceCNY < 0 || cfg.Performance.AutoToleranceBP < 0 {
+		return fmt.Errorf("performance auto tolerances must be non-negative")
+	}
+	if cfg.Performance.WarningToleranceCNY < cfg.Performance.AutoToleranceCNY ||
+		cfg.Performance.WarningToleranceBP < cfg.Performance.AutoToleranceBP {
+		return fmt.Errorf("performance warning tolerances must be >= auto tolerances")
 	}
 	if cfg.AutoRefresh.DebounceSeconds < 0 {
 		return fmt.Errorf("auto_refresh.debounce_seconds must be non-negative")

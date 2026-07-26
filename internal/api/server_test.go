@@ -19,6 +19,7 @@ import (
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/orderflow"
+	relayperformance "ti-relay-trader/internal/performance"
 	"ti-relay-trader/internal/redisstream"
 	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
@@ -2001,6 +2002,94 @@ func TestPerformanceSeriesCSV(t *testing.T) {
 	}
 }
 
+func TestPerformanceSettingsEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Performance.FormulaVersion = "performance_economic_nav.test"
+	cfg.Performance.SettingsWriteEnabled = true
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/performance/settings", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	if envelope.Data["formula_version"] != "performance_economic_nav.test" || envelope.Data["settings_write_enabled"] != true {
+		t.Fatalf("settings = %#v", envelope.Data)
+	}
+}
+
+func TestPerformanceWriteDisabledRejectsCashLedgerCreate(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/cash-ledger", strings.NewReader(`{"trade_date":"20260723","ledger_type":"deposit","flow_class":"external","amount":100}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if perf.createdCash.AccountID != "" {
+		t.Fatalf("cash ledger was created: %#v", perf.createdCash)
+	}
+}
+
+func TestCreateCashLedgerEntryUsesPathAccount(t *testing.T) {
+	cfg := config.Default()
+	cfg.Performance.SettingsWriteEnabled = true
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	body := `{"account_id":"wrong","trade_date":"20260723","ledger_type":"deposit","flow_class":"external","amount":100}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/cash-ledger", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if perf.createdCash.AccountID != "acct-1" {
+		t.Fatalf("created account_id = %q, want acct-1", perf.createdCash.AccountID)
+	}
+}
+
+func TestReverseRepoPreviewEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		reverseRepo: relayperformance.ReverseRepoResult{AccountID: "acct-1", TradeDate: "2026-07-23", Orders: 1, Principal: 1000},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/reverse-repo?trade_date=20260723", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.reverseRepoAccountID != "acct-1" || perf.reverseRepoTradeDate != "20260723" || perf.reverseRepoPersist {
+		t.Fatalf("reverse repo args account=%q date=%q persist=%v", perf.reverseRepoAccountID, perf.reverseRepoTradeDate, perf.reverseRepoPersist)
+	}
+}
+
 type fakeOrderSubmitter struct {
 	req                       trading.SubmitOrderRequest
 	requestID                 string
@@ -2059,6 +2148,113 @@ type fakeAccountAliasStore struct {
 	savedBrokerID  string
 	savedAlias     string
 	err            error
+}
+
+type fakePerformanceService struct {
+	createdRule          ledger.FeeRule
+	rules                []ledger.FeeRule
+	createdCash          ledger.CashLedgerEntry
+	cashEntries          []ledger.CashLedgerEntry
+	createdBaseline      ledger.NavBaseline
+	baselines            []ledger.NavBaseline
+	reverseRepo          relayperformance.ReverseRepoResult
+	reverseRepoAccountID string
+	reverseRepoTradeDate string
+	reverseRepoPersist   bool
+	accruals             []ledger.ReverseRepoAccrual
+	navs                 []ledger.PerformanceNAV
+	reconciliations      []ledger.NAVReconciliation
+	err                  error
+}
+
+func (service *fakePerformanceService) CreateFeeRule(_ context.Context, rule ledger.FeeRule) (ledger.FeeRule, error) {
+	if service.err != nil {
+		return ledger.FeeRule{}, service.err
+	}
+	service.createdRule = rule
+	return rule, nil
+}
+
+func (service *fakePerformanceService) ListFeeRules(_ context.Context, _ ledger.FeeRuleQuery) ([]ledger.FeeRule, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.rules, nil
+}
+
+func (service *fakePerformanceService) CreateCashLedgerEntry(_ context.Context, entry ledger.CashLedgerEntry) (ledger.CashLedgerEntry, error) {
+	if service.err != nil {
+		return ledger.CashLedgerEntry{}, service.err
+	}
+	service.createdCash = entry
+	return entry, nil
+}
+
+func (service *fakePerformanceService) ListCashLedgerEntries(_ context.Context, _ ledger.CashLedgerQuery) ([]ledger.CashLedgerEntry, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.cashEntries, nil
+}
+
+func (service *fakePerformanceService) ConfirmCashLedgerEntry(_ context.Context, accountID, entryID, operator string) (ledger.CashLedgerEntry, error) {
+	if service.err != nil {
+		return ledger.CashLedgerEntry{}, service.err
+	}
+	return ledger.CashLedgerEntry{AccountID: accountID, EntryID: entryID, ConfirmedBy: operator, Status: "confirmed"}, nil
+}
+
+func (service *fakePerformanceService) VoidCashLedgerEntry(_ context.Context, accountID, entryID, operator string) (ledger.CashLedgerEntry, error) {
+	if service.err != nil {
+		return ledger.CashLedgerEntry{}, service.err
+	}
+	return ledger.CashLedgerEntry{AccountID: accountID, EntryID: entryID, VoidedBy: operator, Status: "voided"}, nil
+}
+
+func (service *fakePerformanceService) CreateNavBaseline(_ context.Context, baseline ledger.NavBaseline) (ledger.NavBaseline, error) {
+	if service.err != nil {
+		return ledger.NavBaseline{}, service.err
+	}
+	service.createdBaseline = baseline
+	return baseline, nil
+}
+
+func (service *fakePerformanceService) ListNavBaselines(_ context.Context, _ string) ([]ledger.NavBaseline, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.baselines, nil
+}
+
+func (service *fakePerformanceService) CalculateReverseRepo(_ context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error) {
+	if service.err != nil {
+		return relayperformance.ReverseRepoResult{}, service.err
+	}
+	service.reverseRepoAccountID = accountID
+	service.reverseRepoTradeDate = tradeDate
+	service.reverseRepoPersist = persist
+	return service.reverseRepo, nil
+}
+
+func (service *fakePerformanceService) ListReverseRepoAccruals(_ context.Context, _, _ string) ([]ledger.ReverseRepoAccrual, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.accruals, nil
+}
+
+func (service *fakePerformanceService) ListPerformanceNAVs(_ context.Context, _, _, _ string) ([]ledger.PerformanceNAV, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.navs, nil
+}
+
+func (service *fakePerformanceService) ListNAVReconciliations(_ context.Context, _, _, _ string) ([]ledger.NAVReconciliation, error) {
+	if service.err != nil {
+		return nil, service.err
+	}
+	return service.reconciliations, nil
 }
 
 type fakeSettlementStore struct {

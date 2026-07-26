@@ -169,6 +169,39 @@ func TestPositionDayPnLMigrationAddsColumnsAndViewMetric(t *testing.T) {
 	}
 }
 
+func TestPerformanceAccountingMigrationAddsVersionedInputsAndOutputs(t *testing.T) {
+	upSQL := readMigration(t, "000009_performance_accounting.up.sql")
+	for _, snippet := range []string{
+		"CREATE TABLE performance_fee_rules",
+		"ADD COLUMN flow_class",
+		"ADD COLUMN effective_at",
+		"CREATE TABLE performance_nav_baselines",
+		"CREATE TABLE performance_nav_versions",
+		"CREATE TABLE performance_nav_reconciliations",
+		"CREATE TABLE reverse_repo_accruals",
+		"performance_nav_versions_current_unique",
+		"cash_ledger_idempotency_unique",
+		"repo_fee_rate",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("performance accounting migration missing snippet: %s", snippet)
+		}
+	}
+
+	downSQL := readMigration(t, "000009_performance_accounting.down.sql")
+	for _, snippet := range []string{
+		"DROP TABLE IF EXISTS reverse_repo_accruals",
+		"DROP TABLE IF EXISTS performance_nav_reconciliations",
+		"DROP TABLE IF EXISTS performance_nav_versions",
+		"DROP TABLE IF EXISTS performance_nav_baselines",
+		"DROP TABLE IF EXISTS performance_fee_rules",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("performance accounting rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

@@ -289,6 +289,20 @@ rejected
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | `trade_date` query | `DailyPerformance` | 已实现，读取日初 open、日终 close、持仓快照和成交汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | `date_from/date_to/benchmark_security_id` query | `PerformanceSeries` | 已实现，读取 close 资产快照生成净值序列，同时返回 open-to-close 日内绩效字段，并可用 Meridian bars 增加基准和超额收益 |
 | `GET` | `/v1/accounts/{account_id}/performance/series.csv` | `date_from/date_to/benchmark_security_id` query | `text/csv` | 已实现，导出账户绩效、基准和超额收益 CSV |
+| `GET` | `/v1/performance/settings` | - | `PerformanceSettings` | 已实现，返回经济净值公式版本、对账阈值和人工输入写入开关 |
+| `GET` | `/v1/performance/fee-rules` | `account_id/status/effective_on/limit` query | `[]FeeRule` | 已实现，读取账户级、生效区间版本化费率规则 |
+| `POST` | `/v1/performance/fee-rules` | `FeeRule` | `FeeRule` | 已实现，新增费率规则；默认因 `performance.settings_write_enabled=false` 返回 `403` |
+| `GET` | `/v1/accounts/{account_id}/cash-ledger` | `trade_date/date_from/date_to/flow_class/status/limit` query | `[]CashLedgerEntry` | 已实现，读取人工资金流水、外部入出金和柜台间划转 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger` | `CashLedgerEntry` | `CashLedgerEntry` | 已实现，新增手工资金流水；默认写入关闭 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger/{entry_id}/confirm` | `{operator}` | `CashLedgerEntry` | 已实现，在账户维度确认 draft 流水 |
+| `POST` | `/v1/accounts/{account_id}/cash-ledger/{entry_id}/void` | `{operator}` | `CashLedgerEntry` | 已实现，在账户维度作废 draft/confirmed 流水 |
+| `GET` | `/v1/accounts/{account_id}/performance/baselines` | - | `[]NavBaseline` | 已实现，读取手工维护的日初经济净值基线 |
+| `POST` | `/v1/accounts/{account_id}/performance/baselines` | `NavBaseline` | `NavBaseline` | 已实现，新增日初经济净值基线；默认写入关闭 |
+| `GET` | `/v1/accounts/{account_id}/performance/reverse-repo` | `trade_date` query | `ReverseRepoResult` | 已实现，从成交账本估算 `204001.SH` 逆回购本金、占款天数、毛息、费用和净息，不落库 |
+| `POST` | `/v1/accounts/{account_id}/performance/reverse-repo/rebuild` | `trade_date` query | `ReverseRepoResult` | 已实现，重建并落库逆回购应计结果；默认写入关闭 |
+| `GET` | `/v1/accounts/{account_id}/performance/reverse-repo/accruals` | `trade_date` query | `[]ReverseRepoAccrual` | 已实现，查询已落库逆回购应计结果 |
+| `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | `trade_date` 或 `date_from/date_to` query | `[]PerformanceNAV` | 已实现查询结构；策略归因完成后写入当前版本 |
+| `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | `trade_date` 或 `date_from/date_to` query | `[]NAVReconciliation` | 已实现查询结构，用于 T+1 经济净值对账 |
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
@@ -344,6 +358,16 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 返回账户 close 净值绩效序列，并在每个交易日返回同样的日初资产、隔夜调整、日内盈亏和日内收益率字段。服务读取区间内 `asset_snapshots(snapshot_type=close)` 形成长期净值主线，按上一条 close 净资产计算兼容的单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。绩效页面和 API Console 默认用上证指数 `000001.SH` 作为基准；如果传入其他 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 
 `GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、上一 close 净资产、日初资产、隔夜调整、日内盈亏、日内收益率、close-to-close 收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现 PnL、总持仓浮盈、当日持仓浮盈、总/净 PnL、成交额、费用和快照时间等列。
+
+经济净值输入层由 `000009_performance_accounting` 提供：
+
+- `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。
+- `cash_ledger` 扩展为可人工维护的资金流水，支持 `external` 外部入出金、`internal_transfer` 极速/普通柜台内部划转、`settlement_income` 清算收入、`fee` 和 `adjustment`。外部净流入修正收益率，内部划转成对记录但不计入账户净收益。
+- `performance_nav_baselines` 记录手工确认的日初经济净值基线，解决逆回购回款、占款释放和柜台间划转导致的前一日日终资产与当日日初资产差异。
+- `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。当前 API 已提供查询结构，策略归因写入将在后续阶段补齐。
+- `reverse_repo_accruals` 保存 `204001.SH` 逆回购应计结果。估算口径为 `principal=qty*100`，`gross_interest=principal*(成交年化利率/100)*实际占款天数/365`，费用优先取成交实际费用，其次取账户费率规则，缺失时标记 `missing_repo_fee`。实际占款天数由 Meridian 交易日接口向后取两个交易日计算，跨周末会自然得到 3 天。
+
+人工输入类写接口默认关闭，由配置 `performance.settings_write_enabled` 控制。生产 9092 当前应保持 `false`，仅在服务器侧明确切换配置后才能通过 `/trade#performance-settings` 或 API Console 新增费率、资金流水、日初净值和持久化逆回购估算。
 
 研究侧 PostgreSQL 导出 view 已通过 `000006_research_performance_views` 提供：
 

@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/orderflow"
+	relayperformance "ti-relay-trader/internal/performance"
 	"ti-relay-trader/internal/redisstream"
 	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
@@ -31,6 +33,7 @@ type Dependencies struct {
 	Jobs         JobRunStore
 	Settlements  SettlementStore
 	Accounts     AccountAliasStore
+	Performance  PerformanceService
 	Market       *market.MeridianClient
 	Events       *events.Hub
 	DatabasePing HealthCheckFunc
@@ -80,6 +83,21 @@ type AccountAliasStore interface {
 	UpsertAccountAlias(ctx context.Context, accountID string, brokerID string, alias string) error
 }
 
+type PerformanceService interface {
+	CreateFeeRule(ctx context.Context, rule ledger.FeeRule) (ledger.FeeRule, error)
+	ListFeeRules(ctx context.Context, query ledger.FeeRuleQuery) ([]ledger.FeeRule, error)
+	CreateCashLedgerEntry(ctx context.Context, entry ledger.CashLedgerEntry) (ledger.CashLedgerEntry, error)
+	ListCashLedgerEntries(ctx context.Context, query ledger.CashLedgerQuery) ([]ledger.CashLedgerEntry, error)
+	ConfirmCashLedgerEntry(ctx context.Context, accountID, entryID, operator string) (ledger.CashLedgerEntry, error)
+	VoidCashLedgerEntry(ctx context.Context, accountID, entryID, operator string) (ledger.CashLedgerEntry, error)
+	CreateNavBaseline(ctx context.Context, baseline ledger.NavBaseline) (ledger.NavBaseline, error)
+	ListNavBaselines(ctx context.Context, accountID string) ([]ledger.NavBaseline, error)
+	CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error)
+	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
+	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
+	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
+}
+
 type PerformanceSeriesSummary struct {
 	AccountID                string   `json:"account_id"`
 	DateFrom                 string   `json:"date_from"`
@@ -102,6 +120,7 @@ type PerformanceSeriesSummary struct {
 var errSettlementStoreUnavailable = errors.New("settlement store is unavailable")
 var errMarketClientUnavailable = errors.New("meridian market client is unavailable")
 var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
+var errPerformanceServiceUnavailable = errors.New("performance service is unavailable")
 
 type Server struct {
 	cfg     config.Config
@@ -111,6 +130,7 @@ type Server struct {
 	jobs    JobRunStore
 	settles SettlementStore
 	aliases AccountAliasStore
+	perf    PerformanceService
 	market  *market.MeridianClient
 	events  *events.Hub
 	health  statusHealthChecks
@@ -146,6 +166,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		jobs:    deps.Jobs,
 		settles: deps.Settlements,
 		aliases: deps.Accounts,
+		perf:    deps.Performance,
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
@@ -164,6 +185,8 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/account-routes", server.handleAccountRoutes)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
+	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
+	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
 	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
@@ -983,7 +1006,7 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/accounts/")
 	path = strings.Trim(path, "/")
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 && len(parts) != 3 {
+	if len(parts) < 2 || len(parts) > 4 {
 		httpx.WriteNotFound(w, r)
 		return
 	}
@@ -1067,22 +1090,111 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleRefreshFills(w, r, accountID)
-	case "performance":
-		if len(parts) != 3 {
+	case "cash-ledger":
+		if len(parts) == 2 {
+			switch r.Method {
+			case http.MethodGet:
+				s.handleListCashLedgerEntries(w, r, accountID)
+			case http.MethodPost:
+				s.handleCreateCashLedgerEntry(w, r, accountID)
+			default:
+				httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+			}
+			return
+		}
+		if len(parts) != 4 || (parts[3] != "confirm" && parts[3] != "void") {
 			httpx.WriteNotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodGet {
-			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		if r.Method != http.MethodPost {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		entryID, err := url.PathUnescape(parts[2])
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid entry_id path", err.Error())
+			return
+		}
+		if parts[3] == "confirm" {
+			s.handleConfirmCashLedgerEntry(w, r, accountID, entryID)
+			return
+		}
+		s.handleVoidCashLedgerEntry(w, r, accountID, entryID)
+	case "performance":
+		if len(parts) != 3 && len(parts) != 4 {
+			httpx.WriteNotFound(w, r)
 			return
 		}
 		switch parts[2] {
 		case "daily":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
 			s.handleDailyPerformance(w, r, accountID)
 		case "series":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
 			s.handlePerformanceSeries(w, r, accountID)
 		case "series.csv":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
 			s.handlePerformanceSeriesCSV(w, r, accountID)
+		case "baselines":
+			if len(parts) != 3 {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				s.handleListNavBaselines(w, r, accountID)
+			case http.MethodPost:
+				s.handleCreateNavBaseline(w, r, accountID)
+			default:
+				httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+			}
+		case "reverse-repo":
+			if len(parts) == 3 {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleCalculateReverseRepo(w, r, accountID, false)
+				return
+			}
+			if len(parts) == 4 && parts[3] == "rebuild" {
+				if r.Method != http.MethodPost {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+					return
+				}
+				s.handleCalculateReverseRepo(w, r, accountID, true)
+				return
+			}
+			if len(parts) == 4 && parts[3] == "accruals" {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handleListReverseRepoAccruals(w, r, accountID)
+				return
+			}
+			httpx.WriteNotFound(w, r)
+		case "economic-nav":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handleListPerformanceNAVs(w, r, accountID)
+		case "nav-reconciliations":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handleListNAVReconciliations(w, r, accountID)
 		default:
 			httpx.WriteNotFound(w, r)
 		}
@@ -1575,6 +1687,275 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 	if err := writer.Error(); err != nil {
 		s.logger.Warn("performance_series_csv_write_failed", "error", err)
 	}
+}
+
+func (s *Server) handlePerformanceSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"settings_write_enabled": s.cfg.Performance.SettingsWriteEnabled,
+		"formula_version":        s.cfg.Performance.FormulaVersion,
+		"auto_tolerance_cny":     s.cfg.Performance.AutoToleranceCNY,
+		"auto_tolerance_bp":      s.cfg.Performance.AutoToleranceBP,
+		"warning_tolerance_cny":  s.cfg.Performance.WarningToleranceCNY,
+		"warning_tolerance_bp":   s.cfg.Performance.WarningToleranceBP,
+	})
+}
+
+func (s *Server) handlePerformanceFeeRules(w http.ResponseWriter, r *http.Request) {
+	if s.perf == nil {
+		s.writePerformanceError(w, r, errPerformanceServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		limit, err := parseLimit(r.URL.Query().Get("limit"))
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee rule query", err.Error())
+			return
+		}
+		rules, err := s.perf.ListFeeRules(r.Context(), ledger.FeeRuleQuery{
+			AccountID:   r.URL.Query().Get("account_id"),
+			Status:      r.URL.Query().Get("status"),
+			EffectiveOn: r.URL.Query().Get("effective_on"),
+			Limit:       limit,
+		})
+		if err != nil {
+			s.writePerformanceError(w, r, err)
+			return
+		}
+		httpx.WriteOK(w, r, http.StatusOK, map[string]any{"rules": rules, "count": len(rules)})
+	case http.MethodPost:
+		if !s.requirePerformanceWrite(w, r) {
+			return
+		}
+		defer r.Body.Close()
+		var rule ledger.FeeRule
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&rule); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee rule body", err.Error())
+			return
+		}
+		if _, ok := s.cfg.AccountRoute(strings.TrimSpace(rule.AccountID)); !ok {
+			httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", nil)
+			return
+		}
+		created, err := s.perf.CreateFeeRule(r.Context(), rule)
+		if err != nil {
+			s.writePerformanceError(w, r, err)
+			return
+		}
+		httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"rule": created})
+	default:
+		httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+	}
+}
+
+func (s *Server) handleListCashLedgerEntries(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	limit, err := parseLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cash ledger query", err.Error())
+		return
+	}
+	entries, err := s.perf.ListCashLedgerEntries(r.Context(), ledger.CashLedgerQuery{
+		AccountID: accountID,
+		TradeDate: r.URL.Query().Get("trade_date"),
+		DateFrom:  r.URL.Query().Get("date_from"),
+		DateTo:    r.URL.Query().Get("date_to"),
+		FlowClass: r.URL.Query().Get("flow_class"),
+		Status:    r.URL.Query().Get("status"),
+		Limit:     limit,
+	})
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"entries": entries, "count": len(entries)})
+}
+
+func (s *Server) handleCreateCashLedgerEntry(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	defer r.Body.Close()
+	var entry ledger.CashLedgerEntry
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&entry); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cash ledger body", err.Error())
+		return
+	}
+	entry.AccountID = accountID
+	created, err := s.perf.CreateCashLedgerEntry(r.Context(), entry)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"entry": created})
+}
+
+func (s *Server) handleConfirmCashLedgerEntry(w http.ResponseWriter, r *http.Request, accountID, entryID string) {
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	operator, err := operatorFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cash ledger transition body", err.Error())
+		return
+	}
+	entry, err := s.perf.ConfirmCashLedgerEntry(r.Context(), accountID, entryID, operator)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"entry": entry})
+}
+
+func (s *Server) handleVoidCashLedgerEntry(w http.ResponseWriter, r *http.Request, accountID, entryID string) {
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	operator, err := operatorFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cash ledger transition body", err.Error())
+		return
+	}
+	entry, err := s.perf.VoidCashLedgerEntry(r.Context(), accountID, entryID, operator)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"entry": entry})
+}
+
+func (s *Server) handleListNavBaselines(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	baselines, err := s.perf.ListNavBaselines(r.Context(), accountID)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"baselines": baselines, "count": len(baselines)})
+}
+
+func (s *Server) handleCreateNavBaseline(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	defer r.Body.Close()
+	var baseline ledger.NavBaseline
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&baseline); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid nav baseline body", err.Error())
+		return
+	}
+	baseline.AccountID = accountID
+	created, err := s.perf.CreateNavBaseline(r.Context(), baseline)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"baseline": created})
+}
+
+func (s *Server) handleCalculateReverseRepo(w http.ResponseWriter, r *http.Request, accountID string, persist bool) {
+	if persist && !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if tradeDate == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	result, err := s.perf.CalculateReverseRepo(r.Context(), accountID, tradeDate, persist)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"reverse_repo": result})
+}
+
+func (s *Server) handleListReverseRepoAccruals(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if tradeDate == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	accruals, err := s.perf.ListReverseRepoAccruals(r.Context(), accountID, tradeDate)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"accruals": accruals, "count": len(accruals)})
+}
+
+func (s *Server) handleListPerformanceNAVs(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	dateFrom, dateTo, err := dateRangeFromQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid economic nav query", err.Error())
+		return
+	}
+	navs, err := s.perf.ListPerformanceNAVs(r.Context(), accountID, dateFrom, dateTo)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"navs": navs, "count": len(navs)})
+}
+
+func (s *Server) handleListNAVReconciliations(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	dateFrom, dateTo, err := dateRangeFromQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid nav reconciliation query", err.Error())
+		return
+	}
+	items, err := s.perf.ListNAVReconciliations(r.Context(), accountID, dateFrom, dateTo)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"reconciliations": items, "count": len(items)})
 }
 
 func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string) ([]ledger.DailyPerformance, PerformanceSeriesSummary, error) {
@@ -2635,6 +3016,88 @@ func parseLimit(value string) (int, error) {
 	return limit, nil
 }
 
+func dateRangeFromQuery(values url.Values) (string, string, error) {
+	dateFrom := strings.TrimSpace(values.Get("date_from"))
+	dateTo := strings.TrimSpace(values.Get("date_to"))
+	if tradeDate := strings.TrimSpace(values.Get("trade_date")); tradeDate != "" {
+		dateFrom = tradeDate
+		dateTo = tradeDate
+	}
+	if dateFrom != "" {
+		normalized, err := normalizeAPIDate(dateFrom)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid date_from: %w", err)
+		}
+		dateFrom = normalized
+	}
+	if dateTo != "" {
+		normalized, err := normalizeAPIDate(dateTo)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid date_to: %w", err)
+		}
+		dateTo = normalized
+	}
+	if dateFrom != "" && dateTo != "" && dateFrom > dateTo {
+		return "", "", errors.New("date_from must be <= date_to")
+	}
+	return dateFrom, dateTo, nil
+}
+
+func operatorFromRequest(r *http.Request) (string, error) {
+	defer r.Body.Close()
+	if r.Body == nil || r.ContentLength == 0 {
+		return "operator", nil
+	}
+	var req PerformanceOperatorRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return "operator", nil
+		}
+		return "", err
+	}
+	operator := strings.TrimSpace(req.Operator)
+	if operator == "" {
+		operator = "operator"
+	}
+	return operator, nil
+}
+
+func (s *Server) requirePerformanceAccount(accountID string) error {
+	if s.perf == nil {
+		return errPerformanceServiceUnavailable
+	}
+	if _, ok := s.cfg.AccountRoute(strings.TrimSpace(accountID)); !ok {
+		return orderflow.ErrRouteNotFound
+	}
+	return nil
+}
+
+func (s *Server) requirePerformanceWrite(w http.ResponseWriter, r *http.Request) bool {
+	if !s.cfg.Performance.SettingsWriteEnabled {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "performance settings write is disabled", nil)
+		return false
+	}
+	return true
+}
+
+func (s *Server) writePerformanceError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, errPerformanceServiceUnavailable):
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "performance service is unavailable", nil)
+	case errors.Is(err, sql.ErrNoRows):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "performance record not found", err.Error())
+	case errors.Is(err, orderflow.ErrRouteNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", err.Error())
+	case errors.Is(err, ledger.ErrInvalidLedgerInput):
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid performance request", err.Error())
+	default:
+		s.logger.Error("performance_request_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "performance request failed", nil)
+	}
+}
+
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteNotFound(w, r)
 }
@@ -2912,6 +3375,10 @@ type AccountRouteStreamsView struct {
 
 type AccountAliasRequest struct {
 	Alias string `json:"alias"`
+}
+
+type PerformanceOperatorRequest struct {
+	Operator string `json:"operator,omitempty"`
 }
 
 type JobRunRequest struct {

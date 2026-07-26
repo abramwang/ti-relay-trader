@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 第一版绩效数据接口已完成并进入正式计算口径讨论暂停点，P10 已完成 9092 容器自启动和健康守护底座。2026-07-26 生产账本审计确认：当前 `asset_page.net_asset` 主要是资金余额，证券市值恒为 0，费用/资金流水/已实现盈亏缺失，逆回购和 ETF 申赎不能按普通成交额或资产差直接计算。`2026-07-22` 至 `2026-07-24` 的订单、成交、ETF 成分划转与 Meridian PCF 已完成事实核对：三类策略均找到清晰样本，`314000046830` 在 22 日买入并于 23 日逐证券等量卖出 155 只股票，`501000114077` 和 `314000045768` 存在 ETF 申赎 T0，后者同时进行 ETF 截面调仓。ETF 申赎 T0、股票/ETF 截面及公司行为口径已经确认；费用采用账户级版本化规则，资金流水暂由用户人工维护，极速/普通柜台内部划转不计入收益。详细事实和待确认项已写入 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`；正式经济净资产、日内资产桥和逆回购口径全部确认前，不修改绩效公式或回填历史数据。其余主线为 gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 已进入绩效分析 Phase 2/3，P10 已完成 9092 容器自启动和健康守护底座。2026-07-26 生产账本审计确认：当前 `asset_page.net_asset` 主要是资金余额，证券市值恒为 0，费用/资金流水/已实现盈亏缺失，逆回购和 ETF 申赎不能按普通成交额或资产差直接计算。`2026-07-22` 至 `2026-07-24` 的订单、成交、ETF 成分划转与 Meridian PCF 已完成事实核对：三类策略均找到清晰样本，`314000046830` 在 22 日买入并于 23 日逐证券等量卖出 155 只股票，`501000114077` 和 `314000045768` 存在 ETF 申赎 T0，后者同时进行 ETF 截面调仓。ETF 申赎 T0、股票/ETF 截面及公司行为口径已经确认；费用采用账户级版本化规则，资金流水暂由用户人工维护，极速/普通柜台内部划转不计入收益。经济净资产采用“绩效滚动主线 + T+1 资产对账辅线”，逆回购按 `qty*100` 本金、年化利率、Meridian 交易日历实际占款天数和账户费用规则估算。`000009_performance_accounting` 已提供费率规则、手工资金流水、日初经济净值、版本化 NAV/对账表和逆回购应计表；后端 API 与 `/trade#performance-settings` 第一版已完成，写入默认由 `performance.settings_write_enabled=false` 关闭。其余主线为策略归因落库、gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-26`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -283,15 +283,21 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 明确内置模拟柜台暂缓：实盘调试使用券商测试环境，历史数据模拟撮合放在回测引擎。
 - [x] 实现正式交易服务模式下的 9092 健康检查接口。
 - [x] 每日盘前/盘后任务支持账户级异常隔离：单个账户柜台未就绪或资金快照缺失时，任务整体保持成功完成，并在 report、任务状态页和 `reconciliation_breaks` 中标记异常账户。
+- [x] 新增 `000009_performance_accounting`：账户级费率规则、扩展版 `cash_ledger`、日初经济净值基线、版本化经济 NAV、T+1 对账和逆回购应计表。
+- [x] 新增绩效输入 API：`/v1/performance/settings`、`/v1/performance/fee-rules`、`/v1/accounts/{account_id}/cash-ledger`、`/performance/baselines`、`/performance/reverse-repo`、`/performance/economic-nav` 和 `/performance/nav-reconciliations`；人工写入默认由 `performance.settings_write_enabled=false` 关闭。
+- [x] `/trade#performance-settings` 新增绩效设置工作区，支持查看/维护费率规则、手工资金流水、日初经济净值，并预览/持久化 `204001.SH` 逆回购估算。
+- [x] `204001.SH` 逆回购归因第一版已实现：按成交账本聚合、排除 `relay-summary` 重复成交、用 Meridian 交易日历计算实际占款天数、实际费用优先、费率估算兜底并标记缺失质量。
 
 ## 待办事项
 
-1. 与用户确认“绩效滚动 + T+1 资产校正”的正式经济净资产方案和 `204001.SH` 逆回购近似公式；ETF 申赎 T0、股票/ETF 截面公司行为、账户费用规则和人工资金流水口径已经确认，全部讨论完成前不修改计算公式。
-2. 将 Redis `hb` 合并为 gateway 在线状态，增加 stream lag、DLQ 告警和处置状态。
-3. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
-4. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
-5. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
-6. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、告警、回滚和发布检查清单。
+1. 基于已确认口径实现 ETF 申赎 T0、股票截面和 ETF 截面策略归因落库，写入 `performance_nav_versions.pnl_components`。
+2. 设计跨账户、跨策略归因标识，并修正订单“账户内当日唯一”业务键没有包含交易日的问题。
+3. 增加 Meridian `metadata/adjust-factors` 同源薄代理，并让盘前初始化保存公司行为后的 open 持仓快照。
+4. 将 Redis `hb` 合并为 gateway 在线状态，增加 stream lag、DLQ 告警和处置状态。
+5. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+6. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
+7. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
+8. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、告警、回滚和发布检查清单。
 
 ## README 状态维护规则
 
@@ -517,3 +523,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-26`: 确认股票和 ETF 截面策略按普通二级市场持仓现金流计算，并统一处理公司行为：使用目标日 Meridian `pre_close` 作为复权后的昨仓价格基准，以券商盘前持仓作为物理数量，`adjust-factors` 用于识别和校验股票除权除息及 ETF 分红/份额折算。`588200.SH` 2026-07-21 的 3 倍折算数量桥完全闭合；`314000046830` 股票篮子 22/23 日毛盈亏分别为 -14,016.88 和 -1,558.66，两日合计 -15,575.54。
 - `2026-07-26`: 确认费用和资金流水维护方向：费用按账户和生效区间版本化，柜台实际费用优先，缺失时才使用可追溯规则估算；OC 暂无完整资金流水接口时由用户人工维护，银证入出金作为外部资金修正收益率，极速与普通柜台划转按同一组双边记录且不计入收益。规划 `/trade#performance-settings` 作为独立审计写入口。
 - `2026-07-26`: 形成待确认的经济净资产和逆回购方案：以人工确认的初始经济净资产为起点，按各策略盈亏和外部资金滚动，T 日发布 provisional、T+1 09:01 用现金/持仓/在途资产桥校正为 finalized；`204001.SH` 按 `qty*100` 还原本金，使用年化成交利率、Meridian 交易日历实际占款天数和账户费用规则估算净利息。`314000046830` 7 月 22/23 日样本的未扣费资金桥残差仅 15.57/16.36 元。
+- `2026-07-26`: 用户确认经济净值和逆回购方案后开始落地第一批绩效输入能力：新增 `000009_performance_accounting`，扩展 `cash_ledger` 并增加 `performance_fee_rules/performance_nav_baselines/performance_nav_versions/performance_nav_reconciliations/reverse_repo_accruals`；新增绩效输入 API 和 `/trade#performance-settings` 工作区；逆回购服务按成交账本聚合、排除 summary 重复、用 Meridian 交易日历计算占款天数并按实际费用/费率规则估算净息。写入类接口默认由 `performance.settings_write_enabled=false` 关闭，生产仍保持只读设置。

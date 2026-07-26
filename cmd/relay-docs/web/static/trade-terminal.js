@@ -42,6 +42,13 @@
     performanceDaily: null,
     performanceLoaded: false,
     performanceError: "",
+    performanceSettings: null,
+    feeRules: [],
+    cashLedgerEntries: [],
+    navBaselines: [],
+    reverseRepo: null,
+    performanceSettingsLoaded: false,
+    performanceSettingsError: "",
     barsRows: [],
     barsMeta: null,
     barsSecurityID: "",
@@ -199,7 +206,49 @@
     barVolume: byID("barVolume"),
     barCount: byID("barCount"),
     barTime: byID("barTime"),
-    barsBody: byID("barsBody")
+    barsBody: byID("barsBody"),
+    performanceSettingsStatus: byID("performanceSettingsStatus"),
+    repoTradeDateInput: byID("repoTradeDateInput"),
+    loadPerformanceSettingsButton: byID("loadPerformanceSettingsButton"),
+    previewRepoButton: byID("previewRepoButton"),
+    persistRepoButton: byID("persistRepoButton"),
+    settingsFormulaVersion: byID("settingsFormulaVersion"),
+    settingsWriteState: byID("settingsWriteState"),
+    settingsAutoTolerance: byID("settingsAutoTolerance"),
+    settingsWarningTolerance: byID("settingsWarningTolerance"),
+    repoPrincipal: byID("repoPrincipal"),
+    repoNetInterest: byID("repoNetInterest"),
+    feeRuleStatus: byID("feeRuleStatus"),
+    feeRuleForm: byID("feeRuleForm"),
+    feeRuleName: byID("feeRuleName"),
+    feeRuleEffectiveFrom: byID("feeRuleEffectiveFrom"),
+    feeRuleStatusInput: byID("feeRuleStatusInput"),
+    feeRuleBusinessType: byID("feeRuleBusinessType"),
+    feeRuleTradeSide: byID("feeRuleTradeSide"),
+    feeRuleCommissionRate: byID("feeRuleCommissionRate"),
+    feeRuleMinimumCommission: byID("feeRuleMinimumCommission"),
+    feeRuleStampDutyRate: byID("feeRuleStampDutyRate"),
+    feeRuleTransferFeeRate: byID("feeRuleTransferFeeRate"),
+    feeRuleRepoFeeRate: byID("feeRuleRepoFeeRate"),
+    feeRuleFrictionRate: byID("feeRuleFrictionRate"),
+    feeRulesBody: byID("feeRulesBody"),
+    cashLedgerStatus: byID("cashLedgerStatus"),
+    cashLedgerForm: byID("cashLedgerForm"),
+    cashTradeDateInput: byID("cashTradeDateInput"),
+    cashLedgerTypeInput: byID("cashLedgerTypeInput"),
+    cashFlowClassInput: byID("cashFlowClassInput"),
+    cashAmountInput: byID("cashAmountInput"),
+    cashBucketInput: byID("cashBucketInput"),
+    cashDescriptionInput: byID("cashDescriptionInput"),
+    cashLedgerBody: byID("cashLedgerBody"),
+    navBaselineStatus: byID("navBaselineStatus"),
+    navBaselineForm: byID("navBaselineForm"),
+    navBaselineDateInput: byID("navBaselineDateInput"),
+    navBaselineValueInput: byID("navBaselineValueInput"),
+    navBaselineDescriptionInput: byID("navBaselineDescriptionInput"),
+    navBaselinesBody: byID("navBaselinesBody"),
+    repoStatus: byID("repoStatus"),
+    reverseRepoBody: byID("reverseRepoBody")
   };
 
   function byID(id) {
@@ -394,6 +443,12 @@
       applyDefaultDateInput(els.perfDateFrom, nextDate, previousDefault),
       applyDefaultDateInput(els.perfDateTo, nextDate, previousDefault)
     ].some(Boolean);
+    [
+      els.repoTradeDateInput,
+      els.feeRuleEffectiveFrom,
+      els.cashTradeDateInput,
+      els.navBaselineDateInput
+    ].forEach((input) => applyDefaultDateInput(input, nextDate, previousDefault));
     return result;
   }
 
@@ -781,14 +836,19 @@
 
   function viewFromLocation() {
     const hash = String(window.location.hash || "").replace("#", "");
-    if (hash === "asset") {
+    const pathView = String(window.location.pathname || "").replace(/^\/trade\/?/, "").replace(/^\/+|\/+$/g, "");
+    const viewToken = hash || pathView;
+    if (viewToken === "asset") {
       return "asset";
     }
-    if (hash === "performance") {
+    if (viewToken === "performance") {
       return "performance";
     }
-    if (hash === "orders" || hash === "fills") {
-      if (hash === "fills") {
+    if (viewToken === "performance-settings") {
+      return "performance-settings";
+    }
+    if (viewToken === "orders" || viewToken === "fills") {
+      if (viewToken === "fills") {
         state.selectedTab = "fills";
       }
       return "orders";
@@ -803,7 +863,7 @@
   }
 
   function setActiveView(view) {
-    if (!["trade", "orders", "asset", "performance"].includes(view)) {
+    if (!["trade", "orders", "asset", "performance", "performance-settings"].includes(view)) {
       view = "trade";
     }
     state.activeView = view;
@@ -811,6 +871,7 @@
     els.shell.classList.toggle("view-orders", view === "orders");
     els.shell.classList.toggle("view-asset", view === "asset");
     els.shell.classList.toggle("view-performance", view === "performance");
+    els.shell.classList.toggle("view-performance-settings", view === "performance-settings");
     for (const link of els.viewLinks) {
       link.classList.toggle("active", link.dataset.viewLink === view);
     }
@@ -855,6 +916,12 @@
               resizeMinuteChart();
             });
         }, 0);
+      }
+    }
+    if (view === "performance-settings" && state.initialized) {
+      ensurePerformanceSettingsDefaults();
+      if (state.activeAccount && !state.performanceSettingsLoaded) {
+        loadPerformanceSettings().catch((err) => pushLog("warn", "绩效设置查询失败", err.message));
       }
     }
   }
@@ -2950,6 +3017,325 @@
     `).join("");
   }
 
+  function ensurePerformanceSettingsDefaults() {
+    const day = defaultQueryDate();
+    for (const input of [
+      els.repoTradeDateInput,
+      els.feeRuleEffectiveFrom,
+      els.cashTradeDateInput,
+      els.navBaselineDateInput
+    ]) {
+      if (input && !input.value) {
+        input.value = day;
+      }
+    }
+    if (els.feeRuleName && !els.feeRuleName.value) {
+      els.feeRuleName.value = "账户默认费率";
+    }
+  }
+
+  async function loadPerformanceSettings() {
+    ensurePerformanceSettingsDefaults();
+    if (!state.activeAccount) {
+      renderPerformanceSettings();
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const repoTradeDate = compactDate(els.repoTradeDateInput.value || defaultQueryDate());
+    els.performanceSettingsStatus.textContent = "查询中...";
+    els.loadPerformanceSettingsButton.disabled = true;
+    try {
+      const settings = await request("/v1/performance/settings");
+      state.performanceSettings = settings || {};
+      setPerformanceWriteInputs();
+      const queries = await Promise.allSettled([
+        request("/v1/performance/fee-rules?account_id=" + accountID + "&limit=200"),
+        request("/v1/accounts/" + accountID + "/cash-ledger?limit=200"),
+        request("/v1/accounts/" + accountID + "/performance/baselines"),
+        request("/v1/accounts/" + accountID + "/performance/reverse-repo/accruals?trade_date=" + encodeURIComponent(repoTradeDate))
+      ]);
+      const errors = [];
+      if (queries[0].status === "fulfilled") {
+        state.feeRules = Array.isArray(queries[0].value.rules) ? queries[0].value.rules : [];
+      } else {
+        state.feeRules = [];
+        errors.push("费率 " + queries[0].reason.message);
+      }
+      if (queries[1].status === "fulfilled") {
+        state.cashLedgerEntries = Array.isArray(queries[1].value.entries) ? queries[1].value.entries : [];
+      } else {
+        state.cashLedgerEntries = [];
+        errors.push("流水 " + queries[1].reason.message);
+      }
+      if (queries[2].status === "fulfilled") {
+        state.navBaselines = Array.isArray(queries[2].value.baselines) ? queries[2].value.baselines : [];
+      } else {
+        state.navBaselines = [];
+        errors.push("日初 " + queries[2].reason.message);
+      }
+      if (queries[3].status === "fulfilled") {
+        state.reverseRepo = {
+          trade_date: displayDate(repoTradeDate),
+          accruals: Array.isArray(queries[3].value.accruals) ? queries[3].value.accruals : []
+        };
+      } else {
+        state.reverseRepo = { trade_date: displayDate(repoTradeDate), accruals: [] };
+        errors.push("逆回购 " + queries[3].reason.message);
+      }
+      state.performanceSettingsLoaded = true;
+      state.performanceSettingsError = errors.join("；");
+      renderPerformanceSettings();
+      if (errors.length === 0) {
+        showToast("绩效设置已更新");
+      }
+    } catch (err) {
+      state.performanceSettingsLoaded = false;
+      state.performanceSettingsError = err.message;
+      pushLog("error", "绩效设置查询失败", err.message);
+      showToast("绩效设置查询失败：" + err.message, "error");
+      renderPerformanceSettings();
+    } finally {
+      els.loadPerformanceSettingsButton.disabled = false;
+      setPerformanceWriteInputs();
+    }
+  }
+
+  function setPerformanceWriteInputs() {
+    const enabled = Boolean(state.performanceSettings && state.performanceSettings.settings_write_enabled);
+    for (const input of document.querySelectorAll("[data-write-input]")) {
+      input.disabled = !enabled;
+    }
+  }
+
+  function renderPerformanceSettings() {
+    if (!els.performanceSettingsStatus) {
+      return;
+    }
+    const settings = state.performanceSettings || {};
+    const writeEnabled = Boolean(settings.settings_write_enabled);
+    const repo = state.reverseRepo || {};
+    const accruals = Array.isArray(repo.accruals) ? repo.accruals : [];
+    els.performanceSettingsStatus.textContent = state.performanceSettingsError
+      ? "部分失败：" + state.performanceSettingsError
+      : (state.performanceSettingsLoaded ? "已加载 " + activeAccountLabel() : "等待读取设置");
+    els.settingsFormulaVersion.textContent = settings.formula_version || "--";
+    els.settingsWriteState.textContent = writeEnabled ? "已开放" : "只读";
+    els.settingsWriteState.className = writeEnabled ? "up" : "down";
+    els.settingsAutoTolerance.textContent = formatNumber(settings.auto_tolerance_cny, 2) + " / " + formatNumber(settings.auto_tolerance_bp, 2) + "bp";
+    els.settingsWarningTolerance.textContent = formatNumber(settings.warning_tolerance_cny, 2) + " / " + formatNumber(settings.warning_tolerance_bp, 2) + "bp";
+    els.repoPrincipal.textContent = formatNumber(repo.principal || sumBy(accruals, "principal"));
+    els.repoNetInterest.textContent = formatNumber(repo.net_interest || sumBy(accruals, "net_interest"));
+    els.repoNetInterest.className = classForNumber(repo.net_interest || sumBy(accruals, "net_interest"));
+    setPerformanceWriteInputs();
+    renderFeeRules();
+    renderCashLedgerEntries();
+    renderNavBaselines();
+    renderReverseRepoAccruals();
+  }
+
+  function renderFeeRules() {
+    els.feeRuleStatus.textContent = formatInt(state.feeRules.length) + " 条";
+    if (state.feeRules.length === 0) {
+      els.feeRulesBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">暂无费率规则</div></td></tr>';
+      return;
+    }
+    els.feeRulesBody.innerHTML = state.feeRules.map((rule) => `
+      <tr>
+        <td><span class="row-title"><strong>${escapeHTML(rule.name || rule.rule_id || "--")}</strong><span>${escapeHTML(rule.rule_id || "--")}</span></span></td>
+        <td><span class="status-badge ${escapeHTML(rule.status || "draft")}">${escapeHTML(rule.status || "--")}</span></td>
+        <td>${escapeHTML(rule.business_type || "*")} / ${escapeHTML(rule.trade_side || "*")}</td>
+        <td class="num">${formatRate(rule.commission_rate)}<br><span class="muted">${formatRate(rule.repo_fee_rate)}</span></td>
+        <td>${escapeHTML(displayDate(rule.effective_from))}<br><span class="muted">${escapeHTML(rule.effective_to ? displayDate(rule.effective_to) : "open")}</span></td>
+      </tr>
+    `).join("");
+  }
+
+  function renderCashLedgerEntries() {
+    els.cashLedgerStatus.textContent = formatInt(state.cashLedgerEntries.length) + " 条";
+    if (state.cashLedgerEntries.length === 0) {
+      els.cashLedgerBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暂无手工资金流水</div></td></tr>';
+      return;
+    }
+    const writeEnabled = Boolean(state.performanceSettings && state.performanceSettings.settings_write_enabled);
+    els.cashLedgerBody.innerHTML = state.cashLedgerEntries.map((entry) => {
+      const canConfirm = writeEnabled && entry.status === "draft";
+      const canVoid = writeEnabled && entry.status !== "voided";
+      const actions = [
+        canConfirm ? '<button type="button" class="row-action" data-cash-confirm="' + escapeHTML(entry.entry_id) + '">确认</button>' : "",
+        canVoid ? '<button type="button" class="row-action" data-cash-void="' + escapeHTML(entry.entry_id) + '">作废</button>' : ""
+      ].filter(Boolean).join(" ");
+      return `
+        <tr>
+          <td><span class="row-title"><strong>${escapeHTML(entry.entry_id || "--")}</strong><span>${escapeHTML(entry.cash_bucket || "--")}</span></span></td>
+          <td>${escapeHTML(displayDate(entry.trade_date))}</td>
+          <td>${escapeHTML(entry.ledger_type || "--")}<br><span class="muted">${escapeHTML(entry.flow_class || "--")}</span></td>
+          <td class="num ${classForNumber(entry.amount)}">${formatSigned(entry.amount)}</td>
+          <td><span class="status-badge ${escapeHTML(entry.status || "draft")}">${escapeHTML(entry.status || "--")}</span><br>${actions}</td>
+          <td>${escapeHTML(entry.description || "--")}</td>
+        </tr>`;
+    }).join("");
+  }
+
+  function renderNavBaselines() {
+    els.navBaselineStatus.textContent = formatInt(state.navBaselines.length) + " 条";
+    if (state.navBaselines.length === 0) {
+      els.navBaselinesBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">暂无日初经济净值</div></td></tr>';
+      return;
+    }
+    els.navBaselinesBody.innerHTML = state.navBaselines.map((baseline) => `
+      <tr>
+        <td>${escapeHTML(displayDate(baseline.effective_date))}</td>
+        <td class="num">${formatNumber(baseline.initial_economic_nav)}</td>
+        <td><span class="status-badge ${escapeHTML(baseline.status || "confirmed")}">${escapeHTML(baseline.status || "--")}</span></td>
+        <td>${escapeHTML(baseline.source || "--")}</td>
+        <td>${escapeHTML(baseline.description || "--")}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderReverseRepoAccruals() {
+    const repo = state.reverseRepo || {};
+    const accruals = Array.isArray(repo.accruals) ? repo.accruals : [];
+    els.repoStatus.textContent = [
+      repo.trade_date ? displayDate(repo.trade_date) : displayDate(els.repoTradeDateInput.value),
+      repo.actual_occupation_days ? "占款 " + repo.actual_occupation_days + " 天" : "",
+      repo.persisted ? "已落库" : ""
+    ].filter(Boolean).join(" · ") || "--";
+    if (accruals.length === 0) {
+      els.reverseRepoBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">暂无逆回购估算</div></td></tr>';
+      return;
+    }
+    els.reverseRepoBody.innerHTML = accruals.map((item) => `
+      <tr>
+        <td><span class="row-title"><strong>${escapeHTML(item.gateway_order_id || "--")}</strong><span>${escapeHTML(item.security_id || "204001.SH")}</span></span></td>
+        <td class="num">${formatNumber(item.principal)}</td>
+        <td class="num">${formatNumber(item.weighted_rate_pct, 4)}%</td>
+        <td>${escapeHTML(item.first_settlement_date || "--")}<br><span class="muted">${escapeHTML(item.maturity_settlement_date || "--")} · ${formatInt(item.actual_occupation_days)}天</span></td>
+        <td class="num">${formatNumber(item.gross_interest)}</td>
+        <td class="num">${formatNumber(item.effective_fee)}<br><span class="muted">${escapeHTML(item.fee_source || "--")}</span></td>
+        <td class="num ${classForNumber(item.net_interest)}">${formatSigned(item.net_interest)}</td>
+        <td>${escapeHTML((item.quality_flags || []).join(", ") || "ok")}</td>
+      </tr>
+    `).join("");
+  }
+
+  async function createFeeRule(event) {
+    event.preventDefault();
+    if (!state.activeAccount) {
+      return;
+    }
+    const body = {
+      account_id: state.activeAccount,
+      name: valueOf(els.feeRuleName),
+      status: valueOf(els.feeRuleStatusInput) || "active",
+      market: "*",
+      instrument_type: "*",
+      business_type: valueOf(els.feeRuleBusinessType) || "*",
+      trade_side: valueOf(els.feeRuleTradeSide) || "*",
+      commission_rate: numericValue(els.feeRuleCommissionRate),
+      minimum_commission: numericValue(els.feeRuleMinimumCommission),
+      stamp_duty_rate: numericValue(els.feeRuleStampDutyRate),
+      transfer_fee_rate: numericValue(els.feeRuleTransferFeeRate),
+      repo_fee_rate: numericValue(els.feeRuleRepoFeeRate),
+      estimated_friction_rate: numericValue(els.feeRuleFrictionRate),
+      effective_from: compactDate(valueOf(els.feeRuleEffectiveFrom)) || defaultQueryDate(),
+      created_by: "web-terminal"
+    };
+    await request("/v1/performance/fee-rules", { method: "POST", body });
+    showToast("费率规则已新增");
+    await loadPerformanceSettings();
+  }
+
+  async function createCashLedgerEntry(event) {
+    event.preventDefault();
+    if (!state.activeAccount) {
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const body = {
+      trade_date: compactDate(valueOf(els.cashTradeDateInput)) || defaultQueryDate(),
+      ledger_type: valueOf(els.cashLedgerTypeInput) || "adjustment",
+      flow_class: valueOf(els.cashFlowClassInput) || "external",
+      currency: "CNY",
+      amount: numericValue(els.cashAmountInput),
+      cash_bucket: valueOf(els.cashBucketInput) || "unknown",
+      status: "draft",
+      description: valueOf(els.cashDescriptionInput),
+      source: "manual",
+      created_by: "web-terminal"
+    };
+    await request("/v1/accounts/" + accountID + "/cash-ledger", { method: "POST", body });
+    showToast("资金流水已新增");
+    await loadPerformanceSettings();
+  }
+
+  async function createNavBaseline(event) {
+    event.preventDefault();
+    if (!state.activeAccount) {
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const body = {
+      effective_date: compactDate(valueOf(els.navBaselineDateInput)) || defaultQueryDate(),
+      initial_economic_nav: numericValue(els.navBaselineValueInput),
+      status: "confirmed",
+      source: "manual",
+      description: valueOf(els.navBaselineDescriptionInput),
+      created_by: "web-terminal"
+    };
+    await request("/v1/accounts/" + accountID + "/performance/baselines", { method: "POST", body });
+    showToast("日初经济净值已新增");
+    await loadPerformanceSettings();
+  }
+
+  async function calculateReverseRepo(persist) {
+    if (!state.activeAccount) {
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    const tradeDate = compactDate(valueOf(els.repoTradeDateInput)) || defaultQueryDate();
+    const path = "/v1/accounts/" + accountID + "/performance/reverse-repo" + (persist ? "/rebuild" : "") + "?trade_date=" + encodeURIComponent(tradeDate);
+    els.repoStatus.textContent = persist ? "落库中..." : "估算中...";
+    const data = await request(path, { method: persist ? "POST" : "GET" });
+    state.reverseRepo = data.reverse_repo || null;
+    renderPerformanceSettings();
+    showToast(persist ? "逆回购估算已落库" : "逆回购估算已更新");
+  }
+
+  async function transitionCashLedger(entryID, action) {
+    if (!state.activeAccount || !entryID) {
+      return;
+    }
+    const accountID = encodeURIComponent(state.activeAccount);
+    await request("/v1/accounts/" + accountID + "/cash-ledger/" + encodeURIComponent(entryID) + "/" + action, {
+      method: "POST",
+      body: { operator: "web-terminal" }
+    });
+    showToast(action === "confirm" ? "流水已确认" : "流水已作废");
+    await loadPerformanceSettings();
+  }
+
+  function valueOf(input) {
+    return input ? String(input.value || "").trim() : "";
+  }
+
+  function numericValue(input) {
+    const number = Number(valueOf(input));
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function formatRate(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "--";
+    }
+    return formatPercent(number, 4);
+  }
+
+  function sumBy(rows, key) {
+    return (rows || []).reduce((total, row) => total + (Number(row && row[key]) || 0), 0);
+  }
+
   async function loadBars() {
     ensurePerformanceDefaults();
     const securityID = normalizeSecurityID(els.barSecurityInput.value || currentSecurityID());
@@ -3617,6 +4003,7 @@
     renderBlotter();
     renderDetail();
     renderPerformance();
+    renderPerformanceSettings();
     renderBars();
     updateRisk();
   }
@@ -3951,6 +4338,7 @@
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       state.performanceLoaded = false;
+      state.performanceSettingsLoaded = false;
       state.selectedOrderID = "";
       resetLedgerPages();
       resetPositionStats();
@@ -3962,6 +4350,9 @@
       }
       if (state.activeView === "performance") {
         await loadPerformance();
+      }
+      if (state.activeView === "performance-settings") {
+        await loadPerformanceSettings();
       }
     });
     for (const button of document.querySelectorAll(".side-switch button")) {
@@ -4066,6 +4457,23 @@
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
+    els.loadPerformanceSettingsButton.addEventListener("click", () => loadPerformanceSettings().catch((err) => showToast(err.message, "error")));
+    els.previewRepoButton.addEventListener("click", () => calculateReverseRepo(false).catch((err) => showToast(err.message, "error")));
+    els.persistRepoButton.addEventListener("click", () => calculateReverseRepo(true).catch((err) => showToast(err.message, "error")));
+    els.feeRuleForm.addEventListener("submit", (event) => createFeeRule(event).catch((err) => showToast(err.message, "error")));
+    els.cashLedgerForm.addEventListener("submit", (event) => createCashLedgerEntry(event).catch((err) => showToast(err.message, "error")));
+    els.navBaselineForm.addEventListener("submit", (event) => createNavBaseline(event).catch((err) => showToast(err.message, "error")));
+    els.cashLedgerBody.addEventListener("click", (event) => {
+      const confirmButton = event.target.closest("button[data-cash-confirm]");
+      if (confirmButton) {
+        transitionCashLedger(confirmButton.dataset.cashConfirm, "confirm").catch((err) => showToast(err.message, "error"));
+        return;
+      }
+      const voidButton = event.target.closest("button[data-cash-void]");
+      if (voidButton) {
+        transitionCashLedger(voidButton.dataset.cashVoid, "void").catch((err) => showToast(err.message, "error"));
+      }
+    });
     els.reloadChartButton.addEventListener("click", () => {
       loadTradeChartBars({ silent: false })
         .catch((err) => showToast(err.message, "error"))
@@ -4148,6 +4556,8 @@
       if (state.activeView === "performance") {
         await loadPerformance();
         await loadBars();
+      } else if (state.activeView === "performance-settings") {
+        await loadPerformanceSettings();
       } else if (state.activeView === "trade") {
         await loadTradeChartBars({ silent: true });
         scheduleChartAutoRefresh();

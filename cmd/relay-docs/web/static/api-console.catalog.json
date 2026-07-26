@@ -110,6 +110,96 @@
       { "name": "benchmark_security_id", "label": "benchmark_security_id", "source": "query", "defaultValue": "000001.SH" }
     ]
   },
+  { "id": "performance-settings", "group": "绩效", "title": "绩效设置", "method": "GET", "path": "/v1/performance/settings", "status": "ready", "fields": [] },
+  {
+    "id": "performance-fee-rules",
+    "group": "绩效",
+    "title": "费率规则查询",
+    "method": "GET",
+    "path": "/v1/performance/fee-rules",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "active", "draft", "retired"] },
+      { "name": "effective_on", "label": "effective_on", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "50" }
+    ]
+  },
+  {
+    "id": "performance-fee-rule-create",
+    "group": "绩效",
+    "title": "费率规则新增",
+    "method": "POST",
+    "path": "/v1/performance/fee-rules",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "body", "defaultValue": "00030484" },
+      { "name": "name", "label": "name", "source": "body", "defaultValue": "账户默认费率" },
+      { "name": "status", "label": "status", "source": "body", "type": "select", "defaultValue": "active", "options": ["active", "draft"] },
+      { "name": "business_type", "label": "business_type", "source": "body", "defaultValue": "*" },
+      { "name": "trade_side", "label": "trade_side", "source": "body", "defaultValue": "*" },
+      { "name": "commission_rate", "label": "commission_rate", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "minimum_commission", "label": "minimum_commission", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "stamp_duty_rate", "label": "stamp_duty_rate", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "transfer_fee_rate", "label": "transfer_fee_rate", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "repo_fee_rate", "label": "repo_fee_rate", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "estimated_friction_rate", "label": "estimated_friction_rate", "source": "body", "type": "number", "defaultValue": "0.0015" },
+      { "name": "effective_from", "label": "effective_from", "source": "body", "defaultValue": "20260723" },
+      { "name": "created_by", "label": "created_by", "source": "body", "defaultValue": "api-console" }
+    ]
+  },
+  {
+    "id": "cash-ledger",
+    "group": "绩效",
+    "title": "手工资金流水查询",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/cash-ledger",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
+      { "name": "flow_class", "label": "flow_class", "source": "query", "defaultValue": "" },
+      { "name": "status", "label": "status", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "50" }
+    ]
+  },
+  {
+    "id": "nav-baselines",
+    "group": "绩效",
+    "title": "日初经济净值",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/baselines",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+    ]
+  },
+  {
+    "id": "reverse-repo-preview",
+    "group": "绩效",
+    "title": "逆回购估算预览",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/reverse-repo",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260723" }
+    ]
+  },
+  {
+    "id": "reverse-repo-accruals",
+    "group": "绩效",
+    "title": "逆回购估算结果",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/reverse-repo/accruals",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260723" }
+    ]
+  },
   {
     "id": "positions-refresh",
     "group": "账户",

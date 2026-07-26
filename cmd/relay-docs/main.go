@@ -31,7 +31,9 @@ import (
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/logging"
+	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/orderflow"
+	relayperformance "ti-relay-trader/internal/performance"
 	"ti-relay-trader/internal/redisstream"
 	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/worker"
@@ -338,6 +340,18 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	}
 
 	repo := ledger.NewRepository(db)
+	marketClient, err := market.NewMeridianClient(cfg.Market)
+	if err != nil {
+		logger.Warn("relay_api_market_client_unavailable", "error", err)
+	}
+	perf, err := relayperformance.New(relayperformance.Options{
+		Store:    repo,
+		Calendar: marketClient,
+	})
+	if err != nil {
+		cleanup()
+		return api.Dependencies{}, nil, func() {}, err
+	}
 	orders, err := orderflow.New(orderflow.Options{
 		Config:    cfg,
 		Ledger:    repo,
@@ -353,6 +367,8 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		Jobs:         repo,
 		Settlements:  repo,
 		Accounts:     repo,
+		Performance:  perf,
+		Market:       marketClient,
 		DatabasePing: db.PingContext,
 	}
 	if redisPublisher != nil {

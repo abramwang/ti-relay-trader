@@ -75,7 +75,19 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 4. ETF 申赎 T0 使用已经确认的 IOPV + 15bp 估算口径；OC 后续补充现金差额或清算价值时只提高对账精度。
 5. 完整字段到位前允许展示 `provisional` 估算净值；T+1 校正且差异通过阈值后转为 `finalized`，只有 `finalized` 进入正式累计收益、回撤和基准比较。
 
-在以上口径确认前，N8 暂停新增绩效聚合接口和历史回填；页面后续可以先建设数据质量状态，但不能把现有净资产序列标记为正式绩效。
+以上口径已于 `2026-07-26` 确认，N8 可以按“输入层先行、归因层分步落地”的方式推进。当前仍不能把现有 `asset_snapshots.net_asset` 直接标记为正式绩效；正式经济净值应写入独立的版本化结果表，原始柜台快照继续保留为对账输入。
+
+### 第一批实现状态
+
+已落地第一批绩效输入和逆回购归因底座：
+
+1. `000009_performance_accounting` 新增 `performance_fee_rules`、`performance_nav_baselines`、`performance_nav_versions`、`performance_nav_reconciliations` 和 `reverse_repo_accruals`，并扩展 `cash_ledger` 的流水分类、资金仓位、发生时间、确认/作废、成对划转、幂等键和审计字段。
+2. `/v1/performance/settings` 返回经济净值公式版本、自动/人工对账阈值和 `performance.settings_write_enabled`。生产默认保持只读，人工设置写入接口在开关关闭时统一返回 `403`。
+3. `/v1/performance/fee-rules`、`/v1/accounts/{account_id}/cash-ledger` 和 `/v1/accounts/{account_id}/performance/baselines` 提供费率、手工资金流水和日初经济净值基线的查询/新增接口。
+4. `/v1/accounts/{account_id}/performance/reverse-repo` 从成交账本预览 `204001.SH` 应计利息；`/reverse-repo/rebuild` 可在写入开关开启时重建并落库；`/reverse-repo/accruals` 查询已落库结果。
+5. `/trade#performance-settings` 新增绩效设置工作区，展示配置状态、费率规则、手工资金流水、日初经济净值和逆回购估算结果。该页面是运营/研究侧人工输入入口，不主动查询柜台。
+
+下一步是在上述输入层基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因和 `performance_nav_versions` 写入；再补 T+1 对账流程和数据质量阈值告警。
 
 ## 2026-07-22 至 2026-07-24 三类策略交易事实样本
 
