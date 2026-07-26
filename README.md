@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 第一版绩效数据接口已完成但绩效工作区仍在重构，P10 已完成 9092 容器自启动和健康守护底座。系统已覆盖单笔/批量下单、撤单、资金/持仓/订单/成交查询与刷新、多账户路由、Redis reply/event 到 PostgreSQL 账本同步、SSE 回调、Python SDK 0.1.10、交易日盘前/盘后任务、open/close 快照、对账差异、Meridian bars/level1 行情、持仓实时估值和研究导出。下一主线是 `/trade#performance` 的收益贡献与数据质量、gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 第一版绩效数据接口已完成并进入正式计算口径讨论暂停点，P10 已完成 9092 容器自启动和健康守护底座。2026-07-26 生产账本审计确认：当前 `asset_page.net_asset` 主要是资金余额，证券市值恒为 0，费用/资金流水/已实现盈亏缺失，逆回购和 ETF 申赎不能按普通成交额或资产差直接计算。详细事实和待确认项已写入 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`；正式净值、日内资产桥、逆回购和 ETF 申赎归因口径确认前，不修改绩效公式或回填历史数据。其余主线为 gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程；P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-26`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -286,7 +286,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 重构 `/trade#performance`：完成净值/基准/超额收益/回撤主图、收益贡献、交易质量和数据质量面板。
+1. 与用户确认绩效正式净值、日内资产桥、逆回购、ETF 申赎、费用和外部现金流口径；确认前只建设数据质量展示，不修改计算公式。
 2. 将 Redis `hb` 合并为 gateway 在线状态，增加 stream lag、DLQ 告警和处置状态。
 3. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
 4. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
@@ -509,3 +509,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-12`: 容器重启后恢复 9092 生产只读服务，确认 `/v1/status` 为 `production ok`、账户 3 个、`trading_enabled=0`、Redis/PostgreSQL 依赖 ok；新增 `scripts/relay-docs-service.sh` 并安装 root crontab `RELAY_DOCS_AUTOSTART` 自启动/每分钟健康守护块，后续容器重启或进程退出会自动拉起 9092。
 - `2026-07-18`: 排查非交易日任务页告警：确认 2026-07-18 为非交易日且 `pre_open_init/post_close_settlement` cron 均为 `1-5`，今天没有交易日任务运行，最近 job_run 停在 2026-07-17 成功；页面改为“交易日任务计划/交易日任务跳过”，并修复 9092 继承失效 `HTTP_PROXY` 导致 `/v1/status` 查询 Meridian 交易日接口刷 WARN 的问题。
 - `2026-07-26`: 重新审计开发路线图和运行态：9092 仍为生产只读、3 个账户、下单账户 0、Redis/PostgreSQL 正常，最近交易日 2026-07-24 的盘前和盘后任务均成功。路线图将下一主线收敛为绩效分析 Phase 2/3、gateway/stream/DLQ 可观测、账本环境隔离与数据库幂等、人工复核报告、回归测试和正式发布/备份；同时记录非交易日 `trading_day.phase` 仍按钟点显示 `continuous` 的待修语义。
+- `2026-07-26`: 进入 N8 绩效计算前审计并按用户要求暂停实现。三生产账户现有 80 个 close、78 个 open、47,993 条成交和 13,766 条 ETF 成分划转事件；审计确认 376 个非空资金回包均为 `market_value=0`、`net_asset=cash_total`，所有成交费用和 cash ledger 为空，逆回购与 ETF 申赎价格/数量不能按普通交易解释。结果写入绩效设计文档，等待共同确认正式净值和归因口径。
