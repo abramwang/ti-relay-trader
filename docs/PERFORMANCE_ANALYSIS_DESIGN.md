@@ -89,6 +89,15 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 
 下一步是在上述输入层基础上实现 ETF 申赎 T0、股票截面、ETF 截面的策略归因和 `performance_nav_versions` 写入；再补 T+1 对账流程和数据质量阈值告警。
 
+### 第二批实现状态
+
+已落地策略归因和交易日业务键底座：
+
+1. `000010_strategy_attribution_keys` 为 `orders/order_events/fills` 增加 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id` 和 `t0_order_group_id`；`fills` 额外保存 `business_type`。
+2. `orders_account_trade_date_gateway_order_unique` 体现 OC/券商订单号“账户内当日唯一”的业务语义。当前 `orders_gateway_order_unique` 暂时保留，用于兼容现有 `fills/order_events` 外键；后续 N10 生产化迁移再切换外键和 upsert 冲突目标。
+3. `performance_attribution_links` 作为可追溯链接表，后续把订单、成交、ETF 成分划转、持仓、现金流水和 NAV 分量连接到策略归因结果。
+4. `SubmitOrderRequest`、Redis order/fill 解析、HTTP 查询过滤和 Python SDK `0.1.11` 已支持策略归因字段。未来新策略单应显式携带这些字段；历史订单仍可由归因任务推断后写入链接表。
+
 ## 2026-07-22 至 2026-07-24 三类策略交易事实样本
 
 本节只根据三个连续交易日的订单事件、成交、`transfer.event`、日终持仓和 Meridian PCF 记录交易事实，不定义盈利公式。

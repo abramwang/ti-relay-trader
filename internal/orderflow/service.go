@@ -13,6 +13,7 @@ import (
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/redisstream"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
@@ -208,6 +209,7 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	}
 
 	now := service.clock.Now().UTC()
+	normalized.TradeDate = submitTradeDate(normalized.TradeDate, now)
 	requestID := strings.TrimSpace(opts.RequestID)
 	if existing, replayed, err := service.preflightSubmitOrder(ctx, normalized); err != nil {
 		return SubmitOrderResult{}, err
@@ -338,6 +340,7 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 		if strings.TrimSpace(orderReq.IdempotencyKey) == "" {
 			orderReq.IdempotencyKey = normalized.IdempotencyKey + ":" + orderReq.GatewayOrderID
 		}
+		orderReq.TradeDate = submitTradeDate(orderReq.TradeDate, now)
 		if previousGatewayOrderID, ok := seenIdempotencyKeys[orderReq.IdempotencyKey]; ok && previousGatewayOrderID != orderReq.GatewayOrderID {
 			return BatchSubmitOrderResult{}, fmt.Errorf("%w: orders[%d].idempotency_key=%s already used by gateway_order_id=%s", ErrIdempotencyConflict, i, orderReq.IdempotencyKey, previousGatewayOrderID)
 		}
@@ -786,6 +789,11 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
 	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
 	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
+	normalized.StrategyType = strings.TrimSpace(normalized.StrategyType)
+	normalized.StrategyID = strings.TrimSpace(normalized.StrategyID)
+	normalized.BasketID = strings.TrimSpace(normalized.BasketID)
+	normalized.ParentOrderID = strings.TrimSpace(normalized.ParentOrderID)
+	normalized.T0OrderGroupID = strings.TrimSpace(normalized.T0OrderGroupID)
 	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
 		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
 	}
@@ -810,6 +818,11 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
 	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
 	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
+	normalized.StrategyType = strings.TrimSpace(normalized.StrategyType)
+	normalized.StrategyID = strings.TrimSpace(normalized.StrategyID)
+	normalized.BasketID = strings.TrimSpace(normalized.BasketID)
+	normalized.ParentOrderID = strings.TrimSpace(normalized.ParentOrderID)
+	normalized.T0OrderGroupID = strings.TrimSpace(normalized.T0OrderGroupID)
 	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
 		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
 	}
@@ -862,6 +875,7 @@ func draftOrderFromRequest(req trading.SubmitOrderRequest, now time.Time) tradin
 		AccountID:       req.AccountID,
 		ClientOrderID:   req.ClientOrderID,
 		GatewayOrderID:  req.GatewayOrderID,
+		TradeDate:       submitTradeDate(req.TradeDate, now),
 		Symbol:          req.Symbol,
 		Exchange:        req.Exchange,
 		TradeSide:       req.TradeSide,
@@ -876,6 +890,11 @@ func draftOrderFromRequest(req trading.SubmitOrderRequest, now time.Time) tradin
 		OriginMessageID: "",
 		RequestID:       "",
 		IdempotencyKey:  req.IdempotencyKey,
+		StrategyType:    strings.TrimSpace(req.StrategyType),
+		StrategyID:      strings.TrimSpace(req.StrategyID),
+		BasketID:        strings.TrimSpace(req.BasketID),
+		ParentOrderID:   strings.TrimSpace(req.ParentOrderID),
+		T0OrderGroupID:  strings.TrimSpace(req.T0OrderGroupID),
 		CreatedAt:       now,
 		LastUpdatedAt:   now,
 		AdapterContext: map[string]any{
@@ -894,7 +913,33 @@ func sameSubmitOrder(order trading.Order, req trading.SubmitOrderRequest) bool {
 		order.BusinessType == req.BusinessType &&
 		order.OffsetType == req.OffsetType &&
 		order.LimitPrice == req.Price &&
-		order.OrderQty == req.Qty
+		order.OrderQty == req.Qty &&
+		sameOptionalTradeDate(order.TradeDate, req.TradeDate) &&
+		order.StrategyType == strings.TrimSpace(req.StrategyType) &&
+		order.StrategyID == strings.TrimSpace(req.StrategyID) &&
+		order.BasketID == strings.TrimSpace(req.BasketID) &&
+		order.ParentOrderID == strings.TrimSpace(req.ParentOrderID) &&
+		order.T0OrderGroupID == strings.TrimSpace(req.T0OrderGroupID)
+}
+
+func sameOptionalTradeDate(existing string, requested string) bool {
+	existing = submitTradeDate(existing, time.Time{})
+	requested = submitTradeDate(requested, time.Time{})
+	return existing == "" || requested == "" || existing == requested
+}
+
+func submitTradeDate(value string, now time.Time) string {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		if len(value) == 8 {
+			return value[:4] + "-" + value[4:6] + "-" + value[6:8]
+		}
+		return value
+	}
+	if now.IsZero() {
+		return ""
+	}
+	return now.In(timeutil.Location()).Format("2006-01-02")
 }
 
 func validateSupportedSubmitOrder(req trading.SubmitOrderRequest) error {

@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.10`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.11`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,9 +35,10 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.10.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.11.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照。
+19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 
 尚未完成：
 
@@ -85,15 +86,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.10.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.10.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.10.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.10.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.11.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -130,6 +131,9 @@ order = client.submit_order(
     qty=100,
     client_order_id="strategy-a-0001",
     idempotency_key="strategy-a-0001-submit",
+    strategy_type="stock_cross_section",
+    strategy_id="alpha-basket-v1",
+    basket_id="basket-20260724-001",
 )
 
 print(order.gateway_order_id, order.status)
@@ -204,6 +208,9 @@ receipt = client.submit_order(
     client_order_id="strategy-a-0001",
     gateway_order_id="strategy-a-0001",
     idempotency_key="strategy-a-0001-submit",
+    strategy_type="stock_cross_section",
+    strategy_id="alpha-basket-v1",
+    basket_id="basket-20260724-001",
 )
 
 if receipt.replayed:

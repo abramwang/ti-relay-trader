@@ -642,6 +642,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		Name:           payload.Name,
 		Exchange:       trading.Exchange(payload.Exchange),
 		TradeSide:      trading.TradeSide(payload.TradeSide),
+		BusinessType:   trading.BusinessType(payload.BusinessType),
 		Price:          payload.Price,
 		Qty:            payload.Qty,
 		Fee:            payload.Fee,
@@ -649,6 +650,11 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		MatchTimestamp: payload.MatchTimestamp,
 		MatchedAt:      matchedAt,
 		ShareholderID:  payload.ShareholderID,
+		StrategyType:   payload.StrategyType,
+		StrategyID:     payload.StrategyID,
+		BasketID:       payload.BasketID,
+		ParentOrderID:  payload.ParentOrderID,
+		T0OrderGroupID: payload.T0OrderGroupID,
 		AdapterContext: adapterContext,
 	}, nil
 }
@@ -882,6 +888,7 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 		Name:           order.Name,
 		Exchange:       order.Exchange,
 		TradeSide:      order.TradeSide,
+		BusinessType:   order.BusinessType,
 		Price:          price,
 		Qty:            missingQty,
 		Fee:            0,
@@ -889,6 +896,11 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 		MatchTimestamp: unixMilliOrZero(matchedAt),
 		MatchedAt:      matchedAt,
 		ShareholderID:  order.ShareholderID,
+		StrategyType:   order.StrategyType,
+		StrategyID:     order.StrategyID,
+		BasketID:       order.BasketID,
+		ParentOrderID:  order.ParentOrderID,
+		T0OrderGroupID: order.T0OrderGroupID,
 		AdapterContext: context,
 	}
 	if err := writer.InsertFill(ctx, fill, summaryFillStreamRef(envelope, order.GatewayOrderID), sourceRef(envelope)); err != nil {
@@ -1067,6 +1079,12 @@ type orderPayload struct {
 	RejectCode        string  `json:"reject_code"`
 	RejectMessage     string  `json:"reject_message"`
 	ShareholderID     string  `json:"shareholder_id"`
+	TradeDate         string  `json:"trade_date"`
+	StrategyType      string  `json:"strategy_type"`
+	StrategyID        string  `json:"strategy_id"`
+	BasketID          string  `json:"basket_id"`
+	ParentOrderID     string  `json:"parent_order_id"`
+	T0OrderGroupID    string  `json:"t0_order_group_id"`
 	CreatedAt         string  `json:"created_at"`
 	AcceptedAt        string  `json:"accepted_at"`
 	InsertedAt        string  `json:"inserted_at"`
@@ -1088,6 +1106,11 @@ type fillPayload struct {
 	BusinessType   string  `json:"business_type"`
 	RecordType     string  `json:"record_type"`
 	IsTransfer     *bool   `json:"is_transfer"`
+	StrategyType   string  `json:"strategy_type"`
+	StrategyID     string  `json:"strategy_id"`
+	BasketID       string  `json:"basket_id"`
+	ParentOrderID  string  `json:"parent_order_id"`
+	T0OrderGroupID string  `json:"t0_order_group_id"`
 	Price          float64 `json:"price"`
 	Qty            int64   `json:"qty"`
 	Fee            float64 `json:"fee"`
@@ -1281,6 +1304,12 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		RequestID:         envelope.RequestID,
 		IdempotencyKey:    envelope.IdempotencyKey,
 		ShareholderID:     payload.ShareholderID,
+		TradeDate:         payload.TradeDate,
+		StrategyType:      payload.StrategyType,
+		StrategyID:        payload.StrategyID,
+		BasketID:          payload.BasketID,
+		ParentOrderID:     payload.ParentOrderID,
+		T0OrderGroupID:    payload.T0OrderGroupID,
 		CreatedAt:         parseTime(payload.CreatedAt),
 		AcceptedAt:        parseTime(payload.AcceptedAt),
 		InsertedAt:        parseTime(payload.InsertedAt),
@@ -1500,7 +1529,7 @@ func withRawGatewayOrderID(context map[string]any, rawGatewayOrderID string) map
 }
 
 func withFillPayloadContext(context map[string]any, payload fillPayload) map[string]any {
-	extra := make(map[string]any, 3)
+	extra := make(map[string]any, 8)
 	if businessType := strings.TrimSpace(payload.BusinessType); businessType != "" {
 		extra["business_type"] = businessType
 	}
@@ -1509,6 +1538,21 @@ func withFillPayloadContext(context map[string]any, payload fillPayload) map[str
 	}
 	if payload.IsTransfer != nil {
 		extra["is_transfer"] = *payload.IsTransfer
+	}
+	if strategyType := strings.TrimSpace(payload.StrategyType); strategyType != "" {
+		extra["strategy_type"] = strategyType
+	}
+	if strategyID := strings.TrimSpace(payload.StrategyID); strategyID != "" {
+		extra["strategy_id"] = strategyID
+	}
+	if basketID := strings.TrimSpace(payload.BasketID); basketID != "" {
+		extra["basket_id"] = basketID
+	}
+	if parentOrderID := strings.TrimSpace(payload.ParentOrderID); parentOrderID != "" {
+		extra["parent_order_id"] = parentOrderID
+	}
+	if t0OrderGroupID := strings.TrimSpace(payload.T0OrderGroupID); t0OrderGroupID != "" {
+		extra["t0_order_group_id"] = t0OrderGroupID
 	}
 	if len(extra) == 0 {
 		return context

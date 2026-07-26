@@ -1439,7 +1439,7 @@ func TestListOrders(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&status=working&limit=5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&status=working&strategy_type=stock_cross_section&strategy_id=strategy-a&basket_id=basket-1&limit=5", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1449,6 +1449,9 @@ func TestListOrders(t *testing.T) {
 	}
 	if service.orderQuery.AccountID != "acct-1" || service.orderQuery.Status != trading.OrderStatusWorking || service.orderQuery.Limit != 5 {
 		t.Fatalf("query = %#v", service.orderQuery)
+	}
+	if service.orderQuery.StrategyType != "stock_cross_section" || service.orderQuery.StrategyID != "strategy-a" || service.orderQuery.BasketID != "basket-1" {
+		t.Fatalf("strategy query = %#v", service.orderQuery)
 	}
 	if service.orderQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
 		t.Fatalf("default trade date = %q", service.orderQuery.TradeDate)
@@ -1531,7 +1534,7 @@ func TestListFills(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v1/fills?account_id=acct-1&limit=5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/fills?account_id=acct-1&strategy_type=etf_t0&t0_order_group_id=t0-1&limit=5", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1544,6 +1547,9 @@ func TestListFills(t *testing.T) {
 	}
 	if service.fillQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
 		t.Fatalf("default trade date = %q", service.fillQuery.TradeDate)
+	}
+	if service.fillQuery.StrategyType != "etf_t0" || service.fillQuery.T0OrderGroupID != "t0-1" {
+		t.Fatalf("strategy fill query = %#v", service.fillQuery)
 	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())

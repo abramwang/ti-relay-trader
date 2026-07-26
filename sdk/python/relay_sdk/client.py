@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.10"
+SDK_VERSION = "0.1.11"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -379,6 +379,12 @@ class RelayClient:
         client_order_id: str | None = None,
         gateway_order_id: str | None = None,
         idempotency_key: str | None = None,
+        trade_date: str | None = None,
+        strategy_type: str | None = None,
+        strategy_id: str | None = None,
+        basket_id: str | None = None,
+        parent_order_id: str | None = None,
+        t0_order_group_id: str | None = None,
     ) -> CommandReceipt:
         account_id = self._resolve_account(account_id)
         gateway_order_id = gateway_order_id or self._new_id("gw", account_id)
@@ -396,6 +402,12 @@ class RelayClient:
             "price": price,
             "qty": qty,
             "idempotency_key": idempotency_key,
+            "trade_date": trade_date,
+            "strategy_type": strategy_type,
+            "strategy_id": strategy_id,
+            "basket_id": basket_id,
+            "parent_order_id": parent_order_id,
+            "t0_order_group_id": t0_order_group_id,
         }
         data = self._request("POST", "/v1/orders", json_body=payload)
         return CommandReceipt.from_dict(data)

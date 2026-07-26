@@ -67,6 +67,7 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 		AccountID:       "acct-1",
 		ClientOrderID:   "client-1",
 		GatewayOrderID:  "gateway-1",
+		TradeDate:       "2026-06-13",
 		Symbol:          "600000",
 		Exchange:        trading.ExchangeSH,
 		TradeSide:       trading.TradeSideBuy,
@@ -76,6 +77,11 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 		Status:          trading.OrderStatusAccepted,
 		GatewayStatus:   trading.GatewayStatusAccepted,
 		OriginMessageID: "msg-1",
+		StrategyType:    "stock_cross_section",
+		StrategyID:      "strategy-a",
+		BasketID:        "basket-1",
+		ParentOrderID:   "parent-1",
+		T0OrderGroupID:  "t0-1",
 		AdapterContext:  map[string]any{"front_status": "accepted"},
 	})
 	if err != nil {
@@ -87,15 +93,23 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	requireQueryContains(t, exec.query, "created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END")
 	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN EXCLUDED.is_terminal = TRUE THEN EXCLUDED.cum_filled_qty ELSE GREATEST(orders.cum_filled_qty, EXCLUDED.cum_filled_qty) END")
 	requireQueryContains(t, exec.query, "status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END")
-	requireArgLen(t, exec.args, 38)
+	requireQueryContains(t, exec.query, "trade_date = COALESCE(EXCLUDED.trade_date, orders.trade_date)")
+	requireArgLen(t, exec.args, 44)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[2])
 	}
-	if exec.args[15] != int64(100) {
-		t.Fatalf("leaves_qty arg = %#v, want 100", exec.args[15])
+	if exec.args[21] != int64(100) {
+		t.Fatalf("leaves_qty arg = %#v, want 100", exec.args[21])
 	}
-	assertJSONContains(t, exec.args[36], `"gateway_order_id":"gateway-1"`)
-	assertJSONContains(t, exec.args[37], `"front_status":"accepted"`)
+	if tradeDate, ok := exec.args[5].(sql.NullString); !ok || !tradeDate.Valid || tradeDate.String != "2026-06-13" {
+		t.Fatalf("trade_date arg = %#v", exec.args[5])
+	}
+	if strategyType, ok := exec.args[6].(sql.NullString); !ok || !strategyType.Valid || strategyType.String != "stock_cross_section" {
+		t.Fatalf("strategy_type arg = %#v", exec.args[6])
+	}
+	assertJSONContains(t, exec.args[42], `"gateway_order_id":"gateway-1"`)
+	assertJSONContains(t, exec.args[42], `"strategy_type":"stock_cross_section"`)
+	assertJSONContains(t, exec.args[43], `"front_status":"accepted"`)
 }
 
 func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
@@ -120,9 +134,9 @@ func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
 		t.Fatalf("UpsertOrder() error = %v", err)
 	}
 
-	requireArgLen(t, exec.args, 38)
-	if exec.args[20] != trading.OrderStatusFilled || exec.args[21] != trading.GatewayStatusFilled || exec.args[24] != true {
-		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[20], exec.args[21], exec.args[24])
+	requireArgLen(t, exec.args, 44)
+	if exec.args[26] != trading.OrderStatusFilled || exec.args[27] != trading.GatewayStatusFilled || exec.args[30] != true {
+		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[26], exec.args[27], exec.args[30])
 	}
 }
 
@@ -148,10 +162,10 @@ func TestUpdateOrderStatusAllowsTerminalCumFilledCorrection(t *testing.T) {
 		t.Fatalf("UpdateOrderStatus() error = %v", err)
 	}
 
-	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN $14 = TRUE THEN $6 ELSE GREATEST(cum_filled_qty, $6) END")
-	requireArgLen(t, exec.args, 19)
-	if exec.args[5] != int64(60) || exec.args[13] != true {
-		t.Fatalf("cum/terminal args = %#v/%#v", exec.args[5], exec.args[13])
+	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN $20 = TRUE THEN $12 ELSE GREATEST(cum_filled_qty, $12) END")
+	requireArgLen(t, exec.args, 25)
+	if exec.args[11] != int64(60) || exec.args[19] != true {
+		t.Fatalf("cum/terminal args = %#v/%#v", exec.args[11], exec.args[19])
 	}
 }
 
@@ -184,14 +198,14 @@ func TestAppendOrderEventIsIdempotentByEventOrStream(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO order_events")
 	requireQueryContains(t, exec.query, "ON CONFLICT DO NOTHING")
-	requireArgLen(t, exec.args, 15)
+	requireArgLen(t, exec.args, 21)
 	if exec.args[6] != true {
 		t.Fatalf("is_terminal arg = %#v, want true", exec.args[6])
 	}
-	if streamKey := exec.args[7].(sql.NullString); streamKey.String != "relay:prod:v1:huaxin:g1:event" || !streamKey.Valid {
+	if streamKey := exec.args[13].(sql.NullString); streamKey.String != "relay:prod:v1:huaxin:g1:event" || !streamKey.Valid {
 		t.Fatalf("stream key arg = %#v", streamKey)
 	}
-	if correlationID := exec.args[11].(sql.NullString); correlationID.String != "corr-1" || !correlationID.Valid {
+	if correlationID := exec.args[17].(sql.NullString); correlationID.String != "corr-1" || !correlationID.Valid {
 		t.Fatalf("correlation arg = %#v", correlationID)
 	}
 }
@@ -223,12 +237,12 @@ func TestUpdateOrderStatusBuildsPartialStatusUpdate(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "UPDATE orders SET")
 	requireQueryContains(t, exec.query, "WHERE account_id = $1 AND gateway_order_id = $2")
-	requireQueryContains(t, exec.query, "status = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN status ELSE $12 END")
-	requireArgLen(t, exec.args, 19)
+	requireQueryContains(t, exec.query, "status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN status ELSE $18 END")
+	requireArgLen(t, exec.args, 25)
 	if exec.args[0] != "acct-1" || exec.args[1] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[1])
 	}
-	assertJSONContains(t, exec.args[18], `"order_status_name":"queued"`)
+	assertJSONContains(t, exec.args[24], `"order_status_name":"queued"`)
 }
 
 func TestUpdateOrderStatusInfersFilledFromExecutionQuantities(t *testing.T) {
@@ -253,9 +267,9 @@ func TestUpdateOrderStatusInfersFilledFromExecutionQuantities(t *testing.T) {
 		t.Fatalf("UpdateOrderStatus() error = %v", err)
 	}
 
-	requireArgLen(t, exec.args, 19)
-	if exec.args[11] != trading.OrderStatusFilled || exec.args[12] != trading.GatewayStatusFilled || exec.args[13] != true {
-		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[11], exec.args[12], exec.args[13])
+	requireArgLen(t, exec.args, 25)
+	if exec.args[17] != trading.OrderStatusFilled || exec.args[18] != trading.GatewayStatusFilled || exec.args[19] != true {
+		t.Fatalf("state args = %#v/%#v terminal=%#v, want filled/filled true", exec.args[17], exec.args[18], exec.args[19])
 	}
 }
 
@@ -271,11 +285,15 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 		Symbol:         "600000",
 		Exchange:       trading.ExchangeSH,
 		TradeSide:      trading.TradeSideBuy,
+		BusinessType:   trading.BusinessTypeStock,
 		Price:          10.25,
 		Qty:            100,
 		Fee:            1.23,
 		TradeDate:      "2026-06-13",
 		MatchTimestamp: 1700000002000,
+		StrategyType:   "stock_cross_section",
+		StrategyID:     "strategy-a",
+		BasketID:       "basket-1",
 		AdapterContext: map[string]any{"match_type": "counter"},
 	}, StreamRef{
 		Key: "relay:prod:v1:huaxin:g1:event",
@@ -293,12 +311,19 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 	}
 	requireQueryContains(t, exec.queries[0], "INSERT INTO fills")
 	requireQueryContains(t, exec.queries[0], "ON CONFLICT DO NOTHING")
-	requireArgLen(t, exec.argsList[0], 22)
+	requireArgLen(t, exec.argsList[0], 28)
 	if exec.argsList[0][0] != "acct-1" || exec.argsList[0][2] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.argsList[0][0], exec.argsList[0][2])
 	}
-	assertJSONContains(t, exec.argsList[0][20], `"fill_id":"fill-1"`)
-	assertJSONContains(t, exec.argsList[0][21], `"match_type":"counter"`)
+	if businessType, ok := exec.argsList[0][5].(sql.NullString); !ok || !businessType.Valid || businessType.String != "S" {
+		t.Fatalf("business_type arg = %#v", exec.argsList[0][5])
+	}
+	if strategyType, ok := exec.argsList[0][17].(sql.NullString); !ok || !strategyType.Valid || strategyType.String != "stock_cross_section" {
+		t.Fatalf("strategy_type arg = %#v", exec.argsList[0][17])
+	}
+	assertJSONContains(t, exec.argsList[0][26], `"fill_id":"fill-1"`)
+	assertJSONContains(t, exec.argsList[0][26], `"strategy_type":"stock_cross_section"`)
+	assertJSONContains(t, exec.argsList[0][27], `"match_type":"counter"`)
 	requireQueryContains(t, exec.queries[1], "DELETE FROM fills")
 	requireArgLen(t, exec.argsList[1], 3)
 	if exec.argsList[1][0] != "acct-1" || exec.argsList[1][1] != "gateway-1" {
@@ -392,11 +417,13 @@ func TestListOrdersBuildsDateFilteredRead(t *testing.T) {
 		t.Fatal("ListOrders() expected query error")
 	}
 
-	requireQueryContains(t, exec.query, "created_at >= $2")
-	requireQueryContains(t, exec.query, "created_at < $3")
-	requireQueryContains(t, exec.query, "LIMIT $4")
-	requireArgLen(t, exec.args, 4)
-	if exec.args[0] != "acct-1" || exec.args[3] != 10 {
+	requireQueryContains(t, exec.query, "trade_date >= $2::date")
+	requireQueryContains(t, exec.query, "COALESCE(inserted_at, accepted_at, created_at, last_updated_at, terminal_at) >= $3")
+	requireQueryContains(t, exec.query, "trade_date < $4::date")
+	requireQueryContains(t, exec.query, "COALESCE(inserted_at, accepted_at, created_at, last_updated_at, terminal_at) < $5")
+	requireQueryContains(t, exec.query, "LIMIT $6")
+	requireArgLen(t, exec.args, 6)
+	if exec.args[0] != "acct-1" || exec.args[5] != 10 {
 		t.Fatalf("args = %#v", exec.args)
 	}
 }

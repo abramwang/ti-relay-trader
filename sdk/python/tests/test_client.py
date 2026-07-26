@@ -355,13 +355,29 @@ class RelayClientTest(unittest.TestCase):
         self.assertTrue(body["dry_run"])
 
     def test_submit_order_generates_traceable_ids(self):
-        receipt = self.client.submit_order(symbol="600000", exchange="SH", side="B", price=9.67, qty=100)
+        receipt = self.client.submit_order(
+            symbol="600000",
+            exchange="SH",
+            side="B",
+            price=9.67,
+            qty=100,
+            trade_date="20260724",
+            strategy_type="etf_t0",
+            strategy_id="etf-arb",
+            basket_id="basket-1",
+            t0_order_group_id="t0-1",
+        )
         self.assertTrue(receipt.gateway_order_id.startswith("sdk-gw-acct-1-"))
         self.assertEqual(receipt.status, "created")
         method, path, _query, body = RelayHandler.requests[-1]
         self.assertEqual((method, path), ("POST", "/v1/orders"))
         self.assertEqual(body["account_id"], "acct-1")
         self.assertEqual(body["idempotency_key"], f"order:acct-1:{body['gateway_order_id']}")
+        self.assertEqual(body["trade_date"], "20260724")
+        self.assertEqual(body["strategy_type"], "etf_t0")
+        self.assertEqual(body["strategy_id"], "etf-arb")
+        self.assertEqual(body["basket_id"], "basket-1")
+        self.assertEqual(body["t0_order_group_id"], "t0-1")
 
     def test_submit_order_replay_marker(self):
         receipt = self.client.submit_order(

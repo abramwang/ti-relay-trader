@@ -337,6 +337,12 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 		normalized.GatewayOrderID,
 		nullInt64(normalized.OrderID),
 		nullString(normalized.OrderStreamID),
+		nullDate(normalized.TradeDate),
+		nullString(normalized.StrategyType),
+		nullString(normalized.StrategyID),
+		nullString(normalized.BasketID),
+		nullString(normalized.ParentOrderID),
+		nullString(normalized.T0OrderGroupID),
 		normalized.Symbol,
 		normalized.Name,
 		normalized.Exchange,
@@ -402,6 +408,12 @@ func (repo *Repository) AppendOrderEvent(ctx context.Context, event trading.Orde
 		normalized.Status,
 		normalized.GatewayStatus,
 		normalized.IsTerminal,
+		nullDate(normalized.Order.TradeDate),
+		nullString(normalized.Order.StrategyType),
+		nullString(normalized.Order.StrategyID),
+		nullString(normalized.Order.BasketID),
+		nullString(normalized.Order.ParentOrderID),
+		nullString(normalized.Order.T0OrderGroupID),
 		nullString(stream.Key),
 		nullString(stream.ID),
 		nullString(firstNonEmpty(source.OriginMessageID, normalized.Order.OriginMessageID)),
@@ -435,6 +447,12 @@ func (repo *Repository) UpdateOrderStatus(ctx context.Context, event trading.Ord
 		normalized.GatewayOrderID,
 		nullInt64(normalized.Order.OrderID),
 		nullString(normalized.Order.OrderStreamID),
+		nullDate(normalized.Order.TradeDate),
+		nullString(normalized.Order.StrategyType),
+		nullString(normalized.Order.StrategyID),
+		nullString(normalized.Order.BasketID),
+		nullString(normalized.Order.ParentOrderID),
+		nullString(normalized.Order.T0OrderGroupID),
 		normalized.Order.SubmittedQty,
 		normalized.Order.CumFilledQty,
 		normalized.Order.LeavesQty,
@@ -1010,6 +1028,7 @@ func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, strea
 		normalized.GatewayOrderID,
 		nullInt64(normalized.OrderID),
 		nullString(normalized.OrderStreamID),
+		nullString(string(normalized.BusinessType)),
 		normalized.Symbol,
 		normalized.Name,
 		normalized.Exchange,
@@ -1021,6 +1040,11 @@ func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, strea
 		nullInt64(normalized.MatchTimestamp),
 		nullTime(normalized.MatchedAt),
 		nullString(normalized.ShareholderID),
+		nullString(normalized.StrategyType),
+		nullString(normalized.StrategyID),
+		nullString(normalized.BasketID),
+		nullString(normalized.ParentOrderID),
+		nullString(normalized.T0OrderGroupID),
 		nullString(stream.Key),
 		nullString(stream.ID),
 		nullString(source.OriginMessageID),
@@ -1398,6 +1422,11 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	query.ClientOrderID = strings.TrimSpace(query.ClientOrderID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	query.StrategyType = strings.TrimSpace(query.StrategyType)
+	query.StrategyID = strings.TrimSpace(query.StrategyID)
+	query.BasketID = strings.TrimSpace(query.BasketID)
+	query.ParentOrderID = strings.TrimSpace(query.ParentOrderID)
+	query.T0OrderGroupID = strings.TrimSpace(query.T0OrderGroupID)
 	var err error
 	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
 	if err != nil {
@@ -1426,6 +1455,11 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
+	query.StrategyType = strings.TrimSpace(query.StrategyType)
+	query.StrategyID = strings.TrimSpace(query.StrategyID)
+	query.BasketID = strings.TrimSpace(query.BasketID)
+	query.ParentOrderID = strings.TrimSpace(query.ParentOrderID)
+	query.T0OrderGroupID = strings.TrimSpace(query.T0OrderGroupID)
 	var err error
 	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
 	if err != nil {
@@ -1796,8 +1830,23 @@ func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 	if query.Status != "" {
 		appendFilter("status", query.Status)
 	}
+	if query.StrategyType != "" {
+		appendFilter("strategy_type", query.StrategyType)
+	}
+	if query.StrategyID != "" {
+		appendFilter("strategy_id", query.StrategyID)
+	}
+	if query.BasketID != "" {
+		appendFilter("basket_id", query.BasketID)
+	}
+	if query.ParentOrderID != "" {
+		appendFilter("parent_order_id", query.ParentOrderID)
+	}
+	if query.T0OrderGroupID != "" {
+		appendFilter("t0_order_group_id", query.T0OrderGroupID)
+	}
 	if query.DateFrom != "" || query.DateTo != "" {
-		appendTimestampRange(&where, &args, "created_at", query.DateFrom, query.DateTo)
+		appendOrderDateRange(&where, &args, query.DateFrom, query.DateTo)
 	}
 
 	builder := strings.Builder{}
@@ -1830,6 +1879,21 @@ func buildListFillsSQL(query trading.FillQuery) (string, []any) {
 	}
 	if query.Exchange != "" {
 		appendFilter("exchange", query.Exchange)
+	}
+	if query.StrategyType != "" {
+		appendFilter("strategy_type", query.StrategyType)
+	}
+	if query.StrategyID != "" {
+		appendFilter("strategy_id", query.StrategyID)
+	}
+	if query.BasketID != "" {
+		appendFilter("basket_id", query.BasketID)
+	}
+	if query.ParentOrderID != "" {
+		appendFilter("parent_order_id", query.ParentOrderID)
+	}
+	if query.T0OrderGroupID != "" {
+		appendFilter("t0_order_group_id", query.T0OrderGroupID)
 	}
 	if query.DateFrom != "" || query.DateTo != "" {
 		appendFillDateRange(&where, &args, query.DateFrom, query.DateTo)
@@ -1984,6 +2048,24 @@ func appendTimestampRange(where *[]string, args *[]any, column string, dateFrom 
 	}
 }
 
+func appendOrderDateRange(where *[]string, args *[]any, dateFrom string, dateTo string) {
+	if dateFrom != "" {
+		start, _ := dateStart(dateFrom)
+		*args = append(*args, dateFrom, start)
+		dateArg := len(*args) - 1
+		timeArg := len(*args)
+		*where = append(*where, fmt.Sprintf("((trade_date IS NOT NULL AND trade_date >= $%d::date) OR (trade_date IS NULL AND COALESCE(inserted_at, accepted_at, created_at, last_updated_at, terminal_at) >= $%d))", dateArg, timeArg))
+	}
+	if dateTo != "" {
+		next, _ := nextTradeDate(dateTo)
+		end, _ := dateEndExclusive(dateTo)
+		*args = append(*args, next, end)
+		dateArg := len(*args) - 1
+		timeArg := len(*args)
+		*where = append(*where, fmt.Sprintf("((trade_date IS NOT NULL AND trade_date < $%d::date) OR (trade_date IS NULL AND COALESCE(inserted_at, accepted_at, created_at, last_updated_at, terminal_at) < $%d))", dateArg, timeArg))
+	}
+}
+
 func appendFillDateRange(where *[]string, args *[]any, dateFrom string, dateTo string) {
 	if dateFrom != "" {
 		start, _ := dateStart(dateFrom)
@@ -2011,6 +2093,7 @@ func scanOrder(row rowScanner) (trading.Order, error) {
 	var clientOrderID sql.NullString
 	var orderID sql.NullInt64
 	var orderStreamID sql.NullString
+	var tradeDate sql.NullString
 	var offsetType sql.NullString
 	var avgFillPrice sql.NullFloat64
 	var adapterStatusCode sql.NullInt64
@@ -2021,6 +2104,11 @@ func scanOrder(row rowScanner) (trading.Order, error) {
 	var requestID sql.NullString
 	var idempotencyKey sql.NullString
 	var shareholderID sql.NullString
+	var strategyType sql.NullString
+	var strategyID sql.NullString
+	var basketID sql.NullString
+	var parentOrderID sql.NullString
+	var t0OrderGroupID sql.NullString
 	var createdAt sql.NullTime
 	var acceptedAt sql.NullTime
 	var insertedAt sql.NullTime
@@ -2034,6 +2122,12 @@ func scanOrder(row rowScanner) (trading.Order, error) {
 		&order.GatewayOrderID,
 		&orderID,
 		&orderStreamID,
+		&tradeDate,
+		&strategyType,
+		&strategyID,
+		&basketID,
+		&parentOrderID,
+		&t0OrderGroupID,
 		&order.Symbol,
 		&order.Name,
 		&order.Exchange,
@@ -2073,6 +2167,12 @@ func scanOrder(row rowScanner) (trading.Order, error) {
 	order.ClientOrderID = clientOrderID.String
 	order.OrderID = orderID.Int64
 	order.OrderStreamID = orderStreamID.String
+	order.TradeDate = tradeDate.String
+	order.StrategyType = strategyType.String
+	order.StrategyID = strategyID.String
+	order.BasketID = basketID.String
+	order.ParentOrderID = parentOrderID.String
+	order.T0OrderGroupID = t0OrderGroupID.String
 	order.OffsetType = trading.OffsetType(offsetType.String)
 	order.AvgFillPrice = avgFillPrice.Float64
 	order.AdapterStatusCode = int(adapterStatusCode.Int64)
@@ -2102,10 +2202,16 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 	var fillID sql.NullString
 	var orderID sql.NullInt64
 	var orderStreamID sql.NullString
+	var businessType sql.NullString
 	var tradeDate sql.NullString
 	var matchTimestamp sql.NullInt64
 	var matchedAt sql.NullTime
 	var shareholderID sql.NullString
+	var strategyType sql.NullString
+	var strategyID sql.NullString
+	var basketID sql.NullString
+	var parentOrderID sql.NullString
+	var t0OrderGroupID sql.NullString
 	var adapterContext []byte
 
 	err := row.Scan(
@@ -2114,6 +2220,7 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 		&fill.GatewayOrderID,
 		&orderID,
 		&orderStreamID,
+		&businessType,
 		&fill.Symbol,
 		&fill.Name,
 		&fill.Exchange,
@@ -2125,6 +2232,11 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 		&matchTimestamp,
 		&matchedAt,
 		&shareholderID,
+		&strategyType,
+		&strategyID,
+		&basketID,
+		&parentOrderID,
+		&t0OrderGroupID,
 		&adapterContext,
 	)
 	if err != nil {
@@ -2133,10 +2245,16 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 	fill.FillID = fillID.String
 	fill.OrderID = orderID.Int64
 	fill.OrderStreamID = orderStreamID.String
+	fill.BusinessType = trading.BusinessType(businessType.String)
 	fill.TradeDate = tradeDate.String
 	fill.MatchTimestamp = matchTimestamp.Int64
 	fill.MatchedAt = matchedAt.Time
 	fill.ShareholderID = shareholderID.String
+	fill.StrategyType = strategyType.String
+	fill.StrategyID = strategyID.String
+	fill.BasketID = basketID.String
+	fill.ParentOrderID = parentOrderID.String
+	fill.T0OrderGroupID = t0OrderGroupID.String
 	fill.AdapterContext = map[string]any{}
 	if len(adapterContext) > 0 {
 		if err := json.Unmarshal(adapterContext, &fill.AdapterContext); err != nil {
@@ -2422,6 +2540,22 @@ func scanRawStreamSummaryBucket(row rowScanner) (RawStreamSummaryBucket, error) 
 }
 
 func normalizeOrder(order trading.Order) (trading.Order, error) {
+	order.AccountID = strings.TrimSpace(order.AccountID)
+	order.ClientOrderID = strings.TrimSpace(order.ClientOrderID)
+	order.GatewayOrderID = strings.TrimSpace(order.GatewayOrderID)
+	order.OrderStreamID = strings.TrimSpace(order.OrderStreamID)
+	order.TradeDate = strings.TrimSpace(order.TradeDate)
+	order.Symbol = strings.TrimSpace(order.Symbol)
+	order.Name = strings.TrimSpace(order.Name)
+	order.OriginMessageID = strings.TrimSpace(order.OriginMessageID)
+	order.RequestID = strings.TrimSpace(order.RequestID)
+	order.IdempotencyKey = strings.TrimSpace(order.IdempotencyKey)
+	order.ShareholderID = strings.TrimSpace(order.ShareholderID)
+	order.StrategyType = strings.TrimSpace(order.StrategyType)
+	order.StrategyID = strings.TrimSpace(order.StrategyID)
+	order.BasketID = strings.TrimSpace(order.BasketID)
+	order.ParentOrderID = strings.TrimSpace(order.ParentOrderID)
+	order.T0OrderGroupID = strings.TrimSpace(order.T0OrderGroupID)
 	if strings.TrimSpace(order.AccountID) == "" {
 		return order, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
 	}
@@ -2448,6 +2582,11 @@ func normalizeOrder(order trading.Order) (trading.Order, error) {
 	}
 	if order.OrderQty <= 0 {
 		return order, fmt.Errorf("%w: order_qty must be positive", ErrInvalidLedgerInput)
+	}
+	var err error
+	order.TradeDate, err = normalizeOrderTradeDate(order)
+	if err != nil {
+		return order, err
 	}
 	if order.Status == "" {
 		order.Status = trading.OrderStatusCreated
@@ -2485,6 +2624,26 @@ func normalizeOrderEvent(event trading.OrderEvent) (trading.OrderEvent, error) {
 	if strings.TrimSpace(event.GatewayOrderID) == "" {
 		event.GatewayOrderID = event.Order.GatewayOrderID
 	}
+	event.AccountID = strings.TrimSpace(event.AccountID)
+	event.GatewayOrderID = strings.TrimSpace(event.GatewayOrderID)
+	event.Order.AccountID = firstNonEmpty(strings.TrimSpace(event.Order.AccountID), event.AccountID)
+	event.Order.GatewayOrderID = firstNonEmpty(strings.TrimSpace(event.Order.GatewayOrderID), event.GatewayOrderID)
+	event.Order.TradeDate = strings.TrimSpace(event.Order.TradeDate)
+	event.Order.StrategyType = strings.TrimSpace(event.Order.StrategyType)
+	event.Order.StrategyID = strings.TrimSpace(event.Order.StrategyID)
+	event.Order.BasketID = strings.TrimSpace(event.Order.BasketID)
+	event.Order.ParentOrderID = strings.TrimSpace(event.Order.ParentOrderID)
+	event.Order.T0OrderGroupID = strings.TrimSpace(event.Order.T0OrderGroupID)
+	if event.Order.TradeDate == "" && !event.ProducedAt.IsZero() {
+		event.Order.TradeDate = event.ProducedAt.In(timeutil.Location()).Format("2006-01-02")
+	}
+	if event.Order.TradeDate != "" {
+		var err error
+		event.Order.TradeDate, err = normalizeTradeDate(event.Order.TradeDate)
+		if err != nil {
+			return event, err
+		}
+	}
 	if strings.TrimSpace(event.AccountID) == "" {
 		return event, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
 	}
@@ -2521,6 +2680,19 @@ func normalizeOrderEvent(event trading.OrderEvent) (trading.OrderEvent, error) {
 }
 
 func normalizeFill(fill trading.Fill) (trading.Fill, error) {
+	fill.AccountID = strings.TrimSpace(fill.AccountID)
+	fill.FillID = strings.TrimSpace(fill.FillID)
+	fill.GatewayOrderID = strings.TrimSpace(fill.GatewayOrderID)
+	fill.OrderStreamID = strings.TrimSpace(fill.OrderStreamID)
+	fill.TradeDate = strings.TrimSpace(fill.TradeDate)
+	fill.Symbol = strings.TrimSpace(fill.Symbol)
+	fill.Name = strings.TrimSpace(fill.Name)
+	fill.ShareholderID = strings.TrimSpace(fill.ShareholderID)
+	fill.StrategyType = strings.TrimSpace(fill.StrategyType)
+	fill.StrategyID = strings.TrimSpace(fill.StrategyID)
+	fill.BasketID = strings.TrimSpace(fill.BasketID)
+	fill.ParentOrderID = strings.TrimSpace(fill.ParentOrderID)
+	fill.T0OrderGroupID = strings.TrimSpace(fill.T0OrderGroupID)
 	if strings.TrimSpace(fill.AccountID) == "" {
 		return fill, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
 	}
@@ -2542,7 +2714,32 @@ func normalizeFill(fill trading.Fill) (trading.Fill, error) {
 	if fill.Qty <= 0 {
 		return fill, fmt.Errorf("%w: qty must be positive", ErrInvalidLedgerInput)
 	}
+	if fill.TradeDate != "" {
+		normalized, err := normalizeTradeDate(fill.TradeDate)
+		if err != nil {
+			return fill, err
+		}
+		fill.TradeDate = normalized
+	}
 	return fill, nil
+}
+
+func normalizeOrderTradeDate(order trading.Order) (string, error) {
+	if order.TradeDate != "" {
+		return normalizeTradeDate(order.TradeDate)
+	}
+	for _, candidate := range []time.Time{
+		order.InsertedAt,
+		order.AcceptedAt,
+		order.CreatedAt,
+		order.LastUpdatedAt,
+		order.TerminalAt,
+	} {
+		if !candidate.IsZero() {
+			return candidate.In(timeutil.Location()).Format("2006-01-02"), nil
+		}
+	}
+	return "", nil
 }
 
 func marshalJSONObject(value any) ([]byte, error) {

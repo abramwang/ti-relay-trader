@@ -144,6 +144,7 @@ class Order:
     gateway_order_id: str = ""
     order_id: int = 0
     order_stream_id: str = ""
+    trade_date: str = ""
     symbol: str = ""
     name: str = ""
     exchange: str = ""
@@ -158,6 +159,11 @@ class Order:
     gateway_status: str = ""
     is_terminal: bool = False
     reject_message: str = ""
+    strategy_type: str = ""
+    strategy_id: str = ""
+    basket_id: str = ""
+    parent_order_id: str = ""
+    t0_order_group_id: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -168,6 +174,7 @@ class Order:
             gateway_order_id=_text(data, "gateway_order_id"),
             order_id=_int(data, "order_id"),
             order_stream_id=_text(data, "order_stream_id"),
+            trade_date=_text(data, "trade_date"),
             symbol=_text(data, "symbol"),
             name=_text(data, "name"),
             exchange=_text(data, "exchange"),
@@ -182,6 +189,11 @@ class Order:
             gateway_status=_text(data, "gateway_status"),
             is_terminal=_bool(data, "is_terminal"),
             reject_message=_text(data, "reject_message"),
+            strategy_type=_text(data, "strategy_type"),
+            strategy_id=_text(data, "strategy_id"),
+            basket_id=_text(data, "basket_id"),
+            parent_order_id=_text(data, "parent_order_id"),
+            t0_order_group_id=_text(data, "t0_order_group_id"),
             raw=dict(data),
         )
 
@@ -201,11 +213,17 @@ class Fill:
     name: str = ""
     exchange: str = ""
     trade_side: str = ""
+    business_type: str = ""
     price: float = 0.0
     qty: int = 0
     fee: float = 0.0
     trade_date: str = ""
     match_timestamp: int = 0
+    strategy_type: str = ""
+    strategy_id: str = ""
+    basket_id: str = ""
+    parent_order_id: str = ""
+    t0_order_group_id: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -220,11 +238,17 @@ class Fill:
             name=_text(data, "name"),
             exchange=_text(data, "exchange"),
             trade_side=_text(data, "trade_side"),
+            business_type=_text(data, "business_type"),
             price=_float(data, "price"),
             qty=_int(data, "qty"),
             fee=_float(data, "fee"),
             trade_date=_text(data, "trade_date"),
             match_timestamp=_int(data, "match_timestamp"),
+            strategy_type=_text(data, "strategy_type"),
+            strategy_id=_text(data, "strategy_id"),
+            basket_id=_text(data, "basket_id"),
+            parent_order_id=_text(data, "parent_order_id"),
+            t0_order_group_id=_text(data, "t0_order_group_id"),
             raw=dict(data),
         )
 

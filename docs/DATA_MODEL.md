@@ -123,9 +123,9 @@ migrations/postgres/000001_init_ledger.down.sql
 
 | 表 | 说明 |
 | --- | --- |
-| `orders` | 标准订单主表，以 `account_id + gateway_order_id` 做唯一约束 |
-| `order_events` | 订单状态事件流水，保存每次状态变化 |
-| `fills` | 成交流水，以 `account_id + gateway_order_id + fill_id` 或 fallback 组合键去重 |
+| `orders` | 标准订单主表，保存 `trade_date` 和 `strategy_type/strategy_id/basket_id/parent_order_id/t0_order_group_id` 归因字段；当前保留 `account_id + gateway_order_id` 主唯一约束，并增加 `account_id + trade_date + gateway_order_id` 兼容唯一索引 |
+| `order_events` | 订单状态事件流水，保存每次状态变化，并同步保存交易日和策略归因字段 |
+| `fills` | 成交流水，以 `account_id + gateway_order_id + fill_id` 或 fallback 组合键去重；保存 `business_type` 和策略归因字段，缺失时后续可通过订单主表或归因链接表补足 |
 | `raw_stream_messages` | Redis 原始输入输出消息归档，用于审计和重放 |
 
 ### 账户账表
@@ -141,6 +141,7 @@ migrations/postgres/000001_init_ledger.down.sql
 | `performance_nav_versions` | 版本化经济净值输出，保留 provisional/finalized、公式版本、外部净流入、策略 PnL、结算调整和数据质量标记 |
 | `performance_nav_reconciliations` | T+1 经济净值对账结果，保存可见现金、持仓市值、不可见柜台资金、待交收资产、残差和阈值 |
 | `reverse_repo_accruals` | `204001.SH` 逆回购应计结果，按委托聚合本金、利率、占款天数、费用、净息和应收本息 |
+| `performance_attribution_links` | 策略归因链接表，连接订单、成交、ETF 成分划转、持仓、现金流水和 NAV 分量；用于 ETF 申赎 T0、股票截面、ETF 截面和现金管理策略的可追溯归因 |
 
 ### 盘后对账
 
@@ -175,7 +176,7 @@ migrations/postgres/000001_init_ledger.down.sql
 
 ## 关键约束
 
-1. `orders.account_id + orders.gateway_order_id` 必须唯一。
+1. `orders.account_id + orders.gateway_order_id` 当前仍是主表和 `fills/order_events` 外键使用的兼容唯一键；`000010` 已新增 `orders.account_id + orders.trade_date + orders.gateway_order_id` 唯一索引，作为后续迁移到“账户内当日唯一”业务键的底座。
 2. `fills.account_id + fills.gateway_order_id + fills.fill_id` 优先唯一；缺少稳定 `fill_id` 时使用 `order_stream_id + match_timestamp + qty + price` 去重。
 3. `order_events` 不覆盖历史，只追加事件。
 4. `raw_stream_messages` 保留 Redis stream key、stream id、direction、body 和解析状态。
@@ -194,15 +195,34 @@ relay 当前保留四类订单编号，不能混用：
 | 编号 | 字段 | 来源 | 唯一范围 | 当前用途 |
 | --- | --- | --- | --- | --- |
 | 本地客户端请求 ID | `client_order_id` | 策略、页面或 relay 默认生成 | `account_id` 内非空唯一 | 策略侧和页面侧追踪请求 |
-| 北向订单主键 | `gateway_order_id` | 调用方传入或 relay 生成 `gw-*` | `account_id` 内强制唯一 | 订单主表唯一键、撤单、事件归属、SSE/SDK 去重 |
+| 北向订单主键 | `gateway_order_id` | 调用方传入或 relay 生成 `gw-*` | 当前 `account_id` 内强制唯一；业务语义为 `account_id + trade_date` 内唯一 | 订单主表唯一键、撤单、事件归属、SSE/SDK 去重 |
 | 前置/柜台订单 ID | `order_id` | 前置或券商柜台回报 | 柜台当日口径 | 排查柜台回报、与券商侧对账 |
 | 交易所委托流号 | `order_stream_id` | 柜台/交易所回报 | 交易所当日口径 | 与交易所回报和成交回报交叉校验 |
 
 数据库约束：
 
 1. `orders_gateway_order_unique`: `orders(account_id, gateway_order_id)` 唯一。
-2. `orders_client_order_unique`: `orders(account_id, client_order_id)` 在 `client_order_id IS NOT NULL` 时唯一。
-3. `orders_idempotency_idx`: `orders(account_id, idempotency_key)` 当前是查询索引，不是唯一索引；应用层在发布 Redis 前做幂等预检。
+2. `orders_account_trade_date_gateway_order_unique`: `orders(account_id, trade_date, gateway_order_id)` 在 `trade_date IS NOT NULL` 时唯一，体现 OC/券商编号“账户内当日唯一”的业务语义。
+3. `orders_client_order_unique`: `orders(account_id, client_order_id)` 在 `client_order_id IS NOT NULL` 时唯一。
+4. `orders_idempotency_idx`: `orders(account_id, idempotency_key)` 当前是查询索引，不是唯一索引；应用层在发布 Redis 前做幂等预检。
+
+兼容说明：
+
+`000010` 暂不删除 `orders_gateway_order_unique`，因为当前 `fills` 和 `order_events` 仍通过 `account_id + gateway_order_id` 外键关联订单。后续 N10 账本生产化阶段会在清理历史重复/缺失交易日数据后，把外键、upsert 冲突目标和撤单查询全部切换到 `account_id + trade_date + gateway_order_id`。
+
+### 策略归因标识
+
+未来策略下单、OC 查询回包和 relay 归因计算统一使用以下可选字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `strategy_type` | 策略大类，例如 `etf_t0`、`stock_cross_section`、`etf_cross_section`、`cash_management`；不在数据库层强制枚举，避免未来策略扩展反复迁移 |
+| `strategy_id` | 策略实例或组合 ID，跨账户可复用，用于汇总同一策略在多个账户中的表现 |
+| `basket_id` | 一篮子调仓或 ETF 申赎篮子的批次 ID |
+| `parent_order_id` | ETF 申赎、成分划转或拆单场景中的父订单/父篮子 ID |
+| `t0_order_group_id` | ETF 申赎 T0 的买入成本组 ID；同一组委托量应闭合为 Meridian PCF 最小申赎单位的整数倍 |
+
+这些字段已进入 `SubmitOrderRequest`、`orders`、`order_events`、`fills` 和 Python SDK。`performance_attribution_links` 用于把历史推断结果或后续更细的归因结果挂到订单、成交、划转、持仓和 NAV 分量上；它不覆盖原始订单/成交事实。
 
 下单时的生成规则：
 

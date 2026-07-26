@@ -48,6 +48,12 @@ INSERT INTO orders (
     gateway_order_id,
     order_id,
     order_stream_id,
+    trade_date,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
     symbol,
     name,
     exchange,
@@ -85,12 +91,19 @@ INSERT INTO orders (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
     $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-    $31, COALESCE($32, now()), $33, $34, $35, $36, $37, $38
+    $31, $32, $33, $34, $35, $36, $37, COALESCE($38, now()), $39, $40,
+    $41, $42, $43, $44
 )
 ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
     client_order_id = COALESCE(EXCLUDED.client_order_id, orders.client_order_id),
     order_id = COALESCE(EXCLUDED.order_id, orders.order_id),
     order_stream_id = COALESCE(EXCLUDED.order_stream_id, orders.order_stream_id),
+    trade_date = COALESCE(EXCLUDED.trade_date, orders.trade_date),
+    strategy_type = COALESCE(EXCLUDED.strategy_type, orders.strategy_type),
+    strategy_id = COALESCE(EXCLUDED.strategy_id, orders.strategy_id),
+    basket_id = COALESCE(EXCLUDED.basket_id, orders.basket_id),
+    parent_order_id = COALESCE(EXCLUDED.parent_order_id, orders.parent_order_id),
+    t0_order_group_id = COALESCE(EXCLUDED.t0_order_group_id, orders.t0_order_group_id),
     created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END,
     symbol = EXCLUDED.symbol,
     name = EXCLUDED.name,
@@ -140,6 +153,12 @@ INSERT INTO order_events (
     status,
     gateway_status,
     is_terminal,
+    trade_date,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
     stream_key,
     stream_id,
     origin_message_id,
@@ -150,7 +169,8 @@ INSERT INTO order_events (
     adapter_context
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21
 )
 ON CONFLICT DO NOTHING
 `
@@ -159,21 +179,27 @@ const updateOrderStatusSQL = `
 UPDATE orders SET
     order_id = COALESCE($3, order_id),
     order_stream_id = COALESCE($4, order_stream_id),
-    submitted_qty = GREATEST(submitted_qty, $5),
-    cum_filled_qty = CASE WHEN $14 = TRUE THEN $6 ELSE GREATEST(cum_filled_qty, $6) END,
-    leaves_qty = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN leaves_qty WHEN $7 > 0 OR $14 = TRUE THEN $7 ELSE leaves_qty END,
-    cancelled_qty = GREATEST(cancelled_qty, $8),
-    invalid_qty = GREATEST(invalid_qty, $9),
-    avg_fill_price = COALESCE($10, avg_fill_price),
-    fee = GREATEST(fee, $11),
-    status = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN status ELSE $12 END,
-    gateway_status = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN gateway_status ELSE $13 END,
-    is_terminal = is_terminal OR $14,
-    reject_code = COALESCE($15, reject_code),
-    reject_message = COALESCE($16, reject_message),
-    last_updated_at = COALESCE($17, now()),
-    terminal_at = CASE WHEN is_terminal = TRUE AND $14 = FALSE THEN terminal_at WHEN $14 = TRUE THEN COALESCE($18, $17, terminal_at, now()) ELSE terminal_at END,
-    adapter_context = adapter_context || $19::jsonb,
+    trade_date = COALESCE($5::date, trade_date),
+    strategy_type = COALESCE($6, strategy_type),
+    strategy_id = COALESCE($7, strategy_id),
+    basket_id = COALESCE($8, basket_id),
+    parent_order_id = COALESCE($9, parent_order_id),
+    t0_order_group_id = COALESCE($10, t0_order_group_id),
+    submitted_qty = GREATEST(submitted_qty, $11),
+    cum_filled_qty = CASE WHEN $20 = TRUE THEN $12 ELSE GREATEST(cum_filled_qty, $12) END,
+    leaves_qty = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN leaves_qty WHEN $13 > 0 OR $20 = TRUE THEN $13 ELSE leaves_qty END,
+    cancelled_qty = GREATEST(cancelled_qty, $14),
+    invalid_qty = GREATEST(invalid_qty, $15),
+    avg_fill_price = COALESCE($16, avg_fill_price),
+    fee = GREATEST(fee, $17),
+    status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN status ELSE $18 END,
+    gateway_status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN gateway_status ELSE $19 END,
+    is_terminal = is_terminal OR $20,
+    reject_code = COALESCE($21, reject_code),
+    reject_message = COALESCE($22, reject_message),
+    last_updated_at = COALESCE($23, now()),
+    terminal_at = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN terminal_at WHEN $20 = TRUE THEN COALESCE($24, $23, terminal_at, now()) ELSE terminal_at END,
+    adapter_context = adapter_context || $25::jsonb,
     updated_at = now()
 WHERE account_id = $1 AND gateway_order_id = $2
 `
@@ -185,6 +211,12 @@ SELECT
     gateway_order_id,
     order_id,
     order_stream_id,
+    trade_date::text,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
     symbol,
     name,
     exchange,
@@ -237,6 +269,7 @@ INSERT INTO fills (
     gateway_order_id,
     order_id,
     order_stream_id,
+    business_type,
     symbol,
     name,
     exchange,
@@ -248,6 +281,11 @@ INSERT INTO fills (
     match_timestamp,
     matched_at,
     shareholder_id,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
     stream_key,
     stream_id,
     origin_message_id,
@@ -257,7 +295,7 @@ INSERT INTO fills (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22
+    $21, $22, $23, $24, $25, $26, $27, $28
 )
 ON CONFLICT DO NOTHING
 `
@@ -279,6 +317,7 @@ SELECT
     gateway_order_id,
     order_id,
     order_stream_id,
+    business_type,
     symbol,
     name,
     exchange,
@@ -290,6 +329,11 @@ SELECT
     match_timestamp,
     matched_at,
     shareholder_id,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
     adapter_context
 FROM fills
 `

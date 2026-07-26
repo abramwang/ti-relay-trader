@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.10.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.11.tar.gz"
 ```
 
 ## Quick Start
@@ -44,6 +44,9 @@ receipt = client.submit_order(
     price=9.67,
     qty=100,
     client_order_id="strategy-a-0001",
+    strategy_type="stock_cross_section",
+    strategy_id="alpha-basket-v1",
+    basket_id="basket-20260724-001",
 )
 
 print(receipt.gateway_order_id, receipt.status)
@@ -58,6 +61,11 @@ If a submit request replays the same `gateway_order_id`, `idempotency_key`, and
 payload, relay returns the existing order with `receipt.replayed == True` and
 does not publish another Redis command. Conflicting idempotency keys raise
 `RelayIdempotencyError`.
+
+`submit_order()` accepts optional `trade_date`, `strategy_type`, `strategy_id`,
+`basket_id`, `parent_order_id`, and `t0_order_group_id` fields. Relay stores
+them with the draft order and forwards them to OC as attribution metadata for
+later performance analysis; they do not change broker trading semantics.
 
 Use `business_type="S"` for secondary-market stock and ETF orders. ETF
 creation/redemption is not implemented by `/v1/orders` yet; do not use

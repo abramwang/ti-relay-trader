@@ -202,6 +202,34 @@ func TestPerformanceAccountingMigrationAddsVersionedInputsAndOutputs(t *testing.
 	}
 }
 
+func TestStrategyAttributionKeysMigrationAddsTradeDateAndLinks(t *testing.T) {
+	upSQL := readMigration(t, "000010_strategy_attribution_keys.up.sql")
+	for _, snippet := range []string{
+		"ADD COLUMN trade_date DATE",
+		"ADD COLUMN strategy_type TEXT",
+		"orders_account_trade_date_gateway_order_unique",
+		"CREATE TABLE performance_attribution_links",
+		"performance_attribution_links_strategy_idx",
+		"fills_t0_group_idx",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("strategy attribution migration missing snippet: %s", snippet)
+		}
+	}
+
+	downSQL := readMigration(t, "000010_strategy_attribution_keys.down.sql")
+	for _, snippet := range []string{
+		"DROP TABLE IF EXISTS performance_attribution_links",
+		"DROP INDEX IF EXISTS orders_account_trade_date_gateway_order_unique",
+		"DROP COLUMN IF EXISTS trade_date",
+		"DROP COLUMN IF EXISTS strategy_type",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("strategy attribution rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

@@ -36,6 +36,9 @@ func TestSubmitOrderWritesDraftPublishesCommandAndArchives(t *testing.T) {
 		OffsetType:   trading.OffsetTypeClose,
 		Price:        9.54,
 		Qty:          100,
+		StrategyType: "stock_cross_section",
+		StrategyID:   "strategy-a",
+		BasketID:     "basket-1",
 	}, SubmitOptions{RequestID: "req-http-1"})
 	if err != nil {
 		t.Fatalf("SubmitOrder() error = %v", err)
@@ -57,6 +60,9 @@ func TestSubmitOrderWritesDraftPublishesCommandAndArchives(t *testing.T) {
 	if order.Status != trading.OrderStatusCreated || order.LeavesQty != 100 {
 		t.Fatalf("draft order = %#v", order)
 	}
+	if order.TradeDate != "2026-06-13" || order.StrategyType != "stock_cross_section" || order.StrategyID != "strategy-a" || order.BasketID != "basket-1" {
+		t.Fatalf("draft attribution = %#v", order)
+	}
 	if len(publisher.commands) != 1 {
 		t.Fatalf("published commands = %#v", publisher.commands)
 	}
@@ -66,6 +72,10 @@ func TestSubmitOrderWritesDraftPublishesCommandAndArchives(t *testing.T) {
 	}
 	if command.envelope.Action != redisstream.ActionOrderSubmit || command.envelope.IdempotencyKey == "" {
 		t.Fatalf("envelope = %#v", command.envelope)
+	}
+	payload, ok := command.envelope.Payload.(trading.SubmitOrderRequest)
+	if !ok || payload.TradeDate != "2026-06-13" || payload.StrategyType != "stock_cross_section" || payload.StrategyID != "strategy-a" {
+		t.Fatalf("payload = %#v", command.envelope.Payload)
 	}
 	if len(ledgerWriter.raw) != 1 {
 		t.Fatalf("raw archives = %#v", ledgerWriter.raw)

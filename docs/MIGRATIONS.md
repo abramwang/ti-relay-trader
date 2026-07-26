@@ -42,7 +42,8 @@ migrations/postgres/000009_performance_accounting.down.sql
 7. `000007_open_asset_snapshots` 已应用。
 8. `000008_position_day_pnl` 增加持仓当日浮盈字段，并更新研究侧绩效 view。
 9. `000009_performance_accounting` 新增绩效输入层、版本化经济 NAV、T+1 对账和逆回购应计表，并扩展 `cash_ledger`。
-10. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `9:performance_accounting`。
+10. `000010_strategy_attribution_keys` 新增订单/成交策略归因字段、订单交易日索引和 `performance_attribution_links`。
+11. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `10:strategy_attribution_keys`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -137,6 +138,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 7. `performance_nav_versions`
 8. `performance_nav_reconciliations`
 9. `reverse_repo_accruals`
+10. `performance_attribution_links`
 
 盘后对账：
 

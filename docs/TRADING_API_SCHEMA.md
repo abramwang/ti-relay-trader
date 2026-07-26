@@ -146,6 +146,7 @@ rejected
   "account_id": "00030484",
   "client_order_id": "cli-0001",
   "gateway_order_id": "gw-cli-0001",
+  "trade_date": "20260724",
   "symbol": "600000",
   "exchange": "SH",
   "trade_side": "B",
@@ -153,7 +154,12 @@ rejected
   "offset_type": "C",
   "price": 9.54,
   "qty": 100,
-  "idempotency_key": "idem-submit-0001"
+  "idempotency_key": "idem-submit-0001",
+  "strategy_type": "stock_cross_section",
+  "strategy_id": "alpha-basket-v1",
+  "basket_id": "basket-20260724-001",
+  "parent_order_id": "",
+  "t0_order_group_id": ""
 }
 ```
 
@@ -163,10 +169,12 @@ rejected
 2. `price` 必须大于 0。
 3. `qty` 必须大于 0。
 4. `gateway_order_id` 可由调用方传入；未传时 relay 会生成 `gw-*`。无论来源如何，它都是撤单和事件匹配的北向主键。
+5. `trade_date` 可选；未传时 relay 按 `Asia/Shanghai` 当前日期写入本地草稿。查询/回包链路会优先使用 OC payload 中的 `trade_date`，否则从订单时间推导。
+6. `strategy_type/strategy_id/basket_id/parent_order_id/t0_order_group_id` 可选，用于后续绩效归因，不影响下单校验和 OC 交易语义。
 
 订单编号和幂等规则：
 
-1. `gateway_order_id` 在 `account_id` 内唯一，数据库唯一约束为 `orders(account_id, gateway_order_id)`。
+1. `gateway_order_id` 当前仍在 `account_id` 内兼容唯一，数据库保留 `orders(account_id, gateway_order_id)`；`000010` 已新增 `orders(account_id, trade_date, gateway_order_id)` 唯一索引，用于后续切到“账户内当日唯一”业务键。
 2. `client_order_id` 未传时默认等于 `gateway_order_id`；非空时在 `account_id` 内唯一。
 3. `idempotency_key` 未传时，单笔下单默认 `order:{account_id}:{gateway_order_id}`。
 4. 重复提交同一 `gateway_order_id + idempotency_key + payload` 会返回已有订单，`replayed=true`，不再写 Redis。
@@ -253,13 +261,18 @@ rejected
   "gateway_order_id": "gw-cli-0001",
   "order_id": 1680001,
   "order_stream_id": "110018100000001",
+  "business_type": "S",
   "symbol": "600000",
   "exchange": "SH",
   "trade_side": "B",
   "price": 9.54,
   "qty": 100,
   "fee": 0.0,
-  "match_timestamp": 1777103459957
+  "trade_date": "2026-07-24",
+  "match_timestamp": 1777103459957,
+  "strategy_type": "stock_cross_section",
+  "strategy_id": "alpha-basket-v1",
+  "basket_id": "basket-20260724-001"
 }
 ```
 
@@ -335,7 +348,7 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 
 `POST /v1/orders` 的 `202 Accepted` 仅表示 relay 已接受请求、写入订单草稿并向 Redis `cmd.trade` 写入 `order.submit`，不表示交易所接单或成交。最终状态以 `order.event` 和 `fill.event` 回流为准。
 
-若同一 `account_id + gateway_order_id` 和同一 `idempotency_key` 的请求与原始下单核心字段一致，relay 不会再次写 Redis，而是返回已有订单并标记 `replayed=true`，HTTP 状态为 `200 OK`。若同一 `gateway_order_id` 使用不同幂等键，返回 `409 CONFLICT`；若同一 `idempotency_key` 指向不同订单或不同 payload，返回 `409 IDEMPOTENCY_CONFLICT`。
+若同一 `account_id + gateway_order_id` 和同一 `idempotency_key` 的请求与原始下单核心字段一致，relay 不会再次写 Redis，而是返回已有订单并标记 `replayed=true`，HTTP 状态为 `200 OK`。核心字段包含 `trade_date` 和策略归因字段；同一订单号重放但策略标签不同会返回 `409 IDEMPOTENCY_CONFLICT`。若同一 `gateway_order_id` 使用不同幂等键，返回 `409 CONFLICT`；若同一 `idempotency_key` 指向不同订单或不同 payload，返回 `409 IDEMPOTENCY_CONFLICT`。
 
 涨跌停等柜台规则当前以异步回报为准。relay 同步层只做 schema、账户路由、重复订单和已知 unsupported 交易类型校验；超涨跌停价格可能先返回 `202 Accepted`，随后通过订单账本/SSE 进入 `rejected`。策略端必须订阅订单状态或轮询账本判断最终结果。若需要同步涨跌停预校验，应以后续接入 Meridian 涨跌停/交易规则数据后单独实现。
 
@@ -349,7 +362,7 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 轻量同步循环、`relayctl ledger-sync` 或后续正式 worker 把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL。
 
-`GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为日终 `position_snapshots`。
+`GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为日终 `position_snapshots`。
 
 订单、成交、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 

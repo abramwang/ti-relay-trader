@@ -155,6 +155,7 @@ type SubmitOrderRequest struct {
 	AccountID      string       `json:"account_id"`
 	ClientOrderID  string       `json:"client_order_id,omitempty"`
 	GatewayOrderID string       `json:"gateway_order_id,omitempty"`
+	TradeDate      string       `json:"trade_date,omitempty"`
 	Symbol         string       `json:"symbol"`
 	Exchange       Exchange     `json:"exchange"`
 	TradeSide      TradeSide    `json:"trade_side"`
@@ -163,6 +164,11 @@ type SubmitOrderRequest struct {
 	Price          float64      `json:"price"`
 	Qty            int64        `json:"qty"`
 	IdempotencyKey string       `json:"idempotency_key,omitempty"`
+	StrategyType   string       `json:"strategy_type,omitempty"`
+	StrategyID     string       `json:"strategy_id,omitempty"`
+	BasketID       string       `json:"basket_id,omitempty"`
+	ParentOrderID  string       `json:"parent_order_id,omitempty"`
+	T0OrderGroupID string       `json:"t0_order_group_id,omitempty"`
 }
 
 type BatchSubmitOrderRequest struct {
@@ -184,6 +190,7 @@ type Order struct {
 	GatewayOrderID    string         `json:"gateway_order_id"`
 	OrderID           int64          `json:"order_id,omitempty"`
 	OrderStreamID     string         `json:"order_stream_id,omitempty"`
+	TradeDate         string         `json:"trade_date,omitempty"`
 	Symbol            string         `json:"symbol"`
 	Name              string         `json:"name,omitempty"`
 	Exchange          Exchange       `json:"exchange"`
@@ -210,6 +217,11 @@ type Order struct {
 	RequestID         string         `json:"request_id,omitempty"`
 	IdempotencyKey    string         `json:"idempotency_key,omitempty"`
 	ShareholderID     string         `json:"shareholder_id,omitempty"`
+	StrategyType      string         `json:"strategy_type,omitempty"`
+	StrategyID        string         `json:"strategy_id,omitempty"`
+	BasketID          string         `json:"basket_id,omitempty"`
+	ParentOrderID     string         `json:"parent_order_id,omitempty"`
+	T0OrderGroupID    string         `json:"t0_order_group_id,omitempty"`
 	CreatedAt         time.Time      `json:"created_at,omitempty"`
 	AcceptedAt        time.Time      `json:"accepted_at,omitempty"`
 	InsertedAt        time.Time      `json:"inserted_at,omitempty"`
@@ -228,6 +240,7 @@ type Fill struct {
 	Name           string         `json:"name,omitempty"`
 	Exchange       Exchange       `json:"exchange"`
 	TradeSide      TradeSide      `json:"trade_side"`
+	BusinessType   BusinessType   `json:"business_type,omitempty"`
 	Price          float64        `json:"price"`
 	Qty            int64          `json:"qty"`
 	Fee            float64        `json:"fee,omitempty"`
@@ -235,6 +248,11 @@ type Fill struct {
 	MatchTimestamp int64          `json:"match_timestamp,omitempty"`
 	MatchedAt      time.Time      `json:"matched_at,omitempty"`
 	ShareholderID  string         `json:"shareholder_id,omitempty"`
+	StrategyType   string         `json:"strategy_type,omitempty"`
+	StrategyID     string         `json:"strategy_id,omitempty"`
+	BasketID       string         `json:"basket_id,omitempty"`
+	ParentOrderID  string         `json:"parent_order_id,omitempty"`
+	T0OrderGroupID string         `json:"t0_order_group_id,omitempty"`
 	AdapterContext map[string]any `json:"adapter_context,omitempty"`
 }
 
@@ -272,6 +290,11 @@ type OrderQuery struct {
 	DateFrom       string      `json:"date_from,omitempty"`
 	DateTo         string      `json:"date_to,omitempty"`
 	History        bool        `json:"history,omitempty"`
+	StrategyType   string      `json:"strategy_type,omitempty"`
+	StrategyID     string      `json:"strategy_id,omitempty"`
+	BasketID       string      `json:"basket_id,omitempty"`
+	ParentOrderID  string      `json:"parent_order_id,omitempty"`
+	T0OrderGroupID string      `json:"t0_order_group_id,omitempty"`
 	Limit          int         `json:"limit,omitempty"`
 	Cursor         string      `json:"cursor,omitempty"`
 }
@@ -285,6 +308,11 @@ type FillQuery struct {
 	DateFrom       string   `json:"date_from,omitempty"`
 	DateTo         string   `json:"date_to,omitempty"`
 	History        bool     `json:"history,omitempty"`
+	StrategyType   string   `json:"strategy_type,omitempty"`
+	StrategyID     string   `json:"strategy_id,omitempty"`
+	BasketID       string   `json:"basket_id,omitempty"`
+	ParentOrderID  string   `json:"parent_order_id,omitempty"`
+	T0OrderGroupID string   `json:"t0_order_group_id,omitempty"`
 	Limit          int      `json:"limit,omitempty"`
 	Cursor         string   `json:"cursor,omitempty"`
 }

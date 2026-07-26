@@ -53,7 +53,7 @@
 - [x] 确认费用使用账户级、生效区间版本化规则；柜台实际费用优先，规则估算与实际费用分别保存，ETF T0 的 15bp 参数独立维护。
 - [x] 确认 OC 暂无完整资金流水时由用户人工维护；外部入出金修正收益率，极速/普通柜台内部划转成对记录且不计入收益。
 - [x] 确认“绩效滚动主线 + T+1 资产对账辅线”的正式经济净资产方案，以及 `204001.SH` 逆回购近似口径。
-- [ ] 设计跨账户、跨策略归因标识，并修正订单“账户内当日唯一”业务键没有包含交易日的问题。
+- [x] 设计跨账户、跨策略归因标识，并修正订单“账户内当日唯一”业务键没有包含交易日的问题：新增 `trade_date`、策略归因字段、交易日唯一索引和 `performance_attribution_links`；旧二元唯一约束暂作为外键兼容锚点保留。
 - [ ] 增加 Meridian `metadata/adjust-factors` 同源薄代理，并让盘前初始化保存公司行为后的 open 持仓快照。
 - [x] 扩展 `cash_ledger` 的分类、发生时间、柜台资金仓位、成对划转、确认/冲正和审计字段。
 - [x] 增加 `/trade#performance-settings`，提供账户级费用规则、人工资金流水、日初经济净值和逆回购估算维护。
@@ -100,6 +100,7 @@
 
 - 优先采用测试/生产独立 PostgreSQL DSN；如必须共库，再设计 `environment` 进入核心表主键/唯一键的 migration。
 - 清理历史重复键后，为 `orders(account_id, idempotency_key)` 增加部分唯一约束。
+- 清理历史重复键后，将 `orders/fills/order_events` 的外键和 upsert 冲突目标从 `account_id + gateway_order_id` 切到 `account_id + trade_date + gateway_order_id`。
 - 使用临时 PostgreSQL 跑 migration/repository 集成测试。
 - 编写数据库备份、恢复和按交易日回放验证手册，并完成一次恢复演练。
 
@@ -279,6 +280,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.8.tar.gz` 和 SHA256 校验文件，修复不同订单复用 `fill_id` 时的成交回调去重。
 - [x] 发布 `public/sdk/relay-sdk-0.1.9.tar.gz` 和 SHA256 校验文件，支持绩效序列 `benchmark_security_id` 基准对照。
 - [x] 发布 `public/sdk/relay-sdk-0.1.10.tar.gz` 和 SHA256 校验文件，`Position` 增加 `day_unrealized_pnl` 当日持仓浮盈字段。
+- [x] 发布 `public/sdk/relay-sdk-0.1.11.tar.gz` 和 SHA256 校验文件，`submit_order()` 增加策略归因字段，`Order/Fill` 解析 `trade_date/business_type/strategy_*`。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
