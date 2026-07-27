@@ -4,17 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260727-0002">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260727-0005">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
     <header class="terminal-topbar">
-      <div class="brand-block">
-        <a class="brand-title" href="/">Relay Trader</a>
-        <span class="env-badge {{.EnvironmentClass}}" id="environmentBadge" data-environment="{{.Environment}}">{{.EnvironmentLabel}}</span>
-      </div>
-      <div class="status-strip">
+      <a class="terminal-brand" href="/" aria-label="Relay Trader 总览">
+        <span class="brand-mark">RT</span>
+        <span class="brand-product">
+          <strong>Relay Trader</strong>
+          <small>:9092</small>
+        </span>
+      </a>
+      <nav class="terminal-global-nav" aria-label="全局导航">
+        <a href="/">总览</a>
+        <a class="active" href="/trade">交易终端</a>
+        <a href="/api-console">接口工作台</a>
+        <a href="/jobs">任务</a>
+        <a href="/docs">开发者</a>
+      </nav>
+      <div class="terminal-header-right">
         <span class="status-pill" id="apiStatus"><i></i>API: checking</span>
+        <span class="env-badge {{.EnvironmentClass}}" id="environmentBadge" data-environment="{{.Environment}}">{{.EnvironmentLabel}}</span>
+        <a class="header-help" href="/docs/readme" aria-label="帮助">?</a>
+      </div>
+    </header>
+
+    <section class="terminal-context" aria-label="交易上下文">
+      <div class="status-strip">
         <span class="status-pill danger" id="redisStatus"><i></i>Redis: pending</span>
         <span class="status-pill" id="dbStatus"><i></i>DB: pending</span>
       </div>
@@ -23,21 +40,27 @@
         <span id="tradeDate">--</span>
         <strong id="serverClock">--:--:--</strong>
       </div>
-      <div class="top-actions">
-        <span class="avatar">RT</span>
-      </div>
-    </header>
+    </section>
 
     <aside class="terminal-sidebar">
+      <div class="terminal-local-title">
+        <strong>交易工作台</strong>
+        <small>账户、行情与执行</small>
+      </div>
       <nav class="terminal-nav">
-        <a class="active" href="/trade" data-view-link="trade"><span>⌁</span>交易测试</a>
+        <span class="terminal-nav-label">交易</span>
+        <a class="active" href="/trade" data-view-link="trade"><span>↗</span>下单与行情</a>
         <a href="/trade#orders" data-view-link="orders"><span>▤</span>订单监控</a>
         <a href="/trade#asset" data-view-link="asset"><span>▥</span>资金持仓</a>
+        <span class="terminal-nav-label">分析</span>
         <a href="/trade#performance" data-view-link="performance"><span>▦</span>绩效分析</a>
-        <a href="/trade#performance-settings" data-view-link="performance-settings"><span>▧</span>绩效设置</a>
-        <a href="/api-console"><span>▣</span>接口 Console</a>
-        <a href="/jobs"><span>☷</span>任务状态</a>
-        <a href="/v1/status"><span>☍</span>系统状态</a>
+        <a href="/trade#snapshots" data-view-link="snapshots"><span>◫</span>日终快照</a>
+        <a href="/trade#logs" data-view-link="logs"><span>≡</span>交易日志</a>
+        <span class="terminal-nav-label">相关入口</span>
+        <a href="/trade#performance-settings" data-view-link="performance-settings"><span>⚙</span>绩效设置</a>
+        <a href="/api-console"><span>API</span>接口工作台</a>
+        <a href="/jobs"><span>JOB</span>后台任务</a>
+        <a href="/v1/status"><span>●</span>系统状态</a>
       </nav>
       <div class="sidebar-footer">
         <a href="/docs">文档</a>
@@ -222,7 +245,7 @@
       <section class="trade-panel performance-panel" id="performancePanel" aria-label="绩效分析">
         <div class="performance-toolbar">
           <div>
-            <h2>绩效分析</h2>
+            <h2 id="performanceTitle">绩效分析</h2>
             <span id="performanceRangeHint">读取 close 资产快照、成交汇总与 Meridian bars</span>
           </div>
           <div class="performance-actions">
@@ -601,6 +624,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260727-0003"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260727-0004"></script>
 </body>
 </html>

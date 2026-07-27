@@ -162,6 +162,7 @@
     quotePrice: byID("quotePrice"),
     quoteLast: byID("quoteLast"),
     quoteChange: byID("quoteChange"),
+    performanceTitle: byID("performanceTitle"),
     performanceRangeHint: byID("performanceRangeHint"),
     perfDateFrom: byID("perfDateFrom"),
     perfDateTo: byID("perfDateTo"),
@@ -897,6 +898,13 @@
     if (viewToken === "performance") {
       return "performance";
     }
+    if (viewToken === "snapshots") {
+      return "snapshots";
+    }
+    if (viewToken === "logs") {
+      state.selectedTab = "logs";
+      return "logs";
+    }
     if (viewToken === "performance-settings") {
       return "performance-settings";
     }
@@ -916,14 +924,19 @@
   }
 
   function setActiveView(view) {
-    if (!["trade", "orders", "asset", "performance", "performance-settings"].includes(view)) {
+    if (!["trade", "orders", "asset", "performance", "snapshots", "logs", "performance-settings"].includes(view)) {
       view = "trade";
+    }
+    if (view === "logs") {
+      state.selectedTab = "logs";
     }
     state.activeView = view;
     els.shell.classList.toggle("view-trade", view === "trade");
-    els.shell.classList.toggle("view-orders", view === "orders");
+    els.shell.classList.toggle("view-orders", view === "orders" || view === "logs");
     els.shell.classList.toggle("view-asset", view === "asset");
-    els.shell.classList.toggle("view-performance", view === "performance");
+    els.shell.classList.toggle("view-performance", view === "performance" || view === "snapshots");
+    els.shell.classList.toggle("view-snapshots", view === "snapshots");
+    els.shell.classList.toggle("view-logs", view === "logs");
     els.shell.classList.toggle("view-performance-settings", view === "performance-settings");
     for (const link of els.viewLinks) {
       link.classList.toggle("active", link.dataset.viewLink === view);
@@ -954,7 +967,13 @@
     } else {
       stopChartAutoRefresh();
     }
-    if (view === "performance" && state.initialized) {
+    if (els.performanceTitle) {
+      els.performanceTitle.textContent = view === "snapshots" ? "日终快照" : "绩效分析";
+    }
+    if (view === "snapshots") {
+      setPerformanceTableView("series");
+    }
+    if ((view === "performance" || view === "snapshots") && state.initialized) {
       ensurePerformanceDefaults();
       if (state.activeAccount && !state.performanceLoaded) {
         loadPerformance().catch((err) => pushLog("warn", "绩效查询失败", err.message));
@@ -1901,7 +1920,7 @@
         if (state.activeView === "trade") {
           await loadTradeChartBars({ silent: true });
         }
-        if (state.activeView === "performance") {
+        if (state.activeView === "performance" || state.activeView === "snapshots") {
           await loadPerformance();
         }
       });
@@ -4730,7 +4749,7 @@
         await loadTradeChartBars({ silent: true });
         scheduleChartAutoRefresh();
       }
-      if (state.activeView === "performance") {
+      if (state.activeView === "performance" || state.activeView === "snapshots") {
         await loadPerformance();
       }
       if (state.activeView === "performance-settings") {
@@ -4942,7 +4961,7 @@
       ensurePerformanceDefaults();
       await loadAccountData();
       state.initialized = true;
-      if (state.activeView === "performance") {
+      if (state.activeView === "performance" || state.activeView === "snapshots") {
         await loadPerformance();
       } else if (state.activeView === "performance-settings") {
         await loadPerformanceSettings();

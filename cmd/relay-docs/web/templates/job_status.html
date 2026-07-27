@@ -36,38 +36,40 @@
   </div>
   <div id="jobCards" class="job-cards" aria-live="polite"></div>
 
-  <section class="jobs-panel">
-    <div class="jobs-panel-head">
-      <h2>历史运行记录</h2>
-      <span id="jobCount">--</span>
-    </div>
-    <div class="jobs-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>任务</th>
-            <th>状态</th>
-            <th>交易日</th>
-            <th>触发</th>
-            <th>开始</th>
-            <th>结束</th>
-            <th>耗时</th>
-            <th>最终结果</th>
-            <th>错误摘要</th>
-          </tr>
-        </thead>
-        <tbody id="jobRunsBody">
-          <tr><td colspan="10">加载中...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <div class="jobs-content-grid">
+    <section class="jobs-panel history-panel">
+      <div class="jobs-panel-head">
+        <h2>历史运行记录</h2>
+        <span id="jobCount">--</span>
+      </div>
+      <div class="jobs-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>任务</th>
+              <th>状态</th>
+              <th>交易日</th>
+              <th>触发</th>
+              <th>开始</th>
+              <th>结束</th>
+              <th>耗时</th>
+              <th>最终结果</th>
+              <th>错误摘要</th>
+            </tr>
+          </thead>
+          <tbody id="jobRunsBody">
+            <tr><td colspan="10">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <section class="jobs-panel">
-    <div class="jobs-panel-head">
-      <h2>任务报告</h2>
-      <span id="jobReportTitle">选择一条记录查看 report_json</span>
-    </div>
-    <pre id="jobReport" class="job-report">暂无报告</pre>
-  </section>
+    <section class="jobs-panel report-panel">
+      <div class="jobs-panel-head">
+        <h2>任务报告</h2>
+        <span id="jobReportTitle">选择运行记录</span>
+      </div>
+      <pre id="jobReport" class="job-report">暂无报告</pre>
+    </section>
+  </div>
 </section>

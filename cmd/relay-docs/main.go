@@ -47,16 +47,18 @@ type docPage struct {
 }
 
 type pageData struct {
-	Title      string
-	Active     string
-	Summary    string
-	Generated  string
-	Head       template.HTML
-	Content    template.HTML
-	Scripts    template.HTML
-	Docs       []docPage
-	Doc        *docPage
-	ProjectDir string
+	Title            string
+	Active           string
+	Summary          string
+	Generated        string
+	Head             template.HTML
+	Content          template.HTML
+	Scripts          template.HTML
+	Docs             []docPage
+	Doc              *docPage
+	ProjectDir       string
+	EnvironmentLabel string
+	EnvironmentClass string
 }
 
 //go:embed web/templates/*.html web/static/*
@@ -65,6 +67,7 @@ var portalAssets embed.FS
 var apiConsoleTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/api_console.html"))
 var tradeTerminalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/trade_terminal.html"))
 var jobStatusTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/job_status.html"))
+var portalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/portal.html"))
 
 var (
 	addr    = flag.String("addr", "0.0.0.0:9092", "HTTP listen address")
@@ -526,7 +529,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	envLabel, envClass := environmentView(s.cfg.Service.Environment)
+	envLabel, _ := environmentView(s.cfg.Service.Environment)
 	accountSummary := summarizePortalAccounts(s.cfg.Accounts)
 	accountList := portalAccountList(s.cfg.Accounts)
 	configPath := strings.TrimSpace(s.configPath)
@@ -551,71 +554,77 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 	}
 
 	content := `
-<section class="hero">
-  <p class="eyebrow">relay documentation portal</p>
-  <h1>TI Relay Trader</h1>
-  <p>9092 当前运行文档门户和同源 API，用于查看项目框架、设计文档、交易终端、接口测试台和运行状态。</p>
-  <p>最终服务口径：<a href="` + publicURL + `">` + publicURL + `</a></p>
-  <div class="actions">
-    <a href="/docs">查看文档</a>
-    <a href="/api-console">接口测试台</a>
-    <a href="/trade">交易终端</a>
-    <a href="/jobs">任务状态</a>
-    <a href="/docs/roadmap">开发路线图</a>
-    <a href="/sdk/relay-sdk-0.1.11.tar.gz">SDK 下载</a>
-    <a href="/tree">项目结构</a>
-    <a href="/tests">测试目录</a>
-    <a href="/healthz">健康检查</a>
+<section class="page-heading">
+  <div>
+    <h1>总览</h1>
+    <p>运行环境、账户路由与交易安全边界</p>
   </div>
+  <a class="btn" href="/">刷新状态</a>
 </section>
-<section class="env-console ` + envClass + `">
-  <div class="env-console-head">
-    <div>
-      <p class="eyebrow">runtime environment</p>
-      <h2>运行环境控制</h2>
-    </div>
-    <strong>` + html.EscapeString(envLabel) + `</strong>
+<div class="overview-dashboard">
+  <div class="overview-primary">
+    <section class="panel overview-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">ACCOUNT · ORDER · FILL · PERFORMANCE</p>
+        <h2>Relay Trader</h2>
+        <p>账户、资金持仓、委托成交、绩效与交易日任务。生产环境与下单权限始终可见。</p>
+        <div class="actions">
+          <a href="/trade">打开交易终端</a>
+          <a href="/api-console">接口工作台</a>
+          <a href="/jobs">后台任务</a>
+          <a href="/docs/python-sdk">Python SDK</a>
+        </div>
+      </div>
+    </section>
+    <section class="entry-grid">
+      <a class="entry" href="/trade"><span>↗</span><strong>交易终端</strong><small>行情、下单、资金、持仓、委托、成交与绩效</small></a>
+      <a class="entry" href="/api-console"><span>API</span><strong>接口工作台</strong><small>标准交易与查询接口，写操作受服务端权限控制</small></a>
+      <a class="entry" href="/jobs"><span>JOB</span><strong>后台任务</strong><small>盘前初始化、盘后结算与历史运行报告</small></a>
+      <a class="entry" href="/docs"><span>DEV</span><strong>开发者中心</strong><small>文档、SDK、Schema、测试与项目结构</small></a>
+    </section>
+    <section class="panel route-panel">
+      <div class="panel-header"><span>环境与账户路由</span><small>` + html.EscapeString(accountList) + `</small></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>环境</th><th>账户</th><th>Broker</th><th>Gateway</th><th>查询</th><th>交易权限</th></tr></thead>
+          <tbody>` + portalAccountRowsHTML(s.cfg.Accounts, envLabel) + `</tbody>
+        </table>
+      </div>
+    </section>
   </div>
-  <div class="env-metrics">
-    <div><span>配置文件</span><b>` + html.EscapeString(configPath) + `</b></div>
-    <div><span>Redis</span><b>` + redisState + `</b></div>
-    <div><span>数据库</span><b>` + databaseState + `</b></div>
-    <div><span>账户路由</span><b>` + fmt.Sprintf("%d", accountSummary.Configured) + ` 个</b></div>
-    <div><span>下单权限</span><b>` + tradingState + `</b></div>
-    <div><span>自动刷新</span><b>` + autoRefreshState + `</b></div>
-  </div>
-  <p class="env-note">SDK 与环境切换无关：SDK 只连接 ` + publicURL + `，测试/生产 Redis、账户路由和交易权限完全由 relay 服务端配置决定。</p>
-  <p class="env-note">当前账户：` + html.EscapeString(accountList) + `</p>
-  <p class="env-note">落库口径：当前账本主要按 <code>account_id</code> 隔离；短期不同测试/生产账户可区分，长期建议生产/测试使用独立 DSN 或 schema，或把 <code>environment</code> 纳入核心账表唯一键。</p>
-  ` + s.environmentSwitchHTML() + `
-  <div class="actions">
-    <a href="/v1/status">查看状态 JSON</a>
-    <a href="/v1/accounts">查看账户路由</a>
-    <a href="/docs/operations">切换 Runbook</a>
-    <a href="/trade">进入交易终端</a>
-  </div>
-</section>
-<section class="grid">
-  <a class="card" href="/docs/readme"><strong>README</strong><span>恢复卡片、状态、待办</span></a>
-  <a class="card" href="/docs/architecture"><strong>架构实现</strong><span>Go + Python 服务边界</span></a>
-  <a class="card" href="/docs/roadmap"><strong>开发路线图</strong><span>阶段规划与进度跟踪</span></a>
-  <a class="card" href="/docs/data-model"><strong>数据模型</strong><span>落盘与字段映射</span></a>
-  <a class="card" href="/docs/migrations"><strong>PostgreSQL Migration</strong><span>交易账本首版 DDL</span></a>
-  <a class="card" href="/docs/trading-api-schema"><strong>交易接口 Schema</strong><span>标准对象与状态机</span></a>
-  <a class="card" href="/api-console"><strong>接口测试台</strong><span>Apifox 风格联调页面</span></a>
-  <a class="card" href="/trade"><strong>交易终端</strong><span>成熟交易软件风格手动测试台</span></a>
-  <a class="card" href="/jobs"><strong>任务状态</strong><span>盘前初始化与盘后结算监控</span></a>
-  <a class="card" href="/docs/trading-terminal"><strong>交易终端文档</strong><span>手动测试台实现说明</span></a>
-  <a class="card" href="/docs/performance-analysis"><strong>绩效分析设计</strong><span>指标口径、归因与数据质量</span></a>
-  <a class="card" href="/docs/python-sdk"><strong>Python SDK</strong><span>策略开发客户端</span></a>
-  <a class="card" href="/sdk/relay-sdk-0.1.11.tar.gz"><strong>SDK 安装包</strong><span>relay-sdk 0.1.11 tar.gz</span></a>
-  <a class="card" href="/docs/operations"><strong>运行配置</strong><span>凭据与 cron 任务</span></a>
-  <a class="card" href="/docs/trading-day-workflow"><strong>交易日流程</strong><span>盘前初始化与盘后结算</span></a>
-  <a class="card" href="/docs/redis-stream-probe"><strong>Redis Stream 探测</strong><span>只读联调入口</span></a>
-  <a class="card" href="/docs/redis-ledger-sync"><strong>Redis 账本同步</strong><span>reply/event 落盘入口</span></a>
-  <a class="card" href="/docs/third-party-integration"><strong>前置对接</strong><span>Redis Stream 协议手册</span></a>
-  <a class="card" href="/tests"><strong>测试目录</strong><span>测试索引与目录树</span></a>
-</section>`
+  <aside class="overview-aside">
+    <section class="panel">
+      <div class="panel-header">运行边界</div>
+      <div class="metric-grid">
+        <div class="metric"><span>端口</span><strong>9092</strong></div>
+        <div class="metric"><span>环境</span><strong>` + html.EscapeString(envLabel) + `</strong></div>
+        <div class="metric"><span>Redis</span><strong>` + redisState + `</strong></div>
+        <div class="metric"><span>数据库</span><strong>` + databaseState + `</strong></div>
+        <div class="metric"><span>账户路由</span><strong>` + fmt.Sprintf("%d", accountSummary.Configured) + `</strong></div>
+        <div class="metric"><span>下单权限</span><strong>` + tradingState + `</strong></div>
+      </div>
+      <div class="runtime-path"><span>服务地址</span><code>` + publicURL + `</code></div>
+    </section>
+    <section class="panel">
+      <div class="panel-header">安全约束</div>
+      <div class="security-copy">
+        <div class="danger-banner">Production 保持可见；任何下单、批量下单和撤单都必须经过确认。</div>
+        <div class="kv"><span>环境隔离</span><strong>服务端配置</strong></div>
+        <div class="kv"><span>账户隔离</span><strong>account_id</strong></div>
+        <div class="kv"><span>Query-only</span><strong>保持原权限</strong></div>
+        <div class="kv"><span>自动刷新</span><strong>` + autoRefreshState + `</strong></div>
+      </div>
+    </section>
+    <details class="panel environment-control">
+      <summary>环境切换与本机命令</summary>
+      <div class="environment-control-body">
+        <p class="env-note">SDK 只连接 Relay；测试/生产 Redis、账户路由和交易权限由服务端决定。</p>
+        <p class="env-note">当前配置：<code>` + html.EscapeString(configPath) + `</code></p>
+        ` + s.environmentSwitchHTML() + `
+      </div>
+    </details>
+  </aside>
+</div>`
 
 	s.render(w, pageData{
 		Title:      "relay 文档门户",
@@ -685,6 +694,34 @@ func portalAccountList(accounts []relayconfig.AccountRouteConfig) string {
 	}
 	sort.Strings(items)
 	return strings.Join(items, ", ")
+}
+
+func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environment string) string {
+	if len(accounts) == 0 {
+		return `<tr><td colspan="6" class="empty-cell">尚无账户路由</td></tr>`
+	}
+	var b strings.Builder
+	for _, account := range accounts {
+		queryStatus := "关闭"
+		if account.Enabled {
+			queryStatus = "可查询"
+		}
+		tradingStatus := "只读"
+		if account.TradingEnabled {
+			tradingStatus = "可交易"
+		}
+		fmt.Fprintf(
+			&b,
+			`<tr><td>%s</td><td class="mono">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			html.EscapeString(environment),
+			html.EscapeString(account.AccountID),
+			html.EscapeString(account.BrokerID),
+			html.EscapeString(account.GatewayID),
+			queryStatus,
+			tradingStatus,
+		)
+	}
+	return b.String()
 }
 
 func (s *portalServer) environmentSwitchHTML() string {
@@ -860,9 +897,9 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Title:      "接口测试台",
 		Active:     "console",
 		Summary:    "Form-based API console",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260727-0001">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260727-0004">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260727-0001"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260727-0004"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -915,9 +952,9 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Title:      "任务状态",
 		Active:     "jobs",
 		Summary:    "Daily jobs and background process monitor",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260718-0017">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260727-0005">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260718-0017"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260727-0005"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -1072,9 +1109,10 @@ func (s *portalServer) readProjectFile(rel string) ([]byte, error) {
 }
 
 func (s *portalServer) render(w http.ResponseWriter, data pageData) {
-	data.Generated = time.Now().Format("2006-01-02 15:04:05")
+	data.Generated = timeutil.Now().Format("2006-01-02 15:04:05")
+	data.EnvironmentLabel, data.EnvironmentClass = environmentView(s.cfg.Service.Environment)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTemplate.Execute(w, data); err != nil {
+	if err := portalTemplate.Execute(w, data); err != nil {
 		s.logger.Error("render_page_failed", "error", err)
 	}
 }

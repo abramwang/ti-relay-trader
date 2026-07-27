@@ -94,10 +94,12 @@
 
   function dependencySummary(dependencies) {
     if (!dependencies || typeof dependencies !== "object") return "--";
-    const values = Object.values(dependencies);
-    if (!values.length) return "--";
-    const bad = values.filter((item) => item && item.status && item.status !== "ok");
-    return bad.length ? `${bad.length}/${values.length} 异常` : `${values.length}/${values.length} ok`;
+    const entries = Object.entries(dependencies).filter(([name]) => name !== "auto_refresh");
+    if (!entries.length) return "--";
+    const bad = entries.filter(([, item]) => item && item.status && item.status !== "ok");
+    const autoRefresh = dependencies.auto_refresh && dependencies.auto_refresh.status;
+    const suffix = autoRefresh === "disabled" ? " · 自动刷新关闭" : "";
+    return bad.length ? `${bad.length}/${entries.length} 异常${suffix}` : `${entries.length}/${entries.length} ok${suffix}`;
   }
 
   function jobTitle(name) {

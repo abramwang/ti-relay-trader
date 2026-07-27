@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在推进绩效分析 Phase 3，P10 已完成 9092 容器自启动和健康守护底座。经济净资产、T+1 NAV 对账、账户费用/资金流水、逆回购和策略归因底座已经落地；`GET /v1/accounts/{account_id}/performance/contributions` 已按证券与策略输出 open/close 持仓、买卖额、费用、净贡献、贡献 bp 和质量标记。ETF 申赎 T0 使用赎回时刻之前最近 Meridian Level1 IOPV 估值并扣减配置摩擦率，历史买单只在目标委托量精确闭合赎回量时归组，成分股卖出不重复计入；普通股票/ETF 截面使用持仓现金流恒等式。2026-07-22 至 2026-07-24 三账户生产只读样本已经复核，T0、股票截面、逆回购及成分划转排除结果与人工审计一致；多赎回组 IOPV 并发后最慢样本约 4.55 秒。`/trade#performance` 已增加证券贡献表与净值序列切换，未结算当日会自动回退到最近已有结算结果的交易日；API Console、schema 和 `relay-sdk 0.1.16` 已同步。生产配置仍为只读，下一步增加交易质量统计；其余主线为 gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在推进绩效分析 Phase 3，P10 已完成 9092 容器自启动和健康守护底座。经济净资产、T+1 NAV 对账、账户费用/资金流水、逆回购和策略归因底座已经落地；`GET /v1/accounts/{account_id}/performance/contributions` 已按证券与策略输出 open/close 持仓、买卖额、费用、净贡献、贡献 bp 和质量标记。ETF 申赎 T0 使用赎回时刻之前最近 Meridian Level1 IOPV 估值并扣减配置摩擦率，历史买单只在目标委托量精确闭合赎回量时归组，成分股卖出不重复计入；普通股票/ETF 截面使用持仓现金流恒等式。2026-07-22 至 2026-07-24 三账户生产只读样本已经复核，T0、股票截面、逆回购及成分划转排除结果与人工审计一致；多赎回组 IOPV 并发后最慢样本约 4.55 秒。`/trade#performance` 已增加证券贡献表与净值序列切换，未结算当日会自动回退到最近已有结算结果的交易日；API Console、schema 和 `relay-sdk 0.1.16` 已同步。9092 前端已按 `reference/relay-agent-delivery` 重构为统一 QuantStage Pro Dark 工作区，覆盖总览、交易终端六个局部视图、API Workbench、任务监控和开发者三栏阅读器。生产配置仍为只读，下一步增加交易质量统计；其余主线为 gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830` 和 `314000045768`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-27`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -214,6 +214,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 参考 Meridian API 测试页优化 `/api-console`，每个接口按 path/query/body 参数生成表单，响应同时提供 JSON 和表格视图。
 - [x] 将接口测试台从 Go 内联字符串拆分为 `web/templates/api_console.html`、`web/static/api-console.css`、`web/static/api-console.js` 和 `web/static/api-console.catalog.json`，由 Go `embed` 打包。
 - [x] 新增 9092 页面轻量冒烟测试脚本 `tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、关键静态资源、基础 API 和 SDK 下载入口。
+- [x] 按 `reference/relay-agent-delivery` 统一 9092 前端视觉和信息架构：共享 56px 全局顶栏与深色 Token；交易终端保留独立六视图导航；API Console 改为三栏 Workbench；任务页并列历史记录与报告 Inspector；文档、SDK、测试和项目树共用三栏只读阅读器。
 - [x] 新增 `/trade` 手动交易测试终端，参考成熟交易软件布局，支持账户切换、资金持仓、委托成交、下单、撤单、订单详情和轮询状态高亮。
 - [x] 新增 PostgreSQL 首版账本 migration，覆盖账户、网关、订单、事件、成交、原始 stream、资金、持仓和对账表。
 - [x] 新增 `stream_checkpoints` migration，持久化 Redis Stream 消费位点、处理计数和最近错误摘要。
@@ -536,3 +537,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-27`: 完成 P8 证券/策略贡献第一版：新增只读 `/performance/contributions`，普通股票/ETF 截面按 open/close 持仓现金流恒等式计算，费用区分 actual/estimated/missing；ETF 申赎 T0 按赎回订单聚合成交、严格闭合买入委托目标量、读取赎回时刻之前最近 Meridian Level1 IOPV 并扣减配置摩擦率，成分股卖出标记为划转并排除重复计利，逆回购仅归入现金管理净息。`/trade#performance` 新增证券贡献/净值序列切换和策略汇总，API Console、schema、文档与 `relay-sdk 0.1.16` 已同步；下一步做生产历史样本复核和交易质量统计。
 - `2026-07-27`: 完成贡献归因生产只读复核：`501000114077` 7 月 24 日两组 `159915.SZ` T0 净贡献合计 25,675.90 元；`314000045768` 七组 ETF T0 为 22,422.80 元、逆回购净息 986.496986 元；`314000046830` 7 月 22/23 日股票截面分别为 -14,016.88/-1,558.66 元，逆回购净息分别为 141.402603/618.493151 元。ETF 成分划转均未重复计利，缺 open 快照时只在前一交易日 close 数量桥闭合后估算。多组 IOPV 查询改为最多 8 路并发，最慢生产样本约 4.55 秒；绩效页未结算当日自动回退最近已结算日，1680px Playwright 布局无横向裁切。
 - `2026-07-27`: 修正 Meridian bars 范围查询代理：请求带 `start_date/end_date` 时不再被 Relay 自动补入互斥的 `trade_date`；贡献聚合按 Meridian 官方 `security_ids + start_date/end_date + frequency=1d` 批量读取日线。生产三组样本耗时约 3.30/4.26/0.44 秒，均无 `meridian_daily_bars_unavailable`。
+- `2026-07-27`: 按 `reference/relay-agent-delivery` 完成 9092 前端整体重构：新增共享 QuantStage Pro Dark Token、56px 全局导航和生产环境常驻标识；总览改为运行边界与账户路由仪表盘；交易终端增加“下单与行情/订单监控/资金持仓/绩效分析/日终快照/交易日志”独立导航；API Console、任务监控和开发者中心分别改为三栏 Workbench、历史记录+报告 Inspector 和三栏只读阅读器。保留原 API、参数、表格列、SSE、分页和服务端权限语义；1600x1280 与 1280x800 共 24 个 Playwright 视图无横向溢出、控制台错误、页面异常或 4xx，生产仍为 3 账户只读、`trading_enabled=0`。

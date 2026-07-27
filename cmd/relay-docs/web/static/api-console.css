@@ -438,3 +438,247 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* QuantStage API Workbench */
+.page-console .page-main {
+  padding: 4px;
+  overflow: hidden;
+  background: #0f121a;
+}
+
+.api-console-v2 {
+  grid-template-rows: 64px minmax(0, 1fr);
+  gap: 4px;
+  height: 100%;
+}
+
+.api-console-head {
+  align-items: center;
+  padding: 10px 16px;
+  border-color: var(--border);
+  border-radius: 0;
+  background: var(--surface-1);
+}
+
+.api-console-head .eyebrow {
+  display: none;
+}
+
+.api-console-head h1 {
+  margin: 0 0 2px;
+  font-size: 18px;
+}
+
+.api-console-head .lead {
+  margin: 0;
+  font-size: 11px;
+}
+
+.api-head-actions a {
+  min-height: 30px;
+  border-color: var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.api-head-actions a:hover {
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.api-console-grid {
+  grid-template-columns: 246px minmax(380px, 1fr) minmax(390px, 0.92fr);
+  min-height: 0;
+  height: 100%;
+  border-color: var(--border);
+  border-radius: 0;
+  background: var(--surface-1);
+}
+
+.api-console-nav {
+  border-color: var(--border);
+  background: #151923;
+}
+
+.api-sidebar-head,
+.api-section-head {
+  border-color: var(--border);
+}
+
+.endpoint-list {
+  padding: 6px;
+}
+
+.endpoint-group {
+  margin: 11px 8px 5px;
+  color: #666b76;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.endpoint-item {
+  min-height: 42px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.endpoint-item:hover,
+.endpoint-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.method {
+  border-radius: 3px;
+}
+
+.method.get {
+  background: var(--accent);
+}
+
+.method.post {
+  background: var(--success);
+}
+
+.method.put,
+.method.patch {
+  background: var(--warning);
+  color: #17130c;
+}
+
+.method.delete {
+  background: var(--danger);
+}
+
+.api-request-panel,
+.api-result-panel {
+  border-color: var(--border);
+  background: var(--surface-1);
+}
+
+.api-request-panel {
+  padding: 14px;
+  overflow: auto;
+}
+
+.api-result-panel {
+  grid-template-rows: auto auto minmax(120px, auto) minmax(220px, 1fr);
+  gap: 8px;
+  padding: 14px;
+  background: #181c26;
+  overflow: auto;
+}
+
+.api-section-head h2 {
+  color: #eef0f5;
+  font-size: 15px;
+}
+
+.api-status {
+  min-height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.api-status.ready {
+  border-color: rgba(8, 153, 129, 0.45);
+  background: rgba(8, 153, 129, 0.1);
+  color: #42c6ad;
+}
+
+.api-status.needs-config,
+.api-status.planned {
+  border-color: rgba(255, 152, 0, 0.45);
+  background: rgba(255, 152, 0, 0.08);
+  color: #ffb44d;
+}
+
+.api-status.blocked {
+  border-color: rgba(242, 54, 69, 0.45);
+  background: rgba(242, 54, 69, 0.08);
+  color: #ff7d88;
+}
+
+.request-line-v2 {
+  grid-template-columns: minmax(160px, 230px) minmax(180px, 1fr) 74px;
+  margin: 11px 0 14px;
+}
+
+.request-line-v2 input,
+.request-line-v2 button,
+.param-field input,
+.param-field select,
+.param-field textarea,
+.form-actions button {
+  min-height: 34px;
+  border-color: var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.request-line-v2 button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.request-line-v2 code {
+  background: var(--code);
+  color: #b7c7ef;
+}
+
+.param-grid {
+  gap: 10px;
+}
+
+.param-field span {
+  color: #b8bac2;
+  font-size: 11px;
+}
+
+.empty-params {
+  border-color: var(--border);
+  border-radius: 4px;
+  background: #181c26;
+}
+
+.table-output {
+  border-color: var(--border);
+  border-radius: 4px;
+  background: var(--surface-1);
+}
+
+.result-table th {
+  background: #151923;
+  color: var(--muted-2);
+}
+
+.result-table td {
+  border-color: var(--border);
+  color: #c5c8d0;
+}
+
+.json-details pre {
+  border-color: var(--border);
+  border-radius: 4px;
+  background: var(--code);
+  color: #b9c3d4;
+}
+
+@media (max-width: 1360px) {
+  .api-console-grid {
+    grid-template-columns: 220px minmax(360px, 1fr) minmax(360px, 0.9fr);
+  }
+
+  .global-header {
+    grid-template-columns: 250px minmax(520px, 1fr) auto;
+  }
+}

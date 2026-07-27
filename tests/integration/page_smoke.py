@@ -115,6 +115,7 @@ def build_checks(sdk_version: str) -> list[Check]:
         Check("trade-terminal-hash-path", "/trade%23asset", "text", ("Relay Trader", "trade-terminal.js", "资金持仓")),
         Check("trade-terminal-subpath", "/trade/asset", "text", ("Relay Trader", "trade-terminal.js", "资金持仓")),
         Check("job-status", "/jobs", "text", ("后台任务状态", "job-status.js", "盘前初始化")),
+        Check("portal-ui-css", "/assets/portal-ui.css", "text", (".global-header", ".developer-layout")),
         Check("api-console-css", "/assets/api-console.css", "text", (".api-console-v2",)),
         Check("api-console-js", "/assets/api-console.js", "text", ("api-console.catalog.json", "fetch")),
         Check("trade-terminal-css", "/assets/trade-terminal.css", "text", (".terminal-shell",)),

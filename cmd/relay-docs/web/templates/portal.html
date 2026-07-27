@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} - Relay Trader</title>
+  <link rel="stylesheet" href="/assets/portal-ui.css?v=20260727-0004">
+  {{.Head}}
+</head>
+<body class="relay-portal page-{{.Active}}">
+  <div class="app-shell">
+    <header class="global-header">
+      <a class="brand" href="/" aria-label="Relay Trader 总览">
+        <span class="brand-mark">RT</span>
+        <span class="brand-product">
+          <strong class="brand-name">Relay Trader</strong>
+          <small class="brand-port">:9092</small>
+        </span>
+      </a>
+      <nav class="global-nav" aria-label="全局导航">
+        <a class="nav-item {{if eq .Active "home"}}active{{end}}" href="/">总览</a>
+        <a class="nav-item" href="/trade">交易终端</a>
+        <a class="nav-item {{if eq .Active "console"}}active{{end}}" href="/api-console">接口工作台</a>
+        <a class="nav-item {{if eq .Active "jobs"}}active{{end}}" href="/jobs">任务</a>
+        <a class="nav-item {{if or (eq .Active "docs") (eq .Active "tests") (eq .Active "tree")}}active{{end}}" href="/docs">开发者</a>
+      </nav>
+      <div class="header-right">
+        <a class="status-pill" href="/healthz"><i class="dot"></i>服务状态</a>
+        <span class="env-pill {{.EnvironmentClass}}">{{.EnvironmentLabel}}</span>
+        <a class="help-pill" href="/docs/readme" aria-label="帮助">?</a>
+      </div>
+    </header>
+
+    <div class="portal-workspace">
+      {{if or (eq .Active "home") (eq .Active "console") (eq .Active "jobs")}}
+        <main class="page-main app-page {{.Active}}-page">
+          {{.Content}}
+        </main>
+      {{else}}
+        <main class="developer-layout">
+          <aside class="panel dev-sidebar">
+            <div class="local-title">
+              <strong>开发者中心</strong>
+              <small>文档、SDK 与项目只读视图</small>
+            </div>
+            <nav class="local-nav">
+              <span class="section-label">文档</span>
+              <a class="{{if eq .Active "docs"}}active{{end}}" href="/docs">文档中心</a>
+              <a href="/docs/readme">项目 README</a>
+              <a href="/docs/trading-api-schema">交易 API</a>
+              <a href="/docs/python-sdk">Python SDK</a>
+              <span class="section-label">项目</span>
+              <a class="{{if eq .Active "tests"}}active{{end}}" href="/tests">测试目录</a>
+              <a class="{{if eq .Active "tree"}}active{{end}}" href="/tree">项目结构</a>
+            </nav>
+          </aside>
+          <article class="panel reader-main">
+            <div class="reader-toolbar">
+              <span>{{.Title}}</span>
+              <div>
+                <a href="/docs">/docs</a>
+                <a href="/tree">/tree</a>
+              </div>
+            </div>
+            <div class="reader-scroll">{{.Content}}</div>
+          </article>
+          <aside class="panel reader-aside">
+            <div class="panel-header">页面信息</div>
+            <div class="reader-meta">
+              <div class="kv"><span>环境</span><strong>{{.EnvironmentLabel}}</strong></div>
+              <div class="kv"><span>端口</span><strong class="mono">9092</strong></div>
+              <div class="kv"><span>生成时间</span><strong class="mono">{{.Generated}}</strong></div>
+              <div class="kv"><span>项目目录</span><strong class="mono">{{.ProjectDir}}</strong></div>
+              {{if .Summary}}<div class="kv"><span>摘要</span><strong>{{.Summary}}</strong></div>{{end}}
+            </div>
+            <div class="panel-header">快捷入口</div>
+            <nav class="aside-links">
+              <a href="/api-console">接口工作台</a>
+              <a href="/trade">交易终端</a>
+              <a href="/jobs">后台任务</a>
+              <a href="/v1/schema">Schema JSON</a>
+            </nav>
+          </aside>
+        </main>
+      {{end}}
+    </div>
+  </div>
+  {{.Scripts}}
+</body>
+</html>
