@@ -3945,7 +3945,7 @@
     const candles = chartRows.map(candleValues);
     const volumes = chartRows.map((row) => ({
       value: numericOrNull(row.volume) || 0,
-      itemStyle: { color: isUpBar(row) ? "rgba(200,16,46,0.52)" : "rgba(0,138,99,0.52)" }
+      itemStyle: { color: isUpBar(row) ? "rgba(242,54,69,0.48)" : "rgba(8,153,129,0.48)" }
     }));
     const markers = chartMarkers(labels, chartRows);
     const latest = chartRows[chartRows.length - 1] || {};
@@ -3960,14 +3960,28 @@
     ].join(" · ");
     chart.setOption({
       animation: false,
-      color: ["#c8102e", "#008a63", "#667085"],
+      color: ["#f23645", "#089981", "#787b86"],
+      textStyle: { color: "#9ca0aa" },
       grid: [
         { left: 58, right: 18, top: 28, height: "58%" },
         { left: 58, right: 18, bottom: 36, height: "18%" }
       ],
       tooltip: {
         trigger: "axis",
-        axisPointer: { type: "cross" },
+        backgroundColor: "rgba(17,21,30,0.96)",
+        borderColor: "#363a45",
+        borderWidth: 1,
+        textStyle: { color: "#d1d4dc", fontSize: 11 },
+        axisPointer: {
+          type: "cross",
+          lineStyle: { color: "#596170", width: 1, opacity: 0.72 },
+          crossStyle: { color: "#596170", width: 1, opacity: 0.72 },
+          label: {
+            backgroundColor: "#2a2e39",
+            borderColor: "#4b5160",
+            color: "#c5c8d0"
+          }
+        },
         formatter: (params) => minuteTooltip(params, chartRows)
       },
       legend: {
@@ -3975,19 +3989,26 @@
         right: 8,
         itemWidth: 12,
         itemHeight: 8,
-        textStyle: { color: "#475467", fontSize: 11 },
+        textStyle: { color: "#787b86", fontSize: 11 },
         data: ["K线", "成交量", "买点", "卖点"]
       },
       axisPointer: {
-        link: [{ xAxisIndex: [0, 1] }]
+        link: [{ xAxisIndex: [0, 1] }],
+        lineStyle: { color: "#596170", opacity: 0.72 },
+        label: {
+          backgroundColor: "#2a2e39",
+          borderColor: "#4b5160",
+          color: "#c5c8d0"
+        }
       },
       xAxis: [
         {
           type: "category",
           data: labels,
           boundaryGap: true,
-          axisLabel: { color: "#667085", fontSize: 11 },
-          axisLine: { lineStyle: { color: "#cfd7e3" } }
+          axisLabel: { color: "#6f7480", fontSize: 11 },
+          axisTick: { lineStyle: { color: "#3a3f4a" } },
+          axisLine: { lineStyle: { color: "#3a3f4a" } }
         },
         {
           type: "category",
@@ -3996,28 +4017,51 @@
           boundaryGap: true,
           axisLabel: { show: false },
           axisTick: { show: false },
-          axisLine: { lineStyle: { color: "#cfd7e3" } }
+          axisLine: { lineStyle: { color: "#3a3f4a" } }
         }
       ],
       yAxis: [
         {
           type: "value",
           scale: true,
-          axisLabel: { color: "#667085", fontSize: 11, formatter: (value) => formatPrice(value, latest) },
-          splitLine: { lineStyle: { color: "#e4e9f0" } }
+          axisLabel: { color: "#6f7480", fontSize: 11, formatter: (value) => formatPrice(value, latest) },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { lineStyle: { color: "#2b303b", width: 1, opacity: 0.82 } }
         },
         {
           type: "value",
           gridIndex: 1,
           scale: true,
-          axisLabel: { color: "#667085", fontSize: 10, formatter: formatCompactVolume },
+          axisLabel: { color: "#666b76", fontSize: 10, formatter: formatCompactVolume },
+          axisLine: { show: false },
+          axisTick: { show: false },
           splitNumber: 2,
-          splitLine: { lineStyle: { color: "#edf1f6" } }
+          splitLine: { lineStyle: { color: "#282d37", width: 1, opacity: 0.72 } }
         }
       ],
       dataZoom: [
         { type: "inside", xAxisIndex: [0, 1], throttle: 60 },
-        { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 8, borderColor: "#cfd7e3" }
+        {
+          type: "slider",
+          xAxisIndex: [0, 1],
+          height: 18,
+          bottom: 8,
+          borderColor: "#363a45",
+          backgroundColor: "#181c26",
+          fillerColor: "rgba(41,98,255,0.12)",
+          handleStyle: { color: "#4b5160", borderColor: "#667085" },
+          moveHandleStyle: { color: "#4b5160", opacity: 0.8 },
+          dataBackground: {
+            lineStyle: { color: "#414754", opacity: 0.65 },
+            areaStyle: { color: "#242832", opacity: 0.5 }
+          },
+          selectedDataBackground: {
+            lineStyle: { color: "#65718a", opacity: 0.75 },
+            areaStyle: { color: "#33415f", opacity: 0.38 }
+          },
+          textStyle: { color: "#666b76" }
+        }
       ],
       series: [
         {
@@ -4025,10 +4069,10 @@
           type: "candlestick",
           data: candles,
           itemStyle: {
-            color: "#c8102e",
-            color0: "#008a63",
-            borderColor: "#a10d24",
-            borderColor0: "#006b4d"
+            color: "#f23645",
+            color0: "#089981",
+            borderColor: "#f23645",
+            borderColor0: "#089981"
           }
         },
         {
@@ -4047,7 +4091,7 @@
           data: markers.buy,
           symbol: "triangle",
           symbolSize: 12,
-          itemStyle: { color: "#c8102e", borderColor: "#fff", borderWidth: 1 }
+          itemStyle: { color: "#f23645", borderColor: "#151923", borderWidth: 1 }
         },
         {
           name: "卖点",
@@ -4058,7 +4102,7 @@
           symbol: "triangle",
           symbolRotate: 180,
           symbolSize: 12,
-          itemStyle: { color: "#008a63", borderColor: "#fff", borderWidth: 1 }
+          itemStyle: { color: "#089981", borderColor: "#151923", borderWidth: 1 }
         }
       ]
     }, true);
