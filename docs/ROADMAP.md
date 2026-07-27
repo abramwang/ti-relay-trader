@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-07-26`
+更新时间：`2026-07-27`
 
 ## 状态口径
 
@@ -62,6 +62,10 @@
 - [x] 补 `performance_nav_reconciliations` 人工确认/finalized 推进和阻断 API；`/trade#performance` 轻量展示当前交易日 NAV 对账状态。
 - [x] 补 NAV 对账正式告警展示和页面人工确认/阻断操作流：展示账面/观测 NAV、残差、自动/警告阈值、复核信息和写权限状态；页面确认/阻断受服务端写开关、强制确认和二次确认保护。
 - [x] 按 `qty*100`、年化利率、实际占款天数和账户费用规则实现 `204001.SH` 逆回购归因。
+- [x] 新增只读 `GET /v1/accounts/{account_id}/performance/contributions`：按证券和策略聚合 open/close 持仓、买卖额、费用、净贡献、贡献 bp 与质量标记。
+- [x] 实现 ETF 申赎 T0 第一版估算：同一赎回订单多条成交先合并，以不晚于赎回时刻的 Meridian Level1 IOPV 估值，按配置摩擦率扣费；历史买单仅在目标委托量精确闭合赎回量时归入 T0。
+- [x] 将 ETF 成分股卖出从 T0 估算收益中排除，保留成交额和 `missing_transfer_link` 质量标记，避免与 IOPV 估值重复计利。
+- [x] `/trade#performance` 增加“证券贡献 / 净值序列”切换、策略汇总和贡献明细表；API Console、schema 和 Python SDK helper 同步。
 
 范围：
 
@@ -288,6 +292,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.13.tar.gz` 和 SHA256 校验文件，新增 economic NAV 预览/重建、NAV 查询和 NAV 对账查询 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.14.tar.gz` 和 SHA256 校验文件，新增 T+1 economic NAV reconciliation 预览/落库 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.15.tar.gz` 和 SHA256 校验文件，新增 NAV 对账人工确认/阻断 helper。
+- [x] 发布 `public/sdk/relay-sdk-0.1.16.tar.gz` 和 SHA256 校验文件，新增证券/策略贡献只读 helper。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -376,9 +381,10 @@
 - [x] 生成研究侧数据库导出视图：`research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。
 - [x] 完成绩效分析页面第一版设计文档，明确净值曲线、收益贡献、交易归因和数据质量口径。
 - [ ] 完成 `/trade#performance` Phase 2 UI：已完成经济净值摘要和 NAV 对账工作区；继续补净值/基准/超额收益/回撤主图和正式数据质量区。
-- [ ] 增加 `performance/contributions` 只读聚合接口和按证券贡献表。
+- [x] 增加 `performance/contributions` 只读聚合接口和按证券贡献表。
 - [ ] 增加交易质量统计：成交率、撤单率、拒单率、未终态和异常订单。
-- [ ] 后续按数据完整度评估精确成本引擎、现金流水、逆回购、ETF 申赎和公司行为归因。
+- [x] 用 2026-07-22 至 2026-07-24 生产只读样本复核历史 ETF T0 订单组、IOPV 命中率、成分划转排除和贡献总额；三账户 T0、股票截面和逆回购结果与人工审计一致，多组 IOPV 查询并发后最慢样本约 4.55 秒。
+- [ ] 后续按数据完整度评估精确成本引擎、公司行为和最终清算差异归因；现金流水、逆回购和 ETF 申赎第一版口径已落地。
 
 ### P9 模拟柜台
 

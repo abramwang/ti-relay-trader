@@ -347,7 +347,9 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	perf, err := relayperformance.New(relayperformance.Options{
 		Store:               repo,
 		Calendar:            marketClient,
+		Market:              marketClient,
 		FormulaVersion:      cfg.Performance.FormulaVersion,
+		ETFT0FrictionRate:   cfg.Performance.ETFT0FrictionRate,
 		AutoToleranceCNY:    cfg.Performance.AutoToleranceCNY,
 		AutoToleranceBP:     cfg.Performance.AutoToleranceBP,
 		WarningToleranceCNY: cfg.Performance.WarningToleranceCNY,
@@ -858,9 +860,9 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Title:      "接口测试台",
 		Active:     "console",
 		Summary:    "Form-based API console",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260619-0014">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260727-0001">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260619-0014"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260727-0001"></script>`),
 		ProjectDir: s.root,
 	})
 }

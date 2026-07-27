@@ -679,6 +679,7 @@ repo_receivable =
 | 复权因子 | `GET /v1/meridian/metadata/adjust-factors` |
 | 经济净值 | `GET /v1/accounts/{account_id}/performance/economic-nav/preview`、`POST /v1/accounts/{account_id}/performance/economic-nav/rebuild` |
 | T+1 净值对账 | `GET/POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` |
+| 证券/策略贡献 | `GET /v1/accounts/{account_id}/performance/contributions` |
 
 规划中的绩效配置写接口：
 
@@ -692,20 +693,26 @@ GET /v1/accounts/{account_id}/performance/nav-reconciliations
 
 所有写接口使用独立权限、幂等键和审计日志。生产环境默认只读，不能因为开放交易下单权限而自动开放绩效配置写权限。
 
-如果前端聚合过重，再新增只读聚合接口：
+只读贡献聚合接口已实现：
 
 ```text
 GET /v1/accounts/{account_id}/performance/contributions
 ```
 
-建议返回：
+当前返回：
 
 1. `summary`：账户 KPI 和数据质量摘要。
-2. `positions`：按证券聚合的贡献表。
-3. `trading_quality`：订单/成交质量统计。
-4. `quality_flags`：缺失、估算和对账差异。
+2. `contributions`：按证券和策略聚合的 open/close 数量、买卖额、费用、净贡献、贡献 bp、估值/IOPV 来源和质量状态。
+3. `strategies`：股票截面、ETF 截面、ETF 申赎 T0、现金管理、成分划转和待归因汇总。
+4. `quality_flags`：缺失、估算、T0 历史订单组推断和成分划转链接缺口。
 
-该接口只读，只使用本地账本和 Meridian，不查询柜台。
+该接口只读，只使用本地账本和 Meridian，不查询柜台。open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且必须满足 `open + buy - sell = close` 数量桥；否则该证券保持 `missing`，不能把缺失持仓当作 0 制造虚假收益。多个 ETF 赎回组的 IOPV 请求最多 8 路并发，返回顺序仍按归因组稳定。
+
+2026-07-22 至 2026-07-24 生产只读样本已复核：
+
+1. `501000114077` 7 月 24 日两组 `159915.SZ` T0 净贡献合计 25,675.90 元，98 条成分划转不重复计利。
+2. `314000045768` 7 月 24 日七组 ETF T0 净贡献合计 22,422.80 元，逆回购净息 986.496986 元，122 条成分划转不重复计利。
+3. `314000046830` 7 月 22/23 日股票截面净贡献分别为 -14,016.88/-1,558.66 元；逆回购净息分别为 141.402603/618.493151 元。23 日使用前一日 close 作为 open 兜底后，155 只证券数量桥全部闭合。
 
 ## 分阶段推进
 
@@ -726,11 +733,19 @@ GET /v1/accounts/{account_id}/performance/contributions
 
 ### Phase 3 贡献聚合
 
-视前端复杂度新增 `performance/contributions` 只读接口：
+状态：`done`
 
-1. 后端聚合成交额、费用、订单状态和持仓贡献。
-2. 前端贡献表和交易质量区直接读取聚合结果。
-3. 增加 Go 单元测试覆盖聚合口径。
+当前完成：
+
+1. 后端聚合成交额、费用、open/close 持仓、证券贡献和策略汇总。
+2. ETF T0 合并同一赎回订单的多条成交，使用不晚于赎回时刻的 Meridian IOPV，并隔离可精确闭合赎回量的历史买入订单组。
+3. ETF 成分股卖出从 IOPV 估值收益中排除，逆回购只把净息计入现金管理。
+4. `/trade#performance` 默认展示证券贡献表，可切换到原净值序列；估算、缺失和排除状态可见。
+5. Go 单元测试覆盖普通持仓现金流恒等式与 ETF T0 多成交聚合。
+6. 2026-07-22 至 2026-07-24 生产只读样本完成复核，多组 IOPV 查询并发后最慢样本约 4.55 秒。
+7. Playwright 已验证证券贡献/净值序列切换、未结算日自动回退和 1680px 布局。
+
+下一步进入交易质量统计：成交率、撤单率、拒单率、未终态和异常订单。
 
 ### Phase 4 精确成本引擎
 

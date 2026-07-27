@@ -98,6 +98,18 @@
     ]
   },
   {
+    "id": "performance-contributions",
+    "group": "绩效",
+    "title": "证券/策略贡献",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/contributions",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date（空值取最近交易日）", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "performance-series-csv",
     "group": "账户",
     "title": "绩效序列 CSV",

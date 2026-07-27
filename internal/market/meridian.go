@@ -421,6 +421,9 @@ func shouldFallbackToHistorical(values url.Values, payload map[string]any, today
 }
 
 func shouldUseBarsPreviousTradingDay(values url.Values, today string) bool {
+	if strings.TrimSpace(values.Get("start_date")) != "" || strings.TrimSpace(values.Get("end_date")) != "" {
+		return false
+	}
 	tradeDate := compactMeridianDate(strings.TrimSpace(values.Get("trade_date")))
 	return tradeDate == "" || tradeDate == today
 }

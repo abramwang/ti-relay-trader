@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260726-0003">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260727-0002">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -261,10 +261,40 @@
         <div class="performance-body">
           <section class="performance-section series-section">
             <div class="section-toolbar series-toolbar">
-              <h2>账户绩效序列</h2>
+              <div class="performance-table-tabs" role="tablist" aria-label="绩效数据视图">
+                <button type="button" class="active" data-performance-table-view="contributions" role="tab" aria-selected="true">证券贡献</button>
+                <button type="button" data-performance-table-view="series" role="tab" aria-selected="false">净值序列</button>
+              </div>
               <span id="performanceStatus">等待查询</span>
             </div>
-            <div class="table-wrap">
+            <div class="performance-table-panel contribution-table-panel active" data-performance-table-panel="contributions">
+              <div class="contribution-overview">
+                <span>净贡献 <strong id="contributionNetTotal">--</strong></span>
+                <span>贡献 bp <strong id="contributionBPSTotal">--</strong></span>
+                <span>估算 / 缺失 <strong id="contributionQualityCount">--</strong></span>
+                <div id="performanceStrategySummary" class="strategy-summary"></div>
+              </div>
+              <div class="table-wrap contribution-table-wrap">
+                <table class="contribution-table">
+                  <thead>
+                    <tr>
+                      <th>策略</th>
+                      <th>代码 / 名称</th>
+                      <th class="num">期初 / 期末</th>
+                      <th class="num">买入额</th>
+                      <th class="num">卖出 / 估值</th>
+                      <th class="num">成交额</th>
+                      <th class="num">费用</th>
+                      <th class="num">净贡献</th>
+                      <th class="num">贡献 bp</th>
+                      <th>口径 / 质量</th>
+                    </tr>
+                  </thead>
+                  <tbody id="performanceContributionBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="performance-table-panel table-wrap" data-performance-table-panel="series">
               <table>
                 <thead>
                   <tr>
@@ -571,6 +601,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260726-0003"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260727-0003"></script>
 </body>
 </html>

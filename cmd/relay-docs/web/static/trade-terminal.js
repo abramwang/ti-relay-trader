@@ -40,6 +40,8 @@
     performanceSummary: null,
     performanceSeries: [],
     performanceDaily: null,
+    performanceContribution: null,
+    performanceTableView: "contributions",
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
     performanceReviewBusy: false,
@@ -192,6 +194,13 @@
     perfBenchmarkDays: byID("perfBenchmarkDays"),
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
+    performanceContributionBody: byID("performanceContributionBody"),
+    performanceTableViewButtons: Array.from(document.querySelectorAll("[data-performance-table-view]")),
+    performanceTablePanels: Array.from(document.querySelectorAll("[data-performance-table-panel]")),
+    contributionNetTotal: byID("contributionNetTotal"),
+    contributionBPSTotal: byID("contributionBPSTotal"),
+    contributionQualityCount: byID("contributionQualityCount"),
+    performanceStrategySummary: byID("performanceStrategySummary"),
     minuteChart: byID("minuteChart"),
     minuteChartStatus: byID("minuteChartStatus"),
     chartTradeDateInput: byID("chartTradeDateInput"),
@@ -382,6 +391,22 @@
 
   function currentBusinessDate() {
     return businessDateCompact();
+  }
+
+  function shiftCompactDate(value, days) {
+    const digits = compactDate(value);
+    if (!digits) {
+      return "";
+    }
+    const date = new Date(Date.UTC(
+      Number(digits.slice(0, 4)),
+      Number(digits.slice(4, 6)) - 1,
+      Number(digits.slice(6, 8))
+    ));
+    date.setUTCDate(date.getUTCDate() + Number(days || 0));
+    return date.getUTCFullYear().toString().padStart(4, "0") +
+      String(date.getUTCMonth() + 1).padStart(2, "0") +
+      String(date.getUTCDate()).padStart(2, "0");
   }
 
   function displayDate(value) {
@@ -907,6 +932,7 @@
     renderBlotter();
     renderDetail();
     if (view === "trade" && state.initialized) {
+      loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
       ensureChartDefaults();
       const securityID = currentSecurityID();
       const tradeDate = currentChartTradeDate();
@@ -1866,6 +1892,7 @@
         state.activeAccount = account.account_id;
         state.selectedOrderID = "";
         state.performanceLoaded = false;
+        state.performanceContribution = null;
         resetLedgerPages();
         resetPositionStats();
         renderAccounts();
@@ -2905,8 +2932,28 @@
     els.performanceStatus.textContent = "查询中...";
     els.loadPerformanceButton.disabled = true;
     try {
-      const data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      if ((!Array.isArray(data.series) || data.series.length === 0) && params.dateFrom === params.dateTo) {
+        const fallbackQuery = new URLSearchParams({
+          date_from: shiftCompactDate(params.dateTo, -45),
+          date_to: params.dateTo
+        });
+        const fallbackData = await request("/v1/accounts/" + accountID + "/performance/series?" + fallbackQuery.toString());
+        const fallbackSeries = Array.isArray(fallbackData.series) ? fallbackData.series : [];
+        const latestDate = compactDate(fallbackSeries[fallbackSeries.length - 1] && fallbackSeries[fallbackSeries.length - 1].trade_date);
+        if (latestDate) {
+          params.dateFrom = latestDate;
+          params.dateTo = latestDate;
+          els.perfDateFrom.value = latestDate;
+          els.perfDateTo.value = latestDate;
+          query.set("date_from", latestDate);
+          query.set("date_to", latestDate);
+          data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+          pushLog("info", "绩效日期已回退", displayDate(latestDate) + " 最近已结算交易日");
+        }
+      }
       state.performanceError = "";
+      state.performanceContribution = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       state.performanceSummary = data.summary || null;
@@ -2928,6 +2975,13 @@
         pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + err.message);
       }
       try {
+        const contributionData = await request("/v1/accounts/" + accountID + "/performance/contributions?trade_date=" + encodeURIComponent(dailyDate));
+        state.performanceContribution = contributionData.contribution || null;
+      } catch (err) {
+        state.performanceContribution = null;
+        pushLog("warn", "证券贡献读取失败", displayDate(dailyDate) + " " + err.message);
+      }
+      try {
         const economicData = await request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate));
         state.performanceEconomicNAV = economicData.economic_nav || null;
       } catch (err) {
@@ -2947,6 +3001,7 @@
     } catch (err) {
       state.performanceLoaded = false;
       state.performanceError = err.message;
+      state.performanceContribution = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       pushLog("error", "绩效查询失败", err.message);
@@ -3081,6 +3136,88 @@
     els.blockNAVReconciliationButton.title = disabledReason;
   }
 
+  function setPerformanceTableView(view) {
+    state.performanceTableView = view === "series" ? "series" : "contributions";
+    for (const button of els.performanceTableViewButtons) {
+      const active = button.dataset.performanceTableView === state.performanceTableView;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    }
+    for (const panel of els.performanceTablePanels) {
+      panel.classList.toggle("active", panel.dataset.performanceTablePanel === state.performanceTableView);
+    }
+  }
+
+  function performanceStrategyLabel(value) {
+    return {
+      stock_cross_section: "股票截面",
+      etf_cross_section: "ETF 截面",
+      etf_redemption_t0: "ETF 申赎 T0",
+      cash_management: "现金管理",
+      etf_component_transfer: "ETF 成分划转",
+      unattributed: "待归因"
+    }[value] || value || "待归因";
+  }
+
+  function contributionStatusLabel(value) {
+    return {
+      calculated: "已计算",
+      estimated: "估算",
+      missing: "缺失",
+      excluded: "已排除"
+    }[value] || value || "--";
+  }
+
+  function renderPerformanceContributions() {
+    if (!els.performanceContributionBody) {
+      return;
+    }
+    const contribution = state.performanceContribution || {};
+    const summary = contribution.summary || {};
+    const rows = Array.isArray(contribution.contributions) ? contribution.contributions : [];
+    const strategies = Array.isArray(contribution.strategies) ? contribution.strategies : [];
+    els.contributionNetTotal.textContent = formatSigned(summary.net_contribution);
+    els.contributionNetTotal.className = classForNumber(summary.net_contribution);
+    els.contributionBPSTotal.textContent = formatSigned(summary.contribution_bps);
+    els.contributionBPSTotal.className = classForNumber(summary.contribution_bps);
+    els.contributionQualityCount.textContent = formatInt(summary.estimated_items) + " / " + formatInt(summary.missing_items);
+    els.performanceStrategySummary.innerHTML = strategies.slice(0, 5).map((item) => {
+      const label = performanceStrategyLabel(item.strategy_type);
+      return `<span title="${escapeHTML(label + " " + formatSigned(item.net_contribution))}">${escapeHTML(label)} ${formatSigned(item.net_contribution)}</span>`;
+    }).join("");
+
+    if (rows.length === 0) {
+      els.performanceContributionBody.innerHTML = '<tr><td colspan="10"><div class="empty-state">当前交易日暂无可归因证券，或归因输入尚未完成</div></td></tr>';
+      return;
+    }
+    els.performanceContributionBody.innerHTML = rows.map((item) => {
+      const flags = Array.isArray(item.quality_flags) ? item.quality_flags : [];
+      const qualityText = flags.length ? flags.join(" / ") : "quality ok";
+      const status = item.pnl_status || "missing";
+      const valuation = item.estimated_exit_value ?? item.sell_amount;
+      return `
+        <tr>
+          <td><span class="contribution-status ${escapeHTML(status)}">${escapeHTML(performanceStrategyLabel(item.strategy_type))}</span></td>
+          <td class="contribution-security">
+            <strong>${escapeHTML(item.security_id || item.symbol || "--")}</strong>
+            <span>${escapeHTML(item.name || item.instrument_type || "--")}</span>
+          </td>
+          <td class="num">${formatInt(item.open_quantity)} / ${formatInt(item.close_quantity)}</td>
+          <td class="num">${formatNumber(item.buy_amount)}</td>
+          <td class="num">${formatNumber(valuation)}</td>
+          <td class="num">${formatNumber(item.turnover)}</td>
+          <td class="num">${formatNumber(item.effective_fee)}</td>
+          <td class="num ${classForNumber(item.net_contribution)}">${formatSigned(item.net_contribution)}</td>
+          <td class="num ${classForNumber(item.contribution_bps)}">${formatSigned(item.contribution_bps)}</td>
+          <td class="contribution-quality" title="${escapeHTML(qualityText)}">
+            <strong>${escapeHTML(contributionStatusLabel(status))} · ${escapeHTML(item.fee_source || "--")}</strong>
+            <span>${escapeHTML(item.estimation_method || qualityText)}</span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
   function renderPerformance() {
     if (!els.performanceSeriesBody) {
       return;
@@ -3154,6 +3291,8 @@
     els.perfFee.textContent = formatNumber(daily.fee_total);
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
     renderNAVReconciliation(reconciliation, nav);
+    renderPerformanceContributions();
+    setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
       : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
@@ -4580,6 +4719,7 @@
     els.orderAccount.addEventListener("change", async () => {
       state.activeAccount = els.orderAccount.value;
       state.performanceLoaded = false;
+      state.performanceContribution = null;
       state.performanceSettingsLoaded = false;
       state.selectedOrderID = "";
       resetLedgerPages();
@@ -4698,6 +4838,9 @@
     });
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
+    for (const button of els.performanceTableViewButtons) {
+      button.addEventListener("click", () => setPerformanceTableView(button.dataset.performanceTableView));
+    }
     els.loadBarsButton.addEventListener("click", () => loadBars().catch((err) => showToast(err.message, "error")));
     els.confirmNAVReconciliationButton.addEventListener("click", () => reviewNAVReconciliation("confirm").catch((err) => showToast(err.message, "error")));
     els.blockNAVReconciliationButton.addEventListener("click", () => reviewNAVReconciliation("block").catch((err) => showToast(err.message, "error")));
@@ -4793,7 +4936,9 @@
       await loadStatus();
       await loadAccounts();
       connectEventStream();
-      await loadQuoteForInput();
+      if (state.activeView === "trade") {
+        await loadQuoteForInput();
+      }
       ensurePerformanceDefaults();
       await loadAccountData();
       state.initialized = true;

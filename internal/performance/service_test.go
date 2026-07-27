@@ -4,13 +4,402 @@ import (
 	"context"
 	"database/sql"
 	"math"
+	"net/url"
 	"testing"
 	"time"
 
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
+	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
+
+func TestCalculateContributionsUsesPositionCashFlowIdentity(t *testing.T) {
+	store := &fakePerformanceStore{
+		fills: []trading.Fill{
+			{
+				FillID:         "stock-buy",
+				AccountID:      "acct-1",
+				GatewayOrderID: "buy-order",
+				Symbol:         "600000",
+				Exchange:       trading.ExchangeSH,
+				TradeSide:      trading.TradeSideBuy,
+				BusinessType:   trading.BusinessTypeStock,
+				Price:          10,
+				Qty:            100,
+				Fee:            1,
+			},
+			{
+				FillID:         "stock-sell",
+				AccountID:      "acct-1",
+				GatewayOrderID: "sell-order",
+				Symbol:         "600000",
+				Exchange:       trading.ExchangeSH,
+				TradeSide:      trading.TradeSideSell,
+				BusinessType:   trading.BusinessTypeStock,
+				Price:          12,
+				Qty:            150,
+				Fee:            2,
+			},
+		},
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100,
+			}},
+			"close": {{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    50,
+				MarketValue: 550,
+			}},
+		},
+		daily: ledger.DailyPerformance{
+			AccountID:    "acct-1",
+			TradeDate:    "2026-07-24",
+			OpenNetAsset: 100000,
+			NetAsset:     100447,
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{map[string]any{
+				"security_id":     "600000.SH",
+				"name":            "浦发银行",
+				"instrument_type": "stock",
+			}}},
+		},
+		bars: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{map[string]any{
+				"security_id": "600000.SH",
+				"pre_close":   9.0,
+				"close":       11.0,
+			}}},
+		},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "20260724")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	if len(result.Contributions) != 1 {
+		t.Fatalf("contributions = %#v", result.Contributions)
+	}
+	item := result.Contributions[0]
+	if item.StrategyType != StrategyStockCrossSection || item.Name != "浦发银行" {
+		t.Fatalf("identity = %#v", item)
+	}
+	if item.GrossContribution == nil || *item.GrossContribution != 450 {
+		t.Fatalf("gross contribution = %#v, want 450", item.GrossContribution)
+	}
+	if item.NetContribution == nil || *item.NetContribution != 447 {
+		t.Fatalf("net contribution = %#v, want 447", item.NetContribution)
+	}
+	if item.FeeSource != "actual" || result.Summary.NetContribution != 447 {
+		t.Fatalf("fees/summary = %#v / %#v", item, result.Summary)
+	}
+	if len(marketClient.queries) < 2 {
+		t.Fatalf("market queries = %#v", marketClient.queries)
+	}
+	barQuery := marketClient.queries[1]
+	if barQuery.Get("start_date") != "20260724" || barQuery.Get("end_date") != "20260724" || barQuery.Get("trade_date") != "" {
+		t.Fatalf("bar query = %s", barQuery.Encode())
+	}
+}
+
+func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.T) {
+	location := timeutil.Location()
+	buyTime := time.Date(2026, 7, 24, 10, 0, 0, 0, location)
+	redeemTime := time.Date(2026, 7, 24, 10, 7, 35, 0, location)
+	store := &fakePerformanceStore{
+		orders: []trading.Order{
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-buy",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideBuy,
+				BusinessType:   trading.BusinessTypeStock,
+				OrderQty:       1_000_000,
+				AcceptedAt:     buyTime,
+			},
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-redeem",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeETF,
+				OrderQty:       1_000_000,
+				AcceptedAt:     redeemTime,
+			},
+		},
+		fills: []trading.Fill{
+			{
+				FillID:         "etf-buy-fill",
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-buy",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideBuy,
+				BusinessType:   trading.BusinessTypeStock,
+				Price:          4.8,
+				Qty:            1_000_000,
+				MatchedAt:      buyTime,
+			},
+			{
+				FillID:         "redeem-a",
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-redeem",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeETF,
+				Qty:            400_000,
+				MatchedAt:      redeemTime.Add(-time.Second),
+			},
+			{
+				FillID:         "redeem-b",
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-redeem",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeETF,
+				Qty:            600_000,
+				MatchedAt:      redeemTime,
+			},
+		},
+		daily: ledger.DailyPerformance{OpenNetAsset: 10_000_000},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{map[string]any{
+				"security_id":     "159915.SZ",
+				"name":            "创业板ETF",
+				"instrument_type": "etf",
+			}}},
+		},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{}}},
+		snapshots: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{map[string]any{
+				"security_id": "159915.SZ",
+				"iopv":        4.82,
+				"timestamp":   "2026-07-24T10:07:34+08:00",
+			}}},
+		},
+	}
+	service, err := New(Options{
+		Store:             store,
+		Market:            marketClient,
+		ETFT0FrictionRate: 0.0015,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "2026-07-24")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	if len(result.Contributions) != 1 {
+		t.Fatalf("contributions = %#v", result.Contributions)
+	}
+	item := result.Contributions[0]
+	if item.StrategyType != StrategyETFRedemptionT0 || item.PnLStatus != "estimated" {
+		t.Fatalf("t0 identity = %#v", item)
+	}
+	if item.BuyQuantity != 1_000_000 || item.RedemptionQuantity != 1_000_000 || item.ReferenceIOPV == nil || *item.ReferenceIOPV != 4.82 {
+		t.Fatalf("t0 quantities/iopv = %#v", item)
+	}
+	if item.Orders != 2 || item.Fills != 3 {
+		t.Fatalf("t0 orders/fills = %d/%d, want 2/3", item.Orders, item.Fills)
+	}
+	if item.NetContribution == nil || *item.NetContribution != 12_770 {
+		t.Fatalf("net contribution = %#v, want 12770", item.NetContribution)
+	}
+	if !containsString(item.QualityFlags, "historical_t0_order_group_inferred") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
+func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
+	matchedAt := time.Date(2026, 7, 24, 10, 8, 0, 0, timeutil.Location())
+	store := &fakePerformanceStore{
+		fills: []trading.Fill{
+			{
+				FillID:         "redeem",
+				AccountID:      "acct-1",
+				GatewayOrderID: "redeem-order",
+				Symbol:         "159915",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeETF,
+				Qty:            1_000_000,
+				MatchedAt:      matchedAt,
+			},
+			{
+				FillID:         "component-sale",
+				AccountID:      "acct-1",
+				GatewayOrderID: "component-order",
+				Symbol:         "300750",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideSell,
+				BusinessType:   trading.BusinessTypeStock,
+				Price:          400,
+				Qty:            100,
+				MatchedAt:      matchedAt.Add(time.Minute),
+			},
+		},
+		daily: ledger.DailyPerformance{OpenNetAsset: 10_000_000},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "159915.SZ", "instrument_type": "etf"},
+				map[string]any{"security_id": "300750.SZ", "instrument_type": "stock"},
+			}},
+		},
+		bars:      market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{}}},
+		snapshots: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "20260724")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	var component SecurityContribution
+	for _, item := range result.Contributions {
+		if item.SecurityID == "300750.SZ" {
+			component = item
+			break
+		}
+	}
+	if component.StrategyType != StrategyETFComponentTransfer || component.PnLStatus != "excluded" {
+		t.Fatalf("component contribution = %#v", component)
+	}
+	if component.EffectiveFee != 0 || component.FeeSource != "included_in_etf_t0_friction" {
+		t.Fatalf("component fee = %#v", component)
+	}
+	if containsString(component.QualityFlags, "missing_fee_rule") {
+		t.Fatalf("component flags = %#v", component.QualityFlags)
+	}
+}
+
+func TestCalculateContributionsDoesNotAssumeMissingOpenPositionIsZero(t *testing.T) {
+	store := &fakePerformanceStore{
+		positions: map[string][]trading.Position{
+			"close": {{
+				AccountID: "acct-1",
+				Symbol:    "510300",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100_000,
+			}},
+		},
+		daily: ledger.DailyPerformance{OpenNetAsset: 1_000_000},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "510300.SH", "instrument_type": "etf"},
+			}},
+		},
+		bars: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "510300.SH", "pre_close": 4.8, "close": 4.9},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "20260724")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	item := result.Contributions[0]
+	if item.PnLStatus != "missing" || item.NetContribution != nil {
+		t.Fatalf("contribution = %#v", item)
+	}
+	if !containsString(item.QualityFlags, "missing_open_position_snapshot") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
+func TestCalculateContributionsFallsBackToPreviousCloseWithQuantityBridge(t *testing.T) {
+	store := &fakePerformanceStore{
+		fills: []trading.Fill{{
+			FillID:         "sell",
+			AccountID:      "acct-1",
+			GatewayOrderID: "sell-order",
+			Symbol:         "600000",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideSell,
+			BusinessType:   trading.BusinessTypeStock,
+			Price:          11,
+			Qty:            100,
+		}},
+		positionsByDate: map[string][]trading.Position{
+			"2026-07-22|close": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100,
+			}},
+		},
+		daily: ledger.DailyPerformance{OpenNetAsset: 100_000},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "600000.SH", "instrument_type": "stock"},
+			}},
+		},
+		bars: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "600000.SH", "pre_close": 10.0, "close": 10.5},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, Market: marketClient, Calendar: weekdayCalendar{}})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "20260723")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	item := result.Contributions[0]
+	if item.PnLStatus != "estimated" || item.NetContribution == nil || *item.NetContribution != 100 {
+		t.Fatalf("contribution = %#v", item)
+	}
+	if !containsString(item.QualityFlags, "open_position_from_previous_close") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
 
 func TestCalculateReverseRepoAggregatesFillsAndPersists(t *testing.T) {
 	store := &fakePerformanceStore{
@@ -429,7 +818,11 @@ func TestReviewNAVReconciliationBlocksNAV(t *testing.T) {
 }
 
 type fakePerformanceStore struct {
+	orders                []trading.Order
 	fills                 []trading.Fill
+	positions             map[string][]trading.Position
+	positionsByDate       map[string][]trading.Position
+	feeRules              []ledger.FeeRule
 	fillQueries           []trading.FillQuery
 	daily                 ledger.DailyPerformance
 	dailyErr              error
@@ -450,9 +843,45 @@ type fakePerformanceStore struct {
 	now                   time.Time
 }
 
+type fakeContributionMarket struct {
+	metadata  market.MeridianResponse
+	bars      market.MeridianResponse
+	snapshots market.MeridianResponse
+	queries   []url.Values
+}
+
+func (client *fakeContributionMarket) MetadataInstruments(_ context.Context, values url.Values) (market.MeridianResponse, error) {
+	client.queries = append(client.queries, values)
+	return client.metadata, nil
+}
+
+func (client *fakeContributionMarket) MarketBars(_ context.Context, values url.Values) (market.MeridianResponse, error) {
+	client.queries = append(client.queries, values)
+	return client.bars, nil
+}
+
+func (client *fakeContributionMarket) MarketSnapshots(_ context.Context, values url.Values) (market.MeridianResponse, error) {
+	client.queries = append(client.queries, values)
+	return client.snapshots, nil
+}
+
+func (store *fakePerformanceStore) ListOrders(_ context.Context, _ trading.OrderQuery) ([]trading.Order, error) {
+	return store.orders, nil
+}
+
 func (store *fakePerformanceStore) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	store.fillQueries = append(store.fillQueries, query)
 	return store.fills, nil
+}
+
+func (store *fakePerformanceStore) ListPositionSnapshots(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	if store.positionsByDate != nil {
+		return store.positionsByDate[query.TradeDate+"|"+query.SnapshotType], nil
+	}
+	if store.positions == nil {
+		return nil, nil
+	}
+	return store.positions[query.SnapshotType], nil
 }
 
 func (store *fakePerformanceStore) GetDailyPerformance(_ context.Context, _, _ string) (ledger.DailyPerformance, error) {
@@ -474,7 +903,7 @@ func (store *fakePerformanceStore) CreateFeeRule(_ context.Context, rule ledger.
 }
 
 func (store *fakePerformanceStore) ListFeeRules(_ context.Context, _ ledger.FeeRuleQuery) ([]ledger.FeeRule, error) {
-	return nil, nil
+	return store.feeRules, nil
 }
 
 func (store *fakePerformanceStore) EffectiveRepoFeeRule(_ context.Context, _, _ string) (ledger.FeeRule, error) {
@@ -568,10 +997,15 @@ func (weekdayCalendar) TradingDayStatus(_ context.Context, date string) (market.
 	}
 	weekday := parsed.Weekday()
 	isTrading := weekday != time.Saturday && weekday != time.Sunday
+	previousOrCurrent := parsed
+	for previousOrCurrent.Weekday() == time.Saturday || previousOrCurrent.Weekday() == time.Sunday {
+		previousOrCurrent = previousOrCurrent.AddDate(0, 0, -1)
+	}
 	return market.TradingDayStatus{
-		Date:              parsed.Format("20060102"),
-		IsTradingDay:      isTrading,
-		IsTradingDayKnown: true,
+		Date:                         parsed.Format("20060102"),
+		IsTradingDay:                 isTrading,
+		IsTradingDayKnown:            true,
+		PreviousOrCurrentTradingDate: previousOrCurrent.Format("20060102"),
 	}, nil
 }
 

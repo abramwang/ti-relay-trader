@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.15"
+SDK_VERSION = "0.1.16"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -268,6 +268,26 @@ class RelayClient:
             f"/v1/accounts/{parse.quote(account_id)}/performance/daily",
             query={"trade_date": trade_date},
         )
+
+    def get_performance_contributions(
+        self,
+        *,
+        trade_date: str | None = None,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Return read-only security and strategy contribution attribution.
+
+        When ``trade_date`` is omitted, relay resolves the current or most
+        recent Meridian trading day.
+        """
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/contributions",
+            query={"trade_date": trade_date},
+        )
+        return data.get("contribution", data)
 
     def get_performance_series(
         self,

@@ -2136,6 +2136,38 @@ func TestReverseRepoPreviewEndpoint(t *testing.T) {
 	}
 }
 
+func TestPerformanceContributionsEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		contribution: relayperformance.ContributionResult{
+			AccountID: "acct-1",
+			TradeDate: "2026-07-24",
+			Contributions: []relayperformance.SecurityContribution{{
+				SecurityID:   "600000.SH",
+				StrategyType: relayperformance.StrategyStockCrossSection,
+			}},
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/contributions?trade_date=20260724", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.contributionAccountID != "acct-1" || perf.contributionTradeDate != "2026-07-24" {
+		t.Fatalf("contribution args account=%q date=%q", perf.contributionAccountID, perf.contributionTradeDate)
+	}
+	if !strings.Contains(rec.Body.String(), `"security_id":"600000.SH"`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
 func TestEconomicNAVPreviewEndpoint(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -2432,6 +2464,9 @@ type fakePerformanceService struct {
 	cashEntries                   []ledger.CashLedgerEntry
 	createdBaseline               ledger.NavBaseline
 	baselines                     []ledger.NavBaseline
+	contribution                  relayperformance.ContributionResult
+	contributionAccountID         string
+	contributionTradeDate         string
 	reverseRepo                   relayperformance.ReverseRepoResult
 	reverseRepoAccountID          string
 	reverseRepoTradeDate          string
@@ -2511,6 +2546,15 @@ func (service *fakePerformanceService) ListNavBaselines(_ context.Context, _ str
 		return nil, service.err
 	}
 	return service.baselines, nil
+}
+
+func (service *fakePerformanceService) CalculateContributions(_ context.Context, accountID, tradeDate string) (relayperformance.ContributionResult, error) {
+	if service.err != nil {
+		return relayperformance.ContributionResult{}, service.err
+	}
+	service.contributionAccountID = accountID
+	service.contributionTradeDate = tradeDate
+	return service.contribution, nil
 }
 
 func (service *fakePerformanceService) CalculateReverseRepo(_ context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error) {

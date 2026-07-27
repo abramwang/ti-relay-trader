@@ -45,6 +45,26 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/accounts/acct-1/performance/daily":
             self._json({"ok": True, "data": {"account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "net_asset": 123.45}})
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/contributions":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "contribution": {
+                            "account_id": "acct-1",
+                            "trade_date": query.get("trade_date", ["20260612"])[0],
+                            "contributions": [
+                                {
+                                    "security_id": "600000.SH",
+                                    "strategy_type": "stock_cross_section",
+                                    "net_contribution": 100.0,
+                                }
+                            ],
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/accounts/acct-1/performance/series":
             self._json({"ok": True, "data": {"account_id": "acct-1", "series": [{"trade_date": "20260612", "net_asset": 123.45}]}})
             return
@@ -445,6 +465,8 @@ class RelayClientTest(unittest.TestCase):
     def test_performance_meridian_and_reconciliation_helpers(self):
         daily = self.client.get_performance_daily(trade_date="20260612")
         self.assertEqual(daily["net_asset"], 123.45)
+        contributions = self.client.get_performance_contributions(trade_date="20260612")
+        self.assertEqual(contributions["contributions"][0]["strategy_type"], "stock_cross_section")
         series = self.client.get_performance_series(date_from="20260612", date_to="20260612", benchmark_security_id="000300.SH")
         self.assertEqual(series["series"][0]["trade_date"], "20260612")
         csv_text = self.client.get_performance_series_csv(date_from="20260612", date_to="20260612", benchmark_security_id="000300.SH")

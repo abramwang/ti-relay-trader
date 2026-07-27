@@ -266,6 +266,50 @@ func TestMarketBarsPassesThroughQuery(t *testing.T) {
 	}
 }
 
+func TestMarketBarsPreservesDateRangeWithoutAddingTradeDate(t *testing.T) {
+	var barsQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != barsPath {
+			http.NotFound(w, r)
+			return
+		}
+		barsQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"security_id": "600000.SH",
+				"trade_date":  20260724,
+				"frequency":   "1d",
+				"close":       12.3,
+			}},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{
+		BaseURL:        server.URL,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	response, err := client.MarketBars(context.Background(), url.Values{
+		"security_ids": {"600000.SH,000001.SZ"},
+		"start_date":   {"20260724"},
+		"end_date":     {"20260724"},
+		"frequency":    {"1d"},
+		"adjustment":   {"none"},
+	})
+	if err != nil {
+		t.Fatalf("MarketBars: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if barsQuery.Get("start_date") != "20260724" || barsQuery.Get("end_date") != "20260724" || barsQuery.Get("trade_date") != "" {
+		t.Fatalf("bars query = %s", barsQuery.Encode())
+	}
+}
+
 func TestMarketBarsUsesPreviousTradingDayForToday(t *testing.T) {
 	var barsQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

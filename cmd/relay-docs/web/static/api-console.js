@@ -331,10 +331,16 @@
     if (Array.isArray(data)) {
       return data;
     }
-    for (const key of ["accounts", "positions", "orders", "fills"]) {
+    for (const key of ["accounts", "positions", "orders", "fills", "contributions", "strategies"]) {
       if (Array.isArray(data[key])) {
         return data[key];
       }
+    }
+    if (data.contribution && typeof data.contribution === "object") {
+      if (Array.isArray(data.contribution.contributions)) {
+        return data.contribution.contributions;
+      }
+      return [data.contribution];
     }
     for (const key of ["asset", "order", "published"]) {
       if (data[key] && typeof data[key] === "object" && !Array.isArray(data[key])) {
@@ -443,7 +449,7 @@
   }
 
   async function loadCatalog() {
-    const response = await fetch("/assets/api-console.catalog.json");
+    const response = await fetch("/assets/api-console.catalog.json?v=20260727-0001");
     if (!response.ok) {
       throw new Error("load endpoint catalog failed: HTTP " + response.status);
     }

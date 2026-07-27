@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.15.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.16.tar.gz"
 ```
 
 ## Quick Start
@@ -36,6 +36,7 @@ bars = client.get_meridian_bars(
     start_time="09:30:00",
     end_time="15:00:00",
 )
+contributions = client.get_performance_contributions(trade_date="20260724")
 
 receipt = client.submit_order(
     symbol="600000",

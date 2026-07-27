@@ -300,6 +300,7 @@ rejected
 | `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，默认读取 PostgreSQL 当前持仓 |
 | `GET` | `/v1/accounts/{account_id}/positions/history` | `PositionQuery` | `[]Position` | 已实现，读取 `position_snapshots` 历史快照，默认 `snapshot_type=close`，可传 `snapshot_type=open` |
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | `trade_date` query | `DailyPerformance` | 已实现，读取日初 open、日终 close、持仓快照和成交汇总 |
+| `GET` | `/v1/accounts/{account_id}/performance/contributions` | `trade_date` query | `ContributionResult` | 已实现，只读聚合证券/策略贡献、费用、贡献 bp 和质量标记；空日期取 Meridian 当前或最近交易日 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | `date_from/date_to/benchmark_security_id` query | `PerformanceSeries` | 已实现，读取 close 资产快照生成净值序列，同时返回 open-to-close 日内绩效字段，并可用 Meridian bars 增加基准和超额收益 |
 | `GET` | `/v1/accounts/{account_id}/performance/series.csv` | `date_from/date_to/benchmark_security_id` query | `text/csv` | 已实现，导出账户绩效、基准和超额收益 CSV |
 | `GET` | `/v1/performance/settings` | - | `PerformanceSettings` | 已实现，返回经济净值公式版本、对账阈值和人工输入写入开关 |
@@ -371,6 +372,10 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots(snapshot_type=close)` 的持仓市值、总持仓浮盈、当日持仓浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+day_unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 
+`GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 返回 `ContributionResult`。普通股票和 ETF 截面使用 `close_value + sell_amount - buy_amount - open_value - effective_fee`；期初价格取 Meridian 当日 `pre_close`，期末价格取 Meridian 当日 `close`，缺失时才回退券商 open/close 持仓快照并标记质量缺口。费用优先使用成交实际费用；只有 `adapter_context.fee_complete=true` 才把零费用视为真实零值，否则按账户生效费率估算或标记 `missing_fee_rule`。
+
+ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订单的多条成交先按 `gateway_order_id` 聚合；历史买单只有在赎回前的目标委托量精确闭合赎回量时才组成推断 T0 订单组，其实际成交额作为买入成本。估算退出价值使用每条赎回成交时刻之前最近的 Meridian historical Level1 `iopv * qty`，再按服务端 `performance.etf_t0_friction_rate` 扣减综合摩擦成本。无法闭合买单、缺 IOPV 或缺价格时不返回伪精确盈亏，而是标记 `missing/estimated`。无日初/日终持仓且只有卖出的赎回成分股归为 `etf_component_transfer`，只保留成交额并从 T0 估算收益中排除，避免与 IOPV 退出价值重复计算。逆回购本金不进入普通卖出额，只有按实际占款天数计算的净息进入 `cash_management`。
+
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 返回账户 close 净值绩效序列，并在每个交易日返回同样的日初资产、隔夜调整、日内盈亏和日内收益率字段。服务读取区间内 `asset_snapshots(snapshot_type=close)` 形成长期净值主线，按上一条 close 净资产计算兼容的单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。绩效页面和 API Console 默认用上证指数 `000001.SH` 作为基准；如果传入其他 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 
 `GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、上一 close 净资产、日初资产、隔夜调整、日内盈亏、日内收益率、close-to-close 收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现 PnL、总持仓浮盈、当日持仓浮盈、总/净 PnL、成交额、费用和快照时间等列。
@@ -382,6 +387,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 - `performance_nav_baselines` 记录手工确认的日初经济净值基线，解决逆回购回款、占款释放和柜台间划转导致的前一日日终资产与当日日初资产差异。
 - `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。`economic-nav/preview` 可无写权限试算，`economic-nav/rebuild` 会把同账户同交易日旧 current 版本退役并插入新 current 版本；`economic-nav/reconcile` 读取下一交易日 open 资产/持仓快照，计算 T+1 观测资产残差并可受写开关保护落库；`nav-reconciliations/confirm` 和 `/block` 可人工确认或阻断对账，并将 current economic NAV 就地推进为 `finalized/blocked`；策略归因尚未拆分完成的账户日收益写入 `pnl_components.unattributed`。
 - `reverse_repo_accruals` 保存 `204001.SH` 逆回购应计结果。估算口径为 `principal=qty*100`，`gross_interest=principal*(成交年化利率/100)*实际占款天数/365`，费用优先取成交实际费用，其次取账户费率规则，缺失时标记 `missing_repo_fee`。实际占款天数由 Meridian 交易日接口向后取两个交易日计算，跨周末会自然得到 3 天。
+
+`GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 使用普通证券现金流恒等式 `close_value + sell_amount - buy_amount - open_value - effective_fee`。ETF 申赎 T0 使用赎回成交时刻之前最近的 Meridian Level1 IOPV 作为估算退出价值，并扣除配置项 `performance.etf_t0_friction_rate`；多个赎回组最多 8 路并发查询 IOPV。缺少当日 open 持仓时，只在前一交易日 close 快照存在且 `open + buy - sell = close` 数量桥闭合时估算，否则返回 `pnl_status=missing`，不会把缺失持仓当作 0。接口只读，不触发 OC 查询。
 
 `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的第一版公式为：
 
@@ -404,7 +411,7 @@ daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_fl
 - `research_account_daily_performance_v1`：账户日绩效、持仓汇总、成交汇总和第一版 PnL 字段。
 - `research_order_fill_export_v1`：订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息和成交价量。
 
-`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260615&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`。当 `trade_date` 为空或等于东八区当天时，relay 会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，交易日当天默认使用 `data_scope=realtime`，非交易日自动读取最近交易日 historical bars。为降低读压和 benchmark 重复查询，bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback；该缓存只作用于 relay 到 Meridian 的代理层，不改变响应字段结构。
+`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`security_ids`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260615&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`；批量日线使用 `security_ids=600000.SH,000001.SZ&start_date=20260615&end_date=20260615&frequency=1d&adjustment=none`。仅当没有 `start_date/end_date` 且 `trade_date` 为空或等于东八区当天时，relay 才会调用 Meridian 交易日接口取得 `previous_or_current_trading_date`；范围查询原样透传，不补入互斥的 `trade_date`。交易日当天默认使用 `data_scope=realtime`，非交易日自动读取最近交易日 historical bars。为降低读压和 benchmark 重复查询，bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback；该缓存只作用于 relay 到 Meridian 的代理层，不改变响应字段结构。
 
 `GET /v1/meridian/metadata/adjust-factors` 是 Meridian `GET /v1/metadata/adjust-factors` 的同源薄代理，用于股票/ETF 截面绩效中的除权除息、分红和 ETF 份额折算校验。relay 只透传 `security_id/security_ids/trade_date/start_date/end_date/limit` 等 Meridian 参数并保留上游 `data/meta/error` 结构，不在本项目内另建复权因子标准。
 

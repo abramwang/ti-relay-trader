@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,7 +35,9 @@ const (
 )
 
 type Store interface {
+	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
+	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
 	GetAssetPositionObservation(ctx context.Context, accountID string, tradeDate string, snapshotType string) (ledger.AssetPositionObservation, error)
 	CreateFeeRule(ctx context.Context, rule ledger.FeeRule) (ledger.FeeRule, error)
@@ -59,11 +62,19 @@ type TradingCalendar interface {
 	TradingDayStatus(ctx context.Context, date string) (market.TradingDayStatus, error)
 }
 
+type ContributionMarket interface {
+	MetadataInstruments(ctx context.Context, values url.Values) (market.MeridianResponse, error)
+	MarketBars(ctx context.Context, values url.Values) (market.MeridianResponse, error)
+	MarketSnapshots(ctx context.Context, values url.Values) (market.MeridianResponse, error)
+}
+
 type Options struct {
 	Store               Store
 	Calendar            TradingCalendar
+	Market              ContributionMarket
 	Now                 func() time.Time
 	FormulaVersion      string
+	ETFT0FrictionRate   float64
 	AutoToleranceCNY    float64
 	AutoToleranceBP     float64
 	WarningToleranceCNY float64
@@ -73,8 +84,10 @@ type Options struct {
 type Service struct {
 	store               Store
 	calendar            TradingCalendar
+	market              ContributionMarket
 	now                 func() time.Time
 	formulaVersion      string
+	etfT0FrictionRate   float64
 	autoToleranceCNY    float64
 	autoToleranceBP     float64
 	warningToleranceCNY float64
@@ -192,6 +205,9 @@ func New(options Options) (*Service, error) {
 	if strings.TrimSpace(options.FormulaVersion) == "" {
 		options.FormulaVersion = defaultFormulaVersion
 	}
+	if options.ETFT0FrictionRate <= 0 {
+		options.ETFT0FrictionRate = 0.0015
+	}
 	if options.AutoToleranceCNY == 0 {
 		options.AutoToleranceCNY = defaultAutoToleranceCNY
 	}
@@ -207,8 +223,10 @@ func New(options Options) (*Service, error) {
 	return &Service{
 		store:               options.Store,
 		calendar:            options.Calendar,
+		market:              options.Market,
 		now:                 options.Now,
 		formulaVersion:      strings.TrimSpace(options.FormulaVersion),
+		etfT0FrictionRate:   options.ETFT0FrictionRate,
 		autoToleranceCNY:    options.AutoToleranceCNY,
 		autoToleranceBP:     options.AutoToleranceBP,
 		warningToleranceCNY: options.WarningToleranceCNY,

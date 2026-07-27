@@ -76,6 +76,7 @@ type MarketConfig struct {
 type PerformanceConfig struct {
 	SettingsWriteEnabled bool    `yaml:"settings_write_enabled"`
 	FormulaVersion       string  `yaml:"formula_version"`
+	ETFT0FrictionRate    float64 `yaml:"etf_t0_friction_rate"`
 	AutoToleranceCNY     float64 `yaml:"auto_tolerance_cny"`
 	AutoToleranceBP      float64 `yaml:"auto_tolerance_bp"`
 	WarningToleranceCNY  float64 `yaml:"warning_tolerance_cny"`
@@ -203,6 +204,9 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Performance.FormulaVersion == "" {
 		cfg.Performance.FormulaVersion = "performance_economic_nav.v1"
 	}
+	if cfg.Performance.ETFT0FrictionRate == 0 {
+		cfg.Performance.ETFT0FrictionRate = 0.0015
+	}
 	if cfg.Performance.AutoToleranceCNY == 0 {
 		cfg.Performance.AutoToleranceCNY = 50
 	}
@@ -256,6 +260,9 @@ func (cfg Config) Validate() error {
 	}
 	if strings.TrimSpace(cfg.Performance.FormulaVersion) == "" {
 		return fmt.Errorf("performance.formula_version is required")
+	}
+	if cfg.Performance.ETFT0FrictionRate < 0 || cfg.Performance.ETFT0FrictionRate > 1 {
+		return fmt.Errorf("performance.etf_t0_friction_rate must be between 0 and 1")
 	}
 	if cfg.Performance.AutoToleranceCNY < 0 || cfg.Performance.AutoToleranceBP < 0 {
 		return fmt.Errorf("performance auto tolerances must be non-negative")

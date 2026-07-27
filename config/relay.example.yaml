@@ -38,6 +38,7 @@ performance:
   # control. Read-only performance and reconciliation APIs remain available.
   settings_write_enabled: false
   formula_version: "performance_economic_nav.v1"
+  etf_t0_friction_rate: 0.0015
   auto_tolerance_cny: 50
   auto_tolerance_bp: 0.1
   warning_tolerance_cny: 500

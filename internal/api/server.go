@@ -92,6 +92,7 @@ type PerformanceService interface {
 	VoidCashLedgerEntry(ctx context.Context, accountID, entryID, operator string) (ledger.CashLedgerEntry, error)
 	CreateNavBaseline(ctx context.Context, baseline ledger.NavBaseline) (ledger.NavBaseline, error)
 	ListNavBaselines(ctx context.Context, accountID string) ([]ledger.NavBaseline, error)
+	CalculateContributions(ctx context.Context, accountID, tradeDate string) (relayperformance.ContributionResult, error)
 	CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error)
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVOptions) (relayperformance.EconomicNAVResult, error)
@@ -1148,6 +1149,12 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch parts[2] {
+		case "contributions":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handlePerformanceContributions(w, r, accountID)
 		case "daily":
 			if len(parts) != 3 || r.Method != http.MethodGet {
 				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -1640,6 +1647,28 @@ func (s *Server) handleDailyPerformance(w http.ResponseWriter, r *http.Request, 
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
 		"performance": performance,
 	})
+}
+
+func (s *Server) handlePerformanceContributions(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if tradeDate != "" {
+		normalized, err := normalizeAPIDate(tradeDate)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid trade_date", err.Error())
+			return
+		}
+		tradeDate = normalized
+	}
+	result, err := s.perf.CalculateContributions(r.Context(), accountID, tradeDate)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"contribution": result})
 }
 
 func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request, accountID string) {

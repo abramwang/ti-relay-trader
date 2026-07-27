@@ -46,6 +46,19 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.AutoRefresh.DebounceSeconds != 2 || cfg.AutoRefresh.CooldownSeconds != 20 || cfg.AutoRefresh.TimeoutSeconds != 10 {
 		t.Fatalf("auto refresh defaults = %+v", cfg.AutoRefresh)
 	}
+	if cfg.Performance.ETFT0FrictionRate != 0.0015 {
+		t.Fatalf("performance ETF T0 friction rate = %v, want 0.0015", cfg.Performance.ETFT0FrictionRate)
+	}
+}
+
+func TestDecodeRejectsInvalidETFT0FrictionRate(t *testing.T) {
+	_, err := Decode(strings.NewReader(`performance: {etf_t0_friction_rate: 1.1}`))
+	if err == nil {
+		t.Fatal("expected invalid ETF T0 friction rate error")
+	}
+	if !strings.Contains(err.Error(), "etf_t0_friction_rate") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestDecodeRejectsInvalidMode(t *testing.T) {
