@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260729-0010">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260729-0012">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -282,6 +282,44 @@
           <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong><small id="perfDailyPnl">当日 --</small></div>
           <div><span>基准收益</span><strong id="perfBenchmarkReturn">--</strong><small id="perfBenchmarkID">基准 --</small></div>
           <div><span>超额收益</span><strong id="perfExcessReturn">--</strong><small id="perfBenchmarkDays">样本 --</small></div>
+        </div>
+
+        <div class="performance-overview">
+          <section class="performance-section performance-chart-section">
+            <div class="section-toolbar performance-chart-toolbar">
+              <div>
+                <h2>净值与回撤</h2>
+                <span id="performanceChartRange">等待区间数据</span>
+              </div>
+              <div class="performance-chart-legend" aria-label="图例">
+                <span class="account">账户净值</span>
+                <span class="benchmark">上证基准</span>
+                <span class="excess">超额收益</span>
+                <span class="drawdown">回撤</span>
+              </div>
+            </div>
+            <div class="performance-chart-shell">
+              <div id="performanceChart" class="performance-chart" role="img" aria-label="账户净值、上证指数基准、超额收益和回撤图"></div>
+            </div>
+          </section>
+
+          <section class="performance-section performance-quality-section" id="performanceQualityPanel" data-status="waiting">
+            <div class="section-toolbar performance-quality-toolbar">
+              <div>
+                <h2>数据质量</h2>
+                <span id="performanceQualityDate">等待结算数据</span>
+              </div>
+              <strong class="performance-quality-status" id="performanceQualityStatus">待检查</strong>
+            </div>
+            <div class="performance-quality-summary">
+              <div><span>通过</span><strong id="performanceQualityPassed">--</strong></div>
+              <div><span>提示</span><strong id="performanceQualityWarnings">--</strong></div>
+              <div><span>阻断</span><strong id="performanceQualityBlocked">--</strong></div>
+            </div>
+            <div class="performance-quality-list" id="performanceQualityList">
+              <div class="empty-state">查询绩效后显示快照、行情、归因、对账与任务检查</div>
+            </div>
+          </section>
         </div>
 
         <div class="performance-body">
@@ -656,6 +694,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260729-0010"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260729-0012"></script>
 </body>
 </html>

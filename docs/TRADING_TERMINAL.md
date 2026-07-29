@@ -21,7 +21,7 @@
 http://relay-trader.quantstage.com/trade
 ```
 
-该页面在文档门户模式下直接同源调用 `/v1/*` API。当前 9092 使用本地未跟踪配置启动时，可以访问测试 PostgreSQL、测试 Redis 和测试账户。
+该页面在文档门户模式下直接同源调用 `/v1/*` API。当前 9092 使用未跟踪 `config/relay.prod.yaml` 连接生产 PostgreSQL/Redis，六个账户均为只读且 `trading_enabled=false`；测试/生产选择完全由服务端配置和启动护栏控制，浏览器与 SDK 不携带环境凭据。
 
 ## 实现结构
 
@@ -32,7 +32,7 @@ http://relay-trader.quantstage.com/trade
 | `cmd/relay-docs/web/templates/trade_terminal.html` | 全屏交易终端页面结构 |
 | `cmd/relay-docs/web/static/trade-terminal.css` | 交易终端布局、配色、表格、状态和细节面板样式 |
 | `cmd/relay-docs/web/static/trade-terminal.js` | 页面状态、API 调用、轮询刷新、下单、撤单和渲染逻辑 |
-| `cmd/relay-docs/web/static/echarts.min.js` | 本地 ECharts 运行时，用于交易测试分钟 K 线和买卖点标注 |
+| `cmd/relay-docs/web/static/echarts.min.js` | 本地 ECharts 运行时，用于交易测试分钟 K 线、买卖点标注和绩效净值/回撤主图 |
 
 Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴露。
 
@@ -104,7 +104,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 1. `交易测试`：保留行情、下单、持仓摘要、委托/成交底部面板和右侧委托详情。
 2. `订单监控`：用底部订单模块扩展成完整页面，展示委托数、活动委托、成交数和最近回报；成交回报不再是独立页面，而是该页面里的 `当日成交` tab。
 3. `资金持仓`：用当前持仓模块扩展成完整页面，展示总资产、可用资金、市值、当日盈亏，以及资金总额、股票市值、基金市值、持仓盈亏、平仓盈亏、手续费和持仓表。持仓表同时展示 `盈亏/%` 和 `当日盈亏/%`：前者按买入成本计算总浮盈，后者老仓按今日开盘价、当日买入按成交成本计算日内浮动贡献。
-4. `绩效分析`：承接收盘后 close 快照、日终权益/PnL、净值序列、CSV 导出、Meridian bars 基准对照和数据质量提示；不再单独提供“盘后对账”页面入口。绩效页后续按净值曲线、收益贡献、交易归因和数据质量面板重构，详细口径见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。
+4. `绩效分析`：承接收盘后 close/open 快照、经济净值、证券贡献、交易质量、NAV 对账和 CSV 导出。主图展示账户归一化净值、上证指数基准、超额收益及账户/基准回撤；数据质量区固定检查资产快照、Meridian bars、收益归因、订单成交账本、T+1 NAV 对账和盘前/盘后任务。不再单独提供“盘后对账”页面入口，详细口径见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。
 
 `交易测试` 视图中的右侧持仓区域采用压缩版资金摘要、工具栏和表格行高，中间区域使用 ECharts `candlestick` 绘制 Meridian `bars` 1m 分钟 K 线并叠加成交量，给手动下单提供点位参考；`资金持仓` 独立工作区仍保留完整资金拆分和分页持仓表。分钟 K 线只服务手工交易测试，后续不会作为绩效分析主图。
 
@@ -150,7 +150,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。
 5. 代码补全当前使用 Meridian `/v1/metadata/instruments`，按 `exchange/instrument_type/status/limit/cursor` 取证券主数据并在前端过滤输入前缀。持仓、委托和成交表格中的“证券名称”列使用同一个 Meridian metadata 薄代理，并按当前可见表格代码通过 `security_ids` 批量补齐 `name/instrument_type`；这些字段只作为页面展示和价格精度辅助，不写入 relay 自定义证券主数据。若需要更多名称、拼音、行业等补全能力，应在 Meridian 增加/完善接口，而不是在 relay 内自建标准。
-6. 页面只面向测试账户。实盘 Redis 和生产账户接入前，需要再加环境隔离、二次确认和权限控制。
+6. 页面同时服务测试和生产账户，但环境由服务端统一选择；生产交易权限受账户级 `trading_enabled`、启动脚本风险确认和 API 写权限共同控制，当前生产全部只读。
 
 ## 后续工作
 
@@ -159,4 +159,4 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 3. 支持批量下单测试视图。
 4. 支持请求模板保存。
 5. 增加订单详情里的前置原始 reply/event 链路查看。
-6. 增加页面级 Playwright 冒烟测试，覆盖三类工作区切换。
+6. 在现有页面和绩效 Playwright 冒烟测试上继续扩展账户切换、异常接口和写权限护栏场景。

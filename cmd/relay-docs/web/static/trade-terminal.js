@@ -47,6 +47,8 @@
     performanceTableView: "contributions",
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
+    performanceChart: null,
+    performanceLoadSeq: 0,
     performanceReviewBusy: false,
     performanceReviewSettingsError: "",
     performanceLoaded: false,
@@ -70,6 +72,7 @@
     chartOrders: [],
     chartFills: [],
     minuteChart: null,
+    systemStatus: null,
     initialized: false,
     eventSource: null,
     eventSourceAccount: "",
@@ -199,6 +202,15 @@
     perfBenchmarkID: byID("perfBenchmarkID"),
     perfExcessReturn: byID("perfExcessReturn"),
     perfBenchmarkDays: byID("perfBenchmarkDays"),
+    performanceChart: byID("performanceChart"),
+    performanceChartRange: byID("performanceChartRange"),
+    performanceQualityPanel: byID("performanceQualityPanel"),
+    performanceQualityDate: byID("performanceQualityDate"),
+    performanceQualityStatus: byID("performanceQualityStatus"),
+    performanceQualityPassed: byID("performanceQualityPassed"),
+    performanceQualityWarnings: byID("performanceQualityWarnings"),
+    performanceQualityBlocked: byID("performanceQualityBlocked"),
+    performanceQualityList: byID("performanceQualityList"),
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
     performanceContributionBody: byID("performanceContributionBody"),
@@ -991,6 +1003,9 @@
       ensurePerformanceDefaults();
       if (state.activeAccount && !state.performanceLoaded) {
         loadPerformance().catch((err) => pushLog("warn", "绩效查询失败", err.message));
+      } else {
+        renderPerformance();
+        window.requestAnimationFrame(resizePerformanceChart);
       }
     }
     if (view === "performance-settings" && state.initialized) {
@@ -1004,6 +1019,7 @@
   async function loadStatus() {
     try {
       const data = await request("/v1/status");
+      state.systemStatus = data;
       const dependencies = data.dependencies || {};
       const apiOK = data.status === "ok";
       updateEnvironmentBadge(data.environment);
@@ -1014,6 +1030,9 @@
       updateStreamFooter();
       if (data.time) {
         syncClock(data.time);
+      }
+      if (state.performanceLoaded) {
+        renderPerformanceQuality();
       }
     } catch (err) {
       setStatus(els.apiStatus, false, "API: error");
@@ -3365,6 +3384,8 @@
       renderPerformance();
       return;
     }
+    const loadSeq = ++state.performanceLoadSeq;
+    const isCurrentLoad = () => loadSeq === state.performanceLoadSeq;
     const params = performanceParams();
     const accountID = encodeURIComponent(state.activeAccount);
     const query = new URLSearchParams({
@@ -3378,12 +3399,18 @@
     els.loadPerformanceButton.disabled = true;
     try {
       let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      if (!isCurrentLoad()) {
+        return;
+      }
       if ((!Array.isArray(data.series) || data.series.length === 0) && params.dateFrom === params.dateTo) {
         const fallbackQuery = new URLSearchParams({
           date_from: shiftCompactDate(params.dateTo, -45),
           date_to: params.dateTo
         });
         const fallbackData = await request("/v1/accounts/" + accountID + "/performance/series?" + fallbackQuery.toString());
+        if (!isCurrentLoad()) {
+          return;
+        }
         const fallbackSeries = Array.isArray(fallbackData.series) ? fallbackData.series : [];
         const latestDate = compactDate(fallbackSeries[fallbackSeries.length - 1] && fallbackSeries[fallbackSeries.length - 1].trade_date);
         if (latestDate) {
@@ -3394,6 +3421,9 @@
           query.set("date_from", latestDate);
           query.set("date_to", latestDate);
           data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+          if (!isCurrentLoad()) {
+            return;
+          }
           pushLog("info", "绩效日期已回退", displayDate(latestDate) + " 最近已结算交易日");
         }
       }
@@ -3406,58 +3436,80 @@
       state.performanceSeries = Array.isArray(data.series) ? data.series : [];
       state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
       const dailyDate = compactDate(state.performanceDaily && state.performanceDaily.trade_date) || params.dateTo;
-      try {
-        state.performanceSettings = await request("/v1/performance/settings");
+      const qualityQuery = new URLSearchParams({
+        date_from: params.dateFrom,
+        date_to: params.dateTo
+      });
+      const detailResults = await Promise.allSettled([
+        request("/v1/performance/settings"),
+        request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate)),
+        request("/v1/accounts/" + accountID + "/performance/contributions?trade_date=" + encodeURIComponent(dailyDate)),
+        request("/v1/accounts/" + accountID + "/performance/trade-quality?" + qualityQuery.toString()),
+        request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate)),
+        request("/v1/accounts/" + accountID + "/performance/nav-reconciliations?trade_date=" + encodeURIComponent(dailyDate))
+      ]);
+      if (!isCurrentLoad()) {
+        return;
+      }
+      const [settingsResult, dailyResult, contributionResult, qualityResult, economicResult, reconciliationResult] = detailResults;
+
+      if (settingsResult.status === "fulfilled") {
+        state.performanceSettings = settingsResult.value;
         state.performanceReviewSettingsError = "";
-      } catch (err) {
+      } else {
         state.performanceSettings = null;
-        state.performanceReviewSettingsError = err.message;
-        pushLog("warn", "绩效写权限读取失败", err.message);
+        state.performanceReviewSettingsError = settingsResult.reason.message;
+        pushLog("warn", "绩效写权限读取失败", settingsResult.reason.message);
       }
-      try {
-        const dailyData = await request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate));
-        state.performanceDaily = dailyData.performance || state.performanceDaily;
-      } catch (err) {
-        pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + err.message);
+
+      if (dailyResult.status === "fulfilled") {
+        state.performanceDaily = dailyResult.value.performance || state.performanceDaily;
+      } else {
+        pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + dailyResult.reason.message);
       }
-      try {
-        const contributionData = await request("/v1/accounts/" + accountID + "/performance/contributions?trade_date=" + encodeURIComponent(dailyDate));
-        state.performanceContribution = contributionData.contribution || null;
-      } catch (err) {
+
+      if (contributionResult.status === "fulfilled") {
+        state.performanceContribution = contributionResult.value.contribution || null;
+      } else {
         state.performanceContribution = null;
-        pushLog("warn", "证券贡献读取失败", displayDate(dailyDate) + " " + err.message);
+        pushLog("warn", "证券贡献读取失败", displayDate(dailyDate) + " " + contributionResult.reason.message);
       }
-      try {
-        const qualityQuery = new URLSearchParams({
-          date_from: params.dateFrom,
-          date_to: params.dateTo
-        });
-        const qualityData = await request("/v1/accounts/" + accountID + "/performance/trade-quality?" + qualityQuery.toString());
-        state.performanceTradeQuality = qualityData.trade_quality || null;
-      } catch (err) {
+
+      if (qualityResult.status === "fulfilled") {
+        state.performanceTradeQuality = qualityResult.value.trade_quality || null;
+      } else {
         state.performanceTradeQuality = null;
-        pushLog("warn", "交易质量读取失败", displayDate(params.dateFrom) + " 至 " + displayDate(params.dateTo) + " " + err.message);
+        pushLog("warn", "交易质量读取失败", displayDate(params.dateFrom) + " 至 " + displayDate(params.dateTo) + " " + qualityResult.reason.message);
       }
-      try {
-        const economicData = await request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate));
-        state.performanceEconomicNAV = economicData.economic_nav || null;
-      } catch (err) {
+
+      if (economicResult.status === "fulfilled") {
+        state.performanceEconomicNAV = economicResult.value.economic_nav || null;
+      } else {
         state.performanceEconomicNAV = null;
-        pushLog("warn", "经济净值预览失败", displayDate(dailyDate) + " " + err.message);
+        pushLog("warn", "经济净值预览失败", displayDate(dailyDate) + " " + economicResult.reason.message);
       }
-      try {
-        const reconciliationData = await request("/v1/accounts/" + accountID + "/performance/nav-reconciliations?trade_date=" + encodeURIComponent(dailyDate));
-        state.performanceNAVReconciliation = selectPerformanceNAVReconciliation(reconciliationData.reconciliations, state.performanceEconomicNAV && state.performanceEconomicNAV.nav);
-      } catch (err) {
+
+      if (reconciliationResult.status === "fulfilled") {
+        state.performanceNAVReconciliation = selectPerformanceNAVReconciliation(
+          reconciliationResult.value.reconciliations,
+          state.performanceEconomicNAV && state.performanceEconomicNAV.nav
+        );
+      } else {
         state.performanceNAVReconciliation = null;
-        pushLog("warn", "经济净值对账读取失败", displayDate(dailyDate) + " " + err.message);
+        pushLog("warn", "经济净值对账读取失败", displayDate(dailyDate) + " " + reconciliationResult.reason.message);
       }
       state.performanceLoaded = true;
       renderPerformance();
       showToast("绩效数据已更新");
     } catch (err) {
+      if (!isCurrentLoad()) {
+        return;
+      }
       state.performanceLoaded = false;
       state.performanceError = err.message;
+      state.performanceSummary = null;
+      state.performanceSeries = [];
+      state.performanceDaily = null;
       state.performanceContribution = null;
       state.performanceTradeQuality = null;
       state.performanceEconomicNAV = null;
@@ -3466,7 +3518,9 @@
       showToast("绩效查询失败：" + err.message, "error");
       renderPerformance();
     } finally {
-      els.loadPerformanceButton.disabled = false;
+      if (isCurrentLoad()) {
+        els.loadPerformanceButton.disabled = false;
+      }
     }
   }
 
@@ -3753,6 +3807,431 @@
     }).join("");
   }
 
+  function performanceQualityFlagLabel(value) {
+    return {
+      missing_open_asset: "缺少日初资产",
+      open_asset_fallback: "日初资产使用回退值",
+      overnight_adjustment_unclassified: "隔夜调整待分类",
+      missing_nav_baseline: "缺少经济净值基线",
+      missing_previous_economic_nav: "缺少上一日经济净值",
+      reverse_repo_accrual_preview: "逆回购应计为预估",
+      missing_repo_fee: "缺少逆回购费用",
+      strategy_attribution_pending: "策略归因待完成",
+      missing_iopv: "缺少 IOPV",
+      minute_iopv_fallback: "IOPV 使用分钟回退",
+      missing_meridian_etf_redemption_unit: "缺少 ETF 最小申赎单位",
+      redemption_quantity_not_pcf_unit_multiple: "赎回量未通过 PCF 单位校验",
+      ambiguous_t0_order_group: "T0 订单组存在歧义",
+      incomplete_t0_order_group: "T0 订单组未闭合",
+      missing_transfer_link: "缺少成分划转关联"
+    }[value] || value || "未知质量标记";
+  }
+
+  function performanceQualityChecks() {
+    const series = state.performanceSeries || [];
+    const summary = state.performanceSummary || {};
+    const daily = state.performanceDaily || series[series.length - 1] || {};
+    const contribution = state.performanceContribution || {};
+    const contributionSummary = contribution.summary || {};
+    const tradeQuality = state.performanceTradeQuality || {};
+    const tradeSummary = tradeQuality.summary || {};
+    const economic = state.performanceEconomicNAV || {};
+    const nav = economic.nav || {};
+    const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
+    const flags = Array.from(new Set(
+      series.flatMap((item) => Array.isArray(item.quality_flags) ? item.quality_flags : [])
+        .concat(Array.isArray(economic.quality_flags) ? economic.quality_flags : [])
+        .concat(Array.isArray(nav.quality_flags) ? nav.quality_flags : [])
+    ));
+    const checks = [];
+
+    let snapshotStatus = "passed";
+    let snapshotDetail = formatInt(series.length) + " 个 close 样本，日初来源 " + (daily.open_snapshot_source || "--");
+    if (series.length === 0) {
+      snapshotStatus = "blocked";
+      snapshotDetail = "所选区间没有可用的 close 资产快照";
+    } else if (flags.length > 0) {
+      snapshotStatus = flags.some((flag) => String(flag).startsWith("missing_")) ? "blocked" : "warning";
+      snapshotDetail = flags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ");
+      if (flags.length > 2) {
+        snapshotDetail += " +" + (flags.length - 2);
+      }
+    }
+    checks.push({
+      label: "资产快照与资金桥",
+      detail: snapshotDetail,
+      status: snapshotStatus
+    });
+
+    const benchmarkDays = Number(summary.benchmark_observation_days) || 0;
+    let benchmarkStatus = "passed";
+    let benchmarkDetail = (summary.benchmark_security_id || "未设置基准") + " · " + formatInt(benchmarkDays) + "/" + formatInt(series.length) + " 个交易日";
+    if (!summary.benchmark_security_id || benchmarkDays === 0) {
+      benchmarkStatus = "blocked";
+      benchmarkDetail = "缺少 Meridian 基准 bars，无法计算超额与基准回撤";
+    } else if (benchmarkDays < series.length) {
+      benchmarkStatus = "warning";
+      benchmarkDetail += "，存在行情缺口";
+    }
+    checks.push({
+      label: "Meridian 基准行情",
+      detail: benchmarkDetail,
+      status: benchmarkStatus
+    });
+
+    const missingItems = Number(contributionSummary.missing_items) || 0;
+    const estimatedItems = Number(contributionSummary.estimated_items) || 0;
+    let contributionStatus = "passed";
+    let contributionDetail = "证券贡献完整，未使用缺失或估算输入";
+    if (!state.performanceContribution) {
+      contributionStatus = "warning";
+      contributionDetail = "证券贡献接口未返回结果";
+    } else if (missingItems > 0) {
+      contributionStatus = "blocked";
+      contributionDetail = formatInt(missingItems) + " 个缺失项，" + formatInt(estimatedItems) + " 个估算项";
+    } else if (estimatedItems > 0) {
+      contributionStatus = "warning";
+      contributionDetail = formatInt(estimatedItems) + " 个估算项，明细可在证券贡献表核对";
+    }
+    checks.push({
+      label: "收益归因输入",
+      detail: contributionDetail,
+      status: contributionStatus
+    });
+
+    const anomalyItems = Number(tradeSummary.anomaly_items) || 0;
+    const nonTerminalOrders = Number(tradeSummary.non_terminal_orders) || 0;
+    let ledgerStatus = "passed";
+    let ledgerDetail = formatInt(tradeSummary.orders) + " 笔委托，未发现账本一致性异常";
+    if (!state.performanceTradeQuality) {
+      ledgerStatus = "warning";
+      ledgerDetail = "交易质量接口未返回结果";
+    } else if (nonTerminalOrders > 0) {
+      ledgerStatus = "blocked";
+      ledgerDetail = formatInt(nonTerminalOrders) + " 笔未终态，" + formatInt(anomalyItems) + " 个异常项";
+    } else if (anomalyItems > 0) {
+      ledgerStatus = "warning";
+      ledgerDetail = formatInt(anomalyItems) + " 个异常项，进入交易质量表核对";
+    }
+    checks.push({
+      label: "订单与成交账本",
+      detail: ledgerDetail,
+      status: ledgerStatus
+    });
+
+    const reconciliationStatus = reconciliation.status || "";
+    let navStatus = "warning";
+    let navDetail = "当前交易日暂无 T+1 NAV 对账记录";
+    if (reconciliationStatus === "auto_completed" || reconciliationStatus === "confirmed") {
+      navStatus = "passed";
+      navDetail = navReconciliationStatusInfo(reconciliationStatus).label + " · 残差 " + formatSigned(reconciliation.residual);
+    } else if (reconciliationStatus === "blocked") {
+      navStatus = "blocked";
+      navDetail = "经济净值已阻断 · 残差 " + formatSigned(reconciliation.residual);
+    } else if (reconciliationStatus === "review_required") {
+      navDetail = "待人工确认 · 残差 " + formatSigned(reconciliation.residual);
+    } else if (nav.status === "finalized") {
+      navStatus = "passed";
+      navDetail = "经济净值已定稿";
+    } else if (nav.status) {
+      navDetail = "经济净值 " + nav.status + "，等待 T+1 对账";
+    }
+    checks.push({
+      label: "经济净值与 T+1 对账",
+      detail: navDetail,
+      status: navStatus
+    });
+
+    const targetDate = compactDateLoose(daily.trade_date);
+    const jobRuns = state.systemStatus && state.systemStatus.job_runs || {};
+    const expectedJobs = ["pre_open_init", "post_close_settlement"];
+    const exactRuns = expectedJobs.map((name) => jobRuns[name]).filter((run) => run && compactDateLoose(run.target_trade_date) === targetDate);
+    const failedRun = exactRuns.find((run) => run.status === "failed");
+    const unfinishedRun = exactRuns.find((run) => !["succeeded", "skipped"].includes(run.status));
+    let jobStatus = "passed";
+    let jobDetail = "盘前初始化、盘后结算均已完成";
+    if (!targetDate || exactRuns.length < expectedJobs.length) {
+      jobStatus = "warning";
+      const latestDates = expectedJobs.map((name) => compactDateLoose(jobRuns[name] && jobRuns[name].target_trade_date)).filter(Boolean);
+      jobDetail = latestDates.length
+        ? "所选日无完整任务记录，最近 " + displayDate(latestDates.sort().pop())
+        : "尚未读取到日流程任务状态";
+    } else if (failedRun) {
+      jobStatus = "blocked";
+      jobDetail = failedRun.job_name + " 执行失败：" + (failedRun.error_summary || "查看任务中心");
+    } else if (unfinishedRun) {
+      jobStatus = "warning";
+      jobDetail = unfinishedRun.job_name + " 状态 " + unfinishedRun.status;
+    }
+    checks.push({
+      label: "盘前初始化与盘后结算",
+      detail: jobDetail,
+      status: jobStatus
+    });
+
+    return checks;
+  }
+
+  function renderPerformanceQuality() {
+    if (!els.performanceQualityPanel || !els.performanceQualityList) {
+      return;
+    }
+    const series = state.performanceSeries || [];
+    const daily = state.performanceDaily || series[series.length - 1] || {};
+    if (!state.performanceLoaded) {
+      els.performanceQualityPanel.dataset.status = "waiting";
+      els.performanceQualityStatus.textContent = "待检查";
+      els.performanceQualityDate.textContent = "等待结算数据";
+      els.performanceQualityPassed.textContent = "--";
+      els.performanceQualityWarnings.textContent = "--";
+      els.performanceQualityBlocked.textContent = "--";
+      els.performanceQualityList.innerHTML = '<div class="empty-state">查询绩效后显示快照、行情、归因、对账与任务检查</div>';
+      return;
+    }
+    const checks = performanceQualityChecks();
+    const passed = checks.filter((item) => item.status === "passed").length;
+    const warnings = checks.filter((item) => item.status === "warning").length;
+    const blocked = checks.filter((item) => item.status === "blocked").length;
+    const overall = blocked > 0 ? "blocked" : (warnings > 0 ? "warning" : "passed");
+    const labels = { passed: "全部通过", warning: "需要关注", blocked: "存在阻断" };
+    const statusLabels = { passed: "通过", warning: "提示", blocked: "阻断" };
+    const statusSymbols = { passed: "✓", warning: "!", blocked: "×" };
+    els.performanceQualityPanel.dataset.status = overall;
+    els.performanceQualityStatus.textContent = labels[overall];
+    els.performanceQualityDate.textContent = daily.trade_date ? displayDate(daily.trade_date) + " · 6 项检查" : "所选区间";
+    els.performanceQualityPassed.textContent = formatInt(passed);
+    els.performanceQualityWarnings.textContent = formatInt(warnings);
+    els.performanceQualityBlocked.textContent = formatInt(blocked);
+    els.performanceQualityList.innerHTML = checks.map((item) => `
+      <div class="performance-quality-item" data-status="${escapeHTML(item.status)}" title="${escapeHTML(item.detail)}">
+        <i>${escapeHTML(statusSymbols[item.status])}</i>
+        <div>
+          <strong>${escapeHTML(item.label)}</strong>
+          <span>${escapeHTML(item.detail)}</span>
+        </div>
+        <b>${escapeHTML(statusLabels[item.status])}</b>
+      </div>
+    `).join("");
+  }
+
+  function ensurePerformanceChart() {
+    if (!els.performanceChart || !window.echarts) {
+      return null;
+    }
+    if (!state.performanceChart) {
+      state.performanceChart = window.echarts.init(els.performanceChart, null, { renderer: "canvas" });
+    }
+    return state.performanceChart;
+  }
+
+  function renderPerformanceChart() {
+    if (!els.performanceChart || !els.performanceChartRange) {
+      return;
+    }
+    if (state.activeView !== "performance" && state.activeView !== "snapshots") {
+      return;
+    }
+    const chart = ensurePerformanceChart();
+    if (!chart) {
+      els.performanceChartRange.textContent = "ECharts 未加载";
+      return;
+    }
+    const rows = (state.performanceSeries || []).slice().sort((a, b) => String(a.trade_date).localeCompare(String(b.trade_date)));
+    if (rows.length === 0) {
+      chart.clear();
+      els.performanceChartRange.textContent = state.performanceError ? "绩效序列读取失败" : "暂无净值序列";
+      return;
+    }
+    const labels = rows.map((item) => displayDate(item.trade_date));
+    const accountNAV = rows.map((item) => {
+      const value = numericOrNull(item.cumulative_return);
+      return value === null ? null : 1 + value;
+    });
+    const benchmarkNAV = rows.map((item) => {
+      const value = numericOrNull(item.benchmark_cumulative_return);
+      return value === null ? null : 1 + value;
+    });
+    const excessReturns = rows.map((item) => {
+      const value = numericOrNull(item.excess_cumulative_return);
+      return value === null ? null : value * 100;
+    });
+    const accountDrawdowns = rows.map((item) => {
+      const value = numericOrNull(item.drawdown);
+      return value === null ? null : value * 100;
+    });
+    const benchmarkDrawdowns = rows.map((item) => {
+      const value = numericOrNull(item.benchmark_drawdown);
+      return value === null ? null : value * 100;
+    });
+    const summary = state.performanceSummary || {};
+    els.performanceChartRange.textContent = formatInt(rows.length) + " 个交易日 · close 净值归一化 1.0000 · " + (summary.benchmark_security_id || "未设置基准");
+    chart.setOption({
+      animationDuration: 260,
+      backgroundColor: "transparent",
+      color: ["#4ea1ff", "#f0b90b", "#d1d4dc", "#f23645", "#787b86"],
+      axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: "rgba(17,21,30,0.96)",
+        borderColor: "#363a45",
+        borderWidth: 1,
+        padding: [8, 10],
+        textStyle: { color: "#d1d4dc", fontSize: 11 },
+        formatter(params) {
+          const index = Array.isArray(params) && params.length ? params[0].dataIndex : 0;
+          const item = rows[index] || {};
+          return [
+            "<strong>" + escapeHTML(displayDate(item.trade_date)) + "</strong>",
+            "账户净值　" + formatNumber(accountNAV[index], 4) + "　净资产 " + formatNumber(item.net_asset),
+            "上证基准　" + formatNumber(benchmarkNAV[index], 4) + "　收盘 " + formatNumber(item.benchmark_close, 2),
+            "超额收益　" + formatPercent(item.excess_cumulative_return),
+            "账户回撤　" + formatPercent(item.drawdown) + "　基准 " + formatPercent(item.benchmark_drawdown)
+          ].join("<br>");
+        }
+      },
+      legend: { show: false },
+      grid: [
+        { left: 58, right: 58, top: 24, height: "53%" },
+        { left: 58, right: 58, top: "72%", bottom: 24 }
+      ],
+      xAxis: [
+        {
+          type: "category",
+          data: labels,
+          boundaryGap: false,
+          axisLabel: { show: false },
+          axisLine: { lineStyle: { color: "#3a3f4a" } },
+          axisTick: { show: false },
+          splitLine: { show: false }
+        },
+        {
+          type: "category",
+          gridIndex: 1,
+          data: labels,
+          boundaryGap: false,
+          axisLabel: { color: "#6f7480", fontSize: 10, hideOverlap: true },
+          axisLine: { lineStyle: { color: "#3a3f4a" } },
+          axisTick: { show: false },
+          splitLine: { show: false }
+        }
+      ],
+      yAxis: [
+        {
+          type: "value",
+          scale: true,
+          name: "净值",
+          nameTextStyle: { color: "#6f7480", fontSize: 10 },
+          axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => Number(value).toFixed(2) },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitNumber: 4,
+          splitLine: { lineStyle: { color: "#2b303b", opacity: 0.8 } }
+        },
+        {
+          type: "value",
+          scale: true,
+          position: "right",
+          name: "超额",
+          nameTextStyle: { color: "#6f7480", fontSize: 10 },
+          axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => formatNumber(value, 1) + "%" },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false }
+        },
+        {
+          type: "value",
+          gridIndex: 1,
+          scale: true,
+          max: 0,
+          name: "回撤",
+          nameTextStyle: { color: "#6f7480", fontSize: 10 },
+          axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => formatNumber(value, 0) + "%" },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitNumber: 2,
+          splitLine: { lineStyle: { color: "#2b303b", opacity: 0.8 } }
+        }
+      ],
+      dataZoom: [{ type: "inside", xAxisIndex: [0, 1], throttle: 60 }],
+      series: [
+        {
+          name: "账户净值",
+          type: "line",
+          data: accountNAV,
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 2, color: "#4ea1ff" },
+          itemStyle: { color: "#4ea1ff" },
+          emphasis: { focus: "series" },
+          markLine: {
+            silent: true,
+            symbol: "none",
+            label: { show: false },
+            lineStyle: { color: "#3a3f4a", type: "dashed", width: 1 },
+            data: [{ yAxis: 1 }]
+          }
+        },
+        {
+          name: "上证基准",
+          type: "line",
+          data: benchmarkNAV,
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 1.5, color: "#f0b90b" },
+          itemStyle: { color: "#f0b90b" },
+          emphasis: { focus: "series" }
+        },
+        {
+          name: "超额收益",
+          type: "line",
+          yAxisIndex: 1,
+          data: excessReturns,
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 1.5, color: "#d1d4dc", type: "dashed" },
+          itemStyle: { color: "#d1d4dc" },
+          emphasis: { focus: "series" }
+        },
+        {
+          name: "账户回撤",
+          type: "line",
+          xAxisIndex: 1,
+          yAxisIndex: 2,
+          data: accountDrawdowns,
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 1.5, color: "#f23645" },
+          areaStyle: { color: "rgba(242,54,69,0.10)" },
+          itemStyle: { color: "#f23645" },
+          emphasis: { focus: "series" }
+        },
+        {
+          name: "基准回撤",
+          type: "line",
+          xAxisIndex: 1,
+          yAxisIndex: 2,
+          data: benchmarkDrawdowns,
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 1, color: "#787b86", type: "dashed" },
+          itemStyle: { color: "#787b86" },
+          emphasis: { focus: "series" }
+        }
+      ]
+    }, true);
+  }
+
+  function resizePerformanceChart() {
+    if (state.performanceChart) {
+      state.performanceChart.resize();
+    }
+  }
+
+  function resizeTerminalCharts() {
+    resizeMinuteChart();
+    resizePerformanceChart();
+  }
+
   function renderPerformance() {
     if (!els.performanceSeriesBody) {
       return;
@@ -3828,6 +4307,8 @@
     renderNAVReconciliation(reconciliation, nav);
     renderPerformanceContributions();
     renderPerformanceTradeQuality();
+    renderPerformanceChart();
+    renderPerformanceQuality();
     setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
@@ -5298,7 +5779,7 @@
     }
     window.addEventListener("hashchange", () => setActiveView(viewFromLocation()));
     window.addEventListener("popstate", () => setActiveView(viewFromLocation()));
-    window.addEventListener("resize", resizeMinuteChart);
+    window.addEventListener("resize", resizeTerminalCharts);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         stopChartAutoRefresh();
