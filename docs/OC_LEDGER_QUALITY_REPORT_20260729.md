@@ -2,6 +2,8 @@
 
 更新时间：2026-07-29 17:25 Asia/Shanghai
 
+提交给 OC 的纯修改请求见 `docs/OC_CHANGE_REQUEST_20260729.md`。
+
 ## 结论
 
 本轮确认了两类独立问题：
