@@ -46,6 +46,7 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/accounts/{account_id}/positions/refresh", Response: "RefreshQueryResult", Description: "refresh account positions from front gateway"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/daily", Request: "trade_date", Response: "DailyPerformance", Description: "daily account equity and PnL summary"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/contributions", Request: "trade_date", Response: "ContributionResult", Description: "read-only security and strategy daily contribution attribution"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/trade-quality", Request: "trade_date or date_from/date_to", Response: "TradeQualityResult", Description: "read-only execution, cancellation, rejection, and order-fill consistency quality"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series", Request: "date_from/date_to/benchmark_security_id", Response: "PerformanceSeries", Description: "daily account equity, benchmark, excess return, and drawdown series"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/series.csv", Request: "date_from/date_to/benchmark_security_id", Response: "text/csv", Description: "CSV export for account performance and benchmark series"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/economic-nav/preview", Request: "trade_date/status", Response: "EconomicNAVResult", Description: "calculate economic NAV without writing ledger"},

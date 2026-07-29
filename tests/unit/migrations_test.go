@@ -230,6 +230,27 @@ func TestStrategyAttributionKeysMigrationAddsTradeDateAndLinks(t *testing.T) {
 	}
 }
 
+func TestTradeDateOrderScopeMigrationReplacesCompatibilityKeys(t *testing.T) {
+	upSQL := readMigration(t, "000012_trade_date_order_scope.up.sql")
+	for _, snippet := range []string{
+		"DROP CONSTRAINT orders_gateway_order_unique",
+		"UNIQUE (account_id, trade_date, gateway_order_id)",
+		"FOREIGN KEY (account_id, trade_date, gateway_order_id)",
+		"ON fills(account_id, trade_date, gateway_order_id, fill_id)",
+		"AND fills.trade_date = orders.trade_date",
+		"NOT VALID",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("trade date order scope migration missing snippet: %s", snippet)
+		}
+	}
+
+	downSQL := readMigration(t, "000012_trade_date_order_scope.down.sql")
+	if !strings.Contains(downSQL, "intentionally irreversible") {
+		t.Fatal("trade date order scope rollback must refuse destructive downgrade")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

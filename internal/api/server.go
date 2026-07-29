@@ -93,6 +93,7 @@ type PerformanceService interface {
 	CreateNavBaseline(ctx context.Context, baseline ledger.NavBaseline) (ledger.NavBaseline, error)
 	ListNavBaselines(ctx context.Context, accountID string) ([]ledger.NavBaseline, error)
 	CalculateContributions(ctx context.Context, accountID, tradeDate string) (relayperformance.ContributionResult, error)
+	CalculateTradeQuality(ctx context.Context, accountID, dateFrom, dateTo string) (relayperformance.TradeQualityResult, error)
 	CalculateReverseRepo(ctx context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error)
 	ListReverseRepoAccruals(ctx context.Context, accountID, tradeDate string) ([]ledger.ReverseRepoAccrual, error)
 	CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options relayperformance.EconomicNAVOptions) (relayperformance.EconomicNAVResult, error)
@@ -1155,6 +1156,12 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handlePerformanceContributions(w, r, accountID)
+		case "trade-quality":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handlePerformanceTradeQuality(w, r, accountID)
 		case "daily":
 			if len(parts) != 3 || r.Method != http.MethodGet {
 				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -1669,6 +1676,51 @@ func (s *Server) handlePerformanceContributions(w http.ResponseWriter, r *http.R
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"contribution": result})
+}
+
+func (s *Server) handlePerformanceTradeQuality(w http.ResponseWriter, r *http.Request, accountID string) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	dateFrom := strings.TrimSpace(r.URL.Query().Get("date_from"))
+	dateTo := strings.TrimSpace(r.URL.Query().Get("date_to"))
+	if tradeDate != "" && (dateFrom != "" || dateTo != "") {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "trade_date cannot be combined with date_from or date_to", nil)
+		return
+	}
+	if tradeDate != "" {
+		normalized, err := normalizeAPIDate(tradeDate)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid trade_date", err.Error())
+			return
+		}
+		dateFrom = normalized
+		dateTo = normalized
+	} else {
+		var err error
+		if dateFrom != "" {
+			dateFrom, err = normalizeAPIDate(dateFrom)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_from", err.Error())
+				return
+			}
+		}
+		if dateTo != "" {
+			dateTo, err = normalizeAPIDate(dateTo)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid date_to", err.Error())
+				return
+			}
+		}
+	}
+	result, err := s.perf.CalculateTradeQuality(r.Context(), accountID, dateFrom, dateTo)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"trade_quality": result})
 }
 
 func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request, accountID string) {

@@ -1583,6 +1583,110 @@ tr.flash {
   vertical-align: middle;
 }
 
+.trade-quality-panel.active {
+  display: grid;
+  grid-template-rows: 62px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.trade-quality-overview {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(76px, 1fr));
+  border-bottom: 1px solid var(--line-soft);
+  background: #fbfcfe;
+}
+
+.trade-quality-overview > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.trade-quality-overview span,
+.trade-quality-overview strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-quality-overview span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.trade-quality-overview strong {
+  margin-top: 4px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.trade-quality-table th,
+.trade-quality-table td {
+  height: 38px;
+  padding: 6px 8px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.trade-quality-table th:first-child,
+.trade-quality-table td:first-child {
+  width: 86px;
+  white-space: nowrap;
+}
+
+.trade-quality-table th:nth-child(5),
+.trade-quality-table td:nth-child(5) {
+  min-width: 76px;
+  white-space: nowrap;
+}
+
+.trade-quality-security strong,
+.trade-quality-security span,
+.trade-quality-reason strong,
+.trade-quality-reason span {
+  display: block;
+}
+
+.trade-quality-security strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.trade-quality-security span,
+.trade-quality-reason span {
+  max-width: 240px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-quality-reason strong {
+  max-width: 240px;
+  color: #b42318;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-flag {
+  display: inline-block;
+  margin: 1px 3px 1px 0;
+  padding: 2px 5px;
+  border: 1px solid #fda29b;
+  border-radius: 3px;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .contribution-security strong,
 .contribution-security span,
 .contribution-quality strong,
@@ -2544,6 +2648,7 @@ tr.flash {
 .pager-bar,
 .performance-toolbar,
 .contribution-overview,
+.trade-quality-overview,
 .settings-form,
 .bars-query,
 .nav-reconciliation-review {
@@ -2681,10 +2786,15 @@ tr.selected,
 
 .strategy-summary span,
 .contribution-status,
+.quality-flag,
 .nav-reconciliation-status {
   border-color: var(--line);
   background: var(--panel-soft);
   color: #aeb1bb;
+}
+
+.trade-quality-reason strong {
+  color: #ff7d88;
 }
 
 .minute-chart-shell {

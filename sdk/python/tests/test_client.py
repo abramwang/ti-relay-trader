@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
 from relay_sdk import RelayBrokerNotReadyError, RelayClient, RelayIdempotencyError
+from relay_sdk.client import _fill_key, _order_key
+from relay_sdk.models import Fill, Order
 from relay_sdk.streaming import iter_sse_events
 
 
@@ -60,6 +62,26 @@ class RelayHandler(BaseHTTPRequestHandler):
                                     "net_contribution": 100.0,
                                 }
                             ],
+                        }
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/trade-quality":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "trade_quality": {
+                            "account_id": "acct-1",
+                            "date_from": query.get("date_from", query.get("trade_date", ["20260612"]))[0],
+                            "date_to": query.get("date_to", query.get("trade_date", ["20260612"]))[0],
+                            "summary": {
+                                "orders": 10,
+                                "orders_with_fills": 8,
+                                "executed_order_rate": 0.8,
+                            },
+                            "anomalies": [],
                         }
                     },
                 }
@@ -467,6 +489,11 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(daily["net_asset"], 123.45)
         contributions = self.client.get_performance_contributions(trade_date="20260612")
         self.assertEqual(contributions["contributions"][0]["strategy_type"], "stock_cross_section")
+        quality = self.client.get_trade_quality(date_from="20260612", date_to="20260613")
+        self.assertEqual(quality["summary"]["executed_order_rate"], 0.8)
+        self.assertEqual(RelayHandler.requests[-1][2]["date_from"], ["20260612"])
+        with self.assertRaises(ValueError):
+            self.client.get_trade_quality(trade_date="20260612", date_from="20260612")
         series = self.client.get_performance_series(date_from="20260612", date_to="20260612", benchmark_security_id="000300.SH")
         self.assertEqual(series["series"][0]["trade_date"], "20260612")
         csv_text = self.client.get_performance_series_csv(date_from="20260612", date_to="20260612", benchmark_security_id="000300.SH")
@@ -618,6 +645,16 @@ class RelayClientTest(unittest.TestCase):
         )
 
         self.assertEqual(seen, [("gw-a", "reused-fill", 100), ("gw-b", "reused-fill", 200)])
+
+    def test_callback_keys_include_trade_date(self):
+        self.assertNotEqual(
+            _order_key(Order(account_id="acct-1", trade_date="2026-07-28", gateway_order_id="gw-1")),
+            _order_key(Order(account_id="acct-1", trade_date="2026-07-29", gateway_order_id="gw-1")),
+        )
+        self.assertNotEqual(
+            _fill_key(Fill(account_id="acct-1", trade_date="2026-07-28", gateway_order_id="gw-1", fill_id="fill-1")),
+            _fill_key(Fill(account_id="acct-1", trade_date="2026-07-29", gateway_order_id="gw-1", fill_id="fill-1")),
+        )
 
 
 if __name__ == "__main__":

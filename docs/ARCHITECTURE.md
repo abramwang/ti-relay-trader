@@ -122,7 +122,7 @@ relay 的核心域对象建议如下：
 | `Account` | 资金账户，包含 account_id、broker_id、gateway_id、交易权限、启停状态 |
 | `Gateway` | 前置服务实例，包含 env、broker_id、gateway_id、Redis stream prefix、心跳状态 |
 | `Order` | relay 标准订单，使用 gateway_order_id 作为跨系统主键 |
-| `Fill` | 成交事实，优先按 account_id + gateway_order_id + fill_id 或 match_stream_id 去重 |
+| `Fill` | 成交事实，优先按 account_id + trade_date + gateway_order_id + fill_id 或同日 match_stream_id 去重 |
 | `Position` | 持仓快照和可卖数量，需考虑 A 股 T+1 |
 | `CashLedger` | 资金流水、冻结、解冻、成交扣款、费用 |
 | `ReconciliationRun` | 一次盘后对账任务 |
@@ -132,7 +132,7 @@ relay 的核心域对象建议如下：
 
 1. `account_id` 必须能映射到唯一的 `broker_id + gateway_id + stream_prefix`。
 2. 下单、撤单、查询都必须带 `account_id`。
-3. `gateway_order_id` 由 relay 或调用方生成，但必须在账户维度唯一。
+3. `gateway_order_id` 由 relay、调用方或 OC 生成，必须在 `account_id + trade_date` 范围内唯一。
 4. 同一个 Redis 输出流可能有多账户消息，消费端必须按 `account_id`、`origin_message_id`、`gateway_order_id` 过滤。
 5. `GET /v1/account-routes` 是生产和测试环境的只读路由诊断入口，展示每个账户的查询/交易权限、只读状态、环境和 Redis `cmd.trade/cmd.query/reply/event/hb/dlq` key。
 
@@ -250,7 +250,7 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 | 编号 | 字段 | 唯一范围 | 用途 |
 | --- | --- | --- | --- |
 | 本地请求/委托 ID | `client_order_id` | `account_id` 内唯一，非空时有唯一索引 | 策略或页面侧追踪请求 |
-| 北向订单主键 | `gateway_order_id` | `account_id` 内唯一，强制唯一 | relay 与前置之间的订单关联、撤单、事件归属和账本主键 |
+| 北向订单主键 | `gateway_order_id` | `account_id + trade_date` 内唯一 | relay 与前置之间的订单关联、撤单、事件归属和账本主键 |
 | 前置/柜台订单 ID | `order_id` | 柜台当日口径 | 排查柜台回报和券商侧订单 |
 | 交易所委托流号 | `order_stream_id` | 交易所当日口径 | 与交易所回报、成交回报交叉校验 |
 
@@ -258,7 +258,7 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 
 下单幂等的预检顺序：
 
-1. 先查 `orders(account_id, gateway_order_id)`。
+1. 先查询账户下最新同 `gateway_order_id` 订单，并核对请求 `trade_date`。
 2. 如果同一 `gateway_order_id` 已存在但 `idempotency_key` 不同，返回冲突，不发布 Redis 命令。
 3. 如果同一 `gateway_order_id + idempotency_key` 已存在且核心 payload 一致，返回已有订单并标记 `replayed=true`。
 4. 如果同一 `gateway_order_id + idempotency_key` 已存在但 payload 不一致，返回 `IDEMPOTENCY_CONFLICT`。
@@ -266,7 +266,7 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 
 批量下单对整批有一个 `idempotency_key`，每个子订单也会拥有独立 `gateway_order_id` 和子订单幂等键。当前实现不允许同一批中混合“已重放订单”和“新订单”，避免部分重放导致重复下单语义不清。
 
-成交去重以订单作用域为准：优先使用 `account_id + gateway_order_id + fill_id`，缺少稳定成交流号时使用 `account_id + order_stream_id + match_timestamp + qty + price` fallback。`fill_id/match_stream_id` 只要求在同一订单内稳定，不要求账户级全局唯一。
+成交去重以当日订单作用域为准：优先使用 `account_id + trade_date + gateway_order_id + fill_id`，缺少稳定成交流号时使用包含交易日的 `account_id + order_stream_id + match_timestamp + qty + price` fallback。`fill_id/match_stream_id` 只要求在同一当日订单内稳定。
 
 ## 关键语义
 

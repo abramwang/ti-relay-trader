@@ -41,6 +41,7 @@
     performanceSeries: [],
     performanceDaily: null,
     performanceContribution: null,
+    performanceTradeQuality: null,
     performanceTableView: "contributions",
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
@@ -197,12 +198,20 @@
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
     performanceContributionBody: byID("performanceContributionBody"),
+    tradeQualityBody: byID("tradeQualityBody"),
     performanceTableViewButtons: Array.from(document.querySelectorAll("[data-performance-table-view]")),
     performanceTablePanels: Array.from(document.querySelectorAll("[data-performance-table-panel]")),
     contributionNetTotal: byID("contributionNetTotal"),
     contributionBPSTotal: byID("contributionBPSTotal"),
     contributionQualityCount: byID("contributionQualityCount"),
     performanceStrategySummary: byID("performanceStrategySummary"),
+    tradeQualityOrders: byID("tradeQualityOrders"),
+    tradeQualityExecutionRate: byID("tradeQualityExecutionRate"),
+    tradeQualityFullRate: byID("tradeQualityFullRate"),
+    tradeQualityQuantityRate: byID("tradeQualityQuantityRate"),
+    tradeQualityCancelReject: byID("tradeQualityCancelReject"),
+    tradeQualityOpen: byID("tradeQualityOpen"),
+    tradeQualityAnomalies: byID("tradeQualityAnomalies"),
     minuteChart: byID("minuteChart"),
     minuteChartStatus: byID("minuteChartStatus"),
     chartTradeDateInput: byID("chartTradeDateInput"),
@@ -3266,6 +3275,7 @@
       }
       state.performanceError = "";
       state.performanceContribution = null;
+      state.performanceTradeQuality = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       state.performanceSummary = data.summary || null;
@@ -3294,6 +3304,17 @@
         pushLog("warn", "证券贡献读取失败", displayDate(dailyDate) + " " + err.message);
       }
       try {
+        const qualityQuery = new URLSearchParams({
+          date_from: params.dateFrom,
+          date_to: params.dateTo
+        });
+        const qualityData = await request("/v1/accounts/" + accountID + "/performance/trade-quality?" + qualityQuery.toString());
+        state.performanceTradeQuality = qualityData.trade_quality || null;
+      } catch (err) {
+        state.performanceTradeQuality = null;
+        pushLog("warn", "交易质量读取失败", displayDate(params.dateFrom) + " 至 " + displayDate(params.dateTo) + " " + err.message);
+      }
+      try {
         const economicData = await request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate));
         state.performanceEconomicNAV = economicData.economic_nav || null;
       } catch (err) {
@@ -3314,6 +3335,7 @@
       state.performanceLoaded = false;
       state.performanceError = err.message;
       state.performanceContribution = null;
+      state.performanceTradeQuality = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       pushLog("error", "绩效查询失败", err.message);
@@ -3449,7 +3471,8 @@
   }
 
   function setPerformanceTableView(view) {
-    state.performanceTableView = view === "series" ? "series" : "contributions";
+    const supported = new Set(["contributions", "series", "trade-quality"]);
+    state.performanceTableView = supported.has(view) ? view : "contributions";
     for (const button of els.performanceTableViewButtons) {
       const active = button.dataset.performanceTableView === state.performanceTableView;
       button.classList.toggle("active", active);
@@ -3530,6 +3553,82 @@
     }).join("");
   }
 
+  function tradeQualityFlagLabel(value) {
+    return {
+      rejected_order: "拒单",
+      non_terminal_order: "未终态",
+      invalid_order_quantity: "委托量无效",
+      invalid_quantity: "废单数量",
+      order_fill_quantity_mismatch: "成交量不一致",
+      filled_quantity_exceeds_order: "成交量超委托",
+      terminal_flag_conflict: "终态标记冲突",
+      status_gateway_conflict: "状态冲突",
+      filled_status_quantity_conflict: "成交终态冲突",
+      fill_order_security_mismatch: "成交证券错配",
+      fill_order_side_mismatch: "成交方向错配",
+      fill_order_business_type_mismatch: "业务类型错配",
+      terminal_time_missing: "终态时间缺失",
+      terminal_before_created: "终态早于委托",
+      terminal_trade_date_mismatch: "终态跨交易日",
+      broker_error_message: "柜台错误",
+      orphan_fill: "成交缺委托"
+    }[value] || value || "异常";
+  }
+
+  function formatQualityRate(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? formatNumber(number * 100, 2) + "%" : "--";
+  }
+
+  function renderPerformanceTradeQuality() {
+    if (!els.tradeQualityBody) {
+      return;
+    }
+    const quality = state.performanceTradeQuality || {};
+    const summary = quality.summary || {};
+    const rows = Array.isArray(quality.anomalies) ? quality.anomalies : [];
+    els.tradeQualityOrders.textContent = formatInt(summary.orders);
+    els.tradeQualityExecutionRate.textContent = formatQualityRate(summary.executed_order_rate);
+    els.tradeQualityFullRate.textContent = formatQualityRate(summary.full_fill_rate);
+    els.tradeQualityQuantityRate.textContent = formatQualityRate(summary.quantity_fill_rate);
+    els.tradeQualityCancelReject.textContent = formatInt(summary.cancelled_orders) + " / " + formatInt(summary.rejected_orders);
+    els.tradeQualityOpen.textContent = formatInt(summary.non_terminal_orders);
+    els.tradeQualityAnomalies.textContent = formatInt(summary.anomaly_items);
+
+    if (rows.length === 0) {
+      const message = summary.orders > 0 ? "当前区间未发现交易质量异常" : "当前区间暂无委托记录";
+      els.tradeQualityBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">' + escapeHTML(message) + "</div></td></tr>";
+      return;
+    }
+    els.tradeQualityBody.innerHTML = rows.map((item) => {
+      const flags = Array.isArray(item.flags) ? item.flags : [];
+      const flagText = flags.map(tradeQualityFlagLabel);
+      const reason = item.broker_message || item.reject_message || flagText.join(" / ");
+      const status = item.status || "orphan";
+      const statusLabel = item.status ? statusText(item.status) : "成交无委托";
+      const security = item.security_id || "--";
+      const quantityDelta = Number(item.fill_quantity_delta);
+      return `
+        <tr>
+          <td>${escapeHTML(displayDate(item.trade_date))}</td>
+          <td class="trade-quality-security">
+            <strong>${escapeHTML(security)}</strong>
+            <span>${escapeHTML(item.name || item.gateway_order_id || "--")}</span>
+          </td>
+          <td>${sideBadge(item)}<br><span class="muted">${escapeHTML(item.business_type || "--")}</span></td>
+          <td class="num">${formatInt(item.order_quantity)} / ${formatInt(item.reported_filled_quantity)} / ${formatInt(item.ledger_filled_quantity)}</td>
+          <td><span class="status-badge ${escapeHTML(status)}">${escapeHTML(statusLabel)}</span></td>
+          <td class="num ${classForNumber(quantityDelta)}">${formatSigned(quantityDelta)}</td>
+          <td class="trade-quality-reason" title="${escapeHTML(reason)}">
+            <strong>${flags.slice(0, 2).map((flag) => '<i class="quality-flag">' + escapeHTML(tradeQualityFlagLabel(flag)) + "</i>").join("")}</strong>
+            <span>${escapeHTML(reason || item.gateway_order_id || "--")}</span>
+          </td>
+          <td>${escapeHTML(shortDateTime(item.last_updated_at))}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
   function renderPerformance() {
     if (!els.performanceSeriesBody) {
       return;
@@ -3604,6 +3703,7 @@
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
     renderNAVReconciliation(reconciliation, nav);
     renderPerformanceContributions();
+    renderPerformanceTradeQuality();
     setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError

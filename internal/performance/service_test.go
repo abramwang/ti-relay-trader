@@ -3,6 +3,7 @@ package performance
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"net/url"
 	"testing"
@@ -817,8 +818,208 @@ func TestReviewNAVReconciliationBlocksNAV(t *testing.T) {
 	}
 }
 
+func TestCalculateTradeQualitySummarizesExecutionAndAnomalies(t *testing.T) {
+	location := timeutil.Location()
+	updatedAt := time.Date(2026, 7, 24, 14, 30, 0, 0, location)
+	store := &fakePerformanceStore{
+		orders: []trading.Order{
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "filled-ok",
+				TradeDate:      "2026-07-24",
+				Symbol:         "600000",
+				Exchange:       trading.ExchangeSH,
+				OrderQty:       100,
+				CumFilledQty:   100,
+				Status:         trading.OrderStatusFilled,
+				GatewayStatus:  trading.GatewayStatusFilled,
+				IsTerminal:     true,
+				CreatedAt:      updatedAt.Add(-time.Minute),
+				TerminalAt:     updatedAt,
+				LastUpdatedAt:  updatedAt,
+			},
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "partial-cancel",
+				TradeDate:      "2026-07-24",
+				Symbol:         "000001",
+				Exchange:       trading.ExchangeSZ,
+				OrderQty:       100,
+				CumFilledQty:   40,
+				Status:         trading.OrderStatusCancelled,
+				GatewayStatus:  trading.GatewayStatusCancelled,
+				IsTerminal:     true,
+				CreatedAt:      updatedAt.Add(-time.Minute),
+				TerminalAt:     updatedAt.Add(time.Minute),
+				LastUpdatedAt:  updatedAt.Add(time.Minute),
+			},
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "rejected",
+				TradeDate:      "2026-07-24",
+				Symbol:         "300750",
+				Exchange:       trading.ExchangeSZ,
+				OrderQty:       100,
+				Status:         trading.OrderStatusRejected,
+				GatewayStatus:  trading.GatewayStatusRejected,
+				IsTerminal:     true,
+				RejectMessage:  "price outside limit",
+				CreatedAt:      updatedAt.Add(-time.Minute),
+				TerminalAt:     updatedAt.Add(2 * time.Minute),
+				LastUpdatedAt:  updatedAt.Add(2 * time.Minute),
+			},
+			{
+				AccountID:      "acct-1",
+				GatewayOrderID: "working",
+				TradeDate:      "2026-07-24",
+				Symbol:         "510300",
+				Exchange:       trading.ExchangeSH,
+				OrderQty:       100,
+				Status:         trading.OrderStatusWorking,
+				GatewayStatus:  trading.GatewayStatusWorking,
+				LastUpdatedAt:  updatedAt.Add(3 * time.Minute),
+			},
+			{
+				AccountID:         "acct-1",
+				GatewayOrderID:    "fill-mismatch",
+				TradeDate:         "2026-07-24",
+				Symbol:            "159915",
+				Exchange:          trading.ExchangeSZ,
+				OrderQty:          100,
+				CumFilledQty:      100,
+				Status:            trading.OrderStatusFilled,
+				GatewayStatus:     trading.GatewayStatusFilled,
+				IsTerminal:        true,
+				AdapterStatusCode: -8,
+				AdapterStatusName: "dealt",
+				CreatedAt:         updatedAt.Add(-time.Minute),
+				TerminalAt:        updatedAt.Add(4 * time.Minute),
+				LastUpdatedAt:     updatedAt.Add(4 * time.Minute),
+			},
+		},
+		fills: []trading.Fill{
+			{FillID: "filled-ok-1", AccountID: "acct-1", GatewayOrderID: "filled-ok", TradeDate: "2026-07-24", Symbol: "600000", Exchange: trading.ExchangeSH, Price: 10, Qty: 100, Fee: 1},
+			{FillID: "relay-summary:filled-ok", AccountID: "acct-1", GatewayOrderID: "filled-ok", TradeDate: "2026-07-24", Symbol: "600000", Exchange: trading.ExchangeSH, Price: 10, Qty: 100},
+			{FillID: "partial-cancel-1", AccountID: "acct-1", GatewayOrderID: "partial-cancel", TradeDate: "2026-07-24", Symbol: "000001", Exchange: trading.ExchangeSZ, Price: 12, Qty: 40, Fee: 0.5},
+			{FillID: "fill-mismatch-1", AccountID: "acct-1", GatewayOrderID: "fill-mismatch", TradeDate: "2026-07-24", Symbol: "159900", Exchange: trading.ExchangeSZ, Price: 4.8, Qty: 80, Fee: 0.8},
+			{FillID: "orphan-1", AccountID: "acct-1", GatewayOrderID: "missing-order", TradeDate: "2026-07-24", Symbol: "601318", Exchange: trading.ExchangeSH, Price: 60, Qty: 30, Fee: 0.6},
+		},
+	}
+	service, err := New(Options{Store: store, Now: func() time.Time { return updatedAt }})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateTradeQuality(context.Background(), "acct-1", "20260724", "2026-07-24")
+	if err != nil {
+		t.Fatalf("CalculateTradeQuality() error = %v", err)
+	}
+	if result.DateFrom != "2026-07-24" || result.DateTo != "2026-07-24" {
+		t.Fatalf("range = %s..%s", result.DateFrom, result.DateTo)
+	}
+	summary := result.Summary
+	if summary.Orders != 5 || summary.OrdersWithFills != 3 || summary.FullyFilledOrders != 2 || summary.PartiallyFilledOrders != 1 {
+		t.Fatalf("execution summary = %#v", summary)
+	}
+	if summary.CancelledOrders != 1 || summary.RejectedOrders != 1 || summary.NonTerminalOrders != 1 {
+		t.Fatalf("status summary = %#v", summary)
+	}
+	if summary.AbnormalOrders != 3 || summary.OrphanFillGroups != 1 || summary.AnomalyItems != 4 {
+		t.Fatalf("anomaly summary = %#v, anomalies=%#v", summary, result.Anomalies)
+	}
+	if summary.Fills != 4 || summary.FillQuantity != 250 {
+		t.Fatalf("fill summary = %#v", summary)
+	}
+	if summary.ExecutedOrderRate != 0.6 || summary.FullFillRate != 0.4 || summary.QuantityFillRate != 0.44 {
+		t.Fatalf("rates = %#v", summary)
+	}
+	if summary.Turnover != 3664 || summary.Fee != 2.9 {
+		t.Fatalf("turnover/fee = %#v", summary)
+	}
+	if len(store.orderQueries) != 1 || store.orderQueries[0].DateFrom != "2026-07-24" || store.orderQueries[0].DateTo != "2026-07-24" {
+		t.Fatalf("order queries = %#v", store.orderQueries)
+	}
+	if !tradeQualityHasAnomalyFlag(result.Anomalies, "fill-mismatch", "order_fill_quantity_mismatch") {
+		t.Fatalf("missing fill mismatch anomaly: %#v", result.Anomalies)
+	}
+	if !tradeQualityHasAnomalyFlag(result.Anomalies, "fill-mismatch", "fill_order_security_mismatch") {
+		t.Fatalf("missing fill security mismatch anomaly: %#v", result.Anomalies)
+	}
+	if !tradeQualityHasAnomalyFlag(result.Anomalies, "missing-order", "orphan_fill") {
+		t.Fatalf("missing orphan fill anomaly: %#v", result.Anomalies)
+	}
+	if tradeQualityHasAnomalyFlag(result.Anomalies, "partial-cancel", "broker_error_message") {
+		t.Fatalf("normal broker cancelled status treated as error: %#v", result.Anomalies)
+	}
+}
+
+func TestCalculateTradeQualityRejectsReversedRange(t *testing.T) {
+	service, err := New(Options{Store: &fakePerformanceStore{}})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = service.CalculateTradeQuality(context.Background(), "acct-1", "20260725", "20260724")
+	if err == nil || !errors.Is(err, ledger.ErrInvalidLedgerInput) {
+		t.Fatalf("CalculateTradeQuality() error = %v, want invalid ledger input", err)
+	}
+}
+
+func TestTradeQualityDoesNotMatchReusedOrderIDAcrossDates(t *testing.T) {
+	oldKey := tradeQualityKey("2026-07-23", "reused-order")
+	groups := map[string]qualityFillGroup{
+		oldKey: {quantity: 500},
+	}
+	keysByOrder := map[string][]string{
+		"reused-order": {oldKey},
+	}
+
+	group, matchedKey := matchTradeQualityFillGroup(
+		groups,
+		keysByOrder,
+		tradeQualityKey("2026-07-24", "reused-order"),
+		"reused-order",
+	)
+	if matchedKey != "" || group.quantity != 0 {
+		t.Fatalf("cross-date fill matched key=%q group=%#v", matchedKey, group)
+	}
+}
+
+func TestTradeQualityTerminalTimeAllowsSmallClockSkew(t *testing.T) {
+	createdAt := time.Date(2026, 7, 24, 10, 0, 0, 0, timeutil.Location())
+	order := trading.Order{
+		GatewayOrderID: "clock-skew",
+		TradeDate:      "2026-07-24",
+		OrderQty:       100,
+		Status:         trading.OrderStatusCancelled,
+		GatewayStatus:  trading.GatewayStatusCancelled,
+		IsTerminal:     true,
+		CreatedAt:      createdAt,
+		TerminalAt:     createdAt.Add(-3 * time.Second),
+	}
+	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	if containsString(anomaly.Flags, "terminal_before_created") {
+		t.Fatalf("small clock skew flagged: %#v", anomaly.Flags)
+	}
+
+	order.TerminalAt = createdAt.Add(-6 * time.Second)
+	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	if !containsString(anomaly.Flags, "terminal_before_created") {
+		t.Fatalf("large clock skew not flagged: %#v", anomaly.Flags)
+	}
+}
+
+func tradeQualityHasAnomalyFlag(items []TradeQualityAnomaly, gatewayOrderID, flag string) bool {
+	for _, item := range items {
+		if item.GatewayOrderID == gatewayOrderID && containsString(item.Flags, flag) {
+			return true
+		}
+	}
+	return false
+}
+
 type fakePerformanceStore struct {
 	orders                []trading.Order
+	orderQueries          []trading.OrderQuery
 	fills                 []trading.Fill
 	positions             map[string][]trading.Position
 	positionsByDate       map[string][]trading.Position
@@ -865,7 +1066,8 @@ func (client *fakeContributionMarket) MarketSnapshots(_ context.Context, values 
 	return client.snapshots, nil
 }
 
-func (store *fakePerformanceStore) ListOrders(_ context.Context, _ trading.OrderQuery) ([]trading.Order, error) {
+func (store *fakePerformanceStore) ListOrders(_ context.Context, query trading.OrderQuery) ([]trading.Order, error) {
+	store.orderQueries = append(store.orderQueries, query)
 	return store.orders, nil
 }
 

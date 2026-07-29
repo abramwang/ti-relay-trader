@@ -89,10 +89,13 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	}
 
 	requireQueryContains(t, exec.query, "INSERT INTO orders")
-	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, gateway_order_id)")
-	requireQueryContains(t, exec.query, "created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END")
-	requireQueryContains(t, exec.query, "cum_filled_qty = CASE WHEN EXCLUDED.is_terminal = TRUE THEN EXCLUDED.cum_filled_qty ELSE GREATEST(orders.cum_filled_qty, EXCLUDED.cum_filled_qty) END")
-	requireQueryContains(t, exec.query, "status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END")
+	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, trade_date, gateway_order_id)")
+	requireQueryContains(t, exec.query, "created_at = COALESCE(EXCLUDED.created_at, orders.created_at)")
+	requireQueryContains(t, exec.query, "WHEN EXCLUDED.adapter_context ? 'relay_reply_status' OR EXCLUDED.is_terminal = TRUE")
+	requireQueryContains(t, exec.query, "WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.status")
+	requireQueryContains(t, exec.query, "WHEN EXCLUDED.status = 'rejected' OR EXCLUDED.gateway_status = 'rejected'")
+	requireQueryContains(t, exec.query, "SELECT MIN(event.produced_at)")
+	requireQueryContains(t, exec.query, "event.trade_date = EXCLUDED.trade_date")
 	requireQueryContains(t, exec.query, "trade_date = COALESCE(EXCLUDED.trade_date, orders.trade_date)")
 	requireArgLen(t, exec.args, 44)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
@@ -119,6 +122,7 @@ func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
 	err := repo.UpsertOrder(context.Background(), trading.Order{
 		AccountID:      "acct-1",
 		GatewayOrderID: "gateway-filled",
+		TradeDate:      "2026-06-13",
 		Symbol:         "600000",
 		Exchange:       trading.ExchangeSH,
 		TradeSide:      trading.TradeSideBuy,
@@ -236,7 +240,8 @@ func TestUpdateOrderStatusBuildsPartialStatusUpdate(t *testing.T) {
 	}
 
 	requireQueryContains(t, exec.query, "UPDATE orders SET")
-	requireQueryContains(t, exec.query, "WHERE account_id = $1 AND gateway_order_id = $2")
+	requireQueryContains(t, exec.query, "AND gateway_order_id = $2")
+	requireQueryContains(t, exec.query, "AND trade_date = $5::date")
 	requireQueryContains(t, exec.query, "status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN status ELSE $18 END")
 	requireArgLen(t, exec.args, 25)
 	if exec.args[0] != "acct-1" || exec.args[1] != "gateway-1" {
@@ -258,6 +263,7 @@ func TestUpdateOrderStatusInfersFilledFromExecutionQuantities(t *testing.T) {
 		Order: trading.Order{
 			AccountID:      "acct-1",
 			GatewayOrderID: "gateway-filled",
+			TradeDate:      "2026-06-13",
 			OrderQty:       100,
 			CumFilledQty:   100,
 			LeavesQty:      0,
@@ -325,12 +331,12 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 	assertJSONContains(t, exec.argsList[0][26], `"strategy_type":"stock_cross_section"`)
 	assertJSONContains(t, exec.argsList[0][27], `"match_type":"counter"`)
 	requireQueryContains(t, exec.queries[1], "DELETE FROM fills")
-	requireArgLen(t, exec.argsList[1], 3)
-	if exec.argsList[1][0] != "acct-1" || exec.argsList[1][1] != "gateway-1" {
+	requireArgLen(t, exec.argsList[1], 4)
+	if exec.argsList[1][0] != "acct-1" || exec.argsList[1][1] != "2026-06-13" || exec.argsList[1][2] != "gateway-1" {
 		t.Fatalf("summary cleanup args = %#v", exec.argsList[1])
 	}
-	if orderStream, ok := exec.argsList[1][2].(sql.NullString); !ok || !orderStream.Valid || orderStream.String != "order-stream-1" {
-		t.Fatalf("summary cleanup order stream arg = %#v", exec.argsList[1][2])
+	if orderStream, ok := exec.argsList[1][3].(sql.NullString); !ok || !orderStream.Valid || orderStream.String != "order-stream-1" {
+		t.Fatalf("summary cleanup order stream arg = %#v", exec.argsList[1][3])
 	}
 }
 

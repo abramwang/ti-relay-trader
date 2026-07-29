@@ -470,6 +470,10 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	if order.AdapterStatusCode != 2 || order.AdapterStatusName != "queued" {
 		t.Fatalf("adapter status = %d/%s", order.AdapterStatusCode, order.AdapterStatusName)
 	}
+	wantUpdatedAt := time.Date(2026, 6, 13, 10, 0, 0, 123000000, time.UTC)
+	if !order.LastUpdatedAt.Equal(wantUpdatedAt) {
+		t.Fatalf("last_updated_at = %s, want %s", order.LastUpdatedAt, wantUpdatedAt)
+	}
 	if len(writer.orderEvents) != 1 || writer.orderEvents[0].stream.ID != "2-0" {
 		t.Fatalf("order events = %#v", writer.orderEvents)
 	}
@@ -483,6 +487,7 @@ func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
 			"message_type":"event",
 			"message_id":"event-filled-qty",
 			"event_type":"order.event",
+			"produced_at":"2026-06-13T10:00:01.456Z",
 			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
 			"payload":{
 				"gateway_order_id":"gw-filled-qty",
@@ -515,6 +520,10 @@ func TestProcessLedgerEntryInfersFilledOrderEventFromQuantities(t *testing.T) {
 	order := writer.orders[0]
 	if order.Status != trading.OrderStatusFilled || order.GatewayStatus != trading.GatewayStatusFilled || !order.IsTerminal {
 		t.Fatalf("order state = %s/%s terminal=%v", order.Status, order.GatewayStatus, order.IsTerminal)
+	}
+	wantTerminalAt := time.Date(2026, 6, 13, 10, 0, 1, 456000000, time.UTC)
+	if !order.TerminalAt.Equal(wantTerminalAt) {
+		t.Fatalf("terminal_at = %s, want %s", order.TerminalAt, wantTerminalAt)
 	}
 	if order.AdapterStatusName != "unAccept" {
 		t.Fatalf("adapter status should preserve raw broker name: %#v", order)

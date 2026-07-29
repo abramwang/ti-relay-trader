@@ -40,6 +40,7 @@ def main() -> None:
     positions = client.get_positions(account_id)
     orders = client.list_orders(account_id=account_id, limit=5)
     fills = client.list_fills(account_id=account_id, limit=5)
+    trade_quality = client.get_trade_quality(account_id=account_id)
 
     event_summary: dict[str, Any] = {"skipped": True}
     if not args.skip_events:
@@ -62,6 +63,8 @@ def main() -> None:
         "positions": len(positions),
         "orders_sample": len(orders),
         "fills_sample": len(fills),
+        "trade_quality_orders": int((trade_quality.get("summary") or {}).get("orders", 0)),
+        "trade_quality_anomalies": int((trade_quality.get("summary") or {}).get("anomaly_items", 0)),
         "event": event_summary,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

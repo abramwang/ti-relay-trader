@@ -94,7 +94,7 @@ INSERT INTO orders (
     $31, $32, $33, $34, $35, $36, $37, COALESCE($38, now()), $39, $40,
     $41, $42, $43, $44
 )
-ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
+ON CONFLICT (account_id, trade_date, gateway_order_id) DO UPDATE SET
     client_order_id = COALESCE(EXCLUDED.client_order_id, orders.client_order_id),
     order_id = COALESCE(EXCLUDED.order_id, orders.order_id),
     order_stream_id = COALESCE(EXCLUDED.order_stream_id, orders.order_stream_id),
@@ -104,7 +104,7 @@ ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
     basket_id = COALESCE(EXCLUDED.basket_id, orders.basket_id),
     parent_order_id = COALESCE(EXCLUDED.parent_order_id, orders.parent_order_id),
     t0_order_group_id = COALESCE(EXCLUDED.t0_order_group_id, orders.t0_order_group_id),
-    created_at = CASE WHEN EXCLUDED.raw_payload ? 'created_at' THEN EXCLUDED.created_at ELSE orders.created_at END,
+    created_at = COALESCE(EXCLUDED.created_at, orders.created_at),
     symbol = EXCLUDED.symbol,
     name = EXCLUDED.name,
     exchange = EXCLUDED.exchange,
@@ -113,20 +113,73 @@ ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
     offset_type = EXCLUDED.offset_type,
     limit_price = EXCLUDED.limit_price,
     order_qty = EXCLUDED.order_qty,
-    submitted_qty = GREATEST(orders.submitted_qty, EXCLUDED.submitted_qty),
-    cum_filled_qty = CASE WHEN EXCLUDED.is_terminal = TRUE THEN EXCLUDED.cum_filled_qty ELSE GREATEST(orders.cum_filled_qty, EXCLUDED.cum_filled_qty) END,
-    leaves_qty = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.leaves_qty ELSE EXCLUDED.leaves_qty END,
-    cancelled_qty = GREATEST(orders.cancelled_qty, EXCLUDED.cancelled_qty),
-    invalid_qty = GREATEST(orders.invalid_qty, EXCLUDED.invalid_qty),
-    avg_fill_price = COALESCE(EXCLUDED.avg_fill_price, orders.avg_fill_price),
+    submitted_qty = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.submitted_qty
+        ELSE GREATEST(orders.submitted_qty, EXCLUDED.submitted_qty)
+    END,
+    cum_filled_qty = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' OR EXCLUDED.is_terminal = TRUE
+            THEN EXCLUDED.cum_filled_qty
+        ELSE GREATEST(orders.cum_filled_qty, EXCLUDED.cum_filled_qty)
+    END,
+    leaves_qty = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.leaves_qty
+        WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.leaves_qty
+        ELSE EXCLUDED.leaves_qty
+    END,
+    cancelled_qty = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.cancelled_qty
+        ELSE GREATEST(orders.cancelled_qty, EXCLUDED.cancelled_qty)
+    END,
+    invalid_qty = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.invalid_qty
+        ELSE GREATEST(orders.invalid_qty, EXCLUDED.invalid_qty)
+    END,
+    avg_fill_price = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.avg_fill_price
+        ELSE COALESCE(EXCLUDED.avg_fill_price, orders.avg_fill_price)
+    END,
     fee = EXCLUDED.fee,
-    status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status ELSE EXCLUDED.status END,
-    gateway_status = CASE WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.gateway_status ELSE EXCLUDED.gateway_status END,
-    adapter_status_code = COALESCE(EXCLUDED.adapter_status_code, orders.adapter_status_code),
-    adapter_status_name = COALESCE(EXCLUDED.adapter_status_name, orders.adapter_status_name),
-    is_terminal = orders.is_terminal OR EXCLUDED.is_terminal,
-    reject_code = COALESCE(EXCLUDED.reject_code, orders.reject_code),
-    reject_message = COALESCE(EXCLUDED.reject_message, orders.reject_message),
+    status = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.status
+        WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status
+        ELSE EXCLUDED.status
+    END,
+    gateway_status = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.gateway_status
+        WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.gateway_status
+        ELSE EXCLUDED.gateway_status
+    END,
+    adapter_status_code = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.adapter_status_code
+        ELSE COALESCE(EXCLUDED.adapter_status_code, orders.adapter_status_code)
+    END,
+    adapter_status_name = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.adapter_status_name
+        ELSE COALESCE(EXCLUDED.adapter_status_name, orders.adapter_status_name)
+    END,
+    is_terminal = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.is_terminal
+        ELSE orders.is_terminal OR EXCLUDED.is_terminal
+    END,
+    reject_code = CASE
+        WHEN orders.is_terminal = TRUE
+            AND EXCLUDED.is_terminal = FALSE
+            AND orders.status = 'rejected'
+            THEN orders.reject_code
+        WHEN EXCLUDED.status = 'rejected' OR EXCLUDED.gateway_status = 'rejected'
+            THEN EXCLUDED.reject_code
+        ELSE NULL
+    END,
+    reject_message = CASE
+        WHEN orders.is_terminal = TRUE
+            AND EXCLUDED.is_terminal = FALSE
+            AND orders.status = 'rejected'
+            THEN orders.reject_message
+        WHEN EXCLUDED.status = 'rejected' OR EXCLUDED.gateway_status = 'rejected'
+            THEN EXCLUDED.reject_message
+        ELSE NULL
+    END,
     origin_message_id = COALESCE(EXCLUDED.origin_message_id, orders.origin_message_id),
     request_id = COALESCE(EXCLUDED.request_id, orders.request_id),
     idempotency_key = COALESCE(EXCLUDED.idempotency_key, orders.idempotency_key),
@@ -135,12 +188,35 @@ ON CONFLICT (account_id, gateway_order_id) DO UPDATE SET
     inserted_at = COALESCE(EXCLUDED.inserted_at, orders.inserted_at),
     last_updated_at = COALESCE(EXCLUDED.last_updated_at, orders.last_updated_at),
     terminal_at = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' AND EXCLUDED.is_terminal = FALSE THEN NULL
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' AND EXCLUDED.is_terminal = TRUE
+            THEN COALESCE(
+                EXCLUDED.terminal_at,
+                (
+                    SELECT MIN(event.produced_at)
+                    FROM order_events AS event
+                    WHERE event.account_id = EXCLUDED.account_id
+                        AND event.trade_date = EXCLUDED.trade_date
+                        AND event.gateway_order_id = EXCLUDED.gateway_order_id
+                        AND event.is_terminal = TRUE
+                        AND (
+                            event.status = EXCLUDED.status
+                            OR event.gateway_status = EXCLUDED.gateway_status
+                        )
+                ),
+                orders.terminal_at,
+                EXCLUDED.last_updated_at,
+                now()
+            )
         WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.terminal_at
         WHEN EXCLUDED.is_terminal = TRUE THEN COALESCE(EXCLUDED.terminal_at, orders.terminal_at, EXCLUDED.last_updated_at, now())
         ELSE orders.terminal_at
     END,
     raw_payload = EXCLUDED.raw_payload,
-    adapter_context = orders.adapter_context || EXCLUDED.adapter_context,
+    adapter_context = CASE
+        WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.adapter_context
+        ELSE orders.adapter_context || EXCLUDED.adapter_context
+    END,
     updated_at = now()
 `
 
@@ -195,13 +271,23 @@ UPDATE orders SET
     status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN status ELSE $18 END,
     gateway_status = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN gateway_status ELSE $19 END,
     is_terminal = is_terminal OR $20,
-    reject_code = COALESCE($21, reject_code),
-    reject_message = COALESCE($22, reject_message),
+    reject_code = CASE
+        WHEN is_terminal = TRUE AND $20 = FALSE AND status = 'rejected' THEN reject_code
+        WHEN $18 = 'rejected' OR $19 = 'rejected' THEN $21
+        ELSE NULL
+    END,
+    reject_message = CASE
+        WHEN is_terminal = TRUE AND $20 = FALSE AND status = 'rejected' THEN reject_message
+        WHEN $18 = 'rejected' OR $19 = 'rejected' THEN $22
+        ELSE NULL
+    END,
     last_updated_at = COALESCE($23, now()),
     terminal_at = CASE WHEN is_terminal = TRUE AND $20 = FALSE THEN terminal_at WHEN $20 = TRUE THEN COALESCE($24, $23, terminal_at, now()) ELSE terminal_at END,
     adapter_context = adapter_context || $25::jsonb,
     updated_at = now()
-WHERE account_id = $1 AND gateway_order_id = $2
+WHERE account_id = $1
+    AND gateway_order_id = $2
+    AND trade_date = $5::date
 `
 
 const orderSelectColumns = `
@@ -254,6 +340,8 @@ FROM orders
 
 const getOrderSQL = orderSelectColumns + `
 WHERE account_id = $1 AND gateway_order_id = $2
+ORDER BY trade_date DESC, COALESCE(last_updated_at, created_at) DESC
+LIMIT 1
 `
 
 const getOrderByIdempotencyKeySQL = orderSelectColumns + `
@@ -303,10 +391,11 @@ ON CONFLICT DO NOTHING
 const deleteSummaryFillsForOrderSQL = `
 DELETE FROM fills
 WHERE account_id = $1
+    AND trade_date = $2::date
     AND fill_id LIKE 'relay-summary:%'
     AND (
-        gateway_order_id = $2
-        OR ($3::text IS NOT NULL AND order_stream_id = $3)
+        gateway_order_id = $3
+        OR ($4::text IS NOT NULL AND order_stream_id = $4)
     )
 `
 

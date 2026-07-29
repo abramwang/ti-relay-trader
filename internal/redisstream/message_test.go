@@ -1,6 +1,9 @@
 package redisstream
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestSummarizeEntry(t *testing.T) {
 	body := `{
@@ -37,5 +40,20 @@ func TestSummarizeEntryMissingBody(t *testing.T) {
 	summary := SummarizeEntry("stream", "1-0", map[string]any{"other": "value"})
 	if summary.ParseError == "" {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestDecodeEntryFallsBackToRedisStreamTime(t *testing.T) {
+	envelope, err := DecodeEntry(
+		"relay:prod:v1:huaxin:acct-1:event",
+		"1781505841129-0",
+		map[string]any{"body": `{"message_type":"event","event_type":"order.event"}`},
+	)
+	if err != nil {
+		t.Fatalf("DecodeEntry() error = %v", err)
+	}
+	want := time.UnixMilli(1781505841129)
+	if !envelope.ProducedAt.Equal(want) {
+		t.Fatalf("produced_at = %s, want %s", envelope.ProducedAt, want)
 	}
 }

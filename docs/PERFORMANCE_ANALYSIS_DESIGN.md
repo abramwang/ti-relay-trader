@@ -95,7 +95,7 @@ derived_pnl    = settled_profit + day_unrealized_pnl - fee_total
 已落地策略归因和交易日业务键底座：
 
 1. `000010_strategy_attribution_keys` 为 `orders/order_events/fills` 增加 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id` 和 `t0_order_group_id`；`fills` 额外保存 `business_type`。
-2. `orders_account_trade_date_gateway_order_unique` 体现 OC/券商订单号“账户内当日唯一”的业务语义。当前 `orders_gateway_order_unique` 暂时保留，用于兼容现有 `fills/order_events` 外键；后续 N10 生产化迁移再切换外键和 upsert 冲突目标。
+2. `000012_trade_date_order_scope` 已将 `orders/fills/order_events` 的唯一键、外键和 upsert 冲突目标统一为 `account_id + trade_date + gateway_order_id`；生产原始流已完成重放和外键验证。
 3. `performance_attribution_links` 作为可追溯链接表，后续把订单、成交、ETF 成分划转、持仓、现金流水和 NAV 分量连接到策略归因结果。
 4. `SubmitOrderRequest`、Redis order/fill 解析、HTTP 查询过滤和 Python SDK `0.1.12` 已支持策略归因字段。未来新策略单应显式携带这些字段；历史订单仍可由归因任务推断后写入链接表。
 
@@ -278,8 +278,8 @@ cross_section_net_pnl =
 
 1. `314000045768` 在 14:56:46 有一笔 `204001.SH` 逆回购，回报 `qty=358,280`、`price=1.005`。Meridian instruments 当前未返回该标的元数据，逆回购本金与利息规则需要单独建模。
 2. `314000045768` 日终仍有 2 笔 ETF 买单显示 `working`，另有 4 笔赎回成分股卖单曾被拒绝；成分股最终成交数量仍与划转数量完全一致，说明拒单后存在重试成交。
-3. 订单编号由 OC 保证“账户内当日唯一”，但当前 `orders` 唯一键只有 `account_id + gateway_order_id`，没有交易日。最近日订单中，`501000114077` 有 110/256、`314000045768` 有 609/854 条 `terminal_at < created_at`，表明历史同 ID 终态时间残留。跨日策略归因前必须把订单业务键调整为账户、交易日和柜台订单 ID 的组合。
-4. 三笔订单仍存在 `cum_filled_qty` 与成交明细汇总不一致。策略事实和盈利归因应优先以去重后的真实成交、成分划转和持仓快照为依据，订单累计数量只用于质量检查。
+3. Relay 旧账户级订单唯一键曾导致跨日订单覆盖。2026-07-29 已切换交易日复合键并重放生产原始流：订单由 19,762 恢复到 34,601，成交缺同日订单和订单事件缺同日订单均归零。
+4. 历史仍有少量 OC 原始 `order.event/fill.event` 共用 ID 但证券和数量不一致，不能由 Relay 猜测改配；策略事实和盈利归因必须优先使用通过质量校验的真实成交、成分划转和持仓快照。样本与 OC 整改要求见 `docs/OC_LEDGER_QUALITY_REPORT_20260729.md`。
 5. `2026-07-22/23` 的 `588200.SH` 赎回订单事件已有 `business_type=E`，但对应成交记录缺少该字段，并额外把 ETF 本体作为一条 `transfer.event`；历史归因需通过 `gateway_order_id` 关联订单事件，并从 PCF 成分中排除 ETF 本体标记。
 6. `2026-07-24` 两笔 `159915.SZ` 实时订单事件曾分别出现 `order_qty=200/600`、`cum_filled_qty=1,000,000` 的矛盾；盘后订单查询已将两笔 `order_qty` 修正为 1,000,000。T0 归因必须使用最终订单查询值并保留实时修正质量标记。
 
@@ -704,7 +704,7 @@ GET /v1/accounts/{account_id}/performance/contributions
 1. `summary`：账户 KPI 和数据质量摘要。
 2. `contributions`：按证券和策略聚合的 open/close 数量、买卖额、费用、净贡献、贡献 bp、估值/IOPV 来源和质量状态。
 3. `strategies`：股票截面、ETF 截面、ETF 申赎 T0、现金管理、成分划转和待归因汇总。
-4. `quality_flags`：缺失、估算、T0 历史订单组推断和成分划转链接缺口。
+4. `quality_flags`：缺失、估算、T0 历史订单组推断、成分划转链接缺口，以及交易质量中的成交证券/方向错配、终态时间缺失或跨日。
 
 该接口只读，只使用本地账本和 Meridian，不查询柜台。open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且必须满足 `open + buy - sell = close` 数量桥；否则该证券保持 `missing`，不能把缺失持仓当作 0 制造虚假收益。多个 ETF 赎回组的 IOPV 请求最多 8 路并发，返回顺序仍按归因组稳定。
 
@@ -745,7 +745,20 @@ GET /v1/accounts/{account_id}/performance/contributions
 6. 2026-07-22 至 2026-07-24 生产只读样本完成复核，多组 IOPV 查询并发后最慢样本约 4.55 秒。
 7. Playwright 已验证证券贡献/净值序列切换、未结算日自动回退和 1680px 布局。
 
-下一步进入交易质量统计：成交率、撤单率、拒单率、未终态和异常订单。
+### Phase 3.1 交易质量统计
+
+状态：`done`
+
+当前完成：
+
+1. 新增只读 `GET /v1/accounts/{account_id}/performance/trade-quality`，支持单日或日期区间。
+2. 成交率拆为有实际成交订单率、完全成交率和按委托数量计算的成交率，同时输出撤单率与拒单率。
+3. 异常明细覆盖拒单、未终态、订单与成交数量不一致、终态冲突、柜台错误字段残留和成交缺委托。
+4. 订单和成交严格按 `trade_date + gateway_order_id` 关联，避免柜台订单 ID 跨日复用导致错误归组；真实成交存在时排除同订单 `relay-summary:*` 汇总成交。
+5. `/trade#performance` 增加“交易质量”视图，API Console 与 Python SDK helper 同步。
+6. 2026-07-22 至 2026-07-24 三账户生产只读样本完成核对，正常撤单不作为异常；历史成交缺委托、成交终态残留柜台拒绝字段及数量冲突可明确追溯。
+
+下一步完成 Phase 2 主图和正式数据质量区：账户净值、上证指数基准、超额收益与回撤。
 
 ### Phase 4 精确成本引擎
 

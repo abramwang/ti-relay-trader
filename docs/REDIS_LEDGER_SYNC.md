@@ -129,7 +129,7 @@ action 到 stream 的映射：
 | `order.event` | `account_id`、`gateway_order_id`、数量/状态字段；若没有本地草稿，还需要 `trade_side/business_type` | `orders` upsert 或状态更新、`order_events` 追加 |
 | `fill.event` | `account_id`、`gateway_order_id`、`fill_id` 或 `adapter_context.match_stream_id`、价格、数量、标的、方向 | `fills` |
 
-订单事件按整单快照处理。前置如果同一订单状态变化，会推送完整订单信息，relay 对 `orders(account_id, gateway_order_id)` 做 upsert。终态保护在 SQL 层实现：已 `filled/cancelled/rejected` 的订单不会被后续非终态事件回退，`terminal_at` 也不会被非终态覆盖。
+订单事件按整单快照处理。前置如果同一订单状态变化，会推送完整订单信息，relay 对 `orders(account_id, trade_date, gateway_order_id)` 做 upsert。实时事件保留同一交易日终态保护；`order.list.query` 是柜台权威快照，可以纠正实时链路中的旧状态、旧数量、旧拒单字段和旧终态时间。
 
 成交事件和成交页中的 `business_type`、`record_type`、`is_transfer` 会保存在 `fills.adapter_context`。这用于保留 ETF 申购/赎回等非普通买卖的业务语义，而不改变现有 `fills` 事实表主键和金额字段。普通成交仍要求 `price > 0`、`qty > 0`；ETF 赎回如果前置按标准成交返回 `trade_side=R`、`business_type=E`、正数价格和数量，relay 会作为真实成交入库，并由交易终端显示为 `ETF赎回`。
 
@@ -253,9 +253,9 @@ relay 的正式下单 API 已在写入 Redis `cmd.trade` 前先写入订单草�
 ## 幂等策略
 
 1. `raw_stream_messages` 以 `stream_key + stream_id` 去重。
-2. `orders` 以 `account_id + gateway_order_id` upsert。
+2. `orders` 以 `account_id + trade_date + gateway_order_id` upsert；柜台订单流号允许跨交易日复用。
 3. `order_events` 以 `account_id + event_id` 或 `stream_key + stream_id` 去重。
-4. `fills` 以 `account_id + gateway_order_id + fill_id` 或 fallback 唯一键去重；`fill_id/match_stream_id` 只要求在订单作用域内稳定。
+4. `fills` 以 `account_id + trade_date + gateway_order_id + fill_id` 或含交易日的 fallback 唯一键去重；`fill_id/match_stream_id` 只要求在当日订单作用域内稳定。
 5. `stream_checkpoints` 以 `stream_key` 去重，记录最后已读 Redis Stream ID。
 6. API 下单在发布 Redis 前先查 `gateway_order_id` 和 `idempotency_key`，命中相同 payload 时返回 `replayed=true`，冲突时不发布 Redis 命令。
 
@@ -267,10 +267,30 @@ relay 的正式下单 API 已在写入 Redis `cmd.trade` 前先写入订单草�
 
 修复方式：
 
-1. `000005_fill_id_order_scope` 将成交唯一键调整为 `account_id + gateway_order_id + fill_id`。
+1. `000005_fill_id_order_scope` 先将成交唯一键调整为订单作用域；`000012_trade_date_order_scope` 再收敛为 `account_id + trade_date + gateway_order_id + fill_id`。
 2. Redis Stream 原始消息仍以 `stream_key + stream_id` 做重复消费幂等。
 3. 前置 `fill.event` 必须尽量携带 `gateway_order_id`、`order_id`、`order_stream_id` 和 `fill_id/match_stream_id`；`fill_id` 只要求在订单作用域内稳定。
 4. Relay 回放该区间后，`fh-sdk017-writepress-20260614T125055Z-400597-011-300750` 和 `...-012-600000` 已补入逐笔成交。
+
+## 2026-07-29 跨交易日订单恢复
+
+生产原始流确认 7,665 个 `gateway_order_id` 曾跨交易日复用，旧账户级唯一键导致近 15,000 条历史订单被后续交易日覆盖。`000012_trade_date_order_scope` 已将订单、事件、成交外键和去重键统一到交易日作用域，并新增：
+
+```bash
+go run ./cmd/relayctl ledger-replay -config config/relay.prod.yaml
+
+# 仅重建订单账表，例如修复订单状态或终态时间
+go run ./cmd/relayctl ledger-replay -config config/relay.prod.yaml -stages orders
+```
+
+该命令只读取 PostgreSQL `raw_stream_messages`，先重放订单事件和订单查询页，再重放真实成交。生产重放后，成交缺同日订单和订单事件缺同日订单均降为 0。详细证据和 OC 同日 ID 冲突要求见 `docs/OC_LEDGER_QUALITY_REPORT_20260729.md`。
+
+重放验收通过后执行：
+
+```sql
+ALTER TABLE order_events VALIDATE CONSTRAINT order_events_order_fk;
+ALTER TABLE fills VALIDATE CONSTRAINT fills_order_fk;
+```
 
 ## 后续工作
 

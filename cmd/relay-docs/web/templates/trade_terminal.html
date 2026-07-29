@@ -288,6 +288,7 @@
               <div class="performance-table-tabs" role="tablist" aria-label="绩效数据视图">
                 <button type="button" class="active" data-performance-table-view="contributions" role="tab" aria-selected="true">证券贡献</button>
                 <button type="button" data-performance-table-view="series" role="tab" aria-selected="false">净值序列</button>
+                <button type="button" data-performance-table-view="trade-quality" role="tab" aria-selected="false">交易质量</button>
               </div>
               <span id="performanceStatus">等待查询</span>
             </div>
@@ -341,6 +342,34 @@
                 </thead>
                 <tbody id="performanceSeriesBody"></tbody>
               </table>
+            </div>
+            <div class="performance-table-panel trade-quality-panel" data-performance-table-panel="trade-quality">
+              <div class="trade-quality-overview">
+                <div><span>委托</span><strong id="tradeQualityOrders">--</strong></div>
+                <div><span>有成交率</span><strong id="tradeQualityExecutionRate">--</strong></div>
+                <div><span>完全成交率</span><strong id="tradeQualityFullRate">--</strong></div>
+                <div><span>数量成交率</span><strong id="tradeQualityQuantityRate">--</strong></div>
+                <div><span>撤单 / 拒单</span><strong id="tradeQualityCancelReject">--</strong></div>
+                <div><span>未终态</span><strong id="tradeQualityOpen">--</strong></div>
+                <div><span>异常项</span><strong id="tradeQualityAnomalies">--</strong></div>
+              </div>
+              <div class="table-wrap trade-quality-table-wrap">
+                <table class="trade-quality-table">
+                  <thead>
+                    <tr>
+                      <th>交易日</th>
+                      <th>代码 / 名称</th>
+                      <th>方向 / 业务</th>
+                      <th class="num">委托 / 回报 / 成交</th>
+                      <th>状态</th>
+                      <th class="num">数量差</th>
+                      <th>异常 / 柜台信息</th>
+                      <th>更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tradeQualityBody"></tbody>
+                </table>
+              </div>
             </div>
           </section>
 
@@ -625,6 +654,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260729-0007"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260729-0009"></script>
 </body>
 </html>

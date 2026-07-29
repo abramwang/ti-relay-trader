@@ -30,6 +30,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl ledger-sync: %v\n", err)
 			os.Exit(1)
 		}
+	case "ledger-replay":
+		if err := runLedgerReplay(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl ledger-replay: %v\n", err)
+			os.Exit(1)
+		}
 	case "migrate":
 		if err := runMigrate(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl migrate: %v\n", err)
@@ -114,6 +119,67 @@ func runLedgerSync(args []string) error {
 		return err
 	}
 	return writeJSON(report)
+}
+
+func runLedgerReplay(args []string) error {
+	flags := flag.NewFlagSet("ledger-replay", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	configPath := flags.String("config", os.Getenv(config.EnvPath), "relay YAML config path")
+	databaseURL := flags.String("database-url", os.Getenv("RELAY_DATABASE_URL"), "PostgreSQL DSN override")
+	accountID := flags.String("account-id", "", "optional account filter")
+	dateFrom := flags.String("date-from", "", "optional received-date lower bound, YYYY-MM-DD in Asia/Shanghai")
+	dateTo := flags.String("date-to", "", "optional received-date upper bound, YYYY-MM-DD in Asia/Shanghai")
+	stages := flags.String("stages", "orders,fills", "comma-separated replay stages: orders,fills")
+	timeout := flags.Duration("timeout", 15*time.Minute, "replay timeout")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	dsn := strings.TrimSpace(*databaseURL)
+	if dsn == "" {
+		dsn = strings.TrimSpace(cfg.Database.DSN)
+	}
+	if dsn == "" {
+		return fmt.Errorf("database DSN is required; set -database-url, RELAY_DATABASE_URL, or config.database.dsn")
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		return err
+	}
+
+	repo := ledger.NewRepository(db)
+	report, err := redisstream.ReplayArchivedLedger(ctx, db, repo, redisstream.ArchiveReplayOptions{
+		AccountID: *accountID,
+		DateFrom:  *dateFrom,
+		DateTo:    *dateTo,
+		Stages:    splitCSV(*stages),
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(report); err != nil {
+		return err
+	}
+	for _, stage := range report.Stages {
+		if stage.ErrorCount > 0 {
+			return fmt.Errorf("%s replay completed with %d message errors", stage.Name, stage.ErrorCount)
+		}
+	}
+	return nil
 }
 
 func runMigrate(args []string) error {
@@ -258,13 +324,16 @@ func loadConfig(path string) (*config.Config, error) {
 
 func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, `relayctl commands:
-  ledger-sync  Archive Redis reply/event streams into PostgreSQL ledger
-  migrate      Run PostgreSQL migration status/up/down
-  redis-probe  Read-only Redis Stream probe using relay config
-  redis-scan   Read-only Redis key scan for relay stream accounts
+  ledger-sync    Archive Redis reply/event streams into PostgreSQL ledger
+  ledger-replay  Rebuild order/fill ledgers from archived raw stream messages
+  migrate        Run PostgreSQL migration status/up/down
+  redis-probe    Read-only Redis Stream probe using relay config
+  redis-scan     Read-only Redis key scan for relay stream accounts
 
 Examples:
   RELAY_DATABASE_URL=postgres://... REDIS_URL=redis://... go run ./cmd/relayctl ledger-sync -stream-prefix relay:prod:v1:huaxin:00030484 -count 20
+  go run ./cmd/relayctl ledger-replay -config config/relay.prod.yaml -date-from 2026-07-01
+  go run ./cmd/relayctl ledger-replay -config config/relay.prod.yaml -stages orders
   RELAY_DATABASE_URL=postgres://... go run ./cmd/relayctl migrate status
   go run ./cmd/relayctl migrate up -config config/relay.local.yaml
   go run ./cmd/relayctl migrate down -config config/relay.local.yaml -steps 1

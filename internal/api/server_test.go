@@ -2168,6 +2168,45 @@ func TestPerformanceContributionsEndpoint(t *testing.T) {
 	}
 }
 
+func TestPerformanceTradeQualityEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:test:v1:huaxin:gw-1", Enabled: true},
+	}
+	perf := &fakePerformanceService{
+		tradeQuality: relayperformance.TradeQualityResult{
+			AccountID: "acct-1",
+			DateFrom:  "2026-07-22",
+			DateTo:    "2026-07-24",
+			Summary: relayperformance.TradeQualitySummary{
+				Orders:            10,
+				OrdersWithFills:   8,
+				ExecutedOrderRate: 0.8,
+				RejectedOrders:    1,
+			},
+			Anomalies: []relayperformance.TradeQualityAnomaly{{
+				GatewayOrderID: "order-9",
+				Flags:          []string{"rejected_order"},
+			}},
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Performance: perf})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/trade-quality?date_from=20260722&date_to=2026-07-24", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if perf.tradeQualityAccountID != "acct-1" || perf.tradeQualityDateFrom != "2026-07-22" || perf.tradeQualityDateTo != "2026-07-24" {
+		t.Fatalf("trade quality args account=%q range=%q..%q", perf.tradeQualityAccountID, perf.tradeQualityDateFrom, perf.tradeQualityDateTo)
+	}
+	if !strings.Contains(rec.Body.String(), `"executed_order_rate":0.8`) || !strings.Contains(rec.Body.String(), `"gateway_order_id":"order-9"`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
 func TestEconomicNAVPreviewEndpoint(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -2467,6 +2506,10 @@ type fakePerformanceService struct {
 	contribution                  relayperformance.ContributionResult
 	contributionAccountID         string
 	contributionTradeDate         string
+	tradeQuality                  relayperformance.TradeQualityResult
+	tradeQualityAccountID         string
+	tradeQualityDateFrom          string
+	tradeQualityDateTo            string
 	reverseRepo                   relayperformance.ReverseRepoResult
 	reverseRepoAccountID          string
 	reverseRepoTradeDate          string
@@ -2555,6 +2598,16 @@ func (service *fakePerformanceService) CalculateContributions(_ context.Context,
 	service.contributionAccountID = accountID
 	service.contributionTradeDate = tradeDate
 	return service.contribution, nil
+}
+
+func (service *fakePerformanceService) CalculateTradeQuality(_ context.Context, accountID, dateFrom, dateTo string) (relayperformance.TradeQualityResult, error) {
+	if service.err != nil {
+		return relayperformance.TradeQualityResult{}, service.err
+	}
+	service.tradeQualityAccountID = accountID
+	service.tradeQualityDateFrom = dateFrom
+	service.tradeQualityDateTo = dateTo
+	return service.tradeQuality, nil
 }
 
 func (service *fakePerformanceService) CalculateReverseRepo(_ context.Context, accountID, tradeDate string, persist bool) (relayperformance.ReverseRepoResult, error) {

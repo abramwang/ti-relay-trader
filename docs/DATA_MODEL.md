@@ -90,7 +90,7 @@ relay 的最终账户交易数据、订单数据、成交数据、资金持仓�
 | `trade_side` | `trade_side` | `nTradeSideType` | 买卖方向 |
 | `shareholder_id` | `shareholder_id` | `szShareholderId` | 股东代码 |
 
-成交回报同样携带订单关联字段。页面和对账逻辑应优先通过 `gateway_order_id` 关联订单主表，再用 `order_id`、`order_stream_id` 做柜台和交易所口径交叉校验。`fill_id` 或 `adapter_context.match_stream_id` 不能假设为账户级全局唯一，relay 按 `account_id + gateway_order_id + fill_id` 处理成交幂等。
+成交回报同样携带订单关联字段。页面和对账逻辑通过 `trade_date + gateway_order_id` 关联订单主表，再用 `order_id`、`order_stream_id` 做柜台和交易所口径交叉校验。`fill_id` 或 `adapter_context.match_stream_id` 不能假设为跨日全局唯一，relay 按 `account_id + trade_date + gateway_order_id + fill_id` 处理成交幂等。
 
 ## PostgreSQL 首批表
 
@@ -123,9 +123,9 @@ migrations/postgres/000001_init_ledger.down.sql
 
 | 表 | 说明 |
 | --- | --- |
-| `orders` | 标准订单主表，保存 `trade_date` 和 `strategy_type/strategy_id/basket_id/parent_order_id/t0_order_group_id` 归因字段；当前保留 `account_id + gateway_order_id` 主唯一约束，并增加 `account_id + trade_date + gateway_order_id` 兼容唯一索引 |
+| `orders` | 标准订单主表，以 `account_id + trade_date + gateway_order_id` 唯一，保存策略归因字段 |
 | `order_events` | 订单状态事件流水，保存每次状态变化，并同步保存交易日和策略归因字段 |
-| `fills` | 成交流水，以 `account_id + gateway_order_id + fill_id` 或 fallback 组合键去重；保存 `business_type` 和策略归因字段，缺失时后续可通过订单主表或归因链接表补足 |
+| `fills` | 成交流水，以 `account_id + trade_date + gateway_order_id + fill_id` 或含交易日的 fallback 组合键去重；保存 `business_type` 和策略归因字段 |
 | `raw_stream_messages` | Redis 原始输入输出消息归档，用于审计和重放 |
 
 ### 账户账表
@@ -176,8 +176,8 @@ migrations/postgres/000001_init_ledger.down.sql
 
 ## 关键约束
 
-1. `orders.account_id + orders.gateway_order_id` 当前仍是主表和 `fills/order_events` 外键使用的兼容唯一键；`000010` 已新增 `orders.account_id + orders.trade_date + orders.gateway_order_id` 唯一索引，作为后续迁移到“账户内当日唯一”业务键的底座。
-2. `fills.account_id + fills.gateway_order_id + fills.fill_id` 优先唯一；缺少稳定 `fill_id` 时使用 `order_stream_id + match_timestamp + qty + price` 去重。
+1. `orders.account_id + orders.trade_date + orders.gateway_order_id` 是订单主键；`fills/order_events` 使用相同复合外键。
+2. `fills.account_id + fills.trade_date + fills.gateway_order_id + fills.fill_id` 优先唯一；缺少稳定 `fill_id` 时使用包含交易日的 `order_stream_id + match_timestamp + qty + price` 组合去重。
 3. `order_events` 不覆盖历史，只追加事件。
 4. `raw_stream_messages` 保留 Redis stream key、stream id、direction、body 和解析状态。
 5. 所有交易金额字段优先使用数据库 `numeric`，避免浮点误差进入最终账本。
@@ -195,20 +195,17 @@ relay 当前保留四类订单编号，不能混用：
 | 编号 | 字段 | 来源 | 唯一范围 | 当前用途 |
 | --- | --- | --- | --- | --- |
 | 本地客户端请求 ID | `client_order_id` | 策略、页面或 relay 默认生成 | `account_id` 内非空唯一 | 策略侧和页面侧追踪请求 |
-| 北向订单主键 | `gateway_order_id` | 调用方传入或 relay 生成 `gw-*` | 当前 `account_id` 内强制唯一；业务语义为 `account_id + trade_date` 内唯一 | 订单主表唯一键、撤单、事件归属、SSE/SDK 去重 |
+| 北向订单主键 | `gateway_order_id` | 调用方传入、relay 或 OC 生成 | `account_id + trade_date` 内唯一 | 订单主表唯一键、撤单、事件归属、SSE/SDK 去重 |
 | 前置/柜台订单 ID | `order_id` | 前置或券商柜台回报 | 柜台当日口径 | 排查柜台回报、与券商侧对账 |
 | 交易所委托流号 | `order_stream_id` | 柜台/交易所回报 | 交易所当日口径 | 与交易所回报和成交回报交叉校验 |
 
 数据库约束：
 
-1. `orders_gateway_order_unique`: `orders(account_id, gateway_order_id)` 唯一。
-2. `orders_account_trade_date_gateway_order_unique`: `orders(account_id, trade_date, gateway_order_id)` 在 `trade_date IS NOT NULL` 时唯一，体现 OC/券商编号“账户内当日唯一”的业务语义。
-3. `orders_client_order_unique`: `orders(account_id, client_order_id)` 在 `client_order_id IS NOT NULL` 时唯一。
-4. `orders_idempotency_idx`: `orders(account_id, idempotency_key)` 当前是查询索引，不是唯一索引；应用层在发布 Redis 前做幂等预检。
+1. `orders_account_trade_date_gateway_order_unique`: `orders(account_id, trade_date, gateway_order_id)` 唯一。
+2. `orders_client_order_unique`: `orders(account_id, client_order_id)` 在 `client_order_id IS NOT NULL` 时唯一。
+3. `orders_idempotency_idx`: `orders(account_id, idempotency_key)` 当前是查询索引，不是唯一索引；应用层在发布 Redis 前做幂等预检。
 
-兼容说明：
-
-`000010` 暂不删除 `orders_gateway_order_unique`，因为当前 `fills` 和 `order_events` 仍通过 `account_id + gateway_order_id` 外键关联订单。后续 N10 账本生产化阶段会在清理历史重复/缺失交易日数据后，把外键、upsert 冲突目标和撤单查询全部切换到 `account_id + trade_date + gateway_order_id`。
+`000012_trade_date_order_scope` 已删除旧 `orders_gateway_order_unique`，并将订单、订单事件、成交的唯一键、外键、upsert 和研究视图全部切换到交易日作用域。生产原始流重放后，成交和订单事件的同日外键均已验证。
 
 ### 策略归因标识
 
@@ -233,7 +230,7 @@ relay 当前保留四类订单编号，不能混用：
 
 下单幂等预检：
 
-1. 先按 `account_id + gateway_order_id` 查订单。
+1. 北向新单使用持久化生成的 `gateway_order_id`；幂等预检按账户查询最新同 ID 订单，并比较 `trade_date + idempotency_key + payload`。
 2. 已存在且幂等键不同：返回重复订单冲突，不发布 Redis。
 3. 已存在且幂等键相同、核心 payload 相同：返回已有订单，`replayed=true`，不发布 Redis。
 4. 已存在且幂等键相同、核心 payload 不同：返回 `IDEMPOTENCY_CONFLICT`，不发布 Redis。
@@ -245,8 +242,8 @@ relay 当前保留四类订单编号，不能混用：
 
 成交事实必须关联订单。当前唯一性优先级：
 
-1. `fills(account_id, gateway_order_id, fill_id)`，当 `fill_id` 非空。
-2. `fills(account_id, order_stream_id, match_timestamp, qty, price)`，当 `fill_id` 为空且 fallback 字段足够。
+1. `fills(account_id, trade_date, gateway_order_id, fill_id)`，当 `fill_id` 非空。
+2. `fills(account_id, trade_date, order_stream_id, match_timestamp, qty, price)`，当 `fill_id` 为空且 fallback 字段足够。
 3. `fills(stream_key, stream_id)`，防止同一 Redis event/reply 被重复消费写入。
 
 前置测试环境已经出现过不同订单复用 `fill_id/match_stream_id` 的情况，因此 relay 不再把 `fill_id` 当账户级全局唯一键。前置发送 `fill.event` 时应尽量携带 `gateway_order_id`、`order_id`、`order_stream_id` 和 `fill_id/match_stream_id`；同一订单内成交编号必须稳定。

@@ -167,15 +167,16 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 ## 关键约束
 
-1. `orders(account_id, gateway_order_id)` 唯一，用作订单跨系统主键。
-2. `fills(account_id, gateway_order_id, fill_id)` 在 `fill_id` 存在时唯一；前置/柜台的 `fill_id` 不能假设为账户级全局唯一。
-3. 如果 `fill_id` 缺失，`fills` 使用 `account_id + order_stream_id + match_timestamp + qty + price` 作为 fallback 去重。
+1. `orders(account_id, trade_date, gateway_order_id)` 唯一；柜台订单号只要求账户内当日唯一。
+2. `fills(account_id, trade_date, gateway_order_id, fill_id)` 在 `fill_id` 存在时唯一；前置/柜台的 `fill_id` 不能假设为跨日全局唯一。
+3. 如果 `fill_id` 缺失，`fills` 使用包含 `account_id + trade_date + order_stream_id + match_timestamp + qty + price` 的 fallback 去重。
 4. `order_events` 和 `fills` 对 `stream_key + stream_id` 做唯一约束，避免重复消费写入。
 5. `raw_stream_messages` 归档每条 Redis Stream 原始消息，保留 `body`、`body_text` 和 `parse_error`。
 6. 金额和价格字段使用 `numeric(20, 6)`，避免浮点误差进入最终账本。
 7. 时间字段统一使用 `timestamptz`，原始柜台时间戳保留在 raw 或 adapter 字段。
 8. `stream_checkpoints(stream_key)` 唯一记录每条 output stream 的最后消费 ID；worker 重启后从该 ID 继续 `XREAD`。
 9. `job_runs(run_id)` 唯一记录每次盘前初始化、盘后结算或后续后台任务运行，完整报告保存在 `report_json`，`/v1/status` 只返回摘要。
+10. `000012_trade_date_order_scope` 删除旧账户级订单唯一约束，将 `orders/fills/order_events` 的唯一键、外键和查询视图统一为交易日作用域；该迁移不可逆，避免回滚时丢弃合法跨日订单。
 
 ## 手动执行示例
 
@@ -196,6 +197,15 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000009_performance_accounting.
 ```bash
 RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate up
 ```
+
+已有历史账表升级到 `000012` 后，先执行 `relayctl ledger-replay`，确认同日孤立订单事件和成交均为 0，再验证复合外键：
+
+```sql
+ALTER TABLE order_events VALIDATE CONSTRAINT order_events_order_fk;
+ALTER TABLE fills VALIDATE CONSTRAINT fills_order_fk;
+```
+
+生产库两条约束均已完成验证。不要在重放前强制验证，否则旧二元订单键造成的历史孤立记录会使验证失败。
 
 回滚：
 

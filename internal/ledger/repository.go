@@ -394,7 +394,7 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 		adapterContext,
 	)
 	if err != nil {
-		return fmt.Errorf("upsert order %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+		return fmt.Errorf("upsert order %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
 	}
 	return nil
 }
@@ -440,7 +440,7 @@ func (repo *Repository) AppendOrderEvent(ctx context.Context, event trading.Orde
 		adapterContext,
 	)
 	if err != nil {
-		return fmt.Errorf("append order event %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+		return fmt.Errorf("append order event %s/%s/%s: %w", normalized.AccountID, normalized.Order.TradeDate, normalized.GatewayOrderID, err)
 	}
 	return nil
 }
@@ -486,12 +486,12 @@ func (repo *Repository) UpdateOrderStatus(ctx context.Context, event trading.Ord
 		adapterContext,
 	)
 	if err != nil {
-		return fmt.Errorf("update order status %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+		return fmt.Errorf("update order status %s/%s/%s: %w", normalized.AccountID, normalized.Order.TradeDate, normalized.GatewayOrderID, err)
 	}
 	if result != nil {
 		rows, err := result.RowsAffected()
 		if err == nil && rows == 0 {
-			return fmt.Errorf("%w: %s/%s", ErrOrderNotFound, normalized.AccountID, normalized.GatewayOrderID)
+			return fmt.Errorf("%w: %s/%s/%s", ErrOrderNotFound, normalized.AccountID, normalized.Order.TradeDate, normalized.GatewayOrderID)
 		}
 	}
 	return nil
@@ -1133,8 +1133,8 @@ func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, strea
 		return fmt.Errorf("insert fill %s/%s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, normalized.FillID, err)
 	}
 	if !strings.HasPrefix(normalized.FillID, "relay-summary:") {
-		if _, err := repo.exec.ExecContext(ctx, deleteSummaryFillsForOrderSQL, normalized.AccountID, normalized.GatewayOrderID, nullString(normalized.OrderStreamID)); err != nil {
-			return fmt.Errorf("delete summary fills %s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, err)
+		if _, err := repo.exec.ExecContext(ctx, deleteSummaryFillsForOrderSQL, normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, nullString(normalized.OrderStreamID)); err != nil {
+			return fmt.Errorf("delete summary fills %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
 		}
 	}
 	return nil
@@ -2792,8 +2792,16 @@ func normalizeOrderEvent(event trading.OrderEvent) (trading.OrderEvent, error) {
 	event.Order.BasketID = strings.TrimSpace(event.Order.BasketID)
 	event.Order.ParentOrderID = strings.TrimSpace(event.Order.ParentOrderID)
 	event.Order.T0OrderGroupID = strings.TrimSpace(event.Order.T0OrderGroupID)
-	if event.Order.TradeDate == "" && !event.ProducedAt.IsZero() {
-		event.Order.TradeDate = event.ProducedAt.In(timeutil.Location()).Format("2006-01-02")
+	if event.Order.TradeDate == "" {
+		if !event.ProducedAt.IsZero() {
+			event.Order.TradeDate = event.ProducedAt.In(timeutil.Location()).Format("2006-01-02")
+		} else {
+			var err error
+			event.Order.TradeDate, err = normalizeOrderTradeDate(event.Order)
+			if err != nil {
+				return event, err
+			}
+		}
 	}
 	if event.Order.TradeDate != "" {
 		var err error
@@ -2872,13 +2880,21 @@ func normalizeFill(fill trading.Fill) (trading.Fill, error) {
 	if fill.Qty <= 0 {
 		return fill, fmt.Errorf("%w: qty must be positive", ErrInvalidLedgerInput)
 	}
-	if fill.TradeDate != "" {
-		normalized, err := normalizeTradeDate(fill.TradeDate)
-		if err != nil {
-			return fill, err
+	if fill.TradeDate == "" {
+		switch {
+		case !fill.MatchedAt.IsZero():
+			fill.TradeDate = fill.MatchedAt.In(timeutil.Location()).Format("2006-01-02")
+		case fill.MatchTimestamp > 0:
+			fill.TradeDate = time.UnixMilli(fill.MatchTimestamp).In(timeutil.Location()).Format("2006-01-02")
+		default:
+			return fill, fmt.Errorf("%w: trade_date or matched_at is required", ErrInvalidLedgerInput)
 		}
-		fill.TradeDate = normalized
 	}
+	normalized, err := normalizeTradeDate(fill.TradeDate)
+	if err != nil {
+		return fill, err
+	}
+	fill.TradeDate = normalized
 	return fill, nil
 }
 
@@ -2897,7 +2913,7 @@ func normalizeOrderTradeDate(order trading.Order) (string, error) {
 			return candidate.In(timeutil.Location()).Format("2006-01-02"), nil
 		}
 	}
-	return "", nil
+	return "", fmt.Errorf("%w: trade_date or order timestamp is required", ErrInvalidLedgerInput)
 }
 
 func marshalJSONObject(value any) ([]byte, error) {

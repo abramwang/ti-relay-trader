@@ -28,7 +28,7 @@
 
 ## 当前优先级
 
-1. 完成 N8 绩效分析 Phase 2/3：将 `/trade#performance` 收敛为净值、基准、超额收益、回撤、收益贡献、交易质量和数据质量工作区。
+1. 完成 N8 绩效分析 Phase 2 收尾：补账户净值、上证指数基准、超额收益和回撤主图，并将估算、缺失、NAV 对账与任务状态收敛为正式数据质量区；证券贡献和交易质量统计已完成。
 2. 完成 N9 Redis Stream 运行可观测：把 `hb` 合并为 gateway 在线状态，补 stream lag、DLQ 告警和处置状态。
 3. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
 4. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
@@ -66,6 +66,7 @@
 - [x] 实现 ETF 申赎 T0 第一版估算：同一赎回订单多条成交先合并，以不晚于赎回时刻的 Meridian Level1 IOPV 估值，按配置摩擦率扣费；历史买单仅在目标委托量精确闭合赎回量时归入 T0。
 - [x] 将 ETF 成分股卖出从 T0 估算收益中排除，保留成交额和 `missing_transfer_link` 质量标记，避免与 IOPV 估值重复计利。
 - [x] `/trade#performance` 增加“证券贡献 / 净值序列”切换、策略汇总和贡献明细表；API Console、schema 和 Python SDK helper 同步。
+- [x] 新增只读 `performance/trade-quality`：输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细；订单成交按交易日关联，`/trade#performance`、API Console 和 `relay-sdk 0.1.18` 已同步。
 
 范围：
 
@@ -85,7 +86,7 @@
 
 ### N9 Redis Stream 与 gateway 可观测
 
-状态：`todo`
+状态：`doing`
 
 目标：把已经归档的 `hb/dlq` 和 `stream_checkpoints` 变成可判断、可告警、可处置的运行状态。
 
@@ -99,15 +100,18 @@
 
 ### N10 账本生产化与环境隔离
 
-状态：`todo`
+状态：`doing`
 
 目标：消除测试/生产共库按账户区分的长期风险，并把应用层幂等提升为数据库约束。
 
 范围：
 
 - 优先采用测试/生产独立 PostgreSQL DSN；如必须共库，再设计 `environment` 进入核心表主键/唯一键的 migration。
-- 清理历史重复键后，为 `orders(account_id, idempotency_key)` 增加部分唯一约束。
-- 清理历史重复键后，将 `orders/fills/order_events` 的外键和 upsert 冲突目标从 `account_id + gateway_order_id` 切到 `account_id + trade_date + gateway_order_id`。
+- [ ] 清理历史重复键后，为 `orders(account_id, idempotency_key)` 增加部分唯一约束。
+- [x] 将 `orders/fills/order_events` 的唯一键、外键、upsert 冲突目标和研究视图切到 `account_id + trade_date + gateway_order_id`。
+- [x] 从 PostgreSQL 原始流归档重放生产订单/成交，验证订单事件和成交同日外键完整性。
+- [x] 形成 OC 同日 ID 冲突、订单/成交错配的复现报告和联合验收标准。
+- [x] 交易质量接口增加证券/方向/业务类型错配和终态时间完整性检查；终态事件与盘后权威查询统一使用同日事件证据。
 - 使用临时 PostgreSQL 跑 migration/repository 集成测试。
 - 编写数据库备份、恢复和按交易日回放验证手册，并完成一次恢复演练。
 
@@ -233,7 +237,7 @@
 - [x] 将 Redis `reply/event` 批量归档接入 `raw_stream_messages`。
 - [x] 新订单先写订单草稿，再用缺字段 `order.event` 更新订单状态并追加事件。
 - [x] 新增 `stream_checkpoints` 表，持久化 Redis Stream 消费位点、处理计数和最近错误摘要。
-- [x] 成交唯一键收敛为 `account_id + gateway_order_id + fill_id`，查询页多条成交使用稳定派生 stream ID。
+- [x] 成交唯一键最终收敛为 `account_id + trade_date + gateway_order_id + fill_id`，查询页多条成交使用稳定派生 stream ID。
 - [x] 当前持仓全量查询完成后清理旧批次残留行，日终快照等待本轮资金/持仓刷新确认。
 - [x] 增加 open/close 资产快照、持仓当日盈亏字段和研究侧绩效 view migration。
 - [ ] 让历史 `order.event.payload` 补齐 `trade_side/business_type` 后启用无草稿事件重建订单主表。
@@ -293,6 +297,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.14.tar.gz` 和 SHA256 校验文件，新增 T+1 economic NAV reconciliation 预览/落库 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.15.tar.gz` 和 SHA256 校验文件，新增 NAV 对账人工确认/阻断 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.16.tar.gz` 和 SHA256 校验文件，新增证券/策略贡献只读 helper。
+- [x] 发布 `public/sdk/relay-sdk-0.1.18.tar.gz` 和 SHA256 校验文件，新增交易质量统计 helper，并将订单/成交回调去重键切换到交易日作用域。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -335,6 +340,7 @@
 - [x] 申购/赎回在订单与成交表中单独显示，K 线点位按对应分钟 close 标注。
 - [x] 修复 `/trade#asset`、`/trade%23asset` 和 `/trade/asset` 的终端入口兼容。
 - [x] 持仓行点击可联动交易标的和行情/K 线。
+- [x] 资金持仓页支持按当前账户和所选交易日导出资金摘要与完整分页持仓 CSV。
 - [ ] 增加批量下单测试视图。
 - [ ] 增加 Playwright 页面冒烟测试。
 
@@ -382,7 +388,8 @@
 - [x] 完成绩效分析页面第一版设计文档，明确净值曲线、收益贡献、交易归因和数据质量口径。
 - [ ] 完成 `/trade#performance` Phase 2 UI：已完成经济净值摘要和 NAV 对账工作区；继续补净值/基准/超额收益/回撤主图和正式数据质量区。
 - [x] 增加 `performance/contributions` 只读聚合接口和按证券贡献表。
-- [ ] 增加交易质量统计：成交率、撤单率、拒单率、未终态和异常订单。
+- [x] 增加交易质量统计：有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常订单；区间关联使用 `trade_date + gateway_order_id`，避免柜台 ID 跨日复用。
+- [x] 修复生产账表跨日覆盖：migration `000012`、权威订单查询快照覆盖和 raw archive 重放恢复近 15,000 条订单，孤立成交归零；OC 同日 ID 冲突转入联合整改。
 - [x] 用 2026-07-22 至 2026-07-24 生产只读样本复核历史 ETF T0 订单组、IOPV 命中率、成分划转排除和贡献总额；三账户 T0、股票截面和逆回购结果与人工审计一致，多组 IOPV 查询并发后最慢样本约 4.55 秒。
 - [ ] 后续按数据完整度评估精确成本引擎、公司行为和最终清算差异归因；现金流水、逆回购和 ETF 申赎第一版口径已落地。
 

@@ -3,6 +3,7 @@ package redisstream
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,6 +137,9 @@ func DecodeEntry(stream, streamID string, values map[string]any) (EntryEnvelope,
 	envelope.Payload = msg.Payload
 	envelope.AdapterContext = msg.AdapterContext
 	envelope.ProducedAt = parseTime(msg.ProducedAt)
+	if envelope.ProducedAt.IsZero() {
+		envelope.ProducedAt = producedAtFromStreamID(streamID)
+	}
 
 	if msg.Routing.Env != "" {
 		envelope.Routing.Env = msg.Routing.Env
@@ -150,6 +154,18 @@ func DecodeEntry(stream, streamID string, values map[string]any) (EntryEnvelope,
 		envelope.Routing.AccountID = msg.Routing.AccountID
 	}
 	return envelope, nil
+}
+
+func producedAtFromStreamID(streamID string) time.Time {
+	milliseconds, _, ok := strings.Cut(strings.TrimSpace(streamID), "-")
+	if !ok || milliseconds == "" {
+		return time.Time{}
+	}
+	value, err := strconv.ParseInt(milliseconds, 10, 64)
+	if err != nil || value <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(value).In(timeutil.Location())
 }
 
 func SummarizeEntry(stream, streamID string, values map[string]any) MessageSummary {

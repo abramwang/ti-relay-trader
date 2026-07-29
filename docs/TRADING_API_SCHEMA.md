@@ -174,7 +174,7 @@ rejected
 
 订单编号和幂等规则：
 
-1. `gateway_order_id` 当前仍在 `account_id` 内兼容唯一，数据库保留 `orders(account_id, gateway_order_id)`；`000010` 已新增 `orders(account_id, trade_date, gateway_order_id)` 唯一索引，用于后续切到“账户内当日唯一”业务键。
+1. `gateway_order_id` 在 `account_id + trade_date` 内唯一；`000012` 已将订单、订单事件和成交外键统一到该业务键。OC 查询页与实时推送必须对同一订单使用同一 ID。
 2. `client_order_id` 未传时默认等于 `gateway_order_id`；非空时在 `account_id` 内唯一。
 3. `idempotency_key` 未传时，单笔下单默认 `order:{account_id}:{gateway_order_id}`。
 4. 重复提交同一 `gateway_order_id + idempotency_key + payload` 会返回已有订单，`replayed=true`，不再写 Redis。
@@ -278,7 +278,7 @@ rejected
 
 成交去重优先级：
 
-1. `account_id + gateway_order_id + fill_id`
+1. `account_id + trade_date + gateway_order_id + fill_id`
 2. `order_stream_id + match_timestamp + qty + price`
 
 `fill_id` 对应的柜台成交流号或 `adapter_context.match_stream_id` 只要求在订单作用域内稳定，不要求在账户当日或全历史范围内唯一。策略端如果自行做成交回调去重，也应把 `gateway_order_id` 纳入 key。
@@ -375,6 +375,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 返回 `ContributionResult`。普通股票和 ETF 截面使用 `close_value + sell_amount - buy_amount - open_value - effective_fee`；期初价格取 Meridian 当日 `pre_close`，期末价格取 Meridian 当日 `close`，缺失时才回退券商 open/close 持仓快照并标记质量缺口。费用优先使用成交实际费用；只有 `adapter_context.fee_complete=true` 才把零费用视为真实零值，否则按账户生效费率估算或标记 `missing_fee_rule`。
 
 ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订单的多条成交先按 `gateway_order_id` 聚合；历史买单只有在赎回前的目标委托量精确闭合赎回量时才组成推断 T0 订单组，其实际成交额作为买入成本。估算退出价值使用每条赎回成交时刻之前最近的 Meridian historical Level1 `iopv * qty`，再按服务端 `performance.etf_t0_friction_rate` 扣减综合摩擦成本。无法闭合买单、缺 IOPV 或缺价格时不返回伪精确盈亏，而是标记 `missing/estimated`。无日初/日终持仓且只有卖出的赎回成分股归为 `etf_component_transfer`，只保留成交额并从 T0 估算收益中排除，避免与 IOPV 退出价值重复计算。逆回购本金不进入普通卖出额，只有按实际占款天数计算的净息进入 `cash_management`。
+
+`GET /v1/accounts/{account_id}/performance/trade-quality` 是只读交易质量接口，支持单日 `trade_date` 或区间 `date_from/date_to`。接口完整扫描本地订单和成交账本，不触发 OC 查询；成交先按 `account_id + trade_date + gateway_order_id + fill_id` 去重，并在存在真实成交时排除同订单的 `relay-summary:*` 汇总成交。`summary` 返回有实际成交订单率、完全成交率、按委托数量计算的成交率、撤单率、拒单率、未终态订单、异常订单、孤立成交、成交额和费用；`anomalies` 返回拒单、未终态、订单/成交数量不一致、成交证券/方向/业务类型错配、终态时间缺失或跨日、终态冲突、柜台错误残留和成交缺委托等可追溯明细。OC 委托时间与 Redis 事件时间存在精度差时，`terminal_before_created` 使用 5 秒容差。`gateway_order_id` 只按账户内交易日唯一处理，区间统计不会把跨交易日复用的同 ID 错误关联。
 
 `GET /v1/accounts/{account_id}/performance/series?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 返回账户 close 净值绩效序列，并在每个交易日返回同样的日初资产、隔夜调整、日内盈亏和日内收益率字段。服务读取区间内 `asset_snapshots(snapshot_type=close)` 形成长期净值主线，按上一条 close 净资产计算兼容的单日收益，并在响应层计算 `cumulative_return`、`drawdown`、`summary.total_return` 和 `summary.max_drawdown`。绩效页面和 API Console 默认用上证指数 `000001.SH` 作为基准；如果传入其他 `benchmark_security_id`，relay 会按绩效序列中的交易日逐日读取 Meridian `bars` 的 14:55-15:00 窗口最后一条 1m close，生成 `benchmark_return`、`benchmark_cumulative_return`、`benchmark_drawdown`、`excess_return` 和 `excess_cumulative_return`，并在 `summary` 中返回基准区间收益、基准最大回撤和超额收益。该接口不主动查询柜台。
 

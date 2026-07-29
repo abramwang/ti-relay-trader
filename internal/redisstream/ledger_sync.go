@@ -89,6 +89,8 @@ type LedgerProcessResult struct {
 	LastGatewayOID string   `json:"last_gateway_order_id,omitempty"`
 }
 
+const maxLedgerSkipReasons = 200
+
 func SyncLedger(ctx context.Context, cfg config.Config, writer LedgerWriter, opts LedgerSyncOptions) (LedgerSyncReport, error) {
 	if strings.TrimSpace(cfg.Redis.URL) == "" {
 		return LedgerSyncReport{}, errors.New("redis.url is required for ledger sync")
@@ -578,6 +580,12 @@ func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, bool, e
 
 	order := payload.toOrder(envelope)
 	order.AdapterContext = withRawAccountID(order.AdapterContext, rawAccountID)
+	if order.LastUpdatedAt.IsZero() && !envelope.ProducedAt.IsZero() {
+		order.LastUpdatedAt = envelope.ProducedAt
+	}
+	if order.IsTerminal && order.TerminalAt.IsZero() {
+		order.TerminalAt = firstNonZeroTime(order.LastUpdatedAt, envelope.ProducedAt)
+	}
 	complete := payload.completeOrderLedgerFields()
 	event := trading.OrderEvent{
 		EventID:        envelope.MessageID,
@@ -592,6 +600,15 @@ func orderEventFromEnvelope(envelope EntryEnvelope) (trading.OrderEvent, bool, e
 		AdapterContext: order.AdapterContext,
 	}
 	return event, complete, nil
+}
+
+func firstNonZeroTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
 }
 
 func fillFromEnvelope(envelope EntryEnvelope) (trading.Fill, error) {
@@ -845,11 +862,17 @@ func fillsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, error) {
 }
 
 func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, order trading.Order, source string, result *LedgerProcessResult) error {
+	type summaryFillSynthesisControl interface {
+		AllowSummaryFillSynthesis() bool
+	}
+	if control, ok := writer.(summaryFillSynthesisControl); ok && !control.AllowSummaryFillSynthesis() {
+		return nil
+	}
 	targetQty := orderSummaryFilledQty(order)
 	if targetQty <= 0 {
 		return nil
 	}
-	existingQty, err := existingOrderFillQty(ctx, writer, order.AccountID, order.GatewayOrderID)
+	existingQty, err := existingOrderFillQty(ctx, writer, order.AccountID, order.TradeDate, order.GatewayOrderID)
 	if err != nil {
 		return err
 	}
@@ -982,12 +1005,13 @@ func orderSummaryFilledQty(order trading.Order) int64 {
 	return targetQty
 }
 
-func existingOrderFillQty(ctx context.Context, writer LedgerWriter, accountID string, gatewayOrderID string) (int64, error) {
+func existingOrderFillQty(ctx context.Context, writer LedgerWriter, accountID string, tradeDate string, gatewayOrderID string) (int64, error) {
 	const limit = 500
 	var total int64
 	for page := 0; page < 20; page++ {
 		query := trading.FillQuery{
 			AccountID:      accountID,
+			TradeDate:      tradeDate,
 			GatewayOrderID: gatewayOrderID,
 			Limit:          limit,
 		}
@@ -1710,7 +1734,13 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.ParseErrors += other.ParseErrors
 	result.LedgerErrors += other.LedgerErrors
 	result.Unsupported += other.Unsupported
-	result.SkipReasons = append(result.SkipReasons, other.SkipReasons...)
+	remainingReasons := maxLedgerSkipReasons - len(result.SkipReasons)
+	if remainingReasons > len(other.SkipReasons) {
+		remainingReasons = len(other.SkipReasons)
+	}
+	if remainingReasons > 0 {
+		result.SkipReasons = append(result.SkipReasons, other.SkipReasons[:remainingReasons]...)
+	}
 	if other.LastStreamID != "" {
 		result.LastStreamID = other.LastStreamID
 	}

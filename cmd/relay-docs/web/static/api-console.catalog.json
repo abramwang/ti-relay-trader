@@ -110,6 +110,20 @@
     ]
   },
   {
+    "id": "performance-trade-quality",
+    "group": "绩效",
+    "title": "交易质量统计",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/trade-quality",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date（与区间二选一）", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "performance-series-csv",
     "group": "账户",
     "title": "绩效序列 CSV",

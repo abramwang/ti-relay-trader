@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.16"
+SDK_VERSION = "0.1.18"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -288,6 +288,35 @@ class RelayClient:
             query={"trade_date": trade_date},
         )
         return data.get("contribution", data)
+
+    def get_trade_quality(
+        self,
+        *,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Return read-only order execution and ledger consistency quality.
+
+        Use ``trade_date`` for one day, or ``date_from``/``date_to`` for a
+        range. Relay reads its local order and fill ledgers and never refreshes
+        the broker counter for this request.
+        """
+
+        if trade_date and (date_from or date_to):
+            raise ValueError("trade_date cannot be combined with date_from or date_to")
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/trade-quality",
+            query={
+                "trade_date": trade_date,
+                "date_from": date_from,
+                "date_to": date_to,
+            },
+        )
+        return data.get("trade_quality", data)
 
     def get_performance_series(
         self,
@@ -976,7 +1005,8 @@ def _snapshot_event(event_type: str) -> RelayEvent:
 
 
 def _order_key(order: Order) -> str:
-    return order.gateway_order_id or order.client_order_id or f"{order.account_id}:{order.order_id}:{order.symbol}"
+    identity = order.gateway_order_id or order.client_order_id or f"{order.order_id}:{order.symbol}"
+    return "|".join([order.account_id, order.trade_date, identity])
 
 
 def _order_state(order: Order) -> tuple[Any, ...]:
@@ -993,10 +1023,11 @@ def _order_state(order: Order) -> tuple[Any, ...]:
 
 def _fill_key(fill: Fill) -> str:
     if fill.fill_id:
-        return "|".join([fill.account_id, fill.gateway_order_id, fill.fill_id])
+        return "|".join([fill.account_id, fill.trade_date, fill.gateway_order_id, fill.fill_id])
     return "|".join(
         [
             fill.account_id,
+            fill.trade_date,
             fill.gateway_order_id,
             fill.order_stream_id,
             str(fill.match_timestamp),
