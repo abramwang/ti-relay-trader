@@ -124,6 +124,7 @@
     refreshFillsButton: byID("refreshFillsButton"),
     queryAssetButton: byID("queryAssetButton"),
     queryOrdersButton: byID("queryOrdersButton"),
+    exportAssetButton: byID("exportAssetButton"),
     assetTradeDate: byID("assetTradeDate"),
     ordersTradeDate: byID("ordersTradeDate"),
     netAsset: byID("netAsset"),
@@ -1492,11 +1493,16 @@
   async function fetchAssetForSelectedDate() {
     const accountID = encodeURIComponent(state.activeAccount);
     const tradeDate = selectedAssetTradeDate();
+    return fetchAssetForExport(accountID, tradeDate, true);
+  }
+
+  async function fetchAssetForExport(accountID, tradeDate, encoded = false) {
+    const encodedAccountID = encoded ? accountID : encodeURIComponent(accountID);
     if (isCurrentBusinessDate(tradeDate)) {
-      const data = await request("/v1/accounts/" + accountID + "/asset");
+      const data = await request("/v1/accounts/" + encodedAccountID + "/asset");
       return data.asset || null;
     }
-    const data = await request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(tradeDate));
+    const data = await request("/v1/accounts/" + encodedAccountID + "/performance/daily?trade_date=" + encodeURIComponent(tradeDate));
     return assetFromPerformance(data.performance || {});
   }
 
@@ -1545,6 +1551,293 @@
       params.set("trade_date", tradeDate);
     }
     return request(path + "?" + params.toString());
+  }
+
+  async function fetchAllPositionsForExport(accountID, tradeDate) {
+    const encodedAccountID = encodeURIComponent(accountID);
+    const current = isCurrentBusinessDate(tradeDate);
+    const path = current
+      ? "/v1/accounts/" + encodedAccountID + "/positions"
+      : "/v1/accounts/" + encodedAccountID + "/positions/history";
+    const positions = [];
+    const seenCursors = new Set();
+    let cursor = "";
+    for (let page = 0; page < 100; page += 1) {
+      const params = new URLSearchParams({ limit: "2000" });
+      if (!current) {
+        params.set("trade_date", tradeDate);
+      }
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const data = await request(path + "?" + params.toString());
+      positions.push(...(Array.isArray(data.positions) ? data.positions : []));
+      const nextCursor = String(data.next_cursor || "");
+      if (!nextCursor) {
+        return positions;
+      }
+      if (seenCursors.has(nextCursor)) {
+        throw new Error("持仓分页游标重复，导出已停止");
+      }
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+    throw new Error("持仓记录超过前端导出上限，请缩小查询范围");
+  }
+
+  function exportPositionView(position, useLiveQuote) {
+    if (useLiveQuote) {
+      return livePositionView(position);
+    }
+    const qty = finiteNumber(position.quantity);
+    const avgCost = finiteNumber(position.avg_cost);
+    const price = finiteNumber(position.last_price);
+    const marketValue = finiteNumber(position.market_value);
+    const pnl = finiteNumber(position.unrealized_pnl);
+    const dayPnl = finiteNumber(position.day_unrealized_pnl);
+    const costAmount = qty !== null && avgCost !== null ? qty * avgCost : null;
+    const dayBase = marketValue !== null && dayPnl !== null ? marketValue - dayPnl : null;
+    return {
+      quote: null,
+      quoteItem: position,
+      price,
+      marketValue,
+      pnl,
+      pnlRatio: pnl !== null && costAmount ? pnl / costAmount * 100 : null,
+      dayPnl,
+      dayPnlRatio: dayPnl !== null && dayBase ? dayPnl / dayBase * 100 : null
+    };
+  }
+
+  function sortedExportPositions(positions, useLiveQuote) {
+    const sort = state.tableSorts.positions;
+    if (!sort || !sort.key) {
+      return positions.slice();
+    }
+    return positions.map((position, index) => ({
+      position,
+      index,
+      view: exportPositionView(position, useLiveQuote)
+    })).sort((left, right) => {
+      const compared = compareSortValues(
+        exportPositionSortValue(left.position, left.view, sort.key),
+        exportPositionSortValue(right.position, right.view, sort.key),
+        sort.direction
+      );
+      return compared || left.index - right.index;
+    }).map((item) => item.position);
+  }
+
+  function exportPositionSortValue(position, view, key) {
+    switch (key) {
+    case "symbol":
+      return symbolText(position);
+    case "name":
+      return securityNameText(position);
+    case "quantity":
+      return finiteNumber(position.quantity);
+    case "sellable_qty":
+      return finiteNumber(position.sellable_qty);
+    case "avg_cost":
+      return finiteNumber(position.avg_cost);
+    case "last_price":
+      return finiteNumber(view.price);
+    case "market_value":
+      return finiteNumber(view.marketValue);
+    case "pnl":
+      return finiteNumber(view.pnl);
+    case "day_pnl":
+      return finiteNumber(view.dayPnl);
+    case "updated_at":
+      return timeSortValue(position.updated_at);
+    default:
+      return "";
+    }
+  }
+
+  function exportAssetMetrics(asset, accountID, tradeDate, positions, useLiveQuote) {
+    let marketValue = 0;
+    let positionProfit = 0;
+    let dayPositionProfit = 0;
+    let hasMarketValue = false;
+    let hasPositionProfit = false;
+    let hasDayPositionProfit = false;
+    for (const position of positions) {
+      const view = exportPositionView(position, useLiveQuote);
+      const rowMarketValue = finiteNumber(view.marketValue);
+      const rowPositionProfit = finiteNumber(view.pnl);
+      const rowDayPositionProfit = finiteNumber(view.dayPnl);
+      if (rowMarketValue !== null) {
+        marketValue += rowMarketValue;
+        hasMarketValue = true;
+      }
+      if (rowPositionProfit !== null) {
+        positionProfit += rowPositionProfit;
+        hasPositionProfit = true;
+      }
+      if (rowDayPositionProfit !== null) {
+        dayPositionProfit += rowDayPositionProfit;
+        hasDayPositionProfit = true;
+      }
+    }
+    const assetMarketValue = finiteNumber(asset.market_value);
+    const effectiveMarketValue = hasMarketValue ? marketValue : assetMarketValue;
+    const cashTotal = finiteNumber(asset.cash_total);
+    const commission = accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
+      ? metricCommission(asset)
+      : finiteNumber(asset.commission);
+    const closeProfit = accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
+      ? metricCloseProfit(asset)
+      : finiteNumber(asset.close_profit);
+    const effectiveDayPositionProfit = hasDayPositionProfit
+      ? dayPositionProfit
+      : finiteNumber(asset.day_unrealized_pnl);
+    return {
+      netAsset: cashTotal !== null && effectiveMarketValue !== null
+        ? cashTotal + effectiveMarketValue
+        : finiteNumber(asset.net_asset),
+      cashAvailable: finiteNumber(asset.cash_available),
+      cashTotal,
+      marketValue: effectiveMarketValue,
+      stockValue: finiteNumber(asset.stock_value),
+      fundValue: finiteNumber(asset.fund_value),
+      positionProfit: hasPositionProfit ? positionProfit : finiteNumber(asset.position_profit),
+      closeProfit,
+      commission,
+      dayProfit: metricDayProfit(asset, effectiveDayPositionProfit, closeProfit, commission, hasDayPositionProfit),
+      updatedAt: asset.updated_at || asset.captured_at || ""
+    };
+  }
+
+  function csvCell(value) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    return '"' + String(value).replace(/"/g, '""') + '"';
+  }
+
+  function csvLine(values) {
+    return values.map(csvCell).join(",");
+  }
+
+  function csvNumber(value) {
+    const number = finiteNumber(value);
+    return number === null ? "" : String(number);
+  }
+
+  function downloadCSVFile(filename, lines) {
+    const blob = new Blob(["\ufeff" + lines.join("\r\n") + "\r\n"], {
+      type: "text/csv;charset=utf-8"
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportAssetPositionsCSV() {
+    if (!state.activeAccount) {
+      showToast("请先选择账户", "error");
+      return;
+    }
+    let tradeDate;
+    try {
+      tradeDate = selectedAssetTradeDate();
+    } catch (err) {
+      showToast(err.message, "error");
+      return;
+    }
+    const accountID = state.activeAccount;
+    const account = state.accounts.find((item) => item.account_id === accountID);
+    const originalText = els.exportAssetButton.textContent;
+    els.exportAssetButton.disabled = true;
+    els.exportAssetButton.textContent = "导出中";
+    try {
+      const [assetResult, positions] = await Promise.all([
+        fetchAssetForExport(accountID, tradeDate).then((asset) => ({ asset: asset || {}, error: "" }))
+          .catch((err) => ({ asset: {}, error: err.message })),
+        fetchAllPositionsForExport(accountID, tradeDate)
+      ]);
+      const useLiveQuote = isCurrentBusinessDate(tradeDate) && accountID === state.activeAccount;
+      const sortedPositions = sortedExportPositions(positions, useLiveQuote);
+      const metrics = exportAssetMetrics(assetResult.asset, accountID, tradeDate, positions, useLiveQuote);
+      const exportedAt = new Date().toLocaleString("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        hour12: false
+      });
+      const lines = [
+        csvLine(["资金摘要"]),
+        csvLine(["字段", "值"]),
+        csvLine(["账户ID", accountID]),
+        csvLine(["账户别名", account ? accountLabel(account) : accountID]),
+        csvLine(["交易日", tradeDate]),
+        csvLine(["导出时间(Asia/Shanghai)", exportedAt]),
+        csvLine(["资金数据状态", assetResult.error ? "不可用: " + assetResult.error : "正常"]),
+        csvLine(["总资产", csvNumber(metrics.netAsset)]),
+        csvLine(["可用资金", csvNumber(metrics.cashAvailable)]),
+        csvLine(["资金总额", csvNumber(metrics.cashTotal)]),
+        csvLine(["证券市值", csvNumber(metrics.marketValue)]),
+        csvLine(["股票市值", csvNumber(metrics.stockValue)]),
+        csvLine(["基金市值", csvNumber(metrics.fundValue)]),
+        csvLine(["持仓盈亏", csvNumber(metrics.positionProfit)]),
+        csvLine(["平仓盈亏", csvNumber(metrics.closeProfit)]),
+        csvLine(["手续费", csvNumber(metrics.commission)]),
+        csvLine(["当日盈亏", csvNumber(metrics.dayProfit)]),
+        csvLine(["资金更新时间", metrics.updatedAt]),
+        "",
+        csvLine(["持仓明细"]),
+        csvLine([
+          "账户ID", "交易日", "代码", "市场", "证券名称", "持仓数量", "可用数量",
+          "日初数量", "当日数量", "成本价", "账本现价", "导出现价", "市值",
+          "持仓盈亏", "盈亏比例(%)", "当日盈亏", "当日盈亏比例(%)", "已结算盈亏",
+          "股东代码", "快照类型", "更新时间"
+        ])
+      ];
+      for (const position of sortedPositions) {
+        const view = exportPositionView(position, useLiveQuote);
+        lines.push(csvLine([
+          accountID,
+          tradeDate,
+          symbolText(position),
+          position.exchange || "",
+          securityNameText(position) === "--" ? "" : securityNameText(position),
+          csvNumber(position.quantity),
+          csvNumber(position.sellable_qty),
+          csvNumber(position.initial_qty),
+          csvNumber(position.today_qty),
+          csvNumber(position.avg_cost),
+          csvNumber(position.last_price),
+          csvNumber(view.price),
+          csvNumber(view.marketValue),
+          csvNumber(view.pnl),
+          csvNumber(view.pnlRatio),
+          csvNumber(view.dayPnl),
+          csvNumber(view.dayPnlRatio),
+          csvNumber(position.settled_profit),
+          position.shareholder_id || "",
+          position.snapshot_type || (isCurrentBusinessDate(tradeDate) ? "current" : "close"),
+          position.updated_at || ""
+        ]));
+      }
+      const filename = [
+        "relay-asset-positions",
+        accountID.replace(/[^0-9A-Za-z_-]/g, ""),
+        tradeDate
+      ].join("-") + ".csv";
+      downloadCSVFile(filename, lines);
+      pushLog("info", "资金持仓已导出", accountID + " / " + displayDate(tradeDate) + " / " + formatInt(sortedPositions.length) + " 条");
+      showToast("已导出 " + formatInt(sortedPositions.length) + " 条持仓");
+    } catch (err) {
+      pushLog("error", "资金持仓导出失败", err.message);
+      showToast("导出失败：" + err.message, "error");
+    } finally {
+      els.exportAssetButton.disabled = false;
+      els.exportAssetButton.textContent = originalText;
+    }
   }
 
   async function refreshPositionStatsSource(options = {}) {
@@ -4877,6 +5170,7 @@
     els.refreshFillsButton.addEventListener("click", () => refreshAccountResource("fills"));
     els.queryAssetButton.addEventListener("click", queryPositionsForDate);
     els.queryOrdersButton.addEventListener("click", queryOrdersForDate);
+    els.exportAssetButton.addEventListener("click", () => exportAssetPositionsCSV());
     els.assetTradeDate.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         queryPositionsForDate();

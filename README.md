@@ -10,7 +10,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 最终服务口径: `http://relay-trader.quantstage.com`
 - 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在推进绩效分析 Phase 3，P10 已完成 9092 容器自启动和健康守护底座。经济净资产、T+1 NAV 对账、账户费用/资金流水、逆回购和策略归因底座已经落地；`GET /v1/accounts/{account_id}/performance/contributions` 已按证券与策略输出 open/close 持仓、买卖额、费用、净贡献、贡献 bp 和质量标记。ETF 申赎 T0 使用赎回时刻之前最近 Meridian Level1 IOPV 估值并扣减配置摩擦率，历史买单只在目标委托量精确闭合赎回量时归组，成分股卖出不重复计入；普通股票/ETF 截面使用持仓现金流恒等式。2026-07-22 至 2026-07-24 三账户生产只读样本已经复核，T0、股票截面、逆回购及成分划转排除结果与人工审计一致；多赎回组 IOPV 并发后最慢样本约 4.55 秒。`/trade#performance` 已增加证券贡献表与净值序列切换，未结算当日会自动回退到最近已有结算结果的交易日；API Console、schema 和 `relay-sdk 0.1.16` 已同步。9092 前端已按 `reference/relay-agent-delivery` 重构为统一 QuantStage Pro Dark 工作区，覆盖总览、交易终端六个局部视图、API Workbench、任务监控和开发者三栏阅读器。生产配置仍为只读，下一步增加交易质量统计；其余主线为 gateway/stream/DLQ 可观测、测试/生产账本隔离与数据库级幂等、人工复核报告、Playwright/API 回归和正式发布/备份流程。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-07-28`
+- 最近更新时间: `2026-07-29`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -262,6 +262,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`，明确绩效分析页定位、指标口径、数据来源、页面结构、估算标记和分阶段实现计划。
 - [x] `/trade` 取消单独“盘后对账”导航入口，盘后展示收敛到“绩效分析”；底层结算快照、reconciliation inputs/breaks 和 API Console 调试入口保留。
 - [x] 订单、成交、当前持仓和历史持仓查询新增服务端 `cursor` 翻页响应 `next_cursor`；`/trade` 的订单监控和资金持仓工作区支持按交易日查询并使用服务端分页。
+- [x] `/trade#asset` 资金持仓工作区新增完整 CSV 导出：按当前账户和所选交易日读取全部分页持仓而非仅导出当前页，同时输出资金摘要、持仓明细、东八区导出时间和 UTF-8 BOM；资金摘要读取失败时仍保留持仓导出并明确标记数据状态。
 - [x] 拒绝/失败的下单 reply 会更新本地草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`；`/trade` 订单监控表和详情时间线显示错误/柜台信息。
 - [x] `/trade` 交易测试视图压缩右侧持仓版面，保留资金持仓完整工作区的信息密度。
 - [x] `/trade` 交易测试主界面新增本地 ECharts 当日分钟 K 线，使用 Meridian bars 的 `open/high/low/close` 绘制 candlestick 并叠加成交量；若当天不是交易日，bars 请求会通过 Meridian 交易日接口回退到最近交易日。
@@ -541,3 +542,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-27`: 调整深色交易终端的 ECharts 主题：移除浅色主题遗留的亮白坐标轴和辅助线，统一网格线、轴标签、十字光标、tooltip、dataZoom 和买卖标记描边的深色层级；K 线和成交量涨跌色同步为 QuantStage `#F23645/#089981`。1600x1280 与 1280x800 使用真实 240 条分钟线复核，图表 canvas 正常、无控制台错误、4xx 或横向溢出。
 - `2026-07-28`: 生产新增账户 `307000051388` 和 `307000051389`。Redis 只读扫描确认两户均已有 `relay:prod:v1:huaxin:{account_id}` 命名空间及 `cmd.query/cmd.trade/hb`，已加入未跟踪 `config/relay.prod.yaml`，保持 `enabled=true`、`trading_enabled=false`；9092 当前为 5 个生产只读账户、下单账户 0。07:55 已分别发布资金、持仓、委托、成交查询命令；当时尚未到 OC 启动时间，未生成 `reply/event` 属正常等待状态，OC 启动后需重新触发查询并确认账本回包。
 - `2026-07-29`: 生产预注册新账户 `307000051387`。08:52 OC 尚未启动，Redis 只读扫描未发现该账户 stream，符合预期；已按 `relay:prod:v1:huaxin:307000051387` 加入未跟踪生产配置，保持 `enabled=true`、`trading_enabled=false`，且未提前发送查询命令。9092 重启验证为 6 个生产只读账户、下单账户 0；待 OC 启动并创建 stream 后再执行资金、持仓、委托、成交查询验证。
+- `2026-07-29`: 交易终端资金持仓页新增“导出 CSV”：导出范围固定为当前账户和所选交易日，自动遍历服务端 cursor，覆盖超过 500 条的完整持仓并沿用页面排序；文件包含资金摘要及持仓数量、可用量、成本、现价、市值、持仓/当日盈亏等明细。真实历史样本导出 32 条通过，模拟两页 `2000 + 505` 条导出 2505 条通过，CSV 使用 UTF-8 BOM，浏览器无脚本或接口错误。
