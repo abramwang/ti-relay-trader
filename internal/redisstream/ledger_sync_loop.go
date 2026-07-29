@@ -35,6 +35,7 @@ type LedgerTradeChange struct {
 	AccountIDs   []string
 	OrderEvents  int
 	Fills        int
+	Transfers    int
 	LastStreamID string
 }
 
@@ -45,6 +46,7 @@ type LedgerChange struct {
 	Orders       int
 	OrderEvents  int
 	Fills        int
+	Transfers    int
 	Assets       int
 	Positions    int
 	LastStreamID string
@@ -155,14 +157,17 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"orders", report.Totals.Orders,
 					"order_events", report.Totals.OrderEvents,
 					"fills", report.Totals.Fills,
+					"transfers", report.Totals.Transfers,
 					"assets", report.Totals.Assets,
 					"positions", report.Totals.Positions,
 					"skipped", report.Totals.Skipped,
 					"ledger_errors", report.Totals.LedgerErrors,
 					"parse_errors", report.Totals.ParseErrors,
+					"dead_letters", report.Totals.DeadLetters,
+					"data_quality_dead_letters", report.Totals.DataQualityDLQ,
 				)
 			}
-			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0) {
+			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0) {
 				accountIDs := accountIDsFromLedgerResult(report.Totals)
 				if len(accountIDs) > 0 {
 					opts.OnTradeChange(ctx, LedgerTradeChange{
@@ -171,11 +176,12 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 						AccountIDs:   accountIDs,
 						OrderEvents:  report.Totals.OrderEvents,
 						Fills:        report.Totals.Fills,
+						Transfers:    report.Totals.Transfers,
 						LastStreamID: report.Totals.LastStreamID,
 					})
 				}
 			}
-			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
+			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
 				accountIDs := accountIDsFromLedgerResult(report.Totals)
 				if len(accountIDs) > 0 {
 					opts.OnLedgerChange(ctx, LedgerChange{
@@ -185,6 +191,7 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 						Orders:       report.Totals.Orders,
 						OrderEvents:  report.Totals.OrderEvents,
 						Fills:        report.Totals.Fills,
+						Transfers:    report.Totals.Transfers,
 						Assets:       report.Totals.Assets,
 						Positions:    report.Totals.Positions,
 						LastStreamID: report.Totals.LastStreamID,
@@ -214,10 +221,13 @@ func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, curs
 			"last_batch_orders":        report.Totals.Orders,
 			"last_batch_order_events":  report.Totals.OrderEvents,
 			"last_batch_fills":         report.Totals.Fills,
+			"last_batch_transfers":     report.Totals.Transfers,
 			"last_batch_assets":        report.Totals.Assets,
 			"last_batch_positions":     report.Totals.Positions,
 			"last_batch_parse_errors":  report.Totals.ParseErrors,
 			"last_batch_ledger_errors": report.Totals.LedgerErrors,
+			"last_batch_dead_letters":  report.Totals.DeadLetters,
+			"last_batch_data_quality":  report.Totals.DataQualityDLQ,
 		},
 	}
 	if report.Count > 0 {

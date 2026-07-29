@@ -17,8 +17,10 @@
     metricFillsSeq: 0,
     orders: [],
     fills: [],
+    transfers: [],
     ordersPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
     fillsPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
+    transfersPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
     positionsPage: { cursor: "", previous: [], next: "", page: 1, pageSize: 50 },
     selectedOrderID: "",
     selectedTab: "orders",
@@ -88,7 +90,8 @@
     tableSorts: {
       positions: { key: "market_value", direction: "desc" },
       orders: { key: "created_at", direction: "desc" },
-      fills: { key: "matched_at", direction: "desc" }
+      fills: { key: "matched_at", direction: "desc" },
+      transfers: { key: "matched_at", direction: "desc" }
     }
   };
 
@@ -145,6 +148,7 @@
     orderCount: byID("orderCount"),
     activeOrderCount: byID("activeOrderCount"),
     fillCount: byID("fillCount"),
+    transferCount: byID("transferCount"),
     lastEventTime: byID("lastEventTime"),
     blotterTabs: byID("blotterTabs"),
     blotterContent: byID("blotterContent"),
@@ -1409,11 +1413,12 @@
       return;
     }
     ensureLedgerQueryDefaults();
-    const [assetResult, positionsResult, ordersResult, fillsResult] = await Promise.allSettled([
+    const [assetResult, positionsResult, ordersResult, fillsResult, transfersResult] = await Promise.allSettled([
       fetchAssetForSelectedDate(),
       fetchPositionsPage(),
       fetchOrdersPage(),
-      fetchFillsPage()
+      fetchFillsPage(),
+      fetchComponentTransfersPage()
     ]);
 
     if (assetResult.status === "fulfilled") {
@@ -1439,6 +1444,12 @@
       state.fillsPage.next = fillsResult.value.next_cursor || "";
     } else {
       pushLog("warn", "成交读取失败", fillsResult.reason.message);
+    }
+    if (transfersResult.status === "fulfilled") {
+      state.transfers = transfersResult.value.transfers || [];
+      state.transfersPage.next = transfersResult.value.next_cursor || "";
+    } else {
+      pushLog("warn", "ETF 划转读取失败", transfersResult.reason.message);
     }
 
     try {
@@ -1496,6 +1507,7 @@
   function resetLedgerPages() {
     resetPage(state.ordersPage);
     resetPage(state.fillsPage);
+    resetPage(state.transfersPage);
     resetPage(state.positionsPage);
   }
 
@@ -1984,12 +1996,30 @@
     return request(path + "?" + params.toString());
   }
 
+  async function fetchComponentTransfersPage() {
+    const tradeDate = selectedOrdersTradeDate();
+    const params = new URLSearchParams({
+      account_id: state.activeAccount,
+      limit: String(state.transfersPage.pageSize)
+    });
+    if (state.transfersPage.cursor) {
+      params.set("cursor", state.transfersPage.cursor);
+    }
+    let path = "/v1/transfers";
+    if (!isCurrentBusinessDate(tradeDate)) {
+      path = "/v1/history/transfers";
+      params.set("trade_date", tradeDate);
+    }
+    return request(path + "?" + params.toString());
+  }
+
   async function enrichVisibleLedgerInstruments() {
     try {
       await ensureInstrumentsForItems([
         ...state.positions,
         ...state.orders,
-        ...state.fills
+        ...state.fills,
+        ...state.transfers
       ]);
     } catch (err) {
       pushLog("warn", "证券名称补齐失败", err.message);
@@ -2559,6 +2589,9 @@
     if (table === "fills") {
       return fillSortValue(row, key);
     }
+    if (table === "transfers") {
+      return transferSortValue(row, key);
+    }
     return "";
   }
 
@@ -2645,6 +2678,30 @@
     }
   }
 
+  function transferSortValue(transfer, key) {
+    const order = orderForFill(transfer);
+    switch (key) {
+    case "fill_id":
+      return transfer.fill_id || "";
+    case "req_id":
+      return order.client_order_id || transfer.gateway_order_id || "";
+    case "counter":
+      return String(transfer.order_id || order.order_id || transfer.order_stream_id || order.order_stream_id || "");
+    case "symbol":
+      return symbolText(transfer);
+    case "name":
+      return securityNameText(transfer, order);
+    case "side":
+      return String(transfer.trade_side || order.trade_side || "");
+    case "quantity":
+      return finiteNumber(transfer.component_qty || transfer.qty);
+    case "matched_at":
+      return timeSortValue(transfer.matched_at);
+    default:
+      return "";
+    }
+  }
+
   function timeSortValue(value) {
     if (!value) {
       return null;
@@ -2680,7 +2737,7 @@
       renderPositions();
       return;
     }
-    if (table === "orders" || table === "fills") {
+    if (table === "orders" || table === "fills" || table === "transfers") {
       renderBlotter();
     }
   }
@@ -2815,6 +2872,7 @@
     els.orderCount.textContent = formatInt(state.orders.length);
     els.activeOrderCount.textContent = formatInt(activeOrders.length);
     els.fillCount.textContent = formatInt(state.fills.length);
+    els.transferCount.textContent = formatInt(state.transfers.length);
     const latest = latestOrderOrFillTime();
     els.lastEventTime.textContent = latest ? formatTime(latest) : "--";
   }
@@ -2839,6 +2897,9 @@
     for (const fill of state.fills) {
       note(fill.matched_at);
     }
+    for (const transfer of state.transfers) {
+      note(transfer.matched_at);
+    }
     return latest;
   }
 
@@ -2853,6 +2914,11 @@
     }
     if (state.selectedTab === "fills") {
       renderFillsTable();
+      renderBlotterPager();
+      return;
+    }
+    if (state.selectedTab === "transfers") {
+      renderComponentTransfersTable();
       renderBlotterPager();
       return;
     }
@@ -2999,6 +3065,52 @@
     updateSortHeaders("fills");
   }
 
+  function renderComponentTransfersTable() {
+    if (state.transfers.length === 0) {
+      els.blotterContent.innerHTML = '<div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedOrdersTradeDateSafe())) + ' ETF 成分股划转</div>';
+      return;
+    }
+    els.blotterContent.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="fill_id">划转编号</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="req_id">关联委托</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="counter">柜台/交易所</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="symbol">成分证券</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="name">证券名称</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="side">申赎方向</th>
+            <th>划转类型</th>
+            <th class="num sortable" data-sort-table="transfers" data-sort-key="quantity">划转数量</th>
+            <th>成分金额</th>
+            <th class="sortable" data-sort-table="transfers" data-sort-key="matched_at">划转时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedRows(state.transfers, "transfers").map((transfer) => {
+            const order = orderForFill(transfer);
+            const componentValue = transfer.component_value === null || transfer.component_value === undefined
+              ? "--"
+              : formatMoney(transfer.component_value);
+            return `
+              <tr>
+                <td>${escapeHTML(transfer.fill_id || "--")}</td>
+                <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || "--")}</strong><span>${escapeHTML(transfer.gateway_order_id || "--")}</span></span></td>
+                <td><span class="row-title"><strong>${escapeHTML(transfer.order_id || order.order_id || "--")}</strong><span>${escapeHTML(transfer.order_stream_id || order.order_stream_id || "--")}</span></span></td>
+                <td>${escapeHTML(symbolText({ symbol: transfer.component_symbol || transfer.symbol, exchange: transfer.component_exchange || transfer.exchange }))}</td>
+                <td class="security-name">${escapeHTML(transfer.component_name || securityNameText(transfer, order))}</td>
+                <td>${sideBadge(transfer, order)}</td>
+                <td>${escapeHTML(transfer.transfer_type || transfer.record_type || "--")}</td>
+                <td class="num">${formatInt(transfer.component_qty || transfer.qty)}</td>
+                <td class="num">${componentValue}</td>
+                <td>${formatTime(transfer.matched_at)}</td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+    updateSortHeaders("transfers");
+  }
+
   function selectedOrdersTradeDateSafe() {
     try {
       return selectedOrdersTradeDate();
@@ -3063,6 +3175,18 @@
         prev: els.ordersPrevPage,
         next: els.ordersNextPage,
         label: "成交",
+        tradeDate: selectedOrdersTradeDateSafe()
+      });
+      return;
+    }
+    if (state.selectedTab === "transfers") {
+      renderPager({
+        page: state.transfersPage,
+        count: state.transfers.length,
+        info: els.ordersPageInfo,
+        prev: els.ordersPrevPage,
+        next: els.ordersNextPage,
+        label: "ETF 划转",
         tradeDate: selectedOrdersTradeDateSafe()
       });
       return;
@@ -4998,9 +5122,11 @@
       selectedOrdersTradeDate();
       resetPage(state.ordersPage);
       resetPage(state.fillsPage);
-      const [ordersResult, fillsResult] = await Promise.allSettled([
+      resetPage(state.transfersPage);
+      const [ordersResult, fillsResult, transfersResult] = await Promise.allSettled([
         fetchOrdersPage(),
-        fetchFillsPage()
+        fetchFillsPage(),
+        fetchComponentTransfersPage()
       ]);
       if (ordersResult.status === "fulfilled") {
         state.ordersPage.next = ordersResult.value.next_cursor || "";
@@ -5013,6 +5139,12 @@
         state.fills = fillsResult.value.fills || [];
       } else {
         pushLog("warn", "成交读取失败", fillsResult.reason.message);
+      }
+      if (transfersResult.status === "fulfilled") {
+        state.transfersPage.next = transfersResult.value.next_cursor || "";
+        state.transfers = transfersResult.value.transfers || [];
+      } else {
+        pushLog("warn", "ETF 划转读取失败", transfersResult.reason.message);
       }
       await enrichVisibleLedgerInstruments();
       renderMonitorSummary();
@@ -5104,6 +5236,16 @@
     const data = await fetchFillsPage();
     state.fillsPage.next = data.next_cursor || "";
     state.fills = data.fills || [];
+    await enrichVisibleLedgerInstruments();
+    renderMonitorSummary();
+    renderBlotter();
+    renderDetail();
+  }
+
+  async function loadComponentTransfersOnly() {
+    const data = await fetchComponentTransfersPage();
+    state.transfersPage.next = data.next_cursor || "";
+    state.transfers = data.transfers || [];
     await enrichVisibleLedgerInstruments();
     renderMonitorSummary();
     renderBlotter();
@@ -5284,13 +5426,21 @@
     els.positionsPrevPage.addEventListener("click", () => gotoPositionsPage("prev"));
     els.positionsNextPage.addEventListener("click", () => gotoPositionsPage("next"));
     els.ordersPrevPage.addEventListener("click", () => {
-      const page = state.selectedTab === "fills" ? state.fillsPage : state.ordersPage;
-      const loader = state.selectedTab === "fills" ? loadFillsOnly : loadOrdersOnly;
+      const page = state.selectedTab === "fills"
+        ? state.fillsPage
+        : state.selectedTab === "transfers" ? state.transfersPage : state.ordersPage;
+      const loader = state.selectedTab === "fills"
+        ? loadFillsOnly
+        : state.selectedTab === "transfers" ? loadComponentTransfersOnly : loadOrdersOnly;
       gotoPage(page, "prev", loader);
     });
     els.ordersNextPage.addEventListener("click", () => {
-      const page = state.selectedTab === "fills" ? state.fillsPage : state.ordersPage;
-      const loader = state.selectedTab === "fills" ? loadFillsOnly : loadOrdersOnly;
+      const page = state.selectedTab === "fills"
+        ? state.fillsPage
+        : state.selectedTab === "transfers" ? state.transfersPage : state.ordersPage;
+      const loader = state.selectedTab === "fills"
+        ? loadFillsOnly
+        : state.selectedTab === "transfers" ? loadComponentTransfersOnly : loadOrdersOnly;
       gotoPage(page, "next", loader);
     });
     els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));

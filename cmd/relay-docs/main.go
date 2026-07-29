@@ -425,13 +425,13 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 			StartID:     "0",
 			Count:       200,
 			Block:       time.Second,
-			Roles:       []string{redisstream.SuffixReply, redisstream.SuffixEvent},
+			Roles:       []string{redisstream.SuffixReply, redisstream.SuffixEvent, redisstream.SuffixDLQ},
 			Checkpoints: checkpoints,
 			OnTradeChange: func(_ context.Context, change redisstream.LedgerTradeChange) {
 				if autoRefresh == nil {
 					return
 				}
-				reason := fmt.Sprintf("ledger:%s order_events=%d fills=%d", change.LastStreamID, change.OrderEvents, change.Fills)
+				reason := fmt.Sprintf("ledger:%s order_events=%d fills=%d transfers=%d", change.LastStreamID, change.OrderEvents, change.Fills, change.Transfers)
 				autoRefresh.RequestAccounts(change.AccountIDs, reason)
 			},
 			OnLedgerChange: func(_ context.Context, change redisstream.LedgerChange) {
@@ -466,6 +466,7 @@ func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) 
 			"orders":         change.Orders,
 			"order_events":   change.OrderEvents,
 			"fills":          change.Fills,
+			"transfers":      change.Transfers,
 			"assets":         change.Assets,
 			"positions":      change.Positions,
 			"last_stream_id": change.LastStreamID,
@@ -476,7 +477,7 @@ func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) 
 		event.Type = events.TypeOrderChanged
 		eventHub.Publish(event)
 	}
-	if change.Fills > 0 {
+	if change.Fills > 0 || change.Transfers > 0 {
 		event := base
 		event.Type = events.TypeFillChanged
 		eventHub.Publish(event)

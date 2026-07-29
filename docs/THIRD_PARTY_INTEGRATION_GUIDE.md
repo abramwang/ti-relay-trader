@@ -1,14 +1,16 @@
 # 华鑫托管交易网关第三方对接文档
 
-版本：`v1.0`  
-日期：`2026-06-13`  
-适用程序：`oc_trader_commander_huaxin`  
-协议：`relay.stream.v1`  
+版本：`v1.1`<br>
+日期：`2026-07-29`<br>
+适用程序：`oc_trader_commander_huaxin`<br>
+协议：`relay.stream.v1`<br>
 对接方向：第三方交易系统 / Relay 通过 Redis Stream 与华鑫托管交易网关对接
 
 ## 1. 文档目标
 
 本文档面向第三方开发团队，目标是让第三方在不了解 Titans 内部实现和华鑫原生接口细节的情况下，也可以独立完成与 `oc_trader_commander_huaxin` 的对接。
+
+`v1.1` 重点更新：生产环境订单/成交账本数据质量整改，明确空 `order_stream_id` 时的单笔委托级 `gateway_order_id` 规则、订单与成交上下文一致性检查、ETF 划转与普通成交分离规则。
 
 第三方只需要实现 Redis Stream 协议侧逻辑：
 
@@ -660,20 +662,37 @@ relay:{env}:v1:{broker_id}:{gateway_id}:cmd.query
 成交去重规则：
 
 1. 优先使用 `adapter_context.match_stream_id` 或 `payload.fill_id` 去重。
-2. 如果柜台没有稳定成交流号，可以使用 `order_stream_id + match_timestamp + qty + price` 组合去重。
+2. 如果柜台没有稳定成交流号，可以使用 `order_stream_id + order_id + symbol + exchange + match_timestamp + qty + price` 组合去重。
 3. 不要从订单累计成交差分反推成交明细；成交事实以 `fill.event` 为准。
 
 实时 `gateway_order_id` 规则：
 
 1. Relay 下单产生的本地订单继续使用命令里的 `gateway_order_id`。
-2. 外部订单或 ETF 篮子子单如果有柜台 `order_stream_id`，OC 使用 `external-huaxin-{account_id}-{order_stream_id}` 作为单笔委托级 `gateway_order_id`。
-3. `order.event` 与 `fill.event` 必须使用同一个 `gateway_order_id/order_stream_id` 组合。
+2. 外部订单或 ETF 篮子子单如果有柜台 `order_stream_id`，OC 使用 `external-huaxin-{broker_account_id}-{order_stream_id}` 作为单笔委托级 `gateway_order_id`。
+3. 如果柜台 `order_stream_id` 为空，OC 使用稳定可重建格式：`external-huaxin-{broker_account_id}-{trade_date}-ref{order_id}-basket{basket_id}-{symbol}.{exchange}-{trade_side}{business_type}`。缺失的可选段会省略，非字母数字、`.`、`_`、`#` 的字符会替换成 `_`。
+4. `basket_id` 只表达 ETF 篮子/策略父级关系，会放在 `payload.basket_id` 或 `adapter_context.basket_id`，不会再作为多笔子单共用的 `gateway_order_id`。
+5. 实时 `order.event/fill.event` 与查询 `order_page/fill_page` 调用同一个 `stable_gateway_order_id` 生成函数；同一笔柜台委托在四条链路中的 `gateway_order_id` 必须一致。
+6. 如果 OC 无法确定单笔委托身份，或普通成交与已知订单上下文不一致，会写入 `deadletter`，`action=adapter.data_quality`，不会作为普通 `order.event/fill.event` 发布。
+
+成交关联上下文规则：
+
+1. 成交优先使用华鑫成交回报自身携带的 `order_stream_id/order_id/account_id/symbol/exchange/trade_side/business_type/trade_date` 生成或匹配订单身份。
+2. 如果存在本地命令关系，OC 只用它补齐同一笔订单的 request/correlation/idempotency 上下文，不允许用当前篮子 ID、最近订单或客户端级 ID 覆盖成交自己的证券和方向。
+3. 普通成交发布前必须满足 `fill.symbol/exchange/trade_side/business_type` 与关联订单一致；不一致时进入 `adapter.data_quality` DLQ。
 
 如果普通成交先于订单状态回调到达，OC 会先推一个最小 `order.event`，其 `payload.synthetic_from_fill=true`、`adapter_context.synthetic_from_fill=true`。该事件只用于保证成交外键可关联；后续真实 `order.event` 到达后应以真实订单事件覆盖。
 
 ## 11.1 ETF 成分股划转事件：`transfer.event`
 
-ETF 申赎过程中，华鑫可能返回 `price=0` 的成分股划转记录。OC 不把这类记录作为普通 `fill.event` 推送，而是发布 `transfer.event`：
+ETF 申赎过程中，华鑫可能返回成分证券划转、现金替代或 0 价记录。OC 不把这类记录作为普通 `fill.event` 推送，而是发布 `transfer.event`。
+
+分类条件：
+
+1. `qty > 0` 且有 `symbol`。
+2. 满足 `price <= 0`，或华鑫业务字段表示 ETF 申赎：`business_type=E` 且 `trade_side in (P, R)`。
+3. 不满足上述条件的普通成交必须 `price > 0`、`qty > 0`、有稳定 `fill_id`，并且能唯一关联到单笔订单。
+
+示例：
 
 ```json
 {
@@ -965,7 +984,7 @@ rejected
 
 `payload.items[]` 与 `fill.event.payload` 接近，只放普通成交明细。普通成交必须满足 `price > 0`，并带 `record_type=trade_fill`、`is_transfer=false`。
 
-ETF 申赎过程中，华鑫可能返回 `price=0` 的成分股划转记录。这类记录不是普通成交，不进入 `payload.items[]`，统一放入 `payload.component_transfers[]`：
+ETF 申赎过程中，华鑫可能返回成分证券划转、现金替代或 0 价记录。这类记录不是普通成交，不进入 `payload.items[]`，统一放入 `payload.component_transfers[]`。分类条件与实时 `transfer.event` 一致：`price <= 0`，或 `business_type=E` 且 `trade_side in (P, R)`。
 
 ```json
 {

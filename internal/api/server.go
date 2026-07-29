@@ -61,6 +61,10 @@ type OrderService interface {
 	RefreshFills(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 }
 
+type componentTransferService interface {
+	ListComponentTransfers(ctx context.Context, query trading.ComponentTransferQuery) (orderflow.ListComponentTransfersResult, error)
+}
+
 type JobRunStore interface {
 	UpsertJobRun(ctx context.Context, run ledger.JobRun) (ledger.JobRun, error)
 	LatestJobRuns(ctx context.Context, jobNames []string) ([]ledger.JobRun, error)
@@ -203,9 +207,11 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/reconciliations/breaks", server.handleReconciliationBreaks)
 	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
 	mux.HandleFunc("/v1/history/fills", server.handleHistoryFills)
+	mux.HandleFunc("/v1/history/transfers", server.handleHistoryComponentTransfers)
 	mux.HandleFunc("/v1/orders", server.handleOrders)
 	mux.HandleFunc("/v1/orders/", server.handleOrderPath)
 	mux.HandleFunc("/v1/fills", server.handleFills)
+	mux.HandleFunc("/v1/transfers", server.handleComponentTransfers)
 	mux.HandleFunc("/", server.handleNotFound)
 
 	return httpx.RequestLogger(logger)(mux)
@@ -479,6 +485,31 @@ func (s *Server) enrichFillNames(ctx context.Context, fills []trading.Fill) {
 		}
 		if name := names[securityID(fills[i].Symbol, string(fills[i].Exchange))]; name != "" {
 			fills[i].Name = name
+		}
+	}
+}
+
+func (s *Server) enrichComponentTransferNames(ctx context.Context, transfers []trading.ComponentTransfer) {
+	if len(transfers) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(transfers)*2)
+	for _, transfer := range transfers {
+		ids = append(ids,
+			securityID(transfer.Symbol, string(transfer.Exchange)),
+			securityID(transfer.ComponentSymbol, string(transfer.ComponentExchange)),
+		)
+	}
+	names := s.instrumentNames(ctx, ids)
+	if len(names) == 0 {
+		return
+	}
+	for i := range transfers {
+		if strings.TrimSpace(transfers[i].Name) == "" {
+			transfers[i].Name = names[securityID(transfers[i].Symbol, string(transfers[i].Exchange))]
+		}
+		if strings.TrimSpace(transfers[i].ComponentName) == "" {
+			transfers[i].ComponentName = names[securityID(transfers[i].ComponentSymbol, string(transfers[i].ComponentExchange))]
 		}
 	}
 }
@@ -2697,6 +2728,55 @@ func (s *Server) handleHistoryFills(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
+func (s *Server) handleComponentTransfers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	service, ok := s.orders.(componentTransferService)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "component transfer service is unavailable", nil)
+		return
+	}
+	query, err := parseComponentTransferQuery(r.URL.Query(), true)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid component transfer query", err.Error())
+		return
+	}
+	result, err := service.ListComponentTransfers(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	s.enrichComponentTransferNames(r.Context(), result.Transfers)
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleHistoryComponentTransfers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	service, ok := s.orders.(componentTransferService)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "component transfer service is unavailable", nil)
+		return
+	}
+	query, err := parseComponentTransferQuery(r.URL.Query(), false)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid history component transfer query", err.Error())
+		return
+	}
+	query.History = true
+	result, err := service.ListComponentTransfers(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	s.enrichComponentTransferNames(r.Context(), result.Transfers)
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
 func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
 	if s.jobs == nil {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "job run store is unavailable", nil)
@@ -3248,6 +3328,31 @@ func parseFillQuery(values url.Values, defaultToday bool) (trading.FillQuery, er
 		BasketID:       values.Get("basket_id"),
 		ParentOrderID:  values.Get("parent_order_id"),
 		T0OrderGroupID: values.Get("t0_order_group_id"),
+		Limit:          limit,
+		Cursor:         values.Get("cursor"),
+	}, nil
+}
+
+func parseComponentTransferQuery(values url.Values, defaultToday bool) (trading.ComponentTransferQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return trading.ComponentTransferQuery{}, err
+	}
+	history := parseBool(values.Get("history"))
+	tradeDate, dateFrom, dateTo := parseDateQuery(values)
+	if defaultToday && !history && tradeDate == "" && dateFrom == "" && dateTo == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	return trading.ComponentTransferQuery{
+		AccountID:      values.Get("account_id"),
+		GatewayOrderID: values.Get("gateway_order_id"),
+		Symbol:         values.Get("symbol"),
+		Exchange:       trading.Exchange(values.Get("exchange")),
+		TradeDate:      tradeDate,
+		DateFrom:       dateFrom,
+		DateTo:         dateTo,
+		History:        history,
+		BasketID:       values.Get("basket_id"),
 		Limit:          limit,
 		Cursor:         values.Get("cursor"),
 	}, nil

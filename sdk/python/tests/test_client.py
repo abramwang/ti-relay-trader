@@ -223,6 +223,32 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/history/fills":
             self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-history", "account_id": "acct-1", "trade_date": query.get("trade_date", [""])[0], "qty": 100}]}})
             return
+        if parsed.path in ("/v1/transfers", "/v1/history/transfers"):
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "transfers": [
+                            {
+                                "fill_id": "transfer-1",
+                                "account_id": "acct-1",
+                                "gateway_order_id": "gw-transfer",
+                                "symbol": "300001",
+                                "exchange": "SZ",
+                                "qty": 300,
+                                "trade_side": "R",
+                                "business_type": "E",
+                                "record_type": "etf_component_transfer",
+                                "component_symbol": "300001",
+                                "component_exchange": "SZ",
+                                "component_qty": 300,
+                                "component_value": None,
+                            }
+                        ]
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/events/stream":
             events = [
                 (
@@ -454,6 +480,7 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.get_positions()[0].symbol, "600000")
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
+        self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
 
     def test_history_queries_use_history_endpoints(self):
         open_position = self.client.get_positions(history=True, trade_date="20260612", snapshot_type="open")[0]
@@ -461,10 +488,12 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(open_position.snapshot_type, "open")
         self.assertEqual(self.client.list_orders(history=True, date_from="20260612")[0].gateway_order_id, "gw-history")
         self.assertEqual(self.client.list_fills(history=True, trade_date="20260612")[0].fill_id, "fill-history")
-        self.assertEqual(RelayHandler.requests[-3][1], "/v1/accounts/acct-1/positions/history")
-        self.assertEqual(RelayHandler.requests[-3][2]["snapshot_type"], ["open"])
-        self.assertEqual(RelayHandler.requests[-2][1], "/v1/history/orders")
-        self.assertEqual(RelayHandler.requests[-1][1], "/v1/history/fills")
+        self.assertEqual(self.client.list_transfers(history=True, trade_date="20260612")[0].fill_id, "transfer-1")
+        self.assertEqual(RelayHandler.requests[-4][1], "/v1/accounts/acct-1/positions/history")
+        self.assertEqual(RelayHandler.requests[-4][2]["snapshot_type"], ["open"])
+        self.assertEqual(RelayHandler.requests[-3][1], "/v1/history/orders")
+        self.assertEqual(RelayHandler.requests[-2][1], "/v1/history/fills")
+        self.assertEqual(RelayHandler.requests[-1][1], "/v1/history/transfers")
 
     def test_record_job_run(self):
         run = self.client.record_job_run(

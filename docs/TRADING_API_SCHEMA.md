@@ -279,11 +279,17 @@ rejected
 成交去重优先级：
 
 1. `account_id + trade_date + gateway_order_id + fill_id`
-2. `order_stream_id + match_timestamp + qty + price`
+2. `order_stream_id + order_id + symbol + exchange + match_timestamp + qty + price`
 
 `fill_id` 对应的柜台成交流号或 `adapter_context.match_stream_id` 只要求在订单作用域内稳定，不要求在账户当日或全历史范围内唯一。策略端如果自行做成交回调去重，也应把 `gateway_order_id` 纳入 key。
 
 如果前置只推送订单累计成交量，而没有同步推送完整 `fill.event` 或 `fill_page`，relay 会在新订单事件入账时补一条汇总成交，保证订单账本和成交账本的数量口径向前一致。该补齐记录的 `fill_id` 形如 `relay-summary:<gateway_order_id>`，并在 `adapter_context` 中标记 `relay_synthesized=true`、`relay_synthesis_source=order.event/order_page`、`relay_synthesis_reason=order_filled_without_complete_fill_ledger`。这类记录不是柜台逐笔成交，策略端如果需要严格逐笔成交，可以按该标记过滤。
+
+### ComponentTransfer
+
+ETF 申赎成分证券划转、现金替代和 0 价记录使用独立 `ComponentTransfer` 账本。Relay 接收实时 `transfer.event` 和查询 `fill_page.component_transfers[]`，写入 `etf_component_transfers`，不会写入 `fills`。`component_value=null` 表示 OC 未提供可估值金额，不解释为 0；柜台原始方向保留在 `broker_trade_side/broker_business_type`。
+
+OC v1.1 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `basket_id` 重建或改写 ID；只有归档重放旧 `etfarb#...` 消息时保留一次兼容修复。
 
 ## API 路由规划
 
@@ -327,8 +333,10 @@ rejected
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 已实现，默认按 `Asia/Shanghai` 当日读取 PostgreSQL 账本 |
 | `GET` | `/v1/fills` | `FillQuery` | `[]Fill` | 已实现，默认按 `Asia/Shanghai` 当日读取 PostgreSQL 账本 |
+| `GET` | `/v1/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，默认按 `Asia/Shanghai` 当日读取 ETF 成分股划转账本 |
 | `GET` | `/v1/history/orders` | `OrderQuery` | `[]Order` | 已实现，显式历史订单查询 |
 | `GET` | `/v1/history/fills` | `FillQuery` | `[]Fill` | 已实现，显式历史成交查询 |
+| `GET` | `/v1/history/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，显式历史 ETF 成分股划转查询 |
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
 | `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian query | Meridian payload | 已实现，同源薄代理，保留 Meridian 原始字段 |
@@ -364,11 +372,13 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `POST /v1/orders/batch` 会为每笔子订单写入本地草稿，再向 Redis `cmd.trade` 写入一条 `order.batch.submit` command。批量请求的 `202 Accepted` 不表示交易所接单或成交，最终仍以回流事件为准。
 
-当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders` 和 `GET /v1/fills` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 轻量同步循环、`relayctl ledger-sync` 或后续正式 worker 把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL。
+当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders`、`GET /v1/fills` 和 `GET /v1/transfers` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 同步循环把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL；同一 `fill_page` 中的普通成交和 `component_transfers[]` 会分别入账。
 
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 
-订单、成交、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
+订单、成交、ETF 划转、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
+
+OC 无法确定单笔委托身份或发现普通成交与订单证券、交易所、方向、业务类型不一致时，会写入 `dlq` 且 `action=adapter.data_quality`。Relay 9092 进程消费并归档 DLQ，独立统计 `dead_letters/data_quality_dead_letters`，不会把问题记录落入普通订单或成交账本。
 
 `GET /v1/accounts/{account_id}/performance/daily?trade_date=YYYYMMDD` 返回账户日终权益和 PnL 输入汇总。该接口以指定交易日 `asset_snapshots(snapshot_type=close)` 为主记录，读取上一条 close 净资产保留兼容字段 `daily_pnl`、`return_rate` 和 `asset_change`，同时读取当日 `asset_snapshots(snapshot_type=open)` 生成 `open_net_asset`、`overnight_adjustment=open_net_asset-previous_close_net_asset`、`intraday_pnl=close_net_asset-open_net_asset`、`intraday_return=intraday_pnl/open_net_asset`、`open_snapshot_source` 和 `quality_flags`。如果缺少 open 快照，会用上一 close 兜底并标记 `missing_open_asset/open_asset_fallback`。接口还汇总同日 `position_snapshots(snapshot_type=close)` 的持仓市值、总持仓浮盈、当日持仓浮动盈亏以及 `fills` 的买入金额、卖出金额、成交额和费用。研究侧派生口径为 `realized_pnl=settled_profit`、`gross_pnl=realized_pnl+day_unrealized_pnl`、`net_pnl=gross_pnl-fee_total`。接口只读取本地账本，不主动查询柜台；如果目标日尚未写入 close 资产快照，会返回 `404 NOT_FOUND`。
 

@@ -78,6 +78,17 @@ func (fill Fill) MarshalJSON() ([]byte, error) {
 	})
 }
 
+func (transfer ComponentTransfer) MarshalJSON() ([]byte, error) {
+	type transferAlias ComponentTransfer
+	return json.Marshal(struct {
+		transferAlias
+		MatchedAt *string `json:"matched_at,omitempty"`
+	}{
+		transferAlias: transferAlias(transfer),
+		MatchedAt:     optionalBusinessTime(transfer.MatchedAt),
+	})
+}
+
 func (event OrderEvent) MarshalJSON() ([]byte, error) {
 	type eventAlias OrderEvent
 	return json.Marshal(struct {

@@ -59,6 +59,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 | Meridian bars 代理 | `GET /v1/meridian/market/bars` |
 | 历史订单读取 | `GET /v1/history/orders?account_id=...&trade_date=...` |
 | 历史成交读取 | `GET /v1/history/fills?account_id=...&trade_date=...` |
+| ETF 成分股划转 | `GET /v1/transfers`、`GET /v1/history/transfers` |
 
 行情和证券主数据相关字段约束全部以 Meridian 为准。relay 只做同源薄代理和交易页输入转换，不重新定义行情数据字段；响应保持 Meridian `data/meta/error` 结构，页面直接使用 `security_id`、`name`、`instrument_type`、`market_level`、`trade_date`、`last`、`pre_close`、`bids`、`asks` 等字段。
 
@@ -66,7 +67,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 刷新策略
 
-当前页面优先通过 `GET /v1/events/stream?account_id=...` 建立 SSE 实时通道。9092 服务端会启动轻量后台 Redis `reply/event` 同步循环，把前置订单状态、成交、资金和持仓回报持续写入 PostgreSQL；同步循环在落账后广播 `order.changed`、`fill.changed`、`asset.changed` 和 `positions.changed` 事件，页面收到事件后合并触发账本查询刷新。
+当前页面优先通过 `GET /v1/events/stream?account_id=...` 建立 SSE 实时通道。9092 服务端会启动轻量后台 Redis `reply/event/dlq` 同步循环，把前置订单状态、普通成交、ETF 划转、资金和持仓回报持续写入 PostgreSQL；同步循环在落账后广播 `order.changed`、`fill.changed`、`asset.changed` 和 `positions.changed` 事件，页面收到事件后合并触发账本查询刷新。订单监控中的“ETF 划转”页签独立展示 `transfer.event/fill_page.component_transfers[]`，不会混入普通成交。
 
 页面仍保留 3 秒轮询作为兜底：如果浏览器不支持 EventSource、SSE 断线重连或服务端临时不可用，订单、成交、资金和持仓仍会通过轮询刷新。
 

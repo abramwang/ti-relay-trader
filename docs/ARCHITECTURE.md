@@ -94,7 +94,7 @@ SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)�
 | 资金 | `GET /v1/accounts/{account_id}/asset`、`POST /v1/accounts/{account_id}/asset/refresh` |
 | 持仓 | `GET /v1/accounts/{account_id}/positions`、`GET /v1/accounts/{account_id}/positions/history`、`POST /v1/accounts/{account_id}/positions/refresh` |
 | 交易 | `POST /v1/orders`、`POST /v1/orders/batch`、`POST /v1/orders/{gateway_order_id}/cancel` |
-| 查询 | `GET /v1/orders`、`GET /v1/fills`、`GET /v1/history/orders`、`GET /v1/history/fills`、订单/成交刷新接口 |
+| 查询 | `GET /v1/orders`、`GET /v1/fills`、`GET /v1/transfers` 及对应历史查询、订单/成交刷新接口 |
 | 事件 | `GET /v1/events/stream` |
 | 交易日任务 | `GET /v1/jobs/runs`、`POST /v1/jobs/runs`、`POST /v1/settlements/snapshots` |
 | 绩效与研究 | `GET /v1/accounts/{account_id}/performance/daily`、`GET /v1/accounts/{account_id}/performance/series`、`GET /v1/accounts/{account_id}/performance/series.csv` |
@@ -123,6 +123,7 @@ relay 的核心域对象建议如下：
 | `Gateway` | 前置服务实例，包含 env、broker_id、gateway_id、Redis stream prefix、心跳状态 |
 | `Order` | relay 标准订单，使用 gateway_order_id 作为跨系统主键 |
 | `Fill` | 成交事实，优先按 account_id + trade_date + gateway_order_id + fill_id 或同日 match_stream_id 去重 |
+| `ComponentTransfer` | ETF 申赎成分股划转事实，不进入普通成交和成交额口径 |
 | `Position` | 持仓快照和可卖数量，需考虑 A 股 T+1 |
 | `CashLedger` | 资金流水、冻结、解冻、成交扣款、费用 |
 | `ReconciliationRun` | 一次盘后对账任务 |

@@ -33,6 +33,7 @@ var (
 const (
 	maxOrderQueryLimit    = 500
 	maxFillQueryLimit     = 500
+	maxTransferQueryLimit = 500
 	maxPositionQueryLimit = 2000
 )
 
@@ -150,6 +151,13 @@ type ListFillsResult struct {
 	Query      trading.FillQuery `json:"query"`
 	Count      int               `json:"count"`
 	NextCursor string            `json:"next_cursor,omitempty"`
+}
+
+type ListComponentTransfersResult struct {
+	Transfers  []trading.ComponentTransfer    `json:"transfers"`
+	Query      trading.ComponentTransferQuery `json:"query"`
+	Count      int                            `json:"count"`
+	NextCursor string                         `json:"next_cursor,omitempty"`
 }
 
 type GetAssetResult struct {
@@ -549,6 +557,44 @@ func (service *Service) ListFills(ctx context.Context, query trading.FillQuery) 
 	}, nil
 }
 
+func (service *Service) ListComponentTransfers(ctx context.Context, query trading.ComponentTransferQuery) (ListComponentTransfersResult, error) {
+	normalized, err := normalizeComponentTransferQuery(query)
+	if err != nil {
+		return ListComponentTransfersResult{}, err
+	}
+	offset, err := cursorOffset(normalized.Cursor)
+	if err != nil {
+		return ListComponentTransfersResult{}, err
+	}
+	store, ok := service.ledger.(interface {
+		ListComponentTransfers(context.Context, trading.ComponentTransferQuery) ([]trading.ComponentTransfer, error)
+	})
+	if !ok {
+		return ListComponentTransfersResult{}, fmt.Errorf("%w: component transfer ledger is unavailable", ErrMissingLedger)
+	}
+	fetchQuery := normalized
+	if normalized.Limit < maxTransferQueryLimit {
+		fetchQuery.Limit = normalized.Limit + 1
+	}
+	transfers, err := store.ListComponentTransfers(ctx, fetchQuery)
+	if err != nil {
+		return ListComponentTransfersResult{}, err
+	}
+	nextCursor := ""
+	if len(transfers) > normalized.Limit {
+		transfers = transfers[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	} else if normalized.Limit == maxTransferQueryLimit && len(transfers) == normalized.Limit {
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	}
+	return ListComponentTransfersResult{
+		Transfers:  transfers,
+		Query:      normalized,
+		Count:      len(transfers),
+		NextCursor: nextCursor,
+	}, nil
+}
+
 func (service *Service) RefreshAsset(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
 	return service.publishAccountQuery(ctx, accountID, redisstream.ActionAccountAsset, "asset", opts)
 }
@@ -831,6 +877,28 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	}
 	if normalized.Limit > maxFillQueryLimit {
 		normalized.Limit = maxFillQueryLimit
+	}
+	return normalized, nil
+}
+
+func normalizeComponentTransferQuery(query trading.ComponentTransferQuery) (trading.ComponentTransferQuery, error) {
+	normalized := query
+	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
+	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
+	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
+	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
+	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
+	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
+	normalized.BasketID = strings.TrimSpace(normalized.BasketID)
+	if normalized.Exchange != "" && !normalized.Exchange.Valid() {
+		return normalized, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", trading.ErrInvalidSchema)
+	}
+	if normalized.Limit <= 0 {
+		normalized.Limit = 100
+	}
+	if normalized.Limit > maxTransferQueryLimit {
+		normalized.Limit = maxTransferQueryLimit
 	}
 	return normalized, nil
 }

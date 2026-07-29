@@ -1,0 +1,1 @@
+-- ETF申赎 summary fill 是错误派生数据，无法从 migration 安全重建。

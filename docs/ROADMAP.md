@@ -67,6 +67,7 @@
 - [x] 将 ETF 成分股卖出从 T0 估算收益中排除，保留成交额和 `missing_transfer_link` 质量标记，避免与 IOPV 估值重复计利。
 - [x] `/trade#performance` 增加“证券贡献 / 净值序列”切换、策略汇总和贡献明细表；API Console、schema 和 Python SDK helper 同步。
 - [x] 新增只读 `performance/trade-quality`：输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细；订单成交按交易日关联，`/trade#performance`、API Console 和 `relay-sdk 0.1.18` 已同步。
+- [x] 对齐 OC v1.1 数据质量协议：稳定外部订单 ID 作为不透明值使用，普通成交与 ETF 划转分表，`adapter.data_quality` DLQ 纳入消费统计，新增划转 API、终端页签和归档重放。
 
 范围：
 
@@ -298,6 +299,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.15.tar.gz` 和 SHA256 校验文件，新增 NAV 对账人工确认/阻断 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.16.tar.gz` 和 SHA256 校验文件，新增证券/策略贡献只读 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.18.tar.gz` 和 SHA256 校验文件，新增交易质量统计 helper，并将订单/成交回调去重键切换到交易日作用域。
+- [x] 发布 `public/sdk/relay-sdk-0.1.19.tar.gz` 和 SHA256 校验文件，新增 `ComponentTransfer` 与当日/历史 ETF 划转查询。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台

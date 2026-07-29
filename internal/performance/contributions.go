@@ -182,6 +182,12 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		return ContributionResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	ordinaryFillCount := len(fills)
+	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
+	if transferErr == nil && len(redemptionTransferFills) > 0 {
+		fills = append(fills, redemptionTransferFills...)
+		fills = dedupeContributionFills(fills)
+	}
 
 	openPositions, err := service.listContributionPositions(ctx, accountID, normalizedDate, "open")
 	if err != nil {
@@ -203,8 +209,13 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		GeneratedAt:    service.now(),
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
+	if transferErr != nil {
+		result.QualityFlags = appendUnique(result.QualityFlags, "component_transfer_ledger_unavailable")
+	} else if len(redemptionTransferFills) > 0 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_from_transfer_ledger")
+	}
 	result.Summary.Orders = len(orders)
-	result.Summary.Fills = len(fills)
+	result.Summary.Fills = ordinaryFillCount
 
 	navs, navErr := service.store.ListPerformanceNAVs(ctx, accountID, normalizedDate, normalizedDate)
 	if navErr == nil && len(navs) > 0 {
@@ -382,6 +393,108 @@ func (service *Service) previousClosePositionFallback(ctx context.Context, accou
 		positions[index].SnapshotType = "previous_close_fallback"
 	}
 	return positions, []string{"open_positions_from_previous_close"}
+}
+
+func (service *Service) listRedemptionTransferFills(
+	ctx context.Context,
+	accountID string,
+	tradeDate string,
+	orders []trading.Order,
+	fills []trading.Fill,
+) ([]trading.Fill, error) {
+	store, ok := service.store.(interface {
+		ListComponentTransfers(context.Context, trading.ComponentTransferQuery) ([]trading.ComponentTransfer, error)
+	})
+	if !ok {
+		return nil, nil
+	}
+	transfers := make([]trading.ComponentTransfer, 0)
+	for page := 0; page < maxContributionPages; page++ {
+		batch, err := store.ListComponentTransfers(ctx, trading.ComponentTransferQuery{
+			AccountID: accountID,
+			TradeDate: tradeDate,
+			History:   true,
+			Limit:     contributionPageLimit,
+			Cursor:    strconv.Itoa(page * contributionPageLimit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list contribution component transfers: %w", err)
+		}
+		transfers = append(transfers, batch...)
+		if len(batch) < contributionPageLimit {
+			break
+		}
+		if page == maxContributionPages-1 {
+			return nil, fmt.Errorf("contribution component transfers exceed %d rows", contributionPageLimit*maxContributionPages)
+		}
+	}
+	return redemptionFillsFromComponentTransfers(orders, fills, transfers), nil
+}
+
+func redemptionFillsFromComponentTransfers(orders []trading.Order, fills []trading.Fill, transfers []trading.ComponentTransfer) []trading.Fill {
+	ordersByID := make(map[string]trading.Order, len(orders))
+	for _, order := range orders {
+		ordersByID[order.GatewayOrderID] = order
+	}
+	hasOrdinaryRedemption := make(map[string]bool)
+	for _, fill := range fills {
+		if isRedemptionFill(fill) {
+			hasOrdinaryRedemption[fill.GatewayOrderID] = true
+		}
+	}
+	seen := make(map[string]bool)
+	out := make([]trading.Fill, 0)
+	for _, transfer := range transfers {
+		order, ok := ordersByID[transfer.GatewayOrderID]
+		if !ok || hasOrdinaryRedemption[transfer.GatewayOrderID] {
+			continue
+		}
+		if !isETFBusinessRedemption(order.TradeSide, order.BusinessType) ||
+			contributionSecurityID(order.Symbol, order.Exchange) != contributionSecurityID(transfer.Symbol, transfer.Exchange) {
+			continue
+		}
+		key := strings.Join([]string{
+			transfer.GatewayOrderID,
+			transfer.FillID,
+			transfer.OrderStreamID,
+			strconv.FormatInt(transfer.MatchTimestamp, 10),
+			strconv.FormatInt(transfer.Qty, 10),
+		}, "\x00")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		context := make(map[string]any, len(transfer.AdapterContext)+1)
+		for name, value := range transfer.AdapterContext {
+			context[name] = value
+		}
+		context["relay_component_transfer_source"] = true
+		out = append(out, trading.Fill{
+			FillID:         "transfer:" + firstNonBlank(transfer.FillID, transfer.OrderStreamID),
+			AccountID:      transfer.AccountID,
+			GatewayOrderID: transfer.GatewayOrderID,
+			OrderID:        transfer.OrderID,
+			OrderStreamID:  transfer.OrderStreamID,
+			Symbol:         transfer.Symbol,
+			Name:           firstNonBlank(transfer.Name, order.Name),
+			Exchange:       transfer.Exchange,
+			TradeSide:      transfer.TradeSide,
+			BusinessType:   transfer.BusinessType,
+			Price:          0,
+			Qty:            transfer.Qty,
+			TradeDate:      transfer.TradeDate,
+			MatchTimestamp: transfer.MatchTimestamp,
+			MatchedAt:      transfer.MatchedAt,
+			ShareholderID:  transfer.ShareholderID,
+			StrategyType:   firstNonBlank(transfer.StrategyType, order.StrategyType),
+			StrategyID:     firstNonBlank(transfer.StrategyID, order.StrategyID),
+			BasketID:       firstNonBlank(transfer.BasketID, order.BasketID),
+			ParentOrderID:  firstNonBlank(transfer.ParentOrderID, order.ParentOrderID),
+			T0OrderGroupID: firstNonBlank(transfer.T0OrderGroupID, order.T0OrderGroupID),
+			AdapterContext: context,
+		})
+	}
+	return out
 }
 
 func dedupeContributionFills(fills []trading.Fill) []trading.Fill {

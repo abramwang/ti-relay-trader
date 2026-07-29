@@ -257,6 +257,42 @@ type Fill struct {
 	AdapterContext map[string]any `json:"adapter_context,omitempty"`
 }
 
+type ComponentTransfer struct {
+	FillID             string         `json:"fill_id,omitempty"`
+	AccountID          string         `json:"account_id"`
+	GatewayOrderID     string         `json:"gateway_order_id"`
+	OrderID            int64          `json:"order_id,omitempty"`
+	OrderStreamID      string         `json:"order_stream_id,omitempty"`
+	Symbol             string         `json:"symbol"`
+	Name               string         `json:"name,omitempty"`
+	Exchange           Exchange       `json:"exchange"`
+	Price              float64        `json:"price"`
+	Qty                int64          `json:"qty"`
+	TradeSide          TradeSide      `json:"trade_side"`
+	BusinessType       BusinessType   `json:"business_type"`
+	RecordType         string         `json:"record_type"`
+	TransferType       string         `json:"transfer_type,omitempty"`
+	IsTransfer         bool           `json:"is_transfer"`
+	ComponentSymbol    string         `json:"component_symbol"`
+	ComponentName      string         `json:"component_name,omitempty"`
+	ComponentExchange  Exchange       `json:"component_exchange"`
+	ComponentQty       int64          `json:"component_qty"`
+	ComponentValue     *float64       `json:"component_value"`
+	CashSubstitution   bool           `json:"cash_substitution"`
+	BrokerTradeSide    string         `json:"broker_trade_side,omitempty"`
+	BrokerBusinessType string         `json:"broker_business_type,omitempty"`
+	TradeDate          string         `json:"trade_date,omitempty"`
+	MatchTimestamp     int64          `json:"match_timestamp,omitempty"`
+	MatchedAt          time.Time      `json:"matched_at,omitempty"`
+	ShareholderID      string         `json:"shareholder_id,omitempty"`
+	StrategyType       string         `json:"strategy_type,omitempty"`
+	StrategyID         string         `json:"strategy_id,omitempty"`
+	BasketID           string         `json:"basket_id,omitempty"`
+	ParentOrderID      string         `json:"parent_order_id,omitempty"`
+	T0OrderGroupID     string         `json:"t0_order_group_id,omitempty"`
+	AdapterContext     map[string]any `json:"adapter_context,omitempty"`
+}
+
 type OrderEvent struct {
 	EventID        string         `json:"event_id"`
 	EventType      EventType      `json:"event_type"`
@@ -314,6 +350,20 @@ type FillQuery struct {
 	BasketID       string   `json:"basket_id,omitempty"`
 	ParentOrderID  string   `json:"parent_order_id,omitempty"`
 	T0OrderGroupID string   `json:"t0_order_group_id,omitempty"`
+	Limit          int      `json:"limit,omitempty"`
+	Cursor         string   `json:"cursor,omitempty"`
+}
+
+type ComponentTransferQuery struct {
+	AccountID      string   `json:"account_id,omitempty"`
+	GatewayOrderID string   `json:"gateway_order_id,omitempty"`
+	Symbol         string   `json:"symbol,omitempty"`
+	Exchange       Exchange `json:"exchange,omitempty"`
+	TradeDate      string   `json:"trade_date,omitempty"`
+	DateFrom       string   `json:"date_from,omitempty"`
+	DateTo         string   `json:"date_to,omitempty"`
+	History        bool     `json:"history,omitempty"`
+	BasketID       string   `json:"basket_id,omitempty"`
 	Limit          int      `json:"limit,omitempty"`
 	Cursor         string   `json:"cursor,omitempty"`
 }

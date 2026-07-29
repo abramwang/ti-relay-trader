@@ -14,6 +14,7 @@ from .models import (
     Account,
     Asset,
     CommandReceipt,
+    ComponentTransfer,
     Fill,
     Position,
     RelayEvent,
@@ -25,6 +26,7 @@ __all__ = [
     "Asset",
     "CallbackSubscription",
     "CommandReceipt",
+    "ComponentTransfer",
     "Fill",
     "Order",
     "Position",
@@ -39,4 +41,4 @@ __all__ = [
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.18"
+__version__ = "0.1.19"

@@ -887,8 +887,8 @@ func TestProcessLedgerEntryScopesReusableBasketGatewayOrderIDForFillEvent(t *tes
 				"price":38.76,
 				"qty":100,
 				"matched_at":"2026-06-17T09:40:39+08:00",
-				"trade_side":"R",
-				"business_type":"E",
+				"trade_side":"S",
+				"business_type":"S",
 				"record_type":"trade_fill",
 				"is_transfer":false
 			}
@@ -906,11 +906,154 @@ func TestProcessLedgerEntryScopesReusableBasketGatewayOrderIDForFillEvent(t *tes
 		fill.AdapterContext["relay_raw_account_id"] != "50100011407701" {
 		t.Fatalf("fill context = %#v", fill.AdapterContext)
 	}
-	if fill.TradeSide != trading.TradeSideRedemption ||
-		fill.AdapterContext["business_type"] != "E" ||
+	if fill.TradeSide != trading.TradeSideSell ||
+		fill.AdapterContext["business_type"] != "S" ||
 		fill.AdapterContext["record_type"] != "trade_fill" ||
 		fill.AdapterContext["is_transfer"] != false {
 		t.Fatalf("fill semantics = %#v/%#v", fill.TradeSide, fill.AdapterContext)
+	}
+}
+
+func TestProcessLedgerEntryWritesComponentTransferEvent(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:event", "5-0", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"transfer-event-1",
+			"event_type":"transfer.event",
+			"gateway_order_id":"external-huaxin-50100011407701-12001A180003508",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"50100011407701"},
+			"produced_at":"2026-07-29T10:15:00+08:00",
+			"payload":{
+				"gateway_order_id":"external-huaxin-50100011407701-12001A180003508",
+				"fill_id":"01010000135897600000",
+				"order_id":121,
+				"order_stream_id":"12001A180003508",
+				"account_id":"50100011407701",
+				"symbol":"300001",
+				"exchange":"SZ",
+				"price":0,
+				"qty":300,
+				"trade_side":"R",
+				"business_type":"E",
+				"record_type":"etf_component_transfer",
+				"transfer_type":"etf_redemption_component_transfer",
+				"is_transfer":true,
+				"component_symbol":"300001",
+				"component_exchange":"SZ",
+				"component_qty":300,
+				"component_value":null,
+				"cash_substitution":false,
+				"broker_trade_side":"S",
+				"broker_business_type":"S"
+			}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Transfers != 1 || result.Fills != 0 || result.Unsupported != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.transfers) != 1 {
+		t.Fatalf("transfers = %#v", writer.transfers)
+	}
+	transfer := writer.transfers[0].transfer
+	if transfer.ComponentSymbol != "300001" || transfer.ComponentQty != 300 || transfer.ComponentValue != nil {
+		t.Fatalf("transfer = %#v", transfer)
+	}
+}
+
+func TestSynthesizeOrderSummaryFillSkipsETFSubscriptionAndRedemption(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := LedgerProcessResult{}
+	err := synthesizeOrderSummaryFill(context.Background(), writer, EntryEnvelope{
+		Stream:     "relay:prod:v1:huaxin:acct:event",
+		StreamID:   "5-2",
+		ProducedAt: time.Date(2026, 7, 29, 13, 4, 31, 0, timeutil.Location()),
+	}, trading.Order{
+		AccountID:      "acct",
+		GatewayOrderID: "etf-redeem",
+		Symbol:         "588200",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideRedemption,
+		BusinessType:   trading.BusinessTypeETF,
+		OrderQty:       4_500_000,
+		CumFilledQty:   4_500_000,
+		AvgFillPrice:   1.23,
+		Status:         trading.OrderStatusFilled,
+		GatewayStatus:  trading.GatewayStatusFilled,
+		IsTerminal:     true,
+		LastUpdatedAt:  time.Date(2026, 7, 29, 13, 4, 31, 0, timeutil.Location()),
+	}, "order.event", &result)
+	if err != nil {
+		t.Fatalf("synthesizeOrderSummaryFill() error = %v", err)
+	}
+	if len(writer.fills) != 0 || result.Fills != 0 {
+		t.Fatalf("ETF transfer produced summary fill: %#v / %#v", writer.fills, result)
+	}
+}
+
+func TestProcessLedgerEntryWritesFillPageComponentTransfers(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:reply", "5-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"fill-page-1",
+			"action":"fill.list.query",
+			"result_type":"fill_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"50100011407701"},
+			"produced_at":"2026-07-29T15:05:00+08:00",
+			"payload":{
+				"items":[],
+				"component_transfers":[{
+					"gateway_order_id":"external-huaxin-50100011407701-12001A180001681",
+					"fill_id":"01010000135897600001",
+					"order_id":122,
+					"order_stream_id":"12001A180001681",
+					"account_id":"50100011407701",
+					"symbol":"300347",
+					"exchange":"SZ",
+					"price":0,
+					"qty":100,
+					"trade_side":"R",
+					"business_type":"E",
+					"record_type":"etf_component_transfer",
+					"transfer_type":"etf_redemption_component_transfer",
+					"is_transfer":true,
+					"component_symbol":"300347",
+					"component_exchange":"SZ",
+					"component_qty":100,
+					"cash_substitution":false
+				}]
+			}
+		}`,
+	})
+
+	if result.Replies != 1 || result.Transfers != 1 || result.Fills != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.transfers) != 1 || !strings.Contains(writer.transfers[0].stream.ID, ":transfer:") {
+		t.Fatalf("transfers = %#v", writer.transfers)
+	}
+}
+
+func TestProcessLedgerEntryTracksAdapterDataQualityDeadLetter(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:dlq", "6-0", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"deadletter",
+			"message_id":"dlq-1",
+			"action":"adapter.data_quality",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"50100011407701"},
+			"payload":{"reason":"fill/order context mismatch"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.DeadLetters != 1 || result.DataQualityDLQ != 1 || result.Unsupported != 0 {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
@@ -934,6 +1077,7 @@ type fakeLedgerWriter struct {
 	orderUpdates          []trading.OrderEvent
 	orderEvents           []recordedOrderEvent
 	fills                 []recordedFill
+	transfers             []recordedComponentTransfer
 	assets                []recordedAsset
 	positions             []recordedPosition
 	stalePositionClears   []recordedStalePositionClear
@@ -951,6 +1095,12 @@ type recordedFill struct {
 	fill   trading.Fill
 	stream ledger.StreamRef
 	source ledger.SourceRef
+}
+
+type recordedComponentTransfer struct {
+	transfer trading.ComponentTransfer
+	stream   ledger.StreamRef
+	source   ledger.SourceRef
 }
 
 type recordedAsset struct {
@@ -991,6 +1141,11 @@ func (writer *fakeLedgerWriter) AppendOrderEvent(_ context.Context, event tradin
 
 func (writer *fakeLedgerWriter) InsertFill(_ context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error {
 	writer.fills = append(writer.fills, recordedFill{fill: fill, stream: stream, source: source})
+	return nil
+}
+
+func (writer *fakeLedgerWriter) InsertComponentTransfer(_ context.Context, transfer trading.ComponentTransfer, stream ledger.StreamRef, source ledger.SourceRef) error {
+	writer.transfers = append(writer.transfers, recordedComponentTransfer{transfer: transfer, stream: stream, source: source})
 	return nil
 }
 

@@ -13,12 +13,12 @@ from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import RelayConnectionError, RelayError, RelayTimeoutError, error_from_payload
-from .models import Account, Asset, CommandReceipt, Fill, Order, Position, RelayEvent
+from .models import Account, Asset, CommandReceipt, ComponentTransfer, Fill, Order, Position, RelayEvent
 from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.18"
+SDK_VERSION = "0.1.19"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -194,6 +194,38 @@ class RelayClient:
         path = "/v1/history/fills" if history else "/v1/fills"
         data = self._request("GET", path, query=query)
         return [Fill.from_dict(item) for item in data.get("fills", [])]
+
+    def list_transfers(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        basket_id: str | None = None,
+        history: bool | None = None,
+        limit: int | None = 100,
+    ) -> list[ComponentTransfer]:
+        """List ETF component transfers without mixing them into ordinary fills."""
+
+        query = {
+            "account_id": account_id or self.account_id or None,
+            "gateway_order_id": gateway_order_id,
+            "symbol": symbol,
+            "exchange": exchange,
+            "trade_date": trade_date,
+            "date_from": date_from,
+            "date_to": date_to,
+            "basket_id": basket_id,
+            "history": history,
+            "limit": limit,
+        }
+        path = "/v1/history/transfers" if history else "/v1/transfers"
+        data = self._request("GET", path, query=query)
+        return [ComponentTransfer.from_dict(item) for item in data.get("transfers", [])]
 
     def record_job_run(
         self,

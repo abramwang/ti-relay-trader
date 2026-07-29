@@ -256,6 +256,69 @@ class Fill:
 
 
 @dataclass(frozen=True)
+class ComponentTransfer:
+    fill_id: str = ""
+    account_id: str = ""
+    gateway_order_id: str = ""
+    order_id: int = 0
+    order_stream_id: str = ""
+    symbol: str = ""
+    name: str = ""
+    exchange: str = ""
+    price: float = 0.0
+    qty: int = 0
+    trade_side: str = ""
+    business_type: str = ""
+    record_type: str = ""
+    transfer_type: str = ""
+    component_symbol: str = ""
+    component_name: str = ""
+    component_exchange: str = ""
+    component_qty: int = 0
+    component_value: float | None = None
+    cash_substitution: bool = False
+    broker_trade_side: str = ""
+    broker_business_type: str = ""
+    trade_date: str = ""
+    match_timestamp: int = 0
+    basket_id: str = ""
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ComponentTransfer":
+        raw_component_value = data.get("component_value")
+        component_value = None if raw_component_value in ("", None) else float(raw_component_value)
+        return cls(
+            fill_id=_text(data, "fill_id"),
+            account_id=_text(data, "account_id"),
+            gateway_order_id=_text(data, "gateway_order_id"),
+            order_id=_int(data, "order_id"),
+            order_stream_id=_text(data, "order_stream_id"),
+            symbol=_text(data, "symbol"),
+            name=_text(data, "name"),
+            exchange=_text(data, "exchange"),
+            price=_float(data, "price"),
+            qty=_int(data, "qty"),
+            trade_side=_text(data, "trade_side"),
+            business_type=_text(data, "business_type"),
+            record_type=_text(data, "record_type"),
+            transfer_type=_text(data, "transfer_type"),
+            component_symbol=_text(data, "component_symbol"),
+            component_name=_text(data, "component_name"),
+            component_exchange=_text(data, "component_exchange"),
+            component_qty=_int(data, "component_qty"),
+            component_value=component_value,
+            cash_substitution=_bool(data, "cash_substitution"),
+            broker_trade_side=_text(data, "broker_trade_side"),
+            broker_business_type=_text(data, "broker_business_type"),
+            trade_date=_text(data, "trade_date"),
+            match_timestamp=_int(data, "match_timestamp"),
+            basket_id=_text(data, "basket_id"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
 class CommandReceipt:
     account_id: str = ""
     action: str = ""

@@ -64,8 +64,10 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | 撤单，先校验本地订单非终态，再写入 Redis `order.cancel` |
 | `GET` | `/v1/orders` | 从 PostgreSQL 账本查询当日订单，默认按东八区当日过滤 |
 | `GET` | `/v1/fills` | 从 PostgreSQL 账本查询当日成交，默认按东八区当日过滤 |
+| `GET` | `/v1/transfers` | 从独立账本查询当日 ETF 成分股划转 |
 | `GET` | `/v1/history/orders` | 历史订单查询，支持 `trade_date/date_from/date_to` |
 | `GET` | `/v1/history/fills` | 历史成交查询，支持 `trade_date/date_from/date_to` |
+| `GET` | `/v1/history/transfers` | 历史 ETF 成分股划转查询 |
 | `GET` | `/v1/accounts/{account_id}/positions/history` | 历史持仓快照查询 |
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | 日终权益、日初资产、隔夜调整、日内盈亏和 PnL 输入汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/series` | 账户 close 净值绩效序列、open-to-close 日内绩效、累计收益和回撤 |

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260727-0005">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260729-0010">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -215,11 +215,13 @@
           <div><span>本页委托</span><strong id="orderCount">--</strong></div>
           <div><span>活动委托</span><strong id="activeOrderCount">--</strong></div>
           <div><span>本页成交</span><strong id="fillCount">--</strong></div>
+          <div><span>本页划转</span><strong id="transferCount">--</strong></div>
           <div><span>最近回报</span><strong id="lastEventTime">--</strong></div>
         </div>
         <div class="blotter-tabs" id="blotterTabs">
           <button type="button" class="active" data-tab="orders">委托</button>
           <button type="button" data-tab="fills">成交</button>
+          <button type="button" data-tab="transfers">ETF 划转</button>
           <button type="button" data-tab="cancels">撤单记录</button>
           <button type="button" data-tab="logs">推送日志</button>
           <button type="button" data-tab="raw">原始报文</button>
@@ -654,6 +656,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260729-0009"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260729-0010"></script>
 </body>
 </html>

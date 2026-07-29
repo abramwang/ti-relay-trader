@@ -1,6 +1,6 @@
 # relay 数据模型与落盘设计
 
-更新时间：`2026-06-14`
+更新时间：`2026-07-29`
 
 ## 设计结论
 
@@ -37,6 +37,7 @@ relay 的最终账户交易数据、订单数据、成交数据、资金持仓�
 | `OrderCancelRequest` | `action=order.cancel` | `TiReqOrderDelete` |
 | `Order` | `order.event.payload` / `order_page.items[]` | `TiRtnOrderStatus` / `TiRspQryOrder` |
 | `Fill` | `fill.event.payload` / `fill_page.items[]` | `TiRtnOrderMatch` / `TiRspQryMatch` |
+| `ComponentTransfer` | `transfer.event.payload` / `fill_page.component_transfers[]` | ETF 申赎成分证券划转记录 |
 | `Position` | `position_page.items[]` | `TiRspQryPosition` |
 | `AccountAsset` | `asset_page.account` | `TiRspAccountInfo` |
 
@@ -90,7 +91,11 @@ relay 的最终账户交易数据、订单数据、成交数据、资金持仓�
 | `trade_side` | `trade_side` | `nTradeSideType` | 买卖方向 |
 | `shareholder_id` | `shareholder_id` | `szShareholderId` | 股东代码 |
 
-成交回报同样携带订单关联字段。页面和对账逻辑通过 `trade_date + gateway_order_id` 关联订单主表，再用 `order_id`、`order_stream_id` 做柜台和交易所口径交叉校验。`fill_id` 或 `adapter_context.match_stream_id` 不能假设为跨日全局唯一，relay 按 `account_id + trade_date + gateway_order_id + fill_id` 处理成交幂等。
+成交回报同样携带订单关联字段。页面和对账逻辑通过 `trade_date + gateway_order_id` 关联订单主表，再用 `order_id`、`order_stream_id` 做柜台和交易所口径交叉校验。`fill_id` 或 `adapter_context.match_stream_id` 不能假设为跨日全局唯一，relay 按 `account_id + trade_date + gateway_order_id + fill_id` 处理成交幂等；无稳定 `fill_id` 时按 `order_stream_id + order_id + symbol + exchange + match_timestamp + qty + price` 去重。
+
+### ETF 成分股划转
+
+`transfer.event` 和 `fill_page.component_transfers[]` 只写入 `etf_component_transfers`。分类遵循 OC v1.1：`qty > 0` 且有证券代码，并满足 `price <= 0`，或 `business_type=E` 且 `trade_side=P/R`。普通成交必须 `price > 0`，并带 `record_type=trade_fill/is_transfer=false`；划转必须带 `record_type=etf_component_transfer/is_transfer=true`。
 
 ## PostgreSQL 首批表
 
@@ -109,7 +114,8 @@ migrations/postgres/000001_init_ledger.down.sql
 2. `orders` 的订单 upsert。
 3. `order_events` 的事件追加和重复事件幂等处理。
 4. `fills` 的成交写入和重复成交幂等处理。
-5. `raw_stream_messages` 的原始 Redis 消息归档与重放审计。
+5. `etf_component_transfers` 的 ETF 申赎划转写入和重复事件幂等处理。
+6. `raw_stream_messages` 的原始 Redis 消息归档与重放审计。
 
 ### 配置与路由
 
@@ -126,6 +132,7 @@ migrations/postgres/000001_init_ledger.down.sql
 | `orders` | 标准订单主表，以 `account_id + trade_date + gateway_order_id` 唯一，保存策略归因字段 |
 | `order_events` | 订单状态事件流水，保存每次状态变化，并同步保存交易日和策略归因字段 |
 | `fills` | 成交流水，以 `account_id + trade_date + gateway_order_id + fill_id` 或含交易日的 fallback 组合键去重；保存 `business_type` 和策略归因字段 |
+| `etf_component_transfers` | ETF 申赎成分证券划转、现金替代及 0 价记录；与普通成交物理分表 |
 | `raw_stream_messages` | Redis 原始输入输出消息归档，用于审计和重放 |
 
 ### 账户账表

@@ -79,6 +79,10 @@ func ReplayArchivedLedger(ctx context.Context, db *sql.DB, writer LedgerWriter, 
 			name:      "fills",
 			predicate: "((stream_role = 'event' AND event_type = 'fill.event') OR (stream_role = 'reply' AND action = 'fill.list.query'))",
 		},
+		"transfers": {
+			name:      "transfers",
+			predicate: "(stream_role = 'event' AND event_type IN ('transfer.event', 'etf_component_transfer.event'))",
+		},
 	}
 	for _, stageName := range normalized.Stages {
 		stage := availableStages[stageName]
@@ -98,14 +102,14 @@ func normalizeArchiveReplayOptions(options ArchiveReplayOptions) (ArchiveReplayO
 	options.DateFrom = strings.TrimSpace(options.DateFrom)
 	options.DateTo = strings.TrimSpace(options.DateTo)
 	if len(options.Stages) == 0 {
-		options.Stages = []string{"orders", "fills"}
+		options.Stages = []string{"orders", "fills", "transfers"}
 	} else {
 		seen := make(map[string]struct{}, len(options.Stages))
 		normalizedStages := make([]string, 0, len(options.Stages))
 		for _, stage := range options.Stages {
 			stage = strings.ToLower(strings.TrimSpace(stage))
-			if stage != "orders" && stage != "fills" {
-				return options, fmt.Errorf("unsupported replay stage %q; expected orders or fills", stage)
+			if stage != "orders" && stage != "fills" && stage != "transfers" {
+				return options, fmt.Errorf("unsupported replay stage %q; expected orders, fills, or transfers", stage)
 			}
 			if _, exists := seen[stage]; exists {
 				continue

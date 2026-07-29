@@ -427,6 +427,93 @@ SELECT
 FROM fills
 `
 
+const insertComponentTransferSQL = `
+INSERT INTO etf_component_transfers (
+    account_id,
+    fill_id,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    symbol,
+    name,
+    exchange,
+    price,
+    qty,
+    trade_side,
+    business_type,
+    record_type,
+    transfer_type,
+    is_transfer,
+    component_symbol,
+    component_name,
+    component_exchange,
+    component_qty,
+    component_value,
+    cash_substitution,
+    broker_trade_side,
+    broker_business_type,
+    trade_date,
+    match_timestamp,
+    matched_at,
+    shareholder_id,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
+    stream_key,
+    stream_id,
+    origin_message_id,
+    request_id,
+    raw_payload,
+    adapter_context
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+    $31, $32, $33, $34, $35, $36, $37, $38
+)
+ON CONFLICT DO NOTHING
+`
+
+const componentTransferSelectColumns = `
+SELECT
+    fill_id,
+    account_id,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    symbol,
+    name,
+    exchange,
+    price,
+    qty,
+    trade_side,
+    business_type,
+    record_type,
+    transfer_type,
+    is_transfer,
+    component_symbol,
+    component_name,
+    component_exchange,
+    component_qty,
+    component_value,
+    cash_substitution,
+    broker_trade_side,
+    broker_business_type,
+    trade_date::text,
+    match_timestamp,
+    matched_at,
+    shareholder_id,
+    strategy_type,
+    strategy_id,
+    basket_id,
+    parent_order_id,
+    t0_order_group_id,
+    adapter_context
+FROM etf_component_transfers
+`
+
 const latestAssetSQL = `
 SELECT
     account_id,

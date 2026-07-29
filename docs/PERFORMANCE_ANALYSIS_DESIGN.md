@@ -1,6 +1,6 @@
 # relay 绩效分析页面设计
 
-更新时间：`2026-07-26`
+更新时间：`2026-07-29`
 
 ## 定位
 
@@ -42,7 +42,7 @@ N8 已进入绩效计算前的数据审计阶段。当前只完成代码和生�
 2. `post_close_settlement` 写 open/close 快照时调用内部 `GetAsset()`，没有复用 `GET /asset` 的持仓市值补全。因此现有 `asset_snapshots.net_asset` 主要是资金余额，不是可直接使用的账户经济净资产。
 3. 现有成交中有 126 笔逆回购。回报 `price` 是年化利率，不能用 `price * qty` 作为成交额；上交所现行规则和生产资金桥均确认 `204001.SH` 首次结算价为 100 元，本金按 `qty * 100` 计算。
 4. 现有成交中有 188 笔 `P/R` 申购赎回记录。ETF 赎回主记录常见 `price=1`，该价格不代表赎回资产价值，不能计入普通卖出金额。
-5. 已归档 13,766 条 `transfer.event`，每条均有唯一 `fill_id`，但 `component_value` 当前为空。事件尚未进入标准 transfer 账表，只保存在 raw stream 归档。
+5. 2026-07-29 按 OC v1.1 完成历史重放后，共识别 14,795 条 `transfer.event/fill_page.component_transfers[]`。这些记录独立写入 `etf_component_transfers`，不再混入普通成交；`component_value=null` 按原义保留，不擅自换算为 0。
 6. 三账户 47,993 条成交的 `fee` 全为 0；`cash_ledger` 当前为 0 行；日终持仓 `settled_profit` 当前也全部为 0。现有 `realized_pnl/net_pnl/fee_total` 不能作为正式口径。
 7. open 快照当前只保存资产，不保存日初持仓。当 `asset_page` 不包含证券市值时，无法仅用现有 open 快照准确重建日初经济净资产。
 8. 当前基准序列从查询区间首日 close 开始，而账户累计收益优先从区间首日前一 close 净资产开始，首日收益窗口并未完全对齐。
@@ -706,7 +706,9 @@ GET /v1/accounts/{account_id}/performance/contributions
 3. `strategies`：股票截面、ETF 截面、ETF 申赎 T0、现金管理、成分划转和待归因汇总。
 4. `quality_flags`：缺失、估算、T0 历史订单组推断、成分划转链接缺口，以及交易质量中的成交证券/方向错配、终态时间缺失或跨日。
 
-该接口只读，只使用本地账本和 Meridian，不查询柜台。open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且必须满足 `open + buy - sell = close` 数量桥；否则该证券保持 `missing`，不能把缺失持仓当作 0 制造虚假收益。多个 ETF 赎回组的 IOPV 请求最多 8 路并发，返回顺序仍按归因组稳定。
+该接口只读，只使用本地账本和 Meridian，不查询柜台。OC v1.1 不再要求 ETF 申赎主记录出现在普通成交中：Relay 从独立 transfer 账本中选择“证券代码与关联 ETF 订单一致”的 ETF 本体记录作为赎回时点信号；同一订单下的成分证券 transfer 只做数量链路核对，不转换为成交，也不参与收益重复计算。如果普通赎回成交已经存在，则优先使用普通成交并跳过 transfer 信号，避免双计。
+
+open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且必须满足 `open + buy - sell = close` 数量桥；否则该证券保持 `missing`，不能把缺失持仓当作 0 制造虚假收益。多个 ETF 赎回组的 IOPV 请求最多 8 路并发，返回顺序仍按归因组稳定。
 
 2026-07-22 至 2026-07-24 生产只读样本已复核：
 
@@ -738,7 +740,7 @@ GET /v1/accounts/{account_id}/performance/contributions
 当前完成：
 
 1. 后端聚合成交额、费用、open/close 持仓、证券贡献和策略汇总。
-2. ETF T0 合并同一赎回订单的多条成交，使用不晚于赎回时刻的 Meridian IOPV，并隔离可精确闭合赎回量的历史买入订单组。
+2. ETF T0 合并同一赎回订单的多条普通成交；OC v1.1 未提供普通赎回成交时，以独立 transfer 账本中的 ETF 本体记录作为赎回时点信号。两种路径都使用不晚于赎回时刻的 Meridian IOPV，并隔离可精确闭合赎回量的历史买入订单组。
 3. ETF 成分股卖出从 IOPV 估值收益中排除，逆回购只把净息计入现金管理。
 4. `/trade#performance` 默认展示证券贡献表，可切换到原净值序列；估算、缺失和排除状态可见。
 5. Go 单元测试覆盖普通持仓现金流恒等式与 ETF T0 多成交聚合。

@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在进行绩效分析 Phase 2 收尾，P10 已完成 9092 容器自启动和健康守护底座。经济净资产、T+1 NAV 对账、账户费用/资金流水、逆回购和策略归因底座已经落地；`performance/contributions` 已按证券与策略输出归因，`performance/trade-quality` 已按日或区间输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细。2026-07-29 已将订单/事件/成交统一切换到交易日复合键并完成生产 raw archive 重放，孤立成交和非拒单残留错误归零；OC 同日篮子子单 ID 冲突已形成联合整改报告。`/trade#performance` 已提供证券贡献、净值序列和交易质量三个视图；API Console、schema 和 `relay-sdk 0.1.18` 已同步。9092 前端使用统一 QuantStage Pro Dark 工作区，生产配置仍为 6 个只读账户、下单账户 0；下一步与 OC 完成实盘复测，并继续账户净值、上证指数基准、超额收益、回撤主图和正式数据质量区。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在进行绩效分析 Phase 2 收尾，P10 已完成 9092 容器自启动和健康守护底座。2026-07-29 已完成 OC v1.1 协议升级：外部订单稳定 ID 按不透明值接收，普通成交 fallback 去重增加 `order_id/symbol/exchange`，`transfer.event` 与 `fill_page.component_transfers[]` 独立写入 ETF 划转账本，`adapter.data_quality` DLQ 纳入归档与同步统计；新增当日/历史划转 API、交易终端 ETF 划转页签、API Console 和 `relay-sdk 0.1.19`。生产 migration `000013/000014`、历史 transfer 重放和 OC v1.1 生产只读复测均已完成；生产配置仍为 6 个只读账户、下单账户 0。下一步继续账户净值、上证指数基准、超额收益、回撤主图和正式数据质量区。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-29`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -137,8 +137,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.18.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.18.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -251,6 +251,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `000003_job_runs` migration 并应用到测试 PostgreSQL，`/v1/status` 已暴露交易阶段和最近盘前/盘后任务状态。
 - [x] 新增 `/jobs` 后台任务状态监控页，展示盘前初始化、盘后结算等任务的状态、交易日、开始/完成时间、耗时、错误摘要和 report_json。
 - [x] `GET /v1/orders`、`GET /v1/fills` 默认按 `Asia/Shanghai` 当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history` 历史查询口径。
+- [x] OC v1.1 的 `transfer.event/fill_page.component_transfers[]` 独立写入 `etf_component_transfers`，新增 `/v1/transfers`、`/v1/history/transfers`、交易终端 ETF 划转页签和 SDK `list_transfers()`。
 - [x] 账本 API 时间字段统一按 `Asia/Shanghai` 输出，订单、成交、资金、持仓、订单事件、成交事件和任务运行记录的零值时间字段不再展示为 `0001-01-01T00:00:00Z`。
 - [x] 新增 `POST /v1/settlements/snapshots`，按指定交易日将盘前资金写入 `asset_snapshots(open)`、收盘资金写入 `asset_snapshots(close)`、当前持仓写入 `position_snapshots`，并 upsert `reconciliation_runs` 批次；`pre_open_init` 和 `post_close_settlement` 已接入该接口。
 - [x] 新增盘后对账输入和差异记录第一版：`POST /v1/settlements/snapshots` 会写入 `reconciliation_inputs`、生成 `reconciliation_breaks`，并提供 `GET /v1/reconciliations/breaks` 查询入口。
@@ -364,7 +365,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.18.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -550,3 +551,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-29`: 发布 `relay-sdk 0.1.18`，订单状态回调和成交回调的进程内去重键加入 `trade_date`，避免长运行策略在跨交易日复用同一柜台订单/成交编号时漏掉回调。
 - `2026-07-29`: 完成终态时间和字段覆盖的第二轮质量修复：完整订单重放 161,508 条归档报文且无解析/落库错误，终态时间缺失和跨交易日均归零，盘后 15:05 查询不再覆盖真实成交/撤单时间；交易质量接口新增成交证券/方向/业务类型错配和终态时间检查。历史确认 17 条证券错配成交，均发生在 7 月 6 日以前并保留为 OC 原始流问题；7 月 29 日六账户普通订单链路证券错配、孤立成交和非拒单错误残留均为 0，OC 空 `order_stream_id` 篮子子单 ID 冲突仍待源头修复。
 - `2026-07-29`: 新增 `docs/OC_CHANGE_REQUEST_20260729.md` 作为可直接提交给 OC 的 P0/P1 修改单，包含 7 月 29 日两条同 ID 冲突事件的 stream/message ID、7 月 28 日 32 个篮子子单冲突范围、17 条历史订单成交错配明细、ETF transfer/fill 分类要求、完整字段和东八区时间语义，以及联合验收标准。
+- `2026-07-29`: 对齐 OC `THIRD_PARTY_INTEGRATION_GUIDE.md v1.1`：Relay 不重建 OC 新稳定 ID，成交 fallback 去重补齐订单、证券和交易所维度；新增 `000013_oc_v1_1_component_transfers`、实时/查询 ETF 划转独立入账、DLQ 数据质量计数、划转归档重放、当日/历史查询 API、交易终端 ETF 划转页签及 `relay-sdk 0.1.19`。
+- `2026-07-29`: OC v1.1 生产只读验收完成：应用 `000013_oc_v1_1_component_transfers` 和 `000014_remove_etf_transfer_summary_fills`，历史归档重放识别 14,795 条 transfer 消息且无解析/落库错误；当日 `314000045768` 的 49 条 ETF 划转已独立查询，普通成交中不再保留 `P/R + business_type=E` 的错误 summary fill。绩效贡献只把同一稳定订单下 ETF 本体 transfer 作为赎回时点信号，成分证券 transfer 仅参与链路核对、不重复计利。

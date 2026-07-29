@@ -235,6 +235,52 @@ func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.
 	}
 }
 
+func TestRedemptionFillsFromComponentTransfersUsesOnlyParentETFRecord(t *testing.T) {
+	matchedAt := time.Date(2026, 7, 29, 13, 4, 31, 0, timeutil.Location())
+	orders := []trading.Order{{
+		AccountID:      "acct-1",
+		GatewayOrderID: "external-huaxin-acct-1-stream-1",
+		Symbol:         "588200",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideRedemption,
+		BusinessType:   trading.BusinessTypeETF,
+		OrderQty:       4_500_000,
+	}}
+	transfers := []trading.ComponentTransfer{
+		{
+			FillID:         "parent-transfer",
+			AccountID:      "acct-1",
+			GatewayOrderID: "external-huaxin-acct-1-stream-1",
+			Symbol:         "588200",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			Qty:            4_500_000,
+			MatchedAt:      matchedAt,
+		},
+		{
+			FillID:         "component-transfer",
+			AccountID:      "acct-1",
+			GatewayOrderID: "external-huaxin-acct-1-stream-1",
+			Symbol:         "688361",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			Qty:            425,
+			MatchedAt:      matchedAt,
+		},
+	}
+
+	fills := redemptionFillsFromComponentTransfers(orders, nil, transfers)
+	if len(fills) != 1 {
+		t.Fatalf("fills = %#v", fills)
+	}
+	if fills[0].Symbol != "588200" || fills[0].Qty != 4_500_000 ||
+		fills[0].AdapterContext["relay_component_transfer_source"] != true {
+		t.Fatalf("fill = %#v", fills[0])
+	}
+}
+
 func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 	matchedAt := time.Date(2026, 7, 24, 10, 8, 0, 0, timeutil.Location())
 	store := &fakePerformanceStore{

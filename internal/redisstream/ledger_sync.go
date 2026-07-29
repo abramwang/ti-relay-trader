@@ -23,6 +23,7 @@ type LedgerWriter interface {
 	UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
+	InsertComponentTransfer(ctx context.Context, transfer trading.ComponentTransfer, stream ledger.StreamRef, source ledger.SourceRef) error
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error
@@ -71,6 +72,7 @@ type LedgerProcessResult struct {
 	Orders         int      `json:"orders"`
 	OrderEvents    int      `json:"order_events"`
 	Fills          int      `json:"fills"`
+	Transfers      int      `json:"transfers"`
 	Assets         int      `json:"assets"`
 	Positions      int      `json:"positions"`
 	StalePositions int64    `json:"stale_positions,omitempty"`
@@ -80,6 +82,8 @@ type LedgerProcessResult struct {
 	ParseErrors    int      `json:"parse_errors"`
 	LedgerErrors   int      `json:"ledger_errors"`
 	Unsupported    int      `json:"unsupported"`
+	DeadLetters    int      `json:"dead_letters"`
+	DataQualityDLQ int      `json:"data_quality_dead_letters"`
 	LastStreamID   string   `json:"last_stream_id,omitempty"`
 	LastMessageID  string   `json:"last_message_id,omitempty"`
 	LastEventType  string   `json:"last_event_type,omitempty"`
@@ -190,6 +194,14 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 	}
 	result.Archived++
 
+	if roleFromStream(envelope.Stream) == SuffixDLQ || envelope.MessageType == "deadletter" {
+		result.DeadLetters++
+		if envelope.Action == "adapter.data_quality" {
+			result.DataQualityDLQ++
+		}
+		return result
+	}
+
 	switch envelope.MessageType {
 	case "reply":
 		result.Replies++
@@ -197,7 +209,10 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 	case "event":
 		return processEventEnvelope(ctx, writer, envelope, result)
 	default:
-		if envelope.EventType == "order.event" || envelope.EventType == "fill.event" {
+		if envelope.EventType == "order.event" ||
+			envelope.EventType == "fill.event" ||
+			envelope.EventType == "transfer.event" ||
+			envelope.EventType == "etf_component_transfer.event" {
 			return processEventEnvelope(ctx, writer, envelope, result)
 		}
 		result.Unsupported++
@@ -317,7 +332,7 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		return result
 	case envelope.Action == ActionFillList || envelope.ResultType == "fill_page":
-		fills, err := fillsFromReplyEnvelope(envelope)
+		fills, transfers, err := fillRecordsFromReplyEnvelope(envelope)
 		if err != nil {
 			result.Skipped++
 			result.SkipReasons = append(result.SkipReasons, err.Error())
@@ -326,6 +341,8 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		accountID := envelope.Routing.AccountID
 		if len(fills) > 0 {
 			accountID = fills[0].AccountID
+		} else if len(transfers) > 0 {
+			accountID = transfers[0].AccountID
 		}
 		if accountID != "" {
 			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
@@ -343,6 +360,15 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 			result.Fills++
+		}
+		for _, transfer := range transfers {
+			result.noteAccount(transfer.AccountID)
+			if err := writer.InsertComponentTransfer(ctx, transfer, componentTransferPageStreamRef(envelope, transfer), sourceRef(envelope)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Transfers++
 		}
 		return result
 	default:
@@ -486,6 +512,27 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		result.Fills++
 		return result
+	case "transfer.event", "etf_component_transfer.event":
+		transfer, err := componentTransferFromEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		result.noteAccount(transfer.AccountID)
+		if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, transfer.AccountID)); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		result.Accounts++
+		if err := writer.InsertComponentTransfer(ctx, transfer, streamRef(envelope), sourceRef(envelope)); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		result.Transfers++
+		return result
 	default:
 		result.Unsupported++
 		result.Skipped++
@@ -627,7 +674,7 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 	if payload.GatewayOrderID == "" {
 		payload.GatewayOrderID = envelope.GatewayOrderID
 	}
-	rawGatewayOrderID := normalizeReusableGatewayOrderID(&payload.GatewayOrderID, payload.OrderStreamID)
+	rawGatewayOrderID := normalizeLegacyBasketGatewayOrderID(&payload.GatewayOrderID, payload.OrderStreamID)
 	if payload.FillID == "" {
 		payload.FillID = stringFromMap(envelope.AdapterContext, "match_stream_id")
 	}
@@ -641,6 +688,12 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		return trading.Fill{}, err
 	}
 	matchedAt := parseTime(payload.MatchedAt)
+	if matchedAt.IsZero() && payload.MatchTimestamp > 0 {
+		matchedAt = time.UnixMilli(payload.MatchTimestamp).In(timeutil.Location())
+	}
+	if matchedAt.IsZero() {
+		matchedAt = envelope.ProducedAt
+	}
 	tradeDate := strings.TrimSpace(payload.TradeDate)
 	if tradeDate == "" && !matchedAt.IsZero() {
 		tradeDate = matchedAt.In(timeutil.Location()).Format("2006-01-02")
@@ -673,6 +726,87 @@ func fillFromPayload(payload fillPayload, envelope EntryEnvelope, source string)
 		ParentOrderID:  payload.ParentOrderID,
 		T0OrderGroupID: payload.T0OrderGroupID,
 		AdapterContext: adapterContext,
+	}, nil
+}
+
+func componentTransferFromEnvelope(envelope EntryEnvelope) (trading.ComponentTransfer, error) {
+	var payload componentTransferPayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return trading.ComponentTransfer{}, fmt.Errorf("decode transfer.event payload: %w", err)
+	}
+	return componentTransferFromPayload(payload, envelope, "transfer.event")
+}
+
+func componentTransferFromPayload(payload componentTransferPayload, envelope EntryEnvelope, source string) (trading.ComponentTransfer, error) {
+	if payload.AccountID == "" {
+		payload.AccountID = envelope.Routing.AccountID
+	}
+	rawAccountID := normalizeAccountIDFromRouting(&payload.AccountID, envelope)
+	if payload.GatewayOrderID == "" {
+		payload.GatewayOrderID = envelope.GatewayOrderID
+	}
+	rawGatewayOrderID := normalizeLegacyBasketGatewayOrderID(&payload.GatewayOrderID, payload.OrderStreamID)
+	if payload.FillID == "" {
+		payload.FillID = stringFromMap(envelope.AdapterContext, "match_stream_id")
+	}
+	if err := payload.validate(); err != nil {
+		return trading.ComponentTransfer{}, errors.New(strings.NewReplacer("transfer.event", source).Replace(err.Error()))
+	}
+	matchedAt := parseTime(payload.MatchedAt)
+	if matchedAt.IsZero() && payload.MatchTimestamp > 0 {
+		matchedAt = time.UnixMilli(payload.MatchTimestamp).In(timeutil.Location())
+	}
+	if matchedAt.IsZero() {
+		matchedAt = envelope.ProducedAt
+	}
+	tradeDate := strings.TrimSpace(payload.TradeDate)
+	if tradeDate == "" && !matchedAt.IsZero() {
+		tradeDate = matchedAt.In(timeutil.Location()).Format("2006-01-02")
+	}
+	componentSymbol := firstNonEmpty(payload.ComponentSymbol, payload.Symbol)
+	componentExchange := firstNonEmpty(payload.ComponentExchange, payload.Exchange)
+	componentQty := payload.ComponentQty
+	if componentQty <= 0 {
+		componentQty = payload.Qty
+	}
+	adapterContext := withFillPayloadContext(
+		withRawGatewayOrderID(withRawAccountID(envelope.AdapterContext, rawAccountID), rawGatewayOrderID),
+		payload.fillPayload,
+	)
+	return trading.ComponentTransfer{
+		FillID:             payload.FillID,
+		AccountID:          payload.AccountID,
+		GatewayOrderID:     payload.GatewayOrderID,
+		OrderID:            payload.OrderID,
+		OrderStreamID:      payload.OrderStreamID,
+		Symbol:             payload.Symbol,
+		Name:               payload.Name,
+		Exchange:           trading.Exchange(payload.Exchange),
+		Price:              payload.Price,
+		Qty:                payload.Qty,
+		TradeSide:          trading.TradeSide(payload.TradeSide),
+		BusinessType:       trading.BusinessType(payload.BusinessType),
+		RecordType:         payload.RecordType,
+		TransferType:       payload.TransferType,
+		IsTransfer:         true,
+		ComponentSymbol:    componentSymbol,
+		ComponentName:      payload.ComponentName,
+		ComponentExchange:  trading.Exchange(componentExchange),
+		ComponentQty:       componentQty,
+		ComponentValue:     payload.ComponentValue,
+		CashSubstitution:   payload.CashSubstitution,
+		BrokerTradeSide:    payload.BrokerTradeSide,
+		BrokerBusinessType: payload.BrokerBusinessType,
+		TradeDate:          tradeDate,
+		MatchTimestamp:     payload.MatchTimestamp,
+		MatchedAt:          matchedAt,
+		ShareholderID:      payload.ShareholderID,
+		StrategyType:       payload.StrategyType,
+		StrategyID:         payload.StrategyID,
+		BasketID:           payload.BasketID,
+		ParentOrderID:      payload.ParentOrderID,
+		T0OrderGroupID:     payload.T0OrderGroupID,
+		AdapterContext:     adapterContext,
 	}, nil
 }
 
@@ -831,7 +965,7 @@ func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {
 		}
 		mergeEnvelopeFields(&item, envelope)
 		rawAccountID := normalizeAccountIDFromRouting(&item.AccountID, envelope)
-		rawGatewayOrderID := normalizeReusableGatewayOrderID(&item.GatewayOrderID, item.OrderStreamID)
+		rawGatewayOrderID := normalizeLegacyBasketGatewayOrderID(&item.GatewayOrderID, item.OrderStreamID)
 		if err := item.validateOrderPageFields(); err != nil {
 			return nil, err
 		}
@@ -845,20 +979,28 @@ func ordersFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Order, error) {
 	return orders, nil
 }
 
-func fillsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, error) {
+func fillRecordsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, []trading.ComponentTransfer, error) {
 	var payload fillPagePayload
 	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
-		return nil, fmt.Errorf("decode fill_page payload: %w", err)
+		return nil, nil, fmt.Errorf("decode fill_page payload: %w", err)
 	}
 	fills := make([]trading.Fill, 0, len(payload.Items))
 	for _, item := range payload.Items {
 		fill, err := fillFromPayload(item, envelope, "fill_page")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		fills = append(fills, fill)
 	}
-	return fills, nil
+	transfers := make([]trading.ComponentTransfer, 0, len(payload.ComponentTransfers))
+	for _, item := range payload.ComponentTransfers {
+		transfer, err := componentTransferFromPayload(item, envelope, "fill_page component_transfers")
+		if err != nil {
+			return nil, nil, err
+		}
+		transfers = append(transfers, transfer)
+	}
+	return fills, transfers, nil
 }
 
 func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, order trading.Order, source string, result *LedgerProcessResult) error {
@@ -866,6 +1008,10 @@ func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelo
 		AllowSummaryFillSynthesis() bool
 	}
 	if control, ok := writer.(summaryFillSynthesisControl); ok && !control.AllowSummaryFillSynthesis() {
+		return nil
+	}
+	if order.BusinessType == trading.BusinessTypeETF &&
+		(order.TradeSide == trading.TradeSidePurchase || order.TradeSide == trading.TradeSideRedemption) {
 		return nil
 	}
 	targetQty := orderSummaryFilledQty(order)
@@ -982,6 +1128,18 @@ func fillPageStreamRef(envelope EntryEnvelope, fill trading.Fill) ledger.StreamR
 	suffix := firstNonEmpty(fill.FillID, fill.OrderStreamID, fill.GatewayOrderID)
 	if suffix != "" {
 		stream.ID = stream.ID + ":fill:" + suffix
+	}
+	return stream
+}
+
+func componentTransferPageStreamRef(envelope EntryEnvelope, transfer trading.ComponentTransfer) ledger.StreamRef {
+	stream := streamRef(envelope)
+	if stream.ID == "" {
+		return stream
+	}
+	suffix := firstNonEmpty(transfer.FillID, transfer.OrderStreamID, transfer.ComponentSymbol, transfer.GatewayOrderID)
+	if suffix != "" {
+		stream.ID = stream.ID + ":transfer:" + suffix
 	}
 	return stream
 }
@@ -1144,6 +1302,19 @@ type fillPayload struct {
 	ShareholderID  string  `json:"shareholder_id"`
 }
 
+type componentTransferPayload struct {
+	fillPayload
+	TransferType       string   `json:"transfer_type"`
+	ComponentSymbol    string   `json:"component_symbol"`
+	ComponentName      string   `json:"component_name"`
+	ComponentExchange  string   `json:"component_exchange"`
+	ComponentQty       int64    `json:"component_qty"`
+	ComponentValue     *float64 `json:"component_value"`
+	CashSubstitution   bool     `json:"cash_substitution"`
+	BrokerTradeSide    string   `json:"broker_trade_side"`
+	BrokerBusinessType string   `json:"broker_business_type"`
+}
+
 type assetPagePayload struct {
 	Account assetPayload `json:"account"`
 }
@@ -1172,7 +1343,8 @@ type orderPagePayload struct {
 }
 
 type fillPagePayload struct {
-	Items []fillPayload `json:"items"`
+	Items              []fillPayload              `json:"items"`
+	ComponentTransfers []componentTransferPayload `json:"component_transfers"`
 }
 
 type positionPayload struct {
@@ -1360,6 +1532,17 @@ func (payload fillPayload) validate() error {
 	if strings.TrimSpace(payload.TradeSide) == "" {
 		missing = append(missing, "trade_side")
 	}
+	if recordType := strings.TrimSpace(payload.RecordType); recordType != "" && recordType != "trade_fill" {
+		missing = append(missing, "record_type=trade_fill")
+	}
+	if payload.IsTransfer != nil && *payload.IsTransfer {
+		missing = append(missing, "is_transfer=false")
+	}
+	if strings.TrimSpace(payload.BusinessType) == string(trading.BusinessTypeETF) &&
+		(strings.TrimSpace(payload.TradeSide) == string(trading.TradeSidePurchase) ||
+			strings.TrimSpace(payload.TradeSide) == string(trading.TradeSideRedemption)) {
+		missing = append(missing, "ordinary trade_side")
+	}
 	if payload.Price <= 0 {
 		missing = append(missing, "price")
 	}
@@ -1368,6 +1551,47 @@ func (payload fillPayload) validate() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("fill.event payload incomplete for ledger write: missing %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func (payload componentTransferPayload) validate() error {
+	missing := make([]string, 0)
+	if strings.TrimSpace(payload.AccountID) == "" {
+		missing = append(missing, "account_id")
+	}
+	if strings.TrimSpace(payload.GatewayOrderID) == "" {
+		missing = append(missing, "gateway_order_id")
+	}
+	if strings.TrimSpace(payload.Symbol) == "" {
+		missing = append(missing, "symbol")
+	}
+	if strings.TrimSpace(payload.Exchange) == "" {
+		missing = append(missing, "exchange")
+	}
+	if strings.TrimSpace(payload.TradeSide) == "" {
+		missing = append(missing, "trade_side")
+	}
+	if payload.Qty <= 0 {
+		missing = append(missing, "qty")
+	}
+	if strings.TrimSpace(payload.BusinessType) != string(trading.BusinessTypeETF) {
+		missing = append(missing, "business_type=E")
+	}
+	if strings.TrimSpace(payload.RecordType) != "etf_component_transfer" {
+		missing = append(missing, "record_type=etf_component_transfer")
+	}
+	if payload.IsTransfer == nil || !*payload.IsTransfer {
+		missing = append(missing, "is_transfer=true")
+	}
+	isETFOrderTransfer := strings.TrimSpace(payload.BusinessType) == string(trading.BusinessTypeETF) &&
+		(strings.TrimSpace(payload.TradeSide) == string(trading.TradeSidePurchase) ||
+			strings.TrimSpace(payload.TradeSide) == string(trading.TradeSideRedemption))
+	if payload.Price > 0 && !isETFOrderTransfer {
+		missing = append(missing, "transfer classification")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("transfer.event payload incomplete for ledger write: missing %s", strings.Join(missing, ", "))
 	}
 	return nil
 }
@@ -1593,7 +1817,9 @@ func withFillPayloadContext(context map[string]any, payload fillPayload) map[str
 	return out
 }
 
-func normalizeReusableGatewayOrderID(gatewayOrderID *string, orderStreamID string) string {
+// normalizeLegacyBasketGatewayOrderID preserves one-time repair behavior for
+// archived pre-v1.1 etfarb IDs. OC v1.1 stable IDs are always treated as opaque.
+func normalizeLegacyBasketGatewayOrderID(gatewayOrderID *string, orderStreamID string) string {
 	if gatewayOrderID == nil {
 		return ""
 	}
@@ -1727,6 +1953,7 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.Orders += other.Orders
 	result.OrderEvents += other.OrderEvents
 	result.Fills += other.Fills
+	result.Transfers += other.Transfers
 	result.Assets += other.Assets
 	result.Positions += other.Positions
 	result.Replies += other.Replies
@@ -1734,6 +1961,8 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.ParseErrors += other.ParseErrors
 	result.LedgerErrors += other.LedgerErrors
 	result.Unsupported += other.Unsupported
+	result.DeadLetters += other.DeadLetters
+	result.DataQualityDLQ += other.DataQualityDLQ
 	remainingReasons := maxLedgerSkipReasons - len(result.SkipReasons)
 	if remainingReasons > len(other.SkipReasons) {
 		remainingReasons = len(other.SkipReasons)

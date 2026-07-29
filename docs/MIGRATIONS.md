@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-07-26`
+更新时间：`2026-07-29`
 
 ## 当前状态
 
@@ -29,6 +29,12 @@ migrations/postgres/000010_strategy_attribution_keys.up.sql
 migrations/postgres/000010_strategy_attribution_keys.down.sql
 migrations/postgres/000011_position_snapshot_types.up.sql
 migrations/postgres/000011_position_snapshot_types.down.sql
+migrations/postgres/000012_trade_date_order_scope.up.sql
+migrations/postgres/000012_trade_date_order_scope.down.sql
+migrations/postgres/000013_oc_v1_1_component_transfers.up.sql
+migrations/postgres/000013_oc_v1_1_component_transfers.down.sql
+migrations/postgres/000014_remove_etf_transfer_summary_fills.up.sql
+migrations/postgres/000014_remove_etf_transfer_summary_fills.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -48,7 +54,10 @@ migrations/postgres/000011_position_snapshot_types.down.sql
 9. `000009_performance_accounting` 新增绩效输入层、版本化经济 NAV、T+1 对账和逆回购应计表，并扩展 `cash_ledger`。
 10. `000010_strategy_attribution_keys` 新增订单/成交策略归因字段、订单交易日索引和 `performance_attribution_links`。
 11. `000011_position_snapshot_types` 为 `position_snapshots` 增加 `snapshot_type`，支持盘前 open 持仓快照和盘后 close 持仓快照共存。
-11. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `10:strategy_attribution_keys`。
+12. `000012_trade_date_order_scope` 将订单、事件和成交的业务键与外键统一为 `account_id + trade_date + gateway_order_id`。
+13. `000013_oc_v1_1_component_transfers` 按 OC v1.1 扩展普通成交 fallback 唯一键，新增 ETF 成分划转账表和 `adapter.data_quality` DLQ 索引。
+14. `000014_remove_etf_transfer_summary_fills` 清理 Relay 曾从 ETF 申赎订单错误派生的 summary fill；该数据不能安全逆向重建，因此 down migration 只保留说明。
+15. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `14:remove_etf_transfer_summary_fills`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -74,39 +83,21 @@ internal/ledger
 
 Repository 当前覆盖：
 
-1. `UpsertAccount`
-2. `UpsertOrder`
-3. `AppendOrderEvent`
-4. `InsertFill`
-5. `ArchiveRawStreamMessage`
-6. `GetStreamCheckpoint`
-7. `UpsertStreamCheckpoint`
-8. `UpsertJobRun`
-9. `LatestJobRuns`
-10. `UpsertPosition`
-11. `UpsertAssetSnapshotForDate`
-12. `UpsertPositionSnapshot`
-13. `UpsertPositionSnapshotWithType`
-14. `GetDailyPerformance`
-15. `ListDailyPerformance`
-16. `UpsertReconciliationRun`
-17. `UpsertReconciliationInput`
-18. `UpsertReconciliationBreak`
-19. `ListReconciliationBreaks`
-20. `RawStreamSummary`
-21. `CreateFeeRule`
-22. `ListFeeRules`
-22. `EffectiveRepoFeeRule`
-23. `CreateCashLedgerEntry`
-24. `ListCashLedgerEntries`
-25. `ConfirmCashLedgerEntry`
-26. `VoidCashLedgerEntry`
-27. `CreateNavBaseline`
-28. `ListNavBaselines`
-29. `UpsertReverseRepoAccrual`
-30. `ListReverseRepoAccruals`
-31. `ListPerformanceNAVs`
-32. `ListNAVReconciliations`
+- `UpsertAccount`、`UpsertOrder`、`AppendOrderEvent`
+- `InsertFill`、`InsertComponentTransfer`
+- `ListFills`、`ListComponentTransfers`
+- `ArchiveRawStreamMessage`
+- `GetStreamCheckpoint`、`UpsertStreamCheckpoint`
+- `UpsertJobRun`、`LatestJobRuns`
+- `UpsertPosition`、`UpsertAssetSnapshotForDate`、`UpsertPositionSnapshotWithType`
+- `GetDailyPerformance`、`ListDailyPerformance`
+- `UpsertReconciliationRun`、`UpsertReconciliationInput`、`UpsertReconciliationBreak`、`ListReconciliationBreaks`
+- `RawStreamSummary`
+- `CreateFeeRule`、`ListFeeRules`、`EffectiveRepoFeeRule`
+- `CreateCashLedgerEntry`、`ListCashLedgerEntries`、`ConfirmCashLedgerEntry`、`VoidCashLedgerEntry`
+- `CreateNavBaseline`、`ListNavBaselines`
+- `UpsertReverseRepoAccrual`、`ListReverseRepoAccruals`
+- `ListPerformanceNAVs`、`ListNAVReconciliations`
 
 这些入口会把标准交易结构体、stream key、stream id、source/correlation 信息和原始 payload 写入 PostgreSQL。重复消费场景使用唯一约束和 `ON CONFLICT` 做幂等处理。
 
@@ -131,7 +122,8 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 1. `orders`
 2. `order_events`
 3. `fills`
-4. `raw_stream_messages`
+4. `etf_component_transfers`
+5. `raw_stream_messages`
 
 账户账表：
 
@@ -169,7 +161,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 1. `orders(account_id, trade_date, gateway_order_id)` 唯一；柜台订单号只要求账户内当日唯一。
 2. `fills(account_id, trade_date, gateway_order_id, fill_id)` 在 `fill_id` 存在时唯一；前置/柜台的 `fill_id` 不能假设为跨日全局唯一。
-3. 如果 `fill_id` 缺失，`fills` 使用包含 `account_id + trade_date + order_stream_id + match_timestamp + qty + price` 的 fallback 去重。
+3. 如果 `fill_id` 缺失，`fills` 使用包含 `account_id + trade_date + order_stream_id + order_id + symbol + exchange + match_timestamp + qty + price` 的 fallback 去重。
 4. `order_events` 和 `fills` 对 `stream_key + stream_id` 做唯一约束，避免重复消费写入。
 5. `raw_stream_messages` 归档每条 Redis Stream 原始消息，保留 `body`、`body_text` 和 `parse_error`。
 6. 金额和价格字段使用 `numeric(20, 6)`，避免浮点误差进入最终账本。
@@ -177,6 +169,8 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 8. `stream_checkpoints(stream_key)` 唯一记录每条 output stream 的最后消费 ID；worker 重启后从该 ID 继续 `XREAD`。
 9. `job_runs(run_id)` 唯一记录每次盘前初始化、盘后结算或后续后台任务运行，完整报告保存在 `report_json`，`/v1/status` 只返回摘要。
 10. `000012_trade_date_order_scope` 删除旧账户级订单唯一约束，将 `orders/fills/order_events` 的唯一键、外键和查询视图统一为交易日作用域；该迁移不可逆，避免回滚时丢弃合法跨日订单。
+11. `etf_component_transfers` 与 `fills` 分表：普通成交只接受正价格、正数量和稳定订单标识，ETF 申购赎回成分划转保持独立 transfer 语义，空 `component_value` 必须保留为 `NULL`。
+12. `raw_stream_messages` 对 `stream_role=dlq AND action=adapter.data_quality` 建部分索引，供后续质量告警和人工处置查询。
 
 ## 手动执行示例
 
@@ -190,6 +184,9 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000006_research_performance_vi
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000007_open_asset_snapshots.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000008_position_day_pnl.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000009_performance_accounting.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000012_trade_date_order_scope.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000013_oc_v1_1_component_transfers.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000014_remove_etf_transfer_summary_fills.up.sql
 ```
 
 使用 relayctl：

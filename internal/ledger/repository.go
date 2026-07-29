@@ -631,6 +631,39 @@ func (repo *Repository) ListFills(ctx context.Context, query trading.FillQuery) 
 	return fills, nil
 }
 
+func (repo *Repository) ListComponentTransfers(ctx context.Context, query trading.ComponentTransferQuery) ([]trading.ComponentTransfer, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeComponentTransferQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListComponentTransfersSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list component transfers: %w", err)
+	}
+	defer rows.Close()
+
+	transfers := make([]trading.ComponentTransfer, 0, normalized.Limit)
+	for rows.Next() {
+		transfer, err := scanComponentTransfer(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan component transfer: %w", err)
+		}
+		transfers = append(transfers, transfer)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list component transfers rows: %w", err)
+	}
+	return transfers, nil
+}
+
 func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error) {
 	if repo == nil || repo.exec == nil {
 		return trading.Asset{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -1140,6 +1173,69 @@ func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, strea
 	return nil
 }
 
+func (repo *Repository) InsertComponentTransfer(ctx context.Context, transfer trading.ComponentTransfer, stream StreamRef, source SourceRef) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeComponentTransfer(transfer)
+	if err != nil {
+		return err
+	}
+	rawPayload, err := marshalJSONObject(normalized)
+	if err != nil {
+		return err
+	}
+	adapterContext, err := marshalJSONObject(normalized.AdapterContext)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.exec.ExecContext(ctx, insertComponentTransferSQL,
+		normalized.AccountID,
+		nullString(normalized.FillID),
+		normalized.GatewayOrderID,
+		nullInt64(normalized.OrderID),
+		nullString(normalized.OrderStreamID),
+		normalized.Symbol,
+		normalized.Name,
+		normalized.Exchange,
+		normalized.Price,
+		normalized.Qty,
+		normalized.TradeSide,
+		normalized.BusinessType,
+		normalized.RecordType,
+		nullString(normalized.TransferType),
+		normalized.IsTransfer,
+		normalized.ComponentSymbol,
+		normalized.ComponentName,
+		normalized.ComponentExchange,
+		normalized.ComponentQty,
+		optionalFloat64(normalized.ComponentValue),
+		normalized.CashSubstitution,
+		nullString(normalized.BrokerTradeSide),
+		nullString(normalized.BrokerBusinessType),
+		nullDate(normalized.TradeDate),
+		nullInt64(normalized.MatchTimestamp),
+		nullTime(normalized.MatchedAt),
+		nullString(normalized.ShareholderID),
+		nullString(normalized.StrategyType),
+		nullString(normalized.StrategyID),
+		nullString(normalized.BasketID),
+		nullString(normalized.ParentOrderID),
+		nullString(normalized.T0OrderGroupID),
+		nullString(stream.Key),
+		nullString(stream.ID),
+		nullString(source.OriginMessageID),
+		nullString(source.RequestID),
+		rawPayload,
+		adapterContext,
+	)
+	if err != nil {
+		return fmt.Errorf("insert component transfer %s/%s/%s: %w", normalized.AccountID, normalized.GatewayOrderID, normalized.FillID, err)
+	}
+	return nil
+}
+
 func (repo *Repository) ArchiveRawStreamMessage(ctx context.Context, message RawStreamMessage) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -1537,6 +1633,32 @@ func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	query.BasketID = strings.TrimSpace(query.BasketID)
 	query.ParentOrderID = strings.TrimSpace(query.ParentOrderID)
 	query.T0OrderGroupID = strings.TrimSpace(query.T0OrderGroupID)
+	var err error
+	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
+	if err != nil {
+		return query, err
+	}
+	if query.Exchange != "" && !query.Exchange.Valid() {
+		return query, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if _, err := queryCursorOffset(query.Cursor); err != nil {
+		return query, err
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 500 {
+		query.Limit = 500
+	}
+	return query, nil
+}
+
+func normalizeComponentTransferQuery(query trading.ComponentTransferQuery) (trading.ComponentTransferQuery, error) {
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
+	query.Symbol = strings.TrimSpace(query.Symbol)
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	query.BasketID = strings.TrimSpace(query.BasketID)
 	var err error
 	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
 	if err != nil {
@@ -2001,6 +2123,46 @@ func buildListFillsSQL(query trading.FillQuery) (string, []any) {
 	return builder.String(), args
 }
 
+func buildListComponentTransfersSQL(query trading.ComponentTransferQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	if query.AccountID != "" {
+		appendFilter("account_id", query.AccountID)
+	}
+	if query.GatewayOrderID != "" {
+		appendFilter("gateway_order_id", query.GatewayOrderID)
+	}
+	if query.Symbol != "" {
+		args = append(args, query.Symbol)
+		arg := len(args)
+		where = append(where, fmt.Sprintf("(symbol = $%d OR component_symbol = $%d)", arg, arg))
+	}
+	if query.Exchange != "" {
+		appendFilter("component_exchange", query.Exchange)
+	}
+	if query.BasketID != "" {
+		appendFilter("basket_id", query.BasketID)
+	}
+	if query.DateFrom != "" || query.DateTo != "" {
+		appendFillDateRange(&where, &args, query.DateFrom, query.DateTo)
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(componentTransferSelectColumns)
+	if len(where) > 0 {
+		builder.WriteString("WHERE ")
+		builder.WriteString(strings.Join(where, " AND "))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("ORDER BY COALESCE(matched_at, created_at) DESC, transfer_pk DESC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
+	return builder.String(), args
+}
+
 func buildListPositionsSQL(query trading.PositionQuery) (string, []any) {
 	var where []string
 	var args []any
@@ -2355,6 +2517,92 @@ func scanFill(row rowScanner) (trading.Fill, error) {
 		}
 	}
 	return fill, nil
+}
+
+func scanComponentTransfer(row rowScanner) (trading.ComponentTransfer, error) {
+	var transfer trading.ComponentTransfer
+	var fillID sql.NullString
+	var orderID sql.NullInt64
+	var orderStreamID sql.NullString
+	var transferType sql.NullString
+	var componentValue sql.NullFloat64
+	var brokerTradeSide sql.NullString
+	var brokerBusinessType sql.NullString
+	var tradeDate sql.NullString
+	var matchTimestamp sql.NullInt64
+	var matchedAt sql.NullTime
+	var shareholderID sql.NullString
+	var strategyType sql.NullString
+	var strategyID sql.NullString
+	var basketID sql.NullString
+	var parentOrderID sql.NullString
+	var t0OrderGroupID sql.NullString
+	var adapterContext []byte
+
+	err := row.Scan(
+		&fillID,
+		&transfer.AccountID,
+		&transfer.GatewayOrderID,
+		&orderID,
+		&orderStreamID,
+		&transfer.Symbol,
+		&transfer.Name,
+		&transfer.Exchange,
+		&transfer.Price,
+		&transfer.Qty,
+		&transfer.TradeSide,
+		&transfer.BusinessType,
+		&transfer.RecordType,
+		&transferType,
+		&transfer.IsTransfer,
+		&transfer.ComponentSymbol,
+		&transfer.ComponentName,
+		&transfer.ComponentExchange,
+		&transfer.ComponentQty,
+		&componentValue,
+		&transfer.CashSubstitution,
+		&brokerTradeSide,
+		&brokerBusinessType,
+		&tradeDate,
+		&matchTimestamp,
+		&matchedAt,
+		&shareholderID,
+		&strategyType,
+		&strategyID,
+		&basketID,
+		&parentOrderID,
+		&t0OrderGroupID,
+		&adapterContext,
+	)
+	if err != nil {
+		return trading.ComponentTransfer{}, err
+	}
+	transfer.FillID = fillID.String
+	transfer.OrderID = orderID.Int64
+	transfer.OrderStreamID = orderStreamID.String
+	transfer.TransferType = transferType.String
+	if componentValue.Valid {
+		value := componentValue.Float64
+		transfer.ComponentValue = &value
+	}
+	transfer.BrokerTradeSide = brokerTradeSide.String
+	transfer.BrokerBusinessType = brokerBusinessType.String
+	transfer.TradeDate = tradeDate.String
+	transfer.MatchTimestamp = matchTimestamp.Int64
+	transfer.MatchedAt = matchedAt.Time
+	transfer.ShareholderID = shareholderID.String
+	transfer.StrategyType = strategyType.String
+	transfer.StrategyID = strategyID.String
+	transfer.BasketID = basketID.String
+	transfer.ParentOrderID = parentOrderID.String
+	transfer.T0OrderGroupID = t0OrderGroupID.String
+	transfer.AdapterContext = map[string]any{}
+	if len(adapterContext) > 0 {
+		if err := json.Unmarshal(adapterContext, &transfer.AdapterContext); err != nil {
+			return trading.ComponentTransfer{}, err
+		}
+	}
+	return transfer, nil
 }
 
 func scanAsset(row rowScanner) (trading.Asset, error) {
@@ -2898,6 +3146,85 @@ func normalizeFill(fill trading.Fill) (trading.Fill, error) {
 	return fill, nil
 }
 
+func normalizeComponentTransfer(transfer trading.ComponentTransfer) (trading.ComponentTransfer, error) {
+	transfer.AccountID = strings.TrimSpace(transfer.AccountID)
+	transfer.FillID = strings.TrimSpace(transfer.FillID)
+	transfer.GatewayOrderID = strings.TrimSpace(transfer.GatewayOrderID)
+	transfer.OrderStreamID = strings.TrimSpace(transfer.OrderStreamID)
+	transfer.Symbol = strings.TrimSpace(transfer.Symbol)
+	transfer.Name = strings.TrimSpace(transfer.Name)
+	transfer.RecordType = strings.TrimSpace(transfer.RecordType)
+	transfer.TransferType = strings.TrimSpace(transfer.TransferType)
+	transfer.ComponentSymbol = strings.TrimSpace(transfer.ComponentSymbol)
+	transfer.ComponentName = strings.TrimSpace(transfer.ComponentName)
+	transfer.BrokerTradeSide = strings.TrimSpace(transfer.BrokerTradeSide)
+	transfer.BrokerBusinessType = strings.TrimSpace(transfer.BrokerBusinessType)
+	transfer.TradeDate = strings.TrimSpace(transfer.TradeDate)
+	transfer.ShareholderID = strings.TrimSpace(transfer.ShareholderID)
+	transfer.StrategyType = strings.TrimSpace(transfer.StrategyType)
+	transfer.StrategyID = strings.TrimSpace(transfer.StrategyID)
+	transfer.BasketID = strings.TrimSpace(transfer.BasketID)
+	transfer.ParentOrderID = strings.TrimSpace(transfer.ParentOrderID)
+	transfer.T0OrderGroupID = strings.TrimSpace(transfer.T0OrderGroupID)
+
+	if transfer.AccountID == "" {
+		return transfer, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if transfer.GatewayOrderID == "" {
+		return transfer, fmt.Errorf("%w: gateway_order_id is required", ErrInvalidLedgerInput)
+	}
+	if transfer.Symbol == "" {
+		return transfer, fmt.Errorf("%w: symbol is required", ErrInvalidLedgerInput)
+	}
+	if !transfer.Exchange.Valid() {
+		return transfer, fmt.Errorf("%w: exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if !transfer.TradeSide.Valid() {
+		return transfer, fmt.Errorf("%w: trade_side must be B, S, P, or R", ErrInvalidLedgerInput)
+	}
+	if transfer.BusinessType != trading.BusinessTypeETF {
+		return transfer, fmt.Errorf("%w: component transfer business_type must be E", ErrInvalidLedgerInput)
+	}
+	if transfer.Qty <= 0 {
+		return transfer, fmt.Errorf("%w: qty must be positive", ErrInvalidLedgerInput)
+	}
+	if transfer.RecordType == "" {
+		transfer.RecordType = "etf_component_transfer"
+	}
+	if transfer.RecordType != "etf_component_transfer" {
+		return transfer, fmt.Errorf("%w: record_type must be etf_component_transfer", ErrInvalidLedgerInput)
+	}
+	transfer.IsTransfer = true
+	if transfer.ComponentSymbol == "" {
+		transfer.ComponentSymbol = transfer.Symbol
+	}
+	if transfer.ComponentExchange == "" {
+		transfer.ComponentExchange = transfer.Exchange
+	}
+	if !transfer.ComponentExchange.Valid() {
+		return transfer, fmt.Errorf("%w: component_exchange must be SH, SZ, or BJ", ErrInvalidLedgerInput)
+	}
+	if transfer.ComponentQty <= 0 {
+		transfer.ComponentQty = transfer.Qty
+	}
+	if transfer.TradeDate == "" {
+		switch {
+		case !transfer.MatchedAt.IsZero():
+			transfer.TradeDate = transfer.MatchedAt.In(timeutil.Location()).Format("2006-01-02")
+		case transfer.MatchTimestamp > 0:
+			transfer.TradeDate = time.UnixMilli(transfer.MatchTimestamp).In(timeutil.Location()).Format("2006-01-02")
+		default:
+			return transfer, fmt.Errorf("%w: trade_date or matched_at is required", ErrInvalidLedgerInput)
+		}
+	}
+	normalized, err := normalizeTradeDate(transfer.TradeDate)
+	if err != nil {
+		return transfer, err
+	}
+	transfer.TradeDate = normalized
+	return transfer, nil
+}
+
 func normalizeOrderTradeDate(order trading.Order) (string, error) {
 	if order.TradeDate != "" {
 		return normalizeTradeDate(order.TradeDate)
@@ -2962,6 +3289,13 @@ func nullInt64(value int64) sql.NullInt64 {
 
 func nullFloat64(value float64) sql.NullFloat64 {
 	return sql.NullFloat64{Float64: value, Valid: value != 0}
+}
+
+func optionalFloat64(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func nullTime(value time.Time) sql.NullTime {

@@ -30,8 +30,13 @@ func TestNormalizeArchiveReplayOptions(t *testing.T) {
 	}
 	if _, err := normalizeArchiveReplayOptions(ArchiveReplayOptions{
 		Stages: []string{"transfers"},
+	}); err != nil {
+		t.Fatalf("normalizeArchiveReplayOptions() rejected transfers stage: %v", err)
+	}
+	if _, err := normalizeArchiveReplayOptions(ArchiveReplayOptions{
+		Stages: []string{"unknown"},
 	}); err == nil {
-		t.Fatal("normalizeArchiveReplayOptions() accepted unsupported stage")
+		t.Fatal("normalizeArchiveReplayOptions() accepted unknown stage")
 	}
 }
 

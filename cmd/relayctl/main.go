@@ -129,7 +129,7 @@ func runLedgerReplay(args []string) error {
 	accountID := flags.String("account-id", "", "optional account filter")
 	dateFrom := flags.String("date-from", "", "optional received-date lower bound, YYYY-MM-DD in Asia/Shanghai")
 	dateTo := flags.String("date-to", "", "optional received-date upper bound, YYYY-MM-DD in Asia/Shanghai")
-	stages := flags.String("stages", "orders,fills", "comma-separated replay stages: orders,fills")
+	stages := flags.String("stages", "orders,fills,transfers", "comma-separated replay stages: orders,fills,transfers")
 	timeout := flags.Duration("timeout", 15*time.Minute, "replay timeout")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -325,7 +325,7 @@ func loadConfig(path string) (*config.Config, error) {
 func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, `relayctl commands:
   ledger-sync    Archive Redis reply/event streams into PostgreSQL ledger
-  ledger-replay  Rebuild order/fill ledgers from archived raw stream messages
+  ledger-replay  Rebuild order/fill/transfer ledgers from archived raw stream messages
   migrate        Run PostgreSQL migration status/up/down
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
