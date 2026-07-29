@@ -1,6 +1,6 @@
 # relay 交易终端
 
-更新时间：`2026-06-15`
+更新时间：`2026-07-29`
 
 ## 目标
 
@@ -57,6 +57,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 | Meridian 证券主数据代理 | `GET /v1/meridian/metadata/instruments` |
 | Meridian 快照代理 | `GET /v1/meridian/market/snapshots` |
 | Meridian bars 代理 | `GET /v1/meridian/market/bars` |
+| Meridian 实时分钟 Bar SSE | `GET /v1/meridian/stream/market/bars`，当前作为可联调能力，终端仍使用 HTTP bars 初始加载和定时刷新 |
 | 历史订单读取 | `GET /v1/history/orders?account_id=...&trade_date=...` |
 | 历史成交读取 | `GET /v1/history/fills?account_id=...&trade_date=...` |
 | ETF 成分股划转 | `GET /v1/transfers`、`GET /v1/history/transfers` |
@@ -107,7 +108,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 `交易测试` 视图中的右侧持仓区域采用压缩版资金摘要、工具栏和表格行高，中间区域使用 ECharts `candlestick` 绘制 Meridian `bars` 1m 分钟 K 线并叠加成交量，给手动下单提供点位参考；`资金持仓` 独立工作区仍保留完整资金拆分和分页持仓表。分钟 K 线只服务手工交易测试，后续不会作为绩效分析主图。
 
-`交易测试` 的分钟 K 线使用同源 `/v1/meridian/market/bars`，默认请求 1m、`09:30:00` 到 `15:00:00`、最多 300 条。若页面输入的是当天或空日期，后端会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`：交易日当天使用 `data_scope=realtime`，非交易日读取最近交易日 historical bars，并把实际交易日回填到页面输入框。bars 代理对同 key 请求做短 TTL 缓存、并发合并和 stale fallback，因此交易终端图表、API Console 和绩效 benchmark 共享同一层抗压保护。
+`交易测试` 的分钟 K 线使用同源 `/v1/meridian/market/bars`，默认请求 1m、`09:30:00` 到 `15:00:00`、最多 300 条。若页面输入的是当天或空日期，后端会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`：当前交易日 15:00 前使用 `data_scope=realtime`，15:00 后使用 `auto` 读取当日归档；非交易日读取最近交易日 historical bars，并把实际交易日回填到页面输入框。bars 代理对同 key 请求做短 TTL 缓存、并发合并和 stale fallback，因此交易终端图表、API Console 和绩效 benchmark 共享同一层抗压保护。
 
 分钟 K 线买卖点来自 relay 本地账本，不新增行情字段定义：
 
@@ -144,7 +145,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 当前边界
 
-1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取，当 `trade_date` 为空或等于东八区当天时，交易日当天默认使用 `data_scope=realtime`，非交易日才回退最近交易日 historical。
+1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
 2. 实时推送当前使用 9092 内部事件 hub 和 SSE；正式生产化后应由持久化位点 worker 继续驱动同一个事件出口。
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。

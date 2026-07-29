@@ -113,6 +113,95 @@ func TestMetadataAdjustFactorsPassesThrough(t *testing.T) {
 	}
 }
 
+func TestMarketETFPCFPassesThrough(t *testing.T) {
+	var componentsQuery url.Values
+	var cashQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case etfComponentsPath:
+			componentsQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":           "588200.SH",
+					"component_security_id": "688361.SH",
+					"stock_amount":          "425",
+				}},
+				"meta": map[string]any{"schema_version": "etf_component.v1"},
+			})
+		case etfCashPath:
+			cashQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":           "588200.SH",
+					"unit_subscribe_redeem": "4500000",
+				}},
+				"meta": map[string]any{"schema_version": "etf_cash_component.v1"},
+			})
+		case etfPCFStatusPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"schema_version": "etf_pcf_status.v1"},
+				"meta": map[string]any{"schema_version": "etf_pcf_status.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	values := url.Values{"security_id": {"588200.SH"}, "trade_date": {"20260729"}}
+	components, err := client.MarketETFComponents(context.Background(), values)
+	if err != nil || components.StatusCode != http.StatusOK {
+		t.Fatalf("MarketETFComponents: status=%d err=%v", components.StatusCode, err)
+	}
+	cash, err := client.MarketETFCashComponents(context.Background(), values)
+	if err != nil || cash.StatusCode != http.StatusOK {
+		t.Fatalf("MarketETFCashComponents: status=%d err=%v", cash.StatusCode, err)
+	}
+	status, err := client.MarketETFPCFStatus(context.Background())
+	if err != nil || status.StatusCode != http.StatusOK {
+		t.Fatalf("MarketETFPCFStatus: status=%d err=%v", status.StatusCode, err)
+	}
+	if componentsQuery.Get("trade_date") != "20260729" || cashQuery.Get("security_id") != "588200.SH" {
+		t.Fatalf("PCF queries = %s / %s", componentsQuery.Encode(), cashQuery.Encode())
+	}
+}
+
+func TestMarketStreamsUseRealtimeDefaults(t *testing.T) {
+	queries := make(map[string]url.Values)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries[r.URL.Path] = r.URL.Query()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: ready\n\n"))
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	snapshotResponse, err := client.MarketSnapshotStream(context.Background(), url.Values{"security_id": {"600000.SH"}})
+	if err != nil {
+		t.Fatalf("MarketSnapshotStream: %v", err)
+	}
+	snapshotResponse.Body.Close()
+	barResponse, err := client.MarketBarStream(context.Background(), url.Values{"security_id": {"600000.SH"}})
+	if err != nil {
+		t.Fatalf("MarketBarStream: %v", err)
+	}
+	barResponse.Body.Close()
+
+	if query := queries[snapshotStreamPath]; query.Get("data_scope") != "realtime" || query.Get("market_level") != "level1" {
+		t.Fatalf("snapshot stream query = %s", query.Encode())
+	}
+	if query := queries[barStreamPath]; query.Get("data_scope") != "realtime" || query.Get("frequency") != "1m" {
+		t.Fatalf("bar stream query = %s", query.Encode())
+	}
+}
+
 func TestMarketSnapshotsFallsBackWhenRealtimeUnavailable(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +513,55 @@ func TestMarketBarsUsesRealtimeForCurrentTradingDay(t *testing.T) {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
 	if barsQuery.Get("trade_date") != "20260615" || barsQuery.Get("data_scope") != "realtime" || barsQuery.Get("limit") != "300" {
+		t.Fatalf("bars query = %s", barsQuery.Encode())
+	}
+}
+
+func TestMarketBarsUsesAutoForCurrentTradingDayAfterClose(t *testing.T) {
+	var barsQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case tradingDayPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"date":                             20260729,
+					"is_trading_day":                   true,
+					"previous_or_current_trading_date": 20260729,
+				},
+			})
+		case barsPath:
+			barsQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id": "588200.SH",
+					"trade_date":  20260729,
+					"datetime":    "2026-07-29T15:00:00+08:00",
+					"frequency":   "1m",
+					"close":       1.167,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	client.now = func() time.Time {
+		return time.Date(2026, 7, 29, 7, 10, 0, 0, time.UTC)
+	}
+
+	if _, err := client.MarketBars(context.Background(), url.Values{
+		"security_id": {"588200.SH"},
+		"trade_date":  {"20260729"},
+		"frequency":   {"1m"},
+	}); err != nil {
+		t.Fatalf("MarketBars: %v", err)
+	}
+	if barsQuery.Get("trade_date") != "20260729" || barsQuery.Get("data_scope") != "auto" {
 		t.Fatalf("bars query = %s", barsQuery.Encode())
 	}
 }

@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"
 ```
 
 ## Quick Start
@@ -139,10 +139,16 @@ P8 helper methods are available for strategy and research tooling:
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
 - `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)`
+- `get_meridian_etf_components(security_id=..., trade_date=...)`
+- `get_meridian_etf_cash_components(security_id=..., trade_date=...)`
+- `get_meridian_etf_pcf_status()`
 
 Meridian bars parameters follow Meridian's API. The relay SDK exposes common
 `trade_date` minute-bar arguments and forwards extra query parameters when
-needed.
+needed. ETF PCF methods preserve Meridian's `etf_component.v1`,
+`etf_cash_component.v1`, and `etf_pcf_status.v1` payloads; in particular,
+`unit_subscribe_redeem` remains the authoritative minimum creation/redemption
+unit.
 
 ## Callbacks
 

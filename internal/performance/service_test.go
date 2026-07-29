@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -200,6 +201,13 @@ func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.
 				"timestamp":   "2026-07-24T10:07:34+08:00",
 			}}},
 		},
+		cashComponents: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{map[string]any{
+				"security_id":           "159915.SZ",
+				"unit_subscribe_redeem": "1000000",
+			}}},
+		},
 	}
 	service, err := New(Options{
 		Store:             store,
@@ -221,7 +229,7 @@ func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.
 	if item.StrategyType != StrategyETFRedemptionT0 || item.PnLStatus != "estimated" {
 		t.Fatalf("t0 identity = %#v", item)
 	}
-	if item.BuyQuantity != 1_000_000 || item.RedemptionQuantity != 1_000_000 || item.ReferenceIOPV == nil || *item.ReferenceIOPV != 4.82 {
+	if item.BuyQuantity != 1_000_000 || item.RedemptionQuantity != 1_000_000 || item.RedemptionUnit != 1_000_000 || item.ReferenceIOPV == nil || *item.ReferenceIOPV != 4.82 {
 		t.Fatalf("t0 quantities/iopv = %#v", item)
 	}
 	if item.Orders != 2 || item.Fills != 3 {
@@ -232,6 +240,87 @@ func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.
 	}
 	if !containsString(item.QualityFlags, "historical_t0_order_group_inferred") {
 		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
+func TestBuildT0GroupsFlagsPCFRedemptionUnitMismatch(t *testing.T) {
+	location := timeutil.Location()
+	buyTime := time.Date(2026, 7, 24, 10, 0, 0, 0, location)
+	redeemTime := buyTime.Add(10 * time.Minute)
+	orders := []trading.Order{
+		{
+			GatewayOrderID: "etf-buy",
+			Symbol:         "159915",
+			Exchange:       trading.ExchangeSZ,
+			TradeSide:      trading.TradeSideBuy,
+			BusinessType:   trading.BusinessTypeStock,
+			OrderQty:       1_000_000,
+			AcceptedAt:     buyTime,
+		},
+		{
+			GatewayOrderID: "etf-redeem",
+			Symbol:         "159915",
+			Exchange:       trading.ExchangeSZ,
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			OrderQty:       1_000_000,
+			AcceptedAt:     redeemTime,
+		},
+	}
+	fills := []trading.Fill{
+		{
+			FillID:         "etf-buy-fill",
+			GatewayOrderID: "etf-buy",
+			Symbol:         "159915",
+			Exchange:       trading.ExchangeSZ,
+			TradeSide:      trading.TradeSideBuy,
+			BusinessType:   trading.BusinessTypeStock,
+			Price:          4.8,
+			Qty:            1_000_000,
+			MatchedAt:      buyTime,
+		},
+		{
+			FillID:         "etf-redeem-fill",
+			GatewayOrderID: "etf-redeem",
+			Symbol:         "159915",
+			Exchange:       trading.ExchangeSZ,
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			Qty:            1_000_000,
+			MatchedAt:      redeemTime,
+		},
+	}
+
+	service := &Service{
+		market: &fakeContributionMarket{
+			snapshots: market.MeridianResponse{
+				StatusCode: http.StatusOK,
+				Payload: map[string]any{"data": []any{map[string]any{
+					"security_id": "159915.SZ",
+					"iopv":        4.82,
+					"timestamp":   "2026-07-24T10:09:59+08:00",
+				}}},
+			},
+		},
+		etfT0FrictionRate: 0.0015,
+	}
+	groups, _, _ := service.buildT0Groups(
+		orders,
+		fills,
+		map[string]contributionInstrument{
+			"159915.SZ": {SecurityID: "159915.SZ", InstrumentType: "etf"},
+		},
+		map[string]int64{"159915.SZ": 900_000},
+	)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %#v", groups)
+	}
+	if !containsString(groups[0].flags, "redemption_quantity_not_pcf_unit_multiple") {
+		t.Fatalf("quality flags = %#v", groups[0].flags)
+	}
+	item := service.calculateT0Contribution(context.Background(), "2026-07-24", groups[0], 10_000_000)
+	if item.PnLStatus != "missing" || item.NetContribution != nil {
+		t.Fatalf("mismatched PCF unit contribution = %#v", item)
 	}
 }
 
@@ -1091,10 +1180,11 @@ type fakePerformanceStore struct {
 }
 
 type fakeContributionMarket struct {
-	metadata  market.MeridianResponse
-	bars      market.MeridianResponse
-	snapshots market.MeridianResponse
-	queries   []url.Values
+	metadata       market.MeridianResponse
+	bars           market.MeridianResponse
+	snapshots      market.MeridianResponse
+	cashComponents market.MeridianResponse
+	queries        []url.Values
 }
 
 func (client *fakeContributionMarket) MetadataInstruments(_ context.Context, values url.Values) (market.MeridianResponse, error) {
@@ -1110,6 +1200,11 @@ func (client *fakeContributionMarket) MarketBars(_ context.Context, values url.V
 func (client *fakeContributionMarket) MarketSnapshots(_ context.Context, values url.Values) (market.MeridianResponse, error) {
 	client.queries = append(client.queries, values)
 	return client.snapshots, nil
+}
+
+func (client *fakeContributionMarket) MarketETFCashComponents(_ context.Context, values url.Values) (market.MeridianResponse, error) {
+	client.queries = append(client.queries, values)
+	return client.cashComponents, nil
 }
 
 func (store *fakePerformanceStore) ListOrders(_ context.Context, query trading.OrderQuery) ([]trading.Order, error) {

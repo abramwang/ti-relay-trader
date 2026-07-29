@@ -339,6 +339,10 @@ OC v1.1 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `GET` | `/v1/history/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，显式历史 ETF 成分股划转查询 |
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
 | `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
+| `GET` | `/v1/meridian/stream/market/bars` | Meridian query | Meridian SSE | 已实现，同源 SSE 薄代理，默认 `frequency=1m`、`data_scope=realtime` |
+| `GET` | `/v1/meridian/market/etf-components` | Meridian query | Meridian payload | 已实现，ETF PCF 成分清单薄代理 |
+| `GET` | `/v1/meridian/market/etf-cash-components` | Meridian query | `etf_cash_component.v1` | 已实现，ETF PCF 现金清单及最小申赎单位薄代理 |
+| `GET` | `/v1/meridian/market/etf-pcf-status` | - | Meridian payload | 已实现，PCF 同步状态薄代理 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian query | Meridian payload | 已实现，同源薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | `job_name` query | `[]JobRun` | 已实现，查询最近任务运行 |
 | `POST` | `/v1/jobs/runs` | `JobRunRequest` | `JobRun` | 已实现，日流程任务报告落盘 |
@@ -423,9 +427,13 @@ daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_fl
 - `research_account_daily_performance_v1`：账户日绩效、持仓汇总、成交汇总和第一版 PnL 字段。
 - `research_order_fill_export_v1`：订单与成交关联明细，包含本地/柜台/交易所订单 ID、委托状态、拒单信息和成交价量。
 
-`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`security_ids`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260615&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`；批量日线使用 `security_ids=600000.SH,000001.SZ&start_date=20260615&end_date=20260615&frequency=1d&adjustment=none`。仅当没有 `start_date/end_date` 且 `trade_date` 为空或等于东八区当天时，relay 才会调用 Meridian 交易日接口取得 `previous_or_current_trading_date`；范围查询原样透传，不补入互斥的 `trade_date`。交易日当天默认使用 `data_scope=realtime`，非交易日自动读取最近交易日 historical bars。为降低读压和 benchmark 重复查询，bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback；该缓存只作用于 relay 到 Meridian 的代理层，不改变响应字段结构。
+`GET /v1/meridian/market/bars` 是 Meridian `GET /v1/market/bars` 的同源薄代理，用于 P8 账表计算、绩效序列和交易终端分钟线的行情输入。relay 不重新定义 bars 字段，也不做字段映射；响应保持 Meridian `market_bar.v1` 的 `data/meta/error` 结构。典型参数包括 `security_id`、`security_ids`、`trade_date`、`start_date`、`end_date`、`frequency`、`adjustment`、`start_time`、`end_time` 和 `limit`，具体字段约束以 Meridian 为准。例如分钟线查询可使用 `security_id=600000.SH&trade_date=20260615&frequency=1m&adjustment=none&start_time=09:30:00&end_time=15:00:00&limit=300`；批量日线使用 `security_ids=600000.SH,000001.SZ&start_date=20260615&end_date=20260615&frequency=1d&adjustment=none`。仅当没有 `start_date/end_date` 且 `trade_date` 为空或等于东八区当天时，relay 才会调用 Meridian 交易日接口取得 `previous_or_current_trading_date`；范围查询原样透传，不补入互斥的 `trade_date`。当前交易日 15:00 前默认使用 `data_scope=realtime`，15:00 后使用 `auto` 读取 Meridian 当日归档，非交易日自动读取最近交易日 historical bars。为降低读压和 benchmark 重复查询，bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback；该缓存只作用于 relay 到 Meridian 的代理层，不改变响应字段结构。
 
 `GET /v1/meridian/metadata/adjust-factors` 是 Meridian `GET /v1/metadata/adjust-factors` 的同源薄代理，用于股票/ETF 截面绩效中的除权除息、分红和 ETF 份额折算校验。relay 只透传 `security_id/security_ids/trade_date/start_date/end_date/limit` 等 Meridian 参数并保留上游 `data/meta/error` 结构，不在本项目内另建复权因子标准。
+
+ETF PCF 三个接口同样是透明代理，不转换字符串数值，也不在 Relay 中复制 PCF schema。单日查询使用 `trade_date`，范围查询使用 `start_date/end_date`，互斥约束以 Meridian 为准。绩效贡献仅从 `etf_cash_component.v1.unit_subscribe_redeem` 读取最小申赎单位，校验赎回量是否为整数倍；缺失、上游失败或数量不匹配时输出质量标记，不猜测单位，也不使用 PCF 估算基金管理人最终清算。
+
+`GET /v1/meridian/stream/market/bars` 直接转发 Meridian SSE 事件，不改变 event/data 内容。默认参数只用于交易时实时分钟线订阅；Relay 当前交易终端仍使用带缓存的 HTTP bars 做初始加载和定时刷新，避免在本轮适配中改变页面刷新语义。
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 

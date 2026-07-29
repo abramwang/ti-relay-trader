@@ -41,4 +41,4 @@ __all__ = [
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.19"
+__version__ = "0.1.20"

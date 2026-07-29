@@ -996,6 +996,9 @@ func TestMeridianMarketSnapshotStreamProxy(t *testing.T) {
 		if r.URL.Query().Get("include_existing") != "true" {
 			t.Fatalf("include_existing = %q", r.URL.Query().Get("include_existing"))
 		}
+		if r.URL.Query().Get("data_scope") != "realtime" {
+			t.Fatalf("data_scope = %q", r.URL.Query().Get("data_scope"))
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "event: market_snapshots\n")
 		_, _ = io.WriteString(w, `data: {"data":[{"security_id":"600000.SH","last":9.66}]}`+"\n\n")
@@ -1018,6 +1021,84 @@ func TestMeridianMarketSnapshotStreamProxy(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "event: market_snapshots") || !strings.Contains(rec.Body.String(), `"last":9.66`) {
 		t.Fatalf("response did not proxy sse payload: %s", rec.Body.String())
+	}
+}
+
+func TestMeridianETFPCFProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/market/etf-components":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":           "588200.SH",
+					"component_security_id": "688361.SH",
+					"stock_amount":          "425",
+				}},
+				"meta": map[string]any{"schema_version": "etf_component.v1"},
+			})
+		case "/v1/market/etf-cash-components":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id":           "588200.SH",
+					"unit_subscribe_redeem": "4500000",
+				}},
+				"meta": map[string]any{"schema_version": "etf_cash_component.v1"},
+			})
+		case "/v1/market/etf-pcf-status":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"schema_version": "etf_pcf_status.v1"},
+				"meta": map[string]any{"schema_version": "etf_pcf_status.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	for _, path := range []string{
+		"/v1/meridian/market/etf-components?security_id=588200.SH&trade_date=20260729",
+		"/v1/meridian/market/etf-cash-components?security_id=588200.SH&trade_date=20260729",
+		"/v1/meridian/market/etf-pcf-status",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"schema_version"`) {
+			t.Fatalf("%s did not preserve Meridian payload: %s", path, rec.Body.String())
+		}
+	}
+}
+
+func TestMeridianMarketBarStreamProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/stream/market/bars" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("frequency") != "1m" || r.URL.Query().Get("data_scope") != "realtime" {
+			t.Fatalf("bar stream query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: market_bars\n")
+		_, _ = io.WriteString(w, `data: {"data":[{"security_id":"600000.SH","close":9.66}]}`+"\n\n")
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/stream/market/bars?security_id=600000.SH", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "event: market_bars") {
+		t.Fatalf("bar SSE response = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

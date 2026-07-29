@@ -200,6 +200,10 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/metadata/adjust-factors", server.handleMeridianMetadataAdjustFactors)
 	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
+	mux.HandleFunc("/v1/meridian/market/etf-components", server.handleMeridianMarketETFComponents)
+	mux.HandleFunc("/v1/meridian/market/etf-cash-components", server.handleMeridianMarketETFCashComponents)
+	mux.HandleFunc("/v1/meridian/market/etf-pcf-status", server.handleMeridianMarketETFPCFStatus)
+	mux.HandleFunc("/v1/meridian/stream/market/bars", server.handleMeridianMarketBarStream)
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
@@ -392,7 +396,82 @@ func (s *Server) handleMeridianMarketBars(w http.ResponseWriter, r *http.Request
 	s.writeMeridianResponse(w, r, response, "meridian market request failed")
 }
 
+func (s *Server) handleMeridianMarketETFComponents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MarketETFComponents(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_market_etf_components_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian ETF PCF request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian ETF PCF request failed")
+}
+
+func (s *Server) handleMeridianMarketETFCashComponents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MarketETFCashComponents(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_market_etf_cash_components_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian ETF PCF request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian ETF PCF request failed")
+}
+
+func (s *Server) handleMeridianMarketETFPCFStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MarketETFPCFStatus(r.Context())
+	if err != nil {
+		s.logger.Warn("meridian_market_etf_pcf_status_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian ETF PCF status request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian ETF PCF status request failed")
+}
+
+func (s *Server) handleMeridianMarketBarStream(w http.ResponseWriter, r *http.Request) {
+	s.handleMeridianMarketStream(w, r, "bars", s.marketBarStream)
+}
+
 func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *http.Request) {
+	s.handleMeridianMarketStream(w, r, "snapshots", s.marketSnapshotStream)
+}
+
+func (s *Server) marketBarStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	return s.market.MarketBarStream(ctx, values)
+}
+
+func (s *Server) marketSnapshotStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	return s.market.MarketSnapshotStream(ctx, values)
+}
+
+func (s *Server) handleMeridianMarketStream(
+	w http.ResponseWriter,
+	r *http.Request,
+	resource string,
+	open func(context.Context, url.Values) (*http.Response, error),
+) {
 	if r.Method != http.MethodGet {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 		return
@@ -407,9 +486,9 @@ func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *ht
 		return
 	}
 
-	response, err := s.market.MarketSnapshotStream(r.Context(), r.URL.Query())
+	response, err := open(r.Context(), r.URL.Query())
 	if err != nil {
-		s.logger.Warn("meridian_market_snapshot_stream_failed", "error", err)
+		s.logger.Warn("meridian_market_stream_failed", "resource", resource, "error", err)
 		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian market stream request failed", err.Error())
 		return
 	}
@@ -441,7 +520,7 @@ func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *ht
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				s.logger.Warn("meridian_market_snapshot_stream_read_failed", "error", readErr)
+				s.logger.Warn("meridian_market_stream_read_failed", "resource", resource, "error", readErr)
 			}
 			return
 		}

@@ -502,7 +502,8 @@ def resolve_trading_day(options: JobOptions, requested_date: str) -> TradingDayI
         )
     query = parse.urlencode({"date": requested_date})
     url = f"{options.meridian_base_url.rstrip('/')}/v1/metadata/trading-day?{query}"
-    with request.urlopen(url, timeout=options.timeout) as response:
+    opener = request.build_opener(request.ProxyHandler({}))
+    with opener.open(url, timeout=options.timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     data = payload.get("data") if isinstance(payload, Mapping) else None
     if not isinstance(data, Mapping):
@@ -510,10 +511,12 @@ def resolve_trading_day(options: JobOptions, requested_date: str) -> TradingDayI
     target = normalize_trade_date(str(data.get("previous_or_current_trading_date", "")))
     if not target:
         raise RuntimeError("Meridian trading-day response missing previous_or_current_trading_date")
+    explicit_is_trading_day = data.get("is_trading_day")
+    is_trading_day = explicit_is_trading_day if isinstance(explicit_is_trading_day, bool) else target == requested_date
     return TradingDayInfo(
         requested_date=requested_date,
         target_trade_date=target,
-        is_trading_day=target == requested_date,
+        is_trading_day=is_trading_day,
         source=url,
         raw=payload,
     )

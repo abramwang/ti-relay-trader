@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在进行绩效分析 Phase 2 收尾，P10 已完成 9092 容器自启动和健康守护底座。2026-07-29 已完成 OC v1.1 协议升级：外部订单稳定 ID 按不透明值接收，普通成交 fallback 去重增加 `order_id/symbol/exchange`，`transfer.event` 与 `fill_page.component_transfers[]` 独立写入 ETF 划转账本，`adapter.data_quality` DLQ 纳入归档与同步统计；新增当日/历史划转 API、交易终端 ETF 划转页签、API Console 和 `relay-sdk 0.1.19`。生产 migration `000013/000014`、历史 transfer 重放和 OC v1.1 生产只读复测均已完成；生产配置仍为 6 个只读账户、下单账户 0。下一步继续账户净值、上证指数基准、超额收益、回撤主图和正式数据质量区。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 正在进行绩效分析 Phase 2 收尾，P10 已完成 9092 容器自启动和健康守护底座。2026-07-29 已完成 OC v1.1 协议升级和 Meridian SDK 0.1.15 能力审计：外部订单稳定 ID 按不透明值接收，ETF 划转独立入账；Relay 新增 Meridian ETF PCF/现金清单薄代理、实时分钟 Bar SSE，并用 PCF `unit_subscribe_redeem` 校验 ETF T0 赎回量，Python 日流程优先使用交易日接口显式 `is_trading_day`。`relay-sdk 0.1.20` 已同步发布。生产 migration `000013/000014`、历史 transfer 重放和 OC v1.1 生产只读复测均已完成；生产配置仍为 6 个只读账户、下单账户 0。下一步继续账户净值、上证指数基准、超额收益、回撤主图和正式数据质量区。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-29`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -137,8 +137,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -252,6 +252,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `/jobs` 后台任务状态监控页，展示盘前初始化、盘后结算等任务的状态、交易日、开始/完成时间、耗时、错误摘要和 report_json。
 - [x] `GET /v1/orders`、`GET /v1/fills` 默认按 `Asia/Shanghai` 当日查询；新增 `/v1/history/orders`、`/v1/history/fills` 和 `/v1/accounts/{account_id}/positions/history` 历史查询口径。
 - [x] OC v1.1 的 `transfer.event/fill_page.component_transfers[]` 独立写入 `etf_component_transfers`，新增 `/v1/transfers`、`/v1/history/transfers`、交易终端 ETF 划转页签和 SDK `list_transfers()`。
+- [x] 审计 Meridian SDK `0.1.15`：Relay 保持无 Meridian Python 包运行时依赖，新增 ETF PCF/现金清单/状态薄代理和实时分钟 Bar SSE；绩效贡献使用 `unit_subscribe_redeem` 校验申赎单位，市场回放与全市场任务仍归 Prism/回测边界。
 - [x] 账本 API 时间字段统一按 `Asia/Shanghai` 输出，订单、成交、资金、持仓、订单事件、成交事件和任务运行记录的零值时间字段不再展示为 `0001-01-01T00:00:00Z`。
 - [x] 新增 `POST /v1/settlements/snapshots`，按指定交易日将盘前资金写入 `asset_snapshots(open)`、收盘资金写入 `asset_snapshots(close)`、当前持仓写入 `position_snapshots`，并 upsert `reconciliation_runs` 批次；`pre_open_init` 和 `post_close_settlement` 已接入该接口。
 - [x] 新增盘后对账输入和差异记录第一版：`POST /v1/settlements/snapshots` 会写入 `reconciliation_inputs`、生成 `reconciliation_breaks`，并提供 `GET /v1/reconciliations/breaks` 查询入口。
@@ -270,7 +271,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] `/trade` 分钟 K 线支持当前账户、标的、交易日的买卖点标注：优先使用成交价/成交时间，未成交订单使用委托价/委托时间，并在代码切换、手动刷新和订单/成交 SSE 推送后刷新标注。
 - [x] `/trade` 分钟 K 线新增自动刷新：交易测试主界面、页面可见且 K 线日期为东八区当前交易日时，每 30 秒静默刷新 Meridian 1m bars 和买卖点；切到历史日期、隐藏页面或离开交易视图会暂停。
 - [x] `/trade` 交易终端所有默认交易日统一为东八区当前日期；当 Meridian snapshot/bars 返回最近交易日时，会自动回填仍处于默认值的资金持仓、订单监控、绩效和 K 线日期输入框。
-- [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`，bars 同时使用 `data_scope=realtime`；只有非交易日才回退到最近交易日 historical。
+- [x] 当前交易日行情请求不再回放旧实时缓存：relay 会将当天 snapshot/bars 请求显式限定为 `trade_date=东八区当天`；交易时段 bars 使用 `data_scope=realtime`，15:00 后使用 `auto` 读取 Meridian 已归档的当日数据，非交易日回退到最近交易日 historical。
 - [x] Meridian bars 代理新增短 TTL 缓存、同 key 并发请求合并和 stale fallback，降低读压下 `/v1/meridian/market/bars` 与绩效 `benchmark_security_id` 对上游的重复打穿。
 - [x] 新增 `GET /v1/meridian/stream/market/snapshots` 同源 SSE 薄代理，保留 Meridian `market_snapshots` 原始事件；`/trade` 当前交易日资金持仓会拉取全量持仓清单并按标的分片订阅 level1 SSE，用 Meridian `last` 实时计算现价、市值和全量浮动盈亏合计，历史日继续展示日终/历史账本字段。
 - [x] `/trade` 分页请求层增加非 JSON 响应保护，订单、成交和持仓分页失败时会展示具体请求路径、HTTP 状态和 content-type，并回滚 page/cursor，避免一次失败后分页状态错位。
@@ -333,8 +334,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。API 和 `/trade#performance` 已接入 `asset_snapshots(open)`，返回并展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率；`daily_pnl/return_rate` 仍保留为相邻 close 净资产口径，方便长期净值序列兼容。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
 - `GET /v1/accounts/{account_id}/performance/series` 当前以 close 净资产为主线计算累计收益和回撤，并支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，输出基准收益、回撤和超额收益。页面默认与上证指数 `000001.SH` 涨跌对比，仍允许手动切换基准。持仓复权估值和更精细交易归因仍需后续版本。
 - `GET /v1/accounts/{account_id}/performance/series.csv` 是轻量 CSV 导出；研究侧 PostgreSQL view 已提供 `research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。后续如需大批量离线消费，可再补 Parquet/批量文件任务。
-- P8 账表计算只接入 Meridian `bars`。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
-- `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`，交易日当天使用 `data_scope=realtime`，非交易日自动回退到最近交易日 historical。bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback，降低读压下直接 bars 查询和绩效 benchmark 对上游的重复冲击。
+- P8 价格与基准计算只接入 Meridian `bars`；ETF T0 另读取 Meridian PCF 现金清单中的 `unit_subscribe_redeem` 做最小申赎单位校验，不使用 PCF 还原基金管理人最终清算。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
+- `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`。当前交易日 15:00 前使用 `data_scope=realtime`，15:00 后使用 `auto` 让 Meridian 选择当日归档数据；非交易日自动回退到最近交易日 historical。bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback，降低读压下直接 bars 查询和绩效 benchmark 对上游的重复冲击。
 - `/trade` 分钟 K 线图只用于手工测试与点位理解；买卖点来自本地订单/成交账本，不新增行情字段定义。成交点优先于委托点，同一订单已有成交时不会重复绘制委托价。`/trade#performance` 后续改为净值曲线、收益贡献和交易归因等绩效图。
 - 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
 - 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
@@ -365,7 +366,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -553,3 +554,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-29`: 新增 `docs/OC_CHANGE_REQUEST_20260729.md` 作为可直接提交给 OC 的 P0/P1 修改单，包含 7 月 29 日两条同 ID 冲突事件的 stream/message ID、7 月 28 日 32 个篮子子单冲突范围、17 条历史订单成交错配明细、ETF transfer/fill 分类要求、完整字段和东八区时间语义，以及联合验收标准。
 - `2026-07-29`: 对齐 OC `THIRD_PARTY_INTEGRATION_GUIDE.md v1.1`：Relay 不重建 OC 新稳定 ID，成交 fallback 去重补齐订单、证券和交易所维度；新增 `000013_oc_v1_1_component_transfers`、实时/查询 ETF 划转独立入账、DLQ 数据质量计数、划转归档重放、当日/历史查询 API、交易终端 ETF 划转页签及 `relay-sdk 0.1.19`。
 - `2026-07-29`: OC v1.1 生产只读验收完成：应用 `000013_oc_v1_1_component_transfers` 和 `000014_remove_etf_transfer_summary_fills`，历史归档重放识别 14,795 条 transfer 消息且无解析/落库错误；当日 `314000045768` 的 49 条 ETF 划转已独立查询，普通成交中不再保留 `P/R + business_type=E` 的错误 summary fill。绩效贡献只把同一稳定订单下 ETF 本体 transfer 作为赎回时点信号，成分证券 transfer 仅参与链路核对、不重复计利。
+- `2026-07-29`: 审计 Meridian SDK `0.1.15` 并同步与 Relay 边界相关的能力：Go 行情薄客户端新增 ETF PCF components/cash-components/status 和实时分钟 Bar SSE，snapshot/bar SSE 默认限定 `data_scope=realtime`；HTTP bars 在当前交易日 15:00 后改用 `data_scope=auto`，避免实时 journal 切走后当日 K 线返回空。ETF T0 贡献按 `etf_cash_component.v1.unit_subscribe_redeem` 校验赎回量整数倍，不满足时标记质量缺失；Python 日流程使用交易日接口显式 `is_trading_day` 并禁用环境代理。Relay 核心仍直接调用 Meridian HTTP，不引入包含 pandas/pyarrow 的 Meridian Python SDK 运行时依赖；市场 replay/task/cursor 能力留给 Prism/回测。发布 `relay-sdk 0.1.20`，新增三个 PCF 只读 helper。

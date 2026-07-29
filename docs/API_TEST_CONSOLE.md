@@ -1,6 +1,6 @@
 # relay 接口测试台
 
-更新时间：`2026-06-14`
+更新时间：`2026-07-29`
 
 ## 目标
 
@@ -93,6 +93,10 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `POST` | `/v1/accounts/{account_id}/performance/nav-reconciliations/confirm` | 人工确认 T+1 对账并 finalized current economic NAV；仅写入开关开启时允许 |
 | `POST` | `/v1/accounts/{account_id}/performance/nav-reconciliations/block` | 阻断 T+1 对账并 blocked current economic NAV；仅写入开关开启时允许 |
 | `GET` | `/v1/meridian/market/bars` | Meridian bars 薄代理，保留 `market_bar.v1` 原始字段 |
+| `GET` | `/v1/meridian/stream/market/bars` | Meridian 实时分钟 Bar SSE 薄代理 |
+| `GET` | `/v1/meridian/market/etf-components` | ETF PCF 成分清单薄代理 |
+| `GET` | `/v1/meridian/market/etf-cash-components` | ETF PCF 现金清单和最小申赎单位薄代理 |
+| `GET` | `/v1/meridian/market/etf-pcf-status` | ETF PCF 同步状态薄代理 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian 复权因子薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |
 | `GET` | `/v1/events/stream` | SSE 实时事件流，支持按 `account_id` 过滤订单、成交、资金和持仓变化 |

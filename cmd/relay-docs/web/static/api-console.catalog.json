@@ -601,6 +601,23 @@
     ]
   },
   {
+    "id": "meridian-bar-stream",
+    "group": "行情",
+    "title": "Meridian 分钟线 SSE",
+    "method": "GET",
+    "path": "/v1/meridian/stream/market/bars",
+    "status": "ready",
+    "stream": true,
+    "fields": [
+      { "name": "security_ids", "label": "security_ids", "source": "query", "defaultValue": "600000.SH,000001.SZ" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "frequency", "label": "frequency", "source": "query", "type": "select", "defaultValue": "1m", "options": ["1m"] },
+      { "name": "data_scope", "label": "data_scope", "source": "query", "type": "select", "defaultValue": "realtime", "options": ["realtime"] },
+      { "name": "include_existing", "label": "include_existing", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] },
+      { "name": "watch_interval_ms", "label": "watch_interval_ms", "source": "query", "type": "number", "defaultValue": "1000" }
+    ]
+  },
+  {
     "id": "meridian-snapshots",
     "group": "行情",
     "title": "Meridian 快照",
@@ -631,6 +648,50 @@
       { "name": "include_existing", "label": "include_existing", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] },
       { "name": "watch_interval_ms", "label": "watch_interval_ms", "source": "query", "type": "number", "defaultValue": "1000" }
     ]
+  },
+  {
+    "id": "meridian-etf-components",
+    "group": "行情",
+    "title": "Meridian ETF PCF 成份券",
+    "method": "GET",
+    "path": "/v1/meridian/market/etf-components",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "588200.SH" },
+      { "name": "security_ids", "label": "security_ids", "source": "query", "defaultValue": "" },
+      { "name": "component_security_id", "label": "component_security_id", "source": "query", "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "start_date", "label": "start_date", "source": "query", "defaultValue": "" },
+      { "name": "end_date", "label": "end_date", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "100" },
+      { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "meridian-etf-cash-components",
+    "group": "行情",
+    "title": "Meridian ETF 现金差额",
+    "method": "GET",
+    "path": "/v1/meridian/market/etf-cash-components",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "588200.SH" },
+      { "name": "security_ids", "label": "security_ids", "source": "query", "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "start_date", "label": "start_date", "source": "query", "defaultValue": "" },
+      { "name": "end_date", "label": "end_date", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "100" },
+      { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "meridian-etf-pcf-status",
+    "group": "行情",
+    "title": "Meridian ETF PCF 状态",
+    "method": "GET",
+    "path": "/v1/meridian/market/etf-pcf-status",
+    "status": "ready",
+    "fields": []
   },
   {
     "id": "meridian-instruments",

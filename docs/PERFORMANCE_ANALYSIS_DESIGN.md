@@ -303,6 +303,7 @@ cross_section_net_pnl =
 | 对账差异 | `reconciliation_breaks` | 未终态订单、订单成交数量不一致、快照缺失、刷新失败等质量问题 |
 | Meridian bars | `/v1/meridian/market/bars` | 基准收益、收盘价参考、后续持仓估值补充 |
 | Meridian Level1 | `/v1/meridian/market/snapshots` | ETF 赎回成交时点 IOPV；使用不晚于赎回时刻的最近快照 |
+| Meridian ETF PCF | `/v1/meridian/market/etf-cash-components` | 读取 `unit_subscribe_redeem`，校验 ETF T0 赎回量和买入订单组是否符合最小申赎单位 |
 | Meridian adjust factors | `/v1/meridian/metadata/adjust-factors` 薄代理 | 股票/ETF 公司行为日期、复权因子和持仓成本调整 |
 | Meridian instruments | `/v1/meridian/metadata/instruments` | 证券名称、证券类型、ETF/股票分类和价格精度 |
 
@@ -741,11 +742,12 @@ open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且�
 
 1. 后端聚合成交额、费用、open/close 持仓、证券贡献和策略汇总。
 2. ETF T0 合并同一赎回订单的多条普通成交；OC v1.1 未提供普通赎回成交时，以独立 transfer 账本中的 ETF 本体记录作为赎回时点信号。两种路径都使用不晚于赎回时刻的 Meridian IOPV，并隔离可精确闭合赎回量的历史买入订单组。
-3. ETF 成分股卖出从 IOPV 估值收益中排除，逆回购只把净息计入现金管理。
-4. `/trade#performance` 默认展示证券贡献表，可切换到原净值序列；估算、缺失和排除状态可见。
-5. Go 单元测试覆盖普通持仓现金流恒等式与 ETF T0 多成交聚合。
-6. 2026-07-22 至 2026-07-24 生产只读样本完成复核，多组 IOPV 查询并发后最慢样本约 4.55 秒。
-7. Playwright 已验证证券贡献/净值序列切换、未结算日自动回退和 1680px 布局。
+3. 从 Meridian `etf_cash_component.v1.unit_subscribe_redeem` 读取目标交易日最小申赎单位。赎回量不是整数倍时标记 `redemption_quantity_not_pcf_unit_multiple` 并停止该组收益计算；PCF 缺失时保留既有历史估算路径，但明确标记 `missing_meridian_etf_redemption_unit`，不得把未校验结果解释为精确清算。
+4. ETF 成分股卖出从 IOPV 估值收益中排除，逆回购只把净息计入现金管理。
+5. `/trade#performance` 默认展示证券贡献表，可切换到原净值序列；估算、缺失和排除状态可见。
+6. Go 单元测试覆盖普通持仓现金流恒等式、ETF T0 多成交聚合和 PCF 最小申赎单位不匹配。
+7. 2026-07-22 至 2026-07-24 生产只读样本完成复核，多组 IOPV 查询并发后最慢样本约 4.55 秒。
+8. Playwright 已验证证券贡献/净值序列切换、未结算日自动回退和 1680px 布局。
 
 ### Phase 3.1 交易质量统计
 

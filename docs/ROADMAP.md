@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-07-27`
+更新时间：`2026-07-29`
 
 ## 状态口径
 
@@ -68,6 +68,7 @@
 - [x] `/trade#performance` 增加“证券贡献 / 净值序列”切换、策略汇总和贡献明细表；API Console、schema 和 Python SDK helper 同步。
 - [x] 新增只读 `performance/trade-quality`：输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细；订单成交按交易日关联，`/trade#performance`、API Console 和 `relay-sdk 0.1.18` 已同步。
 - [x] 对齐 OC v1.1 数据质量协议：稳定外部订单 ID 作为不透明值使用，普通成交与 ETF 划转分表，`adapter.data_quality` DLQ 纳入消费统计，新增划转 API、终端页签和归档重放。
+- [x] 审计 Meridian SDK `0.1.15` 并同步 Relay 所需增量：ETF PCF/现金清单/状态薄代理、实时分钟 Bar SSE、交易日显式字段；ETF T0 使用 `unit_subscribe_redeem` 做最小申赎单位质量校验，replay/task/cursor 保留在 Prism/回测边界。
 
 范围：
 
@@ -300,6 +301,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.16.tar.gz` 和 SHA256 校验文件，新增证券/策略贡献只读 helper。
 - [x] 发布 `public/sdk/relay-sdk-0.1.18.tar.gz` 和 SHA256 校验文件，新增交易质量统计 helper，并将订单/成交回调去重键切换到交易日作用域。
 - [x] 发布 `public/sdk/relay-sdk-0.1.19.tar.gz` 和 SHA256 校验文件，新增 `ComponentTransfer` 与当日/历史 ETF 划转查询。
+- [x] 发布 `public/sdk/relay-sdk-0.1.20.tar.gz` 和 SHA256 校验文件，新增 Meridian ETF PCF components/cash-components/status 只读 helper。
 - [x] 增加 SDK 版本发布检查清单。
 
 ### P6.1 接口测试台
@@ -393,6 +395,7 @@
 - [x] 增加交易质量统计：有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常订单；区间关联使用 `trade_date + gateway_order_id`，避免柜台 ID 跨日复用。
 - [x] 修复生产账表跨日覆盖：migration `000012`、权威订单查询快照覆盖和 raw archive 重放恢复近 15,000 条订单，孤立成交归零；OC 同日 ID 冲突转入联合整改。
 - [x] 用 2026-07-22 至 2026-07-24 生产只读样本复核历史 ETF T0 订单组、IOPV 命中率、成分划转排除和贡献总额；三账户 T0、股票截面和逆回购结果与人工审计一致，多组 IOPV 查询并发后最慢样本约 4.55 秒。
+- [x] 接入 Meridian ETF PCF 最小申赎单位校验；上游 PCF 缺失或赎回量非整数倍时输出质量标记，不在 Relay 中猜测单位或重建 PCF 标准。
 - [ ] 后续按数据完整度评估精确成本引擎、公司行为和最终清算差异归因；现金流水、逆回购和 ETF 申赎第一版口径已落地。
 
 ### P9 模拟柜台

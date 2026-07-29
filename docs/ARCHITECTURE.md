@@ -99,7 +99,7 @@ SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)�
 | 交易日任务 | `GET /v1/jobs/runs`、`POST /v1/jobs/runs`、`POST /v1/settlements/snapshots` |
 | 绩效与研究 | `GET /v1/accounts/{account_id}/performance/daily`、`GET /v1/accounts/{account_id}/performance/series`、`GET /v1/accounts/{account_id}/performance/series.csv` |
 | 对账 | `GET /v1/reconciliations/breaks` |
-| 行情薄代理 | `GET /v1/meridian/metadata/instruments`、`GET /v1/meridian/metadata/adjust-factors`、`GET /v1/meridian/market/snapshots`、`GET /v1/meridian/stream/market/snapshots`、`GET /v1/meridian/market/bars` |
+| 行情薄代理 | Meridian instruments、adjust-factors、snapshots、bars、ETF PCF components/cash-components/status，以及 snapshot/bar SSE |
 | 监控 | `GET /v1/status`，当前覆盖 PostgreSQL、Redis、订单服务、行情代理、事件流、自动刷新、交易阶段和日流程任务摘要 |
 
 ## Python 任务职责
@@ -107,7 +107,7 @@ SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)�
 1. 盘前初始化：确认交易日、依赖、账户路由、Redis 位点、刷新初始资金持仓并写入 `asset_snapshots(open)` 日初资产快照，建立风险基线。
 2. 收盘后结算：追平回报、刷新终态账本、生成 `asset_snapshots(close)` 和日终持仓快照，编排对账和盈亏输入。
 3. 盘后对账：柜台查询结果、Redis 事件流水、内部账表三方核对。
-4. 历史数据：通过 Meridian `bars` 拉取账表计算所需的日线/分钟线行情；`metadata/instruments`、`snapshots` 和 level1 snapshot SSE 仅作为交易页面代码补全、行情展示和当前持仓实时估值薄代理。
+4. 历史数据：通过 Meridian `bars` 拉取账表计算所需的日线/分钟线行情，通过 ETF PCF cash-components 读取最小申赎单位；`metadata/instruments`、`snapshots` 和 level1 snapshot SSE 仅作为交易页面代码补全、行情展示和当前持仓实时估值薄代理。
 5. 盈亏统计：日内/日终账户权益、持仓市值、浮动盈亏、已实现盈亏、费用、回撤、收益率。
 6. 数据修复：重放 Redis 事件、补写账表、修复状态机断点。
 7. 验收脚本：对接 `docs/THIRD_PARTY_INTEGRATION_GUIDE.md` 里的 Redis Stream 验收流程。
@@ -206,8 +206,12 @@ Meridian 当前纳入 relay 规划的市场数据契约入口：
 - `GET /v1/contracts/market`
 - `GET /v1/market/bars`
 - `GET /v1/market/snapshots`
+- `GET /v1/stream/market/bars`
+- `GET /v1/market/etf-components`
+- `GET /v1/market/etf-cash-components`
+- `GET /v1/market/etf-pcf-status`
 
-P8 账表计算只依赖 `bars`。交易端暂不接入实时 level2，也不规划 `trades/orders/order-queues`，后续如需更多行情字段应优先推动 Meridian 在 bars 或证券主数据口径中补充。
+P8 价格和基准计算只依赖 `bars`，ETF T0 额外使用 PCF 最小申赎单位做数量约束。交易端暂不接入实时 level2，也不规划 `trades/orders/order-queues`。Meridian SDK `0.1.15` 的 replay/task/cursor 能力归 Prism/回测边界，Relay 不引入 Meridian Python 包运行时依赖。
 
 不要把内网资源里的密码、Token、生产账号、柜台地址写入仓库。
 

@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.19"
+SDK_VERSION = "0.1.20"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -636,6 +636,69 @@ class RelayClient:
         query.update(extra_query)
         return self._request("GET", "/v1/meridian/metadata/adjust-factors", query=query)
 
+    def get_meridian_etf_components(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        security_id_pattern: str | None = None,
+        component_security_id: str | None = None,
+        trade_date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Return Meridian ETF PCF component rows through relay."""
+
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "security_id_pattern": security_id_pattern,
+            "component_security_id": component_security_id,
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/market/etf-components", query=query)
+
+    def get_meridian_etf_cash_components(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        security_id_pattern: str | None = None,
+        trade_date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Return Meridian ETF cash components and redemption units through relay."""
+
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "security_id_pattern": security_id_pattern,
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/market/etf-cash-components", query=query)
+
+    def get_meridian_etf_pcf_status(self) -> Mapping[str, Any]:
+        """Return Meridian ETF PCF synchronization and quality status."""
+
+        return self._request("GET", "/v1/meridian/market/etf-pcf-status")
+
     def submit_order(
         self,
         *,
@@ -1030,6 +1093,12 @@ class RelayClient:
     @staticmethod
     def _new_id(prefix: str, account_id: str) -> str:
         return f"sdk-{prefix}-{account_id}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+
+
+def _join_query_values(values: str | Iterable[str] | None) -> str | None:
+    if isinstance(values, str) or values is None:
+        return values
+    return ",".join(str(item) for item in values)
 
 
 def _snapshot_event(event_type: str) -> RelayEvent:

@@ -23,6 +23,10 @@ const (
 	adjustFactorsPath  = "/v1/metadata/adjust-factors"
 	barsPath           = "/v1/market/bars"
 	snapshotsPath      = "/v1/market/snapshots"
+	etfComponentsPath  = "/v1/market/etf-components"
+	etfCashPath        = "/v1/market/etf-cash-components"
+	etfPCFStatusPath   = "/v1/market/etf-pcf-status"
+	barStreamPath      = "/v1/stream/market/bars"
 	snapshotStreamPath = "/v1/stream/market/snapshots"
 	tradingDayPath     = "/v1/metadata/trading-day"
 )
@@ -153,10 +157,37 @@ func (client *MeridianClient) MarketSnapshotStream(ctx context.Context, values u
 	if strings.TrimSpace(query.Get("include_existing")) == "" {
 		query.Set("include_existing", "true")
 	}
+	if strings.TrimSpace(query.Get("data_scope")) == "" {
+		query.Set("data_scope", client.snapshotDataScope)
+	}
 	if strings.TrimSpace(query.Get("watch_interval_ms")) == "" {
 		query.Set("watch_interval_ms", "1000")
 	}
-	upstreamURL := client.baseURL + snapshotStreamPath
+	return client.marketStream(ctx, snapshotStreamPath, query)
+}
+
+func (client *MeridianClient) MarketBarStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	if client == nil {
+		return nil, errors.New("meridian client is nil")
+	}
+	query := cloneValues(values)
+	if strings.TrimSpace(query.Get("frequency")) == "" {
+		query.Set("frequency", "1m")
+	}
+	if strings.TrimSpace(query.Get("data_scope")) == "" {
+		query.Set("data_scope", "realtime")
+	}
+	if strings.TrimSpace(query.Get("include_existing")) == "" {
+		query.Set("include_existing", "true")
+	}
+	if strings.TrimSpace(query.Get("watch_interval_ms")) == "" {
+		query.Set("watch_interval_ms", "1000")
+	}
+	return client.marketStream(ctx, barStreamPath, query)
+}
+
+func (client *MeridianClient) marketStream(ctx context.Context, path string, query url.Values) (*http.Response, error) {
+	upstreamURL := client.baseURL + path
 	if encoded := query.Encode(); encoded != "" {
 		upstreamURL += "?" + encoded
 	}
@@ -186,6 +217,27 @@ func (client *MeridianClient) MetadataAdjustFactors(ctx context.Context, values 
 	return client.getJSON(ctx, adjustFactorsPath, cloneValues(values))
 }
 
+func (client *MeridianClient) MarketETFComponents(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, etfComponentsPath, cloneValues(values))
+}
+
+func (client *MeridianClient) MarketETFCashComponents(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, etfCashPath, cloneValues(values))
+}
+
+func (client *MeridianClient) MarketETFPCFStatus(ctx context.Context) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, etfPCFStatusPath, nil)
+}
+
 func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values) (MeridianResponse, error) {
 	if client == nil {
 		return MeridianResponse{}, errors.New("meridian client is nil")
@@ -200,11 +252,7 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 		if tradeDate, err := client.previousOrCurrentTradingDate(ctx, date); err == nil && tradeDate != "" {
 			query.Set("trade_date", tradeDate)
 			if strings.TrimSpace(query.Get("data_scope")) == "" {
-				if tradeDate == today {
-					query.Set("data_scope", "realtime")
-				} else {
-					query.Set("data_scope", "historical")
-				}
+				query.Set("data_scope", defaultBarsDataScope(tradeDate, today, client.now()))
 			}
 		}
 	}
@@ -426,6 +474,17 @@ func shouldUseBarsPreviousTradingDay(values url.Values, today string) bool {
 	}
 	tradeDate := compactMeridianDate(strings.TrimSpace(values.Get("trade_date")))
 	return tradeDate == "" || tradeDate == today
+}
+
+func defaultBarsDataScope(tradeDate, today string, now time.Time) string {
+	if tradeDate != today {
+		return "historical"
+	}
+	local := now.In(timeutil.Location())
+	if local.Hour()*60+local.Minute() >= 15*60 {
+		return "auto"
+	}
+	return "realtime"
 }
 
 func meridianDateString(value any) string {

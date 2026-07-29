@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -80,6 +81,7 @@ type SecurityContribution struct {
 	BuyQuantity        int64      `json:"buy_quantity"`
 	SellQuantity       int64      `json:"sell_quantity"`
 	RedemptionQuantity int64      `json:"redemption_quantity,omitempty"`
+	RedemptionUnit     int64      `json:"redemption_unit,omitempty"`
 	BuyAmount          float64    `json:"buy_amount"`
 	SellAmount         float64    `json:"sell_amount"`
 	Turnover           float64    `json:"turnover"`
@@ -145,12 +147,13 @@ type contributionBucket struct {
 }
 
 type t0RedemptionGroup struct {
-	securityID  string
-	instrument  contributionInstrument
-	orders      []trading.Order
-	buyFills    []trading.Fill
-	redemptions []trading.Fill
-	flags       []string
+	securityID     string
+	instrument     contributionInstrument
+	orders         []trading.Order
+	buyFills       []trading.Fill
+	redemptions    []trading.Fill
+	redemptionUnit int64
+	flags          []string
 }
 
 type contributionFee struct {
@@ -269,7 +272,9 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		rules = nil
 	}
 
-	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(ctx, normalizedDate, orders, fills, instruments)
+	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
+	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
+	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
 	for _, item := range service.calculateT0Contributions(ctx, normalizedDate, t0Groups, result.Summary.OpenEconomicNAV) {
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
@@ -662,7 +667,57 @@ func (service *Service) loadContributionInstruments(ctx context.Context, tradeDa
 	return items, flags
 }
 
-func (service *Service) buildT0Groups(_ context.Context, _ string, orders []trading.Order, fills []trading.Fill, instruments map[string]contributionInstrument) ([]t0RedemptionGroup, map[string]bool, map[string]bool) {
+func (service *Service) loadPCFRedemptionUnits(ctx context.Context, tradeDate string, fills []trading.Fill) (map[string]int64, []string) {
+	securitySet := make(map[string]struct{})
+	for _, fill := range fills {
+		if isRedemptionFill(fill) {
+			securitySet[contributionSecurityID(fill.Symbol, fill.Exchange)] = struct{}{}
+		}
+	}
+	if len(securitySet) == 0 {
+		return nil, nil
+	}
+	if service.market == nil {
+		return nil, []string{"meridian_etf_pcf_unavailable"}
+	}
+	securityIDs := make([]string, 0, len(securitySet))
+	for securityID := range securitySet {
+		securityIDs = append(securityIDs, securityID)
+	}
+	sort.Strings(securityIDs)
+	units := make(map[string]int64, len(securityIDs))
+	flags := make([]string, 0)
+	for start := 0; start < len(securityIDs); start += contributionMarketBatch {
+		end := start + contributionMarketBatch
+		if end > len(securityIDs) {
+			end = len(securityIDs)
+		}
+		batch := securityIDs[start:end]
+		response, err := service.market.MarketETFCashComponents(ctx, url.Values{
+			"security_ids": {strings.Join(batch, ",")},
+			"trade_date":   {strings.ReplaceAll(tradeDate, "-", "")},
+			"limit":        {strconv.Itoa(len(batch))},
+		})
+		if err != nil || response.StatusCode >= http.StatusBadRequest || response.Payload["error"] != nil {
+			flags = appendUnique(flags, "meridian_etf_pcf_unavailable")
+			continue
+		}
+		for _, row := range contributionRows(response.Payload) {
+			securityID := strings.ToUpper(contributionString(row["security_id"]))
+			value, ok := contributionFloat(row["unit_subscribe_redeem"])
+			if !ok || value <= 0 || math.Abs(value-math.Round(value)) > 1e-6 {
+				continue
+			}
+			units[securityID] = int64(math.Round(value))
+		}
+	}
+	if len(units) < len(securityIDs) {
+		flags = append(flags, "missing_meridian_etf_redemption_unit")
+	}
+	return units, flags
+}
+
+func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fill, instruments map[string]contributionInstrument, redemptionUnits map[string]int64) ([]t0RedemptionGroup, map[string]bool, map[string]bool) {
 	ordersByID := make(map[string]trading.Order, len(orders))
 	fillsByOrder := make(map[string][]trading.Fill)
 	for _, order := range orders {
@@ -696,9 +751,10 @@ func (service *Service) buildT0Groups(_ context.Context, _ string, orders []trad
 		redemption := redemptions[0]
 		securityID := contributionSecurityID(redemption.Symbol, redemption.Exchange)
 		group := t0RedemptionGroup{
-			securityID:  securityID,
-			instrument:  instruments[securityID],
-			redemptions: redemptions,
+			securityID:     securityID,
+			instrument:     instruments[securityID],
+			redemptions:    redemptions,
+			redemptionUnit: redemptionUnits[securityID],
 		}
 		redemptionOrder := ordersByID[redemption.GatewayOrderID]
 		explicitGroupID := firstNonBlank(redemption.T0OrderGroupID, redemptionOrder.T0OrderGroupID)
@@ -736,6 +792,11 @@ func (service *Service) buildT0Groups(_ context.Context, _ string, orders []trad
 		}
 		if target <= 0 {
 			target = redemptionOrder.OrderQty
+		}
+		if group.redemptionUnit <= 0 {
+			group.flags = appendUnique(group.flags, "missing_meridian_etf_redemption_unit")
+		} else if target <= 0 || target%group.redemptionUnit != 0 {
+			group.flags = appendUnique(group.flags, "redemption_quantity_not_pcf_unit_multiple")
 		}
 		var selectedQty int64
 		for _, order := range candidates {
@@ -826,6 +887,7 @@ func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate s
 		QualityFlags:     append([]string(nil), group.flags...),
 		Orders:           len(group.orders) + 1,
 		Fills:            len(group.buyFills) + len(group.redemptions),
+		RedemptionUnit:   group.redemptionUnit,
 	}
 	for _, fill := range group.buyFills {
 		item.BuyQuantity += fill.Qty
@@ -861,7 +923,8 @@ func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate s
 		item.ReferenceIOPV = floatPointer(value)
 	}
 
-	completeCost := item.BuyQuantity == item.RedemptionQuantity && item.BuyQuantity > 0
+	validPCFUnit := item.RedemptionUnit <= 0 || item.RedemptionQuantity%item.RedemptionUnit == 0
+	completeCost := item.BuyQuantity == item.RedemptionQuantity && item.BuyQuantity > 0 && validPCFUnit
 	if !completeCost {
 		item.QualityFlags = appendUnique(item.QualityFlags, "incomplete_t0_buy_cost")
 	}

@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.19`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.20`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,11 +35,12 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.19.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.20.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率和异常订单。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 20. `list_transfers()` 和 `ComponentTransfer` 独立读取 ETF 申赎成分股划转，不把划转混入普通成交。
+21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
 
 尚未完成：
 
@@ -81,21 +82,21 @@ sdk/python/
 Meridian 当前参考命令：
 
 ```bash
-python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk-0.1.7.tar.gz"
+python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk-0.1.15.tar.gz"
 ```
 
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.19.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.19.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.20.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -331,6 +332,11 @@ client = RelayClient(
 | `list_reconciliation_breaks(...)` | `GET /v1/reconciliations/breaks` | 查询盘后差异 |
 | `get_meridian_bars(security_id=..., trade_date=...)` | `GET /v1/meridian/market/bars` | 查询 Meridian bars 薄代理，参数口径以 Meridian 为准，常用 `trade_date` 分钟线 |
 | `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)` | `GET /v1/meridian/metadata/adjust-factors` | 查询 Meridian 复权因子薄代理，响应字段以 Meridian 为准 |
+| `get_meridian_etf_components(security_id=..., trade_date=...)` | `GET /v1/meridian/market/etf-components` | 查询 ETF PCF 成分清单；数量和现金替代字段保持 Meridian 原始类型 |
+| `get_meridian_etf_cash_components(security_ids=..., trade_date=...)` | `GET /v1/meridian/market/etf-cash-components` | 查询 ETF PCF 现金清单和 `unit_subscribe_redeem` 最小申赎单位 |
+| `get_meridian_etf_pcf_status()` | `GET /v1/meridian/market/etf-pcf-status` | 查询 PCF 最近同步交易日和任务状态 |
+
+Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go HTTP 薄客户端读取交易页和账表所需数据，因此运行时不安装 Meridian Python SDK；策略研究若需要 Meridian `0.1.15` 的市场回放、全市场任务或游标消费，应直接使用 Meridian SDK，并把这类行情处理放在 Prism/回测侧。
 
 ### 交易
 

@@ -173,6 +173,50 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/meridian/market/etf-components":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["588200.SH"])[0],
+                                "component_security_id": "688361.SH",
+                                "stock_amount": "425",
+                            }
+                        ],
+                        "meta": {"schema_version": "etf_component.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/market/etf-cash-components":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["588200.SH"])[0],
+                                "unit_subscribe_redeem": "4500000",
+                            }
+                        ],
+                        "meta": {"schema_version": "etf_cash_component.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/market/etf-pcf-status":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": {"schema_version": "etf_pcf_status.v1", "state": {"status": "success"}},
+                        "meta": {"schema_version": "etf_pcf_status.v1"},
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/orders":
             self._json(
                 {
@@ -552,11 +596,26 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(bars["data"][0]["close"], 9.46)
         factors = self.client.get_meridian_adjust_factors(security_id="600000.SH", start_date="20260601", end_date="20260612")
         self.assertEqual(factors["data"][0]["adj_factor"], 1.2345)
+        components = self.client.get_meridian_etf_components(
+            security_id="588200.SH",
+            security_id_pattern="588*.SH",
+            trade_date="20260729",
+        )
+        self.assertEqual(components["data"][0]["component_security_id"], "688361.SH")
+        cash = self.client.get_meridian_etf_cash_components(security_ids=["588200.SH"], trade_date="20260729")
+        self.assertEqual(cash["data"][0]["unit_subscribe_redeem"], "4500000")
+        pcf_status = self.client.get_meridian_etf_pcf_status()
+        self.assertEqual(pcf_status["data"]["state"]["status"], "success")
 
-        self.assertEqual(RelayHandler.requests[-2][1], "/v1/meridian/market/bars")
-        self.assertEqual(RelayHandler.requests[-2][2]["trade_date"], ["20260612"])
-        self.assertEqual(RelayHandler.requests[-1][1], "/v1/meridian/metadata/adjust-factors")
-        self.assertEqual(RelayHandler.requests[-1][2]["start_date"], ["20260601"])
+        requests = RelayHandler.requests[-5:]
+        self.assertEqual(requests[0][1], "/v1/meridian/market/bars")
+        self.assertEqual(requests[0][2]["trade_date"], ["20260612"])
+        self.assertEqual(requests[1][1], "/v1/meridian/metadata/adjust-factors")
+        self.assertEqual(requests[1][2]["start_date"], ["20260601"])
+        self.assertEqual(requests[2][1], "/v1/meridian/market/etf-components")
+        self.assertEqual(requests[2][2]["security_id_pattern"], ["588*.SH"])
+        self.assertEqual(requests[3][2]["security_ids"], ["588200.SH"])
+        self.assertEqual(requests[4][1], "/v1/meridian/market/etf-pcf-status")
 
     def test_record_settlement_snapshot(self):
         result = self.client.record_settlement_snapshot(
