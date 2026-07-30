@@ -1,0 +1,466 @@
+.operations-page {
+  overflow: auto;
+  background: var(--canvas);
+}
+
+.operations-status {
+  min-height: calc(100vh - var(--header-h));
+  padding: 22px 24px 36px;
+}
+
+.operations-head,
+.operations-panel-head,
+.operations-actions,
+.dlq-filters,
+.dlq-pagination,
+.dlq-pagination div,
+.detail-actions {
+  display: flex;
+  align-items: center;
+}
+
+.operations-head {
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.operations-head h1 {
+  margin: 2px 0 4px;
+  color: #f3f4f6;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.operations-head .eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font: 700 11px "JetBrains Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+}
+
+.operations-head .lead {
+  margin: 0;
+  color: var(--muted-2);
+}
+
+.operations-actions {
+  gap: 8px;
+}
+
+.operations-actions label {
+  display: grid;
+  grid-template-columns: auto 180px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-2);
+}
+
+.operations-actions select,
+.operations-actions button,
+.stream-role-tabs button,
+.dlq-filters select,
+.dlq-filters button,
+.dlq-pagination button,
+.detail-actions button,
+.detail-review input,
+.detail-review textarea {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.operations-actions select,
+.dlq-filters select,
+.detail-review input,
+.detail-review textarea {
+  padding: 0 10px;
+}
+
+.operations-actions button,
+.dlq-filters button,
+.detail-actions button {
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.operations-actions button,
+.detail-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.operations-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-1);
+}
+
+.operations-overview > div {
+  min-height: 96px;
+  padding: 17px 20px;
+  border-right: 1px solid var(--border);
+}
+
+.operations-overview > div:last-child {
+  border-right: 0;
+}
+
+.operations-overview span,
+.operations-overview small {
+  display: block;
+  color: var(--muted);
+}
+
+.operations-overview strong {
+  display: block;
+  margin: 7px 0 2px;
+  color: #f3f4f6;
+  font: 700 23px "JetBrains Mono", ui-monospace, monospace;
+}
+
+.operations-panel {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-1);
+}
+
+.operations-panel-head {
+  justify-content: space-between;
+  min-height: 58px;
+  padding: 10px 14px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.operations-panel-head h2 {
+  margin: 0 0 3px;
+  color: #e8e9ed;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.operations-panel-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.operations-table-wrap {
+  overflow: auto;
+}
+
+.operations-status table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.operations-status th,
+.operations-status td {
+  height: 42px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(54, 58, 69, 0.72);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.operations-status th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.operations-status tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.operations-status tbody tr:hover {
+  background: rgba(41, 98, 255, 0.07);
+}
+
+.operations-status td.mono-cell {
+  color: #b8c6ea;
+  font: 12px "JetBrains Mono", ui-monospace, monospace;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 23px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.status-badge::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.status-online,
+.status-ok {
+  border-color: rgba(8, 153, 129, 0.45);
+  color: #36c9ad;
+}
+
+.status-warning,
+.status-broker_not_ready,
+.status-reconnecting {
+  border-color: rgba(255, 152, 0, 0.46);
+  color: #ffb44a;
+}
+
+.status-critical,
+.status-error,
+.status-stale,
+.status-degraded,
+.status-missing {
+  border-color: rgba(242, 54, 69, 0.48);
+  color: #ff6e79;
+}
+
+.status-off_hours,
+.status-idle,
+.status-unknown {
+  color: #9297a5;
+}
+
+.stream-role-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.stream-role-tabs button {
+  min-width: 54px;
+  padding: 0 10px;
+  color: var(--muted-2);
+  cursor: pointer;
+}
+
+.stream-role-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #b7c8ff;
+}
+
+.dlq-filters {
+  gap: 8px;
+}
+
+.dlq-workspace {
+  display: grid;
+  grid-template-columns: minmax(720px, 1.5fr) minmax(360px, 0.7fr);
+  min-height: 360px;
+}
+
+.dlq-workspace > .operations-table-wrap {
+  border-right: 1px solid var(--border);
+}
+
+.dlq-body-row {
+  cursor: pointer;
+}
+
+.dlq-body-row.selected {
+  background: var(--accent-soft);
+}
+
+.dlq-pagination {
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.dlq-pagination div {
+  gap: 5px;
+}
+
+.dlq-pagination button {
+  width: 34px;
+  padding: 0;
+  color: #c8cad1;
+  cursor: pointer;
+}
+
+.dlq-pagination button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.dlq-detail {
+  min-width: 0;
+  padding: 16px;
+  background: #181c26;
+}
+
+.empty-detail {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+  color: var(--muted);
+}
+
+.detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-heading h3 {
+  margin: 0;
+  color: #eef0f4;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.detail-heading code {
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.detail-meta div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-1);
+}
+
+.detail-meta span,
+.detail-meta strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-meta span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.detail-meta strong {
+  margin-top: 4px;
+  color: #d9dce3;
+  font-size: 12px;
+}
+
+.dlq-json,
+.review-history {
+  max-height: 230px;
+  margin: 8px 0 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--code);
+}
+
+.dlq-json {
+  padding: 12px;
+  color: #b9c7e8;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.detail-review {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-review input,
+.detail-review textarea {
+  width: 100%;
+}
+
+.detail-review textarea {
+  min-height: 64px;
+  padding-top: 8px;
+  resize: vertical;
+}
+
+.detail-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.review-history {
+  padding: 8px 10px;
+}
+
+.review-history div {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.review-history div:last-child {
+  border-bottom: 0;
+}
+
+.operations-toast {
+  position: fixed;
+  top: 70px;
+  right: 22px;
+  z-index: 10;
+  max-width: 420px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: #202532;
+  color: #e8eaf0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.operations-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.operations-toast.error {
+  border-color: rgba(242, 54, 69, 0.6);
+}
+
+@media (max-width: 1450px) {
+  .dlq-workspace {
+    grid-template-columns: minmax(690px, 1.4fr) minmax(330px, 0.6fr);
+  }
+
+  .operations-status th,
+  .operations-status td {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+}

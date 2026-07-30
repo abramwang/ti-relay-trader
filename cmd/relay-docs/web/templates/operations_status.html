@@ -1,0 +1,157 @@
+<section class="operations-status">
+  <div class="operations-head">
+    <div>
+      <p class="eyebrow">Runtime Operations</p>
+      <h1>网关与 Redis Stream</h1>
+      <p class="lead">查看 OC 心跳、输出流消费进度、真实 lag 和死信处置记录。</p>
+    </div>
+    <div class="operations-actions">
+      <label>
+        账户
+        <select id="operationsAccountFilter">
+          <option value="">全部账户</option>
+        </select>
+      </label>
+      <button id="refreshOperations" type="button">刷新</button>
+    </div>
+  </div>
+
+  <div class="operations-overview">
+    <div>
+      <span>监控窗口</span>
+      <strong id="monitoringWindow">--</strong>
+      <small id="monitoringReason">等待服务状态</small>
+    </div>
+    <div>
+      <span>在线网关</span>
+      <strong id="gatewayOnline">--</strong>
+      <small id="gatewayAttention">--</small>
+    </div>
+    <div>
+      <span>待消费消息</span>
+      <strong id="streamLag">--</strong>
+      <small id="streamAttention">--</small>
+    </div>
+    <div>
+      <span>待处理死信</span>
+      <strong id="pendingDLQ">--</strong>
+      <small id="operationsUpdatedAt">尚未刷新</small>
+    </div>
+  </div>
+
+  <section class="operations-panel gateway-panel">
+    <div class="operations-panel-head">
+      <div>
+        <h2>Gateway 状态</h2>
+        <span>按 broker / gateway / account 聚合最新心跳</span>
+      </div>
+      <span id="gatewayCount">--</span>
+    </div>
+    <div class="operations-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>账户</th>
+            <th>Gateway</th>
+            <th>状态</th>
+            <th>最后心跳</th>
+            <th>心跳间隔</th>
+            <th>待处理交易</th>
+            <th>待处理查询</th>
+            <th>最近问题</th>
+          </tr>
+        </thead>
+        <tbody id="gatewayBody">
+          <tr><td colspan="8">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="operations-panel stream-panel">
+    <div class="operations-panel-head">
+      <div>
+        <h2>Stream 消费进度</h2>
+        <span>lag 为 Redis 最新位置与 PostgreSQL checkpoint 之间的实际条数</span>
+      </div>
+      <div class="stream-role-tabs" role="tablist" aria-label="Stream role">
+        <button class="active" type="button" data-stream-role="">全部</button>
+        <button type="button" data-stream-role="reply">Reply</button>
+        <button type="button" data-stream-role="event">Event</button>
+        <button type="button" data-stream-role="hb">HB</button>
+        <button type="button" data-stream-role="dlq">DLQ</button>
+      </div>
+    </div>
+    <div class="operations-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>账户</th>
+            <th>Role</th>
+            <th>状态</th>
+            <th>长度</th>
+            <th>Lag</th>
+            <th>Redis 最新 ID</th>
+            <th>Checkpoint</th>
+            <th>最后消费</th>
+            <th>最后错误</th>
+          </tr>
+        </thead>
+        <tbody id="streamBody">
+          <tr><td colspan="9">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="operations-panel dlq-panel">
+    <div class="operations-panel-head">
+      <div>
+        <h2>Dead Letter Queue</h2>
+        <span id="dlqWriteMode">处置动作读取中</span>
+      </div>
+      <div class="dlq-filters">
+        <select id="dlqStatusFilter" aria-label="死信状态">
+          <option value="">全部状态</option>
+          <option value="pending">待处理</option>
+          <option value="acknowledged">已确认</option>
+          <option value="ignored">已忽略</option>
+          <option value="replayed">已重放</option>
+        </select>
+        <button id="refreshDLQ" type="button">刷新死信</button>
+      </div>
+    </div>
+    <div class="dlq-workspace">
+      <div class="operations-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>账户</th>
+              <th>状态</th>
+              <th>错误码</th>
+              <th>Action</th>
+              <th>消息</th>
+              <th>Stream ID</th>
+            </tr>
+          </thead>
+          <tbody id="dlqBody">
+            <tr><td colspan="7">加载中...</td></tr>
+          </tbody>
+        </table>
+        <div class="dlq-pagination">
+          <span id="dlqPageText">第 1 页</span>
+          <div>
+            <button id="dlqPrevious" type="button" aria-label="上一页">‹</button>
+            <button id="dlqNext" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
+      </div>
+      <aside class="dlq-detail" id="dlqDetail">
+        <div class="empty-detail">选择一条死信查看原文与审核记录</div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="operations-toast" id="operationsToast" role="status" aria-live="polite"></div>
+</section>

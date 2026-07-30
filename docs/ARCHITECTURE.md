@@ -155,7 +155,7 @@ relay:{env}:v1:{broker_id}:{gateway_id}
 | `cmd.query` | `{prefix}:cmd.query` | relay -> 前置 | 资金、持仓、订单、成交查询刷新 |
 | `reply` | `{prefix}:reply` | 前置 -> relay | command 回包、分页查询结果、拒单/失败信息 |
 | `event` | `{prefix}:event` | 前置 -> relay | `order.event`、`fill.event` 持续推送 |
-| `hb` | `{prefix}:hb` | 前置 -> relay | 心跳原始归档；合并 gateway 状态仍待补充 |
+| `hb` | `{prefix}:hb` | 前置 -> relay | 读取最新心跳并按 gateway/account 聚合；原始消息继续归档 |
 | `dlq` | `{prefix}:dlq` | 前置 -> relay | 死信原始归档；告警和处置状态仍待补充 |
 
 每条 Redis Stream entry 只使用一个 `body` field，值为 JSON 字符串。relay 写入 command 时生成统一 envelope：

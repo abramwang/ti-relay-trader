@@ -49,6 +49,12 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if cfg.Performance.ETFT0FrictionRate != 0.0015 {
 		t.Fatalf("performance ETF T0 friction rate = %v, want 0.0015", cfg.Performance.ETFT0FrictionRate)
 	}
+	if cfg.Operations.HeartbeatStaleSeconds != 30 ||
+		cfg.Operations.LagWarningEntries != 500 ||
+		cfg.Operations.LagCriticalEntries != 5000 ||
+		cfg.Operations.SnapshotCacheSeconds != 5 {
+		t.Fatalf("operations defaults = %+v", cfg.Operations)
+	}
 }
 
 func TestDecodeRejectsInvalidETFT0FrictionRate(t *testing.T) {
@@ -57,6 +63,16 @@ func TestDecodeRejectsInvalidETFT0FrictionRate(t *testing.T) {
 		t.Fatal("expected invalid ETF T0 friction rate error")
 	}
 	if !strings.Contains(err.Error(), "etf_t0_friction_rate") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsReversedOperationsLagThresholds(t *testing.T) {
+	_, err := Decode(strings.NewReader(`operations: {lag_warning_entries: 100, lag_critical_entries: 10}`))
+	if err == nil {
+		t.Fatal("expected invalid operations lag threshold error")
+	}
+	if !strings.Contains(err.Error(), "lag_critical_entries") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

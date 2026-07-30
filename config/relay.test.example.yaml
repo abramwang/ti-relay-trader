@@ -32,6 +32,13 @@ market:
   snapshot_market_level: "level1"
   snapshot_data_scope: "realtime"
 
+operations:
+  actions_write_enabled: false
+  heartbeat_stale_seconds: 30
+  lag_warning_entries: 500
+  lag_critical_entries: 5000
+  snapshot_cache_seconds: 5
+
 auto_refresh:
   enabled: true
   debounce_seconds: 2

@@ -300,6 +300,38 @@ go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 
 只读探测入口见 [docs/REDIS_STREAM_PROBE.md](/home/ti-relay-trader/docs/REDIS_STREAM_PROBE.md:1)。
 
+## Gateway、Stream 与 DLQ 运维
+
+独立页面 `/operations` 和接口 `GET /v1/operations/status` 统一展示：
+
+1. 每个 broker/gateway/account 的最新 OC 心跳、组件状态、pending trade/query 和最近 `BROKER_NOT_READY`。
+2. `reply/event/hb/dlq` 的 Redis 最新 ID、PostgreSQL checkpoint、最近消费时间、累计处理/错误数和 lag。
+3. DLQ 的待处理、已确认、已忽略、已重放数量及原始报文。
+4. `/v1/status.runtime` 的紧凑摘要，供首页、探针和外部监控读取。
+
+默认阈值和写保护：
+
+```yaml
+operations:
+  actions_write_enabled: false
+  heartbeat_stale_seconds: 30
+  lag_warning_entries: 500
+  lag_critical_entries: 5000
+  snapshot_cache_seconds: 5
+```
+
+lag 不是 Redis stream ID 的数值差。Relay 在 checkpoint 与最新 ID 不同时，通过有上限的 Redis 服务端遍历计算 checkpoint 之后的实际条数；达到 critical 上限后返回下界并标记 `lag_capped=true`，避免异常积压拖慢状态页。`hb` 用于读取最新 gateway 状态，不作为业务账本消费 lag。
+
+告警窗口由 Meridian 交易日和 `08:55-15:15 Asia/Shanghai` 共同决定。非交易日、盘前和收盘后 gateway/stream 显示 `off_hours`，历史心跳、checkpoint 错误和 DLQ 证据仍保留可查。
+
+DLQ 读取始终可用。审核动作使用以下接口，并写入不可变 `stream_dlq_reviews` 审计记录：
+
+- `GET /v1/operations/dlq`
+- `GET /v1/operations/dlq/reviews`
+- `POST /v1/operations/dlq/review`
+
+生产默认 `actions_write_enabled=false`。`replayed` 仅表示操作人记录“已通过受控流程重放”，该接口不会把原始坏消息自动重新发布到 Redis，避免误触交易命令。
+
 ## Cron 任务管理
 
 后台批处理可以优先采用 cron 管理，适合以下任务：
@@ -371,5 +403,5 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 1. 正式部署脚本、systemd unit 或 `/etc/cron.d/relay-trader` 模板。
 2. cron 安装后验收 `/v1/status` 和 `/jobs` 中的日流程最近运行状态。
-3. worker 心跳状态合并、DLQ 告警和处置页面。
+3. 将 `/v1/status.runtime` 的 warning/critical 状态接入外部告警通知。
 4. 更完整的人工复核报告导出。

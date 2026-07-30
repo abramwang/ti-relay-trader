@@ -34,6 +34,7 @@ type Dependencies struct {
 	Settlements  SettlementStore
 	Accounts     AccountAliasStore
 	Performance  PerformanceService
+	Operations   OperationsService
 	Market       *market.MeridianClient
 	Events       *events.Hub
 	DatabasePing HealthCheckFunc
@@ -107,6 +108,14 @@ type PerformanceService interface {
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 }
 
+type OperationsService interface {
+	Snapshot(ctx context.Context, force bool) (redisstream.RuntimeSnapshot, error)
+	ListDeadLetters(ctx context.Context, query ledger.DeadLetterQuery) (ledger.DeadLetterPage, error)
+	AddDeadLetterReview(ctx context.Context, review ledger.DeadLetterReview) (ledger.DeadLetterReview, error)
+	ListDeadLetterReviews(ctx context.Context, streamKey, streamID string) ([]ledger.DeadLetterReview, error)
+	ActionsWriteEnabled() bool
+}
+
 type PerformanceSeriesSummary struct {
 	AccountID                string   `json:"account_id"`
 	DateFrom                 string   `json:"date_from"`
@@ -140,6 +149,7 @@ type Server struct {
 	settles SettlementStore
 	aliases AccountAliasStore
 	perf    PerformanceService
+	ops     OperationsService
 	market  *market.MeridianClient
 	events  *events.Hub
 	health  statusHealthChecks
@@ -176,6 +186,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		settles: deps.Settlements,
 		aliases: deps.Accounts,
 		perf:    deps.Performance,
+		ops:     deps.Operations,
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
@@ -207,6 +218,10 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
+	mux.HandleFunc("/v1/operations/status", server.handleOperationsStatus)
+	mux.HandleFunc("/v1/operations/dlq/reviews", server.handleDeadLetterReviews)
+	mux.HandleFunc("/v1/operations/dlq/review", server.handleDeadLetterReview)
+	mux.HandleFunc("/v1/operations/dlq", server.handleDeadLetters)
 	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
 	mux.HandleFunc("/v1/reconciliations/breaks", server.handleReconciliationBreaks)
 	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
@@ -2899,6 +2914,120 @@ func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleOperationsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.ops == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability is unavailable", nil)
+		return
+	}
+	force, _ := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get("force")))
+	snapshot, err := s.ops.Snapshot(r.Context(), force)
+	if err != nil {
+		s.logger.Warn("runtime_observability_snapshot_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability query failed", nil)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, snapshot)
+}
+
+func (s *Server) handleDeadLetters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.ops == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability is unavailable", nil)
+		return
+	}
+	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
+	result, err := s.ops.ListDeadLetters(r.Context(), ledger.DeadLetterQuery{
+		AccountID: r.URL.Query().Get("account_id"),
+		Status:    r.URL.Query().Get("status"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		s.writeOperationsError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleDeadLetterReview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+		return
+	}
+	if s.ops == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability is unavailable", nil)
+		return
+	}
+	if !s.ops.ActionsWriteEnabled() {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "operations actions write is disabled", nil)
+		return
+	}
+	defer r.Body.Close()
+	var request DeadLetterReviewRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid dead letter review body", err.Error())
+		return
+	}
+	review, err := s.ops.AddDeadLetterReview(r.Context(), ledger.DeadLetterReview{
+		StreamKey: request.StreamKey,
+		StreamID:  request.StreamID,
+		Status:    request.Status,
+		Operator:  request.Operator,
+		Note:      request.Note,
+	})
+	if err != nil {
+		s.writeOperationsError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"review": review})
+}
+
+func (s *Server) handleDeadLetterReviews(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.ops == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability is unavailable", nil)
+		return
+	}
+	reviews, err := s.ops.ListDeadLetterReviews(
+		r.Context(),
+		r.URL.Query().Get("stream_key"),
+		r.URL.Query().Get("stream_id"),
+	)
+	if err != nil {
+		s.writeOperationsError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"reviews": reviews,
+		"count":   len(reviews),
+	})
+}
+
+func (s *Server) writeOperationsError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, ledger.ErrInvalidLedgerInput):
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid operations request", err.Error())
+	case errors.Is(err, ledger.ErrDeadLetterNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "dead letter not found", err.Error())
+	default:
+		s.logger.Warn("operations_request_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "operations request failed", nil)
+	}
+}
+
 func (s *Server) handleSettlementSnapshots(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
@@ -3602,12 +3731,56 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 		Jobs:               jobScheduleViews(s.cfg.Jobs, s.cfg.Service.Timezone),
 	}
 	if includeDependencies {
-		view.TradingDay = s.meridianTradingDayStatus(ctx, view.TradingDay)
 		view.Dependencies = s.dependencyStatus(ctx)
+		view.Runtime = s.runtimeStatus(ctx)
+		if view.Runtime != nil {
+			view.Dependencies["stream_runtime"] = DependencyStatus{
+				Status:     view.Runtime.Status,
+				Configured: true,
+			}
+		}
+		if view.Runtime != nil && view.Runtime.TradingDayKnown {
+			isTradingDay := view.Runtime.IsTradingDay
+			view.TradingDay.IsTradingDay = &isTradingDay
+			view.TradingDay.PreviousOrCurrentTradingDate = view.Runtime.PreviousOrCurrentTradingDate
+			view.TradingDay.Source = "meridian"
+		} else {
+			view.TradingDay = s.meridianTradingDayStatus(ctx, view.TradingDay)
+		}
 		view.Status = statusFromDependencies(view.Dependencies)
 		view.JobRuns = s.latestJobRunStatus(ctx)
 	}
 	return view
+}
+
+func (s *Server) runtimeStatus(ctx context.Context) *RuntimeStatusView {
+	if s.ops == nil {
+		return nil
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	snapshot, err := s.ops.Snapshot(checkCtx, false)
+	if err != nil {
+		return &RuntimeStatusView{Status: "unavailable", GeneratedAt: timeutil.Now()}
+	}
+	status := "ok"
+	if snapshot.Summary.GatewaysAttention > 0 ||
+		snapshot.Summary.StreamsAttention > 0 ||
+		snapshot.Summary.PendingDeadLetters > 0 {
+		status = "attention"
+	}
+	return &RuntimeStatusView{
+		Status:                       status,
+		MonitoringActive:             snapshot.MonitoringActive,
+		MonitoringReason:             snapshot.MonitoringReason,
+		GeneratedAt:                  snapshot.GeneratedAt,
+		TradingDayKnown:              snapshot.TradingDayKnown,
+		IsTradingDay:                 snapshot.IsTradingDay,
+		PreviousOrCurrentTradingDate: snapshot.PreviousOrCurrentTradingDate,
+		Summary:                      snapshot.Summary,
+		DeadLetters:                  snapshot.DeadLetters,
+		ActionsWriteEnabled:          snapshot.ActionsWriteEnabled,
+	}
 }
 
 func (s *Server) meridianTradingDayStatus(ctx context.Context, view TradingDayStatusView) TradingDayStatusView {
@@ -3699,12 +3872,15 @@ func configDependency(enabled bool) DependencyStatus {
 }
 
 func statusFromDependencies(dependencies map[string]DependencyStatus) string {
-	for _, name := range []string{"database", "redis", "order_service"} {
+	for _, name := range []string{"database", "redis", "order_service", "stream_runtime"} {
 		dep, ok := dependencies[name]
 		if !ok {
 			continue
 		}
 		if name == "order_service" && dep.Status != "ok" {
+			return "degraded"
+		}
+		if name == "stream_runtime" && dep.Status != "ok" {
 			return "degraded"
 		}
 		if dep.Configured && dep.Status != "ok" {
@@ -3776,6 +3952,20 @@ type StatusView struct {
 	Jobs               map[string]JobScheduleView  `json:"jobs,omitempty"`
 	Dependencies       map[string]DependencyStatus `json:"dependencies,omitempty"`
 	JobRuns            map[string]JobRunStatusView `json:"job_runs,omitempty"`
+	Runtime            *RuntimeStatusView          `json:"runtime,omitempty"`
+}
+
+type RuntimeStatusView struct {
+	Status                       string                     `json:"status"`
+	MonitoringActive             bool                       `json:"monitoring_active"`
+	MonitoringReason             string                     `json:"monitoring_reason"`
+	GeneratedAt                  time.Time                  `json:"generated_at,omitempty"`
+	TradingDayKnown              bool                       `json:"trading_day_known"`
+	IsTradingDay                 bool                       `json:"is_trading_day"`
+	PreviousOrCurrentTradingDate string                     `json:"previous_or_current_trading_date,omitempty"`
+	Summary                      redisstream.RuntimeSummary `json:"summary"`
+	DeadLetters                  map[string]int64           `json:"dead_letters,omitempty"`
+	ActionsWriteEnabled          bool                       `json:"actions_write_enabled"`
 }
 
 type TradingDayStatusView struct {
@@ -3862,6 +4052,14 @@ type AccountAliasRequest struct {
 
 type PerformanceOperatorRequest struct {
 	Operator string `json:"operator,omitempty"`
+}
+
+type DeadLetterReviewRequest struct {
+	StreamKey string `json:"stream_key"`
+	StreamID  string `json:"stream_id"`
+	Status    string `json:"status"`
+	Operator  string `json:"operator"`
+	Note      string `json:"note,omitempty"`
 }
 
 type EconomicNAVRequest struct {

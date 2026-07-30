@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-07-29`
+更新时间：`2026-07-30`
 
 ## 状态口径
 
@@ -18,7 +18,7 @@
 | P1 工程化底座 | done | 建立正式服务骨架和配置体系 | 服务模式拆分、配置文件、日志、错误模型、基础测试 |
 | P2 标准交易接口设计 | done | 定义统一 A 股交易 API 和 schema | 账户、资金、持仓、下单、撤单、订单、成交、事件 schema |
 | P3 多账户路由 | done | 管理 account/broker/gateway/stream prefix 关系 | 多账户配置、账户启停状态、路由校验和路由诊断接口 |
-| P4 Redis Stream 前置对接 | doing | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等和位点管理 |
+| P4 Redis Stream 前置对接 | done | 对接托管机房前置服务协议 | 命令写入、reply/event/hb/dlq 消费、幂等、位点和运行可观测 |
 | P5 交易账表持久化 | doing | 建立标准交易账表和审计流水 | PostgreSQL migration、订单表、成交表、资金持仓表、事件表 |
 | P6 9092 正式交易 API 与 SDK | doing | 给交易软件和策略提供统一接口 | HTTP API、Python SDK、事件订阅、状态查询、错误码 |
 | P7 交易日流程与盘后对账 | doing | 管理盘前初始化、收盘后结算和盘后对账 | Python jobs、任务状态、对账批次、差异表、修复入口 |
@@ -28,11 +28,10 @@
 
 ## 当前优先级
 
-1. 完成 N9 Redis Stream 运行可观测：把 `hb` 合并为 gateway 在线状态，补 stream lag、DLQ 告警和处置状态。
-2. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
-3. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
-4. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
-5. P9 模拟柜台继续暂缓；relay 保持实盘接入、账本、审计、对账和策略交易 API 的职责边界。
+1. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+2. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
+3. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
+4. P9 模拟柜台继续暂缓；relay 保持实盘接入、账本、审计、对账和策略交易 API 的职责边界。
 
 ## 阶段任务
 
@@ -92,17 +91,20 @@
 
 ### N9 Redis Stream 与 gateway 可观测
 
-状态：`doing`
+状态：`done`
 
 目标：把已经归档的 `hb/dlq` 和 `stream_checkpoints` 变成可判断、可告警、可处置的运行状态。
 
-范围：
+完成项：
 
-- 按 broker/gateway/account 汇总最后心跳时间、在线状态、重连状态和 `BROKER_NOT_READY`。
-- 计算每条 output stream 的最新 ID、checkpoint、lag、最近消费时间和最近错误。
-- 为 DLQ 建立待处理、已确认、已忽略、已重放状态和审计字段。
-- 在 `/v1/status` 和独立运维页面展示 gateway、stream 和 DLQ 状态。
-- 定义分级告警阈值，避免柜台非服务时间产生无意义告警。
+- [x] 按 broker/gateway/account 汇总最后心跳时间、在线/重连状态、pending trade/query 和最近 `BROKER_NOT_READY`。
+- [x] 展示每条 `reply/event/hb/dlq` 的 Redis 最新 ID、PostgreSQL checkpoint、最近消费时间、最近错误和真实 lag。
+- [x] lag 使用有上限的 Redis 服务端计数；支持 stream trim，阈值默认 warning `500`、critical `5000`。
+- [x] 新增 `stream_dlq_reviews` 不可变审核记录和 DLQ/`BROKER_NOT_READY` 部分索引；DLQ 支持待处理、已确认、已忽略、已重放状态，生产审核写默认关闭。
+- [x] 新增 `/v1/operations/status`、`/v1/operations/dlq*`，并把摘要接入 `/v1/status`。
+- [x] 新增 `/operations` 独立运维页面和 API Console 运维分组。
+- [x] 使用 Meridian 交易日和 `08:55-15:15 Asia/Shanghai` 监控窗口抑制非交易日、盘前和收盘后误报。
+- [x] 生产只读验收：6 个 gateway 收盘后均为 `off_hours`，24 条 output stream lag 为 0，DLQ pending 为 0，下单账户仍为 0。
 
 ### N10 账本生产化与环境隔离
 
@@ -217,9 +219,9 @@
 - [x] 支持外部订单按 `order_stream_id` 建立稳定单笔委托 ID，并保留原始篮子/柜台 ID。
 - [x] 支持 `synthetic_from_fill` 最小订单事件和 ETF `transfer.event` 语义，普通成交与零价划转分离。
 - [x] 接入 `BROKER_NOT_READY` 瞬时错误，不把柜台未登录/重连误写为业务拒单。
-- [ ] 将 `hb` 合并为 gateway 心跳状态。
-- [ ] 增加 `dlq` 告警和处置状态。
-- [ ] 增加 Redis output stream lag、最近消费时间和 checkpoint 健康状态。
+- [x] 将 `hb` 合并为 gateway 心跳状态。
+- [x] 增加 `dlq` 告警和处置状态。
+- [x] 增加 Redis output stream lag、最近消费时间和 checkpoint 健康状态。
 
 ### P5 交易账表持久化
 

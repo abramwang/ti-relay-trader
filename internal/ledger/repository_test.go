@@ -993,6 +993,51 @@ func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[8], `"last_batch_orders":3`)
 }
 
+func TestListDeadLettersBuildsFilteredPageQuery(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListDeadLetters(context.Background(), DeadLetterQuery{
+		AccountID: "acct-1",
+		Status:    "pending",
+		Page:      3,
+		PageSize:  25,
+	})
+	if err == nil {
+		t.Fatal("ListDeadLetters() expected query error")
+	}
+	requireQueryContains(t, exec.query, "FROM raw_stream_messages raw")
+	requireQueryContains(t, exec.query, "LEFT JOIN LATERAL")
+	requireQueryContains(t, exec.query, "LIMIT $3 OFFSET $4")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[0] != "acct-1" || exec.args[1] != "pending" || exec.args[2] != 25 || exec.args[3] != 50 {
+		t.Fatalf("dead letter query args = %#v", exec.args)
+	}
+}
+
+func TestAddDeadLetterReviewBuildsAuditedInsert(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.AddDeadLetterReview(context.Background(), DeadLetterReview{
+		StreamKey: "relay:prod:v1:huaxin:acct-1:dlq",
+		StreamID:  "1-0",
+		Status:    "acknowledged",
+		Operator:  "relay-admin",
+		Note:      "validated",
+	})
+	if err == nil {
+		t.Fatal("AddDeadLetterReview() expected query error")
+	}
+	requireQueryContains(t, exec.query, "INSERT INTO stream_dlq_reviews")
+	requireQueryContains(t, exec.query, "WHERE EXISTS")
+	requireQueryContains(t, exec.query, "stream_role = 'dlq'")
+	requireArgLen(t, exec.args, 5)
+	if exec.args[2] != "acknowledged" || exec.args[3] != "relay-admin" {
+		t.Fatalf("dead letter review args = %#v", exec.args)
+	}
+}
+
 func TestUpsertJobRunBuildsStatusWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

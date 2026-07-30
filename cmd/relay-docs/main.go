@@ -67,6 +67,7 @@ var portalAssets embed.FS
 var apiConsoleTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/api_console.html"))
 var tradeTerminalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/trade_terminal.html"))
 var jobStatusTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/job_status.html"))
+var operationsStatusTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/operations_status.html"))
 var portalTemplate = template.Must(template.ParseFS(portalAssets, "web/templates/portal.html"))
 
 var (
@@ -253,6 +254,7 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	mux.HandleFunc("/api-console", server.handleAPIConsole)
 	mux.HandleFunc("/trade", server.handleTradeTerminal)
 	mux.HandleFunc("/jobs", server.handleJobStatus)
+	mux.HandleFunc("/operations", server.handleOperationsStatus)
 	staticFS, err := fs.Sub(portalAssets, "web/static")
 	if err != nil {
 		return err
@@ -372,12 +374,27 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		return api.Dependencies{}, nil, func() {}, err
 	}
 
+	var runtimeOperations *redisstream.RuntimeObservability
+	if strings.TrimSpace(cfg.Redis.URL) != "" {
+		runtimeOperations, err = redisstream.NewRuntimeObservability(cfg, repo, marketClient)
+		if err != nil {
+			logger.Warn("relay_runtime_observability_unavailable", "error", err)
+		} else {
+			previousCleanup := cleanup
+			cleanup = func() {
+				_ = runtimeOperations.Close()
+				previousCleanup()
+			}
+		}
+	}
+
 	deps := api.Dependencies{
 		Orders:       orders,
 		Jobs:         repo,
 		Settlements:  repo,
 		Accounts:     repo,
 		Performance:  perf,
+		Operations:   runtimeOperations,
 		Market:       marketClient,
 		DatabasePing: db.PingContext,
 	}
@@ -573,6 +590,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
           <a href="/trade">打开交易终端</a>
           <a href="/api-console">接口工作台</a>
           <a href="/jobs">后台任务</a>
+          <a href="/operations">运行运维</a>
           <a href="/docs/python-sdk">Python SDK</a>
         </div>
       </div>
@@ -581,6 +599,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
       <a class="entry" href="/trade"><span>↗</span><strong>交易终端</strong><small>行情、下单、资金、持仓、委托、成交与绩效</small></a>
       <a class="entry" href="/api-console"><span>API</span><strong>接口工作台</strong><small>标准交易与查询接口，写操作受服务端权限控制</small></a>
       <a class="entry" href="/jobs"><span>JOB</span><strong>后台任务</strong><small>盘前初始化、盘后结算与历史运行报告</small></a>
+      <a class="entry" href="/operations"><span>OPS</span><strong>运行运维</strong><small>Gateway 心跳、Stream lag、checkpoint 与死信审核</small></a>
       <a class="entry" href="/docs"><span>DEV</span><strong>开发者中心</strong><small>文档、SDK、Schema、测试与项目结构</small></a>
     </section>
     <section class="panel route-panel">
@@ -956,6 +975,31 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260727-0005">`),
 		Content:    template.HTML(body.String()),
 		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260727-0005"></script>`),
+		ProjectDir: s.root,
+	})
+}
+
+func (s *portalServer) handleOperationsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/operations" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var body bytes.Buffer
+	if err := operationsStatusTemplate.Execute(&body, map[string]string{
+		"PublicURL": publicURL,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, pageData{
+		Title:      "运行运维",
+		Active:     "operations",
+		Summary:    "Gateway heartbeat, Redis Stream lag and dead-letter operations",
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/operations-status.css?v=20260730-0001">`),
+		Content:    template.HTML(body.String()),
+		Scripts:    template.HTML(`<script defer src="/assets/operations-status.js?v=20260730-0001"></script>`),
 		ProjectDir: s.root,
 	})
 }

@@ -44,6 +44,15 @@ performance:
   warning_tolerance_cny: 500
   warning_tolerance_bp: 1
 
+operations:
+  # Heartbeat/lag/DLQ reads are always available. Keep review writes disabled
+  # until the 9092 endpoint is protected by trusted access control.
+  actions_write_enabled: false
+  heartbeat_stale_seconds: 30
+  lag_warning_entries: 500
+  lag_critical_entries: 5000
+  snapshot_cache_seconds: 5
+
 auto_refresh:
   # When order/fill events arrive from Redis, relay coalesces one asset query and
   # one positions query per account. This keeps /trade fresh without polling the

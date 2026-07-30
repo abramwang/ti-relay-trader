@@ -1189,6 +1189,10 @@ const getStreamCheckpointSQL = streamCheckpointSelectColumns + `
 WHERE stream_key = $1
 `
 
+const listStreamCheckpointsSQL = streamCheckpointSelectColumns + `
+ORDER BY stream_key
+`
+
 const upsertStreamCheckpointSQL = `
 INSERT INTO stream_checkpoints (
     stream_key,
@@ -1213,6 +1217,105 @@ ON CONFLICT (stream_key) DO UPDATE SET
     error_count = stream_checkpoints.error_count + EXCLUDED.error_count,
     metadata = stream_checkpoints.metadata || EXCLUDED.metadata,
     updated_at = now()
+`
+
+const deadLetterPageSQL = `
+SELECT
+    raw.stream_key,
+    raw.stream_id,
+    COALESCE(raw.account_id, ''),
+    COALESCE(raw.action, ''),
+    COALESCE(raw.code, ''),
+    COALESCE(raw.body->>'message', ''),
+    COALESCE(raw.origin_message_id, ''),
+    COALESCE(raw.request_id, ''),
+    raw.body,
+    raw.received_at,
+    COALESCE(review.status, 'pending') AS review_status,
+    COALESCE(review.operator, ''),
+    COALESCE(review.note, ''),
+    review.created_at,
+    count(*) OVER() AS total_count
+FROM raw_stream_messages raw
+LEFT JOIN LATERAL (
+    SELECT status, operator, note, created_at
+    FROM stream_dlq_reviews
+    WHERE stream_key = raw.stream_key
+        AND stream_id = raw.stream_id
+    ORDER BY review_id DESC
+    LIMIT 1
+) review ON true
+WHERE raw.stream_role = 'dlq'
+    AND ($1 = '' OR raw.account_id = $1)
+    AND ($2 = '' OR COALESCE(review.status, 'pending') = $2)
+ORDER BY raw.received_at DESC, raw.raw_message_pk DESC
+LIMIT $3 OFFSET $4
+`
+
+const deadLetterStatusCountsSQL = `
+SELECT
+    COALESCE(review.status, 'pending') AS review_status,
+    count(*)::bigint
+FROM raw_stream_messages raw
+LEFT JOIN LATERAL (
+    SELECT status
+    FROM stream_dlq_reviews
+    WHERE stream_key = raw.stream_key
+        AND stream_id = raw.stream_id
+    ORDER BY review_id DESC
+    LIMIT 1
+) review ON true
+WHERE raw.stream_role = 'dlq'
+GROUP BY COALESCE(review.status, 'pending')
+ORDER BY review_status
+`
+
+const insertDeadLetterReviewSQL = `
+INSERT INTO stream_dlq_reviews (
+    stream_key,
+    stream_id,
+    status,
+    operator,
+    note
+)
+SELECT $1, $2, $3, $4, $5
+WHERE EXISTS (
+    SELECT 1
+    FROM raw_stream_messages
+    WHERE stream_key = $1
+        AND stream_id = $2
+        AND stream_role = 'dlq'
+)
+RETURNING review_id, created_at
+`
+
+const deadLetterReviewsSQL = `
+SELECT
+    review_id,
+    stream_key,
+    stream_id,
+    status,
+    operator,
+    note,
+    created_at
+FROM stream_dlq_reviews
+WHERE stream_key = $1
+    AND stream_id = $2
+ORDER BY review_id DESC
+`
+
+const latestBrokerNotReadySQL = `
+SELECT DISTINCT ON (account_id)
+    account_id,
+    code,
+    COALESCE(body->>'message', ''),
+    received_at
+FROM raw_stream_messages
+WHERE code = 'BROKER_NOT_READY'
+    AND account_id IS NOT NULL
+    AND account_id <> ''
+    AND received_at >= $1
+ORDER BY account_id, received_at DESC
 `
 
 const jobRunSelectColumns = `

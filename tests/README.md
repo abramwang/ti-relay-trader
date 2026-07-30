@@ -46,4 +46,4 @@ python3 -m venv .venv
 2. 增加 API Console 响应断言和可保存的冒烟测试集合。
 3. 在 CI 中使用临时 PostgreSQL 执行 migration 和 repository 集成测试。
 4. 增加盘后对账、绩效贡献和人工复核报告的固定样例数据测试。
-5. 增加 gateway 心跳、stream lag 和 DLQ 处置状态测试。
+5. [x] 增加 gateway 心跳、stream lag、非交易时段抑制和 DLQ 处置写保护测试；`operations_visual_smoke.py` 验证生产 6 gateway / 24 output stream 页面。

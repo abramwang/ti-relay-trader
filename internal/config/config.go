@@ -29,6 +29,7 @@ type Config struct {
 	Redis       RedisConfig          `yaml:"redis"`
 	Market      MarketConfig         `yaml:"market"`
 	Performance PerformanceConfig    `yaml:"performance"`
+	Operations  OperationsConfig     `yaml:"operations"`
 	AutoRefresh AutoRefreshConfig    `yaml:"auto_refresh"`
 	Accounts    []AccountRouteConfig `yaml:"accounts"`
 	Jobs        map[string]JobConfig `yaml:"jobs"`
@@ -81,6 +82,14 @@ type PerformanceConfig struct {
 	AutoToleranceBP      float64 `yaml:"auto_tolerance_bp"`
 	WarningToleranceCNY  float64 `yaml:"warning_tolerance_cny"`
 	WarningToleranceBP   float64 `yaml:"warning_tolerance_bp"`
+}
+
+type OperationsConfig struct {
+	ActionsWriteEnabled   bool  `yaml:"actions_write_enabled"`
+	HeartbeatStaleSeconds int   `yaml:"heartbeat_stale_seconds"`
+	LagWarningEntries     int64 `yaml:"lag_warning_entries"`
+	LagCriticalEntries    int64 `yaml:"lag_critical_entries"`
+	SnapshotCacheSeconds  int   `yaml:"snapshot_cache_seconds"`
 }
 
 type AutoRefreshConfig struct {
@@ -219,6 +228,18 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Performance.WarningToleranceBP == 0 {
 		cfg.Performance.WarningToleranceBP = 1
 	}
+	if cfg.Operations.HeartbeatStaleSeconds == 0 {
+		cfg.Operations.HeartbeatStaleSeconds = 30
+	}
+	if cfg.Operations.LagWarningEntries == 0 {
+		cfg.Operations.LagWarningEntries = 500
+	}
+	if cfg.Operations.LagCriticalEntries == 0 {
+		cfg.Operations.LagCriticalEntries = 5000
+	}
+	if cfg.Operations.SnapshotCacheSeconds == 0 {
+		cfg.Operations.SnapshotCacheSeconds = 5
+	}
 	if cfg.AutoRefresh.DebounceSeconds == 0 {
 		cfg.AutoRefresh.DebounceSeconds = 2
 	}
@@ -270,6 +291,18 @@ func (cfg Config) Validate() error {
 	if cfg.Performance.WarningToleranceCNY < cfg.Performance.AutoToleranceCNY ||
 		cfg.Performance.WarningToleranceBP < cfg.Performance.AutoToleranceBP {
 		return fmt.Errorf("performance warning tolerances must be >= auto tolerances")
+	}
+	if cfg.Operations.HeartbeatStaleSeconds < 1 {
+		return fmt.Errorf("operations.heartbeat_stale_seconds must be positive")
+	}
+	if cfg.Operations.LagWarningEntries < 0 || cfg.Operations.LagCriticalEntries < 0 {
+		return fmt.Errorf("operations lag thresholds must be non-negative")
+	}
+	if cfg.Operations.LagCriticalEntries < cfg.Operations.LagWarningEntries {
+		return fmt.Errorf("operations.lag_critical_entries must be >= lag_warning_entries")
+	}
+	if cfg.Operations.SnapshotCacheSeconds < 1 {
+		return fmt.Errorf("operations.snapshot_cache_seconds must be positive")
 	}
 	if cfg.AutoRefresh.DebounceSeconds < 0 {
 		return fmt.Errorf("auto_refresh.debounce_seconds must be non-negative")

@@ -726,6 +726,58 @@
     ]
   },
   {
+    "id": "operations-status",
+    "group": "运维",
+    "title": "Gateway 与 Stream 状态",
+    "method": "GET",
+    "path": "/v1/operations/status",
+    "status": "ready",
+    "fields": [
+      { "name": "force", "label": "force（跳过 5 秒缓存）", "source": "query", "type": "select", "defaultValue": "false", "options": ["false", "true"] }
+    ]
+  },
+  {
+    "id": "operations-dlq",
+    "group": "运维",
+    "title": "DLQ 列表",
+    "method": "GET",
+    "path": "/v1/operations/dlq",
+    "status": "ready",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "" },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "pending", "acknowledged", "ignored", "replayed"] },
+      { "name": "page", "label": "page", "source": "query", "type": "number", "defaultValue": "1" },
+      { "name": "page_size", "label": "page_size", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "operations-dlq-reviews",
+    "group": "运维",
+    "title": "DLQ 审核轨迹",
+    "method": "GET",
+    "path": "/v1/operations/dlq/reviews",
+    "status": "ready",
+    "fields": [
+      { "name": "stream_key", "label": "stream_key", "source": "query", "required": true, "defaultValue": "" },
+      { "name": "stream_id", "label": "stream_id", "source": "query", "required": true, "defaultValue": "" }
+    ]
+  },
+  {
+    "id": "operations-dlq-review",
+    "group": "运维",
+    "title": "记录 DLQ 审核",
+    "method": "POST",
+    "path": "/v1/operations/dlq/review",
+    "status": "ready",
+    "fields": [
+      { "name": "stream_key", "label": "stream_key", "source": "body", "required": true, "defaultValue": "" },
+      { "name": "stream_id", "label": "stream_id", "source": "body", "required": true, "defaultValue": "" },
+      { "name": "status", "label": "status", "source": "body", "type": "select", "required": true, "defaultValue": "acknowledged", "options": ["acknowledged", "ignored", "replayed"] },
+      { "name": "operator", "label": "operator", "source": "body", "required": true, "defaultValue": "" },
+      { "name": "note", "label": "note", "source": "body", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "events",
     "group": "事件",
     "title": "事件流",

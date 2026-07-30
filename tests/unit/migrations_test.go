@@ -84,6 +84,39 @@ func TestStreamCheckpointRollbackDropsCursorTable(t *testing.T) {
 	}
 }
 
+func TestStreamOperationsMigrationAddsAuditedDLQReviews(t *testing.T) {
+	upSQL := readMigration(t, "000015_stream_operations.up.sql")
+	for _, snippet := range []string{
+		"CREATE TABLE stream_dlq_reviews",
+		"FOREIGN KEY (stream_key, stream_id)",
+		"REFERENCES raw_stream_messages(stream_key, stream_id)",
+		"CHECK (status IN ('acknowledged', 'ignored', 'replayed'))",
+		"CREATE INDEX stream_dlq_reviews_message_idx",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("stream operations migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000015_stream_operations.down.sql")
+	if !strings.Contains(downSQL, "DROP TABLE IF EXISTS stream_dlq_reviews") {
+		t.Fatal("stream operations rollback missing review table")
+	}
+}
+
+func TestStreamOperationsIndexesCoverRuntimeFilters(t *testing.T) {
+	upSQL := readMigration(t, "000016_stream_operations_indexes.up.sql")
+	for _, snippet := range []string{
+		"CREATE INDEX raw_stream_messages_dlq_operations_idx",
+		"WHERE stream_role = 'dlq'",
+		"CREATE INDEX raw_stream_messages_broker_not_ready_idx",
+		"WHERE code = 'BROKER_NOT_READY'",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("stream operations index migration missing snippet: %s", snippet)
+		}
+	}
+}
+
 func TestReconciliationIdempotencyMigrationContainsUniqueIndexes(t *testing.T) {
 	upSQL := readMigration(t, "000004_reconciliation_idempotency.up.sql")
 	for _, snippet := range []string{

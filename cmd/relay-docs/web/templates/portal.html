@@ -22,6 +22,7 @@
         <a class="nav-item" href="/trade">交易终端</a>
         <a class="nav-item {{if eq .Active "console"}}active{{end}}" href="/api-console">接口工作台</a>
         <a class="nav-item {{if eq .Active "jobs"}}active{{end}}" href="/jobs">任务</a>
+        <a class="nav-item {{if eq .Active "operations"}}active{{end}}" href="/operations">运维</a>
         <a class="nav-item {{if or (eq .Active "docs") (eq .Active "tests") (eq .Active "tree")}}active{{end}}" href="/docs">开发者</a>
       </nav>
       <div class="header-right">
@@ -32,7 +33,7 @@
     </header>
 
     <div class="portal-workspace">
-      {{if or (eq .Active "home") (eq .Active "console") (eq .Active "jobs")}}
+      {{if or (eq .Active "home") (eq .Active "console") (eq .Active "jobs") (eq .Active "operations")}}
         <main class="page-main app-page {{.Active}}-page">
           {{.Content}}
         </main>

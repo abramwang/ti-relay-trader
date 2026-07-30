@@ -99,6 +99,10 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/meridian/market/etf-pcf-status` | ETF PCF 同步状态薄代理 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian 复权因子薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |
+| `GET` | `/v1/operations/status` | 查看 gateway 心跳、output stream lag 和 DLQ 汇总 |
+| `GET` | `/v1/operations/dlq` | 分页查询 DLQ 原始消息和当前审核状态 |
+| `GET` | `/v1/operations/dlq/reviews` | 查询指定 DLQ 的不可变审核轨迹 |
+| `POST` | `/v1/operations/dlq/review` | 记录确认、忽略或已重放；受独立运维写开关保护 |
 | `GET` | `/v1/events/stream` | SSE 实时事件流，支持按 `account_id` 过滤订单、成交、资金和持仓变化 |
 
 ## 测试行情参考

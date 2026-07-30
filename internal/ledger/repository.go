@@ -18,6 +18,7 @@ var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
 var ErrAssetNotFound = errors.New("asset snapshot not found")
 var ErrStreamCheckpointNotFound = errors.New("stream checkpoint not found")
+var ErrDeadLetterNotFound = errors.New("dead letter not found")
 var ErrJobRunNotFound = errors.New("job run not found")
 
 type Executor interface {
@@ -74,6 +75,54 @@ type StreamCheckpoint struct {
 	ErrorCount      int64          `json:"error_count"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
+}
+
+type DeadLetterQuery struct {
+	AccountID string
+	Status    string
+	Page      int
+	PageSize  int
+}
+
+type DeadLetterItem struct {
+	StreamKey       string         `json:"stream_key"`
+	StreamID        string         `json:"stream_id"`
+	AccountID       string         `json:"account_id,omitempty"`
+	Action          string         `json:"action,omitempty"`
+	Code            string         `json:"code,omitempty"`
+	Message         string         `json:"message,omitempty"`
+	OriginMessageID string         `json:"origin_message_id,omitempty"`
+	RequestID       string         `json:"request_id,omitempty"`
+	Body            map[string]any `json:"body,omitempty"`
+	ReceivedAt      time.Time      `json:"received_at"`
+	ReviewStatus    string         `json:"review_status"`
+	ReviewOperator  string         `json:"review_operator,omitempty"`
+	ReviewNote      string         `json:"review_note,omitempty"`
+	ReviewedAt      time.Time      `json:"reviewed_at,omitempty"`
+}
+
+type DeadLetterPage struct {
+	Items      []DeadLetterItem `json:"items"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	TotalCount int64            `json:"total_count"`
+}
+
+type DeadLetterReview struct {
+	ReviewID  int64     `json:"review_id,omitempty"`
+	StreamKey string    `json:"stream_key"`
+	StreamID  string    `json:"stream_id"`
+	Status    string    `json:"status"`
+	Operator  string    `json:"operator"`
+	Note      string    `json:"note,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+type GatewayIssue struct {
+	AccountID  string    `json:"account_id"`
+	Code       string    `json:"code"`
+	Message    string    `json:"message,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 type JobRun struct {
@@ -1319,6 +1368,34 @@ func (repo *Repository) GetStreamCheckpoint(ctx context.Context, streamKey strin
 	return checkpoint, nil
 }
 
+func (repo *Repository) ListStreamCheckpoints(ctx context.Context) ([]StreamCheckpoint, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, listStreamCheckpointsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("list stream checkpoints: %w", err)
+	}
+	defer rows.Close()
+
+	checkpoints := make([]StreamCheckpoint, 0)
+	for rows.Next() {
+		checkpoint, err := scanStreamCheckpoint(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan stream checkpoint: %w", err)
+		}
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list stream checkpoints: %w", err)
+	}
+	return checkpoints, nil
+}
+
 func (repo *Repository) UpsertStreamCheckpoint(ctx context.Context, checkpoint StreamCheckpoint) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -1361,6 +1438,253 @@ func (repo *Repository) UpsertStreamCheckpoint(ctx context.Context, checkpoint S
 		return fmt.Errorf("upsert stream checkpoint %s: %w", checkpoint.StreamKey, err)
 	}
 	return nil
+}
+
+func (repo *Repository) ListDeadLetters(ctx context.Context, query DeadLetterQuery) (DeadLetterPage, error) {
+	if repo == nil || repo.exec == nil {
+		return DeadLetterPage{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.Status = strings.ToLower(strings.TrimSpace(query.Status))
+	if query.Status != "" && !validDeadLetterStatus(query.Status, true) {
+		return DeadLetterPage{}, fmt.Errorf("%w: invalid dead letter status %q", ErrInvalidLedgerInput, query.Status)
+	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PageSize <= 0 {
+		query.PageSize = 50
+	}
+	if query.PageSize > 500 {
+		query.PageSize = 500
+	}
+
+	queryer, err := repo.queryer()
+	if err != nil {
+		return DeadLetterPage{}, err
+	}
+	rows, err := queryer.QueryContext(
+		ctx,
+		deadLetterPageSQL,
+		query.AccountID,
+		query.Status,
+		query.PageSize,
+		(query.Page-1)*query.PageSize,
+	)
+	if err != nil {
+		return DeadLetterPage{}, fmt.Errorf("list dead letters: %w", err)
+	}
+	defer rows.Close()
+
+	page := DeadLetterPage{
+		Items:    make([]DeadLetterItem, 0),
+		Page:     query.Page,
+		PageSize: query.PageSize,
+	}
+	for rows.Next() {
+		var item DeadLetterItem
+		var body []byte
+		var reviewedAt sql.NullTime
+		if err := rows.Scan(
+			&item.StreamKey,
+			&item.StreamID,
+			&item.AccountID,
+			&item.Action,
+			&item.Code,
+			&item.Message,
+			&item.OriginMessageID,
+			&item.RequestID,
+			&body,
+			&item.ReceivedAt,
+			&item.ReviewStatus,
+			&item.ReviewOperator,
+			&item.ReviewNote,
+			&reviewedAt,
+			&page.TotalCount,
+		); err != nil {
+			return DeadLetterPage{}, fmt.Errorf("scan dead letter: %w", err)
+		}
+		item.ReviewedAt = reviewedAt.Time
+		item.Body = map[string]any{}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &item.Body); err != nil {
+				return DeadLetterPage{}, fmt.Errorf("decode dead letter body: %w", err)
+			}
+		}
+		page.Items = append(page.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return DeadLetterPage{}, fmt.Errorf("list dead letters: %w", err)
+	}
+	return page, nil
+}
+
+func (repo *Repository) DeadLetterStatusCounts(ctx context.Context) (map[string]int64, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, deadLetterStatusCountsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("count dead letters: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[string]int64{
+		"pending":      0,
+		"acknowledged": 0,
+		"ignored":      0,
+		"replayed":     0,
+	}
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan dead letter count: %w", err)
+		}
+		counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("count dead letters: %w", err)
+	}
+	return counts, nil
+}
+
+func (repo *Repository) AddDeadLetterReview(ctx context.Context, review DeadLetterReview) (DeadLetterReview, error) {
+	if repo == nil || repo.exec == nil {
+		return DeadLetterReview{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	review.StreamKey = strings.TrimSpace(review.StreamKey)
+	review.StreamID = strings.TrimSpace(review.StreamID)
+	review.Status = strings.ToLower(strings.TrimSpace(review.Status))
+	review.Operator = strings.TrimSpace(review.Operator)
+	review.Note = strings.TrimSpace(review.Note)
+	if review.StreamKey == "" || review.StreamID == "" {
+		return DeadLetterReview{}, fmt.Errorf("%w: stream_key and stream_id are required", ErrInvalidLedgerInput)
+	}
+	if !validDeadLetterStatus(review.Status, false) {
+		return DeadLetterReview{}, fmt.Errorf("%w: invalid dead letter review status %q", ErrInvalidLedgerInput, review.Status)
+	}
+	if review.Operator == "" {
+		return DeadLetterReview{}, fmt.Errorf("%w: operator is required", ErrInvalidLedgerInput)
+	}
+	if len(review.Note) > 2000 {
+		return DeadLetterReview{}, fmt.Errorf("%w: note exceeds 2000 characters", ErrInvalidLedgerInput)
+	}
+
+	queryer, err := repo.queryer()
+	if err != nil {
+		return DeadLetterReview{}, err
+	}
+	rows, err := queryer.QueryContext(
+		ctx,
+		insertDeadLetterReviewSQL,
+		review.StreamKey,
+		review.StreamID,
+		review.Status,
+		review.Operator,
+		review.Note,
+	)
+	if err != nil {
+		return DeadLetterReview{}, fmt.Errorf("add dead letter review: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return DeadLetterReview{}, fmt.Errorf("add dead letter review: %w", err)
+		}
+		return DeadLetterReview{}, fmt.Errorf("%w: %s/%s", ErrDeadLetterNotFound, review.StreamKey, review.StreamID)
+	}
+	if err := rows.Scan(&review.ReviewID, &review.CreatedAt); err != nil {
+		return DeadLetterReview{}, fmt.Errorf("scan dead letter review: %w", err)
+	}
+	return review, nil
+}
+
+func (repo *Repository) ListDeadLetterReviews(ctx context.Context, streamKey, streamID string) ([]DeadLetterReview, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	streamKey = strings.TrimSpace(streamKey)
+	streamID = strings.TrimSpace(streamID)
+	if streamKey == "" || streamID == "" {
+		return nil, fmt.Errorf("%w: stream_key and stream_id are required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, deadLetterReviewsSQL, streamKey, streamID)
+	if err != nil {
+		return nil, fmt.Errorf("list dead letter reviews: %w", err)
+	}
+	defer rows.Close()
+
+	reviews := make([]DeadLetterReview, 0)
+	for rows.Next() {
+		var review DeadLetterReview
+		if err := rows.Scan(
+			&review.ReviewID,
+			&review.StreamKey,
+			&review.StreamID,
+			&review.Status,
+			&review.Operator,
+			&review.Note,
+			&review.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan dead letter review: %w", err)
+		}
+		reviews = append(reviews, review)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list dead letter reviews: %w", err)
+	}
+	return reviews, nil
+}
+
+func (repo *Repository) LatestBrokerNotReady(ctx context.Context, since time.Time) (map[string]GatewayIssue, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	if since.IsZero() {
+		since = repo.now().Add(-24 * time.Hour)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, latestBrokerNotReadySQL, since)
+	if err != nil {
+		return nil, fmt.Errorf("list broker not ready issues: %w", err)
+	}
+	defer rows.Close()
+
+	issues := make(map[string]GatewayIssue)
+	for rows.Next() {
+		var issue GatewayIssue
+		if err := rows.Scan(&issue.AccountID, &issue.Code, &issue.Message, &issue.ReceivedAt); err != nil {
+			return nil, fmt.Errorf("scan broker not ready issue: %w", err)
+		}
+		issues[issue.AccountID] = issue
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list broker not ready issues: %w", err)
+	}
+	return issues, nil
+}
+
+func validDeadLetterStatus(status string, allowPending bool) bool {
+	switch status {
+	case "acknowledged", "ignored", "replayed":
+		return true
+	case "pending":
+		return allowPending
+	default:
+		return false
+	}
 }
 
 func (repo *Repository) UpsertJobRun(ctx context.Context, run JobRun) (JobRun, error) {

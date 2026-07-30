@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3 已完成，P4/P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。2026-07-29 已完成 OC v1.1 协议升级、Meridian SDK 0.1.15 能力审计，以及账户净值/上证基准/超额收益/回撤主图和六项正式数据质量检查；证券贡献、交易质量、经济净值和 NAV 对账仍按 `calculated/estimated/missing/provisional/finalized` 明示口径。`relay-sdk 0.1.20` 已发布，生产 migration `000013/000014`、历史 transfer 重放和生产只读复测均已完成；生产配置仍为 6 个只读账户、下单账户 0。下一步推进 N9 gateway、Redis Stream lag 和 DLQ 可观测。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。2026-07-30 已完成 N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测：新增 `/operations`、`/v1/operations/*`、`/v1/status.runtime` 与 migration `000015/000016`，生产 6 个 gateway、24 条 output stream 已只读验收，收盘后状态统一为 `off_hours`，lag 和 pending DLQ 均为 0。`relay-sdk 0.1.20` 已发布；生产配置仍为 6 个只读账户、下单账户 0。下一步推进 N10 测试/生产 PostgreSQL 隔离、数据库幂等和备份恢复演练。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-07-29`
+- 最近更新时间: `2026-07-30`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -137,6 +137,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/api-console` | Apifox 风格接口测试台 |
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
+| `http://relay-trader.quantstage.com/operations` | Gateway 心跳、Redis Stream lag、checkpoint 与 DLQ 运维 |
 | `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz` | Python SDK 安装包 |
 | `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
@@ -299,14 +300,11 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 完成绩效主图和正式数据质量区：账户净值、上证指数基准、超额收益、账户/基准回撤，以及估算、缺失、NAV 对账和任务状态汇总。
+1. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
 2. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
-3. 与 OC 联合修复空 `order_stream_id` 的 ETF 篮子子单共用 `gateway_order_id`，按 `docs/OC_LEDGER_QUALITY_REPORT_20260729.md` 完成实盘复测。
-4. 将 Redis `hb` 合并为 gateway 在线状态，增加 stream lag、DLQ 告警和处置状态。
-5. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
-6. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
-7. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
-8. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、告警、回滚和发布检查清单。
+3. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
+4. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
+5. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、外部告警、回滚和发布检查清单。
 
 ## README 状态维护规则
 
@@ -556,3 +554,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-29`: OC v1.1 生产只读验收完成：应用 `000013_oc_v1_1_component_transfers` 和 `000014_remove_etf_transfer_summary_fills`，历史归档重放识别 14,795 条 transfer 消息且无解析/落库错误；当日 `314000045768` 的 49 条 ETF 划转已独立查询，普通成交中不再保留 `P/R + business_type=E` 的错误 summary fill。绩效贡献只把同一稳定订单下 ETF 本体 transfer 作为赎回时点信号，成分证券 transfer 仅参与链路核对、不重复计利。
 - `2026-07-29`: 审计 Meridian SDK `0.1.15` 并同步与 Relay 边界相关的能力：Go 行情薄客户端新增 ETF PCF components/cash-components/status 和实时分钟 Bar SSE，snapshot/bar SSE 默认限定 `data_scope=realtime`；HTTP bars 在当前交易日 15:00 后改用 `data_scope=auto`，避免实时 journal 切走后当日 K 线返回空。ETF T0 贡献按 `etf_cash_component.v1.unit_subscribe_redeem` 校验赎回量整数倍，不满足时标记质量缺失；Python 日流程使用交易日接口显式 `is_trading_day` 并禁用环境代理。Relay 核心仍直接调用 Meridian HTTP，不引入包含 pandas/pyarrow 的 Meridian Python SDK 运行时依赖；市场 replay/task/cursor 能力留给 Prism/回测。发布 `relay-sdk 0.1.20`，新增三个 PCF 只读 helper。
 - `2026-07-29`: 完成 N8 绩效分析工作区：`/trade#performance` 新增 ECharts 账户净值/上证基准/超额收益主图和账户/基准回撤子图；正式数据质量区聚合资产快照与资金桥、Meridian bars、收益归因、订单成交账本、T+1 NAV 对账和盘前/盘后任务六项检查，并按通过/提示/阻断展示。辅助接口改为并行查询并加入请求代次保护，账户切换或连续查询不会被旧响应覆盖。新增 `tests/integration/performance_visual_smoke.py`，生产只读 `20260701-20260729` 的 21 个样本在 `1600x1280` 和 `1280x800` 下通过 canvas 像素、六项质量检查、无横向溢出、无控制台错误和无 4xx/5xx 验证；9092 保持 6 账户只读、`trading_enabled=0`。
+- `2026-07-30`: 完成 N9 Redis Stream 与 gateway 可观测：新增 `/operations` 页面、`/v1/operations/status`、DLQ 列表/审核轨迹接口和 `/v1/status.runtime` 摘要；按 OC 心跳聚合 gateway 状态，按 Redis 最新 ID 与 PostgreSQL checkpoint 计算有上限真实 lag，并用 Meridian 交易日及 `08:55-15:15` 窗口抑制休市误报。新增 `000015_stream_operations` 保存不可变 DLQ 审核记录，`000016` 为 DLQ 和 `BROKER_NOT_READY` 增加部分索引，生产处置写保持关闭。生产只读验收为 6 个 gateway 全部 `off_hours`、24 条 output stream lag=0、pending DLQ=0、下单账户 0；`operations_visual_smoke.py` 在 1600x1100 和 1280x800 下通过，无横向溢出、控制台错误或 4xx/5xx。

@@ -41,6 +41,13 @@ performance:
   warning_tolerance_cny: 500
   warning_tolerance_bp: 1
 
+operations:
+  actions_write_enabled: false
+  heartbeat_stale_seconds: 30
+  lag_warning_entries: 500
+  lag_critical_entries: 5000
+  snapshot_cache_seconds: 5
+
 auto_refresh:
   enabled: true
   debounce_seconds: 2

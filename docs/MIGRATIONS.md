@@ -147,6 +147,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 运行位点：
 
 1. `stream_checkpoints`
+2. `stream_dlq_reviews`
 
 日流程任务：
 
@@ -171,6 +172,7 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 10. `000012_trade_date_order_scope` 删除旧账户级订单唯一约束，将 `orders/fills/order_events` 的唯一键、外键和查询视图统一为交易日作用域；该迁移不可逆，避免回滚时丢弃合法跨日订单。
 11. `etf_component_transfers` 与 `fills` 分表：普通成交只接受正价格、正数量和稳定订单标识，ETF 申购赎回成分划转保持独立 transfer 语义，空 `component_value` 必须保留为 `NULL`。
 12. `raw_stream_messages` 对 `stream_role=dlq AND action=adapter.data_quality` 建部分索引，供后续质量告警和人工处置查询。
+13. `stream_dlq_reviews` 通过 `(stream_key, stream_id)` 外键关联 raw DLQ，每次确认、忽略或标记已重放均追加不可变记录；当前状态取最新 `review_id`，未审核消息视为 `pending`。
 
 ## 手动执行示例
 
@@ -187,6 +189,8 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000009_performance_accounting.
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000012_trade_date_order_scope.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000013_oc_v1_1_component_transfers.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000014_remove_etf_transfer_summary_fills.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000015_stream_operations.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000016_stream_operations_indexes.up.sql
 ```
 
 使用 relayctl：
@@ -220,5 +224,4 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 
 1. 增加基于临时 PostgreSQL 的 CI 集成测试。
 2. 如需更严格数据库级下单幂等，在清理历史重复数据后补充 `orders(account_id, idempotency_key)` 部分唯一约束；当前应用层已在发布 Redis 前做幂等预检。
-3. worker 心跳状态、DLQ 告警和处置状态落盘后，按实际字段补充新 migration。
-4. 内置模拟柜台 migration 暂缓；历史行情模拟撮合由回测引擎负责，外部模拟柜台如需接入应复用前置/Redis Stream 协议。
+3. 内置模拟柜台 migration 暂缓；历史行情模拟撮合由回测引擎负责，外部模拟柜台如需接入应复用前置/Redis Stream 协议。

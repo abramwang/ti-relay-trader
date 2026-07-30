@@ -219,6 +219,80 @@ func TestStatusJobRunErrorDoesNotEmitZeroTime(t *testing.T) {
 	}
 }
 
+func TestOperationsStatusAndDeadLetterQueries(t *testing.T) {
+	operations := &fakeOperationsService{
+		snapshot: redisstream.RuntimeSnapshot{
+			GeneratedAt:      timeutil.Now(),
+			Environment:      "production",
+			MonitoringActive: true,
+			MonitoringReason: "trading_session",
+			Summary: redisstream.RuntimeSummary{
+				GatewaysOnline:     2,
+				StreamsHealthy:     8,
+				TotalLag:           3,
+				PendingDeadLetters: 1,
+			},
+		},
+		deadLetters: ledger.DeadLetterPage{
+			Items: []ledger.DeadLetterItem{{
+				StreamKey:    "relay:prod:v1:huaxin:a1:dlq",
+				StreamID:     "1-0",
+				AccountID:    "a1",
+				Code:         "UNKNOWN_ACTION",
+				ReviewStatus: "pending",
+			}},
+			Page:       1,
+			PageSize:   20,
+			TotalCount: 1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Operations: operations,
+	})
+
+	statusRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(statusRecorder, httptest.NewRequest(http.MethodGet, "/v1/operations/status?force=true", nil))
+	if statusRecorder.Code != http.StatusOK || !strings.Contains(statusRecorder.Body.String(), `"gateways_online":2`) {
+		t.Fatalf("operations status = %d %s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	if !operations.force {
+		t.Fatal("operations status did not pass force=true")
+	}
+
+	dlqRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(dlqRecorder, httptest.NewRequest(http.MethodGet, "/v1/operations/dlq?account_id=a1&status=pending&page=1&page_size=20", nil))
+	if dlqRecorder.Code != http.StatusOK || !strings.Contains(dlqRecorder.Body.String(), "UNKNOWN_ACTION") {
+		t.Fatalf("dead letter response = %d %s", dlqRecorder.Code, dlqRecorder.Body.String())
+	}
+	if operations.query.AccountID != "a1" || operations.query.Status != "pending" {
+		t.Fatalf("dead letter query = %+v", operations.query)
+	}
+}
+
+func TestDeadLetterReviewWriteGuardAndAudit(t *testing.T) {
+	requestBody := `{"stream_key":"relay:prod:v1:huaxin:a1:dlq","stream_id":"1-0","status":"acknowledged","operator":"relay-admin","note":"checked"}`
+	operations := &fakeOperationsService{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Operations: operations,
+	})
+
+	forbidden := httptest.NewRecorder()
+	handler.ServeHTTP(forbidden, httptest.NewRequest(http.MethodPost, "/v1/operations/dlq/review", strings.NewReader(requestBody)))
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("disabled review status = %d, want 403: %s", forbidden.Code, forbidden.Body.String())
+	}
+
+	operations.writeEnabled = true
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/v1/operations/dlq/review", strings.NewReader(requestBody)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("enabled review status = %d, want 201: %s", created.Code, created.Body.String())
+	}
+	if operations.review.Operator != "relay-admin" || operations.review.Status != "acknowledged" {
+		t.Fatalf("saved review = %+v", operations.review)
+	}
+}
+
 func TestAccountsFromConfig(t *testing.T) {
 	cfg := config.Default()
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -2568,6 +2642,17 @@ type fakeJobRunStore struct {
 	err   error
 }
 
+type fakeOperationsService struct {
+	snapshot     redisstream.RuntimeSnapshot
+	snapshotErr  error
+	force        bool
+	deadLetters  ledger.DeadLetterPage
+	query        ledger.DeadLetterQuery
+	writeEnabled bool
+	review       ledger.DeadLetterReview
+	reviews      []ledger.DeadLetterReview
+}
+
 type fakeAccountAliasStore struct {
 	aliases        map[string]string
 	aliasIDs       []string
@@ -2907,6 +2992,31 @@ func (store *fakeJobRunStore) LatestJobRuns(_ context.Context, _ []string) ([]le
 		return nil, ledger.ErrJobRunNotFound
 	}
 	return store.runs, nil
+}
+
+func (service *fakeOperationsService) Snapshot(_ context.Context, force bool) (redisstream.RuntimeSnapshot, error) {
+	service.force = force
+	return service.snapshot, service.snapshotErr
+}
+
+func (service *fakeOperationsService) ListDeadLetters(_ context.Context, query ledger.DeadLetterQuery) (ledger.DeadLetterPage, error) {
+	service.query = query
+	return service.deadLetters, nil
+}
+
+func (service *fakeOperationsService) AddDeadLetterReview(_ context.Context, review ledger.DeadLetterReview) (ledger.DeadLetterReview, error) {
+	service.review = review
+	review.ReviewID = 1
+	review.CreatedAt = timeutil.Now()
+	return review, nil
+}
+
+func (service *fakeOperationsService) ListDeadLetterReviews(_ context.Context, _, _ string) ([]ledger.DeadLetterReview, error) {
+	return service.reviews, nil
+}
+
+func (service *fakeOperationsService) ActionsWriteEnabled() bool {
+	return service.writeEnabled
 }
 
 func (submitter *fakeOrderSubmitter) SubmitOrder(_ context.Context, req trading.SubmitOrderRequest, opts orderflow.SubmitOptions) (orderflow.SubmitOrderResult, error) {
