@@ -33,6 +33,7 @@ DEFAULT_QUERY_LIMIT = 500
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 45.0
 DEFAULT_REFRESH_POLL_SECONDS = 1.0
 FRESHNESS_CHECK_STEPS = {"asset", "positions"}
+REQUIRED_JOB_DEPENDENCIES = ("database", "redis", "order_service", "market", "event_stream")
 
 
 def business_timezone() -> timezone:
@@ -197,24 +198,49 @@ def run_daily_job(
         "errors": [],
     }
 
+    if trading_day is None:
+        trading_day_value, trading_day_report = capture_call(
+            "resolve_trading_day",
+            resolve_trading_day,
+            options,
+            requested_date,
+        )
+        report["trading_day_query"] = trading_day_report
+        if trading_day_report.get("error") or not isinstance(trading_day_value, TradingDayInfo):
+            report["trading_day"] = {
+                "requested_date": requested_date,
+                "target_trade_date": requested_date,
+                "is_trading_day": None,
+                "source": "unavailable",
+                "raw": {},
+            }
+            report["ok"] = False
+            report["errors"].append(
+                trading_day_report.get("error", "resolve_trading_day: invalid trading-day result")
+            )
+            return finish_report(report)
+        trading_day = trading_day_value
+    report["trading_day"] = trading_day.to_dict()
+    if not trading_day.is_trading_day and not options.allow_non_trading_day:
+        report["skipped"] = True
+        report["skip_reason"] = "target date is not an A-share trading day"
+        return finish_report(report)
+
     status_value, status_report = capture_call("status", relay_client.status)
     report["status"] = status_report
     if status_report.get("error"):
         report["ok"] = False
         report["errors"].append(status_report["error"])
         return finish_report(report)
-    if not isinstance(status_value, Mapping) or status_value.get("status") != "ok":
+    status_error = daily_job_status_error(status_value)
+    if status_error:
         report["ok"] = False
-        report["errors"].append(f"relay status is {getattr(status_value, 'get', lambda _name, _default=None: None)('status')!r}")
+        report["errors"].append(status_error)
         return finish_report(report)
-
-    if trading_day is None:
-        trading_day = resolve_trading_day(options, requested_date)
-    report["trading_day"] = trading_day.to_dict()
-    if not trading_day.is_trading_day and not options.allow_non_trading_day:
-        report["skipped"] = True
-        report["skip_reason"] = "target date is not an A-share trading day"
-        return finish_report(report)
+    if isinstance(status_value, Mapping) and status_value.get("status") == "degraded":
+        report.setdefault("warnings", []).append(
+            "relay status is degraded, but all daily-job dependencies are healthy"
+        )
 
     accounts_value, accounts_report = capture_call("list_accounts", relay_client.list_accounts)
     report["accounts_query"] = accounts_report
@@ -538,6 +564,27 @@ def select_accounts(accounts: Iterable[Any], requested: tuple[str, ...]) -> list
     return selected
 
 
+def daily_job_status_error(status: Any) -> str:
+    if not isinstance(status, Mapping):
+        return "relay status response is invalid"
+    status_name = str(status.get("status", "")).strip()
+    if status_name == "ok":
+        return ""
+    if status_name != "degraded":
+        return f"relay status is {status_name!r}"
+    dependencies = status.get("dependencies")
+    if not isinstance(dependencies, Mapping):
+        return "relay status is 'degraded' and dependency details are unavailable"
+    for name in REQUIRED_JOB_DEPENDENCIES:
+        dependency = dependencies.get(name)
+        if not isinstance(dependency, Mapping):
+            return f"relay required dependency {name!r} is unavailable"
+        dependency_status = str(dependency.get("status", "")).strip()
+        if dependency_status != "ok":
+            return f"relay required dependency {name!r} is {dependency_status!r}"
+    return ""
+
+
 def capture_call(
     name: str,
     func: Callable[..., Any],
@@ -680,12 +727,19 @@ def main_for(job_name: str, description: str, runner: Callable[[JobOptions], Map
             }
         )
     if options.persist:
+        trading_day_report = report.get("trading_day")
+        target_trade_date = ""
+        if isinstance(trading_day_report, Mapping):
+            target_trade_date = normalize_trade_date(str(trading_day_report.get("target_trade_date", "")))
+        if not target_trade_date:
+            target_trade_date = options.target_date or normalize_trade_date(str(report.get("started_at", "")))
         _value, persistence = capture_call(
             "record_job_run",
             RelayClient(options.base_url, timeout=options.timeout, trust_env=False).record_job_run,
             report,
             job_name=job_name,
             trigger=options.trigger,
+            target_trade_date=target_trade_date,
         )
         report["persistence"] = persistence
         if persistence.get("error"):

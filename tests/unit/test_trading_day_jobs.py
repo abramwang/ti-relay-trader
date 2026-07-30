@@ -23,6 +23,7 @@ class FakeClient:
     def __init__(self) -> None:
         self.refresh_calls: list[tuple[str, str]] = []
         self.settlement_calls: list[dict[str, object]] = []
+        self.status_value: dict[str, object] = {"status": "ok", "timezone": "Asia/Shanghai"}
         self.accounts = [
             SimpleNamespace(account_id="acct-1", enabled=True),
             SimpleNamespace(account_id="acct-disabled", enabled=False),
@@ -36,7 +37,7 @@ class FakeClient:
         self.lagging_positions: set[str] = set()
 
     def status(self):
-        return {"status": "ok", "timezone": "Asia/Shanghai"}
+        return self.status_value
 
     def list_accounts(self):
         return self.accounts
@@ -125,6 +126,54 @@ def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
 
 
 class TradingDayJobTest(unittest.TestCase):
+    def test_stream_runtime_attention_does_not_block_daily_job(self) -> None:
+        client = FakeClient()
+        client.status_value = {
+            "status": "degraded",
+            "dependencies": {
+                "database": {"status": "ok"},
+                "redis": {"status": "ok"},
+                "order_service": {"status": "ok"},
+                "market": {"status": "ok"},
+                "event_stream": {"status": "ok"},
+                "stream_runtime": {"status": "attention"},
+            },
+        }
+
+        report = run_pre_open_init(
+            JobOptions(job_name="pre_open_init", refresh_wait_seconds=0),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(len(client.refresh_calls), 4)
+        self.assertIn("all daily-job dependencies are healthy", report["warnings"][0])
+
+    def test_degraded_required_dependency_blocks_daily_job_with_trade_date(self) -> None:
+        client = FakeClient()
+        client.status_value = {
+            "status": "degraded",
+            "dependencies": {
+                "database": {"status": "error"},
+                "redis": {"status": "ok"},
+                "order_service": {"status": "ok"},
+                "market": {"status": "ok"},
+                "event_stream": {"status": "ok"},
+            },
+        }
+
+        report = run_pre_open_init(
+            JobOptions(job_name="pre_open_init", refresh_wait_seconds=0),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["trading_day"]["target_trade_date"], "20260615")
+        self.assertIn("database", report["errors"][0])
+        self.assertEqual(client.refresh_calls, [])
+
     def test_pre_open_refreshes_enabled_accounts(self) -> None:
         client = FakeClient()
         report = run_pre_open_init(
