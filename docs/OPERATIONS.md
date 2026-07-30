@@ -118,6 +118,16 @@ accounts:
 8. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。切换脚本默认拒绝带生产下单权限的配置；确需开放时必须在服务器本机执行 `scripts/switch-relay-env.sh production --allow-production-trading` 并输入确认短语。
 9. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
 
+### OC v1.2 Redis ACL
+
+OC v1.2 为保证 Relay `gateway_order_id` 跨 OC 重启稳定，会在 Redis 保存交易幂等和订单身份 token 映射。OC 使用的 Redis 账号除 Stream 命令外，必须允许 `GET` 和 `SET ... NX EX`，并授权以下 key pattern：
+
+```text
+relay:{env}:v1:huaxin:{gateway_id}:cmd.trade:idempotency:v1:*
+relay:{env}:v1:huaxin:{gateway_id}:cmd.trade:order-identity:v1:*
+```
+
+Relay 不生成、不解析 OC 内部 `oc#...` token，也不访问上述映射来重建订单 ID。ACL 不满足时，OC 应在调用柜台前拒绝新订单，不能静默降级为重启后 ID 可能变化的模式。该项需要在恢复生产交易权限前由部署侧逐账户验证。
 配置加载会阻止以下明显危险配置：
 
 1. 未知 `service.environment`。

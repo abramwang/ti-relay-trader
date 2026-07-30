@@ -61,6 +61,17 @@ class RelayIdempotencyError(RelayRejectedError):
 class RelayOrderStateError(RelayRejectedError):
     """Raised when an order state does not allow the requested operation."""
 
+class RelayCancelRejectedError(RelayRejectedError):
+    """Raised when the broker explicitly rejects a cancel action."""
+
+
+class RelayCommandOutcomeUnknownError(RelayError):
+    """Raised when OC restarts before a trade command outcome is known."""
+
+
+class RelayQueryInterruptedError(RelayError):
+    """Raised when an OC restart interrupts a query command."""
+
 
 def error_from_payload(
     payload: Mapping[str, Any] | None,
@@ -91,6 +102,12 @@ def error_from_payload(
         return RelayBrokerNotReadyError(message, **kwargs)
     if code == "IDEMPOTENCY_CONFLICT":
         return RelayIdempotencyError(message, **kwargs)
+    if code in {"BROKER_CANCEL_REJECTED", "CANCEL_RESPONSE_TIMEOUT"}:
+        return RelayCancelRejectedError(message, **kwargs)
+    if code == "COMMAND_OUTCOME_UNKNOWN":
+        return RelayCommandOutcomeUnknownError(message, **kwargs)
+    if code == "QUERY_INTERRUPTED":
+        return RelayQueryInterruptedError(message, **kwargs)
     if code in {"ORDER_TERMINAL_NOT_CANCELABLE", "ORDER_NOT_READY_FOR_CANCEL", "CONFLICT"}:
         return RelayOrderStateError(message, **kwargs)
     if code.endswith("REJECTED") or code.endswith("FAILED") or status_code == 403:

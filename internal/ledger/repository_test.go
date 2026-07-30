@@ -115,6 +115,47 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	assertJSONContains(t, exec.args[43], `"front_status":"accepted"`)
 }
 
+func TestUpsertOrderCancelAttemptKeepsCancelOutcomeSeparate(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	retrySafe := false
+	stateChanged := false
+
+	err := repo.UpsertOrderCancelAttempt(context.Background(), OrderCancelAttempt{
+		AttemptID:         "msg-cancel-1",
+		AccountID:         "acct-1",
+		TradeDate:         "2026-07-30",
+		GatewayOrderID:    "gw-1",
+		OrderID:           123,
+		OrderStreamID:     "stream-order-1",
+		OriginMessageID:   "msg-cancel-1",
+		RequestID:         "req-cancel-1",
+		Status:            "rejected",
+		Code:              "BROKER_CANCEL_REJECTED",
+		Message:           "current order state cannot be cancelled",
+		RetrySafe:         &retrySafe,
+		OrderStateChanged: &stateChanged,
+		OccurredAt:        time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC),
+		StreamKey:         "relay:prod:v1:huaxin:acct-1:event",
+		StreamID:          "1-0",
+		RawPayload:        map[string]any{"cancel_status": "rejected"},
+		AdapterContext:    map[string]any{"broker_error_id": 1},
+	})
+	if err != nil {
+		t.Fatalf("UpsertOrderCancelAttempt() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO order_cancel_attempts")
+	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, attempt_id) DO UPDATE")
+	requireQueryContains(t, exec.query, "reconciliation_required = order_cancel_attempts.reconciliation_required")
+	requireArgLen(t, exec.args, 20)
+	if exec.args[0] != "msg-cancel-1" || exec.args[1] != "acct-1" || exec.args[3] != "gw-1" {
+		t.Fatalf("cancel attempt identity args = %#v", exec.args[:4])
+	}
+	assertJSONContains(t, exec.args[18], `"cancel_status":"rejected"`)
+	assertJSONContains(t, exec.args[19], `"broker_error_id":1`)
+}
+
 func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

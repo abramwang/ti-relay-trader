@@ -7,8 +7,16 @@ from io import BytesIO
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
-from relay_sdk import RelayBrokerNotReadyError, RelayClient, RelayIdempotencyError
+from relay_sdk import (
+    RelayBrokerNotReadyError,
+    RelayCancelRejectedError,
+    RelayClient,
+    RelayCommandOutcomeUnknownError,
+    RelayIdempotencyError,
+    RelayQueryInterruptedError,
+)
 from relay_sdk.client import _fill_key, _order_key
+from relay_sdk.errors import error_from_payload
 from relay_sdk.models import Fill, Order
 from relay_sdk.streaming import iter_sse_events
 
@@ -302,6 +310,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                         "account_ids": ["acct-1"],
                         "time": "2026-06-14T00:00:00Z",
                         "data": {"orders": 1, "last_stream_id": "1-0"},
+                    },
+                ),
+                (
+                    "order.cancel.rejected",
+                    {
+                        "type": "order.cancel.rejected",
+                        "account_ids": ["acct-1"],
+                        "time": "2026-07-30T02:00:00Z",
+                        "data": {
+                            "cancel_failures": 1,
+                            "cancel_attempt": {
+                                "gateway_order_id": "gw-cancel-rejected",
+                                "status": "rejected",
+                                "code": "BROKER_CANCEL_REJECTED",
+                            },
+                        },
                     },
                 ),
                 (
@@ -688,6 +712,19 @@ class RelayClientTest(unittest.TestCase):
         with self.assertRaises(RelayBrokerNotReadyError):
             self.client._request("POST", "/v1/broker-not-ready", json_body={})
 
+        self.assertIsInstance(
+            error_from_payload({"error": {"code": "BROKER_CANCEL_REJECTED", "message": "cancel rejected"}}),
+            RelayCancelRejectedError,
+        )
+        self.assertIsInstance(
+            error_from_payload({"error": {"code": "COMMAND_OUTCOME_UNKNOWN", "message": "reconcile first"}}),
+            RelayCommandOutcomeUnknownError,
+        )
+        self.assertIsInstance(
+            error_from_payload({"error": {"code": "QUERY_INTERRUPTED", "message": "retry query"}}),
+            RelayQueryInterruptedError,
+        )
+
     def test_sse_parser(self):
         stream = BytesIO(
             b'event: order.changed\n'
@@ -733,6 +770,17 @@ class RelayClientTest(unittest.TestCase):
         )
 
         self.assertEqual(seen, [("gw-a", "reused-fill", 100), ("gw-b", "reused-fill", 200)])
+
+    def test_cancel_rejected_callback_receives_attempt_context(self):
+        seen = []
+
+        self.client.watch_cancel_rejections(
+            lambda event: seen.append(event.data["cancel_attempt"]),
+            gateway_order_id="gw-cancel-rejected",
+        )
+
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["code"], "BROKER_CANCEL_REJECTED")
 
     def test_callback_keys_include_trade_date(self):
         self.assertNotEqual(

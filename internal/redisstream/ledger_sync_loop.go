@@ -40,16 +40,20 @@ type LedgerTradeChange struct {
 }
 
 type LedgerChange struct {
-	Stream       string
-	Role         string
-	AccountIDs   []string
-	Orders       int
-	OrderEvents  int
-	Fills        int
-	Transfers    int
-	Assets       int
-	Positions    int
-	LastStreamID string
+	Stream             string
+	Role               string
+	AccountIDs         []string
+	Orders             int
+	OrderEvents        int
+	CancelAttempts     int
+	CancelFailures     int
+	LastCancelAttempt  *ledger.OrderCancelAttempt
+	CancelFailureItems []ledger.OrderCancelAttempt
+	Fills              int
+	Transfers          int
+	Assets             int
+	Positions          int
+	LastStreamID       string
 }
 
 type ledgerStreamCursor struct {
@@ -156,6 +160,8 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"archived", report.Totals.Archived,
 					"orders", report.Totals.Orders,
 					"order_events", report.Totals.OrderEvents,
+					"cancel_attempts", report.Totals.CancelAttempts,
+					"cancel_failures", report.Totals.CancelFailures,
 					"fills", report.Totals.Fills,
 					"transfers", report.Totals.Transfers,
 					"assets", report.Totals.Assets,
@@ -181,20 +187,24 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					})
 				}
 			}
-			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
+			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.CancelAttempts > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
 				accountIDs := accountIDsFromLedgerResult(report.Totals)
 				if len(accountIDs) > 0 {
 					opts.OnLedgerChange(ctx, LedgerChange{
-						Stream:       report.Name,
-						Role:         report.Role,
-						AccountIDs:   accountIDs,
-						Orders:       report.Totals.Orders,
-						OrderEvents:  report.Totals.OrderEvents,
-						Fills:        report.Totals.Fills,
-						Transfers:    report.Totals.Transfers,
-						Assets:       report.Totals.Assets,
-						Positions:    report.Totals.Positions,
-						LastStreamID: report.Totals.LastStreamID,
+						Stream:             report.Name,
+						Role:               report.Role,
+						AccountIDs:         accountIDs,
+						Orders:             report.Totals.Orders,
+						OrderEvents:        report.Totals.OrderEvents,
+						CancelAttempts:     report.Totals.CancelAttempts,
+						CancelFailures:     report.Totals.CancelFailures,
+						LastCancelAttempt:  report.Totals.LastCancelAttempt,
+						CancelFailureItems: report.Totals.CancelFailureItems,
+						Fills:              report.Totals.Fills,
+						Transfers:          report.Totals.Transfers,
+						Assets:             report.Totals.Assets,
+						Positions:          report.Totals.Positions,
+						LastStreamID:       report.Totals.LastStreamID,
 					})
 				}
 			}

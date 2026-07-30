@@ -18,10 +18,11 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.20"
+SDK_VERSION = "0.1.21"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
+CancelRejectedCallback = Callable[[RelayEvent], object]
 
 
 class CallbackSubscription:
@@ -882,6 +883,27 @@ class RelayClient:
         )
         return subscription.start()
 
+    def on_cancel_rejected(
+        self,
+        callback: CancelRejectedCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        daemon: bool = True,
+    ) -> CallbackSubscription:
+        """Start a background callback for rejected or uncertain cancel attempts."""
+
+        subscription = CallbackSubscription(
+            lambda stop_event: self.watch_cancel_rejections(
+                callback,
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                stop_event=stop_event,
+            ),
+            daemon=daemon,
+        )
+        return subscription.start()
+
     def watch_order_status(
         self,
         callback: OrderStatusCallback,
@@ -977,6 +999,29 @@ class RelayClient:
             if event.event_type != "fill.changed":
                 continue
             if not emit(event):
+                return
+
+    def watch_cancel_rejections(
+        self,
+        callback: CancelRejectedCallback,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        """Block and invoke ``callback(event)`` for failed cancel outcomes."""
+
+        for event in self.stream_events(account_id=account_id):
+            if stop_event is not None and stop_event.is_set():
+                return
+            if event.event_type != "order.cancel.rejected":
+                continue
+            attempt = event.data.get("cancel_attempt")
+            if gateway_order_id and (
+                not isinstance(attempt, Mapping) or str(attempt.get("gateway_order_id") or "") != gateway_order_id
+            ):
+                continue
+            if callback(event) is False:
                 return
 
     def _refresh(self, kind: str, account_id: str | None) -> CommandReceipt:

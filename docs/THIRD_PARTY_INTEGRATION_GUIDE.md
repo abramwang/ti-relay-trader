@@ -1,7 +1,7 @@
 # 华鑫托管交易网关第三方对接文档
 
-版本：`v1.1`<br>
-日期：`2026-07-29`<br>
+版本：`v1.2`<br>
+日期：`2026-07-30`<br>
 适用程序：`oc_trader_commander_huaxin`<br>
 协议：`relay.stream.v1`<br>
 对接方向：第三方交易系统 / Relay 通过 Redis Stream 与华鑫托管交易网关对接
@@ -10,7 +10,7 @@
 
 本文档面向第三方开发团队，目标是让第三方在不了解 Titans 内部实现和华鑫原生接口细节的情况下，也可以独立完成与 `oc_trader_commander_huaxin` 的对接。
 
-`v1.1` 重点更新：生产环境订单/成交账本数据质量整改，明确空 `order_stream_id` 时的单笔委托级 `gateway_order_id` 规则、订单与成交上下文一致性检查、ETF 划转与普通成交分离规则。
+`v1.2` 在 v1.1 数据质量规则上补充撤单拒绝事件、真实就绪心跳、严格命令校验、完整查询 reply 重放，以及 Relay 下单 `gateway_order_id` 的跨重启持久映射。升级兼容细节和验收清单见 `RELAY_COMPATIBILITY_NOTICE_20260730.md`。
 
 第三方只需要实现 Redis Stream 协议侧逻辑：
 
@@ -749,6 +749,11 @@ relay:{env}:v1:{broker_id}:{gateway_id}:hb
   "component_role": "broker_trader_gateway",
   "state": "UP",
   "state_text": "running",
+  "redis_ready": true,
+  "broker_ready": true,
+  "order_snapshot_ready": true,
+  "accepting_trade_commands": true,
+  "accepting_cancel_commands": true,
   "last_command_rx_at": "2026-06-13T09:59:58.001Z",
   "pending_trade_count": 0,
   "pending_query_count": 0,
@@ -757,6 +762,11 @@ relay:{env}:v1:{broker_id}:{gateway_id}:hb
     "component_role": "broker_trader_gateway",
     "state": "UP",
     "state_text": "running",
+    "redis_ready": true,
+    "broker_ready": true,
+    "order_snapshot_ready": true,
+    "accepting_trade_commands": true,
+    "accepting_cancel_commands": true,
     "last_command_rx_at": "2026-06-13T09:59:58.001Z",
     "pending_trade_count": 0,
     "pending_query_count": 0
@@ -766,10 +776,11 @@ relay:{env}:v1:{broker_id}:{gateway_id}:hb
 
 监控建议：
 
-1. `state=UP` 表示 OC 主循环和 Redis 发布正常。
-2. `pending_trade_count` 长时间不为 0，说明有订单还未到终态。
-3. `pending_query_count` 长时间不为 0，说明查询 final chunk 未收口，应告警。
-4. 第三方可按 `produced_at` 判断心跳是否超时。
+1. `state=UP` 表示华鑫登录、股东账户初始化和初始订单快照均已完成。
+2. `state=DEGRADED` 表示 Redis 可发布心跳，但华鑫或初始订单同步尚未完全就绪。
+3. `pending_trade_count` 长时间不为 0，说明有订单还未到终态。
+4. `pending_query_count` 长时间不为 0，说明查询 final chunk 未收口，应告警。
+5. 第三方可按 `produced_at` 判断心跳是否超时。
 
 ## 13. Deadletter 死信
 
@@ -860,6 +871,9 @@ OC 行为：
 | `BAD_COMMAND_BODY` | `body` 不是合法 JSON | 修复消息序列化 |
 | `MISSING_MESSAGE_ID` | 缺少 `message_id` | 修复命令 envelope |
 | `UNKNOWN_ACTION` | 未知 action | 检查 action 拼写和 stream |
+| `ACTION_STREAM_MISMATCH` | trade/query action 写入错误 stream | 修正 stream 后使用新 message_id 重发 |
+| `MESSAGE_ID_CONFLICT` | 同 message_id 的命令内容发生变化 | 修复生产者，不自动重试 |
+| `ACCOUNT_MISMATCH` | payload 账户与 gateway stream 不一致 | 修正账户路由 |
 | `BROKER_NOT_READY` | OC 已启动但华鑫柜台登录尚未完成，或断线重连中 | 稍后重试；不要把它当作业务拒单 |
 | `ORDER_SUBMIT_REJECTED` | 本地字段校验失败或下单接口调用失败 | 检查 symbol/exchange/price/qty |
 | `INVALID_BATCH` | 批量请求缺少 `payload.orders[]` | 修复 payload |
@@ -869,10 +883,15 @@ OC 行为：
 | `ORDER_TERMINAL_NOT_CANCELABLE` | 订单已终态，不可撤 | 按终态处理，不再重试撤单 |
 | `ORDER_NOT_READY_FOR_CANCEL` | 订单映射未就绪 | 稍后重试，或等待首个 order.event |
 | `CANCEL_SUBMIT_FAILED` | 撤单接口调用失败 | 进入人工/重试策略 |
+| `BROKER_CANCEL_REJECTED` | 华鑫明确拒绝撤单动作 | 保留原订单状态，记录撤单尝试失败 |
+| `CANCEL_RESPONSE_TIMEOUT` | 华鑫撤单动作响应超时 | 查询订单对账，不自动重撤 |
 | `QUERY_SUBMIT_FAILED` | 查询接口调用失败 | 稍后重试 |
 | `QUERY_FAILED` | 柜台查询回调失败 | 稍后重试或告警 |
 | `IDEMPOTENCY_CONFLICT` | 同幂等键不同 payload | 第三方必须修正幂等键或 payload |
 | `BROKER_REJECTED` | 订单事件中的券商拒单 | 使用 `reject_message` 展示原因 |
+
+撤单被柜台明确拒绝时，event stream 会新增
+`event_type=order.cancel.event / event_name=order.cancel.rejected`。该事件只表示撤单动作失败，不能把原订单改成 `rejected`；成功撤单仍以 `order.event.payload.gateway_status=cancelled` 为准。
 
 ## 16. 状态机建议
 

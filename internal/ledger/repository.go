@@ -46,6 +46,29 @@ type SourceRef struct {
 	IdempotencyKey  string
 }
 
+type OrderCancelAttempt struct {
+	AttemptID              string         `json:"attempt_id"`
+	AccountID              string         `json:"account_id"`
+	TradeDate              string         `json:"trade_date"`
+	GatewayOrderID         string         `json:"gateway_order_id"`
+	OrderID                int64          `json:"order_id,omitempty"`
+	OrderStreamID          string         `json:"order_stream_id,omitempty"`
+	OriginMessageID        string         `json:"origin_message_id,omitempty"`
+	RequestID              string         `json:"request_id,omitempty"`
+	CorrelationID          string         `json:"correlation_id,omitempty"`
+	Status                 string         `json:"status"`
+	Code                   string         `json:"code,omitempty"`
+	Message                string         `json:"message,omitempty"`
+	RetrySafe              *bool          `json:"retry_safe,omitempty"`
+	OrderStateChanged      *bool          `json:"order_state_changed,omitempty"`
+	ReconciliationRequired bool           `json:"reconciliation_required,omitempty"`
+	OccurredAt             time.Time      `json:"occurred_at,omitempty"`
+	StreamKey              string         `json:"stream_key,omitempty"`
+	StreamID               string         `json:"stream_id,omitempty"`
+	RawPayload             any            `json:"raw_payload,omitempty"`
+	AdapterContext         map[string]any `json:"adapter_context,omitempty"`
+}
+
 type RawStreamMessage struct {
 	StreamRef
 	SourceRef
@@ -444,6 +467,60 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 	)
 	if err != nil {
 		return fmt.Errorf("upsert order %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
+	}
+	return nil
+}
+
+func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt OrderCancelAttempt) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	attempt.AttemptID = strings.TrimSpace(attempt.AttemptID)
+	attempt.AccountID = strings.TrimSpace(attempt.AccountID)
+	attempt.TradeDate = strings.TrimSpace(attempt.TradeDate)
+	attempt.GatewayOrderID = strings.TrimSpace(attempt.GatewayOrderID)
+	attempt.Status = strings.ToLower(strings.TrimSpace(attempt.Status))
+	if attempt.AttemptID == "" || attempt.AccountID == "" || attempt.TradeDate == "" || attempt.GatewayOrderID == "" || attempt.Status == "" {
+		return fmt.Errorf("%w: cancel attempt identity, trade_date, gateway_order_id and status are required", ErrInvalidLedgerInput)
+	}
+	if _, err := time.Parse("2006-01-02", attempt.TradeDate); err != nil {
+		return fmt.Errorf("%w: cancel attempt trade_date must be YYYY-MM-DD", ErrInvalidLedgerInput)
+	}
+	if attempt.OccurredAt.IsZero() {
+		attempt.OccurredAt = repo.now()
+	}
+	rawPayload, err := marshalJSONObject(attempt.RawPayload)
+	if err != nil {
+		return err
+	}
+	adapterContext, err := marshalJSONObject(attempt.AdapterContext)
+	if err != nil {
+		return err
+	}
+	_, err = repo.exec.ExecContext(ctx, upsertOrderCancelAttemptSQL,
+		attempt.AttemptID,
+		attempt.AccountID,
+		attempt.TradeDate,
+		attempt.GatewayOrderID,
+		nullInt64(attempt.OrderID),
+		nullString(attempt.OrderStreamID),
+		nullString(attempt.OriginMessageID),
+		nullString(attempt.RequestID),
+		nullString(attempt.CorrelationID),
+		attempt.Status,
+		nullString(attempt.Code),
+		nullString(attempt.Message),
+		attempt.RetrySafe,
+		attempt.OrderStateChanged,
+		attempt.ReconciliationRequired,
+		attempt.OccurredAt,
+		nullString(attempt.StreamKey),
+		nullString(attempt.StreamID),
+		rawPayload,
+		adapterContext,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert cancel attempt %s/%s: %w", attempt.AccountID, attempt.AttemptID, err)
 	}
 	return nil
 }

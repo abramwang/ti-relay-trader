@@ -76,8 +76,9 @@ const (
 type EventType string
 
 const (
-	EventTypeOrder EventType = "order.event"
-	EventTypeFill  EventType = "fill.event"
+	EventTypeOrder       EventType = "order.event"
+	EventTypeFill        EventType = "fill.event"
+	EventTypeOrderCancel EventType = "order.cancel.event"
 )
 
 type ErrorCode string
@@ -100,6 +101,15 @@ const (
 	ErrorIdempotencyConflict        ErrorCode = "IDEMPOTENCY_CONFLICT"
 	ErrorBrokerNotReady             ErrorCode = "BROKER_NOT_READY"
 	ErrorBrokerRejected             ErrorCode = "BROKER_REJECTED"
+	ErrorActionStreamMismatch       ErrorCode = "ACTION_STREAM_MISMATCH"
+	ErrorMessageIDConflict          ErrorCode = "MESSAGE_ID_CONFLICT"
+	ErrorAccountMismatch            ErrorCode = "ACCOUNT_MISMATCH"
+	ErrorBrokerCancelRejected       ErrorCode = "BROKER_CANCEL_REJECTED"
+	ErrorCancelResponseTimeout      ErrorCode = "CANCEL_RESPONSE_TIMEOUT"
+	ErrorCommandOutcomeUnknown      ErrorCode = "COMMAND_OUTCOME_UNKNOWN"
+	ErrorQueryInterrupted           ErrorCode = "QUERY_INTERRUPTED"
+	ErrorInvalidOrdinaryFill        ErrorCode = "INVALID_ORDINARY_FILL"
+	ErrorFillOrderContextMismatch   ErrorCode = "FILL_ORDER_CONTEXT_MISMATCH"
 )
 
 type Account struct {

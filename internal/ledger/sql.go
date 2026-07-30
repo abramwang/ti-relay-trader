@@ -251,6 +251,54 @@ INSERT INTO order_events (
 ON CONFLICT DO NOTHING
 `
 
+const upsertOrderCancelAttemptSQL = `
+INSERT INTO order_cancel_attempts (
+    attempt_id,
+    account_id,
+    trade_date,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    origin_message_id,
+    request_id,
+    correlation_id,
+    status,
+    code,
+    message,
+    retry_safe,
+    order_state_changed,
+    reconciliation_required,
+    occurred_at,
+    stream_key,
+    stream_id,
+    raw_payload,
+    adapter_context
+) VALUES (
+    $1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+)
+ON CONFLICT (account_id, attempt_id) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    gateway_order_id = EXCLUDED.gateway_order_id,
+    order_id = COALESCE(EXCLUDED.order_id, order_cancel_attempts.order_id),
+    order_stream_id = COALESCE(EXCLUDED.order_stream_id, order_cancel_attempts.order_stream_id),
+    origin_message_id = COALESCE(EXCLUDED.origin_message_id, order_cancel_attempts.origin_message_id),
+    request_id = COALESCE(EXCLUDED.request_id, order_cancel_attempts.request_id),
+    correlation_id = COALESCE(EXCLUDED.correlation_id, order_cancel_attempts.correlation_id),
+    status = EXCLUDED.status,
+    code = COALESCE(EXCLUDED.code, order_cancel_attempts.code),
+    message = COALESCE(EXCLUDED.message, order_cancel_attempts.message),
+    retry_safe = COALESCE(EXCLUDED.retry_safe, order_cancel_attempts.retry_safe),
+    order_state_changed = COALESCE(EXCLUDED.order_state_changed, order_cancel_attempts.order_state_changed),
+    reconciliation_required = order_cancel_attempts.reconciliation_required OR EXCLUDED.reconciliation_required,
+    occurred_at = EXCLUDED.occurred_at,
+    stream_key = COALESCE(EXCLUDED.stream_key, order_cancel_attempts.stream_key),
+    stream_id = COALESCE(EXCLUDED.stream_id, order_cancel_attempts.stream_id),
+    raw_payload = EXCLUDED.raw_payload,
+    adapter_context = order_cancel_attempts.adapter_context || EXCLUDED.adapter_context,
+    updated_at = now()
+`
+
 const updateOrderStatusSQL = `
 UPDATE orders SET
     order_id = COALESCE($3, order_id),

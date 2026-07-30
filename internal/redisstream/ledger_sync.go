@@ -20,6 +20,7 @@ import (
 type LedgerWriter interface {
 	UpsertAccount(ctx context.Context, account trading.Account) error
 	UpsertOrder(ctx context.Context, order trading.Order) error
+	UpsertOrderCancelAttempt(ctx context.Context, attempt ledger.OrderCancelAttempt) error
 	UpdateOrderStatus(ctx context.Context, event trading.OrderEvent) error
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
@@ -66,31 +67,35 @@ type LedgerEntryError struct {
 }
 
 type LedgerProcessResult struct {
-	Seen           int      `json:"seen"`
-	Archived       int      `json:"archived"`
-	Accounts       int      `json:"accounts"`
-	Orders         int      `json:"orders"`
-	OrderEvents    int      `json:"order_events"`
-	Fills          int      `json:"fills"`
-	Transfers      int      `json:"transfers"`
-	Assets         int      `json:"assets"`
-	Positions      int      `json:"positions"`
-	StalePositions int64    `json:"stale_positions,omitempty"`
-	Replies        int      `json:"replies"`
-	Skipped        int      `json:"skipped"`
-	SkipReasons    []string `json:"skip_reasons,omitempty"`
-	ParseErrors    int      `json:"parse_errors"`
-	LedgerErrors   int      `json:"ledger_errors"`
-	Unsupported    int      `json:"unsupported"`
-	DeadLetters    int      `json:"dead_letters"`
-	DataQualityDLQ int      `json:"data_quality_dead_letters"`
-	LastStreamID   string   `json:"last_stream_id,omitempty"`
-	LastMessageID  string   `json:"last_message_id,omitempty"`
-	LastEventType  string   `json:"last_event_type,omitempty"`
-	LastAction     string   `json:"last_action,omitempty"`
-	LastAccountID  string   `json:"last_account_id,omitempty"`
-	AccountIDs     []string `json:"account_ids,omitempty"`
-	LastGatewayOID string   `json:"last_gateway_order_id,omitempty"`
+	Seen               int                         `json:"seen"`
+	Archived           int                         `json:"archived"`
+	Accounts           int                         `json:"accounts"`
+	Orders             int                         `json:"orders"`
+	OrderEvents        int                         `json:"order_events"`
+	CancelAttempts     int                         `json:"cancel_attempts"`
+	CancelFailures     int                         `json:"cancel_failures"`
+	Fills              int                         `json:"fills"`
+	Transfers          int                         `json:"transfers"`
+	Assets             int                         `json:"assets"`
+	Positions          int                         `json:"positions"`
+	StalePositions     int64                       `json:"stale_positions,omitempty"`
+	Replies            int                         `json:"replies"`
+	Skipped            int                         `json:"skipped"`
+	SkipReasons        []string                    `json:"skip_reasons,omitempty"`
+	ParseErrors        int                         `json:"parse_errors"`
+	LedgerErrors       int                         `json:"ledger_errors"`
+	Unsupported        int                         `json:"unsupported"`
+	DeadLetters        int                         `json:"dead_letters"`
+	DataQualityDLQ     int                         `json:"data_quality_dead_letters"`
+	LastStreamID       string                      `json:"last_stream_id,omitempty"`
+	LastMessageID      string                      `json:"last_message_id,omitempty"`
+	LastEventType      string                      `json:"last_event_type,omitempty"`
+	LastAction         string                      `json:"last_action,omitempty"`
+	LastAccountID      string                      `json:"last_account_id,omitempty"`
+	AccountIDs         []string                    `json:"account_ids,omitempty"`
+	LastGatewayOID     string                      `json:"last_gateway_order_id,omitempty"`
+	LastCancelAttempt  *ledger.OrderCancelAttempt  `json:"last_cancel_attempt,omitempty"`
+	CancelFailureItems []ledger.OrderCancelAttempt `json:"cancel_failure_items,omitempty"`
 }
 
 const maxLedgerSkipReasons = 200
@@ -199,6 +204,10 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 		if envelope.Action == "adapter.data_quality" {
 			result.DataQualityDLQ++
 		}
+		code, _ := orderErrorInfo(envelope)
+		if trading.ErrorCode(strings.TrimSpace(code)) == trading.ErrorCancelResponseTimeout {
+			return processCancelAttemptEnvelope(ctx, writer, envelope, "timeout", result)
+		}
 		return result
 	}
 
@@ -223,10 +232,37 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 }
 
 func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
+	if envelope.Action == ActionOrderCancel {
+		status := strings.ToLower(strings.TrimSpace(envelope.Status))
+		switch trading.ErrorCode(strings.TrimSpace(envelope.Code)) {
+		case trading.ErrorBrokerNotReady:
+			status = "not_ready"
+		case trading.ErrorCancelResponseTimeout:
+			status = "timeout"
+		case trading.ErrorCommandOutcomeUnknown:
+			status = "outcome_unknown"
+		}
+		if status == string(trading.ReplyStatusCompleted) || status == string(trading.ReplyStatusPartial) {
+			status = string(trading.ReplyStatusAccepted)
+		}
+		return processCancelAttemptEnvelope(ctx, writer, envelope, status, result)
+	}
+
+	if envelope.Action == ActionOrderBatchSubmit {
+		var processed int
+		result, processed = processBatchFailedOrders(ctx, writer, envelope, result)
+		if result.LedgerErrors > 0 {
+			return result
+		}
+		if processed > 0 && (envelope.Status == string(trading.ReplyStatusRejected) || envelope.Status == string(trading.ReplyStatusFailed)) {
+			return result
+		}
+	}
+
 	if envelope.Status == string(trading.ReplyStatusRejected) || envelope.Status == string(trading.ReplyStatusFailed) {
-		if isTransientCommandError(envelope) {
+		if isIndeterminateCommandError(envelope) {
 			result.Skipped++
-			result.SkipReasons = append(result.SkipReasons, transientCommandSkipReason(envelope))
+			result.SkipReasons = append(result.SkipReasons, indeterminateCommandSkipReason(envelope))
 			return result
 		}
 		return processRejectedOrderReply(ctx, writer, envelope, result)
@@ -376,17 +412,70 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 	}
 }
 
-func isTransientCommandError(envelope EntryEnvelope) bool {
+func isIndeterminateCommandError(envelope EntryEnvelope) bool {
 	code, _ := orderErrorInfo(envelope)
-	return trading.ErrorCode(strings.TrimSpace(code)) == trading.ErrorBrokerNotReady
+	switch trading.ErrorCode(strings.TrimSpace(code)) {
+	case trading.ErrorBrokerNotReady, trading.ErrorCommandOutcomeUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
-func transientCommandSkipReason(envelope EntryEnvelope) string {
+func indeterminateCommandSkipReason(envelope EntryEnvelope) string {
 	code, message := orderErrorInfo(envelope)
 	if strings.TrimSpace(message) == "" {
-		message = "broker not ready"
+		message = "command outcome is not safe to infer"
 	}
-	return fmt.Sprintf("transient command failure %s: %s", strings.TrimSpace(code), strings.TrimSpace(message))
+	return fmt.Sprintf("indeterminate command failure %s: %s", strings.TrimSpace(code), strings.TrimSpace(message))
+}
+
+func processBatchFailedOrders(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) (LedgerProcessResult, int) {
+	var payload struct {
+		Orders       []orderPayload `json:"orders"`
+		FailedOrders []struct {
+			Index          int    `json:"index"`
+			GatewayOrderID string `json:"gateway_order_id"`
+			Code           string `json:"code"`
+			Message        string `json:"message"`
+		} `json:"failed_orders"`
+	}
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil || len(payload.FailedOrders) == 0 {
+		return result, 0
+	}
+	for _, failed := range payload.FailedOrders {
+		gatewayOrderID := strings.TrimSpace(failed.GatewayOrderID)
+		if gatewayOrderID == "" && failed.Index >= 0 && failed.Index < len(payload.Orders) {
+			gatewayOrderID = strings.TrimSpace(payload.Orders[failed.Index].GatewayOrderID)
+		}
+		if gatewayOrderID == "" || strings.TrimSpace(envelope.Routing.AccountID) == "" {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, fmt.Sprintf("batch failed order index %d missing account_id or gateway_order_id", failed.Index))
+			continue
+		}
+		event := rejectedOrderEvent(
+			envelope,
+			gatewayOrderID,
+			firstNonEmpty(failed.Code, envelope.Code),
+			firstNonEmpty(failed.Message, envelope.Message),
+			fmt.Sprintf("%s:batch:%d", envelope.MessageID, failed.Index),
+		)
+		if err := writer.UpdateOrderStatus(ctx, event); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result, len(payload.FailedOrders)
+		}
+		result.Orders++
+		batchStream := streamRef(envelope)
+		batchStream.ID = fmt.Sprintf("%s#failed-%d", batchStream.ID, failed.Index)
+		if err := writer.AppendOrderEvent(ctx, event, batchStream, sourceRef(envelope)); err != nil {
+			result.LedgerErrors++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result, len(payload.FailedOrders)
+		}
+		result.OrderEvents++
+	}
+	return result, len(payload.FailedOrders)
 }
 
 func processRejectedOrderReply(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
@@ -401,16 +490,33 @@ func processRejectedOrderReply(ctx context.Context, writer LedgerWriter, envelop
 		return result
 	}
 	rejectCode, rejectMessage := orderErrorInfo(envelope)
-	event := trading.OrderEvent{
-		EventID:        envelope.MessageID,
+	event := rejectedOrderEvent(envelope, gatewayOrderID, rejectCode, rejectMessage, envelope.MessageID)
+	if err := writer.UpdateOrderStatus(ctx, event); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.Orders++
+	if err := writer.AppendOrderEvent(ctx, event, streamRef(envelope), sourceRef(envelope)); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.OrderEvents++
+	return result
+}
+
+func rejectedOrderEvent(envelope EntryEnvelope, gatewayOrderID, rejectCode, rejectMessage, eventID string) trading.OrderEvent {
+	return trading.OrderEvent{
+		EventID:        eventID,
 		EventType:      trading.EventTypeOrder,
-		AccountID:      accountID,
+		AccountID:      envelope.Routing.AccountID,
 		GatewayOrderID: gatewayOrderID,
 		Status:         trading.OrderStatusRejected,
 		GatewayStatus:  trading.GatewayStatusRejected,
 		IsTerminal:     true,
 		Order: trading.Order{
-			AccountID:       accountID,
+			AccountID:       envelope.Routing.AccountID,
 			GatewayOrderID:  gatewayOrderID,
 			Status:          trading.OrderStatusRejected,
 			GatewayStatus:   trading.GatewayStatusRejected,
@@ -427,19 +533,6 @@ func processRejectedOrderReply(ctx context.Context, writer LedgerWriter, envelop
 		ProducedAt:     envelope.ProducedAt,
 		AdapterContext: orderDebugContext(envelope, rejectCode, rejectMessage),
 	}
-	if err := writer.UpdateOrderStatus(ctx, event); err != nil {
-		result.LedgerErrors++
-		result.SkipReasons = append(result.SkipReasons, err.Error())
-		return result
-	}
-	result.Orders++
-	if err := writer.AppendOrderEvent(ctx, event, streamRef(envelope), sourceRef(envelope)); err != nil {
-		result.LedgerErrors++
-		result.SkipReasons = append(result.SkipReasons, err.Error())
-		return result
-	}
-	result.OrderEvents++
-	return result
 }
 
 func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, result LedgerProcessResult) LedgerProcessResult {
@@ -533,12 +626,110 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		result.Transfers++
 		return result
+	case "order.cancel.event":
+		if envelope.EventName != "order.cancel.rejected" {
+			result.Unsupported++
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, "unsupported order.cancel.event event_name "+envelope.EventName)
+			return result
+		}
+		return processCancelAttemptEnvelope(ctx, writer, envelope, "rejected", result)
 	default:
 		result.Unsupported++
 		result.Skipped++
 		result.SkipReasons = append(result.SkipReasons, "unsupported event_type "+envelope.EventType)
 		return result
 	}
+}
+
+type cancelAttemptPayload struct {
+	AccountID              string `json:"account_id"`
+	GatewayOrderID         string `json:"gateway_order_id"`
+	OrderID                int64  `json:"order_id"`
+	OrderStreamID          string `json:"order_stream_id"`
+	CancelStatus           string `json:"cancel_status"`
+	Code                   string `json:"code"`
+	Message                string `json:"message"`
+	RetrySafe              *bool  `json:"retry_safe"`
+	OrderStateChanged      *bool  `json:"order_state_changed"`
+	ReconciliationRequired bool   `json:"reconciliation_required"`
+	OccurredAt             string `json:"occurred_at"`
+}
+
+func processCancelAttemptEnvelope(
+	ctx context.Context,
+	writer LedgerWriter,
+	envelope EntryEnvelope,
+	defaultStatus string,
+	result LedgerProcessResult,
+) LedgerProcessResult {
+	var payload cancelAttemptPayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		result.Skipped++
+		result.SkipReasons = append(result.SkipReasons, fmt.Sprintf("decode order cancel outcome: %v", err))
+		return result
+	}
+	accountID := firstNonEmpty(payload.AccountID, envelope.Routing.AccountID)
+	gatewayOrderID := firstNonEmpty(payload.GatewayOrderID, envelope.GatewayOrderID)
+	attemptID := firstNonEmpty(envelope.OriginMessageID, envelope.RequestID, envelope.MessageID, envelope.Stream+":"+envelope.StreamID)
+	status := firstNonEmpty(payload.CancelStatus, defaultStatus)
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "failed" && trading.ErrorCode(firstNonEmpty(payload.Code, envelope.Code)) == trading.ErrorCancelResponseTimeout {
+		status = "timeout"
+	}
+	occurredAt := parseTime(payload.OccurredAt)
+	if occurredAt.IsZero() {
+		occurredAt = envelope.ProducedAt
+	}
+	if occurredAt.IsZero() {
+		occurredAt = timeutil.Now()
+	}
+	if accountID == "" || gatewayOrderID == "" {
+		result.Skipped++
+		result.SkipReasons = append(result.SkipReasons, "order cancel outcome missing account_id or gateway_order_id")
+		return result
+	}
+	result.noteAccount(accountID)
+	if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.Accounts++
+	attempt := ledger.OrderCancelAttempt{
+		AttemptID:              attemptID,
+		AccountID:              accountID,
+		TradeDate:              tradeDateFromTime(occurredAt),
+		GatewayOrderID:         gatewayOrderID,
+		OrderID:                payload.OrderID,
+		OrderStreamID:          payload.OrderStreamID,
+		OriginMessageID:        envelope.OriginMessageID,
+		RequestID:              envelope.RequestID,
+		CorrelationID:          firstNonEmpty(envelope.CorrelationID, envelope.RequestCorrelationID),
+		Status:                 status,
+		Code:                   firstNonEmpty(payload.Code, envelope.Code),
+		Message:                firstNonEmpty(payload.Message, envelope.Message),
+		RetrySafe:              payload.RetrySafe,
+		OrderStateChanged:      payload.OrderStateChanged,
+		ReconciliationRequired: payload.ReconciliationRequired || status == "timeout" || status == "outcome_unknown",
+		OccurredAt:             occurredAt,
+		StreamKey:              envelope.Stream,
+		StreamID:               envelope.StreamID,
+		RawPayload:             payload,
+		AdapterContext:         envelope.AdapterContext,
+	}
+	if err := writer.UpsertOrderCancelAttempt(ctx, attempt); err != nil {
+		result.LedgerErrors++
+		result.SkipReasons = append(result.SkipReasons, err.Error())
+		return result
+	}
+	result.CancelAttempts++
+	if status != string(trading.ReplyStatusAccepted) {
+		result.CancelFailures++
+		result.CancelFailureItems = append(result.CancelFailureItems, attempt)
+	}
+	result.LastCancelAttempt = &attempt
+	return result
 }
 
 func readAndProcessStream(ctx context.Context, client *redis.Client, writer LedgerWriter, streamName, role, startID string, count int64, block time.Duration) LedgerStreamReport {
@@ -1952,6 +2143,8 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.Accounts += other.Accounts
 	result.Orders += other.Orders
 	result.OrderEvents += other.OrderEvents
+	result.CancelAttempts += other.CancelAttempts
+	result.CancelFailures += other.CancelFailures
 	result.Fills += other.Fills
 	result.Transfers += other.Transfers
 	result.Assets += other.Assets
@@ -1991,6 +2184,11 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	if other.LastGatewayOID != "" {
 		result.LastGatewayOID = other.LastGatewayOID
 	}
+	if other.LastCancelAttempt != nil {
+		attempt := *other.LastCancelAttempt
+		result.LastCancelAttempt = &attempt
+	}
+	result.CancelFailureItems = append(result.CancelFailureItems, other.CancelFailureItems...)
 }
 
 func (result *LedgerProcessResult) noteAccount(accountID string) {

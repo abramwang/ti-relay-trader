@@ -1,6 +1,6 @@
 # Redis Stream 到 PostgreSQL 账本同步
 
-更新时间：`2026-06-18`
+更新时间：`2026-07-30`
 
 ## 当前状态
 
@@ -12,7 +12,9 @@
 
 同日新增自动资金持仓刷新：当同步循环处理到 `order.event` 或 `fill.event` 后，会按账户调度 `account.asset.query` 和 `account.positions.query`。调度器默认 2 秒合并、20 秒冷却，只向前置写入查询命令，后续仍由 `asset_page/position_page` reply 合并到 PostgreSQL。
 
-当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`，便于 `/trade` 和策略端排查拒单原因。例外是 `BROKER_NOT_READY`：它表示 OC 已启动但柜台登录未完成或断线重连中，Relay 只归档原始回包并记录同步跳过原因，不把草稿订单写成业务拒单。
+当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`。`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 不代表可安全推断的业务拒单，Relay 只归档并提示重试或先查询对账，不修改订单终态。
+
+OC v1.2 增量兼容已经落地：`order.cancel.event/order.cancel.rejected` 和 `CANCEL_RESPONSE_TIMEOUT` 只写入独立的 `order_cancel_attempts` 审计表，绝不覆盖原订单状态或下单拒绝原因；`order.batch.submit.payload.failed_orders[]` 按 `index/gateway_order_id` 逐笔回写失败子单；未知事件继续保留 raw 并推进 checkpoint。心跳读取 `redis_ready/broker_ready/order_snapshot_ready/accepting_trade_commands/accepting_cancel_commands`，运维状态不再把“Redis 心跳存活”等同于“柜台全部就绪”。
 
 首批同步范围：
 
@@ -20,10 +22,12 @@
 2. `event`：完整归档到 `raw_stream_messages`。
 3. `order.event`：payload 字段足够时写入 `accounts`、`orders`、`order_events`。
 4. `fill.event`：payload 字段足够时写入 `accounts`、`fills`。
+5. `order.cancel.event/order.cancel.rejected`：写入 `order_cancel_attempts` 并发布 `order.cancel.rejected` SSE，不修改 `orders`。
+6. `transfer.event`：写入 `etf_component_transfers`，不混入普通 `fills`。
 
 `relayctl ledger-sync` 命令是受控批处理入口，不会写入 `cmd.trade` 或 `cmd.query`，也不会移动 consumer group 位点。自动资金持仓刷新在 9092 docs/api 轻量后台同步循环和正式 worker 中均可启用。
 
-`hb/dlq` 当前由 worker 原始归档；心跳状态合并到 `gateways`、DLQ 告警和处置状态仍是后续任务。
+`hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`CANCEL_RESPONSE_TIMEOUT` 还会生成 `reconciliation_required=true` 的撤单审计记录。
 
 ## Stream 命名与方向
 

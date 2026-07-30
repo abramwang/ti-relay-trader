@@ -31,7 +31,7 @@ func Catalog() CatalogDocument {
 			"order_status":   {"created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"},
 			"gateway_status": {"accepted", "working", "filled", "cancelled", "rejected"},
 			"reply_status":   {"accepted", "partial", "completed", "rejected", "failed"},
-			"event_type":     {"order.event", "fill.event", "transfer.event"},
+			"event_type":     {"order.event", "fill.event", "transfer.event", "order.cancel.event"},
 		},
 		HTTPRoutes: []HTTPRouteSpec{
 			{Method: "GET", Path: "/healthz", Response: "StatusView", Description: "service health check"},
@@ -68,7 +68,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/history/orders", Request: "OrderQuery", Response: "[]Order", Description: "query historical orders"},
 			{Method: "GET", Path: "/v1/history/fills", Request: "FillQuery", Response: "[]Fill", Description: "query historical fills"},
 			{Method: "GET", Path: "/v1/history/transfers", Request: "ComponentTransferQuery", Response: "[]ComponentTransfer", Description: "query historical ETF component transfers"},
-			{Method: "GET", Path: "/v1/events/stream", Response: "OrderEvent | FillEvent", Description: "stream ledger change notifications"},
+			{Method: "GET", Path: "/v1/events/stream", Response: "OrderEvent | FillEvent | OrderCancelRejectedEvent", Description: "stream ledger change notifications"},
 			{Method: "GET", Path: "/v1/meridian/metadata/instruments", Response: "Meridian instrument payload", Description: "proxy Meridian instrument metadata without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/metadata/adjust-factors", Response: "Meridian adjust factor payload", Description: "proxy Meridian adjustment factors without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/market/bars", Response: "Meridian market_bar.v1 payload", Description: "proxy Meridian market bars without redefining fields"},

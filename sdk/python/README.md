@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz"
 ```
 
 ## Quick Start
@@ -161,11 +161,18 @@ def on_fill(fill, event):
 
 order_sub = client.on_order_status(on_order, gateway_order_id=receipt.gateway_order_id)
 fill_sub = client.on_fill(on_fill)
+cancel_sub = client.on_cancel_rejected(
+    lambda event: print(event.data["cancel_attempt"]),
+    gateway_order_id=receipt.gateway_order_id,
+)
 
 # Later, before shutdown:
 order_sub.stop()
 fill_sub.stop()
+cancel_sub.stop()
 ```
 
-`on_order_status()` and `on_fill()` run in background daemon threads. For scripts
-that prefer blocking control flow, use `watch_order_status()` or `watch_fills()`.
+`on_order_status()`, `on_fill()`, and `on_cancel_rejected()` run in background
+daemon threads. For scripts that prefer blocking control flow, use the matching
+`watch_*` methods. A cancel rejection reports only the failed cancel action; it
+does not change the original order to rejected.

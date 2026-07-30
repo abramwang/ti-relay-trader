@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.20`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.21`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -26,7 +26,7 @@ SDK 的定位：
 4. 单笔下单、批量下单、撤单。
 5. `wait_order_terminal()` 轮询等待订单终态。
 6. `stream_events()` SSE 事件迭代器。
-7. `on_order_status()`、`on_fill()` 后台回调订阅，以及 `watch_order_status()`、`watch_fills()` 阻塞式回调循环。
+7. `on_order_status()`、`on_fill()`、`on_cancel_rejected()` 后台回调订阅，以及对应的 `watch_*` 阻塞式回调循环。
 8. dataclass 模型和 `raw` 原始响应保留。
 9. relay envelope 错误到 SDK 异常的映射。
 10. `CommandReceipt.replayed`，用于识别幂等重放而非新命令发布。
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.20.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.21.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率和异常订单。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -88,15 +88,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.20.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.21.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -152,7 +152,7 @@ print(terminal.status, terminal.filled_qty)
 
 ETF 二级市场买卖和股票一样使用 `business_type="S"`。`business_type="E"` 预留给 ETF 申购/赎回专项，当前 relay API 尚未实现；策略端不要把 `E` 当成普通 ETF 买卖参数。
 
-## 订单和成交回调
+## 订单、成交和撤单失败回调
 
 策略程序可以用后台回调订阅订单状态和成交回报，避免自己解析 SSE 原始事件：
 
@@ -170,17 +170,23 @@ def on_order_status(order, event):
 def on_fill(fill, event):
     print("fill", fill.gateway_order_id, fill.fill_id, fill.qty, fill.price)
 
+def on_cancel_rejected(event):
+    attempt = event.data["cancel_attempt"]
+    print("cancel rejected", attempt["gateway_order_id"], attempt["code"], attempt["message"])
+
 order_sub = client.on_order_status(on_order_status)
 fill_sub = client.on_fill(on_fill)
+cancel_sub = client.on_cancel_rejected(on_cancel_rejected)
 
 # 策略退出前停止后台订阅。
 order_sub.stop()
 fill_sub.stop()
+cancel_sub.stop()
 ```
 
-`on_order_status()` 和 `on_fill()` 会在后台 daemon thread 中运行，并返回 `CallbackSubscription`，可调用 `stop()`、`close()`、`join()`，也可读取 `error` 查看后台异常。若策略希望自己控制主循环，可直接使用阻塞式 `watch_order_status()` 和 `watch_fills()`。
+三个 `on_*` 方法都会在后台 daemon thread 中运行，并返回 `CallbackSubscription`，可调用 `stop()`、`close()`、`join()`，也可读取 `error` 查看后台异常。若策略希望自己控制主循环，可直接使用对应的 `watch_*` 方法。
 
-当前后端 SSE 事件只说明订单或成交账本发生变化，不直接携带完整订单/成交对象。SDK 收到 `order.changed` 后会自动调用 `list_orders()` 拉取账本并按订单状态去重触发回调；收到 `fill.changed` 后会调用 `list_fills()`。订单和成交回调去重键都包含 `trade_date`，成交键为 `account_id + trade_date + gateway_order_id + fill_id`，不会把跨交易日复用的柜台编号误判为旧回调。
+当前后端 SSE 的 `order.changed/fill.changed` 只说明账本发生变化，不直接携带完整订单/成交对象。SDK 会自动查询账本并去重触发回调。`order.cancel.rejected` 则携带 `cancel_attempt` 审计摘要；它只表示本次撤单动作失败，不会把原订单改成 `rejected`，策略也不应在 `retry_safe=false` 时自动重撤。
 
 ## 写入和变更类方法
 
@@ -349,8 +355,10 @@ Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go H
 | `stream_events(...)` | `GET /v1/events/stream` | 订阅订单和成交事件 |
 | `on_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 后台订单状态回调 |
 | `on_fill(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 后台成交回调 |
+| `on_cancel_rejected(...)` | `GET /v1/events/stream` | 后台撤单失败/结果不确定回调 |
 | `watch_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 阻塞式订单状态回调 |
 | `watch_fills(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 阻塞式成交回调 |
+| `watch_cancel_rejections(...)` | `GET /v1/events/stream` | 阻塞式撤单失败/结果不确定回调 |
 
 ### 任务和账表写入
 
@@ -410,6 +418,9 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | `RelayConnectionError` | 网络连接失败 |
 | `RelayTimeoutError` | 请求或等待事件超时 |
 | `RelayBrokerNotReadyError` | OC 已启动但券商柜台未登录完成或重连中，可稍后重试 |
+| `RelayCancelRejectedError` | 柜台明确拒绝撤单或撤单响应超时；原订单状态不因此改变 |
+| `RelayCommandOutcomeUnknownError` | OC 重启时交易命令结果未知，必须先查询对账 |
+| `RelayQueryInterruptedError` | OC 重启中断查询，可用新 `message_id` 重试 |
 | `RelayRejectedError` | relay 或前置服务拒绝命令 |
 | `RelayIdempotencyError` | 幂等键冲突 |
 | `RelayOrderStateError` | 订单状态不满足操作条件 |

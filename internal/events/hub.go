@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	TypeConnected        = "relay.connected"
-	TypeHeartbeat        = "relay.heartbeat"
-	TypeOrderChanged     = "order.changed"
-	TypeFillChanged      = "fill.changed"
-	TypeAssetChanged     = "asset.changed"
-	TypePositionsChanged = "positions.changed"
+	TypeConnected           = "relay.connected"
+	TypeHeartbeat           = "relay.heartbeat"
+	TypeOrderChanged        = "order.changed"
+	TypeOrderCancelRejected = "order.cancel.rejected"
+	TypeFillChanged         = "fill.changed"
+	TypeAssetChanged        = "asset.changed"
+	TypePositionsChanged    = "positions.changed"
 )
 
 type Event struct {

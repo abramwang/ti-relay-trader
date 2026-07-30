@@ -170,6 +170,18 @@ var (
 			Description: "Redis Stream 协议、命令、回包、事件、心跳、DLQ 和验收流程。",
 		},
 		{
+			Slug:        "oc-v1-2-compatibility",
+			Title:       "OC v1.2 兼容通知",
+			Path:        "docs/RELAY_COMPATIBILITY_NOTICE_20260730.md",
+			Description: "OC v1.2 撤单拒绝、真实就绪心跳、命令校验、幂等恢复和联合验收要求。",
+		},
+		{
+			Slug:        "oc-v1-2-relay-implementation",
+			Title:       "OC v1.2 Relay 实施记录",
+			Path:        "docs/OC_V1_2_RELAY_COMPATIBILITY_20260730.md",
+			Description: "Relay 兼容改造、数据库迁移、测试结果和下一交易窗口待验收项。",
+		},
+		{
 			Slug:        "tests",
 			Title:       "测试目录索引",
 			Path:        "tests/README.md",
@@ -479,20 +491,36 @@ func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) 
 		Stream:       change.Stream,
 		LastStreamID: change.LastStreamID,
 		Data: map[string]any{
-			"role":           change.Role,
-			"orders":         change.Orders,
-			"order_events":   change.OrderEvents,
-			"fills":          change.Fills,
-			"transfers":      change.Transfers,
-			"assets":         change.Assets,
-			"positions":      change.Positions,
-			"last_stream_id": change.LastStreamID,
+			"role":            change.Role,
+			"orders":          change.Orders,
+			"order_events":    change.OrderEvents,
+			"cancel_attempts": change.CancelAttempts,
+			"cancel_failures": change.CancelFailures,
+			"fills":           change.Fills,
+			"transfers":       change.Transfers,
+			"assets":          change.Assets,
+			"positions":       change.Positions,
+			"last_stream_id":  change.LastStreamID,
 		},
 	}
 	if change.Orders > 0 || change.OrderEvents > 0 {
 		event := base
 		event.Type = events.TypeOrderChanged
 		eventHub.Publish(event)
+	}
+	if change.CancelFailures > 0 {
+		for _, attempt := range change.CancelFailureItems {
+			event := base
+			event.Type = events.TypeOrderCancelRejected
+			event.Data = map[string]any{
+				"role":            change.Role,
+				"cancel_attempts": change.CancelAttempts,
+				"cancel_failures": change.CancelFailures,
+				"cancel_attempt":  attempt,
+				"last_stream_id":  change.LastStreamID,
+			}
+			eventHub.Publish(event)
+		}
 	}
 	if change.Fills > 0 || change.Transfers > 0 {
 		event := base

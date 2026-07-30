@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-07-29`
+更新时间：`2026-07-30`
 
 ## 当前状态
 
@@ -35,6 +35,12 @@ migrations/postgres/000013_oc_v1_1_component_transfers.up.sql
 migrations/postgres/000013_oc_v1_1_component_transfers.down.sql
 migrations/postgres/000014_remove_etf_transfer_summary_fills.up.sql
 migrations/postgres/000014_remove_etf_transfer_summary_fills.down.sql
+migrations/postgres/000015_stream_operations.up.sql
+migrations/postgres/000015_stream_operations.down.sql
+migrations/postgres/000016_stream_operations_indexes.up.sql
+migrations/postgres/000016_stream_operations_indexes.down.sql
+migrations/postgres/000017_oc_v1_2_cancel_attempts.up.sql
+migrations/postgres/000017_oc_v1_2_cancel_attempts.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -57,7 +63,10 @@ migrations/postgres/000014_remove_etf_transfer_summary_fills.down.sql
 12. `000012_trade_date_order_scope` 将订单、事件和成交的业务键与外键统一为 `account_id + trade_date + gateway_order_id`。
 13. `000013_oc_v1_1_component_transfers` 按 OC v1.1 扩展普通成交 fallback 唯一键，新增 ETF 成分划转账表和 `adapter.data_quality` DLQ 索引。
 14. `000014_remove_etf_transfer_summary_fills` 清理 Relay 曾从 ETF 申赎订单错误派生的 summary fill；该数据不能安全逆向重建，因此 down migration 只保留说明。
-15. `relay_schema_migrations` 已记录版本 `1:init_ledger` 到 `14:remove_etf_transfer_summary_fills`。
+15. `000015_stream_operations` 新增 Redis Stream checkpoint、Gateway 问题和 DLQ 人工审核能力。
+16. `000016_stream_operations_indexes` 补充 DLQ 和 `BROKER_NOT_READY` 运维查询索引。
+17. `000017_oc_v1_2_cancel_attempts` 新增撤单动作结果审计表；撤单被拒绝、超时或结果未知不再污染订单主状态。
+18. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `17:oc_v1_2_cancel_attempts`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -83,7 +92,7 @@ internal/ledger
 
 Repository 当前覆盖：
 
-- `UpsertAccount`、`UpsertOrder`、`AppendOrderEvent`
+- `UpsertAccount`、`UpsertOrder`、`AppendOrderEvent`、`UpsertOrderCancelAttempt`
 - `InsertFill`、`InsertComponentTransfer`
 - `ListFills`、`ListComponentTransfers`
 - `ArchiveRawStreamMessage`

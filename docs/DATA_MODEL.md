@@ -1,6 +1,6 @@
 # relay 数据模型与落盘设计
 
-更新时间：`2026-07-29`
+更新时间：`2026-07-30`
 
 ## 设计结论
 
@@ -38,6 +38,7 @@ relay 的最终账户交易数据、订单数据、成交数据、资金持仓�
 | `Order` | `order.event.payload` / `order_page.items[]` | `TiRtnOrderStatus` / `TiRspQryOrder` |
 | `Fill` | `fill.event.payload` / `fill_page.items[]` | `TiRtnOrderMatch` / `TiRspQryMatch` |
 | `ComponentTransfer` | `transfer.event.payload` / `fill_page.component_transfers[]` | ETF 申赎成分证券划转记录 |
+| `OrderCancelAttempt` | `order.cancel.event` / 撤单 reply / `CANCEL_RESPONSE_TIMEOUT` DLQ | 单次撤单动作结果，不是订单状态 |
 | `Position` | `position_page.items[]` | `TiRspQryPosition` |
 | `AccountAsset` | `asset_page.account` | `TiRspAccountInfo` |
 
@@ -115,7 +116,8 @@ migrations/postgres/000001_init_ledger.down.sql
 3. `order_events` 的事件追加和重复事件幂等处理。
 4. `fills` 的成交写入和重复成交幂等处理。
 5. `etf_component_transfers` 的 ETF 申赎划转写入和重复事件幂等处理。
-6. `raw_stream_messages` 的原始 Redis 消息归档与重放审计。
+6. `order_cancel_attempts` 的撤单接受、明确拒绝、超时和结果未知审计；该表不反写订单主状态。
+7. `raw_stream_messages` 的原始 Redis 消息归档与重放审计。
 
 ### 配置与路由
 
@@ -123,6 +125,7 @@ migrations/postgres/000001_init_ledger.down.sql
 | --- | --- |
 | `accounts` | 账户配置、账户状态、是否可交易、账户环境类型 |
 | `gateways` | broker、gateway、env、stream prefix、心跳状态 |
+| `order_cancel_attempts` | 以账户和撤单命令 ID 幂等记录撤单动作结果、错误、重试安全性与对账要求 |
 | `account_gateway_routes` | `account_id` 到 `broker_id + gateway_id + stream_prefix` 的路由 |
 
 ### 交易账本

@@ -70,23 +70,28 @@ type RuntimeSummary struct {
 }
 
 type GatewayRuntimeStatus struct {
-	AccountID        string     `json:"account_id"`
-	Alias            string     `json:"alias,omitempty"`
-	BrokerID         string     `json:"broker_id"`
-	GatewayID        string     `json:"gateway_id"`
-	Status           string     `json:"status"`
-	State            string     `json:"state,omitempty"`
-	StateText        string     `json:"state_text,omitempty"`
-	ComponentID      string     `json:"component_id,omitempty"`
-	ComponentRole    string     `json:"component_role,omitempty"`
-	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at,omitempty"`
-	HeartbeatAgeSecs int64      `json:"heartbeat_age_seconds,omitempty"`
-	PendingTrades    int64      `json:"pending_trade_count"`
-	PendingQueries   int64      `json:"pending_query_count"`
-	BrokerNotReady   bool       `json:"broker_not_ready"`
-	LastIssueCode    string     `json:"last_issue_code,omitempty"`
-	LastIssueMessage string     `json:"last_issue_message,omitempty"`
-	LastIssueAt      *time.Time `json:"last_issue_at,omitempty"`
+	AccountID               string     `json:"account_id"`
+	Alias                   string     `json:"alias,omitempty"`
+	BrokerID                string     `json:"broker_id"`
+	GatewayID               string     `json:"gateway_id"`
+	Status                  string     `json:"status"`
+	State                   string     `json:"state,omitempty"`
+	StateText               string     `json:"state_text,omitempty"`
+	ComponentID             string     `json:"component_id,omitempty"`
+	ComponentRole           string     `json:"component_role,omitempty"`
+	RedisReady              *bool      `json:"redis_ready,omitempty"`
+	BrokerReady             *bool      `json:"broker_ready,omitempty"`
+	OrderSnapshotReady      *bool      `json:"order_snapshot_ready,omitempty"`
+	AcceptingTradeCommands  *bool      `json:"accepting_trade_commands,omitempty"`
+	AcceptingCancelCommands *bool      `json:"accepting_cancel_commands,omitempty"`
+	LastHeartbeatAt         *time.Time `json:"last_heartbeat_at,omitempty"`
+	HeartbeatAgeSecs        int64      `json:"heartbeat_age_seconds,omitempty"`
+	PendingTrades           int64      `json:"pending_trade_count"`
+	PendingQueries          int64      `json:"pending_query_count"`
+	BrokerNotReady          bool       `json:"broker_not_ready"`
+	LastIssueCode           string     `json:"last_issue_code,omitempty"`
+	LastIssueMessage        string     `json:"last_issue_message,omitempty"`
+	LastIssueAt             *time.Time `json:"last_issue_at,omitempty"`
 }
 
 type StreamRuntimeStatus struct {
@@ -111,12 +116,17 @@ type StreamRuntimeStatus struct {
 }
 
 type heartbeatPayload struct {
-	ComponentID       string `json:"component_id"`
-	ComponentRole     string `json:"component_role"`
-	State             string `json:"state"`
-	StateText         string `json:"state_text"`
-	PendingTradeCount int64  `json:"pending_trade_count"`
-	PendingQueryCount int64  `json:"pending_query_count"`
+	ComponentID             string `json:"component_id"`
+	ComponentRole           string `json:"component_role"`
+	State                   string `json:"state"`
+	StateText               string `json:"state_text"`
+	RedisReady              *bool  `json:"redis_ready"`
+	BrokerReady             *bool  `json:"broker_ready"`
+	OrderSnapshotReady      *bool  `json:"order_snapshot_ready"`
+	AcceptingTradeCommands  *bool  `json:"accepting_trade_commands"`
+	AcceptingCancelCommands *bool  `json:"accepting_cancel_commands"`
+	PendingTradeCount       int64  `json:"pending_trade_count"`
+	PendingQueryCount       int64  `json:"pending_query_count"`
 }
 
 type streamProbeCommands struct {
@@ -490,6 +500,11 @@ func (service *RuntimeObservability) gatewayStatus(
 				status.ComponentRole = payload.ComponentRole
 				status.State = payload.State
 				status.StateText = payload.StateText
+				status.RedisReady = payload.RedisReady
+				status.BrokerReady = payload.BrokerReady
+				status.OrderSnapshotReady = payload.OrderSnapshotReady
+				status.AcceptingTradeCommands = payload.AcceptingTradeCommands
+				status.AcceptingCancelCommands = payload.AcceptingCancelCommands
 				status.PendingTrades = payload.PendingTradeCount
 				status.PendingQueries = payload.PendingQueryCount
 				if !envelope.ProducedAt.IsZero() {
@@ -514,7 +529,7 @@ func (service *RuntimeObservability) gatewayStatus(
 	state := strings.ToUpper(strings.TrimSpace(status.State))
 	stateText := strings.ToLower(strings.TrimSpace(status.StateText))
 	switch {
-	case status.BrokerNotReady:
+	case status.BrokerNotReady || boolIsFalse(status.BrokerReady) || stateText == "broker_not_ready":
 		status.Status = "broker_not_ready"
 	case strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT"):
 		status.Status = "reconnecting"
@@ -522,12 +537,20 @@ func (service *RuntimeObservability) gatewayStatus(
 		status.Status = "missing"
 	case status.HeartbeatAgeSecs > int64(service.cfg.Operations.HeartbeatStaleSeconds):
 		status.Status = "stale"
-	case state == "UP":
+	case state == "UP" &&
+		!boolIsFalse(status.RedisReady) &&
+		!boolIsFalse(status.OrderSnapshotReady) &&
+		!boolIsFalse(status.AcceptingTradeCommands) &&
+		!boolIsFalse(status.AcceptingCancelCommands):
 		status.Status = "online"
 	default:
 		status.Status = "degraded"
 	}
 	return status
+}
+
+func boolIsFalse(value *bool) bool {
+	return value != nil && !*value
 }
 
 func maxInt64(left, right int64) int64 {

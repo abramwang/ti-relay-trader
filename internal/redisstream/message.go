@@ -69,6 +69,7 @@ type EntryEnvelope struct {
 	MessageType          string
 	MessageID            string
 	EventType            string
+	EventName            string
 	Action               string
 	Status               string
 	Code                 string
@@ -118,6 +119,7 @@ func DecodeEntry(stream, streamID string, values map[string]any) (EntryEnvelope,
 	envelope.Protocol = msg.Protocol
 	envelope.MessageType = msg.MessageType
 	envelope.MessageID = msg.MessageID
+	envelope.EventName = msg.EventName
 	if msg.EventType != "" {
 		envelope.EventType = msg.EventType
 	} else {

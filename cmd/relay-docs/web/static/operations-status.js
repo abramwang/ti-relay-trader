@@ -180,7 +180,13 @@
         <tr>
           <td>${account}</td>
           <td class="mono-cell">${escapeHTML(gateway.broker_id)} / ${escapeHTML(gateway.gateway_id)}</td>
-          <td>${statusBadge(gateway.status)}${gateway.state_text ? `<br><span>${escapeHTML(gateway.state_text)}</span>` : ""}</td>
+          <td>
+            ${statusBadge(gateway.status)}
+            ${gateway.state_text ? `<br><span>${escapeHTML(gateway.state_text)}</span>` : ""}
+            ${gateway.accepting_trade_commands !== undefined
+              ? `<br><span>交易 ${gateway.accepting_trade_commands ? "可用" : "暂停"} · 撤单 ${gateway.accepting_cancel_commands ? "可用" : "暂停"}</span>`
+              : ""}
+          </td>
           <td>${formatTime(gateway.last_heartbeat_at, true)}</td>
           <td class="mono-cell">${gateway.last_heartbeat_at ? `${formatNumber(gateway.heartbeat_age_seconds)}s` : "--"}</td>
           <td class="mono-cell">${formatNumber(gateway.pending_trade_count)}</td>

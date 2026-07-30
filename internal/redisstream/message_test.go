@@ -57,3 +57,21 @@ func TestDecodeEntryFallsBackToRedisStreamTime(t *testing.T) {
 		t.Fatalf("produced_at = %s, want %s", envelope.ProducedAt, want)
 	}
 }
+
+func TestDecodeEntryPreservesEventTypeAndEventName(t *testing.T) {
+	envelope, err := DecodeEntry(
+		"relay:prod:v1:huaxin:acct-1:event",
+		"1785391200123-0",
+		map[string]any{"body": `{
+			"message_type":"event",
+			"event_type":"order.cancel.event",
+			"event_name":"order.cancel.rejected"
+		}`},
+	)
+	if err != nil {
+		t.Fatalf("DecodeEntry() error = %v", err)
+	}
+	if envelope.EventType != "order.cancel.event" || envelope.EventName != "order.cancel.rejected" {
+		t.Fatalf("event identity = %q/%q", envelope.EventType, envelope.EventName)
+	}
+}

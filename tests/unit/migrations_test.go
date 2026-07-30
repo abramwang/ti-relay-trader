@@ -117,6 +117,25 @@ func TestStreamOperationsIndexesCoverRuntimeFilters(t *testing.T) {
 	}
 }
 
+func TestOCV12MigrationAddsCancelAttemptAudit(t *testing.T) {
+	upSQL := readMigration(t, "000017_oc_v1_2_cancel_attempts.up.sql")
+	for _, snippet := range []string{
+		"CREATE TABLE order_cancel_attempts",
+		"UNIQUE (account_id, attempt_id)",
+		"reconciliation_required BOOLEAN NOT NULL DEFAULT FALSE",
+		"CHECK (status IN ('accepted', 'rejected', 'timeout', 'outcome_unknown', 'not_ready', 'failed'))",
+		"CREATE INDEX order_cancel_attempts_reconciliation_idx",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("OC v1.2 migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000017_oc_v1_2_cancel_attempts.down.sql")
+	if !strings.Contains(downSQL, "DROP TABLE IF EXISTS order_cancel_attempts") {
+		t.Fatal("OC v1.2 rollback missing cancel attempt table")
+	}
+}
+
 func TestReconciliationIdempotencyMigrationContainsUniqueIndexes(t *testing.T) {
 	upSQL := readMigration(t, "000004_reconciliation_idempotency.up.sql")
 	for _, snippet := range []string{

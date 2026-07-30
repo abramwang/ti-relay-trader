@@ -3,10 +3,13 @@
 from .client import CallbackSubscription, RelayClient
 from .errors import (
     RelayBrokerNotReadyError,
+    RelayCancelRejectedError,
+    RelayCommandOutcomeUnknownError,
     RelayConnectionError,
     RelayError,
     RelayIdempotencyError,
     RelayOrderStateError,
+    RelayQueryInterruptedError,
     RelayRejectedError,
     RelayTimeoutError,
 )
@@ -32,13 +35,16 @@ __all__ = [
     "Position",
     "RelayClient",
     "RelayBrokerNotReadyError",
+    "RelayCancelRejectedError",
+    "RelayCommandOutcomeUnknownError",
     "RelayConnectionError",
     "RelayError",
     "RelayEvent",
     "RelayIdempotencyError",
     "RelayOrderStateError",
+    "RelayQueryInterruptedError",
     "RelayRejectedError",
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.20"
+__version__ = "0.1.21"

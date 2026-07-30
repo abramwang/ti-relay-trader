@@ -83,12 +83,17 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	location := timeutil.Location()
 	now := time.Date(2026, 7, 30, 10, 0, 20, 0, location)
 	payload, err := json.Marshal(map[string]any{
-		"component_id":        "oc.huaxin.a1",
-		"component_role":      "broker_trader_gateway",
-		"state":               "UP",
-		"state_text":          "running",
-		"pending_trade_count": 1,
-		"pending_query_count": 0,
+		"component_id":              "oc.huaxin.a1",
+		"component_role":            "broker_trader_gateway",
+		"state":                     "UP",
+		"state_text":                "running",
+		"redis_ready":               true,
+		"broker_ready":              true,
+		"order_snapshot_ready":      true,
+		"accepting_trade_commands":  true,
+		"accepting_cancel_commands": true,
+		"pending_trade_count":       1,
+		"pending_query_count":       0,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +128,9 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	}
 
 	status := service.gatewayStatus(now, true, command, ledger.GatewayIssue{})
-	if status.Status != "online" || status.PendingTrades != 1 || status.HeartbeatAgeSecs != 5 {
+	if status.Status != "online" || status.PendingTrades != 1 || status.HeartbeatAgeSecs != 5 ||
+		status.BrokerReady == nil || !*status.BrokerReady ||
+		status.AcceptingCancelCommands == nil || !*status.AcceptingCancelCommands {
 		t.Fatalf("gateway status = %+v", status)
 	}
 
@@ -135,6 +142,53 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	})
 	if status.Status != "broker_not_ready" || !status.BrokerNotReady {
 		t.Fatalf("broker not ready status = %+v", status)
+	}
+}
+
+func TestGatewayStatusUsesOCV12ReadinessFlags(t *testing.T) {
+	location := timeutil.Location()
+	now := time.Date(2026, 7, 30, 9, 1, 10, 0, location)
+	payload, err := json.Marshal(map[string]any{
+		"component_id":              "oc.huaxin.a1",
+		"component_role":            "broker_trader_gateway",
+		"state":                     "DEGRADED",
+		"state_text":                "initial_order_sync_pending",
+		"redis_ready":               true,
+		"broker_ready":              true,
+		"order_snapshot_ready":      false,
+		"accepting_trade_commands":  true,
+		"accepting_cancel_commands": false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"protocol":     Protocol,
+		"message_type": "heartbeat",
+		"message_id":   "hb-v12",
+		"produced_at":  now.Add(-time.Second).Format(time.RFC3339Nano),
+		"payload":      json.RawMessage(payload),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := redis.NewXMessageSliceCmd(context.Background())
+	latest.SetVal([]redis.XMessage{{
+		ID:     "1785308335135-0",
+		Values: map[string]any{"body": string(body)},
+	}})
+	service := &RuntimeObservability{cfg: config.Config{
+		Operations: config.OperationsConfig{HeartbeatStaleSeconds: 30},
+	}}
+	status := service.gatewayStatus(now, true, heartbeatProbeCommand{
+		account: config.AccountRouteConfig{AccountID: "a1", BrokerID: "huaxin", GatewayID: "a1"},
+		stream:  "relay:prod:v1:huaxin:a1:hb",
+		latest:  latest,
+	}, ledger.GatewayIssue{})
+
+	if status.Status != "degraded" || status.OrderSnapshotReady == nil || *status.OrderSnapshotReady ||
+		status.AcceptingCancelCommands == nil || *status.AcceptingCancelCommands {
+		t.Fatalf("gateway v1.2 readiness status = %+v", status)
 	}
 }
 

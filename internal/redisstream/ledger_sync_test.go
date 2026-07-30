@@ -770,11 +770,168 @@ func TestProcessLedgerEntryDoesNotRejectOrderForRejectedCancelReply(t *testing.T
 		}`,
 	})
 
-	if result.Archived != 1 || result.Replies != 1 || result.Orders != 0 || result.OrderEvents != 0 {
+	if result.Archived != 1 || result.Replies != 1 || result.Orders != 0 || result.OrderEvents != 0 ||
+		result.CancelAttempts != 1 || result.CancelFailures != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
 		t.Fatalf("cancel rejection should not change order state: %#v / %#v", writer.orderUpdates, writer.orderEvents)
+	}
+	if len(writer.cancelAttempts) != 1 || writer.cancelAttempts[0].Status != "rejected" ||
+		writer.cancelAttempts[0].GatewayOrderID != "gw-cancel-rejected" {
+		t.Fatalf("cancel attempts = %#v", writer.cancelAttempts)
+	}
+}
+
+func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:event", "3-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-cancel-rejected",
+			"event_type":"order.cancel.event",
+			"event_name":"order.cancel.rejected",
+			"action":"order.cancel",
+			"origin_message_id":"msg-cancel-v12",
+			"request_id":"req-cancel-v12",
+			"gateway_order_id":"gw-cancel-v12",
+			"produced_at":"2026-07-30T02:00:00.123Z",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"501000114077"},
+			"payload":{
+				"gateway_order_id":"gw-cancel-v12",
+				"account_id":"501000114077",
+				"order_id":123,
+				"order_stream_id":"12001A180000123",
+				"cancel_status":"rejected",
+				"code":"BROKER_CANCEL_REJECTED",
+				"message":"当前状态禁止此项操作",
+				"order_state_changed":false,
+				"retry_safe":false,
+				"occurred_at":"2026-07-30T02:00:00.123Z"
+			}
+		}`,
+	})
+
+	if result.CancelAttempts != 1 || result.CancelFailures != 1 || len(result.CancelFailureItems) != 1 ||
+		result.Orders != 0 || result.OrderEvents != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 || len(writer.cancelAttempts) != 1 {
+		t.Fatalf("writer = %#v", writer)
+	}
+	attempt := writer.cancelAttempts[0]
+	if attempt.Code != "BROKER_CANCEL_REJECTED" || attempt.TradeDate != "2026-07-30" ||
+		attempt.RetrySafe == nil || *attempt.RetrySafe || attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
+		t.Fatalf("cancel attempt = %#v", attempt)
+	}
+}
+
+func TestProcessLedgerEntryMapsBatchFailedOrdersByIndex(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:reply", "4-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-batch-partial",
+			"origin_message_id":"msg-batch-1",
+			"action":"order.batch.submit",
+			"status":"accepted",
+			"routing":{"env":"test","broker_id":"sim","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"accepted_count":1,
+				"failed_count":1,
+				"failed_orders":[{
+					"index":1,
+					"gateway_order_id":"gw-batch-2",
+					"code":"ORDER_SUBMIT_REJECTED",
+					"message":"exchange must be SH or SZ"
+				}]
+			}
+		}`,
+	})
+
+	if result.Orders != 1 || result.OrderEvents != 1 || len(writer.orderUpdates) != 1 || len(writer.orderEvents) != 1 {
+		t.Fatalf("result/writer = %#v / %#v", result, writer)
+	}
+	event := writer.orderUpdates[0]
+	if event.GatewayOrderID != "gw-batch-2" || event.Order.RejectCode != trading.ErrorOrderSubmitRejected ||
+		event.Order.RejectMessage != "exchange must be SH or SZ" {
+		t.Fatalf("batch failure event = %#v", event)
+	}
+	if writer.orderEvents[0].stream.ID != "4-1#failed-1" {
+		t.Fatalf("batch event stream = %#v", writer.orderEvents[0].stream)
+	}
+}
+
+func TestProcessLedgerEntryDoesNotRejectOrderForUnknownCommandOutcome(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "5-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-outcome-unknown",
+			"origin_message_id":"msg-submit-restart",
+			"action":"order.submit",
+			"status":"failed",
+			"code":"COMMAND_OUTCOME_UNKNOWN",
+			"message":"OC restarted before the command outcome was known",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"gateway_order_id":"gw-outcome-unknown"}
+		}`,
+	})
+
+	if result.Skipped != 1 || result.Orders != 0 || result.OrderEvents != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
+		t.Fatalf("unknown command outcome changed order: %#v / %#v", writer.orderUpdates, writer.orderEvents)
+	}
+}
+
+func TestProcessLedgerEntryRecordsCancelTimeoutDLQ(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:dlq", "6-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"deadletter",
+			"message_id":"dlq-cancel-timeout",
+			"origin_message_id":"msg-cancel-timeout",
+			"request_id":"req-cancel-timeout",
+			"action":"order.cancel",
+			"code":"CANCEL_RESPONSE_TIMEOUT",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-cancel-timeout",
+				"reconciliation_required":true
+			}
+		}`,
+	})
+
+	if result.DeadLetters != 1 || result.CancelAttempts != 1 || result.CancelFailures != 1 ||
+		len(writer.cancelAttempts) != 1 || !writer.cancelAttempts[0].ReconciliationRequired ||
+		writer.cancelAttempts[0].Status != "timeout" {
+		t.Fatalf("timeout result/writer = %#v / %#v", result, writer.cancelAttempts)
+	}
+}
+
+func TestProcessLedgerEntryArchivesUnknownEventWithoutLedgerFailure(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "7-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-future-v2",
+			"event_type":"order.future.event",
+			"event_name":"order.future.changed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"future_field":"preserved in raw"}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Unsupported != 1 || result.Skipped != 1 || result.LedgerErrors != 0 ||
+		len(writer.raw) != 1 {
+		t.Fatalf("unknown event result/writer = %#v / %#v", result, writer.raw)
 	}
 }
 
@@ -1076,6 +1233,7 @@ type fakeLedgerWriter struct {
 	orders                []trading.Order
 	orderUpdates          []trading.OrderEvent
 	orderEvents           []recordedOrderEvent
+	cancelAttempts        []ledger.OrderCancelAttempt
 	fills                 []recordedFill
 	transfers             []recordedComponentTransfer
 	assets                []recordedAsset
@@ -1126,6 +1284,11 @@ func (writer *fakeLedgerWriter) UpsertAccount(_ context.Context, account trading
 
 func (writer *fakeLedgerWriter) UpsertOrder(_ context.Context, order trading.Order) error {
 	writer.orders = append(writer.orders, order)
+	return nil
+}
+
+func (writer *fakeLedgerWriter) UpsertOrderCancelAttempt(_ context.Context, attempt ledger.OrderCancelAttempt) error {
+	writer.cancelAttempts = append(writer.cancelAttempts, attempt)
 	return nil
 }
 

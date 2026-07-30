@@ -8,8 +8,8 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。2026-07-30 已完成 N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测；盘前任务补跑 6 个账户成功。OC v1.1 次交易日验收为部分通过：空 stream ID 稳定键、869 条真实成交一致性和 124 条 ETF transfer 分流通过，但 `307000051387` 有 14 个实时订单证券与盘后查询错位，16 个真实成交被正确隔离到 `FILL_ORDER_CONTEXT_MISMATCH` DLQ，详见 `docs/OC_VALIDATION_REPORT_20260730.md`。先完成该 P0 联合修复和 Relay summary/ETF 主订单对账口径修正，再推进 N10。`relay-sdk 0.1.20` 已发布；生产配置仍为 6 个只读账户、下单账户 0。P9 内置模拟柜台继续暂缓。
-- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis ping 正常，账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
+- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。2026-07-30 已完成 N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测。OC 已升级到 v1.2，Relay 已按兼容通知实现撤单失败独立审计、batch 子单部分失败、真实就绪心跳、结果未知保护和未知事件前向兼容；`000017` 已应用，`relay-sdk 0.1.21` 已构建发布。生产仍为 6 个只读账户、下单账户 0；下一交易窗口继续联合验收新心跳、撤单拒绝和跨重启订单 ID。详见 `docs/OC_V1_2_RELAY_COMPATIBILITY_20260730.md`。P9 内置模拟柜台继续暂缓。
+- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 32 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-30`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
@@ -138,8 +138,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
 | `http://relay-trader.quantstage.com/operations` | Gateway 心跳、Redis Stream lag、checkpoint 与 DLQ 运维 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -301,11 +301,12 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
-2. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
-3. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
-4. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
-5. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、外部告警、回滚和发布检查清单。
+1. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
+2. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+3. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
+4. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
+5. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
+6. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、外部告警、回滚和发布检查清单。
 
 ## README 状态维护规则
 
@@ -365,7 +366,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.20.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -558,3 +559,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-30`: 完成 N9 Redis Stream 与 gateway 可观测：新增 `/operations` 页面、`/v1/operations/status`、DLQ 列表/审核轨迹接口和 `/v1/status.runtime` 摘要；按 OC 心跳聚合 gateway 状态，按 Redis 最新 ID 与 PostgreSQL checkpoint 计算有上限真实 lag，并用 Meridian 交易日及 `08:55-15:15` 窗口抑制休市误报。新增 `000015_stream_operations` 保存不可变 DLQ 审核记录，`000016` 为 DLQ 和 `BROKER_NOT_READY` 增加部分索引，生产处置写保持关闭。生产只读验收为 6 个 gateway 全部 `off_hours`、24 条 output stream lag=0、pending DLQ=0、下单账户 0；`operations_visual_smoke.py` 在 1600x1100 和 1280x800 下通过，无横向溢出、控制台错误或 4xx/5xx。
 - `2026-07-30`: 排查当天盘前任务未完成：cron 已在 09:01 准时触发，但 N9 的 `stream_runtime=attention` 将 `/v1/status` 汇总为 `degraded`，旧任务健康门禁因此在 0.24 秒内提前退出；失败报告又因尚未解析目标交易日被 `POST /v1/jobs/runs` 拒绝，页面只保留昨天记录。现已先解析 Meridian 交易日，核心依赖健康时允许带运行态告警继续，并为所有持久化报告显式补齐目标交易日。09:12 恢复执行 6/6 账户无错误，写入 6 份 open 资产、208 条 open 持仓，`job_runs` 状态为 `succeeded`。
 - `2026-07-30`: 使用新交易日生产数据验收 OC v1.1。空 `order_stream_id` 的 32 笔订单均为独立稳定 ID；869 条真实成交实时/查询身份一致，124 条 ETF 成分划转没有混入普通成交，终态时间和非拒单错误残留均正常。但 `307000051387` 的 `BTR.83224303|J.0` 篮子有 14 个实时 `order.event` 证券与盘后 `order_page` 错位，导致 16 个真实成交被 OC 正确隔离并产生 32 条 `FILL_ORDER_CONTEXT_MISMATCH` 原始 DLQ。Relay 主账本未写入错误真实成交，但 14 条旧兼容 summary 形成次生错配。已形成 `docs/OC_VALIDATION_REPORT_20260730.md`，P0 根因关闭前暂缓进入 N10。
+- `2026-07-30`: 对齐 OC v1.2 对接文档和兼容通知：新增撤单动作独立审计迁移 `000017`，支持 `order.cancel.rejected`、`CANCEL_RESPONSE_TIMEOUT`、batch `failed_orders[]`、`COMMAND_OUTCOME_UNKNOWN` 保护和五项真实就绪心跳；未知事件 raw 归档后继续消费。发布 `relay-sdk 0.1.21` 的撤单失败回调及专项异常，Go 全量测试和 SDK 16/16 通过。生产迁移已应用、9092 已重启且仍为 6 账户只读；收盘后最新 OC 心跳仍是升级前样本，下一交易窗口继续联合验收。

@@ -28,7 +28,7 @@
 
 ## 当前优先级
 
-1. 关闭 OC v1.1 次交易日验收 P0：修复 `307000051387` 实时订单上下文证券错位，复验 16 个被 `FILL_ORDER_CONTEXT_MISMATCH` 隔离的成交；Relay 同步清理身份不一致的 summary，并把 ETF `P/R + E` 主订单移出普通成交数量检查。
+1. 完成 OC v1.2 联合验收：Relay 已兼容撤单拒绝事件、撤单超时审计、真实就绪心跳、batch 子单部分失败和结果未知保护；下一交易机会验证撤单拒绝与跨 OC 重启订单 ID，并复验 `307000051387` 的实时订单上下文错位是否关闭。
 2. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
 3. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
 4. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
@@ -67,6 +67,8 @@
 - [x] `/trade#performance` 增加“证券贡献 / 净值序列”切换、策略汇总和贡献明细表；API Console、schema 和 Python SDK helper 同步。
 - [x] 新增只读 `performance/trade-quality`：输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细；订单成交按交易日关联，`/trade#performance`、API Console 和 `relay-sdk 0.1.18` 已同步。
 - [x] 对齐 OC v1.1 数据质量协议：稳定外部订单 ID 作为不透明值使用，普通成交与 ETF 划转分表，`adapter.data_quality` DLQ 纳入消费统计，新增划转 API、终端页签和归档重放。
+- [x] 对齐 OC v1.2 增量协议：撤单动作结果独立审计且不污染订单状态，batch `failed_orders[]` 逐单回写，`COMMAND_OUTCOME_UNKNOWN` 保持结果未知，运维页展示 broker/snapshot/交易/撤单真实就绪字段，未知事件 raw 归档后继续推进消费。
+- [ ] 联合验证 OC v1.2：不可撤订单产生 `order.cancel.rejected`、超时进入需对账审计、长 ID 跨 OC 重启保持不变、重复查询完整重放且 PEL 清零。
 - [x] 审计 Meridian SDK `0.1.15` 并同步 Relay 所需增量：ETF PCF/现金清单/状态薄代理、实时分钟 Bar SSE、交易日显式字段；ETF T0 使用 `unit_subscribe_redeem` 做最小申赎单位质量校验，replay/task/cursor 保留在 Prism/回测边界。
 - [x] `/trade#performance` 新增 ECharts 主图：账户 close 净值归一化序列、上证指数基准、超额收益，以及账户/基准回撤双层联动展示。
 - [x] 建立正式数据质量区：按资产快照与资金桥、Meridian 基准行情、收益归因输入、订单成交账本、经济净值与 T+1 对账、盘前初始化与盘后结算六项检查展示通过/提示/阻断。
