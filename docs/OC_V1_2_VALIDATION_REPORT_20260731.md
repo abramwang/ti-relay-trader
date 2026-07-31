@@ -73,3 +73,25 @@ Relay 已增加防御：撤单审计优先使用 `routing.account_id`。migratio
 5. 同 `message_id` 并发重复查询只调用一次柜台并完整重放多页 reply。
 
 生产交易权限仍关闭，上述写链路等待券商测试环境或受控交易机会继续验收。
+
+## OC 修复部署后的待验收状态
+
+OC 已反馈完成并部署以下修复：
+
+1. `70c966d`：查询完成后的 XACK 不再受 `XREADGROUP BLOCK 0` 阻塞，并支持失败重试。
+2. `7110a76`：按 Redis 多 stream 嵌套结构解析恢复响应，修复 stream、entry ID 和 body 错位。
+3. `701d5af`：撤单拒绝事件 `payload.account_id` 使用 Relay 标准账户。
+
+Relay 于 `2026-07-31 17:27 Asia/Shanghai` 执行部署后只读检查。由于 OC 已按 15:30 计划关停，最新 heartbeat 仍为 15:29:02，修复后的进程尚未产生运行态样本：
+
+- 六账户 `cmd.trade` 仍全部为 `pending=0, lag=0`。
+- 六账户 `cmd.query` 仍保留修复前的 18 条 pending，分布为 `4/4/1/1/4/4`，lag 均为 0。
+- 没有新增 `QUERY_INTERRUPTED`。
+- 最新 DLQ 仍是修复前 15:26 的 6 条 `BAD_RECOVERED_COMMAND`，部署后没有新增错误 DLQ。
+
+因此当前状态是 **代码已部署，等待下一次 OC 启动触发真实恢复验收**，不能把未变化的 PEL 判定为新版本失败。下一次启动后应先不发送新命令，直接验证：
+
+1. 18 条历史 query pending 分别产生关联真实 stream、entry ID 和原 `message_id` 的 `QUERY_INTERRUPTED`。
+2. 输出成功后六账户 `cmd.query pending=0, lag=0`。
+3. 不再新增 `BAD_RECOVERED_COMMAND`。
+4. 后续自然发生的撤单拒绝满足 `payload.account_id == routing.account_id`。

@@ -28,7 +28,7 @@
 
 ## 当前优先级
 
-1. 完成 OC v1.2 联合验收：订单/成交实时与查询身份错位已经关闭，readiness heartbeat、ETF transfer 分流和撤单拒绝独立审计已通过；当前 P0 是修复六账户 `cmd.query` 合计 18 条 PEL 未 ACK 及伪 `BAD_RECOVERED_COMMAND` 恢复解析问题。
+1. 完成 OC v1.2 联合验收：订单/成交实时与查询身份错位已经关闭，readiness heartbeat、ETF transfer 分流和撤单拒绝独立审计已通过；OC 已部署 query XACK 和恢复解析修复，下一次启动使用现存 18 条 PEL 验证 `QUERY_INTERRUPTED`、pending 清零且不再产生伪 `BAD_RECOVERED_COMMAND`。
 2. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
 3. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
 4. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
@@ -124,7 +124,7 @@
 - [x] 形成 OC 同日 ID 冲突、订单/成交错配的复现报告和联合验收标准。
 - [x] 交易质量接口增加证券/方向/业务类型错配和终态时间完整性检查；终态事件与盘后权威查询统一使用同日事件证据。
 - [x] 2026-07-31 次交易日复验：6,898 个实时/查询订单身份和 8,318 个实时/查询成交身份错配均为 0，`307000051387` 的实时上下文错位已关闭。
-- [ ] 联合修复 OC 查询命令 PEL：六账户 `cmd.query` 合计 18 条 completed 查询未 ACK，并产生 6 条字段错位的 `BAD_RECOVERED_COMMAND`。
+- [ ] 验收 OC 查询命令 PEL 修复：`70c966d/7110a76` 已部署，等待下一次 OC 启动确认六账户现存 18 条 pending 清零且恢复关联字段正确。
 - 使用临时 PostgreSQL 跑 migration/repository 集成测试。
 - 编写数据库备份、恢复和按交易日回放验证手册，并完成一次恢复演练。
 
