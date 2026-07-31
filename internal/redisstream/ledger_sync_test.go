@@ -132,6 +132,7 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 			"protocol":"relay.stream.v1",
 			"message_type":"reply",
 			"message_id":"reply-order-page-1",
+			"idempotency_key":"orders:query:00030484:req-1",
 			"action":"order.list.query",
 			"result_type":"order_page",
 			"status":"completed",
@@ -170,6 +171,9 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	order := writer.orders[0]
 	if order.GatewayOrderID != "gw-page-1" || order.Status != trading.OrderStatusFilled || order.AdapterStatusName != "全部成交" {
 		t.Fatalf("order = %#v", order)
+	}
+	if order.IdempotencyKey != "" {
+		t.Fatalf("query request key leaked into order idempotency_key: %q", order.IdempotencyKey)
 	}
 	if order.LastUpdatedAt.IsZero() {
 		t.Fatalf("last_updated_at was not parsed: %#v", order)
@@ -432,6 +436,7 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 			"origin_message_id":"msg-1",
 			"request_id":"req-1",
 			"correlation_id":"corr-1",
+			"idempotency_key":"submit-idem-1",
 			"gateway_order_id":"gw-1",
 			"produced_at":"2026-06-13T10:00:00.123Z",
 			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
@@ -469,6 +474,9 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 	if order.AdapterStatusCode != 2 || order.AdapterStatusName != "queued" {
 		t.Fatalf("adapter status = %d/%s", order.AdapterStatusCode, order.AdapterStatusName)
+	}
+	if order.IdempotencyKey != "submit-idem-1" {
+		t.Fatalf("order idempotency_key = %q", order.IdempotencyKey)
 	}
 	wantUpdatedAt := time.Date(2026, 6, 13, 10, 0, 0, 123000000, time.UTC)
 	if !order.LastUpdatedAt.Equal(wantUpdatedAt) {

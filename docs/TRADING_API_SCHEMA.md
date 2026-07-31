@@ -370,7 +370,7 @@ HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 acti
 
 `POST /v1/orders` 的 `202 Accepted` 仅表示 relay 已接受请求、写入订单草稿并向 Redis `cmd.trade` 写入 `order.submit`，不表示交易所接单或成交。最终状态以 `order.event` 和 `fill.event` 回流为准。
 
-若同一 `account_id + gateway_order_id` 和同一 `idempotency_key` 的请求与原始下单核心字段一致，relay 不会再次写 Redis，而是返回已有订单并标记 `replayed=true`，HTTP 状态为 `200 OK`。核心字段包含 `trade_date` 和策略归因字段；同一订单号重放但策略标签不同会返回 `409 IDEMPOTENCY_CONFLICT`。若同一 `gateway_order_id` 使用不同幂等键，返回 `409 CONFLICT`；若同一 `idempotency_key` 指向不同订单或不同 payload，返回 `409 IDEMPOTENCY_CONFLICT`。
+若同一 `account_id + gateway_order_id` 和同一 `idempotency_key` 的请求与原始下单核心字段一致，relay 不会再次写 Redis，而是返回已有订单并标记 `replayed=true`，HTTP 状态为 `200 OK`。核心字段包含 `trade_date` 和策略归因字段；同一订单号重放但策略标签不同会返回 `409 IDEMPOTENCY_CONFLICT`。若同一 `gateway_order_id` 使用不同幂等键，返回 `409 CONFLICT`；若同一 `idempotency_key` 指向不同订单或不同 payload，返回 `409 IDEMPOTENCY_CONFLICT`。该语义由应用预检和 PostgreSQL insert-only 原子占位共同保证，并发请求不能同时发布同一笔订单命令。
 
 涨跌停等柜台规则当前以异步回报为准。relay 同步层只做 schema、账户路由、重复订单和已知 unsupported 交易类型校验；超涨跌停价格可能先返回 `202 Accepted`，随后通过订单账本/SSE 进入 `rejected`。策略端必须订阅订单状态或轮询账本判断最终结果。若需要同步涨跌停预校验，应以后续接入 Meridian 涨跌停/交易规则数据后单独实现。
 

@@ -1709,7 +1709,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		RejectMessage:     rejectMessage,
 		OriginMessageID:   envelope.OriginMessageID,
 		RequestID:         envelope.RequestID,
-		IdempotencyKey:    envelope.IdempotencyKey,
+		IdempotencyKey:    orderIdempotencyKey(envelope),
 		ShareholderID:     payload.ShareholderID,
 		TradeDate:         payload.TradeDate,
 		StrategyType:      payload.StrategyType,
@@ -1836,6 +1836,14 @@ func sourceRef(envelope EntryEnvelope) ledger.SourceRef {
 		CorrelationID:   firstNonEmpty(envelope.CorrelationID, envelope.RequestCorrelationID),
 		IdempotencyKey:  envelope.IdempotencyKey,
 	}
+}
+
+func orderIdempotencyKey(envelope EntryEnvelope) string {
+	action := strings.ToLower(strings.TrimSpace(envelope.Action))
+	if strings.HasSuffix(action, ".query") {
+		return ""
+	}
+	return strings.TrimSpace(envelope.IdempotencyKey)
 }
 
 func outputRoles(roles []string) []string {

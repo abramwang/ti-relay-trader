@@ -261,11 +261,12 @@ relay 的正式下单 API 已在写入 Redis `cmd.trade` 前先写入订单草�
 ## 幂等策略
 
 1. `raw_stream_messages` 以 `stream_key + stream_id` 去重。
-2. `orders` 以 `account_id + trade_date + gateway_order_id` upsert；柜台订单流号允许跨交易日复用。
+2. `orders` 以 `account_id + trade_date + gateway_order_id` upsert；非空 `account_id + idempotency_key` 有部分唯一索引，柜台订单流号允许跨交易日复用。
 3. `order_events` 以 `account_id + event_id` 或 `stream_key + stream_id` 去重。
 4. `fills` 以 `account_id + trade_date + gateway_order_id + fill_id` 或含交易日的 fallback 唯一键去重；`fill_id/match_stream_id` 只要求在当日订单作用域内稳定。
 5. `stream_checkpoints` 以 `stream_key` 去重，记录最后已读 Redis Stream ID。
-6. API 下单在发布 Redis 前先查 `gateway_order_id` 和 `idempotency_key`，命中相同 payload 时返回 `replayed=true`，冲突时不发布 Redis 命令。
+6. API 下单在发布 Redis 前先查 `gateway_order_id` 和 `idempotency_key`，再使用 insert-only 原子占位；命中相同 payload 或并发唯一冲突时返回 `replayed=true`，冲突时不发布 Redis 命令。
+7. `order.list.query` 的查询幂等键只保留在 `raw_stream_messages` 作为命令追踪字段，不写入订单主表的下单幂等字段。
 
 重复执行同一批 `ledger-sync` 不会重复插入原始消息。
 

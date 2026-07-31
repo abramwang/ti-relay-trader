@@ -39,6 +39,7 @@ const (
 
 type LedgerWriter interface {
 	UpsertAccount(ctx context.Context, account trading.Account) error
+	CreateOrder(ctx context.Context, order trading.Order) error
 	UpsertOrder(ctx context.Context, order trading.Order) error
 	GetOrder(ctx context.Context, accountID string, gatewayOrderID string) (trading.Order, error)
 	GetOrderByIdempotencyKey(ctx context.Context, accountID string, idempotencyKey string) (trading.Order, error)
@@ -255,7 +256,21 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	if err := service.ledger.UpsertAccount(ctx, account); err != nil {
 		return SubmitOrderResult{}, err
 	}
-	if err := service.ledger.UpsertOrder(ctx, order); err != nil {
+	if err := service.ledger.CreateOrder(ctx, order); err != nil {
+		if errors.Is(err, ledger.ErrOrderConflict) {
+			existing, replayed, preflightErr := service.preflightSubmitOrder(ctx, normalized)
+			if preflightErr != nil {
+				return SubmitOrderResult{}, preflightErr
+			}
+			if replayed {
+				return SubmitOrderResult{
+					Order:          existing,
+					IdempotencyKey: normalized.IdempotencyKey,
+					RequestID:      requestID,
+					Replayed:       true,
+				}, nil
+			}
+		}
 		return SubmitOrderResult{}, err
 	}
 
@@ -386,7 +401,20 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 	for i := range orders {
 		orders[i].OriginMessageID = messageID
 		orders[i].RequestID = requestID
-		if err := service.ledger.UpsertOrder(ctx, orders[i]); err != nil {
+		if err := service.ledger.CreateOrder(ctx, orders[i]); err != nil {
+			if errors.Is(err, ledger.ErrOrderConflict) {
+				existing, replayed, preflightErr := service.preflightSubmitOrder(ctx, normalized.Orders[i])
+				if preflightErr != nil {
+					return BatchSubmitOrderResult{}, preflightErr
+				}
+				if replayed {
+					return BatchSubmitOrderResult{}, fmt.Errorf(
+						"%w: batch order %s was reserved concurrently",
+						ErrDuplicateGatewayOrder,
+						existing.GatewayOrderID,
+					)
+				}
+			}
 			return BatchSubmitOrderResult{}, err
 		}
 	}

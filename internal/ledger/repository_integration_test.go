@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -67,6 +68,7 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		ClientOrderID:  "client-" + suffix,
 		GatewayOrderID: gatewayOrderID,
 		OrderStreamID:  orderStreamID,
+		TradeDate:      "2026-06-13",
 		Symbol:         "600000",
 		Exchange:       trading.ExchangeSH,
 		TradeSide:      trading.TradeSideBuy,
@@ -76,10 +78,17 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		Status:         trading.OrderStatusAccepted,
 		GatewayStatus:  trading.GatewayStatusAccepted,
 		RequestID:      requestID,
+		IdempotencyKey: "idempotency-" + suffix,
 		AdapterContext: map[string]any{"scope": "integration"},
 	}
-	if err := repo.UpsertOrder(ctx, order); err != nil {
-		t.Fatalf("UpsertOrder() error = %v", err)
+	if err := repo.CreateOrder(ctx, order); err != nil {
+		t.Fatalf("CreateOrder() error = %v", err)
+	}
+	conflictingOrder := order
+	conflictingOrder.ClientOrderID = "client-conflict-" + suffix
+	conflictingOrder.GatewayOrderID = "gateway-conflict-" + suffix
+	if err := repo.CreateOrder(ctx, conflictingOrder); !errors.Is(err, ErrOrderConflict) {
+		t.Fatalf("CreateOrder() duplicate idempotency error = %v, want ErrOrderConflict", err)
 	}
 
 	if err := repo.AppendOrderEvent(ctx, trading.OrderEvent{

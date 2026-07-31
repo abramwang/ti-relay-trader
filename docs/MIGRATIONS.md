@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-07-30`
+更新时间：`2026-07-31`
 
 ## 当前状态
 
@@ -41,6 +41,10 @@ migrations/postgres/000016_stream_operations_indexes.up.sql
 migrations/postgres/000016_stream_operations_indexes.down.sql
 migrations/postgres/000017_oc_v1_2_cancel_attempts.up.sql
 migrations/postgres/000017_oc_v1_2_cancel_attempts.down.sql
+migrations/postgres/000018_normalize_cancel_attempt_accounts.up.sql
+migrations/postgres/000018_normalize_cancel_attempt_accounts.down.sql
+migrations/postgres/000019_order_idempotency_unique.up.sql
+migrations/postgres/000019_order_idempotency_unique.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -66,7 +70,9 @@ migrations/postgres/000017_oc_v1_2_cancel_attempts.down.sql
 15. `000015_stream_operations` 新增 Redis Stream checkpoint、Gateway 问题和 DLQ 人工审核能力。
 16. `000016_stream_operations_indexes` 补充 DLQ 和 `BROKER_NOT_READY` 运维查询索引。
 17. `000017_oc_v1_2_cancel_attempts` 新增撤单动作结果审计表；撤单被拒绝、超时或结果未知不再污染订单主状态。
-18. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `17:oc_v1_2_cancel_attempts`。
+18. `000018_normalize_cancel_attempt_accounts` 将撤单审计账户统一迁移到 Relay routing 标准账户。
+19. `000019_order_idempotency_unique` 清理误写入订单的查询请求键和历史重复键，增加 `orders(account_id,idempotency_key)` 部分唯一索引。
+20. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `19:order_idempotency_unique`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -92,7 +98,7 @@ internal/ledger
 
 Repository 当前覆盖：
 
-- `UpsertAccount`、`UpsertOrder`、`AppendOrderEvent`、`UpsertOrderCancelAttempt`
+- `UpsertAccount`、`CreateOrder`、`UpsertOrder`、`AppendOrderEvent`、`UpsertOrderCancelAttempt`
 - `InsertFill`、`InsertComponentTransfer`
 - `ListFills`、`ListComponentTransfers`
 - `ArchiveRawStreamMessage`
@@ -116,7 +122,7 @@ Repository 当前覆盖：
 RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -run TestRepositoryWritesToPostgres -count=1 -v
 ```
 
-该测试默认跳过；设置测试库 DSN 后会写入一组临时账户、订单、事件、成交和原始 stream 消息，并在测试清理阶段删除。
+该测试默认跳过；设置测试库 DSN 后会写入一组临时账户、订单、事件、成交和原始 stream 消息，验证重复订单幂等键被数据库拒绝，并在测试清理阶段删除。
 
 ## 覆盖表
 

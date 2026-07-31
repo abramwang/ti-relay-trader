@@ -10,12 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"ti-relay-trader/internal/timeutil"
 	"ti-relay-trader/internal/trading"
 )
 
 var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
+var ErrOrderConflict = errors.New("order uniqueness conflict")
 var ErrAssetNotFound = errors.New("asset snapshot not found")
 var ErrStreamCheckpointNotFound = errors.New("stream checkpoint not found")
 var ErrDeadLetterNotFound = errors.New("dead letter not found")
@@ -402,6 +405,23 @@ func (repo *Repository) AccountAliases(ctx context.Context, accountIDs []string)
 	return aliases, nil
 }
 
+func (repo *Repository) CreateOrder(ctx context.Context, order trading.Order) error {
+	if repo == nil || repo.exec == nil {
+		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeOrder(order)
+	if err != nil {
+		return err
+	}
+	if err := repo.writeOrder(ctx, insertOrderSQL, normalized); err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("%w: create order %s/%s/%s: %v", ErrOrderConflict, normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
+		}
+		return fmt.Errorf("create order %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
+	}
+	return nil
+}
+
 func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) error {
 	if repo == nil || repo.exec == nil {
 		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -410,6 +430,13 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 	if err != nil {
 		return err
 	}
+	if err := repo.writeOrder(ctx, upsertOrderSQL, normalized); err != nil {
+		return fmt.Errorf("upsert order %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
+	}
+	return nil
+}
+
+func (repo *Repository) writeOrder(ctx context.Context, query string, normalized trading.Order) error {
 	rawPayload, err := marshalJSONObject(normalized)
 	if err != nil {
 		return err
@@ -419,7 +446,7 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 		return err
 	}
 
-	_, err = repo.exec.ExecContext(ctx, upsertOrderSQL,
+	_, err = repo.exec.ExecContext(ctx, query,
 		normalized.AccountID,
 		nullString(normalized.ClientOrderID),
 		normalized.GatewayOrderID,
@@ -465,10 +492,12 @@ func (repo *Repository) UpsertOrder(ctx context.Context, order trading.Order) er
 		rawPayload,
 		adapterContext,
 	)
-	if err != nil {
-		return fmt.Errorf("upsert order %s/%s/%s: %w", normalized.AccountID, normalized.TradeDate, normalized.GatewayOrderID, err)
-	}
-	return nil
+	return err
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt OrderCancelAttempt) error {

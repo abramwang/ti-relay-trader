@@ -29,7 +29,7 @@
 ## 当前优先级
 
 1. 完成 OC v1.2 联合验收：订单/成交实时与查询身份错位已经关闭，readiness heartbeat、ETF transfer 分流和撤单拒绝独立审计已通过；OC 已部署 query XACK 和恢复解析修复，下一次启动使用现存 18 条 PEL 验证 `QUERY_INTERRUPTED`、pending 清零且不再产生伪 `BAD_RECOVERED_COMMAND`。
-2. 完成 N10 账本生产化：明确测试/生产数据隔离方案，补数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+2. 完成 N10 账本生产化：数据库级订单幂等约束已落地，下一步明确测试/生产数据隔离方案，并补临时 PostgreSQL CI 和备份恢复演练。
 3. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
 4. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
 5. P9 模拟柜台继续暂缓；relay 保持实盘接入、账本、审计、对账和策略交易 API 的职责边界。
@@ -118,7 +118,7 @@
 范围：
 
 - 优先采用测试/生产独立 PostgreSQL DSN；如必须共库，再设计 `environment` 进入核心表主键/唯一键的 migration。
-- [ ] 清理历史重复键后，为 `orders(account_id, idempotency_key)` 增加部分唯一约束。
+- [x] 清理历史查询请求键和 1 组旧缺陷重复键，为 `orders(account_id, idempotency_key)` 增加部分唯一约束；下单改为 PostgreSQL insert-only 原子占位，并发同单回查为 replay、不重复发布 Redis 命令。
 - [x] 将 `orders/fills/order_events` 的唯一键、外键、upsert 冲突目标和研究视图切到 `account_id + trade_date + gateway_order_id`。
 - [x] 从 PostgreSQL 原始流归档重放生产订单/成交，验证订单事件和成交同日外键完整性。
 - [x] 形成 OC 同日 ID 冲突、订单/成交错配的复现报告和联合验收标准。
@@ -258,7 +258,7 @@
 - [x] 增加 open/close 资产快照、持仓当日盈亏字段和研究侧绩效 view migration。
 - [ ] 让历史 `order.event.payload` 补齐 `trade_side/business_type` 后启用无草稿事件重建订单主表。
 - [ ] 明确测试/生产 PostgreSQL 独立 DSN 或共库 `environment` 主键/唯一键 migration。
-- [ ] 清理历史重复幂等键后增加 `orders(account_id, idempotency_key)` 部分唯一约束。
+- [x] 清理历史重复幂等键后增加 `orders(account_id, idempotency_key)` 部分唯一约束；查询回包不再把 `orders:query:*` 请求键写入订单幂等字段。
 - [ ] 增加基于临时 PostgreSQL 的 CI 集成测试。
 
 ### P6 9092 正式交易 API 与 SDK

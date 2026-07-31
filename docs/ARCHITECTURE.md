@@ -259,7 +259,7 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 | 前置/柜台订单 ID | `order_id` | 柜台当日口径 | 排查柜台回报和券商侧订单 |
 | 交易所委托流号 | `order_stream_id` | 交易所当日口径 | 与交易所回报、成交回报交叉校验 |
 
-下单接口会在写 Redis 前先写本地草稿订单。若调用方没有传 `gateway_order_id`，relay 会生成 `gw-*`；若没有传 `client_order_id`，默认使用 `gateway_order_id`；若没有传 `idempotency_key`，单笔默认使用 `order:{account_id}:{gateway_order_id}`。
+下单接口会在写 Redis 前使用 insert-only 写入本地草稿订单，依靠非空 `orders(account_id,idempotency_key)` 部分唯一索引完成数据库原子占位。若调用方没有传 `gateway_order_id`，relay 会生成 `gw-*`；若没有传 `client_order_id`，默认使用 `gateway_order_id`；若没有传 `idempotency_key`，单笔默认使用 `order:{account_id}:{gateway_order_id}`。
 
 下单幂等的预检顺序：
 
@@ -268,6 +268,7 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 3. 如果同一 `gateway_order_id + idempotency_key` 已存在且核心 payload 一致，返回已有订单并标记 `replayed=true`。
 4. 如果同一 `gateway_order_id + idempotency_key` 已存在但 payload 不一致，返回 `IDEMPOTENCY_CONFLICT`。
 5. 如果 `gateway_order_id` 不存在，再查 `orders(account_id, idempotency_key)`；同一幂等键指向不同订单或不同 payload 时返回冲突。
+6. 预检后再以 insert-only 原子占位；若并发请求同时越过预检，数据库唯一冲突会触发同样的回查，相同 payload 返回 replay，冲突 payload 返回 `IDEMPOTENCY_CONFLICT`，均不重复发布 Redis 命令。
 
 批量下单对整批有一个 `idempotency_key`，每个子订单也会拥有独立 `gateway_order_id` 和子订单幂等键。当前实现不允许同一批中混合“已重放订单”和“新订单”，避免部分重放导致重复下单语义不清。
 

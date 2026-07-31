@@ -207,6 +207,40 @@ func TestSubmitOrderReplaysIdenticalExistingOrderWithoutPublishing(t *testing.T)
 	}
 }
 
+func TestSubmitOrderReplaysDatabaseReservationRaceWithoutPublishing(t *testing.T) {
+	existing := validDraftOrder()
+	ledgerWriter := &fakeLedger{
+		createOrderErr:     ledger.ErrOrderConflict,
+		orderOnCreateError: existing,
+	}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"msg-race"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 14, 11, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := validSubmitRequest()
+	req.ClientOrderID = existing.ClientOrderID
+	req.GatewayOrderID = existing.GatewayOrderID
+	req.IdempotencyKey = existing.IdempotencyKey
+	result, err := service.SubmitOrder(context.Background(), req, SubmitOptions{RequestID: "req-race"})
+	if err != nil {
+		t.Fatalf("SubmitOrder() race replay error = %v", err)
+	}
+	if !result.Replayed || result.Order.GatewayOrderID != existing.GatewayOrderID {
+		t.Fatalf("race replay result = %#v", result)
+	}
+	if len(ledgerWriter.orders) != 0 || len(publisher.commands) != 0 || len(ledgerWriter.raw) != 0 {
+		t.Fatalf("reservation race should not publish: orders=%d commands=%d raw=%d", len(ledgerWriter.orders), len(publisher.commands), len(ledgerWriter.raw))
+	}
+}
+
 func TestSubmitOrderRejectsDuplicateGatewayOrderID(t *testing.T) {
 	existing := validDraftOrder()
 	existing.IdempotencyKey = "idem-old"
@@ -861,6 +895,8 @@ type fakeLedger struct {
 	lastPositionQuery         trading.PositionQuery
 	lastPositionSnapshotQuery trading.PositionQuery
 	raw                       []ledger.RawStreamMessage
+	createOrderErr            error
+	orderOnCreateError        trading.Order
 }
 
 func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Account) error {
@@ -870,6 +906,18 @@ func (writer *fakeLedger) UpsertAccount(_ context.Context, account trading.Accou
 
 func (writer *fakeLedger) UpsertOrder(_ context.Context, order trading.Order) error {
 	writer.orders = append(writer.orders, order)
+	return nil
+}
+
+func (writer *fakeLedger) CreateOrder(_ context.Context, order trading.Order) error {
+	if writer.createOrderErr != nil {
+		if writer.orderOnCreateError.AccountID != "" {
+			writer.order = writer.orderOnCreateError
+		}
+		return writer.createOrderErr
+	}
+	writer.orders = append(writer.orders, order)
+	writer.order = order
 	return nil
 }
 

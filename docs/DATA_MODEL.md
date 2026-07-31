@@ -330,7 +330,7 @@ PostgreSQL 连接信息来源：
 短期处理：
 
 1. 对无订单草稿的历史缺字段事件，`relayctl ledger-sync` 只归档 raw，并在报告中记录无法重建主表的原因。
-2. 9092 下单 API 写入 Redis 命令前会先写订单草稿；事件回流后可基于本地草稿更新订单主表状态并追加事件。
+2. 9092 下单 API 写入 Redis 命令前会通过 insert-only 原子占位写入订单草稿；`orders(account_id,idempotency_key)` 对非空键有数据库部分唯一约束。并发同单由唯一冲突回查为幂等重放，事件回流继续通过 upsert 更新订单主表状态并追加事件。
 3. 测试 Redis 已验证一笔 API 下单可从草稿更新到 `filled/filled`，并落盘订单事件和成交。
 
 长期处理：

@@ -41,7 +41,7 @@ ON CONFLICT (account_id) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
 `
 
-const upsertOrderSQL = `
+const insertOrderSQL = `
 INSERT INTO orders (
     account_id,
     client_order_id,
@@ -94,6 +94,9 @@ INSERT INTO orders (
     $31, $32, $33, $34, $35, $36, $37, COALESCE($38, now()), $39, $40,
     $41, $42, $43, $44
 )
+`
+
+const upsertOrderSQL = insertOrderSQL + `
 ON CONFLICT (account_id, trade_date, gateway_order_id) DO UPDATE SET
     client_order_id = COALESCE(EXCLUDED.client_order_id, orders.client_order_id),
     order_id = COALESCE(EXCLUDED.order_id, orders.order_id),

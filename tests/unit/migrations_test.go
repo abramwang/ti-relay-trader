@@ -154,6 +154,26 @@ func TestReconciliationIdempotencyMigrationContainsUniqueIndexes(t *testing.T) {
 	}
 }
 
+func TestOrderIdempotencyMigrationCleansQueryKeysAndAddsUniqueIndex(t *testing.T) {
+	upSQL := readMigration(t, "000019_order_idempotency_unique.up.sql")
+	for _, snippet := range []string{
+		"idempotency_key LIKE 'orders:query:%'",
+		"historical_duplicate_key",
+		"CREATE UNIQUE INDEX orders_idempotency_unique",
+		"ON orders(account_id, idempotency_key)",
+		"WHERE idempotency_key IS NOT NULL",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("order idempotency migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000019_order_idempotency_unique.down.sql")
+	if !strings.Contains(downSQL, "DROP INDEX IF EXISTS orders_idempotency_unique") ||
+		!strings.Contains(downSQL, "relay_idempotency_cleanup") {
+		t.Fatal("order idempotency rollback must drop the unique index and restore audited keys")
+	}
+}
+
 func TestFillIDOrderScopeMigrationReplacesAccountScopedIndex(t *testing.T) {
 	upSQL := readMigration(t, "000005_fill_id_order_scope.up.sql")
 	for _, snippet := range []string{

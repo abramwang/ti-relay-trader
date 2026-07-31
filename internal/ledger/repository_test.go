@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"ti-relay-trader/internal/trading"
 )
 
@@ -113,6 +115,58 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	assertJSONContains(t, exec.args[42], `"gateway_order_id":"gateway-1"`)
 	assertJSONContains(t, exec.args[42], `"strategy_type":"stock_cross_section"`)
 	assertJSONContains(t, exec.args[43], `"front_status":"accepted"`)
+}
+
+func TestCreateOrderUsesInsertOnlyReservation(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+
+	err := repo.CreateOrder(context.Background(), trading.Order{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		TradeDate:      "2026-06-13",
+		Symbol:         "600000",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideBuy,
+		BusinessType:   trading.BusinessTypeStock,
+		LimitPrice:     10.25,
+		OrderQty:       100,
+		Status:         trading.OrderStatusCreated,
+		GatewayStatus:  trading.GatewayStatusAccepted,
+		IdempotencyKey: "idem-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO orders")
+	if strings.Contains(exec.query, "ON CONFLICT") {
+		t.Fatalf("CreateOrder() must reserve with an insert-only statement: %s", exec.query)
+	}
+	requireArgLen(t, exec.args, 44)
+}
+
+func TestCreateOrderClassifiesUniqueViolation(t *testing.T) {
+	exec := &recordingExecutor{err: &pgconn.PgError{Code: "23505", ConstraintName: "orders_idempotency_unique"}}
+	repo := NewRepository(exec)
+
+	err := repo.CreateOrder(context.Background(), trading.Order{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		TradeDate:      "2026-06-13",
+		Symbol:         "600000",
+		Exchange:       trading.ExchangeSH,
+		TradeSide:      trading.TradeSideBuy,
+		BusinessType:   trading.BusinessTypeStock,
+		LimitPrice:     10.25,
+		OrderQty:       100,
+		Status:         trading.OrderStatusCreated,
+		GatewayStatus:  trading.GatewayStatusAccepted,
+		IdempotencyKey: "idem-1",
+	})
+	if !errors.Is(err, ErrOrderConflict) {
+		t.Fatalf("CreateOrder() error = %v, want ErrOrderConflict", err)
+	}
 }
 
 func TestUpsertOrderCancelAttemptKeepsCancelOutcomeSeparate(t *testing.T) {
