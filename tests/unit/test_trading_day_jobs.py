@@ -115,6 +115,41 @@ class FakeClient:
         return FakeReceipt(account_id, action)
 
 
+class BatchGateClient(FakeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.accounts = [
+            SimpleNamespace(account_id="acct-1", enabled=True),
+            SimpleNamespace(account_id="acct-2", enabled=True),
+            SimpleNamespace(account_id="acct-3", enabled=True),
+        ]
+
+    def _refresh(self, account_id: str, action: str) -> FakeReceipt:
+        self.refresh_calls.append((account_id, action))
+        return FakeReceipt(account_id, action)
+
+    def _release_refreshes(self) -> None:
+        position_queries = {
+            account_id
+            for account_id, action in self.refresh_calls
+            if action == "account.positions.query"
+        }
+        if len(position_queries) != len(self.accounts):
+            return
+        refreshed_at = datetime.now(BUSINESS_TZ)
+        for account in self.accounts:
+            self.asset_updated_at[account.account_id] = refreshed_at
+            self.position_updated_at[account.account_id] = refreshed_at
+
+    def get_asset(self, account_id: str):
+        self._release_refreshes()
+        return super().get_asset(account_id)
+
+    def get_positions(self, account_id: str):
+        self._release_refreshes()
+        return super().get_positions(account_id)
+
+
 def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
     return TradingDayInfo(
         requested_date="20260615",
@@ -200,6 +235,27 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(client.settlement_calls[0]["source"], "pre_open_init")
         self.assertEqual(client.settlement_calls[0]["trade_date"], "20260615")
         self.assertEqual(report["open_snapshot"]["result"]["status"], "completed")
+
+    def test_daily_job_dispatches_all_accounts_before_shared_refresh_wait(self) -> None:
+        client = BatchGateClient()
+        report = run_pre_open_init(
+            JobOptions(
+                job_name="pre_open_init",
+                refresh_wait_seconds=0,
+                refresh_timeout_seconds=0.05,
+                refresh_poll_seconds=0.01,
+            ),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report.get("snapshot_blocked_accounts"), None)
+        self.assertEqual(
+            [account_id for account_id, action in client.refresh_calls if action == "account.positions.query"],
+            ["acct-1", "acct-2", "acct-3"],
+        )
+        self.assertEqual(client.settlement_calls[0]["account_ids"], ["acct-1", "acct-2", "acct-3"])
 
     def test_non_trading_day_skips_without_error(self) -> None:
         client = FakeClient()

@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。2026-07-30 已完成 N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测。OC 已升级到 v1.2，Relay 已按兼容通知实现撤单失败独立审计、batch 子单部分失败、真实就绪心跳、结果未知保护和未知事件前向兼容；`000017` 已应用，`relay-sdk 0.1.21` 已构建发布。生产仍为 6 个只读账户、下单账户 0；下一交易窗口继续联合验收新心跳、撤单拒绝和跨重启订单 ID。详见 `docs/OC_V1_2_RELAY_COMPATIBILITY_20260730.md`。P9 内置模拟柜台继续暂缓。
-- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 32 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-07-30`
+- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成，N11 已进入多账户盘前/盘后效率和人工复核闭环。OC 已升级到 v1.2，Relay 已按兼容通知实现撤单失败独立审计、batch 子单部分失败、真实就绪心跳、结果未知保护和未知事件前向兼容；`000017` 已应用，`relay-sdk 0.1.21` 已构建发布。生产仍为 6 个只读账户、下单账户 0；下一交易窗口继续联合验收新心跳、撤单拒绝、跨重启订单 ID 和优化后的任务耗时。详见 `docs/OC_V1_2_RELAY_COMPATIBILITY_20260730.md`。P9 内置模拟柜台继续暂缓。
+- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
+- 最近更新时间: `2026-07-31`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -325,6 +325,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 - 当前无阻塞。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:01 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
+- 生产 OC 由部署计划在交易日 15:30 关停；Relay 机器上的 15:10 `stop_services.sh` 只关闭本地行情采集进程，不包含 OC trader commander。Relay 的 gateway/stream 告警窗口已同步延长到 15:30。14:56 作为策略停止新增交易和预结算观察起点，15:01 仍执行资金、持仓、订单、成交权威刷新并固化日终快照。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 9092 常驻进程已安装到 root crontab 的 `RELAY_DOCS_AUTOSTART` 管理块，`@reboot` 和每分钟 watchdog 都调用 `scripts/relay-docs-service.sh start`。该脚本默认读取 `config/relay.prod.yaml`，生产配置若出现 `trading_enabled=true` 会拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true` 完成人工风险确认。
 - `RELAY_DOCS_AUTOSTART` 的分钟级 watchdog 只检查 `/healthz` 和进程参数，不再调用 `/v1/status`；`/v1/status` 仍会查询 Meridian 交易日状态，但 Meridian Go 客户端和启动脚本已禁用 `HTTP_PROXY/HTTPS_PROXY` 继承，避免内网交易日查询走失效本地代理并刷 WARN。
@@ -560,4 +561,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-30`: 排查当天盘前任务未完成：cron 已在 09:01 准时触发，但 N9 的 `stream_runtime=attention` 将 `/v1/status` 汇总为 `degraded`，旧任务健康门禁因此在 0.24 秒内提前退出；失败报告又因尚未解析目标交易日被 `POST /v1/jobs/runs` 拒绝，页面只保留昨天记录。现已先解析 Meridian 交易日，核心依赖健康时允许带运行态告警继续，并为所有持久化报告显式补齐目标交易日。09:12 恢复执行 6/6 账户无错误，写入 6 份 open 资产、208 条 open 持仓，`job_runs` 状态为 `succeeded`。
 - `2026-07-30`: 使用新交易日生产数据验收 OC v1.1。空 `order_stream_id` 的 32 笔订单均为独立稳定 ID；869 条真实成交实时/查询身份一致，124 条 ETF 成分划转没有混入普通成交，终态时间和非拒单错误残留均正常。但 `307000051387` 的 `BTR.83224303|J.0` 篮子有 14 个实时 `order.event` 证券与盘后 `order_page` 错位，导致 16 个真实成交被 OC 正确隔离并产生 32 条 `FILL_ORDER_CONTEXT_MISMATCH` 原始 DLQ。Relay 主账本未写入错误真实成交，但 14 条旧兼容 summary 形成次生错配。已形成 `docs/OC_VALIDATION_REPORT_20260730.md`，P0 根因关闭前暂缓进入 N10。
 - `2026-07-30`: 对齐 OC v1.2 对接文档和兼容通知：新增撤单动作独立审计迁移 `000017`，支持 `order.cancel.rejected`、`CANCEL_RESPONSE_TIMEOUT`、batch `failed_orders[]`、`COMMAND_OUTCOME_UNKNOWN` 保护和五项真实就绪心跳；未知事件 raw 归档后继续消费。发布 `relay-sdk 0.1.21` 的撤单失败回调及专项异常，Go 全量测试和 SDK 16/16 通过。生产迁移已应用、9092 已重启且仍为 6 账户只读；收盘后最新 OC 心跳仍是升级前样本，下一交易窗口继续联合验收。
-- `2026-07-31`: 排查盘后结算状态：任务于 15:05 准时启动，15:11 完成并落库为 `succeeded`；六账户串行刷新耗时 382.821 秒，其中三户资金/持仓未在 45 秒新鲜度窗口内到账而被阻断 close 快照。为给多账户回包合并和 15:10 OC 关停留出完整窗口，生产 `post_close_settlement` 从后续交易日起提前到 15:01 `Asia/Shanghai`，并同步配置、任务页、运维文档和 root crontab。
+- `2026-07-31`: 排查盘后结算状态：任务于 15:05 准时启动，15:11 完成并落库为 `succeeded`；六账户串行刷新耗时 382.821 秒，其中三户资金/持仓未在 45 秒新鲜度窗口内到账而被阻断 close 快照。为更早发起多账户权威查询并留足回包合并时间，生产 `post_close_settlement` 从后续交易日起提前到 15:01 `Asia/Shanghai`，并同步配置、任务页、运维文档和 root crontab。
+- `2026-07-31`: 重新核对关停与任务效率：生产机 15:10 的 `stop_services.sh` 只关闭行情采集进程，并非 OC 关停；用户将 OC 部署计划调整为 15:30 后，六账户 heartbeat 均持续到 15:29:02，未发现 OC 代码在 15:15 自行退出。Relay 监控窗口同步为 08:55-15:30。盘前/盘后慢的主因是 18 条 output stream 各自顺序 `XREAD BLOCK 1s`，空流会把一轮扫描放大到约 18 秒；同时 Python job 按六账户分别等待 45 秒。现改为全 stream 单次聚合 `XREAD`、逐 stream 独立 checkpoint，以及全账户先发刷新命令、共享一个 45 秒新鲜度窗口；理论最坏等待由约 270 秒降为 45 秒，实际交易日耗时待下一运行窗口验收。每日阶段明确为 14:56 策略停单和预结算观察、15:01 权威结算、15:30 OC 关停。

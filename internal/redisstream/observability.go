@@ -17,6 +17,11 @@ import (
 	"ti-relay-trader/internal/timeutil"
 )
 
+const (
+	monitoringStartMinute = 8*60 + 55
+	monitoringEndMinute   = 15*60 + 30
+)
+
 type ObservabilityStore interface {
 	ListStreamCheckpoints(ctx context.Context) ([]ledger.StreamCheckpoint, error)
 	DeadLetterStatusCounts(ctx context.Context) (map[string]int64, error)
@@ -386,7 +391,7 @@ func (service *RuntimeObservability) monitoringWindow(ctx context.Context, now t
 	}
 	hour, minute, _ := now.Clock()
 	minutes := hour*60 + minute
-	if minutes < 8*60+55 || minutes > 15*60+15 {
+	if minutes < monitoringStartMinute || minutes > monitoringEndMinute {
 		return false, "off_hours", status
 	}
 	return true, "trading_session", status

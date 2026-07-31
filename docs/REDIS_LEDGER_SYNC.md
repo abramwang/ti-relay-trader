@@ -1,6 +1,6 @@
 # Redis Stream 到 PostgreSQL 账本同步
 
-更新时间：`2026-07-30`
+更新时间：`2026-07-31`
 
 ## 当前状态
 
@@ -9,6 +9,8 @@
 `2026-06-14` 起，9092 docs/api 模式也会在本地配置包含 PostgreSQL 和 Redis 时启动轻量后台同步循环，持续消费测试 Redis `reply/event` 并更新本地账本。同步循环现在支持 PostgreSQL `stream_checkpoints` 位点表：如果存在 checkpoint，就从对应 stream 的 `last_stream_id` 继续读取；如果不存在，则按配置起点从 `0` 追赶历史。
 
 同日正式 `worker` 模式已接入同一套同步循环，可持续消费 `reply/event/hb/dlq`，并将每条 output stream 的消费位点、处理计数和最近错误摘要写入 `stream_checkpoints`。生产化建议将持续同步放到 worker 进程，9092 API 进程专注处理 HTTP 请求。
+
+多账户常驻同步使用一次聚合 `XREAD` 同时监听全部 output stream，并为每条 stream 独立维护 checkpoint。旧实现会对每条空 stream 顺序执行一次 1 秒阻塞读取，6 个账户、3 个角色会把一次完整扫描放大到约 18 秒；聚合读取把空闲等待收敛为全局最多 1 秒，同时保留逐 stream 处理、错误隔离和位点恢复语义。每个非空批次日志包含 `processing_duration_ms`，用于区分 Redis 等待和 PostgreSQL 合并耗时。
 
 同日新增自动资金持仓刷新：当同步循环处理到 `order.event` 或 `fill.event` 后，会按账户调度 `account.asset.query` 和 `account.positions.query`。调度器默认 2 秒合并、20 秒冷却，只向前置写入查询命令，后续仍由 `asset_page/position_page` reply 合并到 PostgreSQL。
 
@@ -156,7 +158,7 @@ action 到 stream 的映射：
 
 同步循环读取 checkpoint 的规则：
 
-1. 表中有 `stream_key` 时，从 `last_stream_id` 继续 `XREAD`。
+1. 表中有 `stream_key` 时，从 `last_stream_id` 继续聚合 `XREAD`；每条 stream 仍使用自己的起始 ID。
 2. 没有 checkpoint 时，从配置起点读取；当前默认从 `0` 追赶历史。
 3. 重新消费同一段消息不会重复入账，因为 `raw_stream_messages`、`order_events`、`fills` 等表都有唯一约束。
 4. 如果需要手动回放，可用 `relayctl ledger-sync -from <stream_id>` 读取指定区间；不要手工改 Redis 消费组位点。

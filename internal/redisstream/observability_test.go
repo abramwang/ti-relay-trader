@@ -35,7 +35,15 @@ func TestMonitoringWindowUsesTradingCalendarAndSession(t *testing.T) {
 
 	active, reason, _ = service.monitoringWindow(
 		context.Background(),
-		time.Date(2026, 7, 30, 16, 0, 0, 0, location),
+		time.Date(2026, 7, 30, 15, 29, 0, 0, location),
+	)
+	if !active || reason != "trading_session" {
+		t.Fatalf("post-close monitoring window = %v %q", active, reason)
+	}
+
+	active, reason, _ = service.monitoringWindow(
+		context.Background(),
+		time.Date(2026, 7, 30, 15, 31, 0, 0, location),
 	)
 	if active || reason != "off_hours" {
 		t.Fatalf("off-hours monitoring window = %v %q", active, reason)

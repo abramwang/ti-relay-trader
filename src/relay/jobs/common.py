@@ -250,19 +250,35 @@ def run_daily_job(
         return finish_report(report)
 
     accounts = select_accounts(accounts_value or [], options.account_ids)
-    report["accounts"] = []
-    account_errors: list[dict[str, Any]] = []
-    snapshot_blocked_accounts: list[str] = []
-    for account_id in accounts:
-        account_report = run_account_flow(
+    account_reports = [
+        start_account_flow(
             relay_client,
             account_id,
             options=options,
-            trade_date=trading_day.target_trade_date,
             refresh_steps=refresh_steps,
+        )
+        for account_id in accounts
+    ]
+    wait_for_refreshed_ledgers(
+        relay_client,
+        account_reports,
+        steps=refresh_steps,
+        options=options,
+    )
+    for account_report in account_reports:
+        complete_account_flow(
+            relay_client,
+            account_report,
+            trade_date=trading_day.target_trade_date,
+            query_limit=options.query_limit,
             check_non_terminal_orders=check_non_terminal_orders,
         )
-        report["accounts"].append(account_report)
+
+    report["accounts"] = account_reports
+    account_errors: list[dict[str, Any]] = []
+    snapshot_blocked_accounts: list[str] = []
+    for account_report in account_reports:
+        account_id = str(account_report["account_id"])
         if account_report.get("errors"):
             account_errors.append({"account_id": account_id, "errors": list(account_report["errors"])})
         if account_report.get("snapshot_blocked"):
@@ -308,14 +324,12 @@ def run_daily_job(
     return finish_report(report)
 
 
-def run_account_flow(
+def start_account_flow(
     client: Any,
     account_id: str,
     *,
     options: JobOptions,
-    trade_date: str,
     refresh_steps: tuple[str, ...],
-    check_non_terminal_orders: bool,
 ) -> dict[str, Any]:
     account_report: dict[str, Any] = {
         "account_id": account_id,
@@ -334,8 +348,6 @@ def run_account_flow(
                 account_report["errors"].append(result["error"])
                 if step in FRESHNESS_CHECK_STEPS:
                     freshness_refresh_errors.append(result["error"])
-        if options.refresh_wait_seconds > 0:
-            time.sleep(options.refresh_wait_seconds)
         if freshness_refresh_errors:
             account_report["snapshot_blocked"] = True
             account_report["refresh_freshness"] = {
@@ -343,20 +355,18 @@ def run_account_flow(
                 "error": "asset/positions refresh command failed; snapshot blocked to avoid stale settlement data",
                 "refresh_errors": freshness_refresh_errors,
             }
-        else:
-            freshness = wait_for_refreshed_ledger(
-                client,
-                account_id,
-                steps=refresh_steps,
-                refresh_started_at=refresh_started_at,
-                options=options,
-            )
-            account_report["refresh_freshness"] = freshness
-            if not freshness.get("ok"):
-                account_report["snapshot_blocked"] = True
-                if error := freshness.get("error"):
-                    account_report["errors"].append(str(error))
+    return account_report
 
+
+def complete_account_flow(
+    client: Any,
+    account_report: dict[str, Any],
+    *,
+    trade_date: str,
+    query_limit: int,
+    check_non_terminal_orders: bool,
+) -> None:
+    account_id = str(account_report["account_id"])
     asset_value, asset_report = capture_call("get_asset", client.get_asset, account_id, include_result=False)
     positions_value, positions_report = capture_call("get_positions", client.get_positions, account_id, include_result=False)
     orders_value, orders_report = capture_call(
@@ -365,7 +375,7 @@ def run_account_flow(
         account_id=account_id,
         trade_date=trade_date,
         history=True,
-        limit=options.query_limit,
+        limit=query_limit,
         include_result=False,
     )
     fills_value, fills_report = capture_call(
@@ -374,7 +384,7 @@ def run_account_flow(
         account_id=account_id,
         trade_date=trade_date,
         history=True,
-        limit=options.query_limit,
+        limit=query_limit,
         include_result=False,
     )
     snapshot_reports = {
@@ -394,7 +404,6 @@ def run_account_flow(
     for result in snapshot_reports.values():
         if result.get("error"):
             account_report["errors"].append(result["error"])
-    return account_report
 
 
 def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders: bool) -> dict[str, Any]:
@@ -423,45 +432,86 @@ def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders
     return summary
 
 
-def wait_for_refreshed_ledger(
+def wait_for_refreshed_ledgers(
     client: Any,
-    account_id: str,
+    account_reports: list[dict[str, Any]],
     *,
     steps: tuple[str, ...],
-    refresh_started_at: datetime,
     options: JobOptions,
-) -> dict[str, Any]:
+) -> None:
+    if options.dry_run or options.skip_refresh or not account_reports:
+        return
     required = tuple(step for step in steps if step in FRESHNESS_CHECK_STEPS)
     if not required:
-        return {"ok": True, "skipped": True, "reason": "no asset/positions refresh steps"}
+        for account_report in account_reports:
+            account_report["refresh_freshness"] = {
+                "ok": True,
+                "skipped": True,
+                "reason": "no asset/positions refresh steps",
+            }
+        return
     if options.refresh_timeout_seconds <= 0:
-        return {"ok": True, "skipped": True, "reason": "refresh freshness wait disabled"}
+        for account_report in account_reports:
+            if not account_report.get("snapshot_blocked"):
+                account_report["refresh_freshness"] = {
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "refresh freshness wait disabled",
+                }
+        return
 
+    pending = {
+        str(account_report["account_id"]): account_report
+        for account_report in account_reports
+        if not account_report.get("snapshot_blocked")
+    }
+    if not pending:
+        return
+    if options.refresh_wait_seconds > 0:
+        time.sleep(options.refresh_wait_seconds)
+
+    started_waiting_at = time.monotonic()
     deadline = time.monotonic() + options.refresh_timeout_seconds
-    attempts = 0
-    last_report: dict[str, Any] = {}
-    while True:
-        attempts += 1
-        last_report = refreshed_ledger_status(client, account_id, required, refresh_started_at)
-        last_report["attempts"] = attempts
-        if last_report.get("ok"):
-            last_report["fresh_after_seconds"] = round(
-                options.refresh_timeout_seconds - max(deadline - time.monotonic(), 0.0),
-                3,
-            )
-            return last_report
+    attempts = {account_id: 0 for account_id in pending}
+    last_reports: dict[str, dict[str, Any]] = {}
+    while pending:
+        for account_id, account_report in list(pending.items()):
+            attempts[account_id] += 1
+            refresh_started_at = datetime.fromisoformat(str(account_report["refresh_started_at"]))
+            freshness = refreshed_ledger_status(client, account_id, required, refresh_started_at)
+            freshness["attempts"] = attempts[account_id]
+            last_reports[account_id] = freshness
+            if freshness.get("ok"):
+                freshness["fresh_after_seconds"] = round(time.monotonic() - started_waiting_at, 3)
+                account_report["refresh_freshness"] = freshness
+                del pending[account_id]
 
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            last_report["error"] = (
-                f"asset/positions refresh not visible in local ledger after "
-                f"{options.refresh_timeout_seconds:.1f}s; "
-                f"asset_updated_at={last_report.get('asset_updated_at') or '-'}, "
-                f"positions_latest_updated_at={last_report.get('positions_latest_updated_at') or '-'}, "
-                f"positions_count={last_report.get('positions_count', 0)}"
-            )
-            return last_report
+            for account_id, account_report in pending.items():
+                freshness = last_reports.get(account_id, {
+                    "ok": False,
+                    "account_id": account_id,
+                    "required": list(required),
+                })
+                freshness["error"] = refresh_timeout_error(freshness, options.refresh_timeout_seconds)
+                account_report["refresh_freshness"] = freshness
+                account_report["snapshot_blocked"] = True
+                account_report["errors"].append(str(freshness["error"]))
+            return
+        if not pending:
+            return
         time.sleep(min(options.refresh_poll_seconds, remaining))
+
+
+def refresh_timeout_error(report: Mapping[str, Any], timeout_seconds: float) -> str:
+    return (
+        f"asset/positions refresh not visible in local ledger after "
+        f"{timeout_seconds:.1f}s; "
+        f"asset_updated_at={report.get('asset_updated_at') or '-'}, "
+        f"positions_latest_updated_at={report.get('positions_latest_updated_at') or '-'}, "
+        f"positions_count={report.get('positions_count', 0)}"
+    )
 
 
 def refreshed_ledger_status(

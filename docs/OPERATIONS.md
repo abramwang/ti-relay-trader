@@ -332,7 +332,7 @@ operations:
 
 lag 不是 Redis stream ID 的数值差。Relay 在 checkpoint 与最新 ID 不同时，通过有上限的 Redis 服务端遍历计算 checkpoint 之后的实际条数；达到 critical 上限后返回下界并标记 `lag_capped=true`，避免异常积压拖慢状态页。`hb` 用于读取最新 gateway 状态，不作为业务账本消费 lag。
 
-告警窗口由 Meridian 交易日和 `08:55-15:15 Asia/Shanghai` 共同决定。非交易日、盘前和收盘后 gateway/stream 显示 `off_hours`，历史心跳、checkpoint 错误和 DLQ 证据仍保留可查。
+告警窗口由 Meridian 交易日和 `08:55-15:30 Asia/Shanghai` 共同决定，与生产 OC 当前 15:30 关停计划一致。非交易日、盘前和关停后 gateway/stream 显示 `off_hours`，历史心跳、checkpoint 错误和 DLQ 证据仍保留可查。
 
 DLQ 读取始终可用。审核动作使用以下接口，并写入不可变 `stream_dlq_reviews` 审计记录：
 
@@ -379,6 +379,8 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # 研究侧绩效导出当前通过 9092 API / PostgreSQL view 查询，不需要单独 cron。
 ```
 
+生产 OC 的部署计划当前在 15:30 关停。Relay 机器上另有一条 15:10 调用 `/home/dist/production_env/stop_services.sh` 的历史计划，该脚本只关闭本地行情采集进程，不包含 OC trader commander，不应再用它推断交易前置的关停时间。
+
 注意：
 
 1. 使用 `flock -n` 防止同一任务重复运行。
@@ -403,7 +405,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
   --output outputs/jobs/post_close_settlement.dry-run.json
 ```
 
-当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。刷新命令发出后，任务默认最多等待 45 秒并轮询 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间；等待期间不会重复查询柜台。`pre_open_init` 会在刷新后写入 `open_snapshot` 日初资产和日初持仓快照，`post_close_settlement` 会写入 `settlement_snapshot` 日终资产/持仓快照。单个账户柜台未就绪、查询为空、资金快照缺失或资金/持仓刷新未确认时，任务会在 `account_errors` 中独立标注；若刷新未确认，该账户还会进入 `snapshot_blocked_accounts` 并从本次快照账户列表中剔除，避免把旧持仓固化。整体任务仍可在其它账户正常时成功完成；Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题才会让任务失败。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
+当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 45 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 45 秒，也不会在等待期间重复查询柜台。`pre_open_init` 会在刷新后写入 `open_snapshot` 日初资产和日初持仓快照，`post_close_settlement` 会写入 `settlement_snapshot` 日终资产/持仓快照。单个账户柜台未就绪、查询为空、资金快照缺失或资金/持仓刷新未确认时，任务会在 `account_errors` 中独立标注；若刷新未确认，该账户还会进入 `snapshot_blocked_accounts` 并从本次快照账户列表中剔除，避免把旧持仓固化。整体任务仍可在其它账户正常时成功完成；Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题才会让任务失败。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
 
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`，当 Meridian 明确当天不是交易日且没有当天任务记录时，预期运行结果显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 

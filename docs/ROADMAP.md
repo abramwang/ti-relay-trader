@@ -106,7 +106,7 @@
 - [x] 新增 `stream_dlq_reviews` 不可变审核记录和 DLQ/`BROKER_NOT_READY` 部分索引；DLQ 支持待处理、已确认、已忽略、已重放状态，生产审核写默认关闭。
 - [x] 新增 `/v1/operations/status`、`/v1/operations/dlq*`，并把摘要接入 `/v1/status`。
 - [x] 新增 `/operations` 独立运维页面和 API Console 运维分组。
-- [x] 使用 Meridian 交易日和 `08:55-15:15 Asia/Shanghai` 监控窗口抑制非交易日、盘前和收盘后误报。
+- [x] 使用 Meridian 交易日和 `08:55-15:30 Asia/Shanghai` 监控窗口抑制非交易日、盘前和 OC 关停后误报。
 - [x] 生产只读验收：6 个 gateway 收盘后均为 `off_hours`，24 条 output stream lag 为 0，DLQ pending 为 0，下单账户仍为 0。
 
 ### N10 账本生产化与环境隔离
@@ -128,7 +128,7 @@
 
 ### N11 交易日任务与人工复核闭环
 
-状态：`todo`
+状态：`doing`
 
 目标：让盘前/盘后任务不只“运行完成”，还可清楚判断结果是否可信并形成可归档复核材料。
 
@@ -138,6 +138,9 @@
 - 非交易日 `trading_day.phase` 返回明确的 `non_trading`，避免仅按时钟显示 `continuous`。
 - 增加任务失败、账户异常、刷新超时和快照阻断告警。
 - 保留 09:01 盘前初始化和 15:01 生产盘后结算口径。
+- [x] 多账户刷新改为全账户先发命令、共享 45 秒新鲜度窗口，消除按账户串行等待。
+- [x] Redis output stream 改为单次聚合 `XREAD`，消除空 stream 每轮约 18 秒的顺序阻塞。
+- [x] 明确 14:56 策略停单、15:01 权威结算、15:30 OC 关停的分阶段窗口。
 
 ### N12 API Console、回归测试与发布
 

@@ -134,6 +134,10 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 	if len(cursors) == 0 {
 		return errors.New("no stream roles configured")
 	}
+	cursorIndexes := make(map[string]int, len(cursors))
+	for i := range cursors {
+		cursorIndexes[cursors[i].name] = i
+	}
 
 	logger.Info("relay_ledger_sync_loop_started",
 		"streams", len(cursors),
@@ -142,10 +146,25 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 		"block", block.String(),
 	)
 	for ctx.Err() == nil {
-		for i := range cursors {
-			report := readAndProcessStream(ctx, client, writer, cursors[i].name, cursors[i].role, cursors[i].lastID, count, block)
+		reports, err := readAndProcessStreams(ctx, client, writer, cursors, count, block)
+		if err != nil {
 			if ctx.Err() != nil {
 				break
+			}
+			logger.Warn("relay_ledger_sync_read_failed", "error", err)
+			if !waitForLedgerSyncRetry(ctx, block) {
+				break
+			}
+			continue
+		}
+		for _, report := range reports {
+			if ctx.Err() != nil {
+				break
+			}
+			i, ok := cursorIndexes[report.Name]
+			if !ok {
+				logger.Warn("relay_ledger_sync_unknown_stream", "stream", report.Name)
+				continue
 			}
 			if report.Totals.LastStreamID != "" {
 				cursors[i].lastID = report.Totals.LastStreamID
@@ -171,6 +190,7 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"parse_errors", report.Totals.ParseErrors,
 					"dead_letters", report.Totals.DeadLetters,
 					"data_quality_dead_letters", report.Totals.DataQualityDLQ,
+					"processing_duration_ms", report.ProcessingDuration.Milliseconds(),
 				)
 			}
 			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0) {
@@ -212,6 +232,74 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 	}
 	logger.Info("relay_ledger_sync_loop_stopped", "reason", ctx.Err())
 	return nil
+}
+
+func readAndProcessStreams(
+	ctx context.Context,
+	client *redis.Client,
+	writer LedgerWriter,
+	cursors []ledgerStreamCursor,
+	count int64,
+	block time.Duration,
+) ([]LedgerStreamReport, error) {
+	streams := xReadStreams(cursors)
+	if len(streams) == 0 {
+		return nil, nil
+	}
+	result, err := client.XRead(ctx, &redis.XReadArgs{
+		Streams: streams,
+		Count:   count,
+		Block:   block,
+	}).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	cursorByName := make(map[string]ledgerStreamCursor, len(cursors))
+	for _, cursor := range cursors {
+		cursorByName[cursor.name] = cursor
+	}
+	reports := make([]LedgerStreamReport, 0, len(result))
+	for _, stream := range result {
+		cursor, ok := cursorByName[stream.Stream]
+		if !ok {
+			continue
+		}
+		reports = append(reports, processLedgerStreamMessages(
+			ctx,
+			writer,
+			stream.Stream,
+			cursor.role,
+			cursor.lastID,
+			stream.Messages,
+		))
+	}
+	return reports, nil
+}
+
+func xReadStreams(cursors []ledgerStreamCursor) []string {
+	streams := make([]string, 0, len(cursors)*2)
+	for _, cursor := range cursors {
+		streams = append(streams, cursor.name)
+	}
+	for _, cursor := range cursors {
+		streams = append(streams, cursor.lastID)
+	}
+	return streams
+}
+
+func waitForLedgerSyncRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, cursor ledgerStreamCursor, report LedgerStreamReport, logger *slog.Logger) {

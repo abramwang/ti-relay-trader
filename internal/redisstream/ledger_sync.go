@@ -53,12 +53,13 @@ type LedgerSyncReport struct {
 }
 
 type LedgerStreamReport struct {
-	Name    string              `json:"name"`
-	Role    string              `json:"role"`
-	StartID string              `json:"start_id"`
-	Count   int                 `json:"count"`
-	Totals  LedgerProcessResult `json:"totals"`
-	Errors  []LedgerEntryError  `json:"errors,omitempty"`
+	Name               string              `json:"name"`
+	Role               string              `json:"role"`
+	StartID            string              `json:"start_id"`
+	Count              int                 `json:"count"`
+	ProcessingDuration time.Duration       `json:"-"`
+	Totals             LedgerProcessResult `json:"totals"`
+	Errors             []LedgerEntryError  `json:"errors,omitempty"`
 }
 
 type LedgerEntryError struct {
@@ -733,18 +734,17 @@ func processCancelAttemptEnvelope(
 }
 
 func readAndProcessStream(ctx context.Context, client *redis.Client, writer LedgerWriter, streamName, role, startID string, count int64, block time.Duration) LedgerStreamReport {
-	report := LedgerStreamReport{
-		Name:    streamName,
-		Role:    role,
-		StartID: startID,
-	}
-
 	result, err := client.XRead(ctx, &redis.XReadArgs{
 		Streams: []string{streamName, startID},
 		Count:   count,
 		Block:   block,
 	}).Result()
 	if err != nil {
+		report := LedgerStreamReport{
+			Name:    streamName,
+			Role:    role,
+			StartID: startID,
+		}
 		if err == redis.Nil {
 			return report
 		}
@@ -754,18 +754,38 @@ func readAndProcessStream(ctx context.Context, client *redis.Client, writer Ledg
 	}
 
 	for _, stream := range result {
-		for _, message := range stream.Messages {
-			entryResult := ProcessLedgerEntry(ctx, writer, stream.Stream, message.ID, message.Values)
-			report.Count++
-			report.Totals.add(entryResult)
-			if len(entryResult.SkipReasons) > 0 {
-				report.Errors = append(report.Errors, LedgerEntryError{
-					StreamID: message.ID,
-					Error:    strings.Join(entryResult.SkipReasons, "; "),
-				})
-			}
+		return processLedgerStreamMessages(ctx, writer, stream.Stream, role, startID, stream.Messages)
+	}
+	return LedgerStreamReport{Name: streamName, Role: role, StartID: startID}
+}
+
+func processLedgerStreamMessages(
+	ctx context.Context,
+	writer LedgerWriter,
+	streamName string,
+	role string,
+	startID string,
+	messages []redis.XMessage,
+) LedgerStreamReport {
+	startedAt := time.Now()
+	report := LedgerStreamReport{
+		Name:    streamName,
+		Role:    role,
+		StartID: startID,
+	}
+
+	for _, message := range messages {
+		entryResult := ProcessLedgerEntry(ctx, writer, streamName, message.ID, message.Values)
+		report.Count++
+		report.Totals.add(entryResult)
+		if len(entryResult.SkipReasons) > 0 {
+			report.Errors = append(report.Errors, LedgerEntryError{
+				StreamID: message.ID,
+				Error:    strings.Join(entryResult.SkipReasons, "; "),
+			})
 		}
 	}
+	report.ProcessingDuration = time.Since(startedAt)
 	return report
 }
 
