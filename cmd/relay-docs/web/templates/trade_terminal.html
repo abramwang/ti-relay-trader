@@ -131,7 +131,7 @@
           </div>
           <div class="risk-alert" id="riskAlert">风控提示：当前为测试账户，请确认价格和数量。</div>
           <div class="form-actions">
-            <button type="submit" class="primary-trade buy" id="submitOrderButton">买入下单</button>
+            <button type="submit" class="primary-trade buy" id="submitOrderButton" disabled>买入下单</button>
             <button type="button" id="resetOrderButton">重置</button>
           </div>
         </form>
@@ -695,6 +695,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260729-0012"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260731-0013"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动、健康守护和本机数据库恢复底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成；N10 已落地数据库级订单幂等、测试/生产 PostgreSQL 隔离以及全量备份恢复演练。N11 已完成多账户任务效率、非交易日阶段语义、账户级人工复核报告和每日任务通用 Webhook 告警闭环，下一阶段进入 N12 回归测试与发布验收。OC v1.2 次交易日主链路验收通过，当前等待下一次 OC 启动验证六账户 `cmd.query` 现存 18 条 PEL 的恢复清理。生产仍为 6 个只读账户、下单账户 0；详见 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动、健康守护和本机数据库恢复底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成；N10 已落地数据库级订单幂等、测试/生产 PostgreSQL 隔离以及全量备份恢复演练。N11 已完成多账户任务效率、非交易日阶段语义、账户级人工复核报告和每日任务通用 Webhook 告警闭环。N12 进行中：API catalog 一致性检查、交易终端/API Console 生产只读交互回归、双视口页面验收和统一发布/回滚清单已完成，下一步补可保存断言集合与券商测试环境批量下单视图。OC v1.2 次交易日主链路验收通过，当前等待下一次 OC 启动验证六账户 `cmd.query` 现存 18 条 PEL 的恢复清理。生产仍为 6 个只读账户、下单账户 0；详见 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-31`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -305,8 +305,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 2. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 3. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
 4. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
-5. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
-6. 将 API、worker、docs 拆分为独立常驻进程，补齐日志采集、外部告警、回滚和发布检查清单。
+5. 完成 N12 剩余项：API Console 可保存/导出的请求样例和响应断言集合，以及仅券商测试环境可用的 `/trade` 批量下单测试视图。
+6. 将 API、worker、docs 拆分为独立常驻进程，补齐各自日志采集和独立回滚入口；统一只读发布验收与回滚清单已经完成。
 
 ## README 状态维护规则
 
@@ -570,3 +570,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-31`: 完成 N10 PostgreSQL 全量备份恢复演练：新增 custom-format/zstd 备份、SHA256、manifest 和临时库恢复脚本，兼容容器 PostgreSQL 17 客户端恢复到 15 服务端。生产 2.18 GB 数据生成 58.1 MB 归档；恢复后 2026-07-31 的 39,108 条 raw archive 幂等重放前后保持 6,911 订单、22,735 订单事件、8,318 成交和 297 ETF 划转，孤立记录、重复幂等键、未验证约束及 parser/ledger error 均为 0，临时库已销毁。详见 `docs/DATABASE_BACKUP_RESTORE.md`。
 - `2026-07-31`: 完成 N11 账户级人工复核第一版：新增按交易日查询 `job_runs` 和只读 `/v1/reconciliations/review-report`，把盘前/盘后任务、open/close 快照及 `reconciliation_breaks` 聚合为账户级 `passed/attention/blocked/pending` 结论；`/jobs` 增加交易日选择、资产/持仓/订单/成交/未终态/差异表格、证据查看和 JSON 导出。Meridian 明确休市时 `/v1/status.trading_day.phase=non_trading`，任务时间在页面强制按东八区格式化。生产 2026-07-31 只读复核为 1 户通过、2 户因 3 条开放订单成交差异待复核、3 户因 close 快照新鲜度未确认被阻断；1600x1000 和 1280x800 Playwright 均显示 6 户、2 条任务记录，无横向溢出、控制台或 HTTP 错误。发布 `relay-sdk 0.1.22` 的任务查询与人工复核 helper；生产权限保持只读。
 - `2026-07-31`: 完成 N11 每日任务外部告警闭环：新增默认关闭的 `relay.alert.v1` 通用 Webhook，聚合任务失败、账户异常、45 秒刷新超时、快照未落盘和复核阻断账户，按 `warning/critical` 分级并携带稳定 `Idempotency-Key`；网络错误、429 和 5xx 最多重试 3 次，非交易日正常跳过和 dry-run 不告警。Webhook 与 Bearer Token 仅从未跟踪 `config/relay.alerts.env` 或环境变量读取，报告不暴露接收地址或凭据；告警投递状态回写同一条 `job_runs`，`/jobs` 新增告警状态列。当前生产本地通道保持关闭，等待配置实际接收端后做交易日验收。
+- `2026-07-31`: 进入 N12 回归与发布：API Console catalog 补齐账户路由和任务报告入口，并新增 61 条 catalog/Go handler/源码及在线 schema 一致性检查；交易终端增加生产只读前端护栏，未开交易权限的账户禁用下单和撤单且不会发出写请求。新增交易终端与 API Console Playwright 交互测试，覆盖六账户切换、日期、持仓/订单分页排序、持仓联动代码、分钟 K 线、订单详情和 JSON/表格响应，并在浏览器路由层中止任何 `/v1/*` 写请求。统一生产只读发布验收的 16 项检查在 `1600x1000`、`1280x800` 下全部通过，报告为 `/tmp/relay-readonly-release-20260731.json`；发布/回滚清单要求执行前强制确认 `environment=production`、`trading_enabled=0`。

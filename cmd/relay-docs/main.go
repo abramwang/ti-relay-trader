@@ -146,6 +146,12 @@ var (
 			Description: "本地配置文件、凭据管理、cron 后台任务和部署运行约定。",
 		},
 		{
+			Slug:        "release-checklist",
+			Title:       "发布检查清单",
+			Path:        "docs/RELEASE_CHECKLIST.md",
+			Description: "生产只读自动验收、发布观察、数据保护和版本回滚步骤。",
+		},
+		{
 			Slug:        "trading-day-workflow",
 			Title:       "交易日流程",
 			Path:        "docs/TRADING_DAY_WORKFLOW.md",

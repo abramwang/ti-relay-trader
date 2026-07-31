@@ -2291,6 +2291,7 @@
     editButton.disabled = !state.activeAccount;
     editButton.addEventListener("click", editActiveAccountAlias);
     els.accountTabs.appendChild(editButton);
+    updateRisk();
   }
 
   function accountLabel(account) {
@@ -2310,6 +2311,15 @@
       parts.push("模拟");
     }
     return parts.join(" / ") || "--";
+  }
+
+  function accountTradingEnabled(accountID) {
+    const account = state.accounts.find((item) => item.account_id === accountID);
+    return Boolean(account && account.enabled !== false && account.trading_enabled === true);
+  }
+
+  function selectedOrderAccountCanTrade() {
+    return accountTradingEnabled(els.orderAccount.value || state.activeAccount);
   }
 
   function activeAccountLabel() {
@@ -2987,6 +2997,11 @@
               now - changedAt < 3600 ? "flash" : ""
             ].join(" ");
             const debugText = orderDebugText(order);
+            const cancelAction = order.is_terminal
+              ? '<span class="muted">已完成</span>'
+              : accountTradingEnabled(state.activeAccount)
+                ? '<button type="button" class="row-action" data-cancel-id="' + escapeHTML(id) + '">撤单</button>'
+                : '<span class="muted">只读</span>';
             return `
               <tr class="${className}" data-order-id="${escapeHTML(id)}">
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || id)}</strong><span>${escapeHTML(id)}</span></span></td>
@@ -2999,7 +3014,7 @@
                 <td><span class="status-badge ${escapeHTML(order.status)}">${statusText(order.status)}</span></td>
                 <td class="debug-cell"><span class="row-title"><strong class="${debugText ? "down" : "muted"}">${escapeHTML(debugText || "--")}</strong><span>${escapeHTML(order.reject_code || adapterText(order, "relay_error_code") || "")}</span></span></td>
                 <td>${formatTime(order.created_at || order.inserted_at)}</td>
-                <td>${order.is_terminal ? '<span class="muted">已完成</span>' : '<button type="button" class="row-action" data-cancel-id="' + escapeHTML(id) + '">撤单</button>'}</td>
+                <td>${cancelAction}</td>
               </tr>`;
           }).join("")}
         </tbody>
@@ -5499,6 +5514,13 @@
   }
 
   function updateRisk() {
+    const canTrade = selectedOrderAccountCanTrade();
+    els.submitOrderButton.disabled = !canTrade;
+    els.submitOrderButton.title = canTrade ? "" : "当前账户未开启交易权限";
+    if (!canTrade) {
+      els.riskAlert.textContent = "只读保护：当前账户未开启交易权限，终端不会发送下单或撤单请求。";
+      return;
+    }
     const qty = Number(els.qtyInput.value);
     const price = Number(els.priceInput.value);
     const cash = Number((state.asset && state.asset.cash_available) || 0);
@@ -5517,6 +5539,11 @@
   async function submitOrder(event) {
     event.preventDefault();
     const accountID = els.orderAccount.value || state.activeAccount;
+    if (!accountTradingEnabled(accountID)) {
+      updateRisk();
+      showToast("当前账户为只读，未发送下单请求", "error");
+      return;
+    }
     const body = {
       account_id: accountID,
       client_order_id: "manual-" + Date.now(),
@@ -5541,12 +5568,16 @@
       pushLog("error", "下单失败", err.message);
       showToast("下单失败：" + err.message, "error");
     } finally {
-      els.submitOrderButton.disabled = false;
+      updateRisk();
     }
   }
 
   async function cancelOrder(gatewayOrderID) {
     if (!gatewayOrderID) {
+      return;
+    }
+    if (!accountTradingEnabled(state.activeAccount)) {
+      showToast("当前账户为只读，未发送撤单请求", "error");
       return;
     }
     try {

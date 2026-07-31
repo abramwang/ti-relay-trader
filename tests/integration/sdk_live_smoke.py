@@ -22,11 +22,20 @@ def main() -> None:
     parser.add_argument("--account-id", default="", help="account id to test; defaults to first account from /v1/accounts")
     parser.add_argument("--timeout", type=float, default=5.0, help="HTTP timeout in seconds")
     parser.add_argument("--skip-events", action="store_true", help="skip SSE connection smoke")
+    parser.add_argument(
+        "--allow-degraded",
+        action="store_true",
+        help="accept degraded aggregate status while still exercising every read-only SDK call",
+    )
     args = parser.parse_args()
 
     client = RelayClient(args.base_url, account_id=args.account_id, timeout=args.timeout, trust_env=False)
     status = client.status()
-    require(status.get("status") == "ok", f"service status is not ok: {status.get('status')!r}")
+    allowed_statuses = {"ok", "degraded"} if args.allow_degraded else {"ok"}
+    require(
+        status.get("status") in allowed_statuses,
+        f"service status is not accepted: {status.get('status')!r}",
+    )
 
     accounts = client.list_accounts()
     require(accounts, "no accounts returned by /v1/accounts")

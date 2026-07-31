@@ -1,6 +1,6 @@
 # relay 接口测试台
 
-更新时间：`2026-07-29`
+更新时间：`2026-07-31`
 
 ## 目标
 
@@ -37,7 +37,15 @@ http://relay-trader.quantstage.com/api-console
 | `cmd/relay-docs/web/static/api-console.js` | 表单渲染、请求发送、JSON/表格响应渲染 |
 | `cmd/relay-docs/web/static/api-console.catalog.json` | 接口分组、参数字段、默认值和状态 |
 
-Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文件。后续新增接口时，优先更新 catalog；只有后端路由、权限或响应结构变化时才修改 Go 代码。
+Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文件。后续新增接口时，优先更新 catalog；只有后端路由、权限或响应结构变化时才修改 Go 代码。当前 catalog 有 61 个接口条目，覆盖源码和在线 `/v1/schema` 的 48 个标准发现路由；catalog 额外保留运维、绩效设置等尚未进入 schema 发现的接口。
+
+提交前执行一致性检查：
+
+```bash
+python3 scripts/check-api-catalog.py --base-url http://127.0.0.1:9092
+```
+
+检查器会验证 ID、method/path、path 参数、Go `mux.HandleFunc` 路由覆盖、源码 schema 及在线 schema；schema 路由必须全部存在于 catalog，catalog 允许包含有实际 handler 的扩展入口。
 
 当前可直接测试：
 
@@ -47,6 +55,7 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/status` | 服务状态、依赖健康和账户摘要 |
 | `GET` | `/v1/schema` | schema 发现 |
 | `GET` | `/v1/accounts` | 配置态账户列表 |
+| `GET` | `/v1/account-routes` | 多账户 Redis 路由诊断 |
 | `PATCH` | `/v1/accounts/{account_id}/alias` | 更新账户展示别名，落库到 PostgreSQL `accounts.account_name` |
 
 需要本地配置支持的接口：
@@ -99,6 +108,7 @@ Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文�
 | `GET` | `/v1/meridian/market/etf-pcf-status` | ETF PCF 同步状态薄代理 |
 | `GET` | `/v1/meridian/metadata/adjust-factors` | Meridian 复权因子薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/jobs/runs` | 查看最近盘前/盘后任务运行记录 |
+| `POST` | `/v1/jobs/runs` | 由任务进程回写运行报告；属于内部写接口 |
 | `GET` | `/v1/operations/status` | 查看 gateway 心跳、output stream lag 和 DLQ 汇总 |
 | `GET` | `/v1/operations/dlq` | 分页查询 DLQ 原始消息和当前审核状态 |
 | `GET` | `/v1/operations/dlq/reviews` | 查询指定 DLQ 的不可变审核轨迹 |
@@ -129,6 +139,5 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 ## 后续工作
 
 1. 增加环境切换：文档门户、API 模式、测试前置环境。
-2. 将 endpoint 状态和参数字段由静态 JSON catalog 改成自动读取 `/v1/schema`。
-3. 增加请求样例保存和导出。
-4. 增加响应断言，用于冒烟测试。
+2. 增加请求样例保存和导出。
+3. 增加可命名的响应断言集合，用于联调和发布冒烟。

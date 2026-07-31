@@ -29,8 +29,8 @@
 ## 当前优先级
 
 1. 完成 OC v1.2 联合验收：订单/成交实时与查询身份错位已经关闭，readiness heartbeat、ETF transfer 分流和撤单拒绝独立审计已通过；OC 已部署 query XACK 和恢复解析修复，下一次启动使用现存 18 条 PEL 验证 `QUERY_INTERRUPTED`、pending 清零且不再产生伪 `BAD_RECOVERED_COMMAND`。
-2. N11 已完成；下一步进入 N12，先补任务/API Console/交易终端的 Playwright 交互回归和发布检查清单。通用 Webhook 当前安全默认关闭，配置真实接收端后做交易日投递验收。
-3. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
+2. N12 已进入实施：API catalog 一致性检查、生产只读双视口 Playwright 和统一发布验收/回滚清单已完成；下一步补 API Console 可保存断言集合和券商测试环境批量下单视图。
+3. 完成 N12 回归与发布：收口 API 断言集合、批量下单测试视图，并拆分 API/worker 常驻进程与日志采集。
 4. P10 后续补异机备份、加密、保留周期和恢复时间告警；本机全量备份与恢复演练已经通过。
 5. P9 模拟柜台继续暂缓；relay 保持实盘接入、账本、审计、对账和策略交易 API 的职责边界。
 
@@ -146,17 +146,18 @@
 
 ### N12 API Console、回归测试与发布
 
-状态：`todo`
+状态：`doing`
 
 目标：形成可重复执行的接口、页面和发布验收流程。
 
 范围：
 
-- API catalog 从 handler/schema 自动生成或增加一致性检查。
-- API Console 支持请求样例保存/导出和响应断言集合。
-- `/trade` 增加批量下单手动测试视图；生产环境保持 `trading_enabled=false`，写入测试只在券商测试环境执行。
-- Playwright 覆盖环境/账户切换、日期、分页、排序、K 线、订单详情、绩效页和 jobs 页。
-- 补齐 API/worker 独立部署、日志采集、版本回滚和发布检查清单。
+- [x] API catalog 增加一致性检查，覆盖条目结构、Go handler、源码 schema 和在线 `/v1/schema`。
+- [ ] API Console 支持请求样例保存/导出和响应断言集合。
+- [ ] `/trade` 增加批量下单手动测试视图；生产环境保持 `trading_enabled=false`，写入测试只在券商测试环境执行。
+- [x] Playwright 覆盖环境/账户切换、生产只读护栏、日期、分页、排序、K 线、订单详情、绩效页、jobs 页和运维页，并在网络层禁止写请求。
+- [x] 增加统一生产只读发布验收脚本，以及配置、备份、观察和版本回滚检查清单。
+- [ ] 将 API/worker 拆为独立常驻进程，补齐各自日志采集和独立回滚入口。
 
 ## 里程碑细化
 

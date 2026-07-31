@@ -3,6 +3,7 @@
   { "id": "status", "group": "基础", "title": "服务状态/依赖健康", "method": "GET", "path": "/v1/status", "status": "ready", "fields": [] },
   { "id": "schema", "group": "基础", "title": "Schema 发现", "method": "GET", "path": "/v1/schema", "status": "ready", "fields": [] },
   { "id": "accounts", "group": "账户", "title": "账户列表", "method": "GET", "path": "/v1/accounts", "status": "ready", "fields": [] },
+  { "id": "account-routes", "group": "账户", "title": "账户路由与权限", "method": "GET", "path": "/v1/account-routes", "status": "ready", "fields": [] },
   {
     "id": "account-alias",
     "group": "账户",
@@ -546,6 +547,29 @@
       { "name": "job_name", "label": "job_name", "source": "query", "defaultValue": "pre_open_init,post_close_settlement" },
       { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "job-run-record",
+    "group": "运维",
+    "title": "任务运行记录写入",
+    "method": "POST",
+    "path": "/v1/jobs/runs",
+    "status": "needs-config",
+    "fields": [
+      { "name": "job_name", "label": "job_name", "source": "body", "required": true, "defaultValue": "manual_check" },
+      { "name": "target_trade_date", "label": "target_trade_date", "source": "body", "required": true, "defaultValue": "20260731" },
+      { "name": "timezone", "label": "timezone", "source": "body", "defaultValue": "Asia/Shanghai" },
+      { "name": "trigger", "label": "trigger", "source": "body", "defaultValue": "api-console" },
+      { "name": "status", "label": "status", "source": "body", "type": "select", "defaultValue": "succeeded", "options": ["running", "succeeded", "skipped", "failed"] },
+      {
+        "name": "report_json",
+        "label": "report",
+        "source": "body_json",
+        "type": "textarea",
+        "target": "report",
+        "defaultValue": "{\"ok\":true,\"job\":\"manual_check\",\"timezone\":\"Asia/Shanghai\"}"
+      }
     ]
   },
   {

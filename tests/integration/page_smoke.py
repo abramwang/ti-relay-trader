@@ -109,6 +109,7 @@ def build_checks(sdk_version: str) -> list[Check]:
     return [
         Check("home", "/", "text", ("relay 文档门户", "/api-console", "/trade", "/docs/python-sdk")),
         Check("docs-readme", "/docs/readme", "text", ("线程恢复卡片", "当前进展")),
+        Check("release-checklist", "/docs/release-checklist", "text", ("发布检查清单", "生产只读全量验收", "回滚")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),
         Check("api-console", "/api-console", "text", ("接口测试台", "api-console-v2", "api-console.js")),
         Check("trade-terminal", "/trade", "text", ("Relay Trader", "trade-terminal.js", "绩效分析", "证券贡献", "NAV 对账")),
@@ -126,7 +127,7 @@ def build_checks(sdk_version: str) -> list[Check]:
         Check("operations-status-css", "/assets/operations-status.css", "text", (".operations-status", ".dlq-workspace")),
         Check("operations-status-js", "/assets/operations-status.js", "text", ("/v1/operations/status", "loadDeadLetters")),
         Check("echarts", "/assets/echarts.min.js", "bytes", min_bytes=100_000),
-        Check("api-console-catalog", "/assets/api-console.catalog.json", "json", expected_json=("status", "meridian-bars", "performance-contributions", "operations-status", "daily-review-report")),
+        Check("api-console-catalog", "/assets/api-console.catalog.json", "json", expected_json=("status", "account-routes", "meridian-bars", "performance-contributions", "operations-status", "daily-review-report", "job-run-record")),
         Check("healthz", "/healthz", "json", expected_json=("status", "ok")),
         Check("v1-status", "/v1/status", "json", expected_json=("ok", "dependencies")),
         Check("operations-api", "/v1/operations/status", "json", expected_json=("gateways", "streams", "dead_letters")),
