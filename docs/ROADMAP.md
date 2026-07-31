@@ -137,7 +137,7 @@
 - 输出账户级人工复核报告，汇总资产、持仓、订单、成交、未终态订单、对账差异和异常账户。
 - 非交易日 `trading_day.phase` 返回明确的 `non_trading`，避免仅按时钟显示 `continuous`。
 - 增加任务失败、账户异常、刷新超时和快照阻断告警。
-- 保留 09:01 盘前初始化和 15:05 生产盘后结算口径。
+- 保留 09:01 盘前初始化和 15:01 生产盘后结算口径。
 
 ### N12 API Console、回归测试与发布
 
@@ -378,7 +378,7 @@
 - [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
 - [x] 对比 Redis 原始消息窗口摘要和内部账表摘要。
 - [x] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。
-- [x] 生产盘前初始化固定为交易日 09:01，盘后结算固定为交易日 15:05 `Asia/Shanghai`。
+- [x] 生产盘前初始化固定为交易日 09:01，盘后结算固定为交易日 15:01 `Asia/Shanghai`。
 - [x] 任务使用 Meridian 交易日信息跳过非交易日，并在 `/jobs` 区分计划、上次运行和历史记录。
 - [x] 盘前/盘后任务支持账户级异常隔离和陈旧快照阻断，单账户未就绪不再误判整体失败。
 - [ ] 非交易日 `trading_day.phase` 返回 `non_trading`，不再仅按时钟显示交易阶段。

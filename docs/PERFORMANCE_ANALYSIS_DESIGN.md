@@ -585,7 +585,7 @@ provisional_close_economic_nav =
 
 ### 资产对账辅线
 
-T 日 15:05 先发布 `provisional`，T+1 交易日 09:01 盘前初始化后校正：
+T 日 15:01 先发布 `provisional`，T+1 交易日 09:01 盘前初始化后校正：
 
 ```text
 observed_next_open_assets =

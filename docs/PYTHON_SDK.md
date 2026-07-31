@@ -264,7 +264,7 @@ client.refresh_fills()
 ```python
 report = {
     "run_id": "post_close_settlement-20260625",
-    "started_at": "2026-06-25T15:05:01+08:00",
+    "started_at": "2026-06-25T15:01:01+08:00",
     "finished_at": "2026-06-25T15:06:20+08:00",
     "ok": True,
 }

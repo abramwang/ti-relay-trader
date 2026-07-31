@@ -182,7 +182,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 明确业务时间统一为 `Asia/Shanghai` 东八区，A 股交易日、cron、报表、页面和 API 业务字段都按该时区解释。
 - [x] 明确每日交易主流程包含 `pre_open_init` 盘前初始化和 `post_close_settlement` 收盘后结算。
 - [x] 生产盘前初始化时间调整为交易日 09:01 `Asia/Shanghai`，等待 09:00 启动的前置程序可用后再查询。
-- [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:05 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
+- [x] 明确生产环境 `post_close_settlement` 默认在交易日 15:01 `Asia/Shanghai` 执行，测试环境可按联调需要手工触发或调整 cron。
 - [x] 盘前初始化在资金/持仓/订单/成交刷新后写入 `asset_snapshots(open)` 日初资产快照，用于绩效分析区分隔夜调整和日内盈亏；open 快照只写资产，不覆盖日终持仓快照。
 - [x] 新增统一时间工具，HTTP envelope、`/healthz`、SSE 事件、Redis command `sent_at` 和探测/同步报告生成时间按 `Asia/Shanghai` 输出。
 - [x] 新增 Python 日流程任务入口：`python -m relay.jobs.pre_open_init` 和 `python -m relay.jobs.post_close_settlement`，支持交易日判断、依赖检查、账户刷新、账本快照摘要和 JSON 报告输出。
@@ -324,7 +324,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 ## 阻塞与风险
 
 - 当前无阻塞。
-- 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:05 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
+- 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:01 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
 - 9092 常驻进程已安装到 root crontab 的 `RELAY_DOCS_AUTOSTART` 管理块，`@reboot` 和每分钟 watchdog 都调用 `scripts/relay-docs-service.sh start`。该脚本默认读取 `config/relay.prod.yaml`，生产配置若出现 `trading_enabled=true` 会拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true` 完成人工风险确认。
 - `RELAY_DOCS_AUTOSTART` 的分钟级 watchdog 只检查 `/healthz` 和进程参数，不再调用 `/v1/status`；`/v1/status` 仍会查询 Meridian 交易日状态，但 Meridian Go 客户端和启动脚本已禁用 `HTTP_PROXY/HTTPS_PROXY` 继承，避免内网交易日查询走失效本地代理并刷 WARN。
@@ -560,3 +560,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-30`: 排查当天盘前任务未完成：cron 已在 09:01 准时触发，但 N9 的 `stream_runtime=attention` 将 `/v1/status` 汇总为 `degraded`，旧任务健康门禁因此在 0.24 秒内提前退出；失败报告又因尚未解析目标交易日被 `POST /v1/jobs/runs` 拒绝，页面只保留昨天记录。现已先解析 Meridian 交易日，核心依赖健康时允许带运行态告警继续，并为所有持久化报告显式补齐目标交易日。09:12 恢复执行 6/6 账户无错误，写入 6 份 open 资产、208 条 open 持仓，`job_runs` 状态为 `succeeded`。
 - `2026-07-30`: 使用新交易日生产数据验收 OC v1.1。空 `order_stream_id` 的 32 笔订单均为独立稳定 ID；869 条真实成交实时/查询身份一致，124 条 ETF 成分划转没有混入普通成交，终态时间和非拒单错误残留均正常。但 `307000051387` 的 `BTR.83224303|J.0` 篮子有 14 个实时 `order.event` 证券与盘后 `order_page` 错位，导致 16 个真实成交被 OC 正确隔离并产生 32 条 `FILL_ORDER_CONTEXT_MISMATCH` 原始 DLQ。Relay 主账本未写入错误真实成交，但 14 条旧兼容 summary 形成次生错配。已形成 `docs/OC_VALIDATION_REPORT_20260730.md`，P0 根因关闭前暂缓进入 N10。
 - `2026-07-30`: 对齐 OC v1.2 对接文档和兼容通知：新增撤单动作独立审计迁移 `000017`，支持 `order.cancel.rejected`、`CANCEL_RESPONSE_TIMEOUT`、batch `failed_orders[]`、`COMMAND_OUTCOME_UNKNOWN` 保护和五项真实就绪心跳；未知事件 raw 归档后继续消费。发布 `relay-sdk 0.1.21` 的撤单失败回调及专项异常，Go 全量测试和 SDK 16/16 通过。生产迁移已应用、9092 已重启且仍为 6 账户只读；收盘后最新 OC 心跳仍是升级前样本，下一交易窗口继续联合验收。
+- `2026-07-31`: 排查盘后结算状态：任务于 15:05 准时启动，15:11 完成并落库为 `succeeded`；六账户串行刷新耗时 382.821 秒，其中三户资金/持仓未在 45 秒新鲜度窗口内到账而被阻断 close 快照。为给多账户回包合并和 15:10 OC 关停留出完整窗口，生产 `post_close_settlement` 从后续交易日起提前到 15:01 `Asia/Shanghai`，并同步配置、任务页、运维文档和 root crontab。
