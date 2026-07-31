@@ -229,12 +229,12 @@
   white-space: nowrap;
 }
 
-.jobs-table-wrap td:last-child {
+.jobs-table-wrap .job-error-cell {
   min-width: 180px;
   white-space: normal;
 }
 
-.jobs-table-wrap td:nth-last-child(2) {
+.jobs-table-wrap .job-result-cell {
   min-width: 260px;
   white-space: normal;
 }

@@ -74,6 +74,14 @@ def main() -> int:
                 jobTimes: Array.from(
                     document.querySelectorAll('#jobRunsBody tr td:nth-child(5)')
                 ).map((cell) => cell.textContent || ''),
+                alertHeader: Array.from(document.querySelectorAll('.history-panel th'))
+                    .map((cell) => cell.textContent?.trim() || '').includes('告警'),
+                alertCells: document.querySelectorAll('#jobRunsBody tr td:nth-child(9)').length,
+                alertCardLabels: document.querySelectorAll('.job-card dt').length
+                    ? Array.from(document.querySelectorAll('.job-card dt')).filter(
+                        (cell) => cell.textContent?.trim() === '告警通知'
+                    ).length
+                    : 0,
                 documentOverflow:
                     document.documentElement.scrollWidth > window.innerWidth,
                 reviewTableOverflow:
@@ -94,6 +102,8 @@ def main() -> int:
         raise AssertionError(f"trade-date selection did not stick: {diagnostics}")
     if not any("15:05:01" in value for value in diagnostics["jobTimes"]):
         raise AssertionError(f"job times are not rendered in Asia/Shanghai: {diagnostics}")
+    if not diagnostics["alertHeader"] or diagnostics["alertCells"] != 2 or diagnostics["alertCardLabels"] != 2:
+        raise AssertionError(f"alert delivery state is not rendered: {diagnostics}")
     if diagnostics["documentOverflow"]:
         raise AssertionError(f"page has horizontal document overflow: {diagnostics}")
     if console_errors or page_errors or response_errors:

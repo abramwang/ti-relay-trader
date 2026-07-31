@@ -306,6 +306,26 @@
     return `账户异常 ${count}`;
   }
 
+  function alertDelivery(run) {
+    const value = run && run.report && run.report.alert_delivery;
+    return value && typeof value === "object" ? value : null;
+  }
+
+  function alertDeliveryView(run) {
+    const delivery = alertDelivery(run);
+    if (!delivery) return { label: "--", className: "" };
+    const status = delivery.status || "unknown";
+    if (status === "delivered") return { label: `已通知${delivery.attempts > 1 ? ` (${delivery.attempts}次)` : ""}`, className: "succeeded" };
+    if (status === "not_required") {
+      return { label: delivery.configured ? "无需通知 · 通道可用" : "无需通知 · 通道未启用", className: "skipped" };
+    }
+    if (status === "suppressed") return { label: "演练已抑制", className: "skipped" };
+    if (status === "disabled") return { label: "需通知 · 通道未启用", className: "failed" };
+    if (status === "misconfigured") return { label: "告警配置不完整", className: "failed" };
+    if (status === "failed") return { label: "通知失败", className: "failed" };
+    return { label: status, className: "" };
+  }
+
   function finalResult(run) {
     if (!run) return "--";
     const report = run.report || {};
@@ -380,6 +400,7 @@
             <div><dt>本次运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
             <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>
             <div class="wide"><dt>运行结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>
+            <div class="wide"><dt>告警通知</dt><dd>${escapeHTML(todayRun ? alertDeliveryView(todayRun).label : "--")}</dd></div>
           </dl>
         </article>`;
     }).join("");
@@ -388,11 +409,12 @@
   function renderTable(statusView, runs) {
     els.count.textContent = `${runs.length} 条`;
     if (!runs.length) {
-      els.body.innerHTML = '<tr><td colspan="9">暂无任务运行记录</td></tr>';
+      els.body.innerHTML = '<tr><td colspan="10">暂无任务运行记录</td></tr>';
       return;
     }
     els.body.innerHTML = runs.map((run, index) => {
       const status = statusLabel(run.status, run.skipped);
+      const alert = alertDeliveryView(run);
       const error = run.error_summary || accountErrorSummary(run) || (Array.isArray(run.report && run.report.errors) ? run.report.errors.join("; ") : "");
       return `
         <tr data-index="${index}">
@@ -403,8 +425,9 @@
           <td>${escapeHTML(formatTime(run.started_at))}</td>
           <td>${escapeHTML(formatTime(run.finished_at))}</td>
           <td>${escapeHTML(formatDuration(run.duration_ms))}</td>
-          <td>${escapeHTML(finalResult(run))}</td>
-          <td>${escapeHTML(error || "--")}</td>
+          <td class="job-result-cell">${escapeHTML(finalResult(run))}</td>
+          <td><span class="status-badge ${escapeHTML(alert.className)}">${escapeHTML(alert.label)}</span></td>
+          <td class="job-error-cell">${escapeHTML(error || "--")}</td>
         </tr>`;
     }).join("");
     els.body.querySelectorAll("tr[data-index]").forEach((row) => {
@@ -480,7 +503,7 @@
 
   function renderError(error) {
     els.cards.innerHTML = `<article class="job-card"><div class="job-card-top"><h2>加载失败</h2><span class="status-badge failed">failed</span></div><p>${escapeHTML(error.message)}</p></article>`;
-    els.body.innerHTML = `<tr><td colspan="9">${escapeHTML(error.message)}</td></tr>`;
+    els.body.innerHTML = `<tr><td colspan="10">${escapeHTML(error.message)}</td></tr>`;
     els.reviewBody.innerHTML = `<tr><td colspan="10">${escapeHTML(error.message)}</td></tr>`;
   }
 

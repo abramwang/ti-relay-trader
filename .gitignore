@@ -3,6 +3,8 @@ config/*.yaml
 config/*.yml
 !config/*.example.yaml
 !config/*.example.yml
+config/relay.alerts.env
+!config/relay.alerts.env.example
 
 # Build and runtime artifacts.
 bin/

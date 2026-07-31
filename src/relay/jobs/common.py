@@ -25,6 +25,8 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for repo-local cro
     sys.path.insert(0, str(REPO_ROOT / "sdk" / "python"))
     from relay_sdk import RelayClient
 
+from .alerts import dispatch_daily_job_alert
+
 
 TIMEZONE_NAME = "Asia/Shanghai"
 DEFAULT_BASE_URL = "http://relay-trader.quantstage.com"
@@ -495,6 +497,7 @@ def wait_for_refreshed_ledgers(
                     "required": list(required),
                 })
                 freshness["error"] = refresh_timeout_error(freshness, options.refresh_timeout_seconds)
+                freshness["timed_out"] = True
                 account_report["refresh_freshness"] = freshness
                 account_report["snapshot_blocked"] = True
                 account_report["errors"].append(str(freshness["error"]))
@@ -776,6 +779,8 @@ def main_for(job_name: str, description: str, runner: Callable[[JobOptions], Map
                 "errors": [str(exc)],
             }
         )
+    report["trigger"] = options.trigger
+    persisted_run_id = ""
     if options.persist:
         trading_day_report = report.get("trading_day")
         target_trade_date = ""
@@ -783,18 +788,38 @@ def main_for(job_name: str, description: str, runner: Callable[[JobOptions], Map
             target_trade_date = normalize_trade_date(str(trading_day_report.get("target_trade_date", "")))
         if not target_trade_date:
             target_trade_date = options.target_date or normalize_trade_date(str(report.get("started_at", "")))
-        _value, persistence = capture_call(
+        persisted_value, persistence = capture_call(
             "record_job_run",
             RelayClient(options.base_url, timeout=options.timeout, trust_env=False).record_job_run,
             report,
             job_name=job_name,
             trigger=options.trigger,
             target_trade_date=target_trade_date,
+            include_result=False,
         )
+        if isinstance(persisted_value, Mapping):
+            persisted_run_id = str(persisted_value.get("run_id") or "")
+            if persisted_run_id:
+                persistence["run_id"] = persisted_run_id
         report["persistence"] = persistence
         if persistence.get("error"):
             report["ok"] = False
             report.setdefault("errors", []).append(persistence["error"])
+    report["alert_delivery"] = dispatch_daily_job_alert(report)
+    if options.persist and persisted_run_id:
+        _value, final_persistence = capture_call(
+            "update_job_run_alert_delivery",
+            RelayClient(options.base_url, timeout=options.timeout, trust_env=False).record_job_run,
+            report,
+            job_name=job_name,
+            trigger=options.trigger,
+            run_id=persisted_run_id,
+            target_trade_date=target_trade_date,
+            include_result=False,
+        )
+        report["persistence"]["final_report_saved"] = not bool(final_persistence.get("error"))
+        if final_persistence.get("error"):
+            report.setdefault("warnings", []).append(final_persistence["error"])
     emit_report(report, options)
     raise SystemExit(0 if report.get("ok") else 1)
 

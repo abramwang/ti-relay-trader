@@ -86,6 +86,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 10. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
 11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 12. `/v1/status.trading_day.phase` 在 Meridian 明确当前日期不是交易日时返回 `non_trading`，不再按本地时钟误显示 `continuous` 或 `post_close`。
+13. 任务结束后按报告聚合外部告警：任务失败或快照阻断为 `critical`，单账户异常为 `warning`；刷新超时、阻断账户和错误摘要写入 `relay.alert.v1` Webhook。非交易日正常跳过和 dry-run 不发送，投递结果回写同一条 `job_runs`。
 
 示例配置：
 
@@ -113,5 +114,5 @@ TZ=Asia/Shanghai
 
 ## 后续落地项
 
-1. 将收盘后结算接入正式盘后对账输入、差异表和 PnL 计算。
-2. 增加 cron 安装模板或 systemd timer 部署模板。
+1. 为通用 Webhook 配置真实内部接收端，并在交易日验证失败重试、幂等去重和接收端展示。
+2. 将日任务、API、worker 拆分为独立部署单元并补齐发布回滚检查。

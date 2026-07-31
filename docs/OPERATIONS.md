@@ -422,6 +422,35 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 
+每日任务已内置 `relay.alert.v1` 通用 JSON Webhook。任务失败和快照阻断为 `critical`，单账户查询异常为 `warning`，刷新超时同时标记 `refresh_timeout` 与 `snapshot_blocked`；同一轮六账户异常只聚合投递一次。正常成功、非交易日正常跳过不发送，`--dry-run` 始终抑制通知。每条通知带稳定 `dedupe_key` 和 HTTP `Idempotency-Key`，网络异常、429 和 5xx 最多重试 3 次。投递结果保存到同一条 `job_runs.report.alert_delivery`，可在 `/jobs` 的“告警”列查看；通道失败不会把已成功的账表任务改判为失败。
+
+真实配置只允许写入被 Git 忽略的 `config/relay.alerts.env`，建议权限为 `0600`：
+
+```bash
+cp config/relay.alerts.env.example config/relay.alerts.env
+chmod 600 config/relay.alerts.env
+```
+
+```dotenv
+RELAY_ALERT_ENABLED=true
+RELAY_ALERT_ENVIRONMENT=production
+RELAY_ALERT_PUBLIC_URL=http://relay-trader.quantstage.com
+RELAY_ALERT_WEBHOOK_URL=https://<internal-alert-gateway>/relay
+RELAY_ALERT_WEBHOOK_TOKEN=<bearer-token>
+RELAY_ALERT_TIMEOUT_SECONDS=5
+RELAY_ALERT_MAX_ATTEMPTS=3
+```
+
+环境变量优先于文件配置；可用 `RELAY_ALERT_CONFIG_PATH` 指向其它受控路径。Webhook URL 和 Token 不写入任务报告或日志。未配置接收端时保持 `RELAY_ALERT_ENABLED=false`，异常任务会在 `alert_delivery.status=disabled` 中明确显示“需要通知但通道未启用”。
+
+配置完成后先发送一条不写账本的 `info` 测试通知：
+
+```bash
+PYTHONPATH=src python3 scripts/test-job-alert-webhook.py
+```
+
+命令只输出状态码、尝试次数、耗时和去重键，不输出 URL 或 Token。返回 `delivered` 后，再等待真实交易日任务验证 `warning/critical` 展示。
+
 `GET /v1/jobs/runs?trade_date=YYYYMMDD&job_name=pre_open_init,post_close_settlement` 返回指定交易日任务记录。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 聚合任务报告和对账差异，按账户输出日初/日终资产、持仓、订单、成交、未终态订单、开放差异、快照是否落盘及阻断原因。`/jobs` 的交易日选择器、账户复核表和“导出 JSON”使用同一只读接口。
 
 ## 待增强项
@@ -431,4 +460,4 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 1. 正式部署脚本、systemd unit 或 `/etc/cron.d/relay-trader` 模板。
 2. cron 安装后验收 `/v1/status` 和 `/jobs` 中的日流程最近运行状态。
 3. 将 `/v1/status.runtime` 的 warning/critical 状态接入外部告警通知。
-4. 将账户复核 `blocked`、任务失败和刷新超时接入外部告警通知。
+4. 为通用 Webhook 配置真实内部接收端，并在交易日验收 `delivered`、幂等去重和接收端展示。
