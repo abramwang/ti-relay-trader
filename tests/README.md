@@ -20,6 +20,7 @@
 - 已增加 9092 页面轻量冒烟测试：`tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、静态资源、基础 API 和 SDK 下载入口。
 - 已增加绩效页 Playwright 只读测试：`tests/integration/performance_visual_smoke.py`，覆盖指定区间查询、ECharts canvas 有效像素、六项数据质量检查、无横向溢出、无控制台错误和无 HTTP 错误。
 - 已增加任务复核页 Playwright 只读测试：`tests/integration/jobs_visual_smoke.py`，覆盖交易日选择、六账户复核结论、任务时间东八区格式、无横向溢出、无控制台错误和无 HTTP 错误。
+- 运维页 Playwright 会动态读取 `/v1/accounts`，验证六个 gateway 和账户筛选器均使用 PostgreSQL 落库别名，不回退显示旧的“生产查询账户”配置名。
 - 已增加交易终端 Playwright 交互测试：`tests/integration/trade_terminal_interaction_smoke.py`，覆盖生产环境/账户切换、只读下单护栏、日期查询、持仓和订单分页/排序、持仓联动代码、分钟 K 线 canvas 及订单详情。
 - 已增加 API Console Playwright 交互测试：`tests/integration/api_console_interaction_smoke.py`，覆盖状态、账户、历史订单表单填写、请求预览、JSON/表格响应，并在浏览器路由层中止所有 `/v1/*` 写请求。
 - 已增加 API catalog 一致性检查：`scripts/check-api-catalog.py`，校验 61 个 catalog 条目、Go handler 注册模式、源码 schema 和在线 `/v1/schema`。

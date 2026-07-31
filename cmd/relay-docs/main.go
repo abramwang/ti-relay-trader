@@ -263,7 +263,13 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 	defer stopLedgerSync()
 
 	mux := http.NewServeMux()
-	server := &portalServer{root: absRoot, logger: logger, cfg: cfg, configPath: strings.TrimSpace(*cfgPath)}
+	server := &portalServer{
+		root:       absRoot,
+		logger:     logger,
+		cfg:        cfg,
+		configPath: strings.TrimSpace(*cfgPath),
+		aliases:    apiDeps.Accounts,
+	}
 	mux.HandleFunc("/", server.handleHome)
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.Handle("/v1/", api.NewWithDependencies(cfg, logger, apiDeps))
@@ -569,6 +575,7 @@ type portalServer struct {
 	logger     *slog.Logger
 	cfg        relayconfig.Config
 	configPath string
+	aliases    api.AccountAliasStore
 }
 
 func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -584,6 +591,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
 	envLabel, _ := environmentView(s.cfg.Service.Environment)
 	accountSummary := summarizePortalAccounts(s.cfg.Accounts)
 	accountList := portalAccountList(s.cfg.Accounts)
+	accountAliases := s.accountAliases(r.Context())
 	configPath := strings.TrimSpace(s.configPath)
 	if configPath == "" {
 		configPath = "默认内置配置"
@@ -640,8 +648,8 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
       <div class="panel-header"><span>环境与账户路由</span><small>` + html.EscapeString(accountList) + `</small></div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>环境</th><th>账户</th><th>Broker</th><th>Gateway</th><th>查询</th><th>交易权限</th></tr></thead>
-          <tbody>` + portalAccountRowsHTML(s.cfg.Accounts, envLabel) + `</tbody>
+          <thead><tr><th>环境</th><th>账户</th><th>别名</th><th>Broker</th><th>Gateway</th><th>查询</th><th>交易权限</th></tr></thead>
+          <tbody>` + portalAccountRowsHTML(s.cfg.Accounts, envLabel, accountAliases) + `</tbody>
         </table>
       </div>
     </section>
@@ -750,12 +758,19 @@ func portalAccountList(accounts []relayconfig.AccountRouteConfig) string {
 	return strings.Join(items, ", ")
 }
 
-func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environment string) string {
+func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environment string, aliases map[string]string) string {
 	if len(accounts) == 0 {
-		return `<tr><td colspan="6" class="empty-cell">尚无账户路由</td></tr>`
+		return `<tr><td colspan="7" class="empty-cell">尚无账户路由</td></tr>`
 	}
 	var b strings.Builder
 	for _, account := range accounts {
+		alias := strings.TrimSpace(aliases[account.AccountID])
+		if alias == "" {
+			alias = strings.TrimSpace(account.Alias)
+		}
+		if alias == "" {
+			alias = "--"
+		}
 		queryStatus := "关闭"
 		if account.Enabled {
 			queryStatus = "可查询"
@@ -766,9 +781,10 @@ func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environmen
 		}
 		fmt.Fprintf(
 			&b,
-			`<tr><td>%s</td><td class="mono">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			`<tr><td>%s</td><td class="mono">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
 			html.EscapeString(environment),
 			html.EscapeString(account.AccountID),
+			html.EscapeString(alias),
 			html.EscapeString(account.BrokerID),
 			html.EscapeString(account.GatewayID),
 			queryStatus,
@@ -776,6 +792,22 @@ func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environmen
 		)
 	}
 	return b.String()
+}
+
+func (s *portalServer) accountAliases(ctx context.Context) map[string]string {
+	if s.aliases == nil || len(s.cfg.Accounts) == 0 {
+		return nil
+	}
+	accountIDs := make([]string, 0, len(s.cfg.Accounts))
+	for _, account := range s.cfg.Accounts {
+		accountIDs = append(accountIDs, account.AccountID)
+	}
+	aliases, err := s.aliases.AccountAliases(ctx, accountIDs)
+	if err != nil {
+		s.logger.Warn("portal_account_alias_lookup_failed", "error", err)
+		return nil
+	}
+	return aliases
 }
 
 func (s *portalServer) environmentSwitchHTML() string {

@@ -107,7 +107,7 @@ def read_sdk_version() -> str:
 
 def build_checks(sdk_version: str) -> list[Check]:
     return [
-        Check("home", "/", "text", ("relay 文档门户", "/api-console", "/trade", "/docs/python-sdk")),
+        Check("home", "/", "text", ("relay 文档门户", "/api-console", "/trade", "/docs/python-sdk", "<th>别名</th>")),
         Check("docs-readme", "/docs/readme", "text", ("线程恢复卡片", "当前进展")),
         Check("release-checklist", "/docs/release-checklist", "text", ("发布检查清单", "生产只读全量验收", "回滚")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),

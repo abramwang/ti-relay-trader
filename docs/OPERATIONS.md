@@ -144,7 +144,7 @@ Python SDK 和策略程序不承载测试/生产环境选择。SDK 只连接 rel
 
 `accounts[].alias` 是 UI 和人工识别的默认别名，不参与 Redis Stream 命名、账本唯一键、幂等键或权限判断。多账户环境中建议为每个账户设置短别名，例如“生产查询账户”“一号量化”“高频测试”等；交易终端会优先显示别名，同时保留账号用于核对。
 
-交易终端顶部账户区域的“别名”按钮会调用 `PATCH /v1/accounts/{account_id}/alias`，把用户修改写入 PostgreSQL `accounts.account_name`。`GET /v1/accounts` 读取账户列表时会优先使用落库别名，若落库值为空则回退到配置文件里的 `accounts[].alias`。别名修改只允许写入当前服务配置中存在的账户，不会改变 broker/gateway/stream prefix、账户权限或下单开关。
+交易终端顶部账户区域的“别名”按钮会调用 `PATCH /v1/accounts/{account_id}/alias`，把用户修改写入 PostgreSQL `accounts.account_name`。`GET /v1/accounts` 读取账户列表时会优先使用落库别名，若落库值为空则回退到配置文件里的 `accounts[].alias`。首页接入账户表格和 `/operations` gateway/账户筛选器使用相同优先级，运维页仍在别名下保留 `account_id` 便于精确排错。别名修改只允许写入当前服务配置中存在的账户，不会改变 broker/gateway/stream prefix、账户权限或下单开关。
 
 测试和生产现在使用独立 PostgreSQL 数据库：测试为 `relay_trader_test`，生产为 `relay_trader`。未跟踪配置必须分别声明匹配的 `database.expected_name`，服务在连接前解析 DSN 并拒绝串库。可执行以下命令核验两套配置的实际数据库身份和 migration 版本，输出不包含 DSN：
 

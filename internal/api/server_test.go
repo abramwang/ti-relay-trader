@@ -235,6 +235,10 @@ func TestOperationsStatusAndDeadLetterQueries(t *testing.T) {
 				TotalLag:           3,
 				PendingDeadLetters: 1,
 			},
+			Gateways: []redisstream.GatewayRuntimeStatus{{
+				AccountID: "a1",
+				Alias:     "生产查询账户a1",
+			}},
 		},
 		deadLetters: ledger.DeadLetterPage{
 			Items: []ledger.DeadLetterItem{{
@@ -251,12 +255,16 @@ func TestOperationsStatusAndDeadLetterQueries(t *testing.T) {
 	}
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Operations: operations,
+		Accounts:   &fakeAccountAliasStore{aliases: map[string]string{"a1": "数据库别名"}},
 	})
 
 	statusRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(statusRecorder, httptest.NewRequest(http.MethodGet, "/v1/operations/status?force=true", nil))
 	if statusRecorder.Code != http.StatusOK || !strings.Contains(statusRecorder.Body.String(), `"gateways_online":2`) {
 		t.Fatalf("operations status = %d %s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	if !strings.Contains(statusRecorder.Body.String(), `"alias":"数据库别名"`) || strings.Contains(statusRecorder.Body.String(), "生产查询账户a1") {
+		t.Fatalf("operations status did not apply database alias: %s", statusRecorder.Body.String())
 	}
 	if !operations.force {
 		t.Fatal("operations status did not pass force=true")

@@ -68,7 +68,10 @@ def main() -> int:
         page.wait_for_timeout(300)
 
         diagnostics = page.evaluate(
-            """() => ({
+            """async () => {
+              const accountsPayload = await fetch('/v1/accounts').then((response) => response.json());
+              const accounts = accountsPayload?.data?.accounts || [];
+              return {
                 gatewayRows: document.querySelectorAll("#gatewayBody tr").length,
                 streamRows: document.querySelectorAll("#streamBody tr").length,
                 accountOptions:
@@ -84,7 +87,17 @@ def main() -> int:
                 panelWidths: Array.from(
                     document.querySelectorAll(".operations-panel")
                 ).map((panel) => Math.round(panel.getBoundingClientRect().width)),
-            })"""
+                accountAliases: Object.fromEntries(
+                    accounts.map((account) => [account.account_id, account.alias || ""])
+                ),
+                gatewayLabels: Array.from(
+                    document.querySelectorAll("#gatewayBody tr td:first-child")
+                ).map((cell) => cell.textContent || ""),
+                accountOptionLabels: Array.from(
+                    document.querySelectorAll("#operationsAccountFilter option")
+                ).map((option) => option.textContent || ""),
+              };
+            }"""
         )
         page.screenshot(path=str(output), full_page=True)
         browser.close()
@@ -95,6 +108,18 @@ def main() -> int:
         raise AssertionError(f"expected 24 output streams: {diagnostics}")
     if diagnostics["accountOptions"] != 7:
         raise AssertionError(f"account selector is incomplete: {diagnostics}")
+    rendered_account_text = "\n".join(
+        diagnostics["gatewayLabels"] + diagnostics["accountOptionLabels"]
+    )
+    missing_aliases = [
+        alias
+        for alias in diagnostics["accountAliases"].values()
+        if alias and alias not in rendered_account_text
+    ]
+    if missing_aliases or "生产查询账户" in rendered_account_text:
+        raise AssertionError(
+            f"operations account aliases are stale: missing={missing_aliases} diagnostics={diagnostics}"
+        )
     if "只读" not in diagnostics["writeMode"]:
         raise AssertionError(f"production operation guard is unclear: {diagnostics}")
     if diagnostics["bodyOverflow"]:

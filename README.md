@@ -199,7 +199,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `scripts/relay-docs-service.sh` 管理 9092 常驻进程，并安装 root crontab `RELAY_DOCS_AUTOSTART` 块，容器启动和进程异常退出后会自动恢复生产只读服务。
 - [x] `/jobs` 任务页在非交易日明确展示“交易日任务跳过”；9092 watchdog 不再每分钟请求 `/v1/status`，Meridian 客户端和启动脚本均避免继承容器代理环境。
 - [x] 2026-07-26 重新审计开发路线图：P2 标准接口标记完成，P8/P10 调整为持续优化阶段，并把绩效归因、stream 可观测、账本环境隔离、人工复核、回归测试和发布运维拆成可验收任务。
-- [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`。
+- [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`；首页接入账户表和 `/operations` 也统一优先显示落库别名。
 - [x] P3 多账户路由收敛为 done：新增 `GET /v1/account-routes`，可只读查看每个账户的 broker/gateway/stream prefix、查询/交易权限、只读状态和 Redis stream key。
 - [x] 增加结构化日志，默认 JSON 输出，HTTP 请求带 `request_id`。
 - [x] 增加统一 JSON 响应 envelope 和标准错误码。
@@ -571,3 +571,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-31`: 完成 N11 账户级人工复核第一版：新增按交易日查询 `job_runs` 和只读 `/v1/reconciliations/review-report`，把盘前/盘后任务、open/close 快照及 `reconciliation_breaks` 聚合为账户级 `passed/attention/blocked/pending` 结论；`/jobs` 增加交易日选择、资产/持仓/订单/成交/未终态/差异表格、证据查看和 JSON 导出。Meridian 明确休市时 `/v1/status.trading_day.phase=non_trading`，任务时间在页面强制按东八区格式化。生产 2026-07-31 只读复核为 1 户通过、2 户因 3 条开放订单成交差异待复核、3 户因 close 快照新鲜度未确认被阻断；1600x1000 和 1280x800 Playwright 均显示 6 户、2 条任务记录，无横向溢出、控制台或 HTTP 错误。发布 `relay-sdk 0.1.22` 的任务查询与人工复核 helper；生产权限保持只读。
 - `2026-07-31`: 完成 N11 每日任务外部告警闭环：新增默认关闭的 `relay.alert.v1` 通用 Webhook，聚合任务失败、账户异常、45 秒刷新超时、快照未落盘和复核阻断账户，按 `warning/critical` 分级并携带稳定 `Idempotency-Key`；网络错误、429 和 5xx 最多重试 3 次，非交易日正常跳过和 dry-run 不告警。Webhook 与 Bearer Token 仅从未跟踪 `config/relay.alerts.env` 或环境变量读取，报告不暴露接收地址或凭据；告警投递状态回写同一条 `job_runs`，`/jobs` 新增告警状态列。当前生产本地通道保持关闭，等待配置实际接收端后做交易日验收。
 - `2026-07-31`: 进入 N12 回归与发布：API Console catalog 补齐账户路由和任务报告入口，并新增 61 条 catalog/Go handler/源码及在线 schema 一致性检查；交易终端增加生产只读前端护栏，未开交易权限的账户禁用下单和撤单且不会发出写请求。新增交易终端与 API Console Playwright 交互测试，覆盖六账户切换、日期、持仓/订单分页排序、持仓联动代码、分钟 K 线、订单详情和 JSON/表格响应，并在浏览器路由层中止任何 `/v1/*` 写请求。统一生产只读发布验收的 16 项检查在 `1600x1000`、`1280x800` 下全部通过，报告为 `/tmp/relay-readonly-release-20260731.json`；发布/回滚清单要求执行前强制确认 `environment=production`、`trading_enabled=0`。
+- `2026-07-31`: 统一账户别名展示：`/v1/operations/status` 在返回缓存 gateway 快照前使用 PostgreSQL `accounts.account_name` 覆盖配置默认别名；首页接入账户表新增“别名”列并复用同一数据库来源，空值才回退配置。生产六账户已核对与 `/v1/accounts` 完全一致，页面不再显示旧“生产查询账户”名称；运维 Playwright 增加动态别名一致性回归。

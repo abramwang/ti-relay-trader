@@ -2948,6 +2948,15 @@ func (s *Server) handleOperationsStatus(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability query failed", nil)
 		return
 	}
+	aliasOverrides, _ := s.accountAliasOverrides(r.Context())
+	if len(aliasOverrides) > 0 && len(snapshot.Gateways) > 0 {
+		snapshot.Gateways = append([]redisstream.GatewayRuntimeStatus(nil), snapshot.Gateways...)
+		for index := range snapshot.Gateways {
+			if alias := strings.TrimSpace(aliasOverrides[snapshot.Gateways[index].AccountID]); alias != "" {
+				snapshot.Gateways[index].Alias = alias
+			}
+		}
+	}
 	httpx.WriteOK(w, r, http.StatusOK, snapshot)
 }
 
