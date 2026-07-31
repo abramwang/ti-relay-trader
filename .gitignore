@@ -11,6 +11,8 @@ build/
 *.log
 *.pid
 tmp/
+outputs/backups/
+outputs/restore-drills/
 
 # Python cache and local environments.
 __pycache__/

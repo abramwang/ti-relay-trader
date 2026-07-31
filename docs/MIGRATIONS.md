@@ -245,6 +245,5 @@ RELAY_DATABASE_URL="$RELAY_DATABASE_URL" go run ./cmd/relayctl migrate down -ste
 
 ## 待增强项
 
-1. 增加基于临时 PostgreSQL 的 CI 集成测试。
-2. 如需更严格数据库级下单幂等，在清理历史重复数据后补充 `orders(account_id, idempotency_key)` 部分唯一约束；当前应用层已在发布 Redis 前做幂等预检。
-3. 内置模拟柜台 migration 暂缓；历史行情模拟撮合由回测引擎负责，外部模拟柜台如需接入应复用前置/Redis Stream 协议。
+1. 本机全量备份与临时恢复演练已完成；后续补异机副本、加密、保留周期和恢复时间告警。
+2. 内置模拟柜台 migration 暂缓；历史行情模拟撮合由回测引擎负责，外部模拟柜台如需接入应复用前置/Redis Stream 协议。

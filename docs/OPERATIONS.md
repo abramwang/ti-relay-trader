@@ -302,6 +302,13 @@ scripts/test-postgres-integration.sh
 
 该脚本自动创建唯一临时数据库、执行全部 migration、运行真实 repository 幂等测试，并在退出时销毁临时库。
 
+生产全量备份、SHA256/manifest 校验、临时恢复和按交易日 raw archive 重放见 [DATABASE_BACKUP_RESTORE.md](DATABASE_BACKUP_RESTORE.md)。常用命令：
+
+```bash
+scripts/backup-postgres.sh config/relay.prod.yaml outputs/backups
+scripts/restore-postgres-drill.sh outputs/backups/relay_trader_*.dump 2026-07-31 config/relay.prod.yaml
+```
+
 ## 前置测试环境
 
 当前用户已启动前置程序测试环境，relay 已基于测试 Redis 跑通查询、下单、批量下单、撤单、reply/event 合并和 SSE 推送。继续联调时优先使用以下入口：
