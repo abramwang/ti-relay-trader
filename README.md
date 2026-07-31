@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成；N10 已落地数据库级订单幂等约束，N11 已进入多账户盘前/盘后效率和人工复核闭环。OC v1.2 次交易日主链路验收通过，当前等待下一次 OC 启动验证六账户 `cmd.query` 现存 18 条 PEL 的恢复清理。生产仍为 6 个只读账户、下单账户 0；详见 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动和健康守护底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成；N10 已落地数据库级订单幂等以及测试/生产 PostgreSQL 隔离，N11 已进入多账户盘前/盘后效率和人工复核闭环。OC v1.2 次交易日主链路验收通过，当前等待下一次 OC 启动验证六账户 `cmd.query` 现存 18 条 PEL 的恢复清理。生产仍为 6 个只读账户、下单账户 0；详见 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。P9 内置模拟柜台继续暂缓。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-07-31`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -302,7 +302,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 ## 待办事项
 
 1. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
-2. 明确测试/生产 PostgreSQL 隔离方案，增加数据库级幂等约束、临时 PostgreSQL CI 和备份恢复演练。
+2. 完成 PostgreSQL 备份、恢复和按交易日账本回放演练；数据库幂等、测试/生产分库和临时库测试已完成。
 3. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
 4. 输出盘前/盘后账户级人工复核报告，并修正非交易日 `trading_day.phase` 仍显示钟点交易阶段的问题。
 5. 增加 Playwright 页面交互测试、API 断言集合和 `/trade` 批量下单测试视图。
@@ -354,7 +354,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 2026-06-15 当前生产配置已加入账户 `501000114077`，保持 `trading_enabled=false` 且 `auto_refresh=false`；手动刷新接口可发布 `cmd.query`，订单/成交推送由 Redis `reply/event` 同步到账本和 SSE，交易写接口仍由账户交易权限拦截。
 - 账户别名只用于展示，不参与 Redis Stream 前缀、账本主键、下单幂等或权限判断；真实路由仍以 `account_id/broker_id/gateway_id/stream_prefix` 为准。配置 `accounts[].alias` 是默认值，交易终端修改后的别名写入 PostgreSQL `accounts.account_name` 并优先展示。
 - SDK 不参与测试/生产环境选择；SDK 只连接 `base_url`，实际后端是测试 Redis 还是生产 Redis 完全由 relay 服务端配置、账户路由和交易权限决定。
-- 当前测试/生产查询阶段仍使用同一 PostgreSQL DSN，账表主要按 `account_id` 区分。由于核心表尚未普遍把 `environment` 纳入唯一键，长期生产化建议改为生产/测试独立 DSN 或 schema；如果必须同库，需要补 migration 将 `environment` 纳入 accounts、orders、fills、asset/position snapshots 等核心账表约束。
+- 测试与生产已使用独立 PostgreSQL 数据库，分别为 `relay_trader_test` 和 `relay_trader`；两套未跟踪配置均声明 `database.expected_name`，配置 DSN 指向错误库时会在启动前拒绝。`scripts/check-database-isolation.sh` 可随时复核真实连接目标和 migration 版本。
 - 接口测试台当前可在 9092 文档门户同源发送 `/v1/*` 请求；资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接口需要启动时加载本地 PostgreSQL、测试 Redis 和账户路由配置。
 - 资金/持仓/订单/成交查询默认读取 PostgreSQL 本地账表；可通过刷新接口主动发前置 `cmd.query`，由 9092 轻量后台同步循环或正式 worker 合并 reply 到本地账表。
 - 持仓查询现在保留前置/柜台原始 `sellable_qty`，不会把 `sellable_qty=0` 自动改成 `quantity`；当前持仓 API 会 best-effort 通过 Meridian instruments 补齐 `name`。若前置持仓回包 `avg_cost=0` 且该证券当前持仓不可卖、当日买入成交数量覆盖当前持仓，API 返回会用本地成交账本加权均价临时补偿成本价，raw stream 和账本原始持仓仍保留前置给出的 0，便于后续排查前置字段。
@@ -566,3 +566,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-31`: 完成 OC v1.2 次交易日只读复验：6,898 个实时/查询订单身份和 8,318 个实时/查询成交身份错配均为 0，`307000051387` 的上下文错位未复现；8,318 条普通成交没有零价/transfer 混入，297 条 ETF 划转独立落表；五项 readiness heartbeat 与 7 条撤单拒绝独立审计生效。新发现六账户 `cmd.query` 合计 18 条已完成查询仍在 PEL，15:26 产生 6 条把 stream key 和字面量 `body` 错当 entry 的 `BAD_RECOVERED_COMMAND`，已形成 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。Redis 只读探针新增 consumer group pending/lag/PEL 样本；Relay 撤单审计改为优先采用 routing 标准账户，`000018` 已应用生产库并将 7 条当日审计迁回标准账户。
 - `2026-07-31`: OC 已部署 `70c966d/7110a76/701d5af`，分别修复 query completed 后 XACK、multi-stream 恢复解析和撤单事件标准账户。17:27 只读复核时 OC 已按 15:30 计划关停，最新 heartbeat 仍为 15:29:02，六账户原 18 条 query PEL 尚未触发恢复，也没有新增 `QUERY_INTERRUPTED` 或 `BAD_RECOVERED_COMMAND`；当前结论为代码已部署、等待下一次 OC 启动用现存 PEL 完成真实恢复验收。
 - `2026-07-31`: 完成 N10 数据库级订单幂等：审计发现 36,435 条订单被历史 `order.list.query` 写入了查询请求键，此外真正旧缺陷重复仅 1 组。同步链路现已隔离查询键，下单改用 PostgreSQL insert-only 原子占位；新增 `000019_order_idempotency_unique`，将 36,436 行原键和清理原因审计到 `adapter_context` 后建立 `orders(account_id,idempotency_key)` 部分唯一索引。生产迁移后重复组为 0，真实 PostgreSQL 集成测试通过，9092 保持 6 账户只读、下单账户 0。
+- `2026-07-31`: 完成 N10 测试/生产数据库隔离：新建并迁移 `relay_trader_test`，本地测试配置从生产 `relay_trader` 切换到独立测试库；数据库配置新增 `expected_name` 串库护栏。新增 `check-database-isolation.sh` 校验两套运行配置的真实数据库身份，新增 `test-postgres-integration.sh` 自动创建临时数据库、执行 19 个 migration、运行 repository 幂等集成测试并销毁；两项均已实机通过。

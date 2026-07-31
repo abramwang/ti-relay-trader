@@ -29,7 +29,7 @@
 ## 当前优先级
 
 1. 完成 OC v1.2 联合验收：订单/成交实时与查询身份错位已经关闭，readiness heartbeat、ETF transfer 分流和撤单拒绝独立审计已通过；OC 已部署 query XACK 和恢复解析修复，下一次启动使用现存 18 条 PEL 验证 `QUERY_INTERRUPTED`、pending 清零且不再产生伪 `BAD_RECOVERED_COMMAND`。
-2. 完成 N10 账本生产化：数据库级订单幂等约束已落地，下一步明确测试/生产数据隔离方案，并补临时 PostgreSQL CI 和备份恢复演练。
+2. 完成 N10 账本生产化：数据库级订单幂等和测试/生产独立 PostgreSQL 已落地，下一步完成备份恢复及按交易日回放演练。
 3. 完成 N11 交易日与对账闭环：输出人工复核报告，修正非交易日 `trading_day.phase` 语义，并增强任务失败/账户异常告警。
 4. 完成 N12 回归与发布：扩展 Playwright 页面交互测试、API 断言集合、批量下单测试视图和发布检查清单。
 5. P9 模拟柜台继续暂缓；relay 保持实盘接入、账本、审计、对账和策略交易 API 的职责边界。
@@ -117,7 +117,7 @@
 
 范围：
 
-- 优先采用测试/生产独立 PostgreSQL DSN；如必须共库，再设计 `environment` 进入核心表主键/唯一键的 migration。
+- [x] 测试/生产改用独立 PostgreSQL：测试为 `relay_trader_test`，生产为 `relay_trader`；配置增加 `database.expected_name`，DSN 指向错误库时拒绝启动。
 - [x] 清理历史查询请求键和 1 组旧缺陷重复键，为 `orders(account_id, idempotency_key)` 增加部分唯一约束；下单改为 PostgreSQL insert-only 原子占位，并发同单回查为 replay、不重复发布 Redis 命令。
 - [x] 将 `orders/fills/order_events` 的唯一键、外键、upsert 冲突目标和研究视图切到 `account_id + trade_date + gateway_order_id`。
 - [x] 从 PostgreSQL 原始流归档重放生产订单/成交，验证订单事件和成交同日外键完整性。
@@ -125,8 +125,8 @@
 - [x] 交易质量接口增加证券/方向/业务类型错配和终态时间完整性检查；终态事件与盘后权威查询统一使用同日事件证据。
 - [x] 2026-07-31 次交易日复验：6,898 个实时/查询订单身份和 8,318 个实时/查询成交身份错配均为 0，`307000051387` 的实时上下文错位已关闭。
 - [ ] 验收 OC 查询命令 PEL 修复：`70c966d/7110a76` 已部署，等待下一次 OC 启动确认六账户现存 18 条 pending 清零且恢复关联字段正确。
-- 使用临时 PostgreSQL 跑 migration/repository 集成测试。
-- 编写数据库备份、恢复和按交易日回放验证手册，并完成一次恢复演练。
+- [x] 增加临时 PostgreSQL migration/repository 集成测试脚本，自动建库、迁移、测试和销毁。
+- [ ] 编写数据库备份、恢复和按交易日回放验证手册，并完成一次恢复演练。
 
 ### N11 交易日任务与人工复核闭环
 
@@ -257,9 +257,9 @@
 - [x] 当前持仓全量查询完成后清理旧批次残留行，日终快照等待本轮资金/持仓刷新确认。
 - [x] 增加 open/close 资产快照、持仓当日盈亏字段和研究侧绩效 view migration。
 - [ ] 让历史 `order.event.payload` 补齐 `trade_side/business_type` 后启用无草稿事件重建订单主表。
-- [ ] 明确测试/生产 PostgreSQL 独立 DSN 或共库 `environment` 主键/唯一键 migration。
+- [x] 测试/生产 PostgreSQL 使用独立 DSN，并以 `database.expected_name` 防止配置串库。
 - [x] 清理历史重复幂等键后增加 `orders(account_id, idempotency_key)` 部分唯一约束；查询回包不再把 `orders:query:*` 请求键写入订单幂等字段。
-- [ ] 增加基于临时 PostgreSQL 的 CI 集成测试。
+- [x] 增加基于临时 PostgreSQL 的 CI-ready 集成测试脚本。
 
 ### P6 9092 正式交易 API 与 SDK
 

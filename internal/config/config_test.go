@@ -97,6 +97,44 @@ func TestDecodeRejectsInvalidEnvironment(t *testing.T) {
 	}
 }
 
+func TestDecodeRequiresExpectedDatabaseName(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+database:
+  dsn: "postgres://relay:secret@db:5432/relay_trader_test"
+`))
+	if err == nil || !strings.Contains(err.Error(), "database.expected_name is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecodeRejectsUnexpectedDatabaseNameWithoutLeakingCredentials(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+database:
+  dsn: "postgres://relay:do-not-leak@db:5432/relay_trader"
+  expected_name: "relay_trader_test"
+`))
+	if err == nil || !strings.Contains(err.Error(), `targets "relay_trader"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(err.Error(), "do-not-leak") {
+		t.Fatalf("database validation leaked credentials: %v", err)
+	}
+}
+
+func TestDecodeAcceptsExpectedDatabaseName(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(`
+database:
+  dsn: "postgres://relay:secret@db:5432/relay_trader_test"
+  expected_name: "relay_trader_test"
+`))
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if cfg.Database.ExpectedName != "relay_trader_test" {
+		t.Fatalf("expected database name = %q", cfg.Database.ExpectedName)
+	}
+}
+
 func TestDecodeRejectsDuplicateAccounts(t *testing.T) {
 	_, err := Decode(strings.NewReader(`
 accounts:

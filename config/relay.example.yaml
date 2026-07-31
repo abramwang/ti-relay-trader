@@ -16,7 +16,8 @@ service:
 database:
   driver: "postgres"
   # Use a real DSN only in an untracked local config file.
-  dsn: "postgres://<user>:<password>@<host>:5432/<database>?sslmode=disable"
+  dsn: "postgres://<user>:<password>@<host>:5432/relay_trader_test?sslmode=disable"
+  expected_name: "relay_trader_test"
   max_open_conns: 16
   max_idle_conns: 4
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"gopkg.in/yaml.v3"
 
 	"ti-relay-trader/internal/timeutil"
@@ -56,6 +57,7 @@ const (
 type DatabaseConfig struct {
 	Driver       string `yaml:"driver"`
 	DSN          string `yaml:"dsn"`
+	ExpectedName string `yaml:"expected_name"`
 	MaxOpenConns int    `yaml:"max_open_conns"`
 	MaxIdleConns int    `yaml:"max_idle_conns"`
 }
@@ -272,6 +274,20 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Database.MaxIdleConns > cfg.Database.MaxOpenConns {
 		return fmt.Errorf("database.max_idle_conns must be <= max_open_conns")
+	}
+	if strings.TrimSpace(cfg.Database.DSN) != "" {
+		expectedName := strings.TrimSpace(cfg.Database.ExpectedName)
+		if expectedName == "" {
+			return errors.New("database.expected_name is required when database.dsn is configured")
+		}
+		databaseConfig, err := pgx.ParseConfig(cfg.Database.DSN)
+		if err != nil {
+			return errors.New("database.dsn is invalid")
+		}
+		actualName := strings.TrimSpace(databaseConfig.Database)
+		if actualName != expectedName {
+			return fmt.Errorf("database DSN targets %q, expected database.expected_name %q", actualName, expectedName)
+		}
 	}
 	if strings.TrimSpace(cfg.Market.BaseURL) == "" {
 		return fmt.Errorf("market.base_url is required")

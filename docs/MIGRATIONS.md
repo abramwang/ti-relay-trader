@@ -124,6 +124,14 @@ RELAY_LEDGER_TEST_DATABASE_URL="$RELAY_DATABASE_URL" go test ./internal/ledger -
 
 该测试默认跳过；设置测试库 DSN 后会写入一组临时账户、订单、事件、成交和原始 stream 消息，验证重复订单幂等键被数据库拒绝，并在测试清理阶段删除。
 
+完整临时库测试：
+
+```bash
+scripts/test-postgres-integration.sh
+```
+
+脚本默认从未跟踪的 `config/relay.local.yaml` 读取管理员 DSN，也可通过 `RELAY_DATABASE_ADMIN_URL` 提供。它会创建唯一临时数据库、执行全部 migration、运行 repository 集成测试，并通过 trap 自动销毁临时库；日志不会打印 DSN。
+
 ## 覆盖表
 
 配置与路由：

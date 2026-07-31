@@ -134,6 +134,7 @@ Relay 不生成、不解析 OC 内部 `oc#...` token，也不访问上述映射�
 2. `trading_enabled=true` 但账户 `enabled=false`。
 3. 生产环境中 `trading_enabled=true` 且 `simulated=true`。
 4. 账户 `stream_prefix` 与 `redis.env`、`broker_id`、`gateway_id` 不一致。
+5. `database.dsn` 的实际库名与 `database.expected_name` 不一致；校验错误不会回显数据库凭据。
 
 注意：券商测试环境的 Redis Stream namespace 可能仍使用 `relay:prod:*`，所以 `redis.env=prod` 不能单独表示生产。以 `service.environment`、配置文件路径、账户权限和页面环境标识共同判断当前运行态。
 
@@ -145,12 +146,13 @@ Python SDK 和策略程序不承载测试/生产环境选择。SDK 只连接 rel
 
 交易终端顶部账户区域的“别名”按钮会调用 `PATCH /v1/accounts/{account_id}/alias`，把用户修改写入 PostgreSQL `accounts.account_name`。`GET /v1/accounts` 读取账户列表时会优先使用落库别名，若落库值为空则回退到配置文件里的 `accounts[].alias`。别名修改只允许写入当前服务配置中存在的账户，不会改变 broker/gateway/stream prefix、账户权限或下单开关。
 
-当前账本 schema 中 `gateways` 和 `account_gateway_routes` 已有 `env` 维度，但 `accounts`、`orders`、`fills`、`asset_snapshots`、`positions` 等核心事实表仍主要按 `account_id` 唯一或索引。因此：
+测试和生产现在使用独立 PostgreSQL 数据库：测试为 `relay_trader_test`，生产为 `relay_trader`。未跟踪配置必须分别声明匹配的 `database.expected_name`，服务在连接前解析 DSN 并拒绝串库。可执行以下命令核验两套配置的实际数据库身份和 migration 版本，输出不包含 DSN：
 
-1. 短期内，如果测试账户和生产账户 ID 不同，可以通过 `account_id` 区分。
-2. 长期生产化不建议只靠账户区分，推荐测试/生产使用独立 PostgreSQL DSN 或独立 schema。
-3. 如果必须共用一个库，需要补 migration，把 `environment` 纳入核心账表唯一键、索引和查询条件。
-4. 页面和 SDK 查询生产数据时必须显式选择账户，不能用无账户过滤的研究导出结果直接混用测试/生产。
+```bash
+scripts/check-database-isolation.sh
+```
+
+页面和 SDK 查询生产数据时仍必须显式选择账户，不能用无账户过滤的研究导出结果直接混用测试/生产。
 
 ## 时区口径
 
@@ -273,15 +275,11 @@ http://relay-trader.quantstage.com/api-console
 当前交易账本和位点 DDL 位于：
 
 ```text
-migrations/postgres/000001_init_ledger.up.sql
-migrations/postgres/000002_stream_checkpoints.up.sql
-migrations/postgres/000003_job_runs.up.sql
-migrations/postgres/000004_reconciliation_idempotency.up.sql
-migrations/postgres/000005_fill_id_order_scope.up.sql
-migrations/postgres/000006_research_performance_views.up.sql
+migrations/postgres/*.up.sql
+migrations/postgres/*.down.sql
 ```
 
-真实 DSN 仍放在部署机本地配置或安全渠道。当前测试 PostgreSQL 已应用 `000001` 到 `000006`，包含账本、stream checkpoint、任务运行、对账幂等、成交订单作用域去重和研究导出 view。
+真实 DSN 仍放在部署机本地配置或安全渠道。测试和生产数据库均已应用 `000001` 到 `000019`。
 
 当前环境已安装 `psql`，同时可使用内置 runner：
 
@@ -295,6 +293,14 @@ RELAY_DATABASE_URL=postgres://... go run ./cmd/relayctl migrate up
 ```bash
 go run ./cmd/relayctl migrate up -config config/relay.local.yaml
 ```
+
+完整 migration/repository 临时库回归：
+
+```bash
+scripts/test-postgres-integration.sh
+```
+
+该脚本自动创建唯一临时数据库、执行全部 migration、运行真实 repository 幂等测试，并在退出时销毁临时库。
 
 ## 前置测试环境
 
