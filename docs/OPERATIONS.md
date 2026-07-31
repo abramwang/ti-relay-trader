@@ -420,7 +420,9 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 
 当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 45 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 45 秒，也不会在等待期间重复查询柜台。`pre_open_init` 会在刷新后写入 `open_snapshot` 日初资产和日初持仓快照，`post_close_settlement` 会写入 `settlement_snapshot` 日终资产/持仓快照。单个账户柜台未就绪、查询为空、资金快照缺失或资金/持仓刷新未确认时，任务会在 `account_errors` 中独立标注；若刷新未确认，该账户还会进入 `snapshot_blocked_accounts` 并从本次快照账户列表中剔除，避免把旧持仓固化。整体任务仍可在其它账户正常时成功完成；Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题才会让任务失败。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
 
-任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`，当 Meridian 明确当天不是交易日且没有当天任务记录时，预期运行结果显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
+任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
+
+`GET /v1/jobs/runs?trade_date=YYYYMMDD&job_name=pre_open_init,post_close_settlement` 返回指定交易日任务记录。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 聚合任务报告和对账差异，按账户输出日初/日终资产、持仓、订单、成交、未终态订单、开放差异、快照是否落盘及阻断原因。`/jobs` 的交易日选择器、账户复核表和“导出 JSON”使用同一只读接口。
 
 ## 待增强项
 
@@ -429,4 +431,4 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
 1. 正式部署脚本、systemd unit 或 `/etc/cron.d/relay-trader` 模板。
 2. cron 安装后验收 `/v1/status` 和 `/jobs` 中的日流程最近运行状态。
 3. 将 `/v1/status.runtime` 的 warning/critical 状态接入外部告警通知。
-4. 更完整的人工复核报告导出。
+4. 将账户复核 `blocked`、任务失败和刷新超时接入外部告警通知。

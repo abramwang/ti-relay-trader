@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.22.tar.gz"
 ```
 
 ## Quick Start
@@ -38,6 +38,7 @@ bars = client.get_meridian_bars(
 )
 contributions = client.get_performance_contributions(trade_date="20260724")
 quality = client.get_trade_quality(date_from="20260722", date_to="20260724")
+review = client.get_daily_review_report(trade_date="20260731")
 
 receipt = client.submit_order(
     symbol="600000",
@@ -94,6 +95,11 @@ Methods that publish commands or persist relay ledger records:
 | `record_job_run(report, ...)` | PostgreSQL `job_runs` | Persist daily job report JSON and summary status. |
 | `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset and position snapshots, and reconciliation run inputs. |
 | `rebuild_economic_nav(trade_date=..., status=...)` | PostgreSQL `performance_nav_versions` + `performance_nav_reconciliations` | Persist the current economic NAV version; server-side performance write permission must be enabled. |
+
+Daily-job review reads are available through `list_job_runs()` and
+`get_daily_review_report()`. The latter returns account-level open/close
+snapshots, authoritative settlement order/fill counts, open reconciliation
+breaks, and a `passed`/`attention`/`blocked` conclusion.
 
 Example settlement write:
 

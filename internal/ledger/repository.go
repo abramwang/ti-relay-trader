@@ -168,6 +168,12 @@ type JobRun struct {
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
+type JobRunQuery struct {
+	JobNames  []string
+	TradeDate string
+	Limit     int
+}
+
 type ReconciliationRun struct {
 	RunID        string         `json:"run_id"`
 	TradeDate    string         `json:"trade_date"`
@@ -1856,6 +1862,38 @@ func (repo *Repository) LatestJobRuns(ctx context.Context, jobNames []string) ([
 	return runs, nil
 }
 
+func (repo *Repository) ListJobRuns(ctx context.Context, query JobRunQuery) ([]JobRun, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := normalizeJobRunQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	sqlText, args := buildListJobRunsSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list job runs: %w", err)
+	}
+	defer rows.Close()
+	runs := make([]JobRun, 0, normalized.Limit)
+	for rows.Next() {
+		run, err := scanJobRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan job run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("job run rows: %w", err)
+	}
+	return runs, nil
+}
+
 func (repo *Repository) UpsertReconciliationRun(ctx context.Context, run ReconciliationRun) (ReconciliationRun, error) {
 	if repo == nil || repo.exec == nil {
 		return ReconciliationRun{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -2291,6 +2329,32 @@ func normalizeJobRun(run JobRun, now time.Time) (JobRun, error) {
 	return run, nil
 }
 
+func normalizeJobRunQuery(query JobRunQuery) (JobRunQuery, error) {
+	cleaned := make([]string, 0, len(query.JobNames))
+	seen := map[string]struct{}{}
+	for _, name := range query.JobNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		cleaned = append(cleaned, name)
+	}
+	query.JobNames = cleaned
+	var err error
+	query.TradeDate, err = normalizeTradeDate(query.TradeDate)
+	if err != nil {
+		return query, err
+	}
+	if query.Limit <= 0 || query.Limit > 500 {
+		query.Limit = 100
+	}
+	return query, nil
+}
+
 func normalizeReconciliationRun(run ReconciliationRun, now time.Time) (ReconciliationRun, error) {
 	run.RunID = strings.TrimSpace(run.RunID)
 	run.TradeDate = strings.TrimSpace(run.TradeDate)
@@ -2678,6 +2742,33 @@ func buildLatestJobRunsSQL(jobNames []string) (string, []any) {
 		builder.WriteString(")\n")
 	}
 	builder.WriteString("ORDER BY job_name, COALESCE(finished_at, started_at, updated_at) DESC, job_run_pk DESC")
+	return builder.String(), args
+}
+
+func buildListJobRunsSQL(query JobRunQuery) (string, []any) {
+	var where []string
+	var args []any
+	if len(query.JobNames) > 0 {
+		placeholders := make([]string, 0, len(query.JobNames))
+		for _, name := range query.JobNames {
+			args = append(args, name)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		where = append(where, "job_name IN ("+strings.Join(placeholders, ", ")+")")
+	}
+	if query.TradeDate != "" {
+		args = append(args, query.TradeDate)
+		where = append(where, fmt.Sprintf("trade_date = $%d::date", len(args)))
+	}
+	builder := strings.Builder{}
+	builder.WriteString(jobRunSelectColumns)
+	if len(where) > 0 {
+		builder.WriteString("WHERE ")
+		builder.WriteString(strings.Join(where, " AND "))
+		builder.WriteString("\n")
+	}
+	args = append(args, query.Limit)
+	builder.WriteString(fmt.Sprintf("ORDER BY COALESCE(finished_at, started_at, updated_at) DESC, job_run_pk DESC LIMIT $%d", len(args)))
 	return builder.String(), args
 }
 

@@ -6,8 +6,10 @@
       <p class="lead">盘前初始化、盘后结算和后续后台任务的预期运行时间、最终运行结果、错误摘要和报告输入。</p>
     </div>
     <div class="jobs-actions">
+      <input id="reviewTradeDate" type="date" aria-label="复核交易日">
       <input id="jobNameFilter" value="pre_open_init,post_close_settlement" aria-label="job_name filter">
       <button id="refreshJobs" type="button">刷新</button>
+      <button id="exportReview" type="button">导出 JSON</button>
     </div>
   </div>
 
@@ -36,10 +38,39 @@
   </div>
   <div id="jobCards" class="job-cards" aria-live="polite"></div>
 
+  <section class="jobs-panel review-panel">
+    <div class="jobs-panel-head">
+      <h2>账户级人工复核</h2>
+      <span id="reviewStatus">--</span>
+    </div>
+    <div id="reviewSummary" class="review-summary"></div>
+    <div class="jobs-table-wrap review-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>账户</th>
+            <th>结论</th>
+            <th>日初总资产</th>
+            <th>日终总资产</th>
+            <th>日终持仓</th>
+            <th>订单</th>
+            <th>成交</th>
+            <th>未终态</th>
+            <th>待处理差异</th>
+            <th>异常摘要</th>
+          </tr>
+        </thead>
+        <tbody id="reviewAccountsBody">
+          <tr><td colspan="10">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <div class="jobs-content-grid">
     <section class="jobs-panel history-panel">
       <div class="jobs-panel-head">
-        <h2>历史运行记录</h2>
+        <h2>所选交易日运行记录</h2>
         <span id="jobCount">--</span>
       </div>
       <div class="jobs-table-wrap">

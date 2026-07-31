@@ -12,11 +12,18 @@
     report: document.getElementById("jobReport"),
     refresh: document.getElementById("refreshJobs"),
     filter: document.getElementById("jobNameFilter"),
+    tradeDate: document.getElementById("reviewTradeDate"),
+    exportReview: document.getElementById("exportReview"),
+    reviewStatus: document.getElementById("reviewStatus"),
+    reviewSummary: document.getElementById("reviewSummary"),
+    reviewBody: document.getElementById("reviewAccountsBody"),
   };
+
+  let currentReview = null;
 
   const knownJobs = [
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
-    { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:05", purpose: "固化日终快照和对账输入" },
+    { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:01", purpose: "固化日终快照和对账输入" },
   ];
   const expectedRunGraceMinutes = 5;
 
@@ -72,6 +79,7 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
     return date.toLocaleString("zh-CN", {
+      timeZone: "Asia/Shanghai",
       hour12: false,
       year: "numeric",
       month: "2-digit",
@@ -90,6 +98,33 @@
     if (seconds < 60) return `${seconds.toFixed(2)} s`;
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ${(seconds % 60).toFixed(0)}s`;
+  }
+
+  function formatNumber(value, digits) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "--";
+    return number.toLocaleString("zh-CN", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  }
+
+  function reviewStatusLabel(status) {
+    return {
+      passed: "通过",
+      attention: "待复核",
+      blocked: "已阻断",
+      pending: "等待结算",
+      non_trading: "非交易日",
+    }[status] || status || "--";
+  }
+
+  function reviewStatusClass(status) {
+    if (status === "passed") return "succeeded";
+    if (status === "attention" || status === "pending") return "running";
+    if (status === "blocked") return "failed";
+    if (status === "non_trading") return "skipped";
+    return "";
   }
 
   function dependencySummary(dependencies) {
@@ -194,10 +229,10 @@
     const tradeDate = status && status.trading_day && status.trading_day.date;
     if (runMatchesTradeDate(run, tradeDate)) {
       const label = statusLabel(run.status, run.skipped);
-      if (run.skipped) return { label: "今日跳过", className: "skipped" };
-      if (label === "succeeded" || label === "completed" || label === "ok") return { label: "今日完成", className: "succeeded" };
+      if (run.skipped) return { label: "已跳过", className: "skipped" };
+      if (label === "succeeded" || label === "completed" || label === "ok") return { label: "已完成", className: "succeeded" };
       if (label === "running") return { label: "运行中", className: "running" };
-      if (label === "failed" || label === "error") return { label: "今日失败", className: "failed" };
+      if (label === "failed" || label === "error") return { label: "失败", className: "failed" };
       return { label, className: statusClass(run.status, run.skipped) };
     }
     if (isNonTradingDay(status)) {
@@ -341,10 +376,10 @@
           <dl>
             <div><dt>计划时间</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
             <div><dt>cron</dt><dd>${escapeHTML(schedule.schedule || "--")}</dd></div>
-            <div><dt>当前日期</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
-            <div><dt>今日运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
+            <div><dt>所选日期</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
+            <div><dt>本次运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
             <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>
-            <div class="wide"><dt>今日最终结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>
+            <div class="wide"><dt>运行结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>
           </dl>
         </article>`;
     }).join("");
@@ -381,6 +416,58 @@
     renderReport(runs[0]);
   }
 
+  function renderReview(report) {
+    currentReview = report || null;
+    const summary = report && report.summary || {};
+    els.reviewStatus.innerHTML = report
+      ? `<span class="status-badge ${escapeHTML(reviewStatusClass(report.status))}">${escapeHTML(reviewStatusLabel(report.status))}</span> · ${escapeHTML(report.trade_date || "--")}`
+      : "--";
+    const metrics = [
+      ["账户", summary.reviewed_accounts, summary.configured_accounts],
+      ["通过", summary.passed_accounts],
+      ["待复核", summary.attention_accounts],
+      ["阻断", summary.blocked_accounts],
+      ["未完成", summary.pending_accounts],
+      ["开放差异", summary.open_breaks],
+    ];
+    els.reviewSummary.innerHTML = metrics.map(([label, value, total]) => `
+      <div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value == null ? "0" : value)}${total == null ? "" : ` / ${escapeHTML(total)}`}</strong></div>
+    `).join("");
+    const accounts = report && Array.isArray(report.accounts) ? report.accounts : [];
+    if (!accounts.length) {
+      els.reviewBody.innerHTML = '<tr><td colspan="10">暂无账户复核记录</td></tr>';
+      return;
+    }
+    els.reviewBody.innerHTML = accounts.map((account, index) => {
+      const openAsset = account.open && account.open.asset || {};
+      const closeAsset = account.close && account.close.asset || {};
+      const close = account.close || {};
+      const issues = Array.isArray(account.issues) ? account.issues : [];
+      const openBreaks = (Array.isArray(account.breaks) ? account.breaks : []).filter((item) => item.status === "open").length;
+      const issueText = issues.slice(0, 2).map((item) => item.message || item.code).filter(Boolean).join("; ");
+      return `
+        <tr data-review-index="${index}">
+          <td><strong>${escapeHTML(account.alias || account.account_id)}</strong><br><code>${escapeHTML(account.account_id)}</code></td>
+          <td><span class="status-badge ${escapeHTML(reviewStatusClass(account.status))}">${escapeHTML(reviewStatusLabel(account.status))}</span></td>
+          <td>${escapeHTML(formatNumber(openAsset.net_asset, 2))}</td>
+          <td>${escapeHTML(formatNumber(closeAsset.net_asset, 2))}</td>
+          <td>${escapeHTML(formatNumber(close.positions_count, 0))}</td>
+          <td>${escapeHTML(formatNumber(close.orders_count, 0))}</td>
+          <td>${escapeHTML(formatNumber(close.fills_count, 0))}</td>
+          <td>${escapeHTML(formatNumber(close.non_terminal_orders, 0))}</td>
+          <td>${escapeHTML(formatNumber(openBreaks, 0))}</td>
+          <td title="${escapeHTML(issueText)}">${escapeHTML(issueText || "--")}</td>
+        </tr>`;
+    }).join("");
+    els.reviewBody.querySelectorAll("tr[data-review-index]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const account = accounts[Number(row.getAttribute("data-review-index"))];
+        els.reportTitle.textContent = `账户复核 / ${account.account_id}`;
+        els.report.textContent = JSON.stringify(account, null, 2);
+      });
+    });
+  }
+
   function renderReport(run) {
     if (!run) {
       els.reportTitle.textContent = "选择一条记录查看 report_json";
@@ -394,21 +481,40 @@
   function renderError(error) {
     els.cards.innerHTML = `<article class="job-card"><div class="job-card-top"><h2>加载失败</h2><span class="status-badge failed">failed</span></div><p>${escapeHTML(error.message)}</p></article>`;
     els.body.innerHTML = `<tr><td colspan="9">${escapeHTML(error.message)}</td></tr>`;
+    els.reviewBody.innerHTML = `<tr><td colspan="10">${escapeHTML(error.message)}</td></tr>`;
   }
 
   async function loadJobs() {
     els.refresh.disabled = true;
     try {
+      const status = await getJSON("/v1/status");
+      const tradingDay = status && status.trading_day || {};
+      if (!els.tradeDate.value) {
+        const fallback = tradingDay.is_trading_day === false
+          ? normalizeDate(tradingDay.previous_or_current_trading_date)
+          : normalizeDate(tradingDay.date);
+        els.tradeDate.value = fallback || "";
+      }
       const filter = els.filter.value.trim();
-      const suffix = filter ? `?job_name=${encodeURIComponent(filter)}` : "";
-      const [status, jobs] = await Promise.all([
-        getJSON("/v1/status"),
-        getJSON(`/v1/jobs/runs${suffix}`),
+      const params = new URLSearchParams();
+      if (filter) params.set("job_name", filter);
+      if (els.tradeDate.value) params.set("trade_date", els.tradeDate.value);
+      params.set("limit", "20");
+      const reviewParams = new URLSearchParams();
+      if (els.tradeDate.value) reviewParams.set("trade_date", els.tradeDate.value);
+      const [jobs, review] = await Promise.all([
+        getJSON(`/v1/jobs/runs?${params.toString()}`),
+        getJSON(`/v1/reconciliations/review-report?${reviewParams.toString()}`),
       ]);
       const runs = Array.isArray(jobs.runs) ? jobs.runs : [];
+      const scopedStatus = {
+        ...status,
+        trading_day: { ...(status.trading_day || {}), date: els.tradeDate.value || (status.trading_day || {}).date, is_trading_day: true },
+      };
       renderOverview(status);
-      renderCards(status, runs);
+      renderCards(scopedStatus, runs);
       renderTable(status, runs);
+      renderReview(review);
     } catch (error) {
       renderError(error);
     } finally {
@@ -422,6 +528,16 @@
       event.preventDefault();
       loadJobs();
     }
+  });
+  els.tradeDate.addEventListener("change", loadJobs);
+  els.exportReview.addEventListener("click", () => {
+    if (!currentReview) return;
+    const blob = new Blob([`${JSON.stringify(currentReview, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `relay-daily-review-${currentReview.trade_date || "report"}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   });
   loadJobs();
   window.setInterval(loadJobs, 30000);

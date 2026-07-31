@@ -96,9 +96,9 @@ SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)�
 | 交易 | `POST /v1/orders`、`POST /v1/orders/batch`、`POST /v1/orders/{gateway_order_id}/cancel` |
 | 查询 | `GET /v1/orders`、`GET /v1/fills`、`GET /v1/transfers` 及对应历史查询、订单/成交刷新接口 |
 | 事件 | `GET /v1/events/stream` |
-| 交易日任务 | `GET /v1/jobs/runs`、`POST /v1/jobs/runs`、`POST /v1/settlements/snapshots` |
+| 交易日任务 | `GET /v1/jobs/runs`、`POST /v1/jobs/runs`、`POST /v1/settlements/snapshots`、`GET /v1/reconciliations/review-report` |
 | 绩效与研究 | `GET /v1/accounts/{account_id}/performance/daily`、`GET /v1/accounts/{account_id}/performance/series`、`GET /v1/accounts/{account_id}/performance/series.csv` |
-| 对账 | `GET /v1/reconciliations/breaks` |
+| 对账 | `GET /v1/reconciliations/breaks`、按交易日和账户聚合的只读人工复核报告 |
 | 行情薄代理 | Meridian instruments、adjust-factors、snapshots、bars、ETF PCF components/cash-components/status，以及 snapshot/bar SSE |
 | 监控 | `GET /v1/status`，当前覆盖 PostgreSQL、Redis、订单服务、行情代理、事件流、自动刷新、交易阶段和日流程任务摘要 |
 

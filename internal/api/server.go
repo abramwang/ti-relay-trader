@@ -69,6 +69,7 @@ type componentTransferService interface {
 type JobRunStore interface {
 	UpsertJobRun(ctx context.Context, run ledger.JobRun) (ledger.JobRun, error)
 	LatestJobRuns(ctx context.Context, jobNames []string) ([]ledger.JobRun, error)
+	ListJobRuns(ctx context.Context, query ledger.JobRunQuery) ([]ledger.JobRun, error)
 }
 
 type SettlementStore interface {
@@ -224,6 +225,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/operations/dlq", server.handleDeadLetters)
 	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
 	mux.HandleFunc("/v1/reconciliations/breaks", server.handleReconciliationBreaks)
+	mux.HandleFunc("/v1/reconciliations/review-report", server.handleDailyReviewReport)
 	mux.HandleFunc("/v1/history/orders", server.handleHistoryOrders)
 	mux.HandleFunc("/v1/history/fills", server.handleHistoryFills)
 	mux.HandleFunc("/v1/history/transfers", server.handleHistoryComponentTransfers)
@@ -2879,8 +2881,24 @@ func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		names := splitQueryCSV(r.URL.Query()["job_name"])
-		runs, err := s.jobs.LatestJobRuns(r.Context(), names)
+		tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+		var runs []ledger.JobRun
+		var err error
+		if tradeDate != "" || limit > 0 {
+			runs, err = s.jobs.ListJobRuns(r.Context(), ledger.JobRunQuery{
+				JobNames:  names,
+				TradeDate: tradeDate,
+				Limit:     limit,
+			})
+		} else {
+			runs, err = s.jobs.LatestJobRuns(r.Context(), names)
+		}
 		if err != nil && !errors.Is(err, ledger.ErrJobRunNotFound) {
+			if errors.Is(err, ledger.ErrInvalidLedgerInput) {
+				httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid job run query", err.Error())
+				return
+			}
 			s.logger.Warn("job_runs_query_failed", "error", err)
 			httpx.WriteError(w, r, http.StatusInternalServerError, httpx.CodeInternal, "job run query failed", nil)
 			return
@@ -3746,6 +3764,9 @@ func (s *Server) statusPayload(ctx context.Context, status string, includeDepend
 			view.TradingDay.Source = "meridian"
 		} else {
 			view.TradingDay = s.meridianTradingDayStatus(ctx, view.TradingDay)
+		}
+		if view.TradingDay.IsTradingDay != nil && !*view.TradingDay.IsTradingDay {
+			view.TradingDay.Phase = "non_trading"
 		}
 		view.Status = statusFromDependencies(view.Dependencies)
 		view.JobRuns = s.latestJobRunStatus(ctx)

@@ -52,6 +52,8 @@ relay 每个交易日需要两个稳定流程：
 8. 为盈亏统计准备输入：日终权益、持仓市值、成交金额、费用、已实现盈亏和浮动盈亏。
 9. 输出结算报告，并把任务状态暴露给 `/v1/status` 或后续运维页面。
 
+任务完成状态不等于所有账户都已通过。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 会把同日盘前、盘后 `job_runs.report_json` 与 `reconciliation_breaks` 聚合为账户级复核报告：展示日初/日终资产、持仓、订单、成交、未终态订单、开放差异和快照阻断原因，并给出 `passed`、`attention`、`blocked` 或 `pending` 结论。未传日期时，非交易日自动读取 Meridian 返回的最近交易日；`/jobs` 支持按交易日查看并导出该 JSON 报告。
+
 收盘后结算可以拆分为多个 Python job，但外部状态上应能看到一个完整的 `post_close_settlement` 批次。
 
 ## 配置建议
@@ -83,6 +85,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 9. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`。
 10. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
 11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
+12. `/v1/status.trading_day.phase` 在 Meridian 明确当前日期不是交易日时返回 `non_trading`，不再按本地时钟误显示 `continuous` 或 `post_close`。
 
 示例配置：
 

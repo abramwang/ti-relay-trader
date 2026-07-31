@@ -146,6 +146,12 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/reconciliations/breaks":
             self._json({"ok": True, "data": {"breaks": [{"run_id": query.get("run_id", ["run-1"])[0], "status": query.get("status", ["open"])[0]}]}})
             return
+        if parsed.path == "/v1/reconciliations/review-report":
+            self._json({"ok": True, "data": {"trade_date": query.get("trade_date", ["20260731"])[0], "status": "passed", "accounts": []}})
+            return
+        if parsed.path == "/v1/jobs/runs":
+            self._json({"ok": True, "data": {"runs": [{"job_name": "post_close_settlement", "target_trade_date": query.get("trade_date", [""])[0]}]}})
+            return
         if parsed.path == "/v1/meridian/market/bars":
             self._json(
                 {
@@ -580,6 +586,21 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(body["target_trade_date"], "20260614")
         self.assertEqual(body["timezone"], "Asia/Shanghai")
         self.assertEqual(body["duration_ms"], 1200)
+
+    def test_daily_job_review_helpers(self):
+        runs = self.client.list_job_runs(
+            job_names=["pre_open_init", "post_close_settlement"],
+            trade_date="20260731",
+            limit=20,
+        )
+        self.assertEqual(runs[0]["target_trade_date"], "20260731")
+        method, path, query, _body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("GET", "/v1/jobs/runs"))
+        self.assertEqual(query["job_name"], ["pre_open_init,post_close_settlement"])
+        self.assertEqual(query["limit"], ["20"])
+        review = self.client.get_daily_review_report(trade_date="20260731")
+        self.assertEqual(review["status"], "passed")
+        self.assertEqual(RelayHandler.requests[-1][1], "/v1/reconciliations/review-report")
 
     def test_performance_meridian_and_reconciliation_helpers(self):
         daily = self.client.get_performance_daily(trade_date="20260612")

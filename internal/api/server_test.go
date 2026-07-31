@@ -146,6 +146,9 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	if envelope.Data.TradingDay.IsTradingDay == nil || *envelope.Data.TradingDay.IsTradingDay {
 		t.Fatalf("trading day is_trading_day = %#v, want false", envelope.Data.TradingDay.IsTradingDay)
 	}
+	if envelope.Data.TradingDay.Phase != "non_trading" {
+		t.Fatalf("trading day phase = %q, want non_trading", envelope.Data.TradingDay.Phase)
+	}
 	if envelope.Data.TradingDay.PreviousOrCurrentTradingDate != "20260618" || envelope.Data.TradingDay.Source != "meridian" {
 		t.Fatalf("trading day meridian fields = %#v", envelope.Data.TradingDay)
 	}
@@ -1963,6 +1966,73 @@ func TestReconciliationBreaksQuery(t *testing.T) {
 	}
 }
 
+func TestDailyReviewReportAggregatesAccountBlockingAndBreaks(t *testing.T) {
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{
+		{AccountID: "acct-1", Alias: "alpha", BrokerID: "huaxin", GatewayID: "gw-1", Enabled: true},
+		{AccountID: "acct-2", BrokerID: "huaxin", GatewayID: "gw-2", Enabled: true},
+		{AccountID: "acct-added-later", BrokerID: "huaxin", GatewayID: "gw-3", Enabled: true},
+	}
+	openAccounts := []any{
+		map[string]any{"account_id": "acct-1", "snapshot": map[string]any{"asset": map[string]any{"net_asset": 1000.0}, "positions_count": 1}},
+		map[string]any{"account_id": "acct-2", "snapshot": map[string]any{"asset": map[string]any{"net_asset": 2000.0}, "positions_count": 2}},
+	}
+	openSettled := []any{
+		map[string]any{"account_id": "acct-1", "asset_snapshot_written": true, "position_snapshots_written": 1, "positions_count": 1},
+		map[string]any{"account_id": "acct-2", "asset_snapshot_written": true, "position_snapshots_written": 2, "positions_count": 2},
+	}
+	closeAccounts := []any{
+		map[string]any{"account_id": "acct-1", "snapshot": map[string]any{"asset": map[string]any{"net_asset": 1010.0}, "positions_count": 1}},
+		map[string]any{"account_id": "acct-2", "snapshot_blocked": true, "errors": []any{"refresh timeout"}, "snapshot": map[string]any{"asset": map[string]any{"net_asset": 2000.0}, "positions_count": 2}},
+	}
+	closeSettled := []any{
+		map[string]any{"account_id": "acct-1", "asset_snapshot_written": true, "position_snapshots_written": 1, "positions_count": 1, "orders_count": 12, "fills_count": 9},
+	}
+	jobs := &fakeJobRunStore{runs: []ledger.JobRun{
+		{RunID: "post-1", JobName: "post_close_settlement", TargetTradeDate: "2026-07-31", Status: "succeeded", Report: map[string]any{
+			"settlement_run_id":   "post_close_settlement-20260731",
+			"accounts":            closeAccounts,
+			"settlement_snapshot": map[string]any{"result": map[string]any{"accounts": closeSettled}},
+		}},
+		{RunID: "pre-1", JobName: "pre_open_init", TargetTradeDate: "2026-07-31", Status: "succeeded", Report: map[string]any{
+			"accounts":      openAccounts,
+			"open_snapshot": map[string]any{"result": map[string]any{"accounts": openSettled}},
+		}},
+	}}
+	settles := &fakeSettlementStore{breaks: []ledger.ReconciliationBreak{{
+		RunID: "post_close_settlement-20260731", AccountID: "acct-1", BreakType: "order_fill_qty_mismatch",
+		Severity: "warning", Status: "open", ObjectType: "order", ObjectID: "order-1", Description: "fill qty mismatch",
+	}}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Jobs: jobs, Settlements: settles, Accounts: &fakeAccountAliasStore{aliases: map[string]string{"acct-2": "beta"}},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/reconciliations/review-report?trade_date=20260731", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Data DailyReviewReport `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode review report: %v", err)
+	}
+	if envelope.Data.Status != "blocked" || envelope.Data.Summary.AttentionAccounts != 1 || envelope.Data.Summary.BlockedAccounts != 1 {
+		t.Fatalf("review summary = %#v", envelope.Data)
+	}
+	if len(envelope.Data.Accounts) != 2 || envelope.Data.Accounts[0].Status != "attention" || envelope.Data.Accounts[1].Status != "blocked" {
+		t.Fatalf("review accounts = %#v", envelope.Data.Accounts)
+	}
+	if envelope.Data.Accounts[0].Close == nil || envelope.Data.Accounts[0].Close.OrdersCount != 12 || envelope.Data.Accounts[0].Close.FillsCount != 9 {
+		t.Fatalf("close snapshot = %#v", envelope.Data.Accounts[0].Close)
+	}
+	if envelope.Data.Accounts[1].Alias != "beta" || settles.breakQuery.RunID != "post_close_settlement-20260731" {
+		t.Fatalf("alias/query = %#v / %#v", envelope.Data.Accounts[1], settles.breakQuery)
+	}
+}
+
 func TestDailyPerformanceQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		performance: ledger.DailyPerformance{
@@ -2992,6 +3062,23 @@ func (store *fakeJobRunStore) LatestJobRuns(_ context.Context, _ []string) ([]le
 		return nil, ledger.ErrJobRunNotFound
 	}
 	return store.runs, nil
+}
+
+func (store *fakeJobRunStore) ListJobRuns(_ context.Context, query ledger.JobRunQuery) ([]ledger.JobRun, error) {
+	if store.err != nil {
+		return nil, store.err
+	}
+	filtered := make([]ledger.JobRun, 0, len(store.runs))
+	for _, run := range store.runs {
+		if query.TradeDate != "" {
+			date, err := normalizeAPIDate(query.TradeDate)
+			if err != nil || run.TargetTradeDate != date {
+				continue
+			}
+		}
+		filtered = append(filtered, run)
+	}
+	return filtered, nil
 }
 
 func (service *fakeOperationsService) Snapshot(_ context.Context, force bool) (redisstream.RuntimeSnapshot, error) {

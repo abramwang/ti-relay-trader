@@ -282,10 +282,11 @@
 
 .jobs-status {
   display: grid;
-  grid-template-rows: 64px 70px 28px minmax(180px, auto) minmax(260px, 1fr);
+  grid-template-rows: 64px 70px 28px minmax(205px, auto) minmax(250px, auto) minmax(260px, 1fr);
   gap: 4px;
   height: 100%;
   min-height: 0;
+  overflow: auto;
 }
 
 .jobs-head {
@@ -317,6 +318,14 @@
   border-radius: 4px;
   background: var(--surface-2);
   color: var(--text);
+}
+
+.jobs-actions input[type="date"] {
+  width: 148px;
+}
+
+.jobs-actions #jobNameFilter {
+  width: 270px;
 }
 
 .jobs-actions button {
@@ -373,7 +382,7 @@
 }
 
 .job-card {
-  min-height: 180px;
+  min-height: 205px;
   padding: 12px 14px;
 }
 
@@ -448,6 +457,53 @@
   min-height: 0;
 }
 
+.review-panel {
+  display: grid;
+  grid-template-rows: 40px 54px minmax(150px, 1fr);
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.review-summary > div {
+  padding: 8px 12px;
+  border-right: 1px solid var(--border);
+}
+
+.review-summary > div:last-child {
+  border-right: 0;
+}
+
+.review-summary span,
+.review-summary strong {
+  display: block;
+}
+
+.review-summary span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.review-summary strong {
+  margin-top: 2px;
+  color: #eef0f5;
+  font: 700 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.review-table-wrap td:first-child {
+  min-width: 146px;
+}
+
+.review-table-wrap td:last-child {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .jobs-panel {
   min-height: 0;
   padding: 0;
@@ -463,6 +519,7 @@
 }
 
 .jobs-panel-head h2 {
+  flex: 0 0 auto;
   color: #eef0f5;
   font-size: 13px;
 }

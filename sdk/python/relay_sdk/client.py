@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.21"
+SDK_VERSION = "0.1.22"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -264,6 +264,36 @@ class RelayClient:
         }
         data = self._request("POST", "/v1/jobs/runs", json_body=payload)
         return data.get("run", data)
+
+    def list_job_runs(
+        self,
+        *,
+        job_names: Iterable[str] | None = None,
+        trade_date: str | None = None,
+        limit: int | None = None,
+    ) -> list[Mapping[str, Any]]:
+        """Return daily-job runs, optionally scoped to one trade date."""
+
+        data = self._request(
+            "GET",
+            "/v1/jobs/runs",
+            query={
+                "job_name": ",".join(str(item) for item in (job_names or []) if str(item).strip()) or None,
+                "trade_date": trade_date,
+                "limit": limit,
+            },
+        )
+        runs = data.get("runs", [])
+        return [item for item in runs if isinstance(item, Mapping)]
+
+    def get_daily_review_report(self, *, trade_date: str | None = None) -> Mapping[str, Any]:
+        """Return the account-level pre-open/post-close review report."""
+
+        return self._request(
+            "GET",
+            "/v1/reconciliations/review-report",
+            query={"trade_date": trade_date},
+        )
 
     def record_settlement_snapshot(
         self,

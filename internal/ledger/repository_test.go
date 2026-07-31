@@ -1285,6 +1285,28 @@ func TestListReconciliationBreaksBuildsFilteredRead(t *testing.T) {
 	requireArgLen(t, exec.args, 4)
 }
 
+func TestListJobRunsBuildsTradeDateRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListJobRuns(context.Background(), JobRunQuery{
+		JobNames:  []string{"pre_open_init", "post_close_settlement"},
+		TradeDate: "20260731",
+		Limit:     20,
+	})
+	if err == nil {
+		t.Fatal("ListJobRuns() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM job_runs")
+	requireQueryContains(t, exec.query, "job_name IN ($1, $2)")
+	requireQueryContains(t, exec.query, "trade_date = $3::date")
+	requireArgLen(t, exec.args, 4)
+	if exec.args[2] != "2026-07-31" || exec.args[3] != 20 {
+		t.Fatalf("job run args = %#v", exec.args)
+	}
+}
+
 func TestRawStreamSummaryBuildsWindowRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)

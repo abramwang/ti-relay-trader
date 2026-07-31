@@ -543,7 +543,9 @@
     "path": "/v1/jobs/runs",
     "status": "needs-config",
     "fields": [
-      { "name": "job_name", "label": "job_name", "source": "query", "defaultValue": "pre_open_init,post_close_settlement" }
+      { "name": "job_name", "label": "job_name", "source": "query", "defaultValue": "pre_open_init,post_close_settlement" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
     ]
   },
   {
@@ -567,6 +569,17 @@
         "target": "account_ids",
         "defaultValue": "[\"00030484\"]"
       }
+    ]
+  },
+  {
+    "id": "daily-review-report",
+    "group": "运维",
+    "title": "交易日账户复核报告",
+    "method": "GET",
+    "path": "/v1/reconciliations/review-report",
+    "status": "needs-config",
+    "fields": [
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" }
     ]
   },
   {
