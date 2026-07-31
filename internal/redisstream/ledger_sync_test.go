@@ -800,7 +800,7 @@ func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *tes
 			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"501000114077","account_id":"501000114077"},
 			"payload":{
 				"gateway_order_id":"gw-cancel-v12",
-				"account_id":"501000114077",
+				"account_id":"50100011407701",
 				"order_id":123,
 				"order_stream_id":"12001A180000123",
 				"cancel_status":"rejected",
@@ -821,7 +821,7 @@ func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *tes
 		t.Fatalf("writer = %#v", writer)
 	}
 	attempt := writer.cancelAttempts[0]
-	if attempt.Code != "BROKER_CANCEL_REJECTED" || attempt.TradeDate != "2026-07-30" ||
+	if attempt.AccountID != "501000114077" || attempt.Code != "BROKER_CANCEL_REJECTED" || attempt.TradeDate != "2026-07-30" ||
 		attempt.RetrySafe == nil || *attempt.RetrySafe || attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
 		t.Fatalf("cancel attempt = %#v", attempt)
 	}

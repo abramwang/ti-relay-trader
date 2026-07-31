@@ -670,7 +670,7 @@ func processCancelAttemptEnvelope(
 		result.SkipReasons = append(result.SkipReasons, fmt.Sprintf("decode order cancel outcome: %v", err))
 		return result
 	}
-	accountID := firstNonEmpty(payload.AccountID, envelope.Routing.AccountID)
+	accountID := firstNonEmpty(envelope.Routing.AccountID, payload.AccountID)
 	gatewayOrderID := firstNonEmpty(payload.GatewayOrderID, envelope.GatewayOrderID)
 	attemptID := firstNonEmpty(envelope.OriginMessageID, envelope.RequestID, envelope.MessageID, envelope.Stream+":"+envelope.StreamID)
 	status := firstNonEmpty(payload.CancelStatus, defaultStatus)

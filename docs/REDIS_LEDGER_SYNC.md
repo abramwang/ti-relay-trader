@@ -31,6 +31,8 @@ OC v1.2 增量兼容已经落地：`order.cancel.event/order.cancel.rejected` �
 
 `hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`CANCEL_RESPONSE_TIMEOUT` 还会生成 `reconciliation_required=true` 的撤单审计记录。
 
+`relayctl redis-probe` 是只读 Redis 排障入口。除 stream 长度和最新消息摘要外，现在还输出 consumer group 的 consumers、pending、lag、last delivered ID，并为有 PEL 的 group 展示有限条 pending entry 的 ID、consumer、idle 和 delivery count；探针不会执行 ACK、CLAIM 或删除。
+
 ## Stream 命名与方向
 
 协议版本固定为 `relay.stream.v1`。每个账户路由必须解析到唯一 `stream_prefix`：

@@ -28,12 +28,32 @@ type ProbeReport struct {
 }
 
 type StreamProbe struct {
-	Name            string           `json:"name"`
-	Exists          bool             `json:"exists"`
-	Length          int64            `json:"length,omitempty"`
-	LastGeneratedID string           `json:"last_generated_id,omitempty"`
-	Latest          []MessageSummary `json:"latest,omitempty"`
-	Error           string           `json:"error,omitempty"`
+	Name                string               `json:"name"`
+	Exists              bool                 `json:"exists"`
+	Length              int64                `json:"length,omitempty"`
+	LastGeneratedID     string               `json:"last_generated_id,omitempty"`
+	ConsumerGroups      []ConsumerGroupProbe `json:"consumer_groups,omitempty"`
+	ConsumerGroupsError string               `json:"consumer_groups_error,omitempty"`
+	Latest              []MessageSummary     `json:"latest,omitempty"`
+	Error               string               `json:"error,omitempty"`
+}
+
+type ConsumerGroupProbe struct {
+	Name            string              `json:"name"`
+	Consumers       int64               `json:"consumers"`
+	Pending         int64               `json:"pending"`
+	LastDeliveredID string              `json:"last_delivered_id"`
+	EntriesRead     int64               `json:"entries_read"`
+	Lag             int64               `json:"lag"`
+	PendingEntries  []PendingEntryProbe `json:"pending_entries,omitempty"`
+	PendingError    string              `json:"pending_error,omitempty"`
+}
+
+type PendingEntryProbe struct {
+	ID               string `json:"id"`
+	Consumer         string `json:"consumer"`
+	IdleMilliseconds int64  `json:"idle_ms"`
+	DeliveryCount    int64  `json:"delivery_count"`
 }
 
 func Probe(ctx context.Context, cfg config.Config, opts ProbeOptions) (ProbeReport, error) {
@@ -98,6 +118,30 @@ func probeStream(ctx context.Context, client *redis.Client, stream string, sampl
 	probe.Length = info.Length
 	probe.LastGeneratedID = info.LastGeneratedID
 
+	groups, err := client.XInfoGroups(ctx, stream).Result()
+	if err != nil {
+		probe.ConsumerGroupsError = err.Error()
+	} else {
+		probe.ConsumerGroups = consumerGroupProbes(groups)
+		for index := range probe.ConsumerGroups {
+			if probe.ConsumerGroups[index].Pending <= 0 {
+				continue
+			}
+			entries, pendingErr := client.XPendingExt(ctx, &redis.XPendingExtArgs{
+				Stream: stream,
+				Group:  probe.ConsumerGroups[index].Name,
+				Start:  "-",
+				End:    "+",
+				Count:  int64(samples),
+			}).Result()
+			if pendingErr != nil {
+				probe.ConsumerGroups[index].PendingError = pendingErr.Error()
+				continue
+			}
+			probe.ConsumerGroups[index].PendingEntries = pendingEntryProbes(entries)
+		}
+	}
+
 	messages, err := client.XRevRangeN(ctx, stream, "+", "-", int64(samples)).Result()
 	if err != nil {
 		probe.Error = err.Error()
@@ -109,6 +153,40 @@ func probeStream(ctx context.Context, client *redis.Client, stream string, sampl
 	}
 
 	return probe
+}
+
+func consumerGroupProbes(groups []redis.XInfoGroup) []ConsumerGroupProbe {
+	if len(groups) == 0 {
+		return nil
+	}
+	probes := make([]ConsumerGroupProbe, 0, len(groups))
+	for _, group := range groups {
+		probes = append(probes, ConsumerGroupProbe{
+			Name:            group.Name,
+			Consumers:       group.Consumers,
+			Pending:         group.Pending,
+			LastDeliveredID: group.LastDeliveredID,
+			EntriesRead:     group.EntriesRead,
+			Lag:             group.Lag,
+		})
+	}
+	return probes
+}
+
+func pendingEntryProbes(entries []redis.XPendingExt) []PendingEntryProbe {
+	if len(entries) == 0 {
+		return nil
+	}
+	probes := make([]PendingEntryProbe, 0, len(entries))
+	for _, entry := range entries {
+		probes = append(probes, PendingEntryProbe{
+			ID:               entry.ID,
+			Consumer:         entry.Consumer,
+			IdleMilliseconds: entry.Idle.Milliseconds(),
+			DeliveryCount:    entry.RetryCount,
+		})
+	}
+	return probes
 }
 
 func isMissingStream(err error) bool {
