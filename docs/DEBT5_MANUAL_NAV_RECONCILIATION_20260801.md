@@ -69,3 +69,9 @@ scripts/compare-performance-gold.py \
 生产只读验收结果为 17 条金标、16 条可计算、1 条因缺 7 月 31 日 OC close 快照 unavailable；7 月 2 日和 10 日分别识别 `818,000` 元、`2,506,000` 元本金已嵌入可见资金。7 月 22、23、28、29、30 日的日末资产与日盈亏误差均小于 0.01 元，早期费用/贡献残差仍按原质量规则保留 blocked。
 
 随后已受控重建 7 月 29、30 日 current NAV：两日公式版本均为 v2.1、状态保持 provisional，日末资产和日盈亏与人工值精确到分。重建只新增版本化绩效结果并退役旧 current 版本，不覆盖 OC 原始快照；更早日期将在费用和阻断原因核对后分批重建。
+
+## 数据库审计输入
+
+`000021_performance_nav_gold` 已在生产应用，17 条人工记录以 `source=manual_user_confirmed`、`status=confirmed` 导入 `performance_nav_gold_versions`。每条记录保存确认人、东八区确认时间、来源文件、原始列值、行号和内容哈希；相同文件重复导入后仍为 17 个 current version 1，没有生成重复版本。
+
+数据库驱动的 `performance-gold-compare` 得到 16 条可计算、1 条 unavailable、8 条 blocked；7 月 22、28、29、30 日通过 0.01 元逐日严格门禁。29、30 日已重建；22、28 日暂缓，因为 23 日仍有证券贡献残差阻断，直接跨日发布会让累计净值漏计中间收益。详细结构、命令和连续性门禁见 `docs/PERFORMANCE_NAV_GOLD.md`。

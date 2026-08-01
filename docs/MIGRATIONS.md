@@ -47,6 +47,8 @@ migrations/postgres/000019_order_idempotency_unique.up.sql
 migrations/postgres/000019_order_idempotency_unique.down.sql
 migrations/postgres/000020_performance_cost_ledger.up.sql
 migrations/postgres/000020_performance_cost_ledger.down.sql
+migrations/postgres/000021_performance_nav_gold.up.sql
+migrations/postgres/000021_performance_nav_gold.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -75,7 +77,8 @@ migrations/postgres/000020_performance_cost_ledger.down.sql
 18. `000018_normalize_cancel_attempt_accounts` 将撤单审计账户统一迁移到 Relay routing 标准账户。
 19. `000019_order_idempotency_unique` 清理误写入订单的查询请求键和历史重复键，增加 `orders(account_id,idempotency_key)` 部分唯一索引。
 20. `000020_performance_cost_ledger` 新增账户绩效起算配置和逐日移动加权持仓成本状态，支持数量对账、Meridian 重估、版本和质量标记。
-21. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `20:performance_cost_ledger`。
+21. `000021_performance_nav_gold` 新增版本化人工净值金标，保存确认审计、原始输入、派生日初/隔夜调整和内容哈希幂等；金标不参与 NAV 公式。
+22. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `21:performance_nav_gold`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -116,6 +119,7 @@ Repository 当前覆盖：
 - `CreateNavBaseline`、`ListNavBaselines`
 - `UpsertPerformanceInception`、`GetPerformanceInception`
 - `UpsertPositionCostState`、`ListPositionCostStates`
+- `UpsertPerformanceNAVGold`、`ListPerformanceNAVGold`
 - `UpsertReverseRepoAccrual`、`ListReverseRepoAccruals`
 - `ListPerformanceNAVs`、`ListNAVReconciliations`
 
@@ -222,6 +226,7 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000014_remove_etf_transfer_sum
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000015_stream_operations.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000016_stream_operations_indexes.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000020_performance_cost_ledger.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000021_performance_nav_gold.up.sql
 ```
 
 使用 relayctl：

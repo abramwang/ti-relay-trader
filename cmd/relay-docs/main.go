@@ -134,6 +134,12 @@ var (
 			Description: "交易终端绩效分析页的指标口径、数据来源、页面结构和分阶段实现计划。",
 		},
 		{
+			Slug:        "performance-nav-gold",
+			Title:       "绩效净值人工金标",
+			Path:        "docs/PERFORMANCE_NAV_GOLD.md",
+			Description: "人工净值金标的版本化审计、事务导入、幂等规则、独立对比和重建门禁。",
+		},
+		{
 			Slug:        "python-sdk",
 			Title:       "Python SDK",
 			Path:        "docs/PYTHON_SDK.md",

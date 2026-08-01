@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1` 已修复逆回购本金重复和预估利息提前确认，账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断、成本试算/重建 API 和页面质量检查已落地。债享5号 2026 年 7 月 17 条人工资产/盈利金标已接入可重复比较，7 月 2/10 日本金重叠正确识别；7 月 29/30 日 current NAV 已受控重建为 v2.1，并与人工值精确到分。当前等待四账户实际费用、`307000051387/2026-07-30` 权威成交回填、缺失 OC close 快照和债享5号更早日期分批重建。生产仍为 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1` 已修复逆回购本金重复和预估利息提前确认，账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断、成本试算/重建 API 和页面质量检查已落地。`000021_performance_nav_gold` 已在生产应用，债享5号 17 条人工资产/盈利金标已按版本、确认审计和内容哈希独立落库；7 月 29/30 日 current NAV 已重建，7 月 22/28 日虽通过单日门禁，但因 23 日仍 blocked 暂不跨日发布。当前等待四账户实际费用、`307000051387/2026-07-30` 权威成交回填、缺失 OC close 快照和债享5号连续区间质量修复。生产仍为 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-08-01`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -150,6 +150,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/docs/api-test-console` | 接口测试台设计说明 |
 | `http://relay-trader.quantstage.com/docs/trading-terminal` | 交易终端设计说明 |
 | `http://relay-trader.quantstage.com/docs/performance-analysis` | 绩效分析页面设计 |
+| `http://relay-trader.quantstage.com/docs/performance-nav-gold` | 绩效净值人工金标审计与对比 |
 | `http://relay-trader.quantstage.com/docs/python-sdk` | Python SDK 设计 |
 | `http://relay-trader.quantstage.com/docs/operations` | 运行配置与任务管理 |
 | `http://relay-trader.quantstage.com/docs/trading-day-workflow` | 交易日流程 |
@@ -301,7 +302,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 完成 N13 四账户金标验收：分批重建债享5号更早的 v2.1 账户级曲线并导入人工金标审计来源；再通过 OC 权威查询/重放修复 `307000051387/2026-07-30` 错配成交，补齐缺失 close 快照并配置四账户真实费率。
+1. 完成 N13 四账户金标验收：债享5号人工金标审计来源已落库；下一步先修复 7 月 23 日贡献阻断和连续区间门禁，再分批重建更早 v2.1 曲线。并行通过 OC 权威查询/重放修复 `307000051387/2026-07-30` 错配成交，补齐缺失 close 快照并配置四账户真实费率。
 2. 为 N13 成本账接入 Meridian 除权因子，并在出现首笔 ETF 申赎前完成 `CORE` 与 `ETF_T0:{group_id}` 成本分账。
 3. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
@@ -584,3 +585,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 补充实际费用使用原则：成交级实际费用优先；只有订单总费用时可按该订单成交金额分配到成交/证券归因；账户日汇总费用只用于账户净收益和总额核对，不无依据地分摊到证券。三层来源必须用稳定标识去重，不能重复扣减。
 - `2026-08-01`: 发布并部署 `performance_economic_nav.v2.1`：用含/不含本金两条账表恒等式与正式贡献残差识别逆回购本金 `embedded/separate/ambiguous`，无法明确时阻断；预估净息和预估应收保留诊断，正式 NAV/PnL 只加入未进入可见资金的本金，实际净息延后由确认的 `income_expense` 入账。新增本金重叠、正式应收、利息确认状态和两条残差审计字段，绩效页显示中文质量语义；新增 `scripts/compare-performance-gold.py`。债享5号生产 preview 对 7 月 2/10 日分别识别 81.8 万/250.6 万元本金 embedded，7 月 22、23、28、29、30 日与人工日末资产及盈亏误差均小于 0.01 元；7 月 23 日仍因原证券贡献残差保持 blocked。全量 Go 测试和 9092 页面烟测通过，交易权限保持关闭。
 - `2026-08-01`: 受控重建债享5号 `2026-07-29..30` current NAV 为 v2.1：7 月 29 日日末 `5,329,753.879810` 元、日盈亏 `+8,745.969810` 元；7 月 30 日日末 `5,240,051.094805` 元、日盈亏 `-89,878.315195` 元，均与人工金标精确到分。两日保持 provisional，累计收益由同公式版本重新链接；旧 current 版本正常退役，OC 原始资金/持仓/订单/成交和快照均未覆盖。
+- `2026-08-01`: 新增并生产应用 `000021_performance_nav_gold`，17 条债享5号人工净值金标以 `manual_user_confirmed` 独立版本化落库；确认人、东八区时间、原始列值、来源引用和内容哈希完整，重复导入仍为 17 个 current version 1。新增 `relayctl performance-gold-import/compare`，数据库对比为 16 条可计算、1 条 unavailable、8 条 blocked，7 月 22/28/29/30 日通过 0.01 元逐日门禁。因 7 月 23 日仍 blocked，暂不跨过该日重建 22/28 日，避免单日正确但累计曲线漏收益。详见 `docs/PERFORMANCE_NAV_GOLD.md`。
