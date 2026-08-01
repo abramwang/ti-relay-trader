@@ -995,9 +995,9 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Title:      "接口测试台",
 		Active:     "console",
 		Summary:    "Form-based API console",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260727-0004">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260801-0006">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260729-0005"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260801-0006"></script>`),
 		ProjectDir: s.root,
 	})
 }

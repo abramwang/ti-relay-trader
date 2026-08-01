@@ -26,6 +26,19 @@
         </div>
         <span id="endpointStatus" class="api-status ready">ready</span>
       </div>
+      <div class="collection-toolbar">
+        <select id="savedCollectionSelect" aria-label="已保存测试集合">
+          <option value="">已保存集合</option>
+        </select>
+        <input id="collectionNameInput" aria-label="测试集合名称" placeholder="集合名称" maxlength="80">
+        <button id="saveCollectionButton" type="button">保存</button>
+        <button id="newCollectionButton" type="button">新建</button>
+        <button id="deleteCollectionButton" type="button" disabled>删除</button>
+        <button id="importCollectionButton" type="button">导入</button>
+        <button id="exportCollectionButton" type="button">导出</button>
+        <input id="collectionFileInput" type="file" accept="application/json,.json" hidden>
+      </div>
+      <div id="collectionMeta" class="collection-meta">尚未选择集合</div>
       <div class="request-line-v2">
         <input id="baseUrlInput" aria-label="Base URL" value="{{.PublicURL}}">
         <code id="requestPreview">GET /healthz</code>
@@ -45,6 +58,16 @@
         <span id="responseStatus" class="api-status planned">idle</span>
       </div>
       <div id="responseMeta" class="response-meta">等待请求</div>
+      <section class="assertion-panel" aria-labelledby="assertionTitle">
+        <div class="assertion-head">
+          <h3 id="assertionTitle">响应断言</h3>
+          <div>
+            <span id="assertionSummary" class="assertion-summary idle">未运行</span>
+            <button id="addAssertionButton" type="button">添加断言</button>
+          </div>
+        </div>
+        <div id="assertionList" class="assertion-list"></div>
+      </section>
       <div id="tableOutput" class="table-output"></div>
       <details class="json-details" open>
         <summary>JSON</summary>

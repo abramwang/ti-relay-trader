@@ -56,6 +56,9 @@ def main() -> int:
             route.continue_()
 
         page.route("**/v1/**", guard_api_write)
+        page.add_init_script(
+            """() => localStorage.removeItem('relay.api_console.collections.v1')"""
+        )
 
         page.goto(args.base_url.rstrip("/") + "/api-console", wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_function(
@@ -65,10 +68,51 @@ def main() -> int:
         page.locator("#baseUrlInput").fill(args.base_url.rstrip("/"))
 
         select_endpoint(page, "/v1/status")
+        configure_status_assertions(page)
+        page.locator("#collectionNameInput").fill("生产状态冒烟")
+        page.locator("#saveCollectionButton").click()
+        page.wait_for_function(
+            """() => document.querySelectorAll('#savedCollectionSelect option').length === 2""",
+            timeout=5_000,
+        )
         send_and_wait(page)
         status_json = page.locator("#jsonOutput").inner_text()
         if '"dependencies"' not in status_json or '"environment": "production"' not in status_json:
             raise AssertionError("status response assertion failed")
+        if page.locator("#assertionSummary").inner_text() != "2/2 通过":
+            raise AssertionError("saved response assertions did not pass")
+
+        with page.expect_download(timeout=5_000) as download_info:
+            page.locator("#exportCollectionButton").click()
+        export_path = output.with_suffix(".collections.json")
+        download_info.value.save_as(export_path)
+        exported = json.loads(export_path.read_text(encoding="utf-8"))
+        if exported.get("schema_version") != "relay.api_console_collection.v1":
+            raise AssertionError("collection export schema assertion failed")
+        if len(exported.get("collections", [])) != 1:
+            raise AssertionError("collection export count assertion failed")
+
+        page.evaluate("localStorage.removeItem('relay.api_console.collections.v1')")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function(
+            """() => document.querySelectorAll('.endpoint-item').length > 50""",
+            timeout=15_000,
+        )
+        page.locator("#collectionFileInput").set_input_files(str(export_path))
+        page.wait_for_function(
+            """() => document.querySelectorAll('#savedCollectionSelect option').length === 2""",
+            timeout=5_000,
+        )
+        imported_option = page.locator("#savedCollectionSelect option").nth(1)
+        page.locator("#savedCollectionSelect").select_option(imported_option.get_attribute("value"))
+        page.locator("#baseUrlInput").fill(args.base_url.rstrip("/"))
+        if page.locator("#collectionNameInput").input_value() != "生产状态冒烟":
+            raise AssertionError("imported collection name assertion failed")
+        if page.locator(".assertion-row").count() != 2:
+            raise AssertionError("imported assertion count failed")
+        send_and_wait(page)
+        if page.locator("#assertionSummary").inner_text() != "2/2 通过":
+            raise AssertionError("imported response assertions did not pass")
 
         select_endpoint(page, "/v1/accounts", exact=True)
         send_and_wait(page)
@@ -97,6 +141,8 @@ def main() -> int:
                 responseStatus: document.querySelector('#responseStatus')?.textContent || '',
                 responseMeta: document.querySelector('#responseMeta')?.textContent || '',
                 resultColumns: document.querySelectorAll('#tableOutput thead th').length,
+                savedCollections: document.querySelectorAll('#savedCollectionSelect option').length - 1,
+                assertionSummary: document.querySelector('#assertionSummary')?.textContent || '',
                 horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
             })"""
         )
@@ -123,6 +169,18 @@ def main() -> int:
 
     print(json.dumps({"screenshot": str(output), "diagnostics": diagnostics}, ensure_ascii=False, indent=2))
     return 0
+
+
+def configure_status_assertions(page: object) -> None:
+    first = page.locator(".assertion-row").nth(0)
+    first.locator('select[aria-label="断言类型"]').select_option("status_equals")
+    first.locator('input[aria-label="期望值"]').fill("200")
+
+    page.locator("#addAssertionButton").click()
+    second = page.locator(".assertion-row").nth(1)
+    second.locator('select[aria-label="断言类型"]').select_option("json_path_equals")
+    second.locator('input[aria-label="JSON 路径"]').fill("data.environment")
+    second.locator('input[aria-label="期望值"]').fill("production")
 
 
 def select_endpoint(page, path: str, *, exact: bool = False) -> None:

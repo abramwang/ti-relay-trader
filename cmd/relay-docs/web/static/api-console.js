@@ -11,14 +11,42 @@
   const sendButton = document.getElementById("sendButton");
   const resetButton = document.getElementById("resetButton");
   const copyURLButton = document.getElementById("copyURLButton");
+  const savedCollectionSelect = document.getElementById("savedCollectionSelect");
+  const collectionNameInput = document.getElementById("collectionNameInput");
+  const saveCollectionButton = document.getElementById("saveCollectionButton");
+  const newCollectionButton = document.getElementById("newCollectionButton");
+  const deleteCollectionButton = document.getElementById("deleteCollectionButton");
+  const importCollectionButton = document.getElementById("importCollectionButton");
+  const exportCollectionButton = document.getElementById("exportCollectionButton");
+  const collectionFileInput = document.getElementById("collectionFileInput");
+  const collectionMeta = document.getElementById("collectionMeta");
   const responseStatus = document.getElementById("responseStatus");
   const responseMeta = document.getElementById("responseMeta");
+  const assertionSummary = document.getElementById("assertionSummary");
+  const assertionList = document.getElementById("assertionList");
+  const addAssertionButton = document.getElementById("addAssertionButton");
   const tableOutput = document.getElementById("tableOutput");
   const jsonOutput = document.getElementById("jsonOutput");
+
+  const COLLECTION_SCHEMA = "relay.api_console_collection.v1";
+  const COLLECTION_STORAGE_KEY = "relay.api_console.collections.v1";
+  const MAX_COLLECTIONS = 200;
+  const MAX_ASSERTIONS = 20;
+  const ASSERTION_TYPES = [
+    ["status_equals", "HTTP 状态等于"],
+    ["json_path_exists", "JSON 路径存在"],
+    ["json_path_equals", "JSON 路径等于"],
+    ["json_path_type", "JSON 路径类型"],
+    ["duration_lt", "响应耗时小于(ms)"]
+  ];
 
   let endpoints = [];
   let selectedEndpoint = null;
   let activeStream = null;
+  let collections = [];
+  let activeCollectionId = "";
+  let assertions = [];
+  let lastResponse = null;
 
   function renderEndpointList() {
     endpointList.innerHTML = "";
@@ -110,9 +138,12 @@
     return input;
   }
 
-  function selectEndpoint(endpoint) {
+  function selectEndpoint(endpoint, options = {}) {
     if (selectedEndpoint !== endpoint) {
       closeActiveStream();
+    }
+    if (!options.preserveCollection) {
+      clearActiveCollection();
     }
     selectedEndpoint = endpoint;
     endpointGroup.textContent = endpoint.group;
@@ -161,6 +192,514 @@
       return Number.parseFloat(value);
     }
     return value;
+  }
+
+  function eastEightTimestamp(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(date).replace(" ", "T");
+    return parts + "+08:00";
+  }
+
+  function makeID(prefix) {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return prefix + "-" + window.crypto.randomUUID();
+    }
+    return prefix + "-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+  }
+
+  function defaultAssertion() {
+    return {
+      id: makeID("assertion"),
+      type: "status_equals",
+      path: "",
+      expected: "200"
+    };
+  }
+
+  function readFormSnapshot() {
+    const fields = {};
+    for (const field of fieldEntries()) {
+      fields[field.name] = field.type === "checkbox" ? field.checked : field.value;
+    }
+    return fields;
+  }
+
+  function applyFormSnapshot(fields) {
+    for (const field of fieldEntries()) {
+      if (!Object.prototype.hasOwnProperty.call(fields, field.name)) {
+        continue;
+      }
+      if (field.type === "checkbox") {
+        field.checked = fields[field.name] === true || fields[field.name] === "true";
+      } else {
+        field.value = String(fields[field.name] ?? "");
+      }
+    }
+    updatePreview();
+  }
+
+  function readCollections() {
+    try {
+      const raw = window.localStorage.getItem(COLLECTION_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.schema_version !== COLLECTION_SCHEMA || !Array.isArray(parsed.collections)) {
+        return [];
+      }
+      return parsed.collections.map(normalizeCollection).filter(Boolean).slice(0, MAX_COLLECTIONS);
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  function persistCollections() {
+    window.localStorage.setItem(COLLECTION_STORAGE_KEY, JSON.stringify({
+      schema_version: COLLECTION_SCHEMA,
+      updated_at: eastEightTimestamp(),
+      collections
+    }));
+  }
+
+  function normalizeCollection(value) {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    const endpointID = String(value.endpoint_id || "").trim();
+    const name = String(value.name || "").trim().slice(0, 80);
+    if (!endpointID || !name) {
+      return null;
+    }
+    const rawFields = value.request && value.request.fields && typeof value.request.fields === "object"
+      ? value.request.fields
+      : {};
+    const fields = {};
+    for (const [key, fieldValue] of Object.entries(rawFields)) {
+      if (["string", "number", "boolean"].includes(typeof fieldValue) || fieldValue === null) {
+        fields[String(key).slice(0, 120)] = fieldValue;
+      }
+    }
+    const normalizedAssertions = Array.isArray(value.assertions)
+      ? value.assertions.map(normalizeAssertion).filter(Boolean).slice(0, MAX_ASSERTIONS)
+      : [];
+    return {
+      id: String(value.id || makeID("collection")),
+      name,
+      endpoint_id: endpointID,
+      request: { fields },
+      assertions: normalizedAssertions,
+      created_at: String(value.created_at || eastEightTimestamp()),
+      updated_at: String(value.updated_at || eastEightTimestamp())
+    };
+  }
+
+  function normalizeAssertion(value) {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    const type = ASSERTION_TYPES.some(([candidate]) => candidate === value.type)
+      ? value.type
+      : "status_equals";
+    return {
+      id: String(value.id || makeID("assertion")),
+      type,
+      path: String(value.path || "").slice(0, 240),
+      expected: String(value.expected ?? "").slice(0, 1000)
+    };
+  }
+
+  function renderCollectionSelect() {
+    savedCollectionSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "已保存集合 (" + collections.length + ")";
+    savedCollectionSelect.appendChild(placeholder);
+    const ordered = [...collections].sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+    for (const collection of ordered) {
+      const endpoint = endpoints.find((item) => item.id === collection.endpoint_id);
+      const option = document.createElement("option");
+      option.value = collection.id;
+      option.textContent = collection.name + (endpoint ? " · " + endpoint.method + " " + endpoint.path : " · 接口已移除");
+      savedCollectionSelect.appendChild(option);
+    }
+    savedCollectionSelect.value = activeCollectionId;
+    deleteCollectionButton.disabled = !activeCollectionId;
+  }
+
+  function clearActiveCollection(resetAssertions = true) {
+    activeCollectionId = "";
+    if (savedCollectionSelect) {
+      savedCollectionSelect.value = "";
+    }
+    if (collectionNameInput) {
+      collectionNameInput.value = "";
+    }
+    if (collectionMeta) {
+      collectionMeta.textContent = "尚未选择集合";
+    }
+    if (deleteCollectionButton) {
+      deleteCollectionButton.disabled = true;
+    }
+    if (resetAssertions) {
+      assertions = [defaultAssertion()];
+      renderAssertions();
+    }
+  }
+
+  function loadCollection(collectionID) {
+    const collection = collections.find((item) => item.id === collectionID);
+    if (!collection) {
+      clearActiveCollection();
+      return;
+    }
+    const endpoint = endpoints.find((item) => item.id === collection.endpoint_id);
+    if (!endpoint) {
+      collectionMeta.textContent = "集合对应接口已不在 catalog 中";
+      return;
+    }
+    activeCollectionId = collection.id;
+    selectEndpoint(endpoint, { preserveCollection: true });
+    collectionNameInput.value = collection.name;
+    applyFormSnapshot(collection.request.fields);
+    assertions = collection.assertions.length > 0
+      ? collection.assertions.map((item) => ({ ...item }))
+      : [defaultAssertion()];
+    renderAssertions();
+    renderCollectionSelect();
+    collectionMeta.textContent = "已加载 · 更新于 " + collection.updated_at;
+  }
+
+  function saveCollection() {
+    const name = collectionNameInput.value.trim();
+    if (!name) {
+      collectionMeta.textContent = "请输入集合名称";
+      collectionNameInput.focus();
+      return;
+    }
+    if (!selectedEndpoint) {
+      collectionMeta.textContent = "请先选择接口";
+      return;
+    }
+    const now = eastEightTimestamp();
+    const existing = collections.find((item) => item.id === activeCollectionId);
+    const collection = normalizeCollection({
+      id: existing ? existing.id : makeID("collection"),
+      name,
+      endpoint_id: selectedEndpoint.id,
+      request: { fields: readFormSnapshot() },
+      assertions,
+      created_at: existing ? existing.created_at : now,
+      updated_at: now
+    });
+    if (!collection) {
+      collectionMeta.textContent = "集合内容无效";
+      return;
+    }
+    if (existing) {
+      collections = collections.map((item) => item.id === existing.id ? collection : item);
+    } else {
+      if (collections.length >= MAX_COLLECTIONS) {
+        collectionMeta.textContent = "集合数量已达到 " + MAX_COLLECTIONS + " 个上限";
+        return;
+      }
+      collections.push(collection);
+    }
+    try {
+      persistCollections();
+      activeCollectionId = collection.id;
+      renderCollectionSelect();
+      collectionMeta.textContent = "已保存 · " + now;
+    } catch (err) {
+      collectionMeta.textContent = "保存失败 · " + err;
+    }
+  }
+
+  function deleteCollection() {
+    if (!activeCollectionId) {
+      return;
+    }
+    collections = collections.filter((item) => item.id !== activeCollectionId);
+    try {
+      persistCollections();
+      clearActiveCollection();
+      renderCollectionSelect();
+      collectionMeta.textContent = "集合已删除";
+    } catch (err) {
+      collectionMeta.textContent = "删除失败 · " + err;
+    }
+  }
+
+  function exportCollections() {
+    if (collections.length === 0) {
+      collectionMeta.textContent = "没有可导出的集合";
+      return;
+    }
+    const payload = {
+      schema_version: COLLECTION_SCHEMA,
+      exported_at: eastEightTimestamp(),
+      collections
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const stamp = eastEightTimestamp().replace(/[-:T+]/g, "").slice(0, 14);
+    anchor.href = url;
+    anchor.download = "relay-api-console-collections-" + stamp + ".json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    collectionMeta.textContent = "已导出 " + collections.length + " 个集合";
+  }
+
+  async function importCollections(file) {
+    if (!file) {
+      return;
+    }
+    try {
+      const payload = JSON.parse(await file.text());
+      if (!payload || payload.schema_version !== COLLECTION_SCHEMA || !Array.isArray(payload.collections)) {
+        throw new Error("不支持的集合文件格式");
+      }
+      let imported = 0;
+      let skipped = 0;
+      const existingIDs = new Set(collections.map((item) => item.id));
+      for (const candidate of payload.collections) {
+        const normalized = normalizeCollection(candidate);
+        if (!normalized || !endpoints.some((item) => item.id === normalized.endpoint_id)) {
+          skipped += 1;
+          continue;
+        }
+        if (collections.length >= MAX_COLLECTIONS) {
+          skipped += 1;
+          continue;
+        }
+        if (existingIDs.has(normalized.id)) {
+          normalized.id = makeID("collection");
+        }
+        existingIDs.add(normalized.id);
+        normalized.name = collections.some((item) => item.name === normalized.name)
+          ? normalized.name + " (导入)"
+          : normalized.name;
+        normalized.created_at = eastEightTimestamp();
+        normalized.updated_at = normalized.created_at;
+        collections.push(normalized);
+        imported += 1;
+      }
+      persistCollections();
+      renderCollectionSelect();
+      collectionMeta.textContent = "已导入 " + imported + " 个集合" + (skipped ? "，跳过 " + skipped + " 个" : "");
+    } catch (err) {
+      collectionMeta.textContent = "导入失败 · " + err.message;
+    } finally {
+      collectionFileInput.value = "";
+    }
+  }
+
+  function renderAssertions(results = null) {
+    assertionList.innerHTML = "";
+    if (assertions.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "assertion-empty";
+      empty.textContent = "尚未添加断言";
+      assertionList.appendChild(empty);
+    }
+    assertions.forEach((assertion, index) => {
+      const row = document.createElement("div");
+      row.className = "assertion-row";
+      row.dataset.assertionId = assertion.id;
+
+      const result = results ? results[index] : null;
+      const marker = document.createElement("span");
+      marker.className = "assertion-marker " + (result ? (result.pass ? "pass" : "fail") : "idle");
+      marker.textContent = result ? (result.pass ? "通过" : "失败") : "待运行";
+      marker.title = result ? result.message : "发送请求后执行";
+
+      const type = document.createElement("select");
+      type.setAttribute("aria-label", "断言类型");
+      for (const [value, label] of ASSERTION_TYPES) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        type.appendChild(option);
+      }
+      type.value = assertion.type;
+      type.addEventListener("change", () => {
+        assertion.type = type.value;
+        if (assertion.type === "status_equals" && !assertion.expected) {
+          assertion.expected = "200";
+        }
+        renderAssertions();
+      });
+
+      const path = document.createElement("input");
+      path.setAttribute("aria-label", "JSON 路径");
+      path.placeholder = "data.orders[0].status";
+      path.value = assertion.path;
+      path.disabled = ["status_equals", "duration_lt"].includes(assertion.type);
+      path.addEventListener("input", () => {
+        assertion.path = path.value;
+      });
+
+      const expected = document.createElement("input");
+      expected.setAttribute("aria-label", "期望值");
+      expected.placeholder = assertion.type === "json_path_type" ? "string / number / array" : "期望值";
+      expected.value = assertion.expected;
+      expected.disabled = assertion.type === "json_path_exists";
+      expected.addEventListener("input", () => {
+        assertion.expected = expected.value;
+      });
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "assertion-remove";
+      remove.textContent = "×";
+      remove.title = "删除断言";
+      remove.setAttribute("aria-label", "删除断言");
+      remove.addEventListener("click", () => {
+        assertions = assertions.filter((item) => item.id !== assertion.id);
+        renderAssertions();
+      });
+
+      row.append(marker, type, path, expected, remove);
+      assertionList.appendChild(row);
+    });
+    if (!results) {
+      assertionSummary.textContent = "未运行";
+      assertionSummary.className = "assertion-summary idle";
+    }
+  }
+
+  function parseExpectedValue(value) {
+    const trimmed = String(value).trim();
+    if (trimmed === "") {
+      return "";
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch (_err) {
+      return trimmed;
+    }
+  }
+
+  function resolveJSONPath(payload, path) {
+    let remaining = String(path || "").trim();
+    if (remaining === "" || remaining === "$") {
+      return { found: true, value: payload };
+    }
+    if (remaining.startsWith("$")) {
+      remaining = remaining.slice(1);
+    }
+    const tokens = [];
+    while (remaining.length > 0) {
+      if (remaining.startsWith(".")) {
+        remaining = remaining.slice(1);
+      }
+      const indexMatch = remaining.match(/^\[(\d+)\]/);
+      if (indexMatch) {
+        tokens.push(Number.parseInt(indexMatch[1], 10));
+        remaining = remaining.slice(indexMatch[0].length);
+        continue;
+      }
+      const quotedMatch = remaining.match(/^\[(["'])(.*?)\1\]/);
+      if (quotedMatch) {
+        tokens.push(quotedMatch[2]);
+        remaining = remaining.slice(quotedMatch[0].length);
+        continue;
+      }
+      const propertyMatch = remaining.match(/^[^.\[\]]+/);
+      if (propertyMatch) {
+        tokens.push(propertyMatch[0]);
+        remaining = remaining.slice(propertyMatch[0].length);
+        continue;
+      }
+      return { found: false, value: undefined };
+    }
+    let value = payload;
+    for (const token of tokens) {
+      if (value === null || value === undefined || !Object.prototype.hasOwnProperty.call(Object(value), token)) {
+        return { found: false, value: undefined };
+      }
+      value = value[token];
+    }
+    return { found: true, value };
+  }
+
+  function valueType(value) {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+  }
+
+  function valuesEqual(actual, expected) {
+    if (actual && typeof actual === "object") {
+      try {
+        return JSON.stringify(actual) === JSON.stringify(expected);
+      } catch (_err) {
+        return false;
+      }
+    }
+    return Object.is(actual, expected);
+  }
+
+  function evaluateAssertion(assertion, response) {
+    if (!response) {
+      return { pass: false, message: "尚无响应" };
+    }
+    if (assertion.type === "status_equals") {
+      const expected = Number.parseInt(assertion.expected, 10);
+      const pass = Number.isFinite(expected) && response.status === expected;
+      return { pass, message: "HTTP " + response.status + "，期望 " + assertion.expected };
+    }
+    if (assertion.type === "duration_lt") {
+      const expected = Number.parseFloat(assertion.expected);
+      const pass = Number.isFinite(expected) && response.elapsed < expected;
+      return { pass, message: response.elapsed + "ms，期望小于 " + assertion.expected + "ms" };
+    }
+    if (!response.hasJSON) {
+      return { pass: false, message: "响应不是 JSON" };
+    }
+    const resolved = resolveJSONPath(response.parsed, assertion.path);
+    if (assertion.type === "json_path_exists") {
+      return { pass: resolved.found, message: resolved.found ? "路径存在" : "路径不存在" };
+    }
+    if (!resolved.found) {
+      return { pass: false, message: "路径不存在" };
+    }
+    if (assertion.type === "json_path_type") {
+      const actualType = valueType(resolved.value);
+      const expectedType = assertion.expected.trim().toLowerCase();
+      return { pass: actualType === expectedType, message: "类型 " + actualType + "，期望 " + expectedType };
+    }
+    const expected = parseExpectedValue(assertion.expected);
+    return {
+      pass: valuesEqual(resolved.value, expected),
+      message: "实际 " + formatValue(resolved.value) + "，期望 " + formatValue(expected)
+    };
+  }
+
+  function runAssertions(response) {
+    lastResponse = response;
+    if (assertions.length === 0) {
+      renderAssertions([]);
+      assertionSummary.textContent = "无断言";
+      assertionSummary.className = "assertion-summary idle";
+      return;
+    }
+    const results = assertions.map((assertion) => evaluateAssertion(assertion, response));
+    const passed = results.filter((result) => result.pass).length;
+    renderAssertions(results);
+    assertionSummary.textContent = passed + "/" + results.length + " 通过";
+    assertionSummary.className = "assertion-summary " + (passed === results.length ? "pass" : "fail");
   }
 
   function buildRequest() {
@@ -249,8 +788,11 @@
       const response = await fetch(request.url, init);
       const text = await response.text();
       const elapsed = Math.round(performance.now() - started);
+      let parsed = null;
+      let hasJSON = false;
       try {
-        const parsed = JSON.parse(text);
+        parsed = JSON.parse(text);
+        hasJSON = true;
         jsonOutput.textContent = JSON.stringify(parsed, null, 2);
         renderTable(parsed);
       } catch (_err) {
@@ -259,10 +801,15 @@
       }
       setStatus("HTTP " + response.status, response.ok ? "ready" : "blocked");
       responseMeta.textContent = request.method + " " + request.relativeURL + " · " + elapsed + "ms";
+      runAssertions({ status: response.status, elapsed, parsed, text, hasJSON });
     } catch (err) {
       setStatus("请求失败", "blocked");
       responseMeta.textContent = request.method + " " + request.relativeURL;
       jsonOutput.textContent = String(err);
+      lastResponse = null;
+      renderAssertions();
+      assertionSummary.textContent = "请求失败";
+      assertionSummary.className = "assertion-summary fail";
     }
   }
 
@@ -282,6 +829,9 @@
     responseMeta.textContent = request.method + " " + request.relativeURL;
     tableOutput.innerHTML = "";
     jsonOutput.textContent = "waiting for events...";
+    lastResponse = null;
+    renderAssertions();
+    assertionSummary.textContent = "SSE 等待事件";
 
     const source = new EventSource(request.url);
     activeStream = source;
@@ -454,7 +1004,9 @@
       throw new Error("load endpoint catalog failed: HTTP " + response.status);
     }
     endpoints = await response.json();
+    collections = readCollections();
     selectEndpoint(endpoints[0]);
+    renderCollectionSelect();
   }
 
   paramForm.addEventListener("input", updatePreview);
@@ -462,7 +1014,10 @@
   baseUrlInput.addEventListener("input", updatePreview);
   resetButton.addEventListener("click", () => {
     closeActiveStream();
-    selectEndpoint(selectedEndpoint);
+    renderForm(selectedEndpoint);
+    updatePreview();
+    lastResponse = null;
+    renderAssertions();
   });
   copyURLButton.addEventListener("click", async () => {
     try {
@@ -472,6 +1027,31 @@
     } catch (err) {
       responseMeta.textContent = String(err);
     }
+  });
+  savedCollectionSelect.addEventListener("change", () => {
+    if (savedCollectionSelect.value) {
+      loadCollection(savedCollectionSelect.value);
+    } else {
+      clearActiveCollection();
+    }
+  });
+  saveCollectionButton.addEventListener("click", saveCollection);
+  newCollectionButton.addEventListener("click", () => {
+    clearActiveCollection();
+    collectionNameInput.focus();
+  });
+  deleteCollectionButton.addEventListener("click", deleteCollection);
+  importCollectionButton.addEventListener("click", () => collectionFileInput.click());
+  exportCollectionButton.addEventListener("click", exportCollections);
+  collectionFileInput.addEventListener("change", () => importCollections(collectionFileInput.files[0]));
+  addAssertionButton.addEventListener("click", () => {
+    if (assertions.length >= MAX_ASSERTIONS) {
+      assertionSummary.textContent = "最多 " + MAX_ASSERTIONS + " 条";
+      assertionSummary.className = "assertion-summary fail";
+      return;
+    }
+    assertions.push(defaultAssertion());
+    renderAssertions();
   });
 
   loadCatalog().catch((err) => {

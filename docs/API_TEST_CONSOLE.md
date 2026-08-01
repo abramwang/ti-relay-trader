@@ -1,6 +1,6 @@
 # relay 接口测试台
 
-更新时间：`2026-07-31`
+更新时间：`2026-08-01`
 
 ## 目标
 
@@ -26,6 +26,20 @@ http://relay-trader.quantstage.com/api-console
 
 页面已参考 Meridian API 测试页改成表单模式：左侧选择接口，中间按 `path/query/body` 自动生成参数表单，右侧展示 HTTP 状态、耗时、响应 JSON；当响应里包含 `accounts`、`asset`、`positions`、`orders`、`fills` 等账表对象时，会额外显示表格。`GET /v1/events/stream` 这类 SSE 接口会使用 EventSource 连接，并展示最近收到的事件。
 
+请求编辑区支持命名测试集合。每个集合保存 catalog 端点 ID、当前表单值和响应断言，使用 `relay.api_console_collection.v1` 版本化结构写入浏览器 `localStorage`；可导出全部集合为 JSON，也可从同版本 JSON 文件导入。集合不保存 Base URL，加载集合后不会自动发送请求，避免把测试环境地址或写请求执行意图带入生产环境。
+
+响应断言会在普通 HTTP 请求结束后自动执行，当前支持：
+
+| 断言 | 输入口径 |
+| --- | --- |
+| HTTP 状态等于 | 期望 HTTP status，例如 `200` 或 `202` |
+| JSON 路径存在 | 点号和数组下标路径，例如 `data.orders[0].status` |
+| JSON 路径等于 | 路径和 JSON/文本期望值；数字、布尔值、对象可直接按 JSON 填写 |
+| JSON 路径类型 | `string`、`number`、`boolean`、`object`、`array` 或 `null` |
+| 响应耗时小于 | 毫秒阈值 |
+
+SSE 连接继续显示最近事件，但不把 EventSource 重连状态伪装成普通 HTTP 响应断言。
+
 ## 实现结构
 
 接口测试台不再直接内联在 Go handler 中，当前拆分为：
@@ -37,7 +51,7 @@ http://relay-trader.quantstage.com/api-console
 | `cmd/relay-docs/web/static/api-console.js` | 表单渲染、请求发送、JSON/表格响应渲染 |
 | `cmd/relay-docs/web/static/api-console.catalog.json` | 接口分组、参数字段、默认值和状态 |
 
-Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文件。后续新增接口时，优先更新 catalog；只有后端路由、权限或响应结构变化时才修改 Go 代码。当前 catalog 有 61 个接口条目，覆盖源码和在线 `/v1/schema` 的 48 个标准发现路由；catalog 额外保留运维、绩效设置等尚未进入 schema 发现的接口。
+Go 侧通过 `embed` 打包这些资源，并通过 `/assets/` 暴露静态文件。后续新增接口时，优先更新 catalog；只有后端路由、权限或响应结构变化时才修改 Go 代码。当前 catalog 有 67 个接口条目，覆盖源码和在线 `/v1/schema` 的 54 个标准发现路由；catalog 额外保留运维、绩效设置等尚未进入 schema 发现的接口。
 
 提交前执行一致性检查：
 
@@ -129,8 +143,8 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 
 ## 安全边界
 
-1. 页面本身不保存凭据。
-2. 页面不会自动发送任何请求。
+1. 页面本身不保存凭据；命名集合只保存在当前浏览器，导出文件包含用户填写的请求字段，需按联调资料管理。
+2. 页面不会自动发送任何请求；导入或加载集合也只恢复表单和断言。
 3. 交易写接口仅在启动配置包含 PostgreSQL、测试 Redis 和账户路由时可用，且账户配置必须 `enabled=true`、`trading_enabled=true`。
 4. 实盘账户会使用另一套 Redis 连接方式，测试 Redis 与实盘 Redis 不混用。
 5. 资金/持仓/订单/成交查询默认只读本地 PostgreSQL 账表；刷新接口会发送测试前置 `cmd.query`，需要 9092 轻量同步循环、`ledger-sync` 或正式 worker 合并 reply 后才能在查询接口看到最新数据。
@@ -139,5 +153,4 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 ## 后续工作
 
 1. 增加环境切换：文档门户、API 模式、测试前置环境。
-2. 增加请求样例保存和导出。
-3. 增加可命名的响应断言集合，用于联调和发布冒烟。
+2. 将稳定的只读断言集合纳入统一发布验收清单；生产环境继续在网络层禁止写请求。

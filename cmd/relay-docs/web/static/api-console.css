@@ -682,3 +682,239 @@
     grid-template-columns: 250px minmax(520px, 1fr) auto;
   }
 }
+
+.collection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 11px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  background: #151923;
+}
+
+.collection-toolbar select,
+.collection-toolbar input,
+.collection-toolbar button,
+.assertion-head button,
+.assertion-row select,
+.assertion-row input,
+.assertion-row button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.collection-toolbar select {
+  min-width: 190px;
+  max-width: 100%;
+  flex: 1 1 210px;
+  padding: 0 8px;
+}
+
+.collection-toolbar input {
+  min-width: 140px;
+  flex: 1 1 160px;
+  padding: 0 8px;
+}
+
+.collection-toolbar button,
+.assertion-head button {
+  padding: 0 9px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.collection-toolbar button:hover,
+.assertion-head button:hover,
+.assertion-row button:hover {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent-soft);
+}
+
+.collection-toolbar button:disabled {
+  color: #666b76;
+  cursor: not-allowed;
+}
+
+.collection-toolbar button:disabled:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.collection-meta {
+  min-height: 18px;
+  margin-top: 4px;
+  color: #777c88;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.api-result-panel {
+  grid-template-rows: auto auto auto minmax(120px, auto) minmax(220px, 1fr);
+}
+
+.assertion-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.assertion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 7px 4px 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.assertion-head h3 {
+  margin: 0;
+  color: #d9dce4;
+  font-size: 12px;
+}
+
+.assertion-head > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assertion-summary,
+.assertion-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: #777c88;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.assertion-summary.pass,
+.assertion-marker.pass {
+  border-color: rgba(8, 153, 129, 0.45);
+  background: rgba(8, 153, 129, 0.1);
+  color: #42c6ad;
+}
+
+.assertion-summary.fail,
+.assertion-marker.fail {
+  border-color: rgba(242, 54, 69, 0.45);
+  background: rgba(242, 54, 69, 0.08);
+  color: #ff7d88;
+}
+
+.assertion-list {
+  min-width: 0;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.assertion-row {
+  display: grid;
+  grid-template-columns: 54px minmax(105px, 0.9fr) minmax(90px, 1fr) minmax(70px, 0.7fr) 28px;
+  gap: 4px;
+  min-width: 355px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.assertion-row:last-child {
+  border-bottom: 0;
+}
+
+.assertion-row select,
+.assertion-row input {
+  min-width: 0;
+  width: 100%;
+  padding: 0 6px;
+}
+
+.assertion-row input:disabled {
+  background: #151923;
+  color: #666b76;
+}
+
+.assertion-row .assertion-remove {
+  width: 28px;
+  padding: 0;
+  color: #8f949f;
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.assertion-empty {
+  display: grid;
+  min-height: 50px;
+  place-items: center;
+  color: #777c88;
+  font-size: 11px;
+}
+
+@media (max-width: 860px) {
+  .page-console .page-main {
+    overflow: auto;
+  }
+
+  .api-console-v2 {
+    grid-template-rows: auto auto;
+    height: auto;
+    min-height: 100%;
+  }
+
+  .api-console-head {
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: 82px;
+  }
+
+  .api-console-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+
+  .api-console-nav {
+    max-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .api-request-panel {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .api-result-panel {
+    overflow: visible;
+  }
+
+  .request-line-v2,
+  .param-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .collection-toolbar select,
+  .collection-toolbar input {
+    flex-basis: 100%;
+  }
+
+  .assertion-list {
+    max-height: 260px;
+  }
+}

@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成；N12 的 API Console 命名集合、JSON 导入导出和响应断言已完成，剩余券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-08-01`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -594,3 +594,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: `performance_daily` 已接入通用任务告警：绩效 `blocked` 账户聚合为 critical，费用待完善的 `attention` 账户聚合为 warning，并与任务交易日共同生成幂等去重键。Go 全包、后台任务 21 项、SDK 18 项和 `relay-sdk 0.1.24` 发布包检查通过；生产任务配置与 cron 均为交易日 17:45，计算过程只读且不查询 OC。
 - `2026-08-01`: 发布 `performance_position_cost.v2` 并应用生产迁移 `000023_position_cost_corporate_actions`。成本账保存上一 close、券商 open、公司行为类型/因子/数量差和 Meridian 原始上下文；数量比匹配 `ex_factor` 时保持总成本并调整单位成本，数量不变时只标记价格除权，无法闭合时阻断。测试覆盖 `588200.SH` 3 倍 ETF 份额折算、`600000.SH` 价格除权和错误数量阻断；债享5号 7 月 30 日生产只读试算 156 个证券无误报、数量差异为 0。9092 已更新，生产交易权限保持关闭。
 - `2026-08-01`: 发布 `performance_position_cost.v3`，复用现有 T0 归因和 Meridian PCF 单位门禁，将普通持仓保存为 `CORE`、完整买入赎回组保存为 `ETF_T0:{group_id}`。T0 买入成本不再进入 ETF 底仓，赎回后成本池日内归零；赎回名义价格不生成虚假收益，IOPV 退出价值和 15bp 摩擦继续由贡献模块计算。显式完整组可 calculated，历史推断组为 estimated，候选歧义和未闭合组 blocked。混合底仓/T0 单测及临时 PostgreSQL 同证券双成本池写读测试通过。
+- `2026-08-01`: 完成 N12 API Console 命名测试集合：以 `relay.api_console_collection.v1` 在浏览器本地保存端点、表单和断言，支持版本化 JSON 导入导出且不保存 Base URL、不自动执行请求。新增 HTTP 状态、JSON 路径存在/等值/类型和耗时断言；Playwright 已验证保存、刷新恢复、导出、清空后导入、断言执行、六账户和历史订单表格，浏览器网络层未产生写请求。9092 已部署新资源，生产仍为六账户只读、下单账户 0。
