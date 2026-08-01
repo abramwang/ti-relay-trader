@@ -52,3 +52,18 @@ Relay 使用 Meridian `pre_close/close` 重估持仓。逆回购只加入本金�
 - 正式净值保留 `carried_open_asset`、`observed_open_asset`、`overnight_adjustment`、`close_asset` 和 `daily_pnl`，避免一个 `open_nav` 同时承担两个语义。
 - 逆回购应收至少拆成 `principal_outstanding`、`estimated_interest`、`actual_interest`、`actual_fee`、`cash_overlap` 和 `recognition_status`。
 - 历史回算先实现本金重叠判定和人工金标比较报告；无法从现有字段证明本金归属的日期保持 blocked，并形成给 OC 的字段需求，不写日期特判。
+
+## v2.1 实现与验收
+
+`2026-08-01` 已发布 `performance_economic_nav.v2.1`：系统不读取人工结果来选择公式，而是比较含/不含逆回购本金两条账表恒等式与正式证券贡献的残差；差异不明确时保持 blocked。预估净息继续返回，但正式 `receivable` 只包含未进入可见资金的本金，实际净息延后到确认的 `income_expense`。
+
+可重复验收命令：
+
+```bash
+scripts/compare-performance-gold.py \
+  --account-id 314000046830 \
+  --gold testdata/performance/314000046830_manual_nav_202607.csv \
+  --output /tmp/debt5-gold-v21.json
+```
+
+生产只读验收结果为 17 条金标、16 条可计算、1 条因缺 7 月 31 日 OC close 快照 unavailable；7 月 2 日和 10 日分别识别 `818,000` 元、`2,506,000` 元本金已嵌入可见资金。7 月 22、23、28、29、30 日的日末资产与日盈亏误差均小于 0.01 元，早期费用/贡献残差仍按原质量规则保留 blocked。

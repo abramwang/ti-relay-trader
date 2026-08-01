@@ -3842,6 +3842,11 @@
       missing_previous_economic_nav: "缺少上一日经济净值",
       reverse_repo_accrual_preview: "逆回购应计为预估",
       missing_repo_fee: "缺少逆回购费用",
+      reverse_repo_principal_treatment_inferred: "逆回购本金归属由账表推断",
+      reverse_repo_principal_treatment_ambiguous: "逆回购本金归属不明确",
+      reverse_repo_principal_embedded_in_cash: "逆回购本金已包含在资金中",
+      reverse_repo_principal_separate_from_cash: "逆回购本金独立于可见资金",
+      reverse_repo_estimated_interest_excluded: "逆回购预估利息延后确认",
       strategy_attribution_pending: "策略归因待完成",
       missing_iopv: "缺少 IOPV",
       minute_iopv_fallback: "IOPV 使用分钟回退",
@@ -4302,6 +4307,7 @@
     const nav = economic.nav || {};
     const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
     const cashFlows = economic.cash_flows || {};
+    const reverseRepo = economic.reverse_repo || {};
     const navFlags = Array.isArray(economic.quality_flags) ? economic.quality_flags : (Array.isArray(nav.quality_flags) ? nav.quality_flags : []);
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
@@ -4309,6 +4315,7 @@
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       daily.open_snapshot_source ? "日初 " + daily.open_snapshot_source : "",
       nav.status ? "经济净值 " + nav.status : "",
+      reverseRepo.principal_treatment && reverseRepo.principal_treatment !== "none" ? "逆回购本金 " + ({ embedded: "资金内嵌", separate: "独立应收", ambiguous: "待确认" }[reverseRepo.principal_treatment] || reverseRepo.principal_treatment) : "",
       reconciliation.status ? "对账 " + reconciliation.status : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
@@ -4326,7 +4333,7 @@
     els.perfEconomicPnl.className = classForNumber(nav.account_day_pnl);
     els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
     els.perfExternalFlow.className = classForNumber(cashFlows.external_net_flow);
-    els.perfQualityFlags.textContent = navFlags.length ? navFlags.slice(0, 2).join(" / ") + (navFlags.length > 2 ? " +" + (navFlags.length - 2) : "") : "质量 ok";
+    els.perfQualityFlags.textContent = navFlags.length ? navFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") + (navFlags.length > 2 ? " +" + (navFlags.length - 2) : "") : "质量 ok";
     els.perfOpenNetAsset.textContent = formatNumber(daily.open_net_asset);
     els.perfOpenSource.textContent = [
       daily.open_snapshot_source || "--",

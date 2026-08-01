@@ -799,9 +799,9 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 		t.Fatal("Persisted = false, want true")
 	}
 	assertClose(t, result.NAV.OpenEconomicNAV, 980000)
-	assertClose(t, result.NAV.CloseEconomicNAV, 1000010)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1000000)
 	assertClose(t, result.NAV.ExternalNetFlow, 10000)
-	assertClose(t, result.NAV.AccountDayPnL, 10010)
+	assertClose(t, result.NAV.AccountDayPnL, 10000)
 	if result.NAV.FormulaVersion != "performance_economic_nav.unit" {
 		t.Fatalf("formula = %q", result.NAV.FormulaVersion)
 	}
@@ -811,8 +811,81 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 	if result.ReverseRepo.Orders != 1 || result.ReverseRepo.Source != "ledger" {
 		t.Fatalf("reverse repo summary = %#v", result.ReverseRepo)
 	}
+	if result.ReverseRepo.PrincipalTreatment != "separate" || result.ReverseRepo.PrincipalReceivable != 100000 || result.ReverseRepo.PrincipalCashOverlap != 0 {
+		t.Fatalf("reverse repo principal resolution = %#v", result.ReverseRepo)
+	}
+	assertClose(t, result.ReverseRepo.EstimatedNetInterest, 10)
+	assertClose(t, result.ReverseRepo.RecognizedNetInterest, 0)
+	assertClose(t, result.ReverseRepo.EstimatedReceivable, 100010)
+	assertClose(t, result.ReverseRepo.Receivable, 100000)
+	if !containsString(result.QualityFlags, "reverse_repo_estimated_interest_excluded") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
 	if result.NAV.PnLComponents["cash_management"] == nil {
 		t.Fatalf("missing cash management component: %#v", result.NAV.PnLComponents)
+	}
+}
+
+func TestResolveReverseRepoPrincipalUsesAccountingIdentity(t *testing.T) {
+	tests := []struct {
+		name                    string
+		baseCloseNAV            float64
+		openEconomicNAV         float64
+		formalAttributedPnL     float64
+		wantTreatment           string
+		wantCashOverlap         float64
+		wantPrincipalReceivable float64
+		wantAmbiguous           bool
+	}{
+		{
+			name:                    "principal separate from visible cash",
+			baseCloseNAV:            900,
+			openEconomicNAV:         1000,
+			formalAttributedPnL:     0,
+			wantTreatment:           "separate",
+			wantPrincipalReceivable: 100,
+		},
+		{
+			name:                "principal embedded in visible cash",
+			baseCloseNAV:        1000,
+			openEconomicNAV:     1000,
+			formalAttributedPnL: 0,
+			wantTreatment:       "embedded",
+			wantCashOverlap:     100,
+		},
+		{
+			name:                    "ambiguous bridge is blocked",
+			baseCloseNAV:            950,
+			openEconomicNAV:         1000,
+			formalAttributedPnL:     0,
+			wantTreatment:           "ambiguous",
+			wantPrincipalReceivable: 0,
+			wantCashOverlap:         100,
+			wantAmbiguous:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := EconomicNAVReverseRepoSummary{
+				Orders:               1,
+				Principal:            100,
+				NetInterest:          2,
+				EstimatedNetInterest: 2,
+			}
+			flags := resolveReverseRepoPrincipal(&summary, tt.baseCloseNAV, tt.openEconomicNAV, 0, 0, tt.formalAttributedPnL, 10)
+
+			if summary.PrincipalTreatment != tt.wantTreatment {
+				t.Fatalf("treatment = %q, want %q", summary.PrincipalTreatment, tt.wantTreatment)
+			}
+			assertClose(t, summary.PrincipalCashOverlap, tt.wantCashOverlap)
+			assertClose(t, summary.PrincipalReceivable, tt.wantPrincipalReceivable)
+			assertClose(t, summary.Receivable, tt.wantPrincipalReceivable)
+			assertClose(t, summary.RecognizedNetInterest, 0)
+			if containsString(flags, "reverse_repo_principal_treatment_ambiguous") != tt.wantAmbiguous {
+				t.Fatalf("flags = %#v", flags)
+			}
+		})
 	}
 }
 

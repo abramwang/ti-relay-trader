@@ -412,15 +412,17 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 使用普通证券现金流恒等式 `close_value + sell_amount - buy_amount - open_value - effective_fee`。ETF 申赎 T0 使用赎回成交时刻之前最近的 Meridian Level1 IOPV 作为估算退出价值，并扣除配置项 `performance.etf_t0_friction_rate`；多个赎回组最多 8 路并发查询 IOPV。缺少当日 open 持仓时，只在前一交易日 close 快照存在且 `open + buy - sell = close` 数量桥闭合时估算，否则返回 `pnl_status=missing`，不会把缺失持仓当作 0。接口只读，不触发 OC 查询。
 
-`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的第一版公式为：
+`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的 v2.1 公式为：
 
 ```text
-close_economic_nav = close_visible_net_asset + reverse_repo_receivable
+base_close_nav = close_visible_cash + meridian_close_position_value
+principal_receivable = reverse_repo_principal - principal_already_in_visible_cash
+close_economic_nav = base_close_nav + principal_receivable
 account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment
 daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_flow_i))
 ```
 
-其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`；逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算。当前策略归因尚未完全拆分，`cash_management` 会承接逆回购净息和已知 `income_expense`，剩余 `account_day_pnl` 暂记 `unattributed` 并标记 `strategy_attribution_pending`。
+其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`。逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算；系统比较含/不含本金两条候选 NAV 对正式证券贡献的残差，输出 `principal_treatment=embedded/separate/ambiguous`、`principal_cash_overlap`、`principal_receivable`、`resolution_residual` 和 `alternate_residual`，歧义时阻断。`estimated_net_interest/estimated_receivable` 只作诊断，不进入正式 NAV/PnL；实际净息由确认的 `income_expense` 在到账日进入 `cash_management`。剩余 `account_day_pnl` 暂记 `unattributed` 并标记 `strategy_attribution_pending`。
 
 `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览 T+1 对账；`POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 持久化对账结果，仍由 `performance.settings_write_enabled` 控制。`observed_trade_date` 为空时会通过 Meridian 交易日接口向后取下一交易日。第一版公式为 `observed_open_assets = asset_snapshots(open).cash_total + sum(position_snapshots(open).market_value)`，再扣减 `provisional_close_economic_nav`、盘前已确认 `external_flow` 和盘前已确认 `income_expense` 后得到 `residual`；状态按配置阈值写为 `auto_completed/review_required/blocked`。
 

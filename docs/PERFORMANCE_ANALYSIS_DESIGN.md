@@ -583,9 +583,9 @@ provisional_close_economic_nav =
 
 1. `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD`：只读试算，不写库，生产环境可安全使用。
 2. `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild`：受 `performance.settings_write_enabled` 保护，写入新的 current `performance_nav_versions`，并把同账户同交易日旧 current 版本退役。
-3. 当前第一版实现仍使用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，其中可能重复本金并包含预估利息；人工金标已经证明该实现不能直接 finalized，N13 将改为只加入未进入可见资金的本金，实际净息在回款/费用确认后进入收益。
+3. `performance_economic_nav.v2.1` 使用两条候选账表恒等式判断逆回购本金是否已进入可见资金：比较 `base_close_nav` 与 `base_close_nav + repo_principal` 对正式证券贡献的残差，差异不明确时标记 `reverse_repo_principal_treatment_ambiguous` 并阻断。明确时输出 `embedded/separate`、本金现金重叠、正式本金应收和两条残差，且只能保持 provisional。
 4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。只有日期精度的盘中资金流固定使用 `0.5` 权重并携带估算质量标记。
-5. `pnl_components.cash_management` 当前同时展示逆回购预估净息和已知 `income_expense`；修正后预估值只保留诊断来源，只有实际确认净息进入正式 `account_day_pnl`。策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
+5. `pnl_components.cash_management` 同时展示预估净息、确认净息、预估应收、正式本金应收和 `income_expense`。预估值只作诊断，正式 `account_day_pnl` 排除估算现金管理贡献；实际净息通过确认的 `income_expense` 在到账日进入收益。策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
 6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，`/trade#performance` 已提供正式状态告警和页面复核操作流。
 
 ### 资产对账辅线
@@ -787,7 +787,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 1. `performance_account_inceptions` 保存账户起算日、日初资金、初始持仓/成本来源、策略范围和确认审计；账户范围不在程序中写死。
 2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值和数量残差。
 3. 成本账按 `日初数量 + 买入 - 卖出 = 日终数量` 逐证券校验。逆回购从证券成本账中排除，ETF `P/R` 预留独立分账；数量不平时直接阻断，不用柜台成本强行抹平。
-4. `performance_economic_nav.v2` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
+4. `performance_economic_nav.v2.1` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。

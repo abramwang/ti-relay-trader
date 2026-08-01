@@ -27,7 +27,7 @@ const (
 	fillPageLimit           = 500
 	maxFillPages            = 40
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2"
+	defaultFormulaVersion   = "performance_economic_nav.v2.1"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -117,12 +117,21 @@ type EconomicNAVCashFlowSummary struct {
 }
 
 type EconomicNAVReverseRepoSummary struct {
-	Orders      int     `json:"orders"`
-	Principal   float64 `json:"principal"`
-	NetInterest float64 `json:"net_interest"`
-	Receivable  float64 `json:"receivable"`
-	Fee         float64 `json:"fee"`
-	Source      string  `json:"source,omitempty"`
+	Orders                int     `json:"orders"`
+	Principal             float64 `json:"principal"`
+	PrincipalCashOverlap  float64 `json:"principal_cash_overlap"`
+	PrincipalReceivable   float64 `json:"principal_receivable"`
+	NetInterest           float64 `json:"net_interest"`
+	EstimatedNetInterest  float64 `json:"estimated_net_interest"`
+	RecognizedNetInterest float64 `json:"recognized_net_interest"`
+	Receivable            float64 `json:"receivable"`
+	EstimatedReceivable   float64 `json:"estimated_receivable"`
+	Fee                   float64 `json:"fee"`
+	Source                string  `json:"source,omitempty"`
+	PrincipalTreatment    string  `json:"principal_treatment,omitempty"`
+	InterestRecognition   string  `json:"interest_recognition,omitempty"`
+	ResolutionResidual    float64 `json:"resolution_residual"`
+	AlternateResidual     float64 `json:"alternate_residual"`
 }
 
 type EconomicNAVValuationSummary struct {
@@ -430,8 +439,27 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	repoSummary, repoFlags := service.reverseRepoForEconomicNAV(ctx, accountID, normalizedDate)
+	estimatedCashManagementPnL := strategyNetContribution(contribution, StrategyCashManagement)
+	formalStrategyPnL := roundMoney(contribution.Summary.NetContribution - estimatedCashManagementPnL)
+	formalAttributedPnL := roundMoney(formalStrategyPnL + incomeExpense)
+	attributionWarningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(openEconomicNAV)*service.warningToleranceBP/10000))
+	principalFlags := resolveReverseRepoPrincipal(
+		&repoSummary,
+		roundMoney(closeVisibleCash+contribution.Summary.ClosePositionValue),
+		openEconomicNAV,
+		externalNetFlow,
+		settlementAdjustment,
+		formalAttributedPnL,
+		attributionWarningThreshold,
+	)
 	result.ReverseRepo = repoSummary
 	result.QualityFlags = appendUnique(result.QualityFlags, repoFlags...)
+	result.QualityFlags = appendUnique(result.QualityFlags, principalFlags...)
+	if repoSummary.PrincipalTreatment == "ambiguous" {
+		status = "blocked"
+	} else if repoSummary.Orders > 0 && status == "finalized" {
+		status = "provisional"
+	}
 
 	closeEconomicNAV := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue + repoSummary.Receivable)
 	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
@@ -451,9 +479,8 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	accountDayPnL := roundMoney(closeEconomicNAV - openEconomicNAV - externalNetFlow - settlementAdjustment)
-	accountedContribution := roundMoney(contribution.Summary.NetContribution + incomeExpense)
+	accountedContribution := formalAttributedPnL
 	attributionResidual := roundMoney(accountDayPnL - accountedContribution)
-	attributionWarningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(openEconomicNAV)*service.warningToleranceBP/10000))
 	if math.Abs(attributionResidual) > attributionWarningThreshold {
 		status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "nav_contribution_residual_exceeds_warning")
@@ -480,7 +507,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		previousCumulative = previousNAV.CumulativeNAV
 	}
 	cumulativeNAV := roundRatio(previousCumulative * (1 + dailyReturn))
-	cashManagementPnL := roundMoney(repoSummary.NetInterest + incomeExpense)
+	cashManagementPnL := roundMoney(repoSummary.RecognizedNetInterest + incomeExpense)
 	unattributedPnL := attributionResidual
 	if math.Abs(unattributedPnL) > 0.000001 {
 		result.QualityFlags = appendUnique(result.QualityFlags, "strategy_attribution_pending")
@@ -504,28 +531,39 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		CumulativeNAV:        cumulativeNAV,
 		PnLComponents: map[string]any{
 			"securities_and_strategy": map[string]any{
-				"pnl":                  contribution.Summary.NetContribution,
-				"gross_contribution":   contribution.Summary.GrossContribution,
-				"actual_fee":           contribution.Summary.ActualFee,
-				"estimated_fee":        contribution.Summary.EstimatedFee,
-				"effective_fee":        contribution.Summary.EffectiveFee,
-				"missing_items":        contribution.Summary.MissingItems,
-				"missing_fee_items":    contribution.Summary.MissingFeeItems,
-				"attribution_residual": attributionResidual,
+				"pnl":                                    formalStrategyPnL,
+				"reported_contribution":                  contribution.Summary.NetContribution,
+				"estimated_cash_management_contribution": estimatedCashManagementPnL,
+				"gross_contribution":                     contribution.Summary.GrossContribution,
+				"actual_fee":                             contribution.Summary.ActualFee,
+				"estimated_fee":                          contribution.Summary.EstimatedFee,
+				"effective_fee":                          contribution.Summary.EffectiveFee,
+				"missing_items":                          contribution.Summary.MissingItems,
+				"missing_fee_items":                      contribution.Summary.MissingFeeItems,
+				"attribution_residual":                   attributionResidual,
 			},
 			"unattributed": map[string]any{
 				"pnl":   unattributedPnL,
 				"scope": "strategy_components_pending",
 			},
 			"cash_management": map[string]any{
-				"pnl":                         cashManagementPnL,
-				"known_income_expense":        roundMoney(incomeExpense),
-				"reverse_repo_net_interest":   repoSummary.NetInterest,
-				"reverse_repo_receivable":     repoSummary.Receivable,
-				"reverse_repo_principal":      repoSummary.Principal,
-				"reverse_repo_effective_fee":  repoSummary.Fee,
-				"reverse_repo_orders":         repoSummary.Orders,
-				"reverse_repo_accrual_source": repoSummary.Source,
+				"pnl":                                  cashManagementPnL,
+				"known_income_expense":                 roundMoney(incomeExpense),
+				"reverse_repo_net_interest":            repoSummary.NetInterest,
+				"reverse_repo_estimated_net_interest":  repoSummary.EstimatedNetInterest,
+				"reverse_repo_recognized_net_interest": repoSummary.RecognizedNetInterest,
+				"reverse_repo_receivable":              repoSummary.Receivable,
+				"reverse_repo_estimated_receivable":    repoSummary.EstimatedReceivable,
+				"reverse_repo_principal":               repoSummary.Principal,
+				"reverse_repo_principal_cash_overlap":  repoSummary.PrincipalCashOverlap,
+				"reverse_repo_principal_receivable":    repoSummary.PrincipalReceivable,
+				"reverse_repo_principal_treatment":     repoSummary.PrincipalTreatment,
+				"reverse_repo_interest_recognition":    repoSummary.InterestRecognition,
+				"reverse_repo_resolution_residual":     repoSummary.ResolutionResidual,
+				"reverse_repo_alternate_residual":      repoSummary.AlternateResidual,
+				"reverse_repo_effective_fee":           repoSummary.Fee,
+				"reverse_repo_orders":                  repoSummary.Orders,
+				"reverse_repo_accrual_source":          repoSummary.Source,
 			},
 			"trading_observation": map[string]any{
 				"fills_count": daily.FillsCount,
@@ -941,6 +979,76 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 	return roundMoney(total)
 }
 
+func strategyNetContribution(result ContributionResult, strategyType string) float64 {
+	for _, strategy := range result.Strategies {
+		if strategy.StrategyType == strategyType {
+			return roundMoney(strategy.NetContribution)
+		}
+	}
+	return 0
+}
+
+func resolveReverseRepoPrincipal(
+	summary *EconomicNAVReverseRepoSummary,
+	baseCloseNAV float64,
+	openEconomicNAV float64,
+	externalNetFlow float64,
+	settlementAdjustment float64,
+	formalAttributedPnL float64,
+	warningThreshold float64,
+) []string {
+	if summary == nil || summary.Principal <= 0 {
+		if summary != nil {
+			summary.PrincipalTreatment = "none"
+			summary.InterestRecognition = "none"
+		}
+		return nil
+	}
+
+	withoutPrincipalPnL := baseCloseNAV - openEconomicNAV - externalNetFlow - settlementAdjustment
+	withPrincipalPnL := withoutPrincipalPnL + summary.Principal
+	withoutPrincipalResidual := roundMoney(withoutPrincipalPnL - formalAttributedPnL)
+	withPrincipalResidual := roundMoney(withPrincipalPnL - formalAttributedPnL)
+
+	treatment := "embedded"
+	selectedResidual := withoutPrincipalResidual
+	alternateResidual := withPrincipalResidual
+	principalReceivable := 0.0
+	principalCashOverlap := summary.Principal
+	if math.Abs(withPrincipalResidual) < math.Abs(withoutPrincipalResidual) {
+		treatment = "separate"
+		selectedResidual = withPrincipalResidual
+		alternateResidual = withoutPrincipalResidual
+		principalReceivable = summary.Principal
+		principalCashOverlap = 0
+	}
+
+	confidenceGap := math.Abs(alternateResidual) - math.Abs(selectedResidual)
+	confidenceFloor := math.Max(warningThreshold, math.Abs(summary.Principal)*0.25)
+	flags := []string{"reverse_repo_principal_treatment_inferred"}
+	if confidenceGap <= confidenceFloor {
+		treatment = "ambiguous"
+		flags = append(flags, "reverse_repo_principal_treatment_ambiguous")
+	} else if treatment == "embedded" {
+		flags = append(flags, "reverse_repo_principal_embedded_in_cash")
+	} else {
+		flags = append(flags, "reverse_repo_principal_separate_from_cash")
+	}
+	if math.Abs(summary.EstimatedNetInterest) > 0.000001 {
+		flags = append(flags, "reverse_repo_estimated_interest_excluded")
+	}
+
+	summary.PrincipalTreatment = treatment
+	summary.PrincipalCashOverlap = roundMoney(principalCashOverlap)
+	summary.PrincipalReceivable = roundMoney(principalReceivable)
+	summary.RecognizedNetInterest = 0
+	summary.Receivable = summary.PrincipalReceivable
+	summary.InterestRecognition = "deferred_to_cash_ledger"
+	summary.ResolutionResidual = selectedResidual
+	summary.AlternateResidual = alternateResidual
+	return flags
+}
+
 func (service *Service) reverseRepoForEconomicNAV(ctx context.Context, accountID, tradeDate string) (EconomicNAVReverseRepoSummary, []string) {
 	flags := make([]string, 0)
 	accruals, err := service.store.ListReverseRepoAccruals(ctx, accountID, tradeDate)
@@ -969,14 +1077,24 @@ func (service *Service) reverseRepoForEconomicNAV(ctx context.Context, accountID
 		}
 		summary.Principal += accrual.Principal
 		summary.NetInterest += accrual.NetInterest
-		summary.Receivable += accrual.Receivable
+		summary.EstimatedReceivable += accrual.Receivable
 		summary.Fee += accrual.EffectiveFee
 		flags = appendUnique(flags, accrual.QualityFlags...)
 	}
 	summary.Principal = roundMoney(summary.Principal)
 	summary.NetInterest = roundMoney(summary.NetInterest)
-	summary.Receivable = roundMoney(summary.Receivable)
+	summary.EstimatedNetInterest = summary.NetInterest
+	summary.EstimatedReceivable = roundMoney(summary.EstimatedReceivable)
+	summary.PrincipalReceivable = summary.Principal
+	summary.Receivable = summary.Principal
 	summary.Fee = roundMoney(summary.Fee)
+	if summary.Orders == 0 {
+		summary.PrincipalTreatment = "none"
+		summary.InterestRecognition = "none"
+	} else {
+		summary.PrincipalTreatment = "unresolved"
+		summary.InterestRecognition = "deferred_to_cash_ledger"
+	}
 	return summary, flags
 }
 
