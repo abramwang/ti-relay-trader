@@ -156,6 +156,8 @@ type contributionBucket struct {
 
 type t0RedemptionGroup struct {
 	securityID     string
+	groupID        string
+	explicit       bool
 	instrument     contributionInstrument
 	orders         []trading.Order
 	buyFills       []trading.Fill
@@ -823,6 +825,8 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 		}
 		redemptionOrder := ordersByID[redemption.GatewayOrderID]
 		explicitGroupID := firstNonBlank(redemption.T0OrderGroupID, redemptionOrder.T0OrderGroupID)
+		group.groupID = firstNonBlank(explicitGroupID, redemption.GatewayOrderID)
+		group.explicit = explicitGroupID != ""
 
 		candidates := make([]trading.Order, 0)
 		var candidateQuantity int64
@@ -945,6 +949,7 @@ func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate s
 		Name:             group.instrument.Name,
 		InstrumentType:   firstNonBlank(group.instrument.InstrumentType, "etf"),
 		StrategyType:     StrategyETFRedemptionT0,
+		StrategyID:       group.groupID,
 		PnLStatus:        "missing",
 		FeeSource:        "estimated",
 		PriceSource:      "meridian_historical_level1_iopv",

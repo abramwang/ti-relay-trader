@@ -14,7 +14,7 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
-const positionCostFormulaVersion = "performance_position_cost.v2"
+const positionCostFormulaVersion = "performance_position_cost.v3"
 
 type CostLedgerOptions struct {
 	Persist bool `json:"persist"`
@@ -29,6 +29,11 @@ type CostLedgerSummary struct {
 	CorporateActions      int     `json:"corporate_actions"`
 	QuantityAdjustments   int     `json:"quantity_adjustments"`
 	CorporateActionBreaks int     `json:"corporate_action_breaks"`
+	T0CostBuckets         int     `json:"t0_cost_buckets"`
+	T0BlockedBuckets      int     `json:"t0_blocked_buckets"`
+	T0BuyQuantity         int64   `json:"t0_buy_quantity"`
+	T0RedemptionQuantity  int64   `json:"t0_redemption_quantity"`
+	T0BuyAmount           float64 `json:"t0_buy_amount"`
 	MissingFeeItems       int     `json:"missing_fee_items"`
 	OpenQuantity          int64   `json:"open_quantity"`
 	OpenTotalCost         float64 `json:"open_total_cost"`
@@ -173,11 +178,23 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		}
 	}
 
+	orders, err := service.listContributionOrders(ctx, accountID, normalizedDate)
+	if err != nil {
+		return CostLedgerResult{}, err
+	}
 	fills, err := service.listTradeDateFills(ctx, accountID, normalizedDate)
 	if err != nil {
 		return CostLedgerResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
+	if transferErr != nil {
+		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_transfer_ledger_unavailable")
+	} else if len(redemptionTransferFills) > 0 {
+		fills = append(fills, redemptionTransferFills...)
+		fills = dedupeContributionFills(fills)
+		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_from_transfer_ledger")
+	}
 	ordinaryFills := fills[:0]
 	for _, fill := range fills {
 		if strings.TrimSpace(fill.Symbol) == reverseRepoSymbol && fill.Exchange == trading.ExchangeSH {
@@ -238,6 +255,10 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 
 	instruments, marketFlags := service.loadContributionInstruments(ctx, normalizedDate, securityIDs)
 	result.QualityFlags = appendUnique(result.QualityFlags, marketFlags...)
+	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
+	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
+	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
+	t0Buckets := buildT0CostBuckets(accountID, normalizedDate, t0Groups)
 	if normalizedDate != inception.InceptionDate {
 		factors, factorsAvailable, factorFlags := service.loadCorporateActionFactors(ctx, normalizedDate, securityIDs)
 		result.QualityFlags = appendUnique(result.QualityFlags, factorFlags...)
@@ -279,6 +300,9 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	consumedOrderFees := make(map[string]bool)
 
 	for _, fill := range fills {
+		if t0Buckets.consumedFills[contributionFillKey(fill)] {
+			continue
+		}
 		key := contributionSecurityID(fill.Symbol, fill.Exchange)
 		state := working[key]
 		instrument := instruments[key]
@@ -317,6 +341,10 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			state.flags = appendUnique(state.flags, "etf_subscription_redemption_requires_separate_cost_bucket")
 			state.item.Status = "blocked"
 		}
+	}
+	for _, state := range t0Buckets.states {
+		state.item.CalculatedAt = result.CalculatedAt
+		result.Positions = append(result.Positions, state.item)
 	}
 
 	keys := make([]string, 0, len(working))
@@ -411,6 +439,15 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 		if item.QuantityResidual != 0 {
 			result.Summary.QuantityBreaks++
 		}
+		if isT0CostBucket(item.CostBucket) {
+			result.Summary.T0CostBuckets++
+			result.Summary.T0BuyQuantity += item.BuyQuantity
+			result.Summary.T0RedemptionQuantity += item.SellQuantity
+			result.Summary.T0BuyAmount += item.BuyAmount
+			if item.Status == "blocked" {
+				result.Summary.T0BlockedBuckets++
+			}
+		}
 		switch item.CorporateActionType {
 		case "price_adjustment":
 			result.Summary.CorporateActions++
@@ -442,6 +479,7 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 	result.Summary.CloseTotalCost = roundMoney(result.Summary.CloseTotalCost)
 	result.Summary.CloseMarketValue = roundMoney(result.Summary.CloseMarketValue)
 	result.Summary.UnrealizedPnL = roundMoney(result.Summary.UnrealizedPnL)
+	result.Summary.T0BuyAmount = roundMoney(result.Summary.T0BuyAmount)
 	if result.Summary.BlockedItems > 0 || result.Summary.QuantityBreaks > 0 {
 		result.Status = "blocked"
 	} else if result.Summary.EstimatedItems > 0 || result.Summary.MissingFeeItems > 0 {

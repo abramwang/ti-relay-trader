@@ -105,6 +105,27 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 	if err != nil || len(costStates) != 1 || costStates[0].CorporateActionQuantityDelta != 200 {
 		t.Fatalf("ListPositionCostStates() states/error = %#v/%v", costStates, err)
 	}
+	if _, err := repo.UpsertPositionCostState(ctx, PositionCostState{
+		AccountID:      accountID,
+		TradeDate:      "2026-06-13",
+		Symbol:         "588200",
+		Exchange:       "SH",
+		CostBucket:     "ETF_T0:basket-1",
+		Status:         "calculated",
+		FormulaVersion: "performance_position_cost.v3",
+		BuyQuantity:    1000,
+		BuyAmount:      1200,
+		SellQuantity:   1000,
+		FeeSource:      "included_in_etf_t0_friction",
+		OpeningSource:  "explicit_t0_order_group",
+		QualityFlags:   []string{"etf_t0_cost_separated", "etf_t0_redemption_cost_released"},
+	}); err != nil {
+		t.Fatalf("UpsertPositionCostState() T0 bucket error = %v", err)
+	}
+	costStates, err = repo.ListPositionCostStates(ctx, PositionCostStateQuery{AccountID: accountID, TradeDate: "20260613"})
+	if err != nil || len(costStates) != 2 || costStates[0].CostBucket != "CORE" || costStates[1].CostBucket != "ETF_T0:basket-1" {
+		t.Fatalf("ListPositionCostStates() cost buckets/error = %#v/%v", costStates, err)
+	}
 
 	order := trading.Order{
 		AccountID:      accountID,

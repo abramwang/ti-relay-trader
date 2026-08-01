@@ -1360,6 +1360,130 @@ func TestCalculateCostLedgerBlocksCorporateActionQuantityMismatch(t *testing.T) 
 	}
 }
 
+func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testing.T) {
+	location := timeutil.Location()
+	buyTime := time.Date(2026, 8, 3, 10, 0, 0, 0, location)
+	redeemTime := buyTime.Add(10 * time.Minute)
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-08-03",
+			Status:                "confirmed",
+			OpeningPositionSource: "broker_open_snapshot",
+		},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "159915", Exchange: trading.ExchangeSZ, Quantity: 100, AvgCost: 4}},
+			"close": {{AccountID: "acct-1", Symbol: "159915", Exchange: trading.ExchangeSZ, Quantity: 200}},
+		},
+		orders: []trading.Order{
+			{
+				AccountID: "acct-1", GatewayOrderID: "t0-buy", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, OrderQty: 1000,
+				T0OrderGroupID: "basket-1", AcceptedAt: buyTime,
+			},
+			{
+				AccountID: "acct-1", GatewayOrderID: "core-buy", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, OrderQty: 100,
+				AcceptedAt: buyTime.Add(time.Minute),
+			},
+			{
+				AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, OrderQty: 1000,
+				T0OrderGroupID: "basket-1", AcceptedAt: redeemTime,
+			},
+		},
+		fills: []trading.Fill{
+			{
+				FillID: "t0-buy-fill", AccountID: "acct-1", GatewayOrderID: "t0-buy", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, Price: 4.8, Qty: 1000,
+				T0OrderGroupID: "basket-1", MatchedAt: buyTime,
+			},
+			{
+				FillID: "core-buy-fill", AccountID: "acct-1", GatewayOrderID: "core-buy", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, Price: 4.7, Qty: 100, Fee: 1,
+				MatchedAt: buyTime.Add(time.Minute),
+			},
+			{
+				FillID: "t0-redeem-fill", AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 1000,
+				T0OrderGroupID: "basket-1", MatchedAt: redeemTime,
+			},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "159915.SZ", "instrument_type": "etf",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "159915.SZ", "pre_close": 4.6, "close": 4.9,
+		}}}},
+		cashComponents: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "159915.SZ", "unit_subscribe_redeem": 1000,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260803", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3" {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(result.Positions) != 2 || result.Summary.T0CostBuckets != 1 || result.Summary.T0BlockedBuckets != 0 {
+		t.Fatalf("positions/summary = %#v / %#v", result.Positions, result.Summary)
+	}
+	var core, t0 ledger.PositionCostState
+	for _, item := range result.Positions {
+		if item.CostBucket == "CORE" {
+			core = item
+		} else if item.CostBucket == "ETF_T0:basket-1" {
+			t0 = item
+		}
+	}
+	if core.CloseQuantity != 200 || core.BuyQuantity != 100 || core.BrokerCloseQuantity != 200 || core.QuantityResidual != 0 {
+		t.Fatalf("core = %#v", core)
+	}
+	assertClose(t, core.CloseTotalCost, 871)
+	if t0.BuyQuantity != 1000 || t0.SellQuantity != 1000 || t0.CloseQuantity != 0 || t0.CloseTotalCost != 0 {
+		t.Fatalf("t0 = %#v", t0)
+	}
+	assertClose(t, t0.BuyAmount, 4800)
+	if t0.FeeSource != "included_in_etf_t0_friction" || !containsString(t0.QualityFlags, "etf_t0_cost_separated") {
+		t.Fatalf("t0 quality = %#v", t0)
+	}
+	if result.Summary.T0BuyQuantity != 1000 || result.Summary.T0RedemptionQuantity != 1000 || result.Summary.T0BuyAmount != 4800 {
+		t.Fatalf("t0 summary = %#v", result.Summary)
+	}
+}
+
+func TestBuildT0CostBucketsBlocksAmbiguousHistoricalGroup(t *testing.T) {
+	group := t0RedemptionGroup{
+		securityID:     "588200.SH",
+		groupID:        "redeem-1",
+		redemptionUnit: 1000,
+		flags:          []string{"historical_t0_order_group_inferred", "ambiguous_t0_order_group"},
+		buyFills: []trading.Fill{{
+			FillID: "buy", AccountID: "acct-1", GatewayOrderID: "buy-1", Symbol: "588200", Exchange: trading.ExchangeSH,
+			TradeSide: trading.TradeSideBuy, Price: 1.2, Qty: 1000,
+		}},
+		redemptions: []trading.Fill{{
+			FillID: "redeem", AccountID: "acct-1", GatewayOrderID: "redeem-1", Symbol: "588200", Exchange: trading.ExchangeSH,
+			TradeSide: trading.TradeSideRedemption, Qty: 1000,
+		}},
+	}
+	result := buildT0CostBuckets("acct-1", "2026-08-03", []t0RedemptionGroup{group})
+	if len(result.states) != 1 || result.states[0].item.Status != "blocked" {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.states[0].item.CostBucket != "ETF_T0:redeem-1" || !containsString(result.states[0].flags, "ambiguous_t0_order_group") {
+		t.Fatalf("state = %#v", result.states[0])
+	}
+}
+
 func TestReconcileEconomicNAVUsesNextOpenObservation(t *testing.T) {
 	store := &fakePerformanceStore{
 		navs: []ledger.PerformanceNAV{{
