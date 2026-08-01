@@ -211,7 +211,7 @@ Meridian 当前纳入 relay 规划的市场数据契约入口：
 - `GET /v1/market/etf-cash-components`
 - `GET /v1/market/etf-pcf-status`
 
-P8 价格和基准计算只依赖 `bars`，ETF T0 额外使用 PCF 最小申赎单位做数量约束。交易端暂不接入实时 level2，也不规划 `trades/orders/order-queues`。Meridian SDK `0.1.15` 的 replay/task/cursor 能力归 Prism/回测边界，Relay 不引入 Meridian Python 包运行时依赖。
+P8 价格和基准计算只依赖 `bars`，ETF T0 额外使用 PCF 最小申赎单位做数量约束。交易端暂不接入实时 level2，也不规划 `trades/orders/order-queues`。Meridian SDK `0.1.17` 的 replay/task/cursor、分钟线分块和行业分类能力归 Prism/回测边界，Relay 不引入 Meridian Python 包运行时依赖；Relay 核心继续使用 Go HTTP 薄客户端。
 
 不要把内网资源里的密码、Token、生产账号、柜台地址写入仓库。
 

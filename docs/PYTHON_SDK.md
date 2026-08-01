@@ -82,7 +82,7 @@ sdk/python/
 Meridian 当前参考命令：
 
 ```bash
-python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk-0.1.15.tar.gz"
+python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk-0.1.17.tar.gz"
 ```
 
 relay SDK 当前命令：
@@ -342,7 +342,7 @@ client = RelayClient(
 | `get_meridian_etf_cash_components(security_ids=..., trade_date=...)` | `GET /v1/meridian/market/etf-cash-components` | 查询 ETF PCF 现金清单和 `unit_subscribe_redeem` 最小申赎单位 |
 | `get_meridian_etf_pcf_status()` | `GET /v1/meridian/market/etf-pcf-status` | 查询 PCF 最近同步交易日和任务状态 |
 
-Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go HTTP 薄客户端读取交易页和账表所需数据，因此运行时不安装 Meridian Python SDK；策略研究若需要 Meridian `0.1.15` 的市场回放、全市场任务或游标消费，应直接使用 Meridian SDK，并把这类行情处理放在 Prism/回测侧。
+Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go HTTP 薄客户端读取交易页和账表所需数据，因此运行时不安装 Meridian Python SDK；策略研究若需要 Meridian `0.1.17` 的市场回放、全市场任务、游标消费或行业分类能力，应直接使用 Meridian SDK，并把这类行情处理放在 Prism/回测侧。Meridian `0.1.16` 增加了明确证券的多日分钟线分块，但不改变 Relay 的 Go HTTP 调用链路；两类 Python 客户端都应禁用内网请求的环境代理或正确设置 `NO_PROXY`。
 
 ### 交易
 
