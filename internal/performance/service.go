@@ -1072,7 +1072,9 @@ func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry,
 	sessionSeconds := sessionEnd.Sub(sessionStart).Seconds()
 	for _, flow := range flows {
 		weight := 0.5
-		if !flow.EffectiveAt.IsZero() {
+		if cashFlowHasDateOnlyPrecision(flow) {
+			flags = appendUnique(flags, "external_flow_time_estimated_mid_session")
+		} else if !flow.EffectiveAt.IsZero() {
 			effectiveAt := flow.EffectiveAt.In(timeutil.Location())
 			switch {
 			case !effectiveAt.After(sessionStart):
@@ -1100,6 +1102,14 @@ func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry,
 		denominator = openNAV
 	}
 	return roundMoney(denominator), details, flags
+}
+
+func cashFlowHasDateOnlyPrecision(flow ledger.CashLedgerEntry) bool {
+	if flow.RawPayload == nil {
+		return false
+	}
+	precision, _ := flow.RawPayload["effective_time_precision"].(string)
+	return strings.EqualFold(strings.TrimSpace(precision), "date")
 }
 
 func overnightCashAmount(items []ledger.CashLedgerEntry, observedDate time.Time, flowClass string) (float64, int, []string) {

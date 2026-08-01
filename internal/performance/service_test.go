@@ -816,6 +816,28 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 	}
 }
 
+func TestCalculateReturnDenominatorUsesMidSessionWeightForDateOnlyCashFlow(t *testing.T) {
+	tradeDate := time.Date(2026, 7, 29, 0, 0, 0, 0, timeutil.Location())
+	flows := []ledger.CashLedgerEntry{{
+		EntryID:     "withdraw-date-only",
+		Amount:      -200,
+		EffectiveAt: time.Date(2026, 7, 29, 15, 0, 0, 0, timeutil.Location()),
+		RawPayload: map[string]any{
+			"effective_time_precision": "date",
+		},
+	}}
+
+	denominator, details, flags := calculateReturnDenominator(1000, flows, tradeDate)
+
+	assertClose(t, denominator, 900)
+	if len(details) != 1 || details[0]["weight"] != 0.5 || details[0]["weighted"] != -100.0 {
+		t.Fatalf("weight details = %#v", details)
+	}
+	if !containsString(flags, "external_flow_time_estimated_mid_session") {
+		t.Fatalf("flags = %#v", flags)
+	}
+}
+
 func TestCalculateEconomicNAVUsesMeridianPositionValuationInsteadOfBrokerCost(t *testing.T) {
 	store := &fakePerformanceStore{
 		daily: ledger.DailyPerformance{

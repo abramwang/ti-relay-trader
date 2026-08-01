@@ -540,6 +540,7 @@ OC 当前没有完整资金流水接口，外部入出金和柜台资金变化�
 2. open 与 close 之间生效的外部资金用于修正当日收益；close 之后的记录归入下一交易日。
 3. 内部柜台划转无论何时发生都不改变账户经济净资产。若 Relay 暂时只能看到一侧余额，使用人工记录补齐资产桥并标记 `partial_counter_visibility`，不得把可见资金下降当作亏损。
 4. 红利若已通过 Meridian `pre_close` 进入证券日收益，不得在证券贡献中重复增加；实际红利现金只用于账户资产桥和分类核对。
+5. 只确认交易日、无法取得精确时刻的盘中外部资金，不伪造事件级精度：`raw_payload.effective_time_precision=date`，`effective_at` 使用可审计的盘中基准时刻，Modified Dietz 分母采用 `0.5` 权重，并输出 `external_flow_time_estimated_mid_session`。后续取得银行或柜台精确时间后，以冲正/修订记录重算。
 
 第一版页面建议在 `/trade#performance-settings` 提供“费用规则”和“资金流水”两个 tab。资金流水支持账户、日期、分类和状态过滤，提供新增、确认、冲正、CSV 导入导出及未配平内部划转提示。该页面是生产敏感写入口，不复用交易权限开关，需要独立的绩效配置写权限和完整审计。
 
@@ -579,7 +580,7 @@ provisional_close_economic_nav =
 1. `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD`：只读试算，不写库，生产环境可安全使用。
 2. `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild`：受 `performance.settings_write_enabled` 保护，写入新的 current `performance_nav_versions`，并把同账户同交易日旧 current 版本退役。
 3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
-4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。
+4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。只有日期精度的盘中资金流固定使用 `0.5` 权重并携带估算质量标记。
 5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
 6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，`/trade#performance` 已提供正式状态告警和页面复核操作流。
 
@@ -782,6 +783,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
+8. `307000051387` 的 `2026-07-29` 百万元盘中出金已按 confirmed `external_flow` 纳入 v2：精确时刻未知时使用日期精度和 `0.5` 权重，重算日盈亏 `+71,089.76` 元、收益率 `+0.141192%`、归因残差 `-458.48` 元，当日由 blocked 降为 provisional；`2026-07-30` 的 18 个数量差异继续独立阻断。
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。该账户的历史持仓不是“空仓起算”，但因无 ETF 申赎，不存在申赎对柜台成本的污染。
 

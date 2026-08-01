@@ -3861,7 +3861,8 @@
       official_performance_nav_unavailable: "缺少正式 v2 净值",
       cash_only_snapshot_not_performance_nav: "现金快照不作为绩效净值",
       position_quantity_not_reconciled: "持仓数量未闭合",
-      position_quantity_bridge_incomplete: "持仓数量桥不完整"
+      position_quantity_bridge_incomplete: "持仓数量桥不完整",
+      external_flow_time_estimated_mid_session: "外部资金发生时间按盘中估算"
     }[value] || value || "未知质量标记";
   }
 
