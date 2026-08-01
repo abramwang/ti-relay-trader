@@ -799,11 +799,30 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 
 待完成项：
 
-1. 配置四账户的实际费率和最低收费，将 provisional 升级为 finalized。
-2. 使用 Meridian 除权因子处理股票和 ETF 的公司行为，保持总成本连续并调整单位成本/数量桥。
-3. 在出现 ETF 申赎前实现 `CORE` 与 `ETF_T0:{group_id}` 独立成本池，引入 PCF、现金替代和跨市场回款质量标记。
-4. 债享5号人工金标已进入独立版本化审计表，并可由 `relayctl performance-gold-compare` 从数据库驱动只读比较；下一步先解决 7 月 23 日证券贡献阻断和连续区间门禁，再分批重建更早曲线，并完成其余三账户金标验收。
-5. 给研究侧导出 view 增加 v2 版本，保留 v1 作原始柜台参考。
+1. 下一个交易日采集四账户实际订单费用，按账户和交易维度校准费率及最低收费。用户确认开户后费率未调整，校准规则可向历史起算日外推；回算值标记为 `estimated_from_broker_calibration`，不冒充历史柜台实际费用。
+2. 为 7 月 31 日等缺 OC close 快照的日期建立独立衍生日终观察，优先使用下一交易日 open 反推，并以当日 open + 完整成交/划转 + 资金流水正向推演作为次级来源。
+3. 使用 Meridian 除权因子处理股票和 ETF 的公司行为，保持总成本连续并调整单位成本/数量桥。
+4. 在出现 ETF 申赎前实现 `CORE` 与 `ETF_T0:{group_id}` 独立成本池，引入 PCF、现金替代和跨市场回款质量标记。
+5. 债享5号人工金标已进入独立版本化审计表，并可由 `relayctl performance-gold-compare` 从数据库驱动只读比较；下一步先解决 7 月 23 日证券贡献阻断和连续区间门禁，再分批重建更早曲线，并完成其余三账户金标验收。
+6. 给研究侧导出 view 增加 v2 版本，保留 v1 作原始柜台参考。
+
+### 历史费用校准口径
+
+OC `broker_order_fund_detail` 只能查询当前柜台交易日，因此 Relay 不生成伪造的历史实际费用。用户已确认现有账户开户后交易费率稳定，后续采用可审计的参数校准回算：
+
+1. 每个账户至少采集覆盖沪深市场、股票/ETF、买入/卖出和普通二级市场业务的订单费用样本；按 `commission/stamp_tax/transfer_fee/handling_fee/regulatory_fee/settlement_fee/other_fee` 分项校准，不能只用 `total_fee / turnover` 一个比例替代全部规则。
+2. 佣金同时拟合比例和最低收费。单个小额订单只能证明最低佣金，不能据此反推佣金率；样本不足的交易维度保持 `missing_fee_calibration_sample`。
+3. 校准结果保存为版本化账户 fee rule，记录样本交易日、订单数、成交额范围、拟合误差、确认人、历史有效起点和来源费用记录。真实订单费用始终高于估算规则优先级。
+4. 历史回算保存 `estimated_fee`、`effective_fee`、`fee_rule_version` 和 `fee_source=estimated_from_broker_calibration`。只有费用覆盖矩阵完整且账户级 NAV/人工金标残差通过门禁时，才允许从 blocked 升为 provisional；是否 finalized 仍由 T+1 对账或人工复核决定。
+
+### 缺失日终快照的衍生口径
+
+缺失 OC close 快照时不覆盖原始表，而是生成研究侧衍生日终观察并保存完整输入。来源优先级为：
+
+1. `next_open_backcast`：使用下一交易日 OC open 资金和持仓，扣除隔夜外部资金、确认收益费用、逆回购回款、ETF 清算差额和 Meridian 公司行为后反推前一日 close。
+2. `same_day_ledger_forward`：下一 open 尚不可用时，从当日 OC open 出发，按完整普通成交、ETF 划转、确认资金流水和结算事件推演日终数量与现金，并使用 Meridian 当日 close 重估持仓。
+3. 同时具备两种来源时执行双向核对；数量逐证券相等且现金/NAV 残差不超过配置阈值才可发布 provisional。任何未终态订单、成交数量缺口、未知现金流或缺行情都会阻断。
+4. 衍生记录必须携带 `source_method`、输入快照 ID、订单/成交/划转计数、行情 schema、公司行为因子、残差和质量标记；不得写成 `source=oc`，也不得用于修改原始 `asset_snapshots` 或 `position_snapshots`。
 
 ## 第一版边界
 
