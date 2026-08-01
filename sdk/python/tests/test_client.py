@@ -113,6 +113,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/accounts/acct-1/performance/cost-ledger/preview":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "cost_ledger": {
+                            "account_id": "acct-1",
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "status": "calculated",
+                            "persisted": False,
+                            "quality_flags": [],
+                        }
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/accounts/acct-1/performance/economic-nav/reconcile":
             self._json(
                 {
@@ -390,9 +406,10 @@ class RelayHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parsed = parse.urlparse(self.path)
+        query = parse.parse_qs(parsed.query)
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        RelayHandler.requests.append(("POST", parsed.path, {}, body))
+        RelayHandler.requests.append(("POST", parsed.path, query, body))
         if parsed.path == "/v1/orders":
             if body.get("gateway_order_id") == "gw-replay":
                 self._json(
@@ -475,6 +492,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "trade_date": body.get("trade_date"),
                             "persisted": True,
                             "nav": {"status": body.get("status")},
+                        }
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/accounts/acct-1/performance/cost-ledger/rebuild":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "cost_ledger": {
+                            "account_id": "acct-1",
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "status": "calculated",
+                            "persisted": True,
+                            "quality_flags": [],
                         }
                     },
                 }
@@ -642,6 +675,12 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(RelayHandler.requests[-1][2]["benchmark_security_id"], ["000300.SH"])
         preview = self.client.preview_economic_nav(trade_date="20260612")
         self.assertFalse(preview["persisted"])
+        cost_preview = self.client.preview_cost_ledger(trade_date="20260612")
+        self.assertFalse(cost_preview["persisted"])
+        self.assertEqual(cost_preview["status"], "calculated")
+        cost_rebuilt = self.client.rebuild_cost_ledger(trade_date="20260612")
+        self.assertTrue(cost_rebuilt["persisted"])
+        self.assertEqual(RelayHandler.requests[-1][2]["trade_date"], ["20260612"])
         rebuilt = self.client.rebuild_economic_nav(trade_date="20260612", status="finalized")
         self.assertTrue(rebuilt["persisted"])
         reconcile_preview = self.client.preview_economic_nav_reconciliation(trade_date="20260612", observed_trade_date="20260615")

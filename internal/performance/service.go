@@ -494,6 +494,18 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			status = "provisional"
 		}
 	}
+	if !contribution.Summary.FeeCoverageComplete {
+		result.QualityFlags = appendUnique(result.QualityFlags, "order_fee_day_incomplete", "broker_delivery_statement_pending")
+		if status == "finalized" {
+			status = "provisional"
+		}
+	}
+	if contribution.Summary.EstimatedFee > 0 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "net_performance_fee_estimated")
+		if status == "finalized" {
+			status = "provisional"
+		}
+	}
 	returnDenominator, weightedFlowDetails, denominatorFlags := calculateReturnDenominator(openEconomicNAV, externalFlows, parsedDate)
 	result.QualityFlags = appendUnique(result.QualityFlags, denominatorFlags...)
 	dailyReturn := 0.0
@@ -543,6 +555,10 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"effective_fee":                          contribution.Summary.EffectiveFee,
 				"missing_items":                          contribution.Summary.MissingItems,
 				"missing_fee_items":                      contribution.Summary.MissingFeeItems,
+				"fee_required_orders":                    contribution.Summary.FeeRequiredOrders,
+				"fee_covered_orders":                     contribution.Summary.FeeCoveredOrders,
+				"fee_coverage_complete":                  contribution.Summary.FeeCoverageComplete,
+				"fee_coverage_source":                    contribution.Summary.FeeCoverageSource,
 				"attribution_residual":                   attributionResidual,
 			},
 			"unattributed": map[string]any{
@@ -954,6 +970,61 @@ func authoritativeOrderFees(records []ledger.OrderFeeRecord) map[string]ledger.O
 		}
 	}
 	return result
+}
+
+type orderFeeDayCoverage struct {
+	requiredOrders int
+	coveredOrders  int
+	complete       bool
+	source         string
+}
+
+func calculateOrderFeeDayCoverage(fills []trading.Fill, authoritativeFees map[string]ledger.OrderFeeRecord) orderFeeDayCoverage {
+	type fillGroup struct {
+		allFillFeesComplete bool
+	}
+	groups := make(map[string]fillGroup)
+	for index, fill := range fills {
+		key := strings.TrimSpace(fill.GatewayOrderID)
+		if key == "" {
+			fillID := strings.TrimSpace(fill.FillID)
+			if fillID == "" {
+				fillID = fmt.Sprintf("anonymous-%d", index)
+			}
+			key = "fill:" + fillID
+		}
+		group, exists := groups[key]
+		if !exists {
+			group.allFillFeesComplete = true
+		}
+		group.allFillFeesComplete = group.allFillFeesComplete && contributionFillHasCompleteActualFee(fill)
+		groups[key] = group
+	}
+
+	coverage := orderFeeDayCoverage{requiredOrders: len(groups)}
+	if coverage.requiredOrders == 0 {
+		coverage.complete = true
+		coverage.source = "not_applicable"
+		return coverage
+	}
+	for key, group := range groups {
+		_, hasOrderFee := authoritativeFees[key]
+		if hasOrderFee || group.allFillFeesComplete {
+			coverage.coveredOrders++
+		}
+	}
+	coverage.complete = coverage.coveredOrders == coverage.requiredOrders
+	if coverage.complete {
+		coverage.source = "broker_order_or_fill"
+	} else {
+		coverage.source = "broker_statement_pending"
+	}
+	return coverage
+}
+
+func contributionFillHasCompleteActualFee(fill trading.Fill) bool {
+	feeSource := strings.TrimSpace(contributionString(fill.AdapterContext["fee_source"]))
+	return feeSource != "unavailable" && (fill.Fee > 0 || contributionBool(fill.AdapterContext["fee_complete"]))
 }
 
 func (service *Service) openEconomicNAV(ctx context.Context, accountID, tradeDate string, daily ledger.DailyPerformance) (float64, []string, error) {

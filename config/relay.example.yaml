@@ -82,6 +82,9 @@ jobs:
   post_close_settlement:
     enabled: true
     schedule: "1 15 * * 1-5"
+  performance_daily:
+    enabled: true
+    schedule: "45 17 * * 1-5"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

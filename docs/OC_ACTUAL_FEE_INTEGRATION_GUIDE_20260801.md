@@ -143,6 +143,7 @@ OC 在 `reply` Stream 返回一条终态 `fee_page`：
 5. `order.list.query`、`fill.list.query` 和实时事件中 `fee_source=unavailable` 的 `fee` 不参与实际费用优先级。
 6. `other_fee` 是柜台总费用与公开分项的残差；总账以 `total_fee` 为准，不应再把 `other_fee` 之外的分项重复相加计费。
 7. 同一请求因 Redis 重投而回放时，按 `origin_message_id` 去重；不同请求查询同一交易日时，按稳定 `fee_record_id` 覆盖。
+8. Relay 将交易字段完整性与费用完整性分开判断。缺少费用不影响字段完备订单参与数量、成本、成交额和毛收益计算；当日有成交订单的费用覆盖不完整时，仅将净绩效保持为 provisional 并等待券商交割单。
 
 ## 6. 失败码
 

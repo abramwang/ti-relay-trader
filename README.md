@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断和人工金标已落地。OC `fee.list.query/fee_page` 已接入；下一个交易日将以订单实费校准账户级版本化费率，用户确认开户后费率未调整，历史按 `estimated_from_broker_calibration` 回算。7 月 31 日缺 OC close 的账户采用下一 open 反推、当日账本正推的独立衍生日终观察，Meridian `adjust-factors` 纳入公司行为连续性。当前仍等待 `307000051387/2026-07-30` 权威成交回填。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断、人工金标和 OC 当日订单实费已落地。当前优先建立 OC 新版本后完整交易日的每日绩效流水线，按账户独立检查订单、成交、费用、资金持仓和 Meridian 行情后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-08-01`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -99,7 +99,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 │   └── relay/
 │       ├── api/         # 对外 API 服务，默认监听 9092
 │       ├── connectors/  # 实盘柜台、券商、网关适配器
-│       ├── jobs/        # Python 盘前初始化和收盘后结算任务
+│       ├── jobs/        # Python 盘前、盘后和每日绩效任务
 │       ├── schemas/     # 标准化请求、响应、事件、账表模型
 │       └── services/    # 业务服务与编排逻辑
 └── tests/
@@ -138,8 +138,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
 | `http://relay-trader.quantstage.com/operations` | Gateway 心跳、Redis Stream lag、checkpoint 与 DLQ 运维 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.23.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.23.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -302,7 +302,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 完成 N13 四账户金标验收：债享5号人工金标审计来源已落库；下一步先修复 7 月 23 日贡献阻断和连续区间门禁，再分批重建更早 v2.1 曲线。并行通过 OC 权威查询/重放修复 `307000051387/2026-07-30` 错配成交，补齐缺失 close 快照并配置四账户真实费率。
+1. 完成 N13 新数据口径验收：等待 OC 实费版本后的首个完整交易日，由 17:45 `performance_daily` 对 `307000051387/1388/1389` 和债享5号逐账户验证订单、成交、费用、资金持仓、行情、成本账和 economic NAV；只有 `ready` 账户才能进入正式绩效发布。7 月历史缺口不再调用 OC 或推断补齐，后续单独导入券商交割单。
 2. 为 N13 成本账接入 Meridian 除权因子，并在出现首笔 ETF 申赎前完成 `CORE` 与 `ETF_T0:{group_id}` 成本分账。
 3. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
@@ -325,7 +325,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 阻塞与风险
 
-- N13 金标验收仍有明确数据阻塞：`307000051387/2026-07-30` 有 18 个证券数量桥不平，其中 `510810.SH` 委托成交量 `76,400` 而成交表只有 `300`；在 OC 提供权威成交回填前，Relay 保持该日 blocked，不生成临时补账。`2026-07-29` 百万元出金已确认落账，不再是阻塞项。
+- N13 历史诊断仍记录 `307000051387/2026-07-30` 的 18 个证券数量桥不平，其中 `510810.SH` 委托成交量 `76,400` 而成交表只有 `300`。OC 不具备历史查询能力，该日继续 blocked 且不生成临时补账，等待未来券商交割单导入；这不再阻塞 OC 新协议后完整交易日的主线验收。`2026-07-29` 百万元出金已确认落账。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:01 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 OC 由部署计划在交易日 15:30 关停；Relay 机器上的 15:10 `stop_services.sh` 只关闭本地行情采集进程，不包含 OC trader commander。Relay 的 gateway/stream 告警窗口已同步延长到 15:30。14:56 作为策略停止新增交易和预结算观察起点，15:01 仍执行资金、持仓、订单、成交权威刷新并固化日终快照。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
@@ -369,7 +369,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.23.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -588,4 +588,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 新增并生产应用 `000021_performance_nav_gold`，17 条债享5号人工净值金标以 `manual_user_confirmed` 独立版本化落库；确认人、东八区时间、原始列值、来源引用和内容哈希完整，重复导入仍为 17 个 current version 1。新增 `relayctl performance-gold-import/compare`，数据库对比为 16 条可计算、1 条 unavailable、8 条 blocked，7 月 22/28/29/30 日通过 0.01 元逐日门禁。因 7 月 23 日仍 blocked，暂不跨过该日重建 22/28 日，避免单日正确但累计曲线漏收益。详见 `docs/PERFORMANCE_NAV_GOLD.md`。
 - `2026-08-01`: 定位债享5号 7 月 23 日连续净值阻断：账户 NAV 与人工金标只差 `0.004028` 元，订单/成交数量闭合；155 个股票卖出项缺实际费用，`1,567,206.34` 元卖出额对应 `1,075.885972` 元归因残差，即 `6.864992 bp`，超过 537.56 元警告阈值。7 月 22 日小额卖出残差仅 277.89 元并未阻断，残差随成交额放大，符合费用缺失。Relay 不从金标倒推实际费用，下一步等待 OC 结算费用或账户独立费率合同参数。
 - `2026-08-01`: 按 OC 新文档接入订单实际费用：新增 `fee.list.query/fee_page` 解析和 `000022_order_fee_records`，稳定键为 `account_id + fee_record_id`，完整性门禁为 `fee_complete && association_complete`。普通证券贡献、移动成本账和逆回购优先使用订单费用且同一订单只扣一次；ETF 申赎 T0 保持独立 15bp 摩擦模型。新增费用查询/刷新 API、API Console、盘后刷新步骤并发布 `relay-sdk 0.1.23`；费用先于订单到达时，相同记录重放也会补全订单关联。迁移 22 已应用到生产，交易权限保持关闭；`2026-08-01` 为非交易日且 OC 已离线，因此未向生产 Stream 发布无效查询，首个交易日仍需完成六账户 `fee_page` 实数验收。OC 当前只支持柜台当前交易日，历史费用仍需独立导入。Go 全量测试、SDK 18/18、任务测试和临时 PostgreSQL 全迁移集成测试通过。
-- `2026-08-01`: 用户确认现有账户开户后费率未再次调整，历史费用方案由“等待历史柜台接口”调整为“最新交易日实费校准、版本化规则回溯估算”：真实费用与历史估算分层保存，最低佣金和不同市场/品种/方向分别拟合，样本不足不强行填值。7 月 31 日缺 OC close 采用下一交易日 open 反推优先、当日完整账本正推次之的衍生日终观察，结果只作 provisional 且不覆盖 OC 原始快照；Meridian `adjust-factors` 已列入随后公司行为开发任务。
+- `2026-08-01`: 绩效优先级再次收紧：OC 不具备历史查询能力，当前不以最新费率外推 7 月历史，也不以衍生 close 替代 7 月 31 日 OC 缺失快照；历史等待券商交割单后通过独立导入流程补齐。当前先保证 OC 新版本后的完整交易日可逐账户通过订单、成交、费用、资金持仓和 Meridian 行情门禁并正常计算，Meridian `adjust-factors` 保留为随后开发任务。
+- `2026-08-01`: 新增只读 `performance_daily` 每日绩效计算任务，生产计划为交易日 17:45，位于 Meridian 17:35 日线同步之后；任务对可信四账户分别试算移动成本账和 economic NAV，输出 `ready/attention/blocked`、费用完整性和质量标记，单户异常不使整批失败，也不绕过绩效写保护。SDK `0.1.24` 新增 `preview_cost_ledger/rebuild_cost_ledger`。用 7 月 30 日旧账本演练得到 0 ready、2 attention、2 blocked：两户准确识别历史费用缺失，`307000051387` 准确识别数量桥阻断，零资产账户独立阻断；任务本身 `ok=true`，未写入历史绩效。
+- `2026-08-01`: 明确交易可用性与费用完备性分离：订单核心字段及成交关联完整时，即使缺少费用也继续用于数量、成本、成交额和毛收益；费用覆盖按当日有成交的唯一订单统计，缺口仅使净绩效保持 provisional、标记等待券商交割单，不把订单判为无效数据。
+- `2026-08-01`: `performance_daily` 已接入通用任务告警：绩效 `blocked` 账户聚合为 critical，费用待完善的 `attention` 账户聚合为 warning，并与任务交易日共同生成幂等去重键。Go 全包、后台任务 21 项、SDK 18 项和 `relay-sdk 0.1.24` 发布包检查通过；生产任务配置与 cron 均为交易日 17:45，计算过程只读且不查询 OC。

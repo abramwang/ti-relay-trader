@@ -156,6 +156,43 @@ class JobAlertTest(unittest.TestCase):
         self.assertEqual(delivery["severity"], "critical")
         self.assertEqual(delivery["issue_types"], ["account_errors", "snapshot_blocked"])
 
+    def test_performance_account_results_build_aggregated_alert(self) -> None:
+        report = base_report()
+        report["job"] = "performance_daily"
+        report["performance_blocked_accounts"] = ["acct-blocked"]
+        report["performance_attention_accounts"] = ["acct-attention"]
+        opener = FakeOpener([204])
+        config = AlertConfig(
+            enabled=True,
+            environment="production",
+            webhook_url="https://alerts.example/relay",
+        )
+
+        delivery = dispatch_daily_job_alert(report, config=config, opener=opener)
+
+        self.assertEqual(delivery["severity"], "critical")
+        self.assertEqual(
+            delivery["issue_types"],
+            ["performance_blocked", "performance_attention"],
+        )
+        payload = json.loads(opener.requests[0][0].data.decode("utf-8"))
+        self.assertEqual(payload["accounts"], ["acct-attention", "acct-blocked"])
+        self.assertIn("每日绩效计算", payload["title"])
+        self.assertEqual(
+            payload["details"]["performance_blocked_accounts"],
+            ["acct-blocked"],
+        )
+
+    def test_performance_attention_is_warning(self) -> None:
+        report = base_report()
+        report["job"] = "performance_daily"
+        report["performance_attention_accounts"] = ["acct-attention"]
+
+        delivery = dispatch_daily_job_alert(report, config=AlertConfig())
+
+        self.assertEqual(delivery["severity"], "warning")
+        self.assertEqual(delivery["issue_types"], ["performance_attention"])
+
     def test_main_persists_alert_delivery_into_same_job_run(self) -> None:
         options = common.JobOptions(job_name="post_close_settlement", persist=True, trigger="cron")
         calls = []

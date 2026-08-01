@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.23.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"
 ```
 
 ## Quick Start
@@ -140,6 +140,8 @@ P8 helper methods are available for strategy and research tooling:
 - `get_performance_daily(trade_date=...)`
 - `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)`
 - `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)`
+- `preview_cost_ledger(trade_date=...)`
+- `rebuild_cost_ledger(trade_date=...)`
 - `preview_economic_nav(trade_date=...)`
 - `rebuild_economic_nav(trade_date=..., status="provisional")`
 - `list_economic_nav(trade_date=...)`

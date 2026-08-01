@@ -18,7 +18,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.23"
+SDK_VERSION = "0.1.24"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -472,6 +472,42 @@ class RelayClient:
             query={"trade_date": trade_date, "status": status},
         )
         return data.get("economic_nav", data)
+
+    def preview_cost_ledger(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Calculate the trusted position cost ledger without writing it."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/cost-ledger/preview",
+            query={"trade_date": trade_date},
+        )
+        return data.get("cost_ledger", data)
+
+    def rebuild_cost_ledger(
+        self,
+        *,
+        trade_date: str,
+        account_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Recalculate and persist the trusted position cost ledger.
+
+        Relay only accepts this request when server-side
+        ``performance.settings_write_enabled`` is enabled.
+        """
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "POST",
+            f"/v1/accounts/{parse.quote(account_id)}/performance/cost-ledger/rebuild",
+            query={"trade_date": trade_date},
+        )
+        return data.get("cost_ledger", data)
 
     def rebuild_economic_nav(
         self,

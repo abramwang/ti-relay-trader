@@ -109,6 +109,9 @@ func TestCalculateContributionsUsesPositionCashFlowIdentity(t *testing.T) {
 	if item.FeeSource != "actual" || result.Summary.NetContribution != 447 {
 		t.Fatalf("fees/summary = %#v / %#v", item, result.Summary)
 	}
+	if !result.Summary.FeeCoverageComplete || result.Summary.FeeRequiredOrders != 2 || result.Summary.FeeCoveredOrders != 2 {
+		t.Fatalf("fee coverage = %#v", result.Summary)
+	}
 	if len(marketClient.queries) < 2 {
 		t.Fatalf("market queries = %#v", marketClient.queries)
 	}
@@ -143,6 +146,50 @@ func TestContributionFeeForFillChargesAuthoritativeOrderFeeOnce(t *testing.T) {
 	}
 }
 
+func TestCalculateOrderFeeDayCoverageRequiresEveryExecutedOrder(t *testing.T) {
+	fills := []trading.Fill{
+		{FillID: "fill-1", GatewayOrderID: "order-1", Price: 10, Qty: 100},
+		{FillID: "fill-2", GatewayOrderID: "order-1", Price: 10.1, Qty: 100},
+		{
+			FillID:         "fill-3",
+			GatewayOrderID: "order-2",
+			Price:          12,
+			Qty:            100,
+			AdapterContext: map[string]any{
+				"fee_complete": true,
+				"fee_source":   "broker_trade_query",
+			},
+		},
+	}
+	authoritative := authoritativeOrderFees([]ledger.OrderFeeRecord{{
+		GatewayOrderID:      "order-1",
+		FeeRecordID:         "fee-1",
+		TotalFee:            5,
+		FeeComplete:         true,
+		AssociationComplete: true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             time.Now(),
+	}})
+
+	coverage := calculateOrderFeeDayCoverage(fills, authoritative)
+	if !coverage.complete || coverage.requiredOrders != 2 || coverage.coveredOrders != 2 || coverage.source != "broker_order_or_fill" {
+		t.Fatalf("complete coverage = %#v", coverage)
+	}
+
+	delete(authoritative, "order-1")
+	coverage = calculateOrderFeeDayCoverage(fills, authoritative)
+	if coverage.complete || coverage.requiredOrders != 2 || coverage.coveredOrders != 1 || coverage.source != "broker_statement_pending" {
+		t.Fatalf("incomplete coverage = %#v", coverage)
+	}
+}
+
+func TestCalculateOrderFeeDayCoverageAllowsNoTradeDay(t *testing.T) {
+	coverage := calculateOrderFeeDayCoverage(nil, nil)
+	if !coverage.complete || coverage.requiredOrders != 0 || coverage.coveredOrders != 0 || coverage.source != "not_applicable" {
+		t.Fatalf("coverage = %#v", coverage)
+	}
+}
+
 func TestCalculateContributionFillFeeDoesNotTrustUnavailableFee(t *testing.T) {
 	fee := calculateContributionFillFee(trading.Fill{
 		Fee: 3,
@@ -153,6 +200,50 @@ func TestCalculateContributionFillFeeDoesNotTrustUnavailableFee(t *testing.T) {
 	}, contributionInstrument{}, nil)
 	if fee.actual != 0 || fee.source != "missing" || !containsString(fee.flags, "missing_fee_rule") {
 		t.Fatalf("fee = %#v", fee)
+	}
+}
+
+func TestCalculateOrderFeeDayCoverageUsesOneRecordPerOrder(t *testing.T) {
+	fees := authoritativeOrderFees([]ledger.OrderFeeRecord{{
+		GatewayOrderID:      "gw-covered",
+		FeeRecordID:         "fee-covered",
+		TotalFee:            6.25,
+		FeeComplete:         true,
+		AssociationComplete: true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             time.Date(2026, 8, 3, 15, 1, 0, 0, timeutil.Location()),
+	}})
+	coverage := calculateOrderFeeDayCoverage([]trading.Fill{
+		{FillID: "fill-1", GatewayOrderID: "gw-covered"},
+		{FillID: "fill-2", GatewayOrderID: "gw-covered"},
+		{FillID: "fill-3", GatewayOrderID: "gw-missing"},
+	}, fees)
+
+	if coverage.requiredOrders != 2 || coverage.coveredOrders != 1 || coverage.complete {
+		t.Fatalf("coverage = %#v", coverage)
+	}
+	if coverage.source != "broker_statement_pending" {
+		t.Fatalf("coverage source = %q", coverage.source)
+	}
+}
+
+func TestCalculateOrderFeeDayCoverageAcceptsCompleteFillFeeAndNoTradeDay(t *testing.T) {
+	noTrades := calculateOrderFeeDayCoverage(nil, nil)
+	if !noTrades.complete || noTrades.requiredOrders != 0 || noTrades.source != "not_applicable" {
+		t.Fatalf("no-trade coverage = %#v", noTrades)
+	}
+
+	fillCoverage := calculateOrderFeeDayCoverage([]trading.Fill{{
+		FillID:         "fill-zero-fee",
+		GatewayOrderID: "gw-zero-fee",
+		Fee:            0,
+		AdapterContext: map[string]any{
+			"fee_complete": true,
+			"fee_source":   "broker_fill_detail",
+		},
+	}}, nil)
+	if !fillCoverage.complete || fillCoverage.coveredOrders != 1 || fillCoverage.source != "broker_order_or_fill" {
+		t.Fatalf("fill coverage = %#v", fillCoverage)
 	}
 }
 

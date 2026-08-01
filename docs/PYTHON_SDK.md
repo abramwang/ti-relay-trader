@@ -35,9 +35,9 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.21.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.24.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
-18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率和异常订单。
+18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率和异常订单。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 20. `list_transfers()` 和 `ComponentTransfer` 独立读取 ETF 申赎成分股划转，不把划转混入普通成交。
 21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
@@ -88,15 +88,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.21.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.21.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.24.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -327,6 +327,8 @@ client = RelayClient(
 | `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
 | `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
+| `preview_cost_ledger(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/cost-ledger/preview` | 只读试算移动加权成本账和数量桥质量 |
+| `rebuild_cost_ledger(trade_date=...)` | `POST /v1/accounts/{account_id}/performance/cost-ledger/rebuild` | 重建并落库可信成本状态；需要服务器开启绩效写入 |
 | `preview_economic_nav(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/economic-nav/preview` | 只读试算 economic NAV、现金桥、逆回购和质量标记 |
 | `rebuild_economic_nav(trade_date=..., status=...)` | `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild` | 重建并落库 current economic NAV 版本和对账记录；需要服务器开启绩效写入 |
 | `preview_economic_nav_reconciliation(trade_date=..., observed_trade_date=...)` | `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile` | 只读预览 T+1 observed open assets 净值对账 |

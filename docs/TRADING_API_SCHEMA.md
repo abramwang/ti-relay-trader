@@ -396,6 +396,8 @@ OC 无法确定单笔委托身份或发现普通成交与订单证券、交易�
 
 `POST /v1/accounts/{account_id}/fees/refresh` 发布 OC `fee.list.query`，只支持 OC 当前柜台交易日；`GET /v1/accounts/{account_id}/fees` 查询已落库的订单费用，支持 `trade_date/date_from/date_to/gateway_order_id/fee_complete/limit/cursor`。`fee_page.account_total_fee` 仅用于账户级核对，不参与逐订单累计；费用记录由 `account_id + fee_record_id` 幂等更新，只有完整且关联成功的订单费用可进入绩效。历史费用不由该刷新接口回补。
 
+费用缺失不等于订单不可用。订单和成交核心字段及关联完整时，Relay 仍使用它计算数量桥、移动成本、成交额和毛收益；费用完整性按当日有成交的唯一 `gateway_order_id` 单独统计。覆盖不完整时，贡献摘要返回 `fee_required_orders/fee_covered_orders/fee_coverage_complete/fee_coverage_source`，并将净绩效标记为 provisional、等待券商交割单，不把订单标记为数据质量失败。
+
 ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订单的多条成交先按 `gateway_order_id` 聚合；历史买单只有在赎回前的目标委托量精确闭合赎回量时才组成推断 T0 订单组，其实际成交额作为买入成本。估算退出价值使用每条赎回成交时刻之前最近的 Meridian historical Level1 `iopv * qty`，再按服务端 `performance.etf_t0_friction_rate` 扣减综合摩擦成本。无法闭合买单、缺 IOPV 或缺价格时不返回伪精确盈亏，而是标记 `missing/estimated`。无日初/日终持仓且只有卖出的赎回成分股归为 `etf_component_transfer`，只保留成交额并从 T0 估算收益中排除，避免与 IOPV 退出价值重复计算。逆回购本金不进入普通卖出额，只有按实际占款天数计算的净息进入 `cash_management`。
 
 `GET /v1/accounts/{account_id}/performance/trade-quality` 是只读交易质量接口，支持单日 `trade_date` 或区间 `date_from/date_to`。接口完整扫描本地订单和成交账本，不触发 OC 查询；成交先按 `account_id + trade_date + gateway_order_id + fill_id` 去重，并在存在真实成交时排除同订单的 `relay-summary:*` 汇总成交。`summary` 返回有实际成交订单率、完全成交率、按委托数量计算的成交率、撤单率、拒单率、未终态订单、异常订单、孤立成交、成交额和费用；`anomalies` 返回拒单、未终态、订单/成交数量不一致、成交证券/方向/业务类型错配、终态时间缺失或跨日、终态冲突、柜台错误残留和成交缺委托等可追溯明细。OC 委托时间与 Redis 事件时间存在精度差时，`terminal_before_created` 使用 5 秒容差。`gateway_order_id` 只按账户内交易日唯一处理，区间统计不会把跨交易日复用的同 ID 错误关联。

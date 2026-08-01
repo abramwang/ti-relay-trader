@@ -24,6 +24,7 @@
   const knownJobs = [
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
     { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:01", purpose: "固化日终快照和对账输入" },
+    { name: "performance_daily", title: "每日绩效计算", expectedTime: "17:45", purpose: "逐账户计算成本账和经济净值质量" },
   ];
   const expectedRunGraceMinutes = 5;
 

@@ -389,7 +389,8 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股生产环境交易日收盘后结算，15:01 Asia/Shanghai。
 1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
-# 研究侧绩效导出当前通过 9092 API / PostgreSQL view 查询，不需要单独 cron。
+# Meridian 17:35 日线同步完成后，逐账户执行只读绩效计算和质量门禁。
+45 17 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-performance-daily.lock python3 -m relay.jobs.performance_daily --account-id 307000051387 --account-id 307000051388 --account-id 307000051389 --account-id 314000046830 --persist --trigger cron --output /var/log/relay/reports/performance_daily.json >> /var/log/relay/performance_daily.log 2>&1
 ```
 
 生产 OC 的部署计划当前在 15:30 关停。Relay 机器上另有一条 15:10 调用 `/home/dist/production_env/stop_services.sh` 的历史计划，该脚本只关闭本地行情采集进程，不包含 OC trader commander，不应再用它推断交易前置的关停时间。
@@ -416,13 +417,21 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
   --base-url http://relay-trader.quantstage.com \
   --dry-run \
   --output outputs/jobs/post_close_settlement.dry-run.json
+
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
+  --base-url http://relay-trader.quantstage.com \
+  --account-id 307000051387 \
+  --account-id 307000051388 \
+  --account-id 307000051389 \
+  --account-id 314000046830 \
+  --output outputs/jobs/performance_daily.json
 ```
 
-当前 `pre_open_init` 与 `post_close_settlement` 会输出 JSON 报告，包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 45 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 45 秒，也不会在等待期间重复查询柜台。`pre_open_init` 会在刷新后写入 `open_snapshot` 日初资产和日初持仓快照；`post_close_settlement` 在订单、成交之后额外发布 `fee.list.query`，记录完整/关联成功的订单实际费用，再写入 `settlement_snapshot` 日终资产/持仓快照。费用查询只支持 OC 当前柜台交易日，不用于历史补跑。单个账户柜台未就绪、查询为空、资金快照缺失或资金/持仓刷新未确认时，任务会在 `account_errors` 中独立标注；若刷新未确认，该账户还会进入 `snapshot_blocked_accounts` 并从本次快照账户列表中剔除，避免把旧持仓固化。整体任务仍可在其它账户正常时成功完成；Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题才会让任务失败。默认会调用 Meridian 交易日接口；如果目标日期不是交易日且未传 `--allow-non-trading-day`，任务会跳过账户刷新并以 `ok=true, skipped=true` 结束。
+当前三个任务都会输出 JSON 报告。`pre_open_init` 与 `post_close_settlement` 包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 45 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 45 秒，也不会在等待期间重复查询柜台。`pre_open_init` 写入 `open_snapshot`；`post_close_settlement` 额外发布 `fee.list.query` 后写入 `settlement_snapshot`。费用查询只支持 OC 当前柜台交易日，不用于历史补跑。`performance_daily` 不再查询柜台，只调用成本账和经济净值只读试算，按账户输出 `ready/attention/blocked`、费用完整性和质量标记。单个账户异常独立标注，系统依赖失败等全局问题才会让任务整体失败。非交易日默认以 `ok=true, skipped=true` 结束。
 
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 
-每日任务已内置 `relay.alert.v1` 通用 JSON Webhook。任务失败和快照阻断为 `critical`，单账户查询异常为 `warning`，刷新超时同时标记 `refresh_timeout` 与 `snapshot_blocked`；同一轮六账户异常只聚合投递一次。正常成功、非交易日正常跳过不发送，`--dry-run` 始终抑制通知。每条通知带稳定 `dedupe_key` 和 HTTP `Idempotency-Key`，网络异常、429 和 5xx 最多重试 3 次。投递结果保存到同一条 `job_runs.report.alert_delivery`，可在 `/jobs` 的“告警”列查看；通道失败不会把已成功的账表任务改判为失败。
+每日任务已内置 `relay.alert.v1` 通用 JSON Webhook。任务失败、快照阻断和绩效计算阻断为 `critical`；单账户查询异常及费用数据待完善的绩效账户为 `warning`；刷新超时同时标记 `refresh_timeout` 与 `snapshot_blocked`。同一轮多账户异常只聚合投递一次。正常成功、非交易日正常跳过不发送，`--dry-run` 始终抑制通知。每条通知带稳定 `dedupe_key` 和 HTTP `Idempotency-Key`，网络异常、429 和 5xx 最多重试 3 次。投递结果保存到同一条 `job_runs.report.alert_delivery`，可在 `/jobs` 的“告警”列查看；通道失败不会把已成功的账表任务改判为失败。
 
 真实配置只允许写入被 Git 忽略的 `config/relay.alerts.env`，建议权限为 `0600`：
 
@@ -451,7 +460,7 @@ PYTHONPATH=src python3 scripts/test-job-alert-webhook.py
 
 命令只输出状态码、尝试次数、耗时和去重键，不输出 URL 或 Token。返回 `delivered` 后，再等待真实交易日任务验证 `warning/critical` 展示。
 
-`GET /v1/jobs/runs?trade_date=YYYYMMDD&job_name=pre_open_init,post_close_settlement` 返回指定交易日任务记录。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 聚合任务报告和对账差异，按账户输出日初/日终资产、持仓、订单、成交、未终态订单、开放差异、快照是否落盘及阻断原因。`/jobs` 的交易日选择器、账户复核表和“导出 JSON”使用同一只读接口。
+`GET /v1/jobs/runs?trade_date=YYYYMMDD&job_name=pre_open_init,post_close_settlement,performance_daily` 返回指定交易日任务记录。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 聚合任务报告和对账差异，按账户输出日初/日终资产、持仓、订单、成交、未终态订单、开放差异、快照是否落盘及阻断原因。`/jobs` 的交易日选择器、账户复核表和“导出 JSON”使用同一只读接口。
 
 ## 待增强项
 

@@ -172,6 +172,128 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
     )
 
 
+def run_daily_performance(options: JobOptions, *, client: Any | None = None, trading_day: TradingDayInfo | None = None) -> dict[str, Any]:
+    relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
+    report = run_daily_job(
+        options,
+        client=relay_client,
+        trading_day=trading_day,
+        phase="performance_daily",
+        refresh_steps=(),
+        check_non_terminal_orders=True,
+    )
+    if report.get("skipped") or not report.get("accounts"):
+        return report
+
+    ready_accounts: list[str] = []
+    attention_accounts: list[str] = []
+    blocked_accounts: list[str] = []
+    for account_report in report["accounts"]:
+        account_id = str(account_report["account_id"])
+        cost_value, cost_report = capture_call(
+            "preview_cost_ledger",
+            relay_client.preview_cost_ledger,
+            account_id=account_id,
+            trade_date=report["trading_day"]["target_trade_date"],
+            include_result=False,
+        )
+        nav_value, nav_report = capture_call(
+            "preview_economic_nav",
+            relay_client.preview_economic_nav,
+            account_id=account_id,
+            trade_date=report["trading_day"]["target_trade_date"],
+            include_result=False,
+        )
+        cost = result_to_jsonable(cost_value) if cost_value is not None else {}
+        nav = result_to_jsonable(nav_value) if nav_value is not None else {}
+        cost_status = str(cost.get("status") or "error" if isinstance(cost, Mapping) else "error")
+        nav_status = str(nav.get("status") or "error" if isinstance(nav, Mapping) else "error")
+        flags = sorted(
+            {
+                str(flag)
+                for value in (cost, nav)
+                if isinstance(value, Mapping)
+                for flag in value.get("quality_flags", [])
+            }
+        )
+        errors = [
+            item["error"]
+            for item in (cost_report, nav_report)
+            if item.get("error")
+        ]
+        fee_incomplete = any(
+            flag in {
+                "net_performance_fee_incomplete",
+                "net_performance_fee_estimated",
+                "order_fee_day_incomplete",
+                "missing_fee_rule",
+                "missing_repo_fee",
+            }
+            for flag in flags
+        )
+        if errors or cost_status == "blocked" or nav_status == "blocked":
+            status = "blocked"
+            blocked_accounts.append(account_id)
+        elif fee_incomplete:
+            status = "attention"
+            attention_accounts.append(account_id)
+        else:
+            status = "ready"
+            ready_accounts.append(account_id)
+        account_report["performance"] = {
+            "status": status,
+            "cost_ledger_status": cost_status,
+            "economic_nav_status": nav_status,
+            "fee_complete": not fee_incomplete,
+            "quality_flags": flags,
+            "errors": errors,
+            "cost_ledger": performance_calculation_summary(cost, include_positions=True),
+            "economic_nav": performance_calculation_summary(nav),
+        }
+
+    report["performance_summary"] = {
+        "accounts": len(report["accounts"]),
+        "ready": len(ready_accounts),
+        "attention": len(attention_accounts),
+        "blocked": len(blocked_accounts),
+    }
+    report["performance_ready_accounts"] = ready_accounts
+    report["performance_attention_accounts"] = attention_accounts
+    report["performance_blocked_accounts"] = blocked_accounts
+    if attention_accounts or blocked_accounts:
+        report.setdefault("warnings", []).append(
+            "daily performance has account-level attention or blocked results"
+        )
+    return report
+
+
+def performance_calculation_summary(value: Any, *, include_positions: bool = False) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    fields = (
+        "account_id",
+        "trade_date",
+        "status",
+        "formula_version",
+        "persisted",
+        "opening_source",
+        "summary",
+        "nav",
+        "reconciliation",
+        "daily_performance",
+        "cash_flows",
+        "reverse_repo",
+        "valuation",
+        "quality_flags",
+        "calculated_at",
+    )
+    result = {field: result_to_jsonable(value[field]) for field in fields if field in value}
+    if include_positions:
+        positions = value.get("positions")
+        result["positions_count"] = len(positions) if isinstance(positions, list) else 0
+    return result
+
+
 def run_daily_job(
     options: JobOptions,
     *,

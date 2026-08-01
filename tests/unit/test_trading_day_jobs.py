@@ -11,7 +11,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "sdk" / "python"))
 
-from relay.jobs.common import BUSINESS_TZ, JobOptions, TradingDayInfo, run_post_close_settlement, run_pre_open_init  # noqa: E402
+from relay.jobs.common import (  # noqa: E402
+    BUSINESS_TZ,
+    JobOptions,
+    TradingDayInfo,
+    run_daily_performance,
+    run_post_close_settlement,
+    run_pre_open_init,
+)
 
 
 class FakeReceipt:
@@ -35,6 +42,9 @@ class FakeClient:
         self.default_asset_updated_at = stale_at
         self.default_position_updated_at = stale_at
         self.lagging_positions: set[str] = set()
+        self.cost_status: dict[str, str] = {}
+        self.nav_status: dict[str, str] = {}
+        self.performance_flags: dict[str, list[str]] = {}
 
     def status(self):
         return self.status_value
@@ -119,6 +129,24 @@ class FakeClient:
             "warnings": warnings,
         }
 
+    def preview_cost_ledger(self, *, account_id: str, trade_date: str):
+        return {
+            "account_id": account_id,
+            "trade_date": trade_date,
+            "status": self.cost_status.get(account_id, "calculated"),
+            "persisted": False,
+            "quality_flags": self.performance_flags.get(account_id, []),
+        }
+
+    def preview_economic_nav(self, *, account_id: str, trade_date: str):
+        return {
+            "account_id": account_id,
+            "trade_date": trade_date,
+            "status": self.nav_status.get(account_id, "provisional"),
+            "persisted": False,
+            "quality_flags": self.performance_flags.get(account_id, []),
+        }
+
     def _refresh(self, account_id: str, action: str) -> FakeReceipt:
         self.refresh_calls.append((account_id, action))
         if action == "account.asset.query":
@@ -174,6 +202,33 @@ def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
 
 
 class TradingDayJobTest(unittest.TestCase):
+    def test_daily_performance_isolates_account_quality_results(self) -> None:
+        client = FakeClient()
+        client.accounts = [
+            SimpleNamespace(account_id="acct-ready", enabled=True),
+            SimpleNamespace(account_id="acct-attention", enabled=True),
+            SimpleNamespace(account_id="acct-blocked", enabled=True),
+        ]
+        client.performance_flags["acct-attention"] = ["net_performance_fee_incomplete"]
+        client.cost_status["acct-blocked"] = "blocked"
+        client.performance_flags["acct-blocked"] = ["position_quantity_not_reconciled"]
+
+        report = run_daily_performance(
+            JobOptions(job_name="performance_daily"),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["performance_summary"], {"accounts": 3, "ready": 1, "attention": 1, "blocked": 1})
+        self.assertEqual(report["performance_ready_accounts"], ["acct-ready"])
+        self.assertEqual(report["performance_attention_accounts"], ["acct-attention"])
+        self.assertEqual(report["performance_blocked_accounts"], ["acct-blocked"])
+        self.assertEqual(report["accounts"][0]["performance"]["status"], "ready")
+        self.assertEqual(report["accounts"][1]["performance"]["status"], "attention")
+        self.assertFalse(report["accounts"][1]["performance"]["fee_complete"])
+        self.assertEqual(report["accounts"][2]["performance"]["status"], "blocked")
+
     def test_stream_runtime_attention_does_not_block_daily_job(self) -> None:
         client = FakeClient()
         client.status_value = {

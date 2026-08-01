@@ -3867,7 +3867,10 @@
       cash_only_snapshot_not_performance_nav: "现金快照不作为绩效净值",
       position_quantity_not_reconciled: "持仓数量未闭合",
       position_quantity_bridge_incomplete: "持仓数量桥不完整",
-      external_flow_time_estimated_mid_session: "外部资金发生时间按盘中估算"
+      external_flow_time_estimated_mid_session: "外部资金发生时间按盘中估算",
+      order_fee_day_incomplete: "当日成交订单费用覆盖不完整",
+      broker_delivery_statement_pending: "等待券商交割单补齐费用",
+      net_performance_fee_estimated: "净收益仍使用估算费用"
     }[value] || value || "未知质量标记";
   }
 

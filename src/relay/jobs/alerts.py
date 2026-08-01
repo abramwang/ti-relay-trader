@@ -166,15 +166,36 @@ def build_daily_job_alert(
     if timeout_accounts:
         issue_types.append("refresh_timeout")
 
+    performance_blocked_accounts = sorted(
+        set(normalized_strings(report.get("performance_blocked_accounts")))
+    )
+    if performance_blocked_accounts:
+        issue_types.append("performance_blocked")
+
+    performance_attention_accounts = sorted(
+        set(normalized_strings(report.get("performance_attention_accounts")))
+    )
+    if performance_attention_accounts:
+        issue_types.append("performance_attention")
+
     if not issue_types:
         return None, "job_completed_without_alertable_issues"
 
     account_ids = sorted(
         set(blocked_accounts)
         | set(timeout_accounts)
+        | set(performance_blocked_accounts)
+        | set(performance_attention_accounts)
         | {item["account_id"] for item in account_errors if item.get("account_id")}
     )
-    severity = "critical" if "task_failed" in issue_types or "snapshot_blocked" in issue_types else "warning"
+    severity = (
+        "critical"
+        if any(
+            issue_type in issue_types
+            for issue_type in ("task_failed", "snapshot_blocked", "performance_blocked")
+        )
+        else "warning"
+    )
     job_name = str(report.get("job") or "daily_job")
     trade_date = target_trade_date(report)
     environment = config.environment
@@ -191,7 +212,11 @@ def build_daily_job_alert(
     ).hexdigest()[:16]
     dedupe_key = f"relay:{environment}:{job_name}:{trade_date}:{digest}"
     public_url = config.public_url or str(report.get("base_url") or "").rstrip("/")
-    job_label = {"pre_open_init": "盘前初始化", "post_close_settlement": "盘后结算"}.get(job_name, job_name)
+    job_label = {
+        "pre_open_init": "盘前初始化",
+        "post_close_settlement": "盘后结算",
+        "performance_daily": "每日绩效计算",
+    }.get(job_name, job_name)
     account_text = f"，涉及 {len(account_ids)} 个账户" if account_ids else ""
     title = f"[Relay][{severity.upper()}] {job_label}异常"
     message = f"{trade_date or '未知交易日'} {job_label}出现 {', '.join(issue_types)}{account_text}。"
@@ -220,6 +245,8 @@ def build_daily_job_alert(
             "account_error_count": len(account_errors) or int_value(report.get("account_error_count")),
             "snapshot_blocked_accounts": blocked_accounts,
             "refresh_timeout_accounts": timeout_accounts,
+            "performance_blocked_accounts": performance_blocked_accounts,
+            "performance_attention_accounts": performance_attention_accounts,
         },
         "links": {"jobs": f"{public_url}/jobs"} if public_url else {},
     }

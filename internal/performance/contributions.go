@@ -69,6 +69,10 @@ type ContributionSummary struct {
 	EstimatedItems         int     `json:"estimated_items"`
 	MissingItems           int     `json:"missing_items"`
 	MissingFeeItems        int     `json:"missing_fee_items"`
+	FeeRequiredOrders      int     `json:"fee_required_orders"`
+	FeeCoveredOrders       int     `json:"fee_covered_orders"`
+	FeeCoverageComplete    bool    `json:"fee_coverage_complete"`
+	FeeCoverageSource      string  `json:"fee_coverage_source"`
 	ExcludedItems          int     `json:"excluded_items"`
 }
 
@@ -194,6 +198,7 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		return ContributionResult{}, err
 	}
 	authoritativeFees := authoritativeOrderFees(feeRecords)
+	feeCoverage := calculateOrderFeeDayCoverage(fills, authoritativeFees)
 	consumedOrderFees := make(map[string]bool)
 	ordinaryFillCount := len(fills)
 	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
@@ -221,6 +226,13 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		TradeDate:      normalizedDate,
 		FormulaVersion: contributionFormulaVersion,
 		GeneratedAt:    service.now(),
+	}
+	result.Summary.FeeRequiredOrders = feeCoverage.requiredOrders
+	result.Summary.FeeCoveredOrders = feeCoverage.coveredOrders
+	result.Summary.FeeCoverageComplete = feeCoverage.complete
+	result.Summary.FeeCoverageSource = feeCoverage.source
+	if !feeCoverage.complete {
+		result.QualityFlags = appendUnique(result.QualityFlags, "order_fee_day_incomplete", "broker_delivery_statement_pending")
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
 	result.QualityFlags = appendUnique(result.QualityFlags, closePositionFlags...)
