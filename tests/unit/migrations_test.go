@@ -345,6 +345,28 @@ func TestPerformanceNAVGoldMigrationAddsVersionedAuditedInput(t *testing.T) {
 	}
 }
 
+func TestOrderFeeRecordsMigrationAddsAuditedOrderFees(t *testing.T) {
+	upSQL := readMigration(t, "000022_order_fee_records.up.sql")
+	for _, snippet := range []string{
+		"CREATE TABLE order_fee_records",
+		"UNIQUE (account_id, fee_record_id)",
+		"record_scope = 'order'",
+		"fee_complete BOOLEAN NOT NULL DEFAULT FALSE",
+		"association_complete BOOLEAN NOT NULL DEFAULT FALSE",
+		"fee_as_of TIMESTAMPTZ NOT NULL",
+		"raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"CREATE INDEX order_fee_records_order_idx",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("order fee records migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000022_order_fee_records.down.sql")
+	if !strings.Contains(downSQL, "DROP TABLE IF EXISTS order_fee_records") {
+		t.Fatal("order fee records rollback missing table drop")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

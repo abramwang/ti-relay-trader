@@ -1004,6 +1004,68 @@ func TestRefreshAccountFills(t *testing.T) {
 	}
 }
 
+func TestRefreshAccountFees(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		refreshFeesResult: orderflow.RefreshQueryResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionFeeList,
+			MessageID: "msg-fees-1",
+			StreamKey: "relay:prod:v1:huaxin:gw-1:cmd.query",
+			StreamID:  "1-0",
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	req := httptest.NewRequest(http.MethodPost, "/v1/accounts/acct-1/fees/refresh?trade_date=2026-08-01", nil)
+	req.Header.Set("X-Request-ID", "req-refresh-fees")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.refreshFeesAccountID != "acct-1" || service.refreshFeesRequestID != "req-refresh-fees" {
+		t.Fatalf("refresh fees call = %q/%q", service.refreshFeesAccountID, service.refreshFeesRequestID)
+	}
+	if service.refreshFeesTradeDate != "20260801" || !strings.Contains(rec.Body.String(), redisstream.ActionFeeList) {
+		t.Fatalf("refresh fees response/date = %q/%s", service.refreshFeesTradeDate, rec.Body.String())
+	}
+}
+
+func TestListAccountFees(t *testing.T) {
+	complete := true
+	service := &fakeOrderSubmitter{listFeesResult: orderflow.ListOrderFeesResult{
+		Fees: []ledger.OrderFeeRecord{{
+			AccountID:           "acct-1",
+			FeeRecordID:         "fee-1",
+			TradeDate:           "2026-08-01",
+			GatewayOrderID:      "gw-1",
+			TotalFee:            6.25,
+			FeeComplete:         true,
+			AssociationComplete: true,
+		}},
+		Count: 1,
+	}}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/fees?trade_date=20260801&gateway_order_id=gw-1&fee_complete=true&limit=20", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.feeQuery.AccountID != "acct-1" || service.feeQuery.TradeDate != "20260801" || service.feeQuery.GatewayOrderID != "gw-1" {
+		t.Fatalf("fee query = %#v", service.feeQuery)
+	}
+	if service.feeQuery.FeeComplete == nil || *service.feeQuery.FeeComplete != complete {
+		t.Fatalf("fee_complete = %#v", service.feeQuery.FeeComplete)
+	}
+	if !strings.Contains(rec.Body.String(), `"total_fee":6.25`) {
+		t.Fatalf("response missing fee: %s", rec.Body.String())
+	}
+}
+
 func TestSchemaDiscovery(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodGet, "/v1/schema", nil)
@@ -2731,6 +2793,9 @@ type fakeOrderSubmitter struct {
 	fillQuery                 trading.FillQuery
 	listFillsResult           orderflow.ListFillsResult
 	listFillsErr              error
+	feeQuery                  ledger.OrderFeeRecordQuery
+	listFeesResult            orderflow.ListOrderFeesResult
+	listFeesErr               error
 	assetAccountID            string
 	assetResult               orderflow.GetAssetResult
 	assetErr                  error
@@ -2755,6 +2820,11 @@ type fakeOrderSubmitter struct {
 	refreshFillsTradeDate     string
 	refreshFillsResult        orderflow.RefreshQueryResult
 	refreshFillsErr           error
+	refreshFeesAccountID      string
+	refreshFeesRequestID      string
+	refreshFeesTradeDate      string
+	refreshFeesResult         orderflow.RefreshQueryResult
+	refreshFeesErr            error
 }
 
 type fakeJobRunStore struct {
@@ -3239,6 +3309,14 @@ func (submitter *fakeOrderSubmitter) ListFills(_ context.Context, query trading.
 	return submitter.listFillsResult, nil
 }
 
+func (submitter *fakeOrderSubmitter) ListOrderFees(_ context.Context, query ledger.OrderFeeRecordQuery) (orderflow.ListOrderFeesResult, error) {
+	submitter.feeQuery = query
+	if submitter.listFeesErr != nil {
+		return orderflow.ListOrderFeesResult{}, submitter.listFeesErr
+	}
+	return submitter.listFeesResult, nil
+}
+
 func (submitter *fakeOrderSubmitter) GetAsset(_ context.Context, accountID string) (orderflow.GetAssetResult, error) {
 	submitter.assetAccountID = accountID
 	if submitter.assetErr != nil {
@@ -3291,4 +3369,14 @@ func (submitter *fakeOrderSubmitter) RefreshFills(_ context.Context, accountID s
 		return orderflow.RefreshQueryResult{}, submitter.refreshFillsErr
 	}
 	return submitter.refreshFillsResult, nil
+}
+
+func (submitter *fakeOrderSubmitter) RefreshFees(_ context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error) {
+	submitter.refreshFeesAccountID = accountID
+	submitter.refreshFeesRequestID = opts.RequestID
+	submitter.refreshFeesTradeDate = opts.TradeDate
+	if submitter.refreshFeesErr != nil {
+		return orderflow.RefreshQueryResult{}, submitter.refreshFeesErr
+	}
+	return submitter.refreshFeesResult, nil
 }

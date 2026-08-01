@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ type LedgerWriter interface {
 	AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertFill(ctx context.Context, fill trading.Fill, stream ledger.StreamRef, source ledger.SourceRef) error
 	InsertComponentTransfer(ctx context.Context, transfer trading.ComponentTransfer, stream ledger.StreamRef, source ledger.SourceRef) error
+	UpsertOrderFeeRecord(ctx context.Context, record ledger.OrderFeeRecord) error
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	UpsertAssetSnapshot(ctx context.Context, asset trading.Asset, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPosition(ctx context.Context, position trading.Position, source string, rawPayload any, updatedAt time.Time) error
@@ -77,6 +79,7 @@ type LedgerProcessResult struct {
 	CancelFailures     int                         `json:"cancel_failures"`
 	Fills              int                         `json:"fills"`
 	Transfers          int                         `json:"transfers"`
+	Fees               int                         `json:"fees"`
 	Assets             int                         `json:"assets"`
 	Positions          int                         `json:"positions"`
 	StalePositions     int64                       `json:"stale_positions,omitempty"`
@@ -406,6 +409,31 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 			result.Transfers++
+		}
+		return result
+	case envelope.Action == ActionFeeList || envelope.ResultType == "fee_page":
+		fees, accountID, err := feeRecordsFromReplyEnvelope(envelope)
+		if err != nil {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, err.Error())
+			return result
+		}
+		if accountID != "" {
+			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, accountID)); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Accounts++
+		}
+		for _, fee := range fees {
+			result.noteAccount(fee.AccountID)
+			if err := writer.UpsertOrderFeeRecord(ctx, fee); err != nil {
+				result.LedgerErrors++
+				result.SkipReasons = append(result.SkipReasons, err.Error())
+				return result
+			}
+			result.Fees++
 		}
 		return result
 	default:
@@ -1214,6 +1242,101 @@ func fillRecordsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Fill, []tra
 	return fills, transfers, nil
 }
 
+func feeRecordsFromReplyEnvelope(envelope EntryEnvelope) ([]ledger.OrderFeeRecord, string, error) {
+	var payload feePagePayload
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		return nil, "", fmt.Errorf("decode fee_page payload: %w", err)
+	}
+	if payload.ItemCount != len(payload.Items) {
+		return nil, firstNonEmpty(payload.AccountID, envelope.Routing.AccountID), fmt.Errorf(
+			"fee_page item_count=%d does not match items=%d",
+			payload.ItemCount,
+			len(payload.Items),
+		)
+	}
+	itemTotal := 0.0
+	seenFeeRecordIDs := make(map[string]struct{}, len(payload.Items))
+	for _, item := range payload.Items {
+		feeRecordID := strings.TrimSpace(item.FeeRecordID)
+		if feeRecordID == "" {
+			return nil, firstNonEmpty(payload.AccountID, envelope.Routing.AccountID), fmt.Errorf("fee_page item missing fee_record_id")
+		}
+		if _, exists := seenFeeRecordIDs[feeRecordID]; exists {
+			return nil, firstNonEmpty(payload.AccountID, envelope.Routing.AccountID), fmt.Errorf("fee_page duplicate fee_record_id %q", feeRecordID)
+		}
+		seenFeeRecordIDs[feeRecordID] = struct{}{}
+		itemTotal += item.TotalFee
+	}
+	if math.Abs(itemTotal-payload.AccountTotalFee) > 0.01 {
+		return nil, firstNonEmpty(payload.AccountID, envelope.Routing.AccountID), fmt.Errorf(
+			"fee_page account_total_fee %.6f does not match item total %.6f",
+			payload.AccountTotalFee,
+			itemTotal,
+		)
+	}
+	accountID := firstNonEmpty(payload.AccountID, envelope.Routing.AccountID)
+	rawAccountID := normalizeAccountIDFromRouting(&accountID, envelope)
+	tradeDate := strings.TrimSpace(payload.TradeDate)
+	items := make([]ledger.OrderFeeRecord, 0, len(payload.Items))
+	for _, item := range payload.Items {
+		if item.AccountID == "" {
+			item.AccountID = accountID
+		}
+		itemRawAccountID := normalizeAccountIDFromRouting(&item.AccountID, envelope)
+		if item.TradeDate == "" {
+			item.TradeDate = tradeDate
+		}
+		feeAsOf := parseTime(item.FeeAsOf)
+		if feeAsOf.IsZero() {
+			return nil, accountID, fmt.Errorf("fee_page item %q missing valid fee_as_of", item.FeeRecordID)
+		}
+		adapterContext := mergeContextMaps(envelope.AdapterContext, item.AdapterContext)
+		adapterContext = withRawAccountID(adapterContext, firstNonEmpty(itemRawAccountID, rawAccountID))
+		items = append(items, ledger.OrderFeeRecord{
+			AccountID:           item.AccountID,
+			FeeRecordID:         item.FeeRecordID,
+			TradeDate:           item.TradeDate,
+			RecordScope:         item.RecordScope,
+			GatewayOrderID:      item.GatewayOrderID,
+			OrderID:             item.OrderID,
+			OrderStreamID:       item.OrderStreamID,
+			FillID:              item.FillID,
+			Symbol:              item.Symbol,
+			Exchange:            item.Exchange,
+			TradeSide:           item.TradeSide,
+			BusinessType:        item.BusinessType,
+			OrderAmount:         item.OrderAmount,
+			Turnover:            item.Turnover,
+			Commission:          item.Commission,
+			StampTax:            item.StampTax,
+			TransferFee:         item.TransferFee,
+			HandlingFee:         item.HandlingFee,
+			RegulatoryFee:       item.RegulatoryFee,
+			SettlementFee:       item.SettlementFee,
+			OtherFee:            item.OtherFee,
+			TotalFee:            item.TotalFee,
+			Currency:            item.Currency,
+			FeeComplete:         item.FeeComplete,
+			FeeSource:           item.FeeSource,
+			FeeAsOf:             feeAsOf,
+			SettledAt:           parseTime(item.SettledAt),
+			AssociationComplete: item.AssociationComplete,
+			AdapterContext:      adapterContext,
+			OriginMessageID:     firstNonEmpty(envelope.OriginMessageID, envelope.MessageID),
+			RequestID:           envelope.RequestID,
+			CorrelationID:       firstNonEmpty(envelope.CorrelationID, envelope.RequestCorrelationID),
+			IdempotencyKey:      envelope.IdempotencyKey,
+			StreamKey:           envelope.Stream,
+			StreamID:            envelope.StreamID,
+			RawPayload:          structToMap(item),
+		})
+	}
+	if accountID == "" && len(items) > 0 {
+		accountID = items[0].AccountID
+	}
+	return items, accountID, nil
+}
+
 func synthesizeOrderSummaryFill(ctx context.Context, writer LedgerWriter, envelope EntryEnvelope, order trading.Order, source string, result *LedgerProcessResult) error {
 	type summaryFillSynthesisControl interface {
 		AllowSummaryFillSynthesis() bool
@@ -1463,6 +1586,9 @@ type orderPayload struct {
 	InvalidQty        int64   `json:"invalid_qty"`
 	AvgFillPrice      float64 `json:"avg_fill_price"`
 	Fee               float64 `json:"fee"`
+	FeeComplete       bool    `json:"fee_complete"`
+	FeeSource         string  `json:"fee_source"`
+	FeeAsOf           string  `json:"fee_as_of"`
 	Status            string  `json:"status"`
 	GatewayStatus     string  `json:"gateway_status"`
 	AdapterStatusCode int     `json:"adapter_status_code"`
@@ -1507,6 +1633,9 @@ type fillPayload struct {
 	Price          float64 `json:"price"`
 	Qty            int64   `json:"qty"`
 	Fee            float64 `json:"fee"`
+	FeeComplete    bool    `json:"fee_complete"`
+	FeeSource      string  `json:"fee_source"`
+	FeeAsOf        string  `json:"fee_as_of"`
 	TradeDate      string  `json:"trade_date"`
 	MatchTimestamp int64   `json:"match_timestamp"`
 	MatchedAt      string  `json:"matched_at"`
@@ -1556,6 +1685,52 @@ type orderPagePayload struct {
 type fillPagePayload struct {
 	Items              []fillPayload              `json:"items"`
 	ComponentTransfers []componentTransferPayload `json:"component_transfers"`
+}
+
+type feePagePayload struct {
+	AccountID           string            `json:"account_id"`
+	TradeDate           string            `json:"trade_date"`
+	ItemCount           int               `json:"item_count"`
+	AccountTotalFee     float64           `json:"account_total_fee"`
+	Currency            string            `json:"currency"`
+	FeeComplete         bool              `json:"fee_complete"`
+	FeeSource           string            `json:"fee_source"`
+	FeeAsOf             string            `json:"fee_as_of"`
+	AssociationComplete bool              `json:"association_complete"`
+	RecordScope         string            `json:"record_scope"`
+	Items               []orderFeePayload `json:"items"`
+}
+
+type orderFeePayload struct {
+	FeeRecordID         string         `json:"fee_record_id"`
+	RecordScope         string         `json:"record_scope"`
+	AccountID           string         `json:"account_id"`
+	TradeDate           string         `json:"trade_date"`
+	GatewayOrderID      string         `json:"gateway_order_id"`
+	OrderID             int64          `json:"order_id"`
+	OrderStreamID       string         `json:"order_stream_id"`
+	FillID              string         `json:"fill_id"`
+	Symbol              string         `json:"symbol"`
+	Exchange            string         `json:"exchange"`
+	TradeSide           string         `json:"trade_side"`
+	BusinessType        string         `json:"business_type"`
+	OrderAmount         float64        `json:"order_amount"`
+	Turnover            float64        `json:"turnover"`
+	Commission          float64        `json:"commission"`
+	StampTax            float64        `json:"stamp_tax"`
+	TransferFee         float64        `json:"transfer_fee"`
+	HandlingFee         float64        `json:"handling_fee"`
+	RegulatoryFee       float64        `json:"regulatory_fee"`
+	SettlementFee       float64        `json:"settlement_fee"`
+	OtherFee            float64        `json:"other_fee"`
+	TotalFee            float64        `json:"total_fee"`
+	Currency            string         `json:"currency"`
+	FeeComplete         bool           `json:"fee_complete"`
+	FeeSource           string         `json:"fee_source"`
+	FeeAsOf             string         `json:"fee_as_of"`
+	SettledAt           string         `json:"settled_at"`
+	AssociationComplete bool           `json:"association_complete"`
+	AdapterContext      map[string]any `json:"adapter_context"`
 }
 
 type positionPayload struct {
@@ -1678,7 +1853,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	isTerminal := payload.IsTerminal || inferredTerminal || status.Terminal() || gatewayStatus.Terminal()
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	rejectCode, rejectMessage := orderPayloadRejectInfo(envelope, payload, status, gatewayStatus)
-	adapterContext := orderDebugContext(envelope, rejectCode, rejectMessage)
+	adapterContext := withOrderPayloadContext(orderDebugContext(envelope, rejectCode, rejectMessage), payload)
 	return trading.Order{
 		AccountID:         payload.AccountID,
 		ClientOrderID:     payload.ClientOrderID,
@@ -1996,7 +2171,7 @@ func withRawGatewayOrderID(context map[string]any, rawGatewayOrderID string) map
 }
 
 func withFillPayloadContext(context map[string]any, payload fillPayload) map[string]any {
-	extra := make(map[string]any, 8)
+	extra := make(map[string]any, 11)
 	if businessType := strings.TrimSpace(payload.BusinessType); businessType != "" {
 		extra["business_type"] = businessType
 	}
@@ -2021,6 +2196,13 @@ func withFillPayloadContext(context map[string]any, payload fillPayload) map[str
 	if t0OrderGroupID := strings.TrimSpace(payload.T0OrderGroupID); t0OrderGroupID != "" {
 		extra["t0_order_group_id"] = t0OrderGroupID
 	}
+	extra["fee_complete"] = payload.FeeComplete
+	if feeSource := strings.TrimSpace(payload.FeeSource); feeSource != "" {
+		extra["fee_source"] = feeSource
+	}
+	if feeAsOf := strings.TrimSpace(payload.FeeAsOf); feeAsOf != "" {
+		extra["fee_as_of"] = feeAsOf
+	}
 	if len(extra) == 0 {
 		return context
 	}
@@ -2034,6 +2216,43 @@ func withFillPayloadContext(context map[string]any, payload fillPayload) map[str
 		}
 	}
 	return out
+}
+
+func withOrderPayloadContext(context map[string]any, payload orderPayload) map[string]any {
+	extra := map[string]any{"reported_fee_complete": payload.FeeComplete}
+	if feeSource := strings.TrimSpace(payload.FeeSource); feeSource != "" {
+		extra["reported_fee_source"] = feeSource
+	}
+	if feeAsOf := strings.TrimSpace(payload.FeeAsOf); feeAsOf != "" {
+		extra["reported_fee_as_of"] = feeAsOf
+	}
+	return mergeContextMaps(context, extra)
+}
+
+func mergeContextMaps(base map[string]any, extra map[string]any) map[string]any {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(base)+len(extra))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range extra {
+		out[key] = value
+	}
+	return out
+}
+
+func structToMap(value any) map[string]any {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	return result
 }
 
 // normalizeLegacyBasketGatewayOrderID preserves one-time repair behavior for
@@ -2175,6 +2394,7 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.CancelFailures += other.CancelFailures
 	result.Fills += other.Fills
 	result.Transfers += other.Transfers
+	result.Fees += other.Fees
 	result.Assets += other.Assets
 	result.Positions += other.Positions
 	result.Replies += other.Replies

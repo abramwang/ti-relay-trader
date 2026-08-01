@@ -99,6 +99,8 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	requireQueryContains(t, exec.query, "SELECT MIN(event.produced_at)")
 	requireQueryContains(t, exec.query, "event.trade_date = EXCLUDED.trade_date")
 	requireQueryContains(t, exec.query, "trade_date = COALESCE(EXCLUDED.trade_date, orders.trade_date)")
+	requireQueryContains(t, exec.query, "orders.adapter_context ? 'fee_record_id'")
+	requireQueryContains(t, exec.query, "reported_fee_source")
 	requireArgLen(t, exec.args, 44)
 	if exec.args[0] != "acct-1" || exec.args[2] != "gateway-1" {
 		t.Fatalf("identity args = %#v %#v", exec.args[0], exec.args[2])
@@ -208,6 +210,70 @@ func TestUpsertOrderCancelAttemptKeepsCancelOutcomeSeparate(t *testing.T) {
 	}
 	assertJSONContains(t, exec.args[18], `"cancel_status":"rejected"`)
 	assertJSONContains(t, exec.args[19], `"broker_error_id":1`)
+}
+
+func TestUpsertOrderFeeRecordBuildsAuthoritativeOrderFeeWrite(t *testing.T) {
+	exec := &recordingExecutor{}
+	repo := NewRepository(exec)
+	feeAsOf := time.Date(2026, 8, 1, 15, 1, 59, 0, time.FixedZone("CST", 8*60*60))
+
+	err := repo.UpsertOrderFeeRecord(context.Background(), OrderFeeRecord{
+		AccountID:           "acct-1",
+		FeeRecordID:         "broker-order-fee:stream-1",
+		TradeDate:           "20260801",
+		RecordScope:         "order",
+		GatewayOrderID:      "gateway-1",
+		OrderID:             123,
+		OrderStreamID:       "stream-1",
+		Symbol:              "600000",
+		Exchange:            "SH",
+		TradeSide:           "S",
+		BusinessType:        "S",
+		Turnover:            1000,
+		Commission:          5,
+		StampTax:            1,
+		TotalFee:            6,
+		Currency:            "CNY",
+		FeeComplete:         true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             feeAsOf,
+		AssociationComplete: true,
+		AdapterContext:      map[string]any{"broker_account_id": "acct-101"},
+		RawPayload:          map[string]any{"fee_record_id": "broker-order-fee:stream-1"},
+	})
+	if err != nil {
+		t.Fatalf("UpsertOrderFeeRecord() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "INSERT INTO order_fee_records")
+	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, fee_record_id)")
+	requireQueryContains(t, exec.query, "effective AS")
+	requireQueryContains(t, exec.query, "NOT EXISTS (SELECT 1 FROM upserted)")
+	requireQueryContains(t, exec.query, "order_fee_records.fee_source <> 'unavailable'")
+	requireQueryContains(t, exec.query, "UPDATE orders")
+	requireQueryContains(t, exec.query, "effective.association_complete")
+	requireArgLen(t, exec.args, 36)
+	if exec.args[0] != "acct-1" || exec.args[1] != "broker-order-fee:stream-1" || exec.args[2] != "2026-08-01" {
+		t.Fatalf("fee identity args = %#v", exec.args[:3])
+	}
+	if exec.args[21] != float64(6) || exec.args[23] != true || exec.args[27] != true {
+		t.Fatalf("fee amount/status args = %#v", exec.args[21:28])
+	}
+	assertJSONContains(t, exec.args[28], `"broker_account_id":"acct-101"`)
+}
+
+func TestUpsertOrderFeeRecordRejectsAssociatedRecordWithoutGatewayOrder(t *testing.T) {
+	repo := NewRepository(&recordingExecutor{})
+	err := repo.UpsertOrderFeeRecord(context.Background(), OrderFeeRecord{
+		AccountID:           "acct-1",
+		FeeRecordID:         "fee-1",
+		TradeDate:           "2026-08-01",
+		FeeAsOf:             time.Now(),
+		AssociationComplete: true,
+	})
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("UpsertOrderFeeRecord() error = %v, want ErrInvalidLedgerInput", err)
+	}
 }
 
 func TestUpsertOrderInfersFilledFromExecutionQuantities(t *testing.T) {

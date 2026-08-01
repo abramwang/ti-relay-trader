@@ -257,7 +257,7 @@ client.refresh_orders()
 client.refresh_fills()
 ```
 
-刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。盘后结算任务会在刷新后轮询本地账本时间戳，确认资产和持仓已晚于本轮刷新开始时间；如果未确认，会把账户加入 `snapshot_blocked_accounts`，避免写入旧日终持仓。
+刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。`refresh_fees()` 发布 `fee.list.query`，`list_order_fees()` 读取订单级费用；OC 当前只支持柜台当前交易日。盘后结算任务会在刷新后轮询本地账本时间戳，确认资产和持仓已晚于本轮刷新开始时间；如果未确认，会把账户加入 `snapshot_blocked_accounts`，避免写入旧日终持仓。
 
 ### 任务报告和结算快照落库
 

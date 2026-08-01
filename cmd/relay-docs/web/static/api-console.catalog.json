@@ -427,6 +427,18 @@
     ]
   },
   {
+    "id": "fees-refresh",
+    "group": "账户",
+    "title": "实际费用刷新",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/fees/refresh",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date（仅 OC 当前交易日）", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "submit-order",
     "group": "交易",
     "title": "单笔下单",
@@ -552,6 +564,23 @@
       { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
       { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
       { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" }
+    ]
+  },
+  {
+    "id": "order-fees",
+    "group": "查询",
+    "title": "订单实际费用",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/fees",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "fee_complete", "label": "fee_complete", "source": "query", "type": "select", "defaultValue": "", "options": ["", "true", "false"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "50" }
     ]
   },
   {

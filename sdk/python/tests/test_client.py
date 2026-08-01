@@ -275,6 +275,25 @@ class RelayHandler(BaseHTTPRequestHandler):
                 return
             self._json({"ok": True, "data": {"fills": [{"fill_id": "fill-1", "account_id": "acct-1", "qty": 100}]}})
             return
+        if parsed.path == "/v1/accounts/acct-1/fees":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "fees": [{
+                            "account_id": "acct-1",
+                            "fee_record_id": "fee-1",
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "gateway_order_id": query.get("gateway_order_id", ["gw-1"])[0],
+                            "total_fee": 6.25,
+                            "fee_complete": True,
+                            "fee_source": "broker_order_fund_detail",
+                            "association_complete": True,
+                        }]
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/history/orders":
             self._json({"ok": True, "data": {"orders": [{"account_id": "acct-1", "gateway_order_id": "gw-history", "status": "filled", "is_terminal": True}]}})
             return
@@ -418,6 +437,9 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/v1/accounts/acct-1/fills/refresh":
             self._json({"ok": True, "data": {"account_id": "acct-1", "action": "fill.list.query", "stream_id": "3-0"}}, status=202)
+            return
+        if parsed.path == "/v1/accounts/acct-1/fees/refresh":
+            self._json({"ok": True, "data": {"account_id": "acct-1", "action": "fee.list.query", "stream_id": "6-0"}}, status=202)
             return
         if parsed.path == "/v1/accounts/acct-1/asset/refresh" or parsed.path == "/v1/accounts/acct-1/positions/refresh":
             self._json({"ok": True, "data": {"account_id": "acct-1", "action": "query", "stream_id": "4-0"}}, status=202)
@@ -720,7 +742,22 @@ class RelayClientTest(unittest.TestCase):
     def test_refresh_and_cancel(self):
         self.assertEqual(self.client.refresh_orders().action, "order.list.query")
         self.assertEqual(self.client.refresh_fills().action, "fill.list.query")
+        self.assertEqual(self.client.refresh_fees().action, "fee.list.query")
         self.assertEqual(self.client.cancel_order("gw-1").gateway_order_id, "gw-1")
+
+    def test_list_order_fees(self):
+        fees = self.client.list_order_fees(
+            trade_date="20260801",
+            gateway_order_id="gw-fee-1",
+            fee_complete=True,
+        )
+        self.assertEqual(len(fees), 1)
+        self.assertEqual(fees[0].gateway_order_id, "gw-fee-1")
+        self.assertEqual(fees[0].total_fee, 6.25)
+        self.assertTrue(fees[0].fee_complete)
+        method, path, query, _body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("GET", "/v1/accounts/acct-1/fees"))
+        self.assertEqual(query["fee_complete"], ["true"])
 
     def test_wait_order_terminal(self):
         order = self.client.wait_order_terminal("gw-1", timeout=1, poll_interval=0.01)

@@ -745,7 +745,7 @@ func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 		Config:    testConfig(true, false),
 		Ledger:    ledgerWriter,
 		Publisher: publisher,
-		IDs:       sequenceIDs{"msg-asset-1", "msg-positions-1", "msg-orders-1", "msg-fills-1"},
+		IDs:       sequenceIDs{"msg-asset-1", "msg-positions-1", "msg-orders-1", "msg-fills-1", "msg-fees-1"},
 		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)},
 	})
 	if err != nil {
@@ -768,20 +768,25 @@ func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshFills() error = %v", err)
 	}
+	feesResult, err := service.RefreshFees(context.Background(), "acct-1", RefreshOptions{RequestID: "req-fees"})
+	if err != nil {
+		t.Fatalf("RefreshFees() error = %v", err)
+	}
 
-	actions := []string{assetResult.Action, positionsResult.Action, ordersResult.Action, fillsResult.Action}
+	actions := []string{assetResult.Action, positionsResult.Action, ordersResult.Action, fillsResult.Action, feesResult.Action}
 	wantActions := []string{
 		redisstream.ActionAccountAsset,
 		redisstream.ActionAccountPositions,
 		redisstream.ActionOrderList,
 		redisstream.ActionFillList,
+		redisstream.ActionFeeList,
 	}
 	for i, action := range actions {
 		if action != wantActions[i] {
 			t.Fatalf("actions = %#v, want %#v", actions, wantActions)
 		}
 	}
-	if len(publisher.commands) != 4 {
+	if len(publisher.commands) != 5 {
 		t.Fatalf("commands = %#v", publisher.commands)
 	}
 	for _, command := range publisher.commands {
@@ -793,7 +798,7 @@ func TestRefreshQueriesPublishQueryCommands(t *testing.T) {
 			t.Fatalf("payload = %#v", command.envelope.Payload)
 		}
 	}
-	if len(ledgerWriter.raw) != 4 || ledgerWriter.raw[0].Role != redisstream.SuffixCmdQuery {
+	if len(ledgerWriter.raw) != 5 || ledgerWriter.raw[0].Role != redisstream.SuffixCmdQuery {
 		t.Fatalf("raw archives = %#v", ledgerWriter.raw)
 	}
 }
@@ -886,12 +891,14 @@ type fakeLedger struct {
 	getOrderErr               error
 	listedOrders              []trading.Order
 	listedFills               []trading.Fill
+	listedFees                []ledger.OrderFeeRecord
 	asset                     trading.Asset
 	assetErr                  error
 	listedPositions           []trading.Position
 	listedPositionSnapshots   []trading.Position
 	lastOrderQuery            trading.OrderQuery
 	lastFillQuery             trading.FillQuery
+	lastFeeQuery              ledger.OrderFeeRecordQuery
 	lastPositionQuery         trading.PositionQuery
 	lastPositionSnapshotQuery trading.PositionQuery
 	raw                       []ledger.RawStreamMessage
@@ -949,6 +956,11 @@ func (writer *fakeLedger) ListOrders(_ context.Context, query trading.OrderQuery
 func (writer *fakeLedger) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	writer.lastFillQuery = query
 	return writer.listedFills, nil
+}
+
+func (writer *fakeLedger) ListOrderFeeRecords(_ context.Context, query ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error) {
+	writer.lastFeeQuery = query
+	return writer.listedFees, nil
 }
 
 func (writer *fakeLedger) GetLatestAsset(_ context.Context, accountID string) (trading.Asset, error) {

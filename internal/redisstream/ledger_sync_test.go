@@ -382,6 +382,199 @@ func TestProcessLedgerEntryWritesFillPageReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryWritesFeePageReply(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-5", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fee-page-1",
+			"origin_message_id":"msg-fee-query-1",
+			"request_id":"req-fee-query-1",
+			"correlation_id":"corr-fee-query-1",
+			"action":"fee.list.query",
+			"result_type":"fee_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"produced_at":"2026-08-01T15:02:03+08:00",
+			"payload":{
+				"account_id":"314000046830",
+				"trade_date":"2026-08-01",
+				"item_count":1,
+				"account_total_fee":12.34,
+				"items":[{
+					"fee_record_id":"broker-order-fee:110010180003456",
+					"record_scope":"order",
+					"account_id":"31400004683001",
+					"gateway_order_id":"external-huaxin-314000046830-110010180003456",
+					"order_id":888,
+					"order_stream_id":"110010180003456",
+					"symbol":"603738",
+					"exchange":"SH",
+					"trade_side":"S",
+					"business_type":"S",
+					"order_amount":5431,
+					"turnover":5431,
+					"commission":5,
+					"stamp_tax":5.431,
+					"transfer_fee":0.109,
+					"handling_fee":1.8,
+					"regulatory_fee":0,
+					"settlement_fee":0,
+					"other_fee":0,
+					"total_fee":12.34,
+					"currency":"CNY",
+					"fee_complete":true,
+					"fee_source":"broker_order_fund_detail",
+					"fee_as_of":"2026-08-01T15:01:59+08:00",
+					"settled_at":"",
+					"association_complete":true,
+					"adapter_context":{"broker_account_id":"31400004683001"}
+				}]
+			}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Replies != 1 || result.Accounts != 1 || result.Fees != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.fees) != 1 {
+		t.Fatalf("fees = %#v", writer.fees)
+	}
+	fee := writer.fees[0]
+	if fee.AccountID != "314000046830" || fee.FeeRecordID != "broker-order-fee:110010180003456" {
+		t.Fatalf("fee identity = %#v", fee)
+	}
+	if fee.TotalFee != 12.34 || !fee.FeeComplete || !fee.AssociationComplete {
+		t.Fatalf("fee amounts/status = %#v", fee)
+	}
+	if fee.FeeSource != "broker_order_fund_detail" || fee.OriginMessageID != "msg-fee-query-1" {
+		t.Fatalf("fee source = %#v", fee)
+	}
+	if fee.AdapterContext["relay_raw_account_id"] != "31400004683001" {
+		t.Fatalf("fee context = %#v", fee.AdapterContext)
+	}
+	if got := fee.FeeAsOf.In(timeutil.Location()).Format(time.RFC3339); got != "2026-08-01T15:01:59+08:00" {
+		t.Fatalf("fee_as_of = %s", got)
+	}
+}
+
+func TestProcessLedgerEntryPreservesUnavailableFillFeeMetadata(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-6", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fill-fee-metadata",
+			"action":"fill.list.query",
+			"result_type":"fill_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"items":[{
+				"fill_id":"fill-fee-metadata",
+				"gateway_order_id":"gw-fee-metadata",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"price":10,
+				"qty":100,
+				"trade_side":"B",
+				"fee":0,
+				"fee_complete":false,
+				"fee_source":"unavailable",
+				"fee_as_of":"2026-08-01T15:01:59+08:00"
+			}]}
+		}`,
+	})
+
+	if result.Fills != 1 || len(writer.fills) != 1 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.fills)
+	}
+	context := writer.fills[0].fill.AdapterContext
+	if context["fee_complete"] != false || context["fee_source"] != "unavailable" {
+		t.Fatalf("fill fee context = %#v", context)
+	}
+}
+
+func TestProcessLedgerEntryRejectsInconsistentFeePageTotal(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:acct-1:reply", "1-7", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fee-page-bad-total",
+			"action":"fee.list.query",
+			"result_type":"fee_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"acct-1","account_id":"acct-1"},
+			"payload":{"item_count":1,"account_total_fee":9,"items":[{
+				"fee_record_id":"fee-1",
+				"record_scope":"order",
+				"account_id":"acct-1",
+				"trade_date":"2026-08-01",
+				"gateway_order_id":"gw-1",
+				"total_fee":5,
+				"fee_complete":true,
+				"fee_source":"broker_order_fund_detail",
+				"fee_as_of":"2026-08-01T15:01:59+08:00",
+				"association_complete":true
+			}]}
+		}`,
+	})
+
+	if result.Skipped != 1 || result.Fees != 0 || len(writer.fees) != 0 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.fees)
+	}
+	if len(result.SkipReasons) != 1 || !strings.Contains(result.SkipReasons[0], "account_total_fee") {
+		t.Fatalf("skip reasons = %#v", result.SkipReasons)
+	}
+}
+
+func TestProcessLedgerEntryRejectsDuplicateFeeRecordIDs(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:acct-1:reply", "1-8", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-fee-page-duplicate",
+			"action":"fee.list.query",
+			"result_type":"fee_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"acct-1","account_id":"acct-1"},
+			"payload":{"item_count":2,"account_total_fee":10,"items":[{
+				"fee_record_id":"fee-duplicate",
+				"record_scope":"order",
+				"account_id":"acct-1",
+				"trade_date":"2026-08-01",
+				"gateway_order_id":"gw-1",
+				"total_fee":5,
+				"fee_complete":true,
+				"fee_source":"broker_order_fund_detail",
+				"fee_as_of":"2026-08-01T15:01:59+08:00",
+				"association_complete":true
+			},{
+				"fee_record_id":"fee-duplicate",
+				"record_scope":"order",
+				"account_id":"acct-1",
+				"trade_date":"2026-08-01",
+				"gateway_order_id":"gw-1",
+				"total_fee":5,
+				"fee_complete":true,
+				"fee_source":"broker_order_fund_detail",
+				"fee_as_of":"2026-08-01T15:01:59+08:00",
+				"association_complete":true
+			}]}
+		}`,
+	})
+
+	if result.Skipped != 1 || result.Fees != 0 || len(writer.fees) != 0 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.fees)
+	}
+	if len(result.SkipReasons) != 1 || !strings.Contains(result.SkipReasons[0], "duplicate fee_record_id") {
+		t.Fatalf("skip reasons = %#v", result.SkipReasons)
+	}
+}
+
 func TestProcessLedgerEntryNormalizesRoutedFillPageAccount(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-41", map[string]any{
@@ -484,6 +677,46 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 	if len(writer.orderEvents) != 1 || writer.orderEvents[0].stream.ID != "2-0" {
 		t.Fatalf("order events = %#v", writer.orderEvents)
+	}
+}
+
+func TestProcessLedgerEntryPreservesUnavailableOrderFeeMetadataAsReported(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "2-fee", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-order-fee-metadata",
+			"event_type":"order.event",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-fee-metadata",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":100,
+				"limit_price":9.54,
+				"status":"working",
+				"gateway_status":"working",
+				"fee":0,
+				"fee_complete":false,
+				"fee_source":"unavailable",
+				"fee_as_of":"2026-08-01T15:01:59+08:00"
+			}
+		}`,
+	})
+
+	if result.Orders != 1 || len(writer.orders) != 1 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.orders)
+	}
+	context := writer.orders[0].AdapterContext
+	if context["reported_fee_complete"] != false || context["reported_fee_source"] != "unavailable" {
+		t.Fatalf("order fee context = %#v", context)
+	}
+	if _, exists := context["fee_source"]; exists {
+		t.Fatalf("reported metadata must not overwrite authoritative fee context: %#v", context)
 	}
 }
 
@@ -1244,6 +1477,7 @@ type fakeLedgerWriter struct {
 	cancelAttempts        []ledger.OrderCancelAttempt
 	fills                 []recordedFill
 	transfers             []recordedComponentTransfer
+	fees                  []ledger.OrderFeeRecord
 	assets                []recordedAsset
 	positions             []recordedPosition
 	stalePositionClears   []recordedStalePositionClear
@@ -1317,6 +1551,11 @@ func (writer *fakeLedgerWriter) InsertFill(_ context.Context, fill trading.Fill,
 
 func (writer *fakeLedgerWriter) InsertComponentTransfer(_ context.Context, transfer trading.ComponentTransfer, stream ledger.StreamRef, source ledger.SourceRef) error {
 	writer.transfers = append(writer.transfers, recordedComponentTransfer{transfer: transfer, stream: stream, source: source})
+	return nil
+}
+
+func (writer *fakeLedgerWriter) UpsertOrderFeeRecord(_ context.Context, fee ledger.OrderFeeRecord) error {
+	writer.fees = append(writer.fees, fee)
 	return nil
 }
 

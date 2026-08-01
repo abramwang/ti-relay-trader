@@ -26,6 +26,8 @@ const (
 	reverseRepoYearDays     = 365.0
 	fillPageLimit           = 500
 	maxFillPages            = 40
+	feePageLimit            = 5000
+	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
 	defaultFormulaVersion   = "performance_economic_nav.v2.1"
 	defaultAutoToleranceCNY = 50.0
@@ -37,6 +39,7 @@ const (
 type Store interface {
 	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
+	ListOrderFeeRecords(ctx context.Context, query ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error)
 	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
 	GetAssetPositionObservation(ctx context.Context, accountID string, tradeDate string, snapshotType string) (ledger.AssetPositionObservation, error)
@@ -831,6 +834,11 @@ func (service *Service) CalculateReverseRepo(ctx context.Context, accountID, tra
 		return ReverseRepoResult{}, err
 	}
 	groups := reverseRepoGroups(fills)
+	feeRecords, err := service.listOrderFeeRecords(ctx, accountID, normalizedDate)
+	if err != nil {
+		return ReverseRepoResult{}, err
+	}
+	authoritativeFees := authoritativeOrderFees(feeRecords)
 	result := ReverseRepoResult{
 		AccountID:  accountID,
 		TradeDate:  normalizedDate,
@@ -866,7 +874,8 @@ func (service *Service) CalculateReverseRepo(ctx context.Context, accountID, tra
 	}
 
 	for _, group := range groups {
-		accrual := calculateRepoGroup(accountID, normalizedDate, occupationDays, firstSettlement, maturitySettlement, group, rule, ruleErr == nil, service.now())
+		orderFee, hasOrderFee := authoritativeFees[group.gatewayOrderID]
+		accrual := calculateRepoGroup(accountID, normalizedDate, occupationDays, firstSettlement, maturitySettlement, group, orderFee, hasOrderFee, rule, ruleErr == nil, service.now())
 		if persist {
 			if err := service.store.UpsertReverseRepoAccrual(ctx, accrual); err != nil {
 				return ReverseRepoResult{}, err
@@ -910,6 +919,41 @@ func (service *Service) listTradeDateFills(ctx context.Context, accountID, trade
 		}
 	}
 	return nil, fmt.Errorf("reverse repo fill scan exceeded %d rows", fillPageLimit*maxFillPages)
+}
+
+func (service *Service) listOrderFeeRecords(ctx context.Context, accountID, tradeDate string) ([]ledger.OrderFeeRecord, error) {
+	items := make([]ledger.OrderFeeRecord, 0)
+	for page := 0; page < maxFeePages; page++ {
+		batch, err := service.store.ListOrderFeeRecords(ctx, ledger.OrderFeeRecordQuery{
+			AccountID: accountID,
+			TradeDate: tradeDate,
+			Limit:     feePageLimit,
+			Cursor:    strconv.Itoa(page * feePageLimit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list order fee records: %w", err)
+		}
+		items = append(items, batch...)
+		if len(batch) < feePageLimit {
+			return items, nil
+		}
+	}
+	return nil, fmt.Errorf("order fee scan exceeded %d rows", feePageLimit*maxFeePages)
+}
+
+func authoritativeOrderFees(records []ledger.OrderFeeRecord) map[string]ledger.OrderFeeRecord {
+	result := make(map[string]ledger.OrderFeeRecord)
+	for _, record := range records {
+		gatewayOrderID := strings.TrimSpace(record.GatewayOrderID)
+		if gatewayOrderID == "" || !record.FeeComplete || !record.AssociationComplete || strings.TrimSpace(record.FeeSource) == "unavailable" {
+			continue
+		}
+		current, exists := result[gatewayOrderID]
+		if !exists || record.FeeAsOf.After(current.FeeAsOf) {
+			result[gatewayOrderID] = record
+		}
+	}
+	return result
 }
 
 func (service *Service) openEconomicNAV(ctx context.Context, accountID, tradeDate string, daily ledger.DailyPerformance) (float64, []string, error) {
@@ -1442,6 +1486,8 @@ func calculateRepoGroup(
 	firstSettlement time.Time,
 	maturitySettlement time.Time,
 	group repoFillGroup,
+	orderFee ledger.OrderFeeRecord,
+	hasOrderFee bool,
 	rule ledger.FeeRule,
 	hasRule bool,
 	calculatedAt time.Time,
@@ -1491,6 +1537,12 @@ func calculateRepoGroup(
 		},
 	}
 	switch {
+	case hasOrderFee:
+		fee := roundMoney(orderFee.TotalFee)
+		accrual.ActualFee = &fee
+		accrual.EffectiveFee = fee
+		accrual.FeeSource = "actual_order_fee:" + orderFee.FeeSource
+		accrual.SourcePayload["fee_record_id"] = orderFee.FeeRecordID
 	case hasActualFee:
 		fee := roundMoney(actualFee)
 		accrual.ActualFee = &fee

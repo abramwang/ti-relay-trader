@@ -142,7 +142,12 @@ ON CONFLICT (account_id, trade_date, gateway_order_id) DO UPDATE SET
         WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.avg_fill_price
         ELSE COALESCE(EXCLUDED.avg_fill_price, orders.avg_fill_price)
     END,
-    fee = EXCLUDED.fee,
+    fee = CASE
+        WHEN orders.adapter_context ? 'fee_record_id'
+            AND COALESCE(EXCLUDED.adapter_context ->> 'reported_fee_source', 'unavailable') = 'unavailable'
+            THEN orders.fee
+        ELSE EXCLUDED.fee
+    END,
     status = CASE
         WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.status
         WHEN orders.is_terminal = TRUE AND EXCLUDED.is_terminal = FALSE THEN orders.status

@@ -182,6 +182,12 @@ var (
 			Description: "Redis Stream 协议、命令、回包、事件、心跳、DLQ 和验收流程。",
 		},
 		{
+			Slug:        "oc-actual-fee-integration",
+			Title:       "OC 订单实际费用对接",
+			Path:        "docs/OC_ACTUAL_FEE_INTEGRATION_GUIDE_20260801.md",
+			Description: "OC fee.list.query、fee_page、订单级费用幂等和历史查询边界。",
+		},
+		{
 			Slug:        "oc-v1-2-compatibility",
 			Title:       "OC v1.2 兼容通知",
 			Path:        "docs/RELAY_COMPATIBILITY_NOTICE_20260730.md",

@@ -60,6 +60,8 @@ type OrderService interface {
 	RefreshPositions(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 	RefreshOrders(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
 	RefreshFills(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
+	RefreshFees(ctx context.Context, accountID string, opts orderflow.RefreshOptions) (orderflow.RefreshQueryResult, error)
+	ListOrderFees(ctx context.Context, query ledger.OrderFeeRecordQuery) (orderflow.ListOrderFeesResult, error)
 }
 
 type componentTransferService interface {
@@ -1244,6 +1246,24 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleRefreshFills(w, r, accountID)
+	case "fees":
+		if len(parts) == 3 {
+			if parts[2] != "refresh" {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+				return
+			}
+			s.handleRefreshFees(w, r, accountID)
+			return
+		}
+		if r.Method != http.MethodGet {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			return
+		}
+		s.handleAccountFees(w, r, accountID)
 	case "cash-ledger":
 		if len(parts) == 2 {
 			switch r.Method {
@@ -3027,6 +3047,42 @@ func (s *Server) handleRefreshFills(w http.ResponseWriter, r *http.Request, acco
 	httpx.WriteOK(w, r, http.StatusAccepted, result)
 }
 
+func (s *Server) handleRefreshFees(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	opts, err := refreshOptionsFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid refresh query", err.Error())
+		return
+	}
+	result, err := s.orders.RefreshFees(r.Context(), accountID, opts)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusAccepted, result)
+}
+
+func (s *Server) handleAccountFees(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.orders == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
+		return
+	}
+	query, err := parseOrderFeeQuery(accountID, r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee query", err.Error())
+		return
+	}
+	result, err := s.orders.ListOrderFees(r.Context(), query)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
 func refreshOptionsFromRequest(r *http.Request) (orderflow.RefreshOptions, error) {
 	opts := orderflow.RefreshOptions{RequestID: httpx.RequestID(r)}
 	rawTradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
@@ -3878,6 +3934,31 @@ func parsePositionQuery(accountID string, values url.Values) (trading.PositionQu
 
 func parseDateQuery(values url.Values) (string, string, string) {
 	return values.Get("trade_date"), values.Get("date_from"), values.Get("date_to")
+}
+
+func parseOrderFeeQuery(accountID string, values url.Values) (ledger.OrderFeeRecordQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return ledger.OrderFeeRecordQuery{}, err
+	}
+	var feeComplete *bool
+	if raw := strings.TrimSpace(values.Get("fee_complete")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return ledger.OrderFeeRecordQuery{}, fmt.Errorf("fee_complete must be true or false")
+		}
+		feeComplete = &value
+	}
+	return ledger.OrderFeeRecordQuery{
+		AccountID:      accountID,
+		TradeDate:      values.Get("trade_date"),
+		DateFrom:       values.Get("date_from"),
+		DateTo:         values.Get("date_to"),
+		GatewayOrderID: values.Get("gateway_order_id"),
+		FeeComplete:    feeComplete,
+		Limit:          limit,
+		Cursor:         values.Get("cursor"),
+	}, nil
 }
 
 func parseBool(value string) bool {

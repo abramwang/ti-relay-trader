@@ -34,6 +34,7 @@ const (
 	maxOrderQueryLimit    = 500
 	maxFillQueryLimit     = 500
 	maxTransferQueryLimit = 500
+	maxFeeQueryLimit      = 500
 	maxPositionQueryLimit = 2000
 )
 
@@ -45,6 +46,7 @@ type LedgerWriter interface {
 	GetOrderByIdempotencyKey(ctx context.Context, accountID string, idempotencyKey string) (trading.Order, error)
 	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
+	ListOrderFeeRecords(ctx context.Context, query ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error)
 	GetLatestAsset(ctx context.Context, accountID string) (trading.Asset, error)
 	ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
@@ -152,6 +154,13 @@ type ListFillsResult struct {
 	Query      trading.FillQuery `json:"query"`
 	Count      int               `json:"count"`
 	NextCursor string            `json:"next_cursor,omitempty"`
+}
+
+type ListOrderFeesResult struct {
+	Fees       []ledger.OrderFeeRecord    `json:"fees"`
+	Query      ledger.OrderFeeRecordQuery `json:"query"`
+	Count      int                        `json:"count"`
+	NextCursor string                     `json:"next_cursor,omitempty"`
 }
 
 type ListComponentTransfersResult struct {
@@ -637,6 +646,54 @@ func (service *Service) RefreshOrders(ctx context.Context, accountID string, opt
 
 func (service *Service) RefreshFills(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
 	return service.publishAccountQuery(ctx, accountID, redisstream.ActionFillList, "fills", opts)
+}
+
+func (service *Service) RefreshFees(ctx context.Context, accountID string, opts RefreshOptions) (RefreshQueryResult, error) {
+	return service.publishAccountQuery(ctx, accountID, redisstream.ActionFeeList, "fees", opts)
+}
+
+func (service *Service) ListOrderFees(ctx context.Context, query ledger.OrderFeeRecordQuery) (ListOrderFeesResult, error) {
+	normalized := query
+	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
+	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)
+	normalized.DateFrom = strings.TrimSpace(normalized.DateFrom)
+	normalized.DateTo = strings.TrimSpace(normalized.DateTo)
+	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
+	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
+	if _, err := service.routeForConfiguredAccount(normalized.AccountID); err != nil {
+		return ListOrderFeesResult{}, err
+	}
+	if normalized.Limit <= 0 {
+		normalized.Limit = 100
+	}
+	if normalized.Limit > maxFeeQueryLimit {
+		normalized.Limit = maxFeeQueryLimit
+	}
+	offset, err := cursorOffset(normalized.Cursor)
+	if err != nil {
+		return ListOrderFeesResult{}, err
+	}
+	fetchQuery := normalized
+	if normalized.Limit < maxFeeQueryLimit {
+		fetchQuery.Limit = normalized.Limit + 1
+	}
+	fees, err := service.ledger.ListOrderFeeRecords(ctx, fetchQuery)
+	if err != nil {
+		return ListOrderFeesResult{}, err
+	}
+	nextCursor := ""
+	if len(fees) > normalized.Limit {
+		fees = fees[:normalized.Limit]
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	} else if normalized.Limit == maxFeeQueryLimit && len(fees) == normalized.Limit {
+		nextCursor = strconv.Itoa(offset + normalized.Limit)
+	}
+	return ListOrderFeesResult{
+		Fees:       fees,
+		Query:      normalized,
+		Count:      len(fees),
+		NextCursor: nextCursor,
+	}, nil
 }
 
 func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.SubmitOrderRequest) (trading.Order, bool, error) {

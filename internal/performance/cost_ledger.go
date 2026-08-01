@@ -230,12 +230,18 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		result.QualityFlags = appendUnique(result.QualityFlags, "fee_rules_unavailable")
 		rules = nil
 	}
+	feeRecords, err := service.listOrderFeeRecords(ctx, accountID, normalizedDate)
+	if err != nil {
+		return CostLedgerResult{}, err
+	}
+	authoritativeFees := authoritativeOrderFees(feeRecords)
+	consumedOrderFees := make(map[string]bool)
 
 	for _, fill := range fills {
 		key := contributionSecurityID(fill.Symbol, fill.Exchange)
 		state := working[key]
 		instrument := instruments[key]
-		fee := calculateContributionFillFee(fill, instrument, rules)
+		fee := contributionFeeForFill(fill, instrument, rules, authoritativeFees, consumedOrderFees)
 		state.item.FeeSource = mergeContributionFeeSource(state.item.FeeSource, fee.source)
 		state.flags = appendUnique(state.flags, fee.flags...)
 		amount := contributionFillAmount(fill)

@@ -256,6 +256,73 @@ class Fill:
 
 
 @dataclass(frozen=True)
+class OrderFeeRecord:
+    account_id: str = ""
+    fee_record_id: str = ""
+    trade_date: str = ""
+    record_scope: str = "order"
+    gateway_order_id: str = ""
+    order_id: int = 0
+    order_stream_id: str = ""
+    fill_id: str = ""
+    symbol: str = ""
+    exchange: str = ""
+    trade_side: str = ""
+    business_type: str = ""
+    order_amount: float = 0.0
+    turnover: float = 0.0
+    commission: float = 0.0
+    stamp_tax: float = 0.0
+    transfer_fee: float = 0.0
+    handling_fee: float = 0.0
+    regulatory_fee: float = 0.0
+    settlement_fee: float = 0.0
+    other_fee: float = 0.0
+    total_fee: float = 0.0
+    currency: str = "CNY"
+    fee_complete: bool = False
+    fee_source: str = "unavailable"
+    fee_as_of: str = ""
+    settled_at: str = ""
+    association_complete: bool = False
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "OrderFeeRecord":
+        return cls(
+            account_id=_text(data, "account_id"),
+            fee_record_id=_text(data, "fee_record_id"),
+            trade_date=_text(data, "trade_date"),
+            record_scope=_text(data, "record_scope", "order"),
+            gateway_order_id=_text(data, "gateway_order_id"),
+            order_id=_int(data, "order_id"),
+            order_stream_id=_text(data, "order_stream_id"),
+            fill_id=_text(data, "fill_id"),
+            symbol=_text(data, "symbol"),
+            exchange=_text(data, "exchange"),
+            trade_side=_text(data, "trade_side"),
+            business_type=_text(data, "business_type"),
+            order_amount=_float(data, "order_amount"),
+            turnover=_float(data, "turnover"),
+            commission=_float(data, "commission"),
+            stamp_tax=_float(data, "stamp_tax"),
+            transfer_fee=_float(data, "transfer_fee"),
+            handling_fee=_float(data, "handling_fee"),
+            regulatory_fee=_float(data, "regulatory_fee"),
+            settlement_fee=_float(data, "settlement_fee"),
+            other_fee=_float(data, "other_fee"),
+            total_fee=_float(data, "total_fee"),
+            currency=_text(data, "currency", "CNY"),
+            fee_complete=_bool(data, "fee_complete"),
+            fee_source=_text(data, "fee_source", "unavailable"),
+            fee_as_of=_text(data, "fee_as_of"),
+            settled_at=_text(data, "settled_at"),
+            association_complete=_bool(data, "association_complete"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
 class ComponentTransfer:
     fill_id: str = ""
     account_id: str = ""

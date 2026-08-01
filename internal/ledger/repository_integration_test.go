@@ -45,6 +45,7 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM fills WHERE account_id = $1", accountID)
+		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_fee_records WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_events WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM orders WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM raw_stream_messages WHERE request_id = $1", requestID)
@@ -91,6 +92,48 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		t.Fatalf("CreateOrder() duplicate idempotency error = %v, want ErrOrderConflict", err)
 	}
 
+	lateGatewayOrderID := gatewayOrderID + "-late"
+	lateFeeRecord := OrderFeeRecord{
+		AccountID:           accountID,
+		FeeRecordID:         "fee-late-" + suffix,
+		TradeDate:           "2026-06-13",
+		RecordScope:         "order",
+		GatewayOrderID:      lateGatewayOrderID,
+		OrderStreamID:       orderStreamID + "-late",
+		Symbol:              "600000",
+		Exchange:            "SH",
+		TradeSide:           "B",
+		BusinessType:        "S",
+		Turnover:            1025,
+		Commission:          7,
+		TotalFee:            7,
+		FeeComplete:         true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             time.Now().UTC(),
+		AssociationComplete: true,
+	}
+	if err := repo.UpsertOrderFeeRecord(ctx, lateFeeRecord); err != nil {
+		t.Fatalf("UpsertOrderFeeRecord() before order error = %v", err)
+	}
+	lateOrder := order
+	lateOrder.ClientOrderID += "-late"
+	lateOrder.GatewayOrderID = lateGatewayOrderID
+	lateOrder.OrderStreamID += "-late"
+	lateOrder.IdempotencyKey += "-late"
+	if err := repo.CreateOrder(ctx, lateOrder); err != nil {
+		t.Fatalf("CreateOrder() after fee error = %v", err)
+	}
+	if err := repo.UpsertOrderFeeRecord(ctx, lateFeeRecord); err != nil {
+		t.Fatalf("UpsertOrderFeeRecord() stable replay error = %v", err)
+	}
+	var lateOrderFee float64
+	if err := db.QueryRowContext(ctx, `SELECT fee FROM orders WHERE account_id = $1 AND trade_date = $2::date AND gateway_order_id = $3`, accountID, "2026-06-13", lateGatewayOrderID).Scan(&lateOrderFee); err != nil {
+		t.Fatalf("query replay-associated order fee: %v", err)
+	}
+	if lateOrderFee != 7 {
+		t.Fatalf("replay-associated order fee = %v, want 7", lateOrderFee)
+	}
+
 	if err := repo.AppendOrderEvent(ctx, trading.OrderEvent{
 		EventID:        "event-" + suffix,
 		AccountID:      accountID,
@@ -132,6 +175,67 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		t.Fatalf("InsertFill() error = %v", err)
 	}
 
+	feeAsOf := time.Now().UTC()
+	if err := repo.UpsertOrderFeeRecord(ctx, OrderFeeRecord{
+		AccountID:           accountID,
+		FeeRecordID:         "fee-" + suffix,
+		TradeDate:           "2026-06-13",
+		RecordScope:         "order",
+		GatewayOrderID:      gatewayOrderID,
+		OrderStreamID:       orderStreamID,
+		Symbol:              "600000",
+		Exchange:            "SH",
+		TradeSide:           "B",
+		BusinessType:        "S",
+		Turnover:            1025,
+		Commission:          5,
+		TotalFee:            5,
+		FeeComplete:         true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             feeAsOf,
+		AssociationComplete: true,
+	}); err != nil {
+		t.Fatalf("UpsertOrderFeeRecord() error = %v", err)
+	}
+	fees, err := repo.ListOrderFeeRecords(ctx, OrderFeeRecordQuery{
+		AccountID:      accountID,
+		TradeDate:      "20260613",
+		GatewayOrderID: gatewayOrderID,
+	})
+	if err != nil || len(fees) != 1 || fees[0].TotalFee != 5 {
+		t.Fatalf("ListOrderFeeRecords() fees/error = %#v/%v", fees, err)
+	}
+	var orderFee float64
+	if err := db.QueryRowContext(ctx, `SELECT fee FROM orders WHERE account_id = $1 AND trade_date = $2::date AND gateway_order_id = $3`, accountID, "2026-06-13", gatewayOrderID).Scan(&orderFee); err != nil {
+		t.Fatalf("query updated order fee: %v", err)
+	}
+	if orderFee != 5 {
+		t.Fatalf("order fee = %v, want 5", orderFee)
+	}
+	degradedFeeRecord := OrderFeeRecord{
+		AccountID:           accountID,
+		FeeRecordID:         "fee-" + suffix,
+		TradeDate:           "2026-06-13",
+		RecordScope:         "order",
+		GatewayOrderID:      gatewayOrderID,
+		TotalFee:            0,
+		FeeComplete:         false,
+		FeeSource:           "unavailable",
+		FeeAsOf:             feeAsOf.Add(time.Minute),
+		AssociationComplete: false,
+	}
+	if err := repo.UpsertOrderFeeRecord(ctx, degradedFeeRecord); err != nil {
+		t.Fatalf("UpsertOrderFeeRecord() degraded replay error = %v", err)
+	}
+	fees, err = repo.ListOrderFeeRecords(ctx, OrderFeeRecordQuery{
+		AccountID:      accountID,
+		TradeDate:      "20260613",
+		GatewayOrderID: gatewayOrderID,
+	})
+	if err != nil || len(fees) != 1 || !fees[0].FeeComplete || !fees[0].AssociationComplete || fees[0].TotalFee != 5 {
+		t.Fatalf("final fee downgraded by incomplete replay: %#v/%v", fees, err)
+	}
+
 	if err := repo.ArchiveRawStreamMessage(ctx, RawStreamMessage{
 		StreamRef: StreamRef{
 			Key: "relay:test:v1:ledger:raw",
@@ -157,6 +261,7 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 
 	assertRowCount(ctx, t, db, "orders", "account_id = $1 AND gateway_order_id = $2", accountID, gatewayOrderID)
 	assertRowCount(ctx, t, db, "fills", "account_id = $1 AND fill_id = $2", accountID, fillID)
+	assertRowCount(ctx, t, db, "order_fee_records", "account_id = $1 AND gateway_order_id = $2", accountID, gatewayOrderID)
 	assertRowCount(ctx, t, db, "order_events", "account_id = $1 AND gateway_order_id = $2", accountID, gatewayOrderID)
 	assertRowCount(ctx, t, db, "raw_stream_messages", "request_id = $1", requestID)
 }

@@ -118,6 +118,44 @@ func TestCalculateContributionsUsesPositionCashFlowIdentity(t *testing.T) {
 	}
 }
 
+func TestContributionFeeForFillChargesAuthoritativeOrderFeeOnce(t *testing.T) {
+	feeAsOf := time.Date(2026, 8, 1, 15, 1, 0, 0, timeutil.Location())
+	authoritative := authoritativeOrderFees([]ledger.OrderFeeRecord{{
+		GatewayOrderID:      "gw-fee-1",
+		FeeRecordID:         "fee-1",
+		TotalFee:            6.25,
+		FeeComplete:         true,
+		AssociationComplete: true,
+		FeeSource:           "broker_order_fund_detail",
+		FeeAsOf:             feeAsOf,
+	}})
+	consumed := make(map[string]bool)
+	fill := trading.Fill{GatewayOrderID: "gw-fee-1", Price: 10, Qty: 100}
+
+	first := contributionFeeForFill(fill, contributionInstrument{}, nil, authoritative, consumed)
+	second := contributionFeeForFill(fill, contributionInstrument{}, nil, authoritative, consumed)
+
+	if first.actual != 6.25 || first.effective != 6.25 || first.source != "actual_order_fee:broker_order_fund_detail" {
+		t.Fatalf("first fee = %#v", first)
+	}
+	if second.actual != 0 || second.effective != 0 || second.source != "" {
+		t.Fatalf("second fee duplicated = %#v", second)
+	}
+}
+
+func TestCalculateContributionFillFeeDoesNotTrustUnavailableFee(t *testing.T) {
+	fee := calculateContributionFillFee(trading.Fill{
+		Fee: 3,
+		AdapterContext: map[string]any{
+			"fee_complete": false,
+			"fee_source":   "unavailable",
+		},
+	}, contributionInstrument{}, nil)
+	if fee.actual != 0 || fee.source != "missing" || !containsString(fee.flags, "missing_fee_rule") {
+		t.Fatalf("fee = %#v", fee)
+	}
+}
+
 func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.T) {
 	location := timeutil.Location()
 	buyTime := time.Date(2026, 7, 24, 10, 0, 0, 0, location)
@@ -1474,6 +1512,7 @@ type fakePerformanceStore struct {
 	positions             map[string][]trading.Position
 	positionsByDate       map[string][]trading.Position
 	feeRules              []ledger.FeeRule
+	orderFees             []ledger.OrderFeeRecord
 	fillQueries           []trading.FillQuery
 	daily                 ledger.DailyPerformance
 	dailyErr              error
@@ -1534,6 +1573,10 @@ func (store *fakePerformanceStore) ListOrders(_ context.Context, query trading.O
 func (store *fakePerformanceStore) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	store.fillQueries = append(store.fillQueries, query)
 	return store.fills, nil
+}
+
+func (store *fakePerformanceStore) ListOrderFeeRecords(_ context.Context, _ ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error) {
+	return store.orderFees, nil
 }
 
 func (store *fakePerformanceStore) ListPositionSnapshots(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {

@@ -189,6 +189,12 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		return ContributionResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	feeRecords, err := service.listOrderFeeRecords(ctx, accountID, normalizedDate)
+	if err != nil {
+		return ContributionResult{}, err
+	}
+	authoritativeFees := authoritativeOrderFees(feeRecords)
+	consumedOrderFees := make(map[string]bool)
 	ordinaryFillCount := len(fills)
 	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
 	if transferErr == nil && len(redemptionTransferFills) > 0 {
@@ -300,7 +306,7 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		}
 		bucket.orders = filteredOrders
 		bucket.fills = filteredFills
-		item := calculateOrdinaryContribution(bucket, rules, result.Summary.OpenEconomicNAV, hasRedemption)
+		item := calculateOrdinaryContribution(bucket, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, hasRedemption)
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
 	}
@@ -1031,7 +1037,14 @@ func (service *Service) loadRedemptionIOPV(ctx context.Context, tradeDate string
 	return selectedValue, selectedTime, selectedValue > 0
 }
 
-func calculateOrdinaryContribution(bucket contributionBucket, rules []ledger.FeeRule, openNAV float64, hasRedemption bool) SecurityContribution {
+func calculateOrdinaryContribution(
+	bucket contributionBucket,
+	rules []ledger.FeeRule,
+	authoritativeFees map[string]ledger.OrderFeeRecord,
+	consumedOrderFees map[string]bool,
+	openNAV float64,
+	hasRedemption bool,
+) SecurityContribution {
 	instrument := bucket.instrument
 	item := SecurityContribution{
 		SecurityID:     instrument.SecurityID,
@@ -1091,7 +1104,7 @@ func calculateOrdinaryContribution(bucket contributionBucket, rules []ledger.Fee
 			item.RedemptionQuantity += fill.Qty
 		}
 		if !componentCandidate {
-			fillFee := calculateContributionFillFee(fill, instrument, rules)
+			fillFee := contributionFeeForFill(fill, instrument, rules, authoritativeFees, consumedOrderFees)
 			fees.actual += fillFee.actual
 			fees.estimated += fillFee.estimated
 			fees.effective += fillFee.effective
@@ -1164,6 +1177,18 @@ func (service *Service) calculateCashManagementContribution(ctx context.Context,
 	}
 	net := result.NetInterest
 	gross := result.GrossInterest
+	feeSource := ""
+	actualFee := 0.0
+	estimatedFee := 0.0
+	for _, accrual := range result.Accruals {
+		feeSource = mergeContributionFeeSource(feeSource, accrual.FeeSource)
+		if accrual.ActualFee != nil {
+			actualFee += *accrual.ActualFee
+		}
+		if accrual.EstimatedFee != nil {
+			estimatedFee += *accrual.EstimatedFee
+		}
+	}
 	item := SecurityContribution{
 		SecurityID:        reverseRepoSecurityID,
 		Symbol:            reverseRepoSymbol,
@@ -1174,8 +1199,10 @@ func (service *Service) calculateCashManagementContribution(ctx context.Context,
 		SellQuantity:      int64(math.Round(result.Principal / reverseRepoCashMultiple)),
 		SellAmount:        result.Principal,
 		Turnover:          result.Principal,
+		ActualFee:         roundMoney(actualFee),
+		EstimatedFee:      roundMoney(estimatedFee),
 		EffectiveFee:      result.EffectiveFee,
-		FeeSource:         "reverse_repo_fee_rule",
+		FeeSource:         firstNonBlank(feeSource, "missing"),
 		GrossContribution: floatPointer(gross),
 		NetContribution:   floatPointer(net),
 		ContributionBPS:   contributionBPSPointer(net, openNAV),
@@ -1189,11 +1216,16 @@ func (service *Service) calculateCashManagementContribution(ctx context.Context,
 }
 
 func calculateContributionFillFee(fill trading.Fill, instrument contributionInstrument, rules []ledger.FeeRule) contributionFee {
-	if fill.Fee > 0 || contributionBool(fill.AdapterContext["fee_complete"]) {
+	feeSource := strings.TrimSpace(contributionString(fill.AdapterContext["fee_source"]))
+	if feeSource != "unavailable" && (fill.Fee > 0 || contributionBool(fill.AdapterContext["fee_complete"])) {
+		source := "actual"
+		if feeSource != "" {
+			source = "actual_fill:" + feeSource
+		}
 		return contributionFee{
 			actual:    fill.Fee,
 			effective: fill.Fee,
-			source:    "actual",
+			source:    source,
 		}
 	}
 	rule, ok := selectContributionFeeRule(fill, instrument, rules)
@@ -1215,6 +1247,28 @@ func calculateContributionFillFee(fill trading.Fill, instrument contributionInst
 		source:    "estimated",
 		flags:     []string{"estimated_fee_from_account_rule"},
 	}
+}
+
+func contributionFeeForFill(
+	fill trading.Fill,
+	instrument contributionInstrument,
+	rules []ledger.FeeRule,
+	authoritativeFees map[string]ledger.OrderFeeRecord,
+	consumedOrderFees map[string]bool,
+) contributionFee {
+	gatewayOrderID := strings.TrimSpace(fill.GatewayOrderID)
+	if record, ok := authoritativeFees[gatewayOrderID]; ok {
+		if consumedOrderFees[gatewayOrderID] {
+			return contributionFee{}
+		}
+		consumedOrderFees[gatewayOrderID] = true
+		return contributionFee{
+			actual:    record.TotalFee,
+			effective: record.TotalFee,
+			source:    "actual_order_fee:" + record.FeeSource,
+		}
+	}
+	return calculateContributionFillFee(fill, instrument, rules)
 }
 
 func selectContributionFeeRule(fill trading.Fill, instrument contributionInstrument, rules []ledger.FeeRule) (ledger.FeeRule, bool) {

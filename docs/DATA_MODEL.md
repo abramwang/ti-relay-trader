@@ -135,6 +135,7 @@ migrations/postgres/000001_init_ledger.down.sql
 | `orders` | 标准订单主表，以 `account_id + trade_date + gateway_order_id` 唯一，保存策略归因字段 |
 | `order_events` | 订单状态事件流水，保存每次状态变化，并同步保存交易日和策略归因字段 |
 | `fills` | 成交流水，以 `account_id + trade_date + gateway_order_id + fill_id` 或含交易日的 fallback 组合键去重；保存 `business_type` 和策略归因字段 |
+| `order_fee_records` | OC 订单级实际费用，以 `account_id + fee_record_id` 唯一；保存费用分项、完整性、关联状态、来源时点和原始回包。只有完整且关联成功的记录进入绩效 |
 | `etf_component_transfers` | ETF 申赎成分证券划转、现金替代及 0 价记录；与普通成交物理分表 |
 | `raw_stream_messages` | Redis 原始输入输出消息归档，用于审计和重放 |
 

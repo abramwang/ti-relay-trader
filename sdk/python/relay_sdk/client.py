@@ -13,12 +13,12 @@ from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import RelayConnectionError, RelayError, RelayTimeoutError, error_from_payload
-from .models import Account, Asset, CommandReceipt, ComponentTransfer, Fill, Order, Position, RelayEvent
+from .models import Account, Asset, CommandReceipt, ComponentTransfer, Fill, Order, OrderFeeRecord, Position, RelayEvent
 from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.22"
+SDK_VERSION = "0.1.23"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -138,6 +138,11 @@ class RelayClient:
     def refresh_fills(self, account_id: str | None = None) -> CommandReceipt:
         return self._refresh("fills", account_id)
 
+    def refresh_fees(self, account_id: str | None = None) -> CommandReceipt:
+        """Ask OC for order-level fees for its current broker trading day."""
+
+        return self._refresh("fees", account_id)
+
     def list_orders(
         self,
         *,
@@ -195,6 +200,34 @@ class RelayClient:
         path = "/v1/history/fills" if history else "/v1/fills"
         data = self._request("GET", path, query=query)
         return [Fill.from_dict(item) for item in data.get("fills", [])]
+
+    def list_order_fees(
+        self,
+        account_id: str | None = None,
+        *,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        gateway_order_id: str | None = None,
+        fee_complete: bool | None = None,
+        limit: int | None = 100,
+    ) -> list[OrderFeeRecord]:
+        """Return persisted OC order-level actual fee records."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/fees",
+            query={
+                "trade_date": trade_date,
+                "date_from": date_from,
+                "date_to": date_to,
+                "gateway_order_id": gateway_order_id,
+                "fee_complete": fee_complete,
+                "limit": limit,
+            },
+        )
+        return [OrderFeeRecord.from_dict(item) for item in data.get("fees", [])]
 
     def list_transfers(
         self,
@@ -1161,7 +1194,7 @@ class RelayClient:
         for key, value in (query or {}).items():
             if value is None or value == "":
                 continue
-            filtered[key] = value
+            filtered[key] = str(value).lower() if isinstance(value, bool) else value
         suffix = "?" + parse.urlencode(filtered, doseq=True) if filtered else ""
         return self.base_url + path + suffix
 

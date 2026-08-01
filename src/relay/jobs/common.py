@@ -164,7 +164,7 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
         client=client,
         trading_day=trading_day,
         phase="post_close_settlement",
-        refresh_steps=("orders", "fills", "asset", "positions"),
+        refresh_steps=("orders", "fills", "fees", "asset", "positions"),
         check_non_terminal_orders=True,
         settle_snapshots=True,
         snapshot_type="close",
@@ -274,6 +274,7 @@ def run_daily_job(
             trade_date=trading_day.target_trade_date,
             query_limit=options.query_limit,
             check_non_terminal_orders=check_non_terminal_orders,
+            include_fees="fees" in refresh_steps,
         )
 
     report["accounts"] = account_reports
@@ -367,6 +368,7 @@ def complete_account_flow(
     trade_date: str,
     query_limit: int,
     check_non_terminal_orders: bool,
+    include_fees: bool = False,
 ) -> None:
     account_id = str(account_report["account_id"])
     asset_value, asset_report = capture_call("get_asset", client.get_asset, account_id, include_result=False)
@@ -389,17 +391,31 @@ def complete_account_flow(
         limit=query_limit,
         include_result=False,
     )
+    fees_value: Any = []
+    fees_report: dict[str, Any] = {"ok": True, "skipped": True}
+    if include_fees:
+        fees_value, fees_report = capture_call(
+            "list_order_fees",
+            client.list_order_fees,
+            account_id,
+            trade_date=trade_date,
+            limit=query_limit,
+            include_result=False,
+        )
     snapshot_reports = {
         "asset": asset_report,
         "positions": positions_report,
         "orders": orders_report,
         "fills": fills_report,
     }
+    if include_fees:
+        snapshot_reports["fees"] = fees_report
     snapshot_values = {
         "asset": asset_value,
         "positions": positions_value,
         "orders": orders_value,
         "fills": fills_value,
+        "fees": fees_value,
     }
     account_report["queries"] = snapshot_reports
     account_report["snapshot"] = summarize_snapshot(snapshot_values, check_non_terminal_orders=check_non_terminal_orders)
@@ -413,6 +429,7 @@ def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders
     positions = snapshot.get("positions") or []
     orders = snapshot.get("orders") or []
     fills = snapshot.get("fills") or []
+    fees = snapshot.get("fees") or []
     non_terminal_orders = [order for order in orders if not bool(getattr(order, "is_terminal", False))]
     summary = {
         "asset": model_summary(asset, fields=("account_id", "net_asset", "cash_available", "market_value")),
@@ -422,6 +439,13 @@ def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders
         ),
         "orders_count": len(orders),
         "fills_count": len(fills),
+        "fees_count": len(fees),
+        "complete_fees_count": sum(
+            1
+            for fee in fees
+            if bool(getattr(fee, "fee_complete", False))
+            and bool(getattr(fee, "association_complete", False))
+        ),
         "non_terminal_orders": len(non_terminal_orders),
     }
     asset_updated_at = model_datetime(asset, fields=("updated_at", "captured_at"))

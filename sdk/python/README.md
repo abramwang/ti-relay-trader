@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.22.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.23.tar.gz"
 ```
 
 ## Quick Start
@@ -92,6 +92,7 @@ Methods that publish commands or persist relay ledger records:
 | `refresh_positions()` | Redis `cmd.query` | Ask OC to query broker positions. A completed full page clears stale current positions not returned by the broker. |
 | `refresh_orders()` | Redis `cmd.query` | Ask OC to query broker orders. Useful for external orders and final status reconciliation. |
 | `refresh_fills()` | Redis `cmd.query` | Ask OC to query broker fills. Useful for end-of-day reconciliation. |
+| `refresh_fees()` | Redis `cmd.query` | Ask OC for order-level actual fees for its current broker trading day. Historical dates are not supported by OC. |
 | `record_job_run(report, ...)` | PostgreSQL `job_runs` | Persist daily job report JSON and summary status. |
 | `record_settlement_snapshot(...)` | PostgreSQL settlement tables | Persist open/close asset and position snapshots, and reconciliation run inputs. |
 | `rebuild_economic_nav(trade_date=..., status=...)` | PostgreSQL `performance_nav_versions` + `performance_nav_reconciliations` | Persist the current economic NAV version; server-side performance write permission must be enabled. |
@@ -108,6 +109,9 @@ client.refresh_asset()
 client.refresh_positions()
 client.refresh_orders()
 client.refresh_fills()
+client.refresh_fees()
+
+fees = client.list_order_fees(trade_date="20260801", fee_complete=True)
 
 client.record_job_run(
     {"run_id": "post_close_settlement-20260625", "ok": True},

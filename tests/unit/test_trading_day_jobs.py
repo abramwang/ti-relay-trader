@@ -48,6 +48,9 @@ class FakeClient:
     def refresh_fills(self, account_id: str):
         return self._refresh(account_id, "fill.list.query")
 
+    def refresh_fees(self, account_id: str):
+        return self._refresh(account_id, "fee.list.query")
+
     def refresh_asset(self, account_id: str):
         return self._refresh(account_id, "account.asset.query")
 
@@ -83,6 +86,16 @@ class FakeClient:
 
     def list_fills(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
         return [SimpleNamespace(account_id=account_id, fill_id="fill-1")]
+
+    def list_order_fees(self, account_id: str, *, limit: int, trade_date: str | None = None):
+        return [
+            SimpleNamespace(
+                account_id=account_id,
+                fee_record_id="fee-1",
+                fee_complete=True,
+                association_complete=True,
+            )
+        ]
 
     def record_settlement_snapshot(self, **kwargs):
         self.settlement_calls.append(dict(kwargs))
@@ -314,6 +327,9 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertFalse(report["skipped"])
         self.assertEqual(len(report["accounts"]), 1)
         self.assertEqual(report["accounts"][0]["snapshot"]["non_terminal_order_ids"], ["gw-working"])
+        self.assertEqual(report["accounts"][0]["snapshot"]["fees_count"], 1)
+        self.assertEqual(report["accounts"][0]["snapshot"]["complete_fees_count"], 1)
+        self.assertIn(("acct-1", "fee.list.query"), client.refresh_calls)
         self.assertEqual(len(client.settlement_calls), 1)
         self.assertEqual(client.settlement_calls[0]["trade_date"], "20260612")
         self.assertEqual(client.settlement_calls[0]["account_ids"], ["acct-1"])

@@ -22,6 +22,7 @@ from .models import (
     Position,
     RelayEvent,
     Order,
+    OrderFeeRecord,
 )
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "ComponentTransfer",
     "Fill",
     "Order",
+    "OrderFeeRecord",
     "Position",
     "RelayClient",
     "RelayBrokerNotReadyError",
@@ -47,4 +49,4 @@ __all__ = [
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.22"
+__version__ = "0.1.23"
