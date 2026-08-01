@@ -787,13 +787,14 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 `2026-08-01` 已落地的计算底座：
 
 1. `performance_account_inceptions` 保存账户起算日、日初资金、初始持仓/成本来源、策略范围和确认审计；账户范围不在程序中写死。
-2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值和数量残差。
+2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值、上一 close/券商 open 数量、公司行为因子和数量残差。
 3. 成本账按 `日初数量 + 买入 - 卖出 = 日终数量` 逐证券校验。逆回购从证券成本账中排除，ETF `P/R` 预留独立分账；数量不平时直接阻断，不用柜台成本强行抹平。
 4. `performance_economic_nav.v2.1` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
 8. `307000051387` 的 `2026-07-29` 百万元盘中出金已按 confirmed `external_flow` 纳入 v2：精确时刻未知时使用日期精度和 `0.5` 权重，重算日盈亏 `+71,089.76` 元、收益率 `+0.141192%`、归因残差 `-458.48` 元，当日由 blocked 降为 provisional；`2026-07-30` 的 18 个数量差异继续独立阻断。
+9. `performance_position_cost.v2` 接入 Meridian `adjust-factors`。券商 open 数量与上一 close 数量之比匹配 `ex_factor` 时，保持持仓总成本并调整单位成本；因子存在但数量不变时按价格除权留痕；因子与券商数量无法闭合时标记 `corporate_action_mismatch` 并阻断。原始因子上下文独立保存，不覆盖 OC 持仓。
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。该账户的历史持仓不是“空仓起算”，但因无 ETF 申赎，不存在申赎对柜台成本的污染。
 
@@ -803,7 +804,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 
 1. 从 OC 新版本后的第一个完整交易日开始运行每日绩效计算：订单、成交、订单实际费用、open/close 资金持仓和 Meridian 日线通过门禁后，逐账户计算成本账与经济净值并保存质量结论。
 2. 历史费用、旧成交缺口和缺失 OC close 快照暂不推断回填；后续取得券商交割单后通过独立历史导入流程补齐。
-3. 使用 Meridian 除权因子处理股票和 ETF 的公司行为，保持总成本连续并调整单位成本/数量桥。
+3. 公司行为成本校正已接入；后续在首个新协议完整交易日继续验收实际发生的股票分红、送转和 ETF 份额折算。
 4. 在出现 ETF 申赎前实现 `CORE` 与 `ETF_T0:{group_id}` 独立成本池，引入 PCF、现金替代和跨市场回款质量标记。
 5. 债享5号人工金标已进入独立版本化审计表，并可由 `relayctl performance-gold-compare` 从数据库驱动只读比较；下一步先解决 7 月 23 日证券贡献阻断和连续区间门禁，再分批重建更早曲线，并完成其余三账户金标验收。
 6. 给研究侧导出 view 增加 v2 版本，保留 v1 作原始柜台参考。

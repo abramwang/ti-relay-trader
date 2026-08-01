@@ -27,37 +27,44 @@ type PerformanceInception struct {
 }
 
 type PositionCostState struct {
-	AccountID           string    `json:"account_id"`
-	TradeDate           string    `json:"trade_date"`
-	Symbol              string    `json:"symbol"`
-	Exchange            string    `json:"exchange"`
-	CostBucket          string    `json:"cost_bucket"`
-	Status              string    `json:"status"`
-	FormulaVersion      string    `json:"formula_version"`
-	OpenQuantity        int64     `json:"open_quantity"`
-	OpenTotalCost       float64   `json:"open_total_cost"`
-	BuyQuantity         int64     `json:"buy_quantity"`
-	BuyAmount           float64   `json:"buy_amount"`
-	BuyFee              float64   `json:"buy_fee"`
-	SellQuantity        int64     `json:"sell_quantity"`
-	SellAmount          float64   `json:"sell_amount"`
-	SellFee             float64   `json:"sell_fee"`
-	RealizedPnL         float64   `json:"realized_pnl"`
-	CloseQuantity       int64     `json:"close_quantity"`
-	CloseTotalCost      float64   `json:"close_total_cost"`
-	AverageCost         float64   `json:"average_cost"`
-	BrokerCloseQuantity int64     `json:"broker_close_quantity"`
-	QuantityResidual    int64     `json:"quantity_residual"`
-	ClosePrice          float64   `json:"close_price"`
-	CloseMarketValue    float64   `json:"close_market_value"`
-	UnrealizedPnL       float64   `json:"unrealized_pnl"`
-	FeeSource           string    `json:"fee_source"`
-	OpeningSource       string    `json:"opening_source"`
-	QualityFlags        []string  `json:"quality_flags,omitempty"`
-	Source              string    `json:"source"`
-	CalculatedAt        time.Time `json:"calculated_at,omitempty"`
-	CreatedAt           time.Time `json:"created_at,omitempty"`
-	UpdatedAt           time.Time `json:"updated_at,omitempty"`
+	AccountID                    string         `json:"account_id"`
+	TradeDate                    string         `json:"trade_date"`
+	Symbol                       string         `json:"symbol"`
+	Exchange                     string         `json:"exchange"`
+	CostBucket                   string         `json:"cost_bucket"`
+	Status                       string         `json:"status"`
+	FormulaVersion               string         `json:"formula_version"`
+	PreviousCloseQuantity        int64          `json:"previous_close_quantity"`
+	BrokerOpenQuantity           int64          `json:"broker_open_quantity"`
+	OpenQuantity                 int64          `json:"open_quantity"`
+	OpenTotalCost                float64        `json:"open_total_cost"`
+	BuyQuantity                  int64          `json:"buy_quantity"`
+	BuyAmount                    float64        `json:"buy_amount"`
+	BuyFee                       float64        `json:"buy_fee"`
+	SellQuantity                 int64          `json:"sell_quantity"`
+	SellAmount                   float64        `json:"sell_amount"`
+	SellFee                      float64        `json:"sell_fee"`
+	RealizedPnL                  float64        `json:"realized_pnl"`
+	CloseQuantity                int64          `json:"close_quantity"`
+	CloseTotalCost               float64        `json:"close_total_cost"`
+	AverageCost                  float64        `json:"average_cost"`
+	BrokerCloseQuantity          int64          `json:"broker_close_quantity"`
+	QuantityResidual             int64          `json:"quantity_residual"`
+	ClosePrice                   float64        `json:"close_price"`
+	CloseMarketValue             float64        `json:"close_market_value"`
+	UnrealizedPnL                float64        `json:"unrealized_pnl"`
+	FeeSource                    string         `json:"fee_source"`
+	OpeningSource                string         `json:"opening_source"`
+	CorporateActionType          string         `json:"corporate_action_type"`
+	CorporateActionFactor        float64        `json:"corporate_action_factor"`
+	CorporateActionQuantityDelta int64          `json:"corporate_action_quantity_delta"`
+	CorporateActionSource        string         `json:"corporate_action_source,omitempty"`
+	CorporateActionContext       map[string]any `json:"corporate_action_context,omitempty"`
+	QualityFlags                 []string       `json:"quality_flags,omitempty"`
+	Source                       string         `json:"source"`
+	CalculatedAt                 time.Time      `json:"calculated_at,omitempty"`
+	CreatedAt                    time.Time      `json:"created_at,omitempty"`
+	UpdatedAt                    time.Time      `json:"updated_at,omitempty"`
 }
 
 type PositionCostStateQuery struct {
@@ -150,12 +157,17 @@ func (repo *Repository) UpsertPositionCostState(ctx context.Context, item Positi
 	item.TradeDate = date
 	item.CostBucket = firstLedgerValue(item.CostBucket, "CORE")
 	item.Status = firstLedgerValue(item.Status, "calculated")
-	item.FormulaVersion = firstLedgerValue(item.FormulaVersion, "performance_position_cost.v1")
+	item.FormulaVersion = firstLedgerValue(item.FormulaVersion, "performance_position_cost.v2")
 	item.FeeSource = firstLedgerValue(item.FeeSource, "none")
+	item.CorporateActionType = firstLedgerValue(item.CorporateActionType, "none")
 	item.Source = firstLedgerValue(item.Source, "relay.performance.cost_ledger")
 	qualityFlags, err := json.Marshal(item.QualityFlags)
 	if err != nil {
 		return PositionCostState{}, fmt.Errorf("marshal cost quality flags: %w", err)
+	}
+	corporateActionContext, err := marshalJSONObject(item.CorporateActionContext)
+	if err != nil {
+		return PositionCostState{}, err
 	}
 	queryer, err := repo.queryer()
 	if err != nil {
@@ -163,12 +175,15 @@ func (repo *Repository) UpsertPositionCostState(ctx context.Context, item Positi
 	}
 	rows, err := queryer.QueryContext(ctx, upsertPositionCostStateSQL,
 		item.AccountID, item.TradeDate, item.Symbol, item.Exchange, item.CostBucket,
-		item.Status, item.FormulaVersion, item.OpenQuantity, item.OpenTotalCost,
+		item.Status, item.FormulaVersion, item.PreviousCloseQuantity, item.BrokerOpenQuantity,
+		item.OpenQuantity, item.OpenTotalCost,
 		item.BuyQuantity, item.BuyAmount, item.BuyFee, item.SellQuantity, item.SellAmount,
 		item.SellFee, item.RealizedPnL, item.CloseQuantity, item.CloseTotalCost,
 		item.AverageCost, item.BrokerCloseQuantity, item.QuantityResidual, item.ClosePrice,
 		item.CloseMarketValue, item.UnrealizedPnL, item.FeeSource, item.OpeningSource,
-		qualityFlags, item.Source, nullableTime(item.CalculatedAt),
+		item.CorporateActionType, item.CorporateActionFactor, item.CorporateActionQuantityDelta,
+		item.CorporateActionSource, corporateActionContext, qualityFlags, item.Source,
+		nullableTime(item.CalculatedAt),
 	)
 	if err != nil {
 		return PositionCostState{}, fmt.Errorf("upsert position cost %s/%s/%s.%s: %w", item.AccountID, item.TradeDate, item.Symbol, item.Exchange, err)
@@ -242,18 +257,23 @@ func scanPerformanceInception(row rowScanner) (PerformanceInception, error) {
 func scanPositionCostState(row rowScanner) (PositionCostState, error) {
 	var item PositionCostState
 	var qualityFlags []byte
+	var corporateActionContext []byte
 	err := row.Scan(
 		&item.AccountID, &item.TradeDate, &item.Symbol, &item.Exchange, &item.CostBucket,
-		&item.Status, &item.FormulaVersion, &item.OpenQuantity, &item.OpenTotalCost,
+		&item.Status, &item.FormulaVersion, &item.PreviousCloseQuantity, &item.BrokerOpenQuantity,
+		&item.OpenQuantity, &item.OpenTotalCost,
 		&item.BuyQuantity, &item.BuyAmount, &item.BuyFee, &item.SellQuantity, &item.SellAmount,
 		&item.SellFee, &item.RealizedPnL, &item.CloseQuantity, &item.CloseTotalCost,
 		&item.AverageCost, &item.BrokerCloseQuantity, &item.QuantityResidual, &item.ClosePrice,
 		&item.CloseMarketValue, &item.UnrealizedPnL, &item.FeeSource, &item.OpeningSource,
-		&qualityFlags, &item.Source, &item.CalculatedAt, &item.CreatedAt, &item.UpdatedAt,
+		&item.CorporateActionType, &item.CorporateActionFactor, &item.CorporateActionQuantityDelta,
+		&item.CorporateActionSource, &corporateActionContext, &qualityFlags, &item.Source,
+		&item.CalculatedAt, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
 		return PositionCostState{}, err
 	}
+	_ = json.Unmarshal(corporateActionContext, &item.CorporateActionContext)
 	_ = json.Unmarshal(qualityFlags, &item.QualityFlags)
 	return item, nil
 }
@@ -305,35 +325,44 @@ WHERE account_id = $1
 
 const positionCostStateColumnsSQL = `
     account_id, trade_date::text, symbol, exchange, cost_bucket,
-    status, formula_version, open_quantity, open_total_cost,
+    status, formula_version, previous_close_quantity, broker_open_quantity,
+    open_quantity, open_total_cost,
     buy_quantity, buy_amount, buy_fee, sell_quantity, sell_amount,
     sell_fee, realized_pnl, close_quantity, close_total_cost,
     average_cost, broker_close_quantity, quantity_residual, close_price,
     close_market_value, unrealized_pnl, fee_source, opening_source,
-    quality_flags, source, calculated_at, created_at, updated_at
+    corporate_action_type, corporate_action_factor, corporate_action_quantity_delta,
+    corporate_action_source, corporate_action_context, quality_flags, source,
+    calculated_at, created_at, updated_at
 `
 
 const upsertPositionCostStateSQL = `
 INSERT INTO performance_position_cost_states (
     account_id, trade_date, symbol, exchange, cost_bucket,
-    status, formula_version, open_quantity, open_total_cost,
+    status, formula_version, previous_close_quantity, broker_open_quantity,
+    open_quantity, open_total_cost,
     buy_quantity, buy_amount, buy_fee, sell_quantity, sell_amount,
     sell_fee, realized_pnl, close_quantity, close_total_cost,
     average_cost, broker_close_quantity, quantity_residual, close_price,
     close_market_value, unrealized_pnl, fee_source, opening_source,
-    quality_flags, source, calculated_at
+    corporate_action_type, corporate_action_factor, corporate_action_quantity_delta,
+    corporate_action_source, corporate_action_context, quality_flags, source, calculated_at
 ) VALUES (
     $1, $2::date, $3, $4, $5,
     $6, $7, $8, $9,
-    $10, $11, $12, $13, $14,
-    $15, $16, $17, $18,
-    $19, $20, $21, $22,
-    $23, $24, $25, $26,
-    $27::jsonb, $28, COALESCE($29, now())
+    $10, $11,
+    $12, $13, $14, $15, $16,
+    $17, $18, $19, $20,
+    $21, $22, $23, $24,
+    $25, $26, $27, $28,
+    $29, $30, $31,
+    $32, $33::jsonb, $34::jsonb, $35, COALESCE($36, now())
 )
 ON CONFLICT (account_id, trade_date, symbol, exchange, cost_bucket) DO UPDATE SET
     status = EXCLUDED.status,
     formula_version = EXCLUDED.formula_version,
+    previous_close_quantity = EXCLUDED.previous_close_quantity,
+    broker_open_quantity = EXCLUDED.broker_open_quantity,
     open_quantity = EXCLUDED.open_quantity,
     open_total_cost = EXCLUDED.open_total_cost,
     buy_quantity = EXCLUDED.buy_quantity,
@@ -353,6 +382,11 @@ ON CONFLICT (account_id, trade_date, symbol, exchange, cost_bucket) DO UPDATE SE
     unrealized_pnl = EXCLUDED.unrealized_pnl,
     fee_source = EXCLUDED.fee_source,
     opening_source = EXCLUDED.opening_source,
+    corporate_action_type = EXCLUDED.corporate_action_type,
+    corporate_action_factor = EXCLUDED.corporate_action_factor,
+    corporate_action_quantity_delta = EXCLUDED.corporate_action_quantity_delta,
+    corporate_action_source = EXCLUDED.corporate_action_source,
+    corporate_action_context = EXCLUDED.corporate_action_context,
     quality_flags = EXCLUDED.quality_flags,
     source = EXCLUDED.source,
     calculated_at = EXCLUDED.calculated_at,

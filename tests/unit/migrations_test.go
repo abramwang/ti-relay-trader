@@ -367,6 +367,25 @@ func TestOrderFeeRecordsMigrationAddsAuditedOrderFees(t *testing.T) {
 	}
 }
 
+func TestPositionCostCorporateActionsMigrationAddsAuditedInputs(t *testing.T) {
+	upSQL := readMigration(t, "000023_position_cost_corporate_actions.up.sql")
+	for _, snippet := range []string{
+		"previous_close_quantity BIGINT",
+		"broker_open_quantity BIGINT",
+		"corporate_action_type TEXT",
+		"corporate_action_factor NUMERIC(20, 12)",
+		"corporate_action_context JSONB",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("position cost corporate action migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000023_position_cost_corporate_actions.down.sql")
+	if !strings.Contains(downSQL, "DROP COLUMN IF EXISTS corporate_action_context") {
+		t.Fatal("position cost corporate action rollback missing columns")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

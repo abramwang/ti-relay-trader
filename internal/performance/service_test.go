@@ -1210,6 +1210,156 @@ func TestCalculateCostLedgerBlocksQuantityMismatch(t *testing.T) {
 	}
 }
 
+func TestCalculateCostLedgerAdjustsQuantityForMeridianCorporateAction(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:     "acct-1",
+			InceptionDate: "2026-07-20",
+			Status:        "confirmed",
+		},
+		costStates: []ledger.PositionCostState{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-20",
+			Symbol:         "588200",
+			Exchange:       "SH",
+			CostBucket:     "CORE",
+			Status:         "calculated",
+			CloseQuantity:  100,
+			CloseTotalCost: 1000,
+		}},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "588200", Exchange: trading.ExchangeSH, Quantity: 300}},
+			"close": {{AccountID: "acct-1", Symbol: "588200", Exchange: trading.ExchangeSH, Quantity: 300}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "588200.SH", "instrument_type": "etf",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "588200.SH", "pre_close": 0.4, "close": 0.41,
+		}}}},
+		adjustFactors: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id":   "588200.SH",
+			"ex_date":       20260721,
+			"ex_factor":     3.0,
+			"ex_cum_factor": 3.0,
+			"source":        "mysql_ti_db",
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260721", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || result.Summary.CorporateActions != 1 || result.Summary.QuantityAdjustments != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	item := result.Positions[0]
+	if item.PreviousCloseQuantity != 100 || item.BrokerOpenQuantity != 300 || item.OpenQuantity != 300 || item.CloseQuantity != 300 {
+		t.Fatalf("quantities = %#v", item)
+	}
+	if item.CorporateActionType != "quantity_adjustment" || item.CorporateActionFactor != 3 || item.CorporateActionQuantityDelta != 200 {
+		t.Fatalf("corporate action = %#v", item)
+	}
+	assertClose(t, item.OpenTotalCost, 1000)
+	assertClose(t, item.CloseTotalCost, 1000)
+	assertClose(t, item.AverageCost, 3.333333)
+	if !containsString(item.QualityFlags, "corporate_action_quantity_adjusted") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+	if len(marketClient.queries) < 3 || marketClient.queries[2].Get("start_date") != "20260721" {
+		t.Fatalf("Meridian queries = %#v", marketClient.queries)
+	}
+}
+
+func TestCalculateCostLedgerTreatsUnchangedQuantityFactorAsPriceAdjustment(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{AccountID: "acct-1", InceptionDate: "2026-07-15", Status: "confirmed"},
+		costStates: []ledger.PositionCostState{{
+			AccountID: "acct-1", TradeDate: "2026-07-15", Symbol: "600000", Exchange: "SH",
+			CostBucket: "CORE", Status: "calculated", CloseQuantity: 100, CloseTotalCost: 1000,
+		}},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+			"close": {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 8.89, "close": 8.95,
+		}}}},
+		adjustFactors: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "ex_date": "20260716", "ex_factor": 1.0472451375925815,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260716", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	item := result.Positions[0]
+	if result.Status != "calculated" || item.CorporateActionType != "price_adjustment" || item.OpenQuantity != 100 {
+		t.Fatalf("result/item = %#v / %#v", result, item)
+	}
+	assertClose(t, item.CloseTotalCost, 1000)
+	if !containsString(item.QualityFlags, "corporate_action_price_adjustment") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
+func TestCalculateCostLedgerBlocksCorporateActionQuantityMismatch(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{AccountID: "acct-1", InceptionDate: "2026-07-20", Status: "confirmed"},
+		costStates: []ledger.PositionCostState{{
+			AccountID: "acct-1", TradeDate: "2026-07-20", Symbol: "588200", Exchange: "SH",
+			CostBucket: "CORE", Status: "calculated", CloseQuantity: 100, CloseTotalCost: 1000,
+		}},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "588200", Exchange: trading.ExchangeSH, Quantity: 250}},
+			"close": {{AccountID: "acct-1", Symbol: "588200", Exchange: trading.ExchangeSH, Quantity: 250}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "588200.SH", "instrument_type": "etf",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "588200.SH", "pre_close": 0.4, "close": 0.41,
+		}}}},
+		adjustFactors: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "588200.SH", "ex_date": 20260721, "ex_factor": 3.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260721", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	item := result.Positions[0]
+	if result.Status != "blocked" || result.Summary.CorporateActionBreaks != 1 || item.CorporateActionType != "mismatch" {
+		t.Fatalf("result/item = %#v / %#v", result, item)
+	}
+	if !containsString(item.QualityFlags, "corporate_action_mismatch") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
 func TestReconcileEconomicNAVUsesNextOpenObservation(t *testing.T) {
 	store := &fakePerformanceStore{
 		navs: []ledger.PerformanceNAV{{
@@ -1630,10 +1780,16 @@ type fakePerformanceStore struct {
 
 type fakeContributionMarket struct {
 	metadata       market.MeridianResponse
+	adjustFactors  market.MeridianResponse
 	bars           market.MeridianResponse
 	snapshots      market.MeridianResponse
 	cashComponents market.MeridianResponse
 	queries        []url.Values
+}
+
+func (client *fakeContributionMarket) MetadataAdjustFactors(_ context.Context, values url.Values) (market.MeridianResponse, error) {
+	client.queries = append(client.queries, values)
+	return client.adjustFactors, nil
 }
 
 func (client *fakeContributionMarket) MetadataInstruments(_ context.Context, values url.Values) (market.MeridianResponse, error) {

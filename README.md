@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断、人工金标和 OC 当日订单实费已落地。当前优先建立 OC 新版本后完整交易日的每日绩效流水线，按账户独立检查订单、成交、费用、资金持仓和 Meridian 行情后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v2`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
 - 最近更新时间: `2026-08-01`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -592,3 +592,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 新增只读 `performance_daily` 每日绩效计算任务，生产计划为交易日 17:45，位于 Meridian 17:35 日线同步之后；任务对可信四账户分别试算移动成本账和 economic NAV，输出 `ready/attention/blocked`、费用完整性和质量标记，单户异常不使整批失败，也不绕过绩效写保护。SDK `0.1.24` 新增 `preview_cost_ledger/rebuild_cost_ledger`。用 7 月 30 日旧账本演练得到 0 ready、2 attention、2 blocked：两户准确识别历史费用缺失，`307000051387` 准确识别数量桥阻断，零资产账户独立阻断；任务本身 `ok=true`，未写入历史绩效。
 - `2026-08-01`: 明确交易可用性与费用完备性分离：订单核心字段及成交关联完整时，即使缺少费用也继续用于数量、成本、成交额和毛收益；费用覆盖按当日有成交的唯一订单统计，缺口仅使净绩效保持 provisional、标记等待券商交割单，不把订单判为无效数据。
 - `2026-08-01`: `performance_daily` 已接入通用任务告警：绩效 `blocked` 账户聚合为 critical，费用待完善的 `attention` 账户聚合为 warning，并与任务交易日共同生成幂等去重键。Go 全包、后台任务 21 项、SDK 18 项和 `relay-sdk 0.1.24` 发布包检查通过；生产任务配置与 cron 均为交易日 17:45，计算过程只读且不查询 OC。
+- `2026-08-01`: 发布 `performance_position_cost.v2` 并应用生产迁移 `000023_position_cost_corporate_actions`。成本账保存上一 close、券商 open、公司行为类型/因子/数量差和 Meridian 原始上下文；数量比匹配 `ex_factor` 时保持总成本并调整单位成本，数量不变时只标记价格除权，无法闭合时阻断。测试覆盖 `588200.SH` 3 倍 ETF 份额折算、`600000.SH` 价格除权和错误数量阻断；债享5号 7 月 30 日生产只读试算 156 个证券无误报、数量差异为 0。9092 已更新，生产交易权限保持关闭。

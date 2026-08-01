@@ -46,6 +46,7 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		defer cleanupCancel()
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM fills WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_fee_records WHERE account_id = $1", accountID)
+		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM performance_position_cost_states WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_events WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM orders WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM raw_stream_messages WHERE request_id = $1", requestID)
@@ -62,6 +63,47 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		Tags:           map[string]string{"scope": "integration"},
 	}); err != nil {
 		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+
+	costState, err := repo.UpsertPositionCostState(ctx, PositionCostState{
+		AccountID:                    accountID,
+		TradeDate:                    "2026-06-13",
+		Symbol:                       "588200",
+		Exchange:                     "SH",
+		CostBucket:                   "CORE",
+		Status:                       "calculated",
+		FormulaVersion:               "performance_position_cost.v2",
+		PreviousCloseQuantity:        100,
+		BrokerOpenQuantity:           300,
+		OpenQuantity:                 300,
+		OpenTotalCost:                1000,
+		CloseQuantity:                300,
+		CloseTotalCost:               1000,
+		AverageCost:                  3.333333,
+		BrokerCloseQuantity:          300,
+		ClosePrice:                   0.41,
+		CloseMarketValue:             123,
+		UnrealizedPnL:                -877,
+		CorporateActionType:          "quantity_adjustment",
+		CorporateActionFactor:        3,
+		CorporateActionQuantityDelta: 200,
+		CorporateActionSource:        "mysql_ti_db",
+		CorporateActionContext: map[string]any{
+			"security_id": "588200.SH",
+			"ex_date":     20260613,
+			"ex_factor":   3,
+		},
+		QualityFlags: []string{"corporate_action_quantity_adjusted"},
+	})
+	if err != nil {
+		t.Fatalf("UpsertPositionCostState() error = %v", err)
+	}
+	if costState.CorporateActionType != "quantity_adjustment" || costState.CorporateActionFactor != 3 || costState.BrokerOpenQuantity != 300 {
+		t.Fatalf("saved position cost corporate action = %#v", costState)
+	}
+	costStates, err := repo.ListPositionCostStates(ctx, PositionCostStateQuery{AccountID: accountID, TradeDate: "20260613"})
+	if err != nil || len(costStates) != 1 || costStates[0].CorporateActionQuantityDelta != 200 {
+		t.Fatalf("ListPositionCostStates() states/error = %#v/%v", costStates, err)
 	}
 
 	order := trading.Order{

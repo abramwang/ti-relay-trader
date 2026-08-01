@@ -14,33 +14,36 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
-const positionCostFormulaVersion = "performance_position_cost.v1"
+const positionCostFormulaVersion = "performance_position_cost.v2"
 
 type CostLedgerOptions struct {
 	Persist bool `json:"persist"`
 }
 
 type CostLedgerSummary struct {
-	Securities          int     `json:"securities"`
-	CalculatedItems     int     `json:"calculated_items"`
-	EstimatedItems      int     `json:"estimated_items"`
-	BlockedItems        int     `json:"blocked_items"`
-	QuantityBreaks      int     `json:"quantity_breaks"`
-	MissingFeeItems     int     `json:"missing_fee_items"`
-	OpenQuantity        int64   `json:"open_quantity"`
-	OpenTotalCost       float64 `json:"open_total_cost"`
-	BuyQuantity         int64   `json:"buy_quantity"`
-	BuyAmount           float64 `json:"buy_amount"`
-	BuyFee              float64 `json:"buy_fee"`
-	SellQuantity        int64   `json:"sell_quantity"`
-	SellAmount          float64 `json:"sell_amount"`
-	SellFee             float64 `json:"sell_fee"`
-	RealizedPnL         float64 `json:"realized_pnl"`
-	CloseQuantity       int64   `json:"close_quantity"`
-	CloseTotalCost      float64 `json:"close_total_cost"`
-	CloseMarketValue    float64 `json:"close_market_value"`
-	UnrealizedPnL       float64 `json:"unrealized_pnl"`
-	AttributionResidual float64 `json:"attribution_residual"`
+	Securities            int     `json:"securities"`
+	CalculatedItems       int     `json:"calculated_items"`
+	EstimatedItems        int     `json:"estimated_items"`
+	BlockedItems          int     `json:"blocked_items"`
+	QuantityBreaks        int     `json:"quantity_breaks"`
+	CorporateActions      int     `json:"corporate_actions"`
+	QuantityAdjustments   int     `json:"quantity_adjustments"`
+	CorporateActionBreaks int     `json:"corporate_action_breaks"`
+	MissingFeeItems       int     `json:"missing_fee_items"`
+	OpenQuantity          int64   `json:"open_quantity"`
+	OpenTotalCost         float64 `json:"open_total_cost"`
+	BuyQuantity           int64   `json:"buy_quantity"`
+	BuyAmount             float64 `json:"buy_amount"`
+	BuyFee                float64 `json:"buy_fee"`
+	SellQuantity          int64   `json:"sell_quantity"`
+	SellAmount            float64 `json:"sell_amount"`
+	SellFee               float64 `json:"sell_fee"`
+	RealizedPnL           float64 `json:"realized_pnl"`
+	CloseQuantity         int64   `json:"close_quantity"`
+	CloseTotalCost        float64 `json:"close_total_cost"`
+	CloseMarketValue      float64 `json:"close_market_value"`
+	UnrealizedPnL         float64 `json:"unrealized_pnl"`
+	AttributionResidual   float64 `json:"attribution_residual"`
 }
 
 type CostLedgerResult struct {
@@ -107,18 +110,23 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	}
 
 	working := make(map[string]*costWorkingState)
+	openPositions, err := service.listContributionPositions(ctx, accountID, normalizedDate, "open")
+	if err != nil {
+		return CostLedgerResult{}, err
+	}
+	openBySecurity := make(map[string]trading.Position, len(openPositions))
+	for _, position := range openPositions {
+		openBySecurity[contributionSecurityID(position.Symbol, position.Exchange)] = position
+	}
 	if normalizedDate == inception.InceptionDate {
 		result.OpeningSource = inception.OpeningPositionSource
-		openPositions, err := service.listContributionPositions(ctx, accountID, normalizedDate, "open")
-		if err != nil {
-			return CostLedgerResult{}, err
-		}
 		for _, position := range openPositions {
 			key := contributionSecurityID(position.Symbol, position.Exchange)
 			state := newCostWorkingState(accountID, normalizedDate, position.Symbol, string(position.Exchange), result.OpeningSource)
 			state.quantity = position.Quantity
 			state.cost = roundMoney(position.AvgCost * float64(position.Quantity))
 			state.item.OpenQuantity = position.Quantity
+			state.item.BrokerOpenQuantity = position.Quantity
 			state.item.OpenTotalCost = state.cost
 			if position.Quantity > 0 && position.AvgCost <= 0 {
 				state.flags = appendUnique(state.flags, "missing_trusted_open_cost")
@@ -184,6 +192,16 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	})
 	securityIDs := make([]string, 0)
 	seenSecurity := make(map[string]bool)
+	for key := range working {
+		securityIDs = append(securityIDs, key)
+		seenSecurity[key] = true
+	}
+	for key := range openBySecurity {
+		if !seenSecurity[key] {
+			securityIDs = append(securityIDs, key)
+			seenSecurity[key] = true
+		}
+	}
 	for _, fill := range fills {
 		key := contributionSecurityID(fill.Symbol, fill.Exchange)
 		if !seenSecurity[key] {
@@ -220,6 +238,29 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 
 	instruments, marketFlags := service.loadContributionInstruments(ctx, normalizedDate, securityIDs)
 	result.QualityFlags = appendUnique(result.QualityFlags, marketFlags...)
+	if normalizedDate != inception.InceptionDate {
+		factors, factorsAvailable, factorFlags := service.loadCorporateActionFactors(ctx, normalizedDate, securityIDs)
+		result.QualityFlags = appendUnique(result.QualityFlags, factorFlags...)
+		for key, state := range working {
+			openPosition := openBySecurity[key]
+			factor, hasFactor := factors[key]
+			applyCorporateActionOpening(state, openPosition.Quantity, factor, hasFactor, factorsAvailable)
+		}
+		for key, openPosition := range openBySecurity {
+			if working[key] != nil || openPosition.Quantity == 0 {
+				continue
+			}
+			state := newCostWorkingState(accountID, normalizedDate, openPosition.Symbol, string(openPosition.Exchange), result.OpeningSource)
+			state.quantity = openPosition.Quantity
+			state.item.BrokerOpenQuantity = openPosition.Quantity
+			state.item.OpenQuantity = openPosition.Quantity
+			state.item.OpenTotalCost = roundMoney(openPosition.AvgCost * float64(openPosition.Quantity))
+			state.cost = state.item.OpenTotalCost
+			state.item.Status = "blocked"
+			state.flags = appendUnique(state.flags, "opening_position_without_previous_cost")
+			working[key] = state
+		}
+	}
 	rules, ruleErr := service.store.ListFeeRules(ctx, ledger.FeeRuleQuery{
 		AccountID:   accountID,
 		Status:      "active",
@@ -337,16 +378,17 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 
 func newCostWorkingState(accountID, tradeDate, symbol, exchange, openingSource string) *costWorkingState {
 	return &costWorkingState{item: ledger.PositionCostState{
-		AccountID:      accountID,
-		TradeDate:      tradeDate,
-		Symbol:         strings.TrimSpace(symbol),
-		Exchange:       strings.ToUpper(strings.TrimSpace(exchange)),
-		CostBucket:     "CORE",
-		Status:         "calculated",
-		FormulaVersion: positionCostFormulaVersion,
-		FeeSource:      "none",
-		OpeningSource:  openingSource,
-		Source:         "relay.performance.cost_ledger",
+		AccountID:           accountID,
+		TradeDate:           tradeDate,
+		Symbol:              strings.TrimSpace(symbol),
+		Exchange:            strings.ToUpper(strings.TrimSpace(exchange)),
+		CostBucket:          "CORE",
+		Status:              "calculated",
+		FormulaVersion:      positionCostFormulaVersion,
+		FeeSource:           "none",
+		OpeningSource:       openingSource,
+		CorporateActionType: "none",
+		Source:              "relay.performance.cost_ledger",
 	}}
 }
 
@@ -368,6 +410,15 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
 		if item.QuantityResidual != 0 {
 			result.Summary.QuantityBreaks++
+		}
+		switch item.CorporateActionType {
+		case "price_adjustment":
+			result.Summary.CorporateActions++
+		case "quantity_adjustment":
+			result.Summary.CorporateActions++
+			result.Summary.QuantityAdjustments++
+		case "mismatch":
+			result.Summary.CorporateActionBreaks++
 		}
 		if containsStringValue(item.QualityFlags, "missing_fee_rule") {
 			result.Summary.MissingFeeItems++

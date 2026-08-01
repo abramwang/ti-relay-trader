@@ -71,6 +71,7 @@ type TradingCalendar interface {
 
 type ContributionMarket interface {
 	MetadataInstruments(ctx context.Context, values url.Values) (market.MeridianResponse, error)
+	MetadataAdjustFactors(ctx context.Context, values url.Values) (market.MeridianResponse, error)
 	MarketBars(ctx context.Context, values url.Values) (market.MeridianResponse, error)
 	MarketSnapshots(ctx context.Context, values url.Values) (market.MeridianResponse, error)
 	MarketETFCashComponents(ctx context.Context, values url.Values) (market.MeridianResponse, error)

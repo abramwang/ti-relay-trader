@@ -394,6 +394,8 @@ OC 无法确定单笔委托身份或发现普通成交与订单证券、交易�
 
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 返回 `ContributionResult`。普通股票和 ETF 截面使用 `close_value + sell_amount - buy_amount - open_value - effective_fee`；期初价格取 Meridian 当日 `pre_close`，期末价格取 Meridian 当日 `close`，缺失时才回退券商 open/close 持仓快照并标记质量缺口。费用优先使用 `order_fee_records` 中 `fee_complete=true && association_complete=true` 的 OC 订单实际费用，同一订单无论有多少成交只扣一次；其次才使用可信成交费用或账户生效费率，缺少规则时标记 `missing_fee_rule`。
 
+`GET /v1/accounts/{account_id}/performance/cost-ledger/preview?trade_date=YYYYMMDD` 只读试算 `performance_position_cost.v2`，`POST .../cost-ledger/rebuild` 在开启绩效写保护后保存结果。非起算日以上一 close 成本状态承接总成本，以当日券商 open 持仓作为物理数量，并查询 Meridian `adjust-factors`：数量比匹配 `ex_factor` 时保存 `corporate_action_type=quantity_adjustment`，总成本不变、单位成本随数量调整；因子存在但数量不变时保存 `price_adjustment`；无法闭合时保存 `mismatch` 并阻断。响应和数据库同时返回 `previous_close_quantity/broker_open_quantity/corporate_action_factor/corporate_action_quantity_delta/corporate_action_context`，不修改 OC 原始持仓。
+
 `POST /v1/accounts/{account_id}/fees/refresh` 发布 OC `fee.list.query`，只支持 OC 当前柜台交易日；`GET /v1/accounts/{account_id}/fees` 查询已落库的订单费用，支持 `trade_date/date_from/date_to/gateway_order_id/fee_complete/limit/cursor`。`fee_page.account_total_fee` 仅用于账户级核对，不参与逐订单累计；费用记录由 `account_id + fee_record_id` 幂等更新，只有完整且关联成功的订单费用可进入绩效。历史费用不由该刷新接口回补。
 
 费用缺失不等于订单不可用。订单和成交核心字段及关联完整时，Relay 仍使用它计算数量桥、移动成本、成交额和毛收益；费用完整性按当日有成交的唯一 `gateway_order_id` 单独统计。覆盖不完整时，贡献摘要返回 `fee_required_orders/fee_covered_orders/fee_coverage_complete/fee_coverage_source`，并将净绩效标记为 provisional、等待券商交割单，不把订单标记为数据质量失败。
