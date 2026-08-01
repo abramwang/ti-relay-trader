@@ -561,7 +561,7 @@ account_day_pnl =
     etf_t0_estimated_pnl
     + stock_cross_section_net_pnl
     + etf_cross_section_net_pnl
-    + reverse_repo_net_interest
+    + recognized_reverse_repo_net_interest
     + other_income_expense
     + settlement_adjustment
 
@@ -583,9 +583,9 @@ provisional_close_economic_nav =
 
 1. `GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD`：只读试算，不写库，生产环境可安全使用。
 2. `POST /v1/accounts/{account_id}/performance/economic-nav/rebuild`：受 `performance.settings_write_enabled` 保护，写入新的 current `performance_nav_versions`，并把同账户同交易日旧 current 版本退役。
-3. 公式暂用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，`account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment`。
+3. 当前第一版实现仍使用 `close_economic_nav = close_visible_net_asset + reverse_repo_receivable`，其中可能重复本金并包含预估利息；人工金标已经证明该实现不能直接 finalized，N13 将改为只加入未进入可见资金的本金，实际净息在回款/费用确认后进入收益。
 4. `daily_return` 使用 Modified Dietz 外部资金权重；09:30 前资金权重为 1，15:00 后权重为 0，盘中按剩余交易时间线性衰减。只有日期精度的盘中资金流固定使用 `0.5` 权重并携带估算质量标记。
-5. `pnl_components.cash_management` 承接逆回购净息和已知 `income_expense`；策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
+5. `pnl_components.cash_management` 当前同时展示逆回购预估净息和已知 `income_expense`；修正后预估值只保留诊断来源，只有实际确认净息进入正式 `account_day_pnl`。策略尚未拆分的部分进入 `pnl_components.unattributed`，并标记 `strategy_attribution_pending`。
 6. `performance_nav_reconciliations` 写入 same-day provisional 对账记录，并已提供 T+1 observed open assets 预览/落库接口；人工确认/阻断 API 可将 current `performance_nav_versions` 就地推进为 `finalized/blocked`，`/trade#performance` 已提供正式状态告警和页面复核操作流。
 
 ### 资产对账辅线
@@ -608,7 +608,7 @@ reconciliation_residual =
 
 1. `next_open_position_value` 使用盘前持仓数量和当日 Meridian `pre_close`；因此盘前任务必须保存 open 持仓快照。
 2. 只能看到一个柜台资金仓位时，由已确认的内部划转和人工仓位余额生成 `confirmed_invisible_counter_cash`。
-3. 逆回购本金及预计利息、ETF 清算在途款只在尚未进入可见资金时列入 `outstanding_settlement_assets`，转为现金后立即冲销，避免重复计入。
+3. 逆回购本金只在尚未进入可见资金时列入 `outstanding_settlement_assets`，转为现金或已包含于资金快照后立即冲销；预估利息仅作诊断，取得实际回款/费用后再确认。`cash_total-cash_available` 还可能包含冻结资金或卖出待取资金，不能仅凭该差额自动认定本金重叠。
 4. `reconciliation_residual` 回写原交易日的独立 `settlement_adjustment`，不静默摊给股票截面、ETF 截面或 ETF T0。
 5. 建议默认阈值配置化：绝对差异不超过 `max(50 CNY, open_nav * 0.1 bp)` 时自动完成；不超过 `max(500 CNY, open_nav * 1 bp)` 时保留警告并等待人工确认；更大差异保持 `provisional`，不得进入正式累计净值。
 6. 周五或节假日前的记录在下一个交易日盘前再最终确认，不按自然日强行结算。
@@ -640,21 +640,25 @@ repo_gross_interest_i =
     * actual_occupation_days
     / 365
 
-reverse_repo_net_interest =
+repo_estimated_net_interest =
     sum(repo_gross_interest_i)
     - effective_repo_fee
 
-repo_receivable =
+repo_principal_receivable =
     sum(repo_principal_i)
-    + reverse_repo_net_interest
+    - principal_already_in_visible_cash
+
+repo_actual_net_interest =
+    actual_repo_interest
+    - actual_repo_fee
 ```
 
 其中：
 
 1. `actual_occupation_days` 按交易所实际占款天数计算，使用 Meridian 交易日历推导首次交收日和到期交收日之间的自然日天数；不能固定写成名义期限 1 天。
 2. `effective_repo_fee` 优先使用柜台实际费用，缺失时读取账户级逆回购费用规则，不复用股票、ETF 或 ETF T0 费率。
-3. 逆回购本金不进入股票卖出额、普通成交额或策略利润；只有净利息进入 `reverse_repo_net_interest`。
-4. T 日 close 将本金和预计净利息记为应收资产，T+1 资金可用后冲销本金应收；实际到账差异进入前述 `settlement_adjustment`。
+3. 逆回购本金不进入股票卖出额、普通成交额或策略利润；未进入可见资金的本金只作为资产形态转换计入一次。
+4. T 日 close 只把尚未进入可见资金的本金记为正式应收；预估净利息保存为诊断字段，不进入 finalized 当日盈利。T+1 取得实际回款和费用后确认实际净息，并冲销本金应收；实际到账差异进入前述 `settlement_adjustment`。
 5. 缺少交易日历、数量乘数不通过现金桥校验或出现非 `204001.SH` 品种时标记 `unsupported_repo_contract`，不猜测计算。
 
 现有生产样本验证：
@@ -664,7 +668,7 @@ repo_receivable =
 | `2026-07-22` | `314000046830` | 3,809,000.00 | 1.355% | 1 | 141.40 | 156.97 | 15.57 |
 | `2026-07-23` | `314000046830` | 5,375,000.00 | 1.400% | 3 | 618.49 | 634.86 | 16.36 |
 
-该账户两日没有 ETF 申赎清算干扰，公式与次日盘前资金桥只差十几元，适合作为第一版逆回购回归样本。其它两个账户同日存在 ETF 申赎待结算，不用单一现金差反推逆回购收入。
+该账户两日没有 ETF 申赎清算干扰，公式与次日盘前资金桥只差十几元，适合作为逆回购回款诊断样本；但用户确认的人工盈利在 7 月 22、23 日均不包含表中 141.40、618.49 元预估利息，因此预估值不再进入正式当日盈利。其它两个账户同日存在 ETF 申赎待结算，不用单一现金差反推逆回购收入。
 
 ## 接口规划
 
@@ -783,7 +787,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 1. `performance_account_inceptions` 保存账户起算日、日初资金、初始持仓/成本来源、策略范围和确认审计；账户范围不在程序中写死。
 2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值和数量残差。
 3. 成本账按 `日初数量 + 买入 - 卖出 = 日终数量` 逐证券校验。逆回购从证券成本账中排除，ETF `P/R` 预留独立分账；数量不平时直接阻断，不用柜台成本强行抹平。
-4. `performance_economic_nav.v2` 以 `可见资金 + Meridian 持仓重估 + 逆回购应收 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
+4. `performance_economic_nav.v2` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
@@ -791,14 +795,14 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。该账户的历史持仓不是“空仓起算”，但因无 ETF 申赎，不存在申赎对柜台成本的污染。
 
-债享5号历史边界复核（`2026-08-01`）：原始资金、持仓、订单和成交从 `2026-06-15` 起存在，Meridian 行情和数量输入从 `2026-06-25` 起可完成单日 v2 估值；当前曲线很短是因为起算锚点保守设置在 `2026-07-29`。`2026-07-02` 有历史 OC 成交身份错配，不能跨过该日连续回算；`2026-07-10` 的 `cash_total=2,506,383.86` 已包含约 `2,506,000` 元逆回购占款，当前公式又增加逆回购应收，造成约 `2,505,780.06` 元重复计入；`2026-07-17` 无交易但资金从 `5,392,417.51` 降至 `2,392,417.51`，需确认是否为 `3,000,000` 元外部出金。当前可直接把正式起点提前到 `2026-07-24`；上述两项修正并补齐费用后，可从 `2026-07-03` 重新锚定连续可信曲线。
+债享5号历史边界复核（`2026-08-01`）：原始资金、持仓、订单和成交从 `2026-06-15` 起存在，Meridian 行情和数量输入从 `2026-06-25` 起可完成单日 v2 估值；当前曲线很短是因为起算锚点保守设置在 `2026-07-29`。用户随后提供 7 月 17 个交易日的人工资产/盈利金标，证明本金只计一次且不计预估利息后，7 月 22、23、28、29、30 日与 Relay 精确到分一致，7 月 14 日盈利只差 0.72 元。7 月 2 日和 10 日的历史资金快照已包含逆回购本金；7 月 17 日可见资金减少的 300 万不改变人工连续经济资产，因此属于不可见占款/柜台资金，不是外部出金。账户级 7 月曲线可据此验收，但 7 月 2 日 OC 成交身份异常仍独立阻断证券级贡献，7 月 31 日缺 OC close 快照仍只能使用人工金标。完整对账见 `docs/DEBT5_MANUAL_NAV_RECONCILIATION_20260801.md`。
 
 待完成项：
 
 1. 配置四账户的实际费率和最低收费，将 provisional 升级为 finalized。
 2. 使用 Meridian 除权因子处理股票和 ETF 的公司行为，保持总成本连续并调整单位成本/数量桥。
 3. 在出现 ETF 申赎前实现 `CORE` 与 `ETF_T0:{group_id}` 独立成本池，引入 PCF、现金替代和跨市场回款质量标记。
-4. 对四账户逐日做人工金标验收，完成后再向其他历史账户扩展。
+4. 将债享5号人工金标接入只读比较报告，修复逆回购本金重叠和正式利息确认后重建 7 月账户级曲线；再完成其余三账户金标验收并向其他历史账户扩展。
 5. 给研究侧导出 view 增加 v2 版本，保留 v1 作原始柜台参考。
 
 ## 第一版边界
