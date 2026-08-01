@@ -213,7 +213,7 @@ func (cfg *Config) ApplyDefaults() {
 		cfg.Market.SnapshotDataScope = "realtime"
 	}
 	if cfg.Performance.FormulaVersion == "" {
-		cfg.Performance.FormulaVersion = "performance_economic_nav.v1"
+		cfg.Performance.FormulaVersion = "performance_economic_nav.v2"
 	}
 	if cfg.Performance.ETFT0FrictionRate == 0 {
 		cfg.Performance.ETFT0FrictionRate = 0.0015

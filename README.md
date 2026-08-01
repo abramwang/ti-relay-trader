@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0/P1/P2/P3/P4 已完成，P5/P6/P7 已形成可联调和生产只读运行的第一版，P8 的 N8 绩效工作区已完成，P10 已完成 9092 容器自启动、健康守护和本机数据库恢复底座。N9 gateway、Redis Stream lag、checkpoint 和 DLQ 可观测已完成；N10 已落地数据库级订单幂等、测试/生产 PostgreSQL 隔离以及全量备份恢复演练。N11 已完成多账户任务效率、非交易日阶段语义、账户级人工复核报告和每日任务通用 Webhook 告警闭环。N12 进行中：API catalog 一致性检查、交易终端/API Console 生产只读交互回归、双视口页面验收和统一发布/回滚清单已完成，下一步补可保存断言集合与券商测试环境批量下单视图。OC v1.2 次交易日主链路验收通过，当前等待下一次 OC 启动验证六账户 `cmd.query` 现存 18 条 PEL 的恢复清理。生产仍为 6 个只读账户、下单账户 0；详见 `docs/OC_V1_2_VALIDATION_REPORT_20260731.md`。P9 内置模拟柜台继续暂缓。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成，N12 剩余 API Console 断言集合、券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2`、账户起算锚点、Meridian 持仓重估、移动加权成本账、数量桥阻断、成本试算/重建 API 和页面第七项质量检查已落地。首批范围为三个新账户 `307000051387/1388/1389` 与只做股票截面的债享5号 `314000046830`；当前等待费用参数、`307000051387` 疑似 100 万外部出金确认、该户 `2026-07-30` 权威成交回填和 `2026-07-31` close 快照补齐。生产仍为 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-07-31`
+- 最近更新时间: `2026-08-01`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -301,12 +301,13 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
-2. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
-3. 将已复核的证券/策略贡献结果版本化落入 `performance_nav_versions.pnl_components`，保留公式版本和输入质量标记。
-4. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
-5. 完成 N12 剩余项：API Console 可保存/导出的请求样例和响应断言集合，以及仅券商测试环境可用的 `/trade` 批量下单测试视图。
-6. 将 API、worker、docs 拆分为独立常驻进程，补齐各自日志采集和独立回滚入口；统一只读发布验收与回滚清单已经完成。
+1. 完成 N13 四账户金标验收：确认 `307000051387` 在 `2026-07-29` 是否有 `1,000,000` 元出金，通过 OC 权威查询/重放修复该户 `2026-07-30` 错配成交，补齐 `2026-07-31` close 快照并配置四账户真实费率。
+2. 为 N13 成本账接入 Meridian 除权因子，并在出现首笔 ETF 申赎前完成 `CORE` 与 `ETF_T0:{group_id}` 成本分账。
+3. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
+4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
+5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
+6. 完成 N12 剩余项：API Console 可保存/导出的请求样例和响应断言集合，以及仅券商测试环境可用的 `/trade` 批量下单测试视图。
+7. 将 API、worker、docs 拆分为独立常驻进程，补齐各自日志采集和独立回滚入口；统一只读发布验收与回滚清单已经完成。
 
 ## README 状态维护规则
 
@@ -323,7 +324,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 阻塞与风险
 
-- 当前无阻塞。
+- N13 金标验收存在明确数据阻塞：`307000051387/2026-07-29` 疑似缺 `-1,000,000` 元外部资金流，`2026-07-30` 有 18 个证券数量桥不平，其中 `510810.SH` 委托成交量 `76,400` 而成交表只有 `300`；在用户确认资金流与 OC 提供权威成交回填前，Relay 保持 blocked，不生成临时补账。
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:01 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 OC 由部署计划在交易日 15:30 关停；Relay 机器上的 15:10 `stop_services.sh` 只关闭本地行情采集进程，不包含 OC trader commander。Relay 的 gateway/stream 告警窗口已同步延长到 15:30。14:56 作为策略停止新增交易和预结算观察起点，15:01 仍执行资金、持仓、订单、成交权威刷新并固化日终快照。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
@@ -333,7 +334,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；`/v1/reconciliations/review-report` 与 `/jobs` 已提供按交易日、按账户的可导出人工复核报告。
 - 盘前/盘后任务的账户级查询异常不会再直接把整体任务置为失败：例如新账户柜台未准备好、某账户暂时没有资产快照，会在 report 的 `account_errors` 中独立标注。若资金/持仓刷新未在本地账本确认，该账户会进入 `snapshot_blocked_accounts` 并从本次 open/close 快照账户列表中剔除，避免把早盘或旧持仓固化为日终持仓。整体任务失败只保留给 Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题。
 - `GET /v1/accounts/{account_id}/performance/daily` 当前依赖日终 close 资产快照；如果未先执行收盘结算快照，会返回 404。API 和 `/trade#performance` 已接入 `asset_snapshots(open)`，返回并展示日初资产、隔夜调整、日内盈亏和 open-to-close 收益率；`daily_pnl/return_rate` 仍保留为相邻 close 净资产口径，方便长期净值序列兼容。成交已实现盈亏仍需后续结合成本、现金流水和 Meridian bars 精细化。
-- `GET /v1/accounts/{account_id}/performance/series` 当前以 close 净资产为主线计算累计收益和回撤，并支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，输出基准收益、回撤和超额收益。页面默认与上证指数 `000001.SH` 涨跌对比，仍允许手动切换基准。持仓复权估值和更精细交易归因仍需后续版本。
+- `GET /v1/accounts/{account_id}/performance/series` 已优先使用 `performance_economic_nav.v2`，按日收益复利链接计算累计收益和回撤；blocked 日期不计入正式曲线，没有 v2 NAV 的旧现金快照仅返回零值诊断行。接口仍支持 `benchmark_security_id` 从 Meridian bars 拉取基准 close，页面默认与上证指数 `000001.SH` 对比。
 - `GET /v1/accounts/{account_id}/performance/series.csv` 是轻量 CSV 导出；研究侧 PostgreSQL view 已提供 `research_account_daily_performance_v1` 和 `research_order_fill_export_v1`。后续如需大批量离线消费，可再补 Parquet/批量文件任务。
 - P8 价格与基准计算只接入 Meridian `bars`；ETF T0 另读取 Meridian PCF 现金清单中的 `unit_subscribe_redeem` 做最小申赎单位校验，不使用 PCF 还原基金管理人最终清算。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
 - `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`。当前交易日 15:00 前使用 `data_scope=realtime`，15:00 后使用 `auto` 让 Meridian 选择当日归档数据；非交易日自动回退到最近交易日 historical。bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback，降低读压下直接 bars 查询和绩效 benchmark 对上游的重复冲击。
@@ -572,3 +573,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-07-31`: 完成 N11 每日任务外部告警闭环：新增默认关闭的 `relay.alert.v1` 通用 Webhook，聚合任务失败、账户异常、45 秒刷新超时、快照未落盘和复核阻断账户，按 `warning/critical` 分级并携带稳定 `Idempotency-Key`；网络错误、429 和 5xx 最多重试 3 次，非交易日正常跳过和 dry-run 不告警。Webhook 与 Bearer Token 仅从未跟踪 `config/relay.alerts.env` 或环境变量读取，报告不暴露接收地址或凭据；告警投递状态回写同一条 `job_runs`，`/jobs` 新增告警状态列。当前生产本地通道保持关闭，等待配置实际接收端后做交易日验收。
 - `2026-07-31`: 进入 N12 回归与发布：API Console catalog 补齐账户路由和任务报告入口，并新增 61 条 catalog/Go handler/源码及在线 schema 一致性检查；交易终端增加生产只读前端护栏，未开交易权限的账户禁用下单和撤单且不会发出写请求。新增交易终端与 API Console Playwright 交互测试，覆盖六账户切换、日期、持仓/订单分页排序、持仓联动代码、分钟 K 线、订单详情和 JSON/表格响应，并在浏览器路由层中止任何 `/v1/*` 写请求。统一生产只读发布验收的 16 项检查在 `1600x1000`、`1280x800` 下全部通过，报告为 `/tmp/relay-readonly-release-20260731.json`；发布/回滚清单要求执行前强制确认 `environment=production`、`trading_enabled=0`。
 - `2026-07-31`: 统一账户别名展示：`/v1/operations/status` 在返回缓存 gateway 快照前使用 PostgreSQL `accounts.account_name` 覆盖配置默认别名；首页接入账户表新增“别名”列并复用同一数据库来源，空值才回退配置。生产六账户已核对与 `/v1/accounts` 完全一致，页面不再显示旧“生产查询账户”名称；运维 Playwright 增加动态别名一致性回归。
+- `2026-08-01`: 进入 N13 可信成本账与绩效重建：新增 `000020_performance_cost_ledger`、账户级起算锚点、逐日移动加权成本账、数量桥阻断、成本试算/重建 API 与 `relayctl performance-rebuild`。`performance_economic_nav.v2` 使用可见资金、Meridian `pre_close/close` 持仓重估和逆回购应收计算 NAV，隔离柜台 ETF 成本污染；无 v2 的旧现金快照不再绘制正式收益。生产已应用 migration 20，并为 `307000051387/1388/1389` 和债享5号 `314000046830` 保存可审计起算配置。
+- `2026-08-01`: 四账户首轮回算完成：`307000051388` 在 `2026-07-28..30` 的 v2 累计收益为 `-0.883054%`，`314000046830` 两个交易日数量桥闭合，两户都因缺真实费率保持 provisional；`307000051389` 为零资产正确阻断。`307000051387/2026-07-29` 检出 `-1,000,458.48` 归因残差，需确认是否存在 100 万出金；`2026-07-30` 检出 18 个数量差异，`510810.SH` 委托成交 `76,400` 但成交账仅 `300`，保持 blocked 并等待 OC 权威成交回填。`2026-07-31` 有资产的三户缺 close 快照，当日不发布正式绩效。Go 全量测试、绩效 Playwright 七项质量检查和 9092 生产只读重启验收通过，下单账户仍为 0。

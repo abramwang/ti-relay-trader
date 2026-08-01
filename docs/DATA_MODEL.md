@@ -152,6 +152,8 @@ migrations/postgres/000001_init_ledger.down.sql
 | `performance_nav_reconciliations` | T+1 经济净值对账结果，保存可见现金、持仓市值、不可见柜台资金、待交收资产、残差和阈值 |
 | `reverse_repo_accruals` | `204001.SH` 逆回购应计结果，按委托聚合本金、利率、占款天数、费用、净息和应收本息 |
 | `performance_attribution_links` | 策略归因链接表，连接订单、成交、ETF 成分划转、持仓、现金流水和 NAV 分量；用于 ETF 申赎 T0、股票截面、ETF 截面和现金管理策略的可追溯归因 |
+| `performance_account_inceptions` | 账户级绩效起算锚点，记录起算日、初始资金、初始持仓/成本来源、策略范围、可信状态和人工确认审计 |
+| `performance_position_cost_states` | 逐账户、交易日、证券和成本池保存移动加权成本状态，包含日初/买入/卖出/日终数量与成本、已实现盈亏、Meridian 估值、柜台数量残差和质量标记 |
 
 ### 盘后对账
 
@@ -180,7 +182,7 @@ migrations/postgres/000001_init_ledger.down.sql
 
 持仓 PnL 统一保留两套口径：`unrealized_pnl` 是按持仓买入成本计算的总持仓浮盈，`day_unrealized_pnl` 是当日持仓浮动贡献，老仓按今日开盘价作日内基准，当日买入按当日买入成交成本作基准。研究侧派生 PnL 使用日内口径：`realized_pnl = settled_profit`，`gross_pnl = realized_pnl + day_unrealized_pnl`，`net_pnl = gross_pnl - fee_total`。原始 `settled_profit`、`unrealized_pnl`、`day_unrealized_pnl`、`fee_total`、`daily_pnl` 和 `return_rate` 仍保留。9092 API 已接入 `asset_snapshots(open)`，返回 `open_net_asset`、`overnight_adjustment`、`intraday_pnl` 和 `intraday_return`，避免把逆回购回款、占款释放等隔夜资产变化混进日内交易绩效。
 
-经济净值主线不覆盖原始柜台快照：`asset_snapshots` 继续保存柜台可见资金和持仓市值，`performance_nav_versions` 保存绩效侧的经济净资产版本。`economic-nav/rebuild` 写入时会把同账户同交易日旧 `is_current=true` 版本退役，再插入新的 current 版本；`performance_nav_reconciliations` 按 `performance_nav_pk` 幂等保存 same-day provisional 对账和 T+1 observed open assets 对账结果，后者读取下一交易日 `asset_snapshots(open)` 与 `position_snapshots(open)` 聚合并计算 residual/status。人工确认接口会在同一 current NAV 版本上就地写入 `finalized_at/status=finalized`，阻断接口会就地写入 `status=blocked`，对账记录保存 `reviewed_by/reviewed_at/details.review`。当前输入层先落地费率、资金流水、日初基线、逆回购应计和 economic NAV 容器；ETF 申赎 T0、股票截面和 ETF 截面的策略归因将在这些输入之上细分写入 `pnl_components`，未拆分收益暂放 `unattributed`。生产写入类接口默认关闭，避免无认证 9092 误写手工设置。
+经济净值主线不覆盖原始柜台快照：`asset_snapshots` 继续保存柜台可见资金和持仓市值，`performance_nav_versions` 保存绩效侧的经济净资产版本。`performance_economic_nav.v2` 使用柜台可见资金、Meridian `pre_close/close` 重估持仓、逆回购应收和确认调整构建 NAV，不使用柜台 `avg_cost/market_value/unrealized_pnl` 作为研究侧成本与估值。`performance_position_cost_states` 从已确认起算锚点按移动加权法滚动，数量桥不平或行情缺失时将当日成本结果阻断。`economic-nav/rebuild` 写入时会把同账户同交易日旧 `is_current=true` 版本退役，再插入新的 current 版本；`performance_nav_reconciliations` 按 `performance_nav_pk` 幂等保存 same-day provisional 对账和 T+1 observed open assets 对账结果。人工确认接口会在同一 current NAV 版本上写入 `finalized_at/status=finalized`，阻断接口写入 `status=blocked`。费率、外部资金流、公司行为和 ETF T0 成本池继续以版本化输入完善；缺输入时只能输出 provisional 或 blocked，不允许 finalized。生产写入类 HTTP 接口默认关闭，批处理通过受控的部署机 CLI 执行。
 
 `/trade#performance` 的页面指标、收益贡献和数据质量展示设计见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。该页面第一版应优先复用上述 close 快照、成交账本、订单账本、对账结果和 Meridian bars，不主动查询柜台。
 

@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-07-31`
+更新时间：`2026-08-01`
 
 ## 当前状态
 
@@ -45,6 +45,8 @@ migrations/postgres/000018_normalize_cancel_attempt_accounts.up.sql
 migrations/postgres/000018_normalize_cancel_attempt_accounts.down.sql
 migrations/postgres/000019_order_idempotency_unique.up.sql
 migrations/postgres/000019_order_idempotency_unique.down.sql
+migrations/postgres/000020_performance_cost_ledger.up.sql
+migrations/postgres/000020_performance_cost_ledger.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -72,7 +74,8 @@ migrations/postgres/000019_order_idempotency_unique.down.sql
 17. `000017_oc_v1_2_cancel_attempts` 新增撤单动作结果审计表；撤单被拒绝、超时或结果未知不再污染订单主状态。
 18. `000018_normalize_cancel_attempt_accounts` 将撤单审计账户统一迁移到 Relay routing 标准账户。
 19. `000019_order_idempotency_unique` 清理误写入订单的查询请求键和历史重复键，增加 `orders(account_id,idempotency_key)` 部分唯一索引。
-20. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `19:order_idempotency_unique`。
+20. `000020_performance_cost_ledger` 新增账户绩效起算配置和逐日移动加权持仓成本状态，支持数量对账、Meridian 重估、版本和质量标记。
+21. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `20:performance_cost_ledger`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -111,6 +114,8 @@ Repository 当前覆盖：
 - `CreateFeeRule`、`ListFeeRules`、`EffectiveRepoFeeRule`
 - `CreateCashLedgerEntry`、`ListCashLedgerEntries`、`ConfirmCashLedgerEntry`、`VoidCashLedgerEntry`
 - `CreateNavBaseline`、`ListNavBaselines`
+- `UpsertPerformanceInception`、`GetPerformanceInception`
+- `UpsertPositionCostState`、`ListPositionCostStates`
 - `UpsertReverseRepoAccrual`、`ListReverseRepoAccruals`
 - `ListPerformanceNAVs`、`ListNAVReconciliations`
 
@@ -160,6 +165,8 @@ scripts/test-postgres-integration.sh
 8. `performance_nav_reconciliations`
 9. `reverse_repo_accruals`
 10. `performance_attribution_links`
+11. `performance_account_inceptions`
+12. `performance_position_cost_states`
 
 盘后对账：
 
@@ -214,6 +221,7 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000013_oc_v1_1_component_trans
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000014_remove_etf_transfer_summary_fills.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000015_stream_operations.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000016_stream_operations_indexes.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000020_performance_cost_ledger.up.sql
 ```
 
 使用 relayctl：

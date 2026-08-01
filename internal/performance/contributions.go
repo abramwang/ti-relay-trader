@@ -47,25 +47,29 @@ type ContributionResult struct {
 }
 
 type ContributionSummary struct {
-	OpenEconomicNAV     float64 `json:"open_economic_nav"`
-	CloseEconomicNAV    float64 `json:"close_economic_nav"`
-	Securities          int     `json:"securities"`
-	Orders              int     `json:"orders"`
-	Fills               int     `json:"fills"`
-	BuyAmount           float64 `json:"buy_amount"`
-	SellAmount          float64 `json:"sell_amount"`
-	Turnover            float64 `json:"turnover"`
-	ActualFee           float64 `json:"actual_fee"`
-	EstimatedFee        float64 `json:"estimated_fee"`
-	EffectiveFee        float64 `json:"effective_fee"`
-	GrossContribution   float64 `json:"gross_contribution"`
-	NetContribution     float64 `json:"net_contribution"`
-	ContributionBPS     float64 `json:"contribution_bps"`
-	AccountDayPnL       float64 `json:"account_day_pnl"`
-	AttributionResidual float64 `json:"attribution_residual"`
-	EstimatedItems      int     `json:"estimated_items"`
-	MissingItems        int     `json:"missing_items"`
-	ExcludedItems       int     `json:"excluded_items"`
+	OpenEconomicNAV        float64 `json:"open_economic_nav"`
+	CloseEconomicNAV       float64 `json:"close_economic_nav"`
+	OpenPositionValue      float64 `json:"open_position_value"`
+	ClosePositionValue     float64 `json:"close_position_value"`
+	Securities             int     `json:"securities"`
+	Orders                 int     `json:"orders"`
+	Fills                  int     `json:"fills"`
+	BuyAmount              float64 `json:"buy_amount"`
+	SellAmount             float64 `json:"sell_amount"`
+	Turnover               float64 `json:"turnover"`
+	ActualFee              float64 `json:"actual_fee"`
+	EstimatedFee           float64 `json:"estimated_fee"`
+	EffectiveFee           float64 `json:"effective_fee"`
+	GrossContribution      float64 `json:"gross_contribution"`
+	NetContribution        float64 `json:"net_contribution"`
+	ContributionBPS        float64 `json:"contribution_bps"`
+	AccountDayPnL          float64 `json:"account_day_pnl"`
+	AccountDayPnLAvailable bool    `json:"account_day_pnl_available"`
+	AttributionResidual    float64 `json:"attribution_residual"`
+	EstimatedItems         int     `json:"estimated_items"`
+	MissingItems           int     `json:"missing_items"`
+	MissingFeeItems        int     `json:"missing_fee_items"`
+	ExcludedItems          int     `json:"excluded_items"`
 }
 
 type SecurityContribution struct {
@@ -204,6 +208,7 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 	if err != nil {
 		return ContributionResult{}, err
 	}
+	closePositions, closePositionFlags := service.supplementClosePositionsFromNextOpen(ctx, accountID, normalizedDate, closePositions)
 
 	result := ContributionResult{
 		AccountID:      accountID,
@@ -212,6 +217,7 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		GeneratedAt:    service.now(),
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
+	result.QualityFlags = appendUnique(result.QualityFlags, closePositionFlags...)
 	if transferErr != nil {
 		result.QualityFlags = appendUnique(result.QualityFlags, "component_transfer_ledger_unavailable")
 	} else if len(redemptionTransferFills) > 0 {
@@ -226,6 +232,7 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 		result.Summary.OpenEconomicNAV = nav.OpenEconomicNAV
 		result.Summary.CloseEconomicNAV = nav.CloseEconomicNAV
 		result.Summary.AccountDayPnL = nav.AccountDayPnL
+		result.Summary.AccountDayPnLAvailable = true
 	} else if navErr != nil {
 		result.QualityFlags = appendUnique(result.QualityFlags, "economic_nav_unavailable")
 	}
@@ -305,11 +312,13 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 	}
 
 	finalizeContributionResult(&result)
-	if result.Summary.AccountDayPnL != 0 {
+	if result.Summary.AccountDayPnLAvailable {
 		result.Summary.AttributionResidual = roundMoney(result.Summary.AccountDayPnL - result.Summary.NetContribution)
 		if math.Abs(result.Summary.AttributionResidual) > service.warningToleranceCNY {
 			result.QualityFlags = appendUnique(result.QualityFlags, "attribution_residual_exceeds_warning")
 		}
+	} else {
+		result.QualityFlags = appendUnique(result.QualityFlags, "account_day_pnl_unavailable")
 	}
 	return result, nil
 }
@@ -372,6 +381,44 @@ func (service *Service) listContributionPositions(ctx context.Context, accountID
 		}
 	}
 	return nil, fmt.Errorf("%s contribution positions exceed %d rows", snapshotType, contributionPageLimit*maxContributionPages)
+}
+
+func (service *Service) supplementClosePositionsFromNextOpen(ctx context.Context, accountID, tradeDate string, closePositions []trading.Position) ([]trading.Position, []string) {
+	if service.calendar == nil {
+		return closePositions, nil
+	}
+	_, parsedDate, err := parseTradeDate(tradeDate)
+	if err != nil {
+		return closePositions, nil
+	}
+	nextDate, err := service.nextTradingDay(ctx, parsedDate)
+	if err != nil {
+		return closePositions, nil
+	}
+	nextOpen, err := service.listContributionPositions(ctx, accountID, nextDate.Format("2006-01-02"), "open")
+	if err != nil || len(nextOpen) == 0 {
+		return closePositions, nil
+	}
+	existing := make(map[string]bool, len(closePositions))
+	for _, position := range closePositions {
+		existing[contributionSecurityID(position.Symbol, position.Exchange)] = true
+	}
+	added := 0
+	for _, position := range nextOpen {
+		key := contributionSecurityID(position.Symbol, position.Exchange)
+		if existing[key] || position.Quantity <= 0 {
+			continue
+		}
+		position.TradeDate = tradeDate
+		position.SnapshotType = "next_open_close_fallback"
+		closePositions = append(closePositions, position)
+		existing[key] = true
+		added++
+	}
+	if added == 0 {
+		return closePositions, nil
+	}
+	return closePositions, []string{"close_position_supplemented_from_next_open"}
 }
 
 func (service *Service) previousClosePositionFallback(ctx context.Context, accountID, tradeDate string) ([]trading.Position, []string) {
@@ -1028,6 +1075,7 @@ func calculateOrdinaryContribution(bucket contributionBucket, rules []ledger.Fee
 	} else if item.CloseQuantity != 0 {
 		item.QualityFlags = appendUnique(item.QualityFlags, "missing_close_price")
 	}
+	item.MarketValue = item.CloseValue
 
 	var fees contributionFee
 	for _, fill := range bucket.fills {
@@ -1085,6 +1133,11 @@ func calculateOrdinaryContribution(bucket contributionBucket, rules []ledger.Fee
 	if !bucket.hasClose && impliedCloseQuantity != 0 {
 		item.PnLStatus = "missing"
 		item.QualityFlags = appendUnique(item.QualityFlags, "missing_close_position_snapshot", "position_quantity_bridge_incomplete")
+		return item
+	}
+	if bucket.hasOpen && bucket.hasClose && impliedCloseQuantity != item.CloseQuantity {
+		item.PnLStatus = "missing"
+		item.QualityFlags = appendUnique(item.QualityFlags, "position_quantity_not_reconciled", "position_quantity_bridge_incomplete")
 		return item
 	}
 	if (item.OpenQuantity != 0 && item.OpenPrice == nil) || (item.CloseQuantity != 0 && item.ClosePrice == nil) {
@@ -1211,9 +1264,14 @@ func finalizeContributionResult(result *ContributionResult) {
 		result.Summary.BuyAmount += item.BuyAmount
 		result.Summary.SellAmount += item.SellAmount
 		result.Summary.Turnover += item.Turnover
+		result.Summary.OpenPositionValue += item.OpenValue
+		result.Summary.ClosePositionValue += item.CloseValue
 		result.Summary.ActualFee += item.ActualFee
 		result.Summary.EstimatedFee += item.EstimatedFee
 		result.Summary.EffectiveFee += item.EffectiveFee
+		if containsStringValue(item.QualityFlags, "missing_fee_rule") {
+			result.Summary.MissingFeeItems++
+		}
 
 		strategy := strategies[item.StrategyType]
 		if strategy == nil {
@@ -1250,6 +1308,8 @@ func finalizeContributionResult(result *ContributionResult) {
 	result.Summary.BuyAmount = roundMoney(result.Summary.BuyAmount)
 	result.Summary.SellAmount = roundMoney(result.Summary.SellAmount)
 	result.Summary.Turnover = roundMoney(result.Summary.Turnover)
+	result.Summary.OpenPositionValue = roundMoney(result.Summary.OpenPositionValue)
+	result.Summary.ClosePositionValue = roundMoney(result.Summary.ClosePositionValue)
 	result.Summary.ActualFee = roundMoney(result.Summary.ActualFee)
 	result.Summary.EstimatedFee = roundMoney(result.Summary.EstimatedFee)
 	result.Summary.EffectiveFee = roundMoney(result.Summary.EffectiveFee)

@@ -2190,6 +2190,49 @@ func TestPerformanceSeriesQuery(t *testing.T) {
 	}
 }
 
+func TestPerformanceSeriesWithoutV2NAVIsDiagnosticOnly(t *testing.T) {
+	series := []ledger.DailyPerformance{
+		{AccountID: "acct-1", TradeDate: "2026-07-28", NetAsset: 1000, PreviousNetAsset: 100, DailyPnL: 900, ReturnRate: 9},
+		{AccountID: "acct-1", TradeDate: "2026-07-29", NetAsset: 500, PreviousNetAsset: 1000, DailyPnL: -500, ReturnRate: -0.5},
+	}
+
+	series = overlayPerformanceNAVSeries(series, nil)
+	series, summary := buildPerformanceSeries("acct-1", "2026-07-28", "2026-07-29", series)
+
+	if summary.StartNetAsset != 0 || summary.EndNetAsset != 0 || summary.TotalPnL != 0 || summary.TotalReturn != 0 || summary.MaxDrawdown != 0 {
+		t.Fatalf("legacy diagnostic summary = %#v, want zero official metrics", summary)
+	}
+	for _, item := range series {
+		if item.FormulaVersion != "legacy_cash_snapshot_diagnostic" || item.PerformanceStatus != "blocked" {
+			t.Fatalf("legacy item status = %#v", item)
+		}
+		if item.NetAsset != 0 || item.DailyPnL != 0 || item.ReturnRate != 0 || item.CumulativeReturn != 0 || item.Drawdown != 0 {
+			t.Fatalf("legacy item leaked official metrics = %#v", item)
+		}
+	}
+}
+
+func TestPerformanceSeriesUsesV2DailyReturnChain(t *testing.T) {
+	series := []ledger.DailyPerformance{
+		{AccountID: "acct-1", TradeDate: "2026-07-28", NetAsset: 1},
+		{AccountID: "acct-1", TradeDate: "2026-07-29", NetAsset: 1},
+	}
+	navs := []ledger.PerformanceNAV{
+		{AccountID: "acct-1", TradeDate: "2026-07-28", Status: "provisional", FormulaVersion: "performance_economic_nav.v2", OpenEconomicNAV: 1000, CloseEconomicNAV: 1100, AccountDayPnL: 100, DailyReturn: 0.1},
+		{AccountID: "acct-1", TradeDate: "2026-07-29", Status: "provisional", FormulaVersion: "performance_economic_nav.v2", OpenEconomicNAV: 1100, CloseEconomicNAV: 990, AccountDayPnL: -110, DailyReturn: -0.1},
+	}
+
+	series = overlayPerformanceNAVSeries(series, navs)
+	series, summary := buildPerformanceSeries("acct-1", "2026-07-28", "2026-07-29", series)
+
+	if math.Abs(summary.TotalReturn-(-0.01)) > 0.0000001 || summary.TotalPnL != -10 || summary.StartNetAsset != 1000 || summary.EndNetAsset != 990 {
+		t.Fatalf("v2 summary = %#v", summary)
+	}
+	if math.Abs(summary.MaxDrawdown-(-0.1)) > 0.0000001 || math.Abs(series[1].CumulativeReturn-(-0.01)) > 0.0000001 {
+		t.Fatalf("v2 curve = %#v summary=%#v", series, summary)
+	}
+}
+
 func TestPerformanceSeriesQueryWithBenchmarkBars(t *testing.T) {
 	var queries []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2773,6 +2816,11 @@ type fakePerformanceService struct {
 	accruals                      []ledger.ReverseRepoAccrual
 	navs                          []ledger.PerformanceNAV
 	reconciliations               []ledger.NAVReconciliation
+	inception                     ledger.PerformanceInception
+	costLedger                    relayperformance.CostLedgerResult
+	costLedgerAccountID           string
+	costLedgerTradeDate           string
+	costLedgerOptions             relayperformance.CostLedgerOptions
 	err                           error
 }
 
@@ -2913,6 +2961,31 @@ func (service *fakePerformanceService) ListNAVReconciliations(_ context.Context,
 		return nil, service.err
 	}
 	return service.reconciliations, nil
+}
+
+func (service *fakePerformanceService) GetPerformanceInception(_ context.Context, _ string) (ledger.PerformanceInception, error) {
+	if service.err != nil {
+		return ledger.PerformanceInception{}, service.err
+	}
+	return service.inception, nil
+}
+
+func (service *fakePerformanceService) UpsertPerformanceInception(_ context.Context, item ledger.PerformanceInception) (ledger.PerformanceInception, error) {
+	if service.err != nil {
+		return ledger.PerformanceInception{}, service.err
+	}
+	service.inception = item
+	return item, nil
+}
+
+func (service *fakePerformanceService) CalculateCostLedger(_ context.Context, accountID, tradeDate string, options relayperformance.CostLedgerOptions) (relayperformance.CostLedgerResult, error) {
+	if service.err != nil {
+		return relayperformance.CostLedgerResult{}, service.err
+	}
+	service.costLedgerAccountID = accountID
+	service.costLedgerTradeDate = tradeDate
+	service.costLedgerOptions = options
+	return service.costLedger, nil
 }
 
 type fakeSettlementStore struct {

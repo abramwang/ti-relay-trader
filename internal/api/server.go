@@ -107,6 +107,9 @@ type PerformanceService interface {
 	ReviewNAVReconciliation(ctx context.Context, accountID, tradeDate string, options relayperformance.NAVReconciliationReviewOptions) (relayperformance.NAVReconciliationReviewResult, error)
 	ListPerformanceNAVs(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
+	GetPerformanceInception(ctx context.Context, accountID string) (ledger.PerformanceInception, error)
+	UpsertPerformanceInception(ctx context.Context, item ledger.PerformanceInception) (ledger.PerformanceInception, error)
+	CalculateCostLedger(ctx context.Context, accountID, tradeDate string, options relayperformance.CostLedgerOptions) (relayperformance.CostLedgerResult, error)
 }
 
 type OperationsService interface {
@@ -1320,6 +1323,29 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			default:
 				httpx.WriteMethodNotAllowed(w, r, "GET, POST")
 			}
+		case "inception":
+			if len(parts) != 3 {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				s.handlePerformanceInception(w, r, accountID, false)
+			case http.MethodPost:
+				s.handlePerformanceInception(w, r, accountID, true)
+			default:
+				httpx.WriteMethodNotAllowed(w, r, "GET, POST")
+			}
+		case "cost-ledger":
+			if len(parts) == 4 && parts[3] == "preview" && r.Method == http.MethodGet {
+				s.handleCalculateCostLedger(w, r, accountID, false)
+				return
+			}
+			if len(parts) == 4 && parts[3] == "rebuild" && r.Method == http.MethodPost {
+				s.handleCalculateCostLedger(w, r, accountID, true)
+				return
+			}
+			httpx.WriteNotFound(w, r)
 		case "reverse-repo":
 			if len(parts) == 3 {
 				if r.Method != http.MethodGet {
@@ -1778,6 +1804,14 @@ func (s *Server) handleDailyPerformance(w http.ResponseWriter, r *http.Request, 
 		s.writeOrderError(w, r, err)
 		return
 	}
+	if s.perf != nil {
+		navs, navErr := s.perf.ListPerformanceNAVs(r.Context(), accountID, "", normalizedTradeDate)
+		if navErr != nil {
+			s.writePerformanceError(w, r, navErr)
+			return
+		}
+		performance = overlayPerformanceNAVSeries([]ledger.DailyPerformance{performance}, navs)[0]
+	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
 		"performance": performance,
 	})
@@ -2158,6 +2192,60 @@ func (s *Server) handleCreateNavBaseline(w http.ResponseWriter, r *http.Request,
 	httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"baseline": created})
 }
 
+func (s *Server) handlePerformanceInception(w http.ResponseWriter, r *http.Request, accountID string, write bool) {
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	if !write {
+		item, err := s.perf.GetPerformanceInception(r.Context(), accountID)
+		if err != nil {
+			s.writePerformanceError(w, r, err)
+			return
+		}
+		httpx.WriteOK(w, r, http.StatusOK, map[string]any{"inception": item})
+		return
+	}
+	if !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	defer r.Body.Close()
+	var item ledger.PerformanceInception
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&item); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid performance inception body", err.Error())
+		return
+	}
+	item.AccountID = accountID
+	saved, err := s.perf.UpsertPerformanceInception(r.Context(), item)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"inception": saved})
+}
+
+func (s *Server) handleCalculateCostLedger(w http.ResponseWriter, r *http.Request, accountID string, persist bool) {
+	if persist && !s.requirePerformanceWrite(w, r) {
+		return
+	}
+	if err := s.requirePerformanceAccount(accountID); err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	if tradeDate == "" {
+		tradeDate = timeutil.Now().Format("2006-01-02")
+	}
+	result, err := s.perf.CalculateCostLedger(r.Context(), accountID, tradeDate, relayperformance.CostLedgerOptions{Persist: persist})
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"cost_ledger": result})
+}
+
 func (s *Server) handleCalculateReverseRepo(w http.ResponseWriter, r *http.Request, accountID string, persist bool) {
 	if persist && !s.requirePerformanceWrite(w, r) {
 		return
@@ -2405,6 +2493,13 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 	if err != nil {
 		return nil, PerformanceSeriesSummary{}, err
 	}
+	if s.perf != nil {
+		navs, navErr := s.perf.ListPerformanceNAVs(r.Context(), accountID, normalizedDateFrom, normalizedDateTo)
+		if navErr != nil {
+			return nil, PerformanceSeriesSummary{}, navErr
+		}
+		series = overlayPerformanceNAVSeries(series, navs)
+	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
 	if benchmarkSecurityID := strings.TrimSpace(values.Get("benchmark_security_id")); benchmarkSecurityID != "" {
 		if s.market == nil {
@@ -2443,6 +2538,12 @@ func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, se
 	if len(series) == 0 {
 		return series, summary
 	}
+	if hasResearchPerformanceSeries(series) {
+		return buildResearchPerformanceSeries(series, summary)
+	}
+	if hasLegacyDiagnosticSeries(series) {
+		return series, summary
+	}
 	base := series[0].PreviousNetAsset
 	if base <= 0 {
 		base = series[0].NetAsset
@@ -2476,6 +2577,169 @@ func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, se
 	}
 	summary.MaxDrawdown = maxDrawdown
 	return series, summary
+}
+
+func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger.PerformanceNAV) []ledger.DailyPerformance {
+	byDate := make(map[string]ledger.PerformanceNAV, len(navs))
+	for _, nav := range navs {
+		if !strings.HasPrefix(nav.FormulaVersion, "performance_economic_nav.v2") {
+			continue
+		}
+		byDate[nav.TradeDate] = nav
+	}
+	previousClose := 0.0
+	if len(series) > 0 {
+		for _, nav := range navs {
+			if nav.TradeDate < series[0].TradeDate && nav.Status != "blocked" && strings.HasPrefix(nav.FormulaVersion, "performance_economic_nav.v2") {
+				previousClose = nav.CloseEconomicNAV
+			}
+		}
+	}
+	for index := range series {
+		nav, ok := byDate[series[index].TradeDate]
+		if !ok {
+			series[index].PerformanceStatus = "blocked"
+			series[index].FormulaVersion = "legacy_cash_snapshot_diagnostic"
+			series[index].PreviousNetAsset = 0
+			series[index].OpenNetAsset = 0
+			series[index].NetAsset = 0
+			series[index].OvernightAdjustment = 0
+			series[index].AssetChange = 0
+			series[index].IntradayPnL = 0
+			series[index].IntradayReturn = 0
+			series[index].DailyPnL = 0
+			series[index].ReturnRate = 0
+			series[index].CumulativeReturn = 0
+			series[index].Drawdown = 0
+			series[index].UnrealizedPnL = 0
+			series[index].UnrealizedPnLAvailable = false
+			series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags,
+				"official_performance_nav_unavailable",
+				"cash_only_snapshot_not_performance_nav",
+				"excluded_from_official_performance_series",
+			)
+			continue
+		}
+		series[index].PerformanceStatus = nav.Status
+		series[index].FormulaVersion = nav.FormulaVersion
+		series[index].NetAsset = nav.CloseEconomicNAV
+		series[index].OpenNetAsset = nav.OpenEconomicNAV
+		series[index].PreviousNetAsset = previousClose
+		if previousClose > 0 {
+			series[index].OvernightAdjustment = nav.OpenEconomicNAV - previousClose
+			series[index].AssetChange = nav.CloseEconomicNAV - previousClose
+		} else {
+			series[index].OvernightAdjustment = 0
+			series[index].AssetChange = 0
+		}
+		series[index].DailyPnL = nav.AccountDayPnL
+		series[index].NetPnL = nav.AccountDayPnL
+		series[index].GrossPnL = nav.AccountDayPnL + series[index].FeeTotal
+		series[index].ReturnRate = nav.DailyReturn
+		series[index].IntradayPnL = nav.AccountDayPnL
+		series[index].IntradayReturn = nav.DailyReturn
+		series[index].CumulativeReturn = nav.CumulativeNAV - 1
+		series[index].QualityFlags = removeStringValues(series[index].QualityFlags, "overnight_adjustment_unclassified")
+		series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, nav.QualityFlags...)
+		if valuation, ok := nav.PnLComponents["market_valuation"].(map[string]any); ok {
+			if value, ok := floatFromAny(valuation["close_position_value"]); ok {
+				series[index].PositionMarketValue = value
+			}
+		}
+		series[index].UnrealizedPnL = 0
+		series[index].UnrealizedPnLAvailable = false
+		series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, "broker_unrealized_pnl_excluded")
+		if nav.Status == "blocked" {
+			series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, "performance_nav_blocked")
+		}
+		if nav.Status != "blocked" {
+			previousClose = nav.CloseEconomicNAV
+		}
+	}
+	return series
+}
+
+func hasLegacyDiagnosticSeries(series []ledger.DailyPerformance) bool {
+	for _, item := range series {
+		if item.FormulaVersion == "legacy_cash_snapshot_diagnostic" {
+			return true
+		}
+	}
+	return false
+}
+
+func removeStringValues(values []string, removed ...string) []string {
+	blocked := make(map[string]bool, len(removed))
+	for _, value := range removed {
+		blocked[value] = true
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if !blocked[value] {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func hasResearchPerformanceSeries(series []ledger.DailyPerformance) bool {
+	for _, item := range series {
+		if strings.HasPrefix(item.FormulaVersion, "performance_economic_nav.v2") {
+			return true
+		}
+	}
+	return false
+}
+
+func buildResearchPerformanceSeries(series []ledger.DailyPerformance, summary PerformanceSeriesSummary) ([]ledger.DailyPerformance, PerformanceSeriesSummary) {
+	cumulative := 1.0
+	peak := 1.0
+	maxDrawdown := 0.0
+	totalPnL := 0.0
+	started := false
+	for index := range series {
+		item := &series[index]
+		if !strings.HasPrefix(item.FormulaVersion, "performance_economic_nav.v2") || item.PerformanceStatus == "blocked" {
+			item.QualityFlags = appendUniqueStrings(item.QualityFlags, "excluded_from_official_performance_series")
+			continue
+		}
+		if !started {
+			summary.StartNetAsset = item.OpenNetAsset
+			started = true
+		}
+		cumulative *= 1 + item.ReturnRate
+		item.CumulativeReturn = cumulative - 1
+		if cumulative > peak {
+			peak = cumulative
+		}
+		item.Drawdown = cumulative/peak - 1
+		if item.Drawdown < maxDrawdown {
+			maxDrawdown = item.Drawdown
+		}
+		totalPnL += item.DailyPnL
+		summary.EndNetAsset = item.NetAsset
+	}
+	if started {
+		summary.TotalPnL = totalPnL
+		summary.TotalReturn = cumulative - 1
+		summary.MaxDrawdown = maxDrawdown
+	}
+	return series, summary
+}
+
+func appendUniqueStrings(values []string, extras ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(extras))
+	for _, value := range values {
+		seen[value] = struct{}{}
+	}
+	for _, value := range extras {
+		if _, ok := seen[value]; ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		values = append(values, value)
+		seen[value] = struct{}{}
+	}
+	return values
 }
 
 func (s *Server) applyBenchmarkSeries(ctx context.Context, series []ledger.DailyPerformance, summary *PerformanceSeriesSummary, securityID string) error {

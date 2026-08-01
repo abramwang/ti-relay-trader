@@ -44,6 +44,7 @@
     performanceDaily: null,
     performanceContribution: null,
     performanceTradeQuality: null,
+    performanceCostLedger: null,
     performanceTableView: "contributions",
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
@@ -3445,6 +3446,7 @@
       state.performanceError = "";
       state.performanceContribution = null;
       state.performanceTradeQuality = null;
+      state.performanceCostLedger = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       state.performanceSummary = data.summary || null;
@@ -3460,13 +3462,14 @@
         request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate)),
         request("/v1/accounts/" + accountID + "/performance/contributions?trade_date=" + encodeURIComponent(dailyDate)),
         request("/v1/accounts/" + accountID + "/performance/trade-quality?" + qualityQuery.toString()),
+        request("/v1/accounts/" + accountID + "/performance/cost-ledger/preview?trade_date=" + encodeURIComponent(dailyDate)),
         request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate)),
         request("/v1/accounts/" + accountID + "/performance/nav-reconciliations?trade_date=" + encodeURIComponent(dailyDate))
       ]);
       if (!isCurrentLoad()) {
         return;
       }
-      const [settingsResult, dailyResult, contributionResult, qualityResult, economicResult, reconciliationResult] = detailResults;
+      const [settingsResult, dailyResult, contributionResult, qualityResult, costResult, economicResult, reconciliationResult] = detailResults;
 
       if (settingsResult.status === "fulfilled") {
         state.performanceSettings = settingsResult.value;
@@ -3495,6 +3498,13 @@
       } else {
         state.performanceTradeQuality = null;
         pushLog("warn", "交易质量读取失败", displayDate(params.dateFrom) + " 至 " + displayDate(params.dateTo) + " " + qualityResult.reason.message);
+      }
+
+      if (costResult.status === "fulfilled") {
+        state.performanceCostLedger = costResult.value.cost_ledger || null;
+      } else {
+        state.performanceCostLedger = null;
+        pushLog("warn", "持仓成本账读取失败", displayDate(dailyDate) + " " + costResult.reason.message);
       }
 
       if (economicResult.status === "fulfilled") {
@@ -3527,6 +3537,7 @@
       state.performanceDaily = null;
       state.performanceContribution = null;
       state.performanceTradeQuality = null;
+      state.performanceCostLedger = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
       pushLog("error", "绩效查询失败", err.message);
@@ -3838,7 +3849,19 @@
       redemption_quantity_not_pcf_unit_multiple: "赎回量未通过 PCF 单位校验",
       ambiguous_t0_order_group: "T0 订单组存在歧义",
       incomplete_t0_order_group: "T0 订单组未闭合",
-      missing_transfer_link: "缺少成分划转关联"
+      missing_transfer_link: "缺少成分划转关联",
+      research_position_valuation: "持仓使用 Meridian 行情重估",
+      broker_position_cost_excluded: "柜台持仓成本已隔离",
+      broker_unrealized_pnl_excluded: "柜台累计浮盈已隔离",
+      performance_inception_baseline: "使用可信绩效起算点",
+      nav_contribution_residual_exceeds_warning: "净值与贡献残差超限",
+      net_performance_fee_incomplete: "净收益费用不完整",
+      performance_nav_blocked: "正式绩效已阻断",
+      excluded_from_official_performance_series: "未纳入正式绩效曲线",
+      official_performance_nav_unavailable: "缺少正式 v2 净值",
+      cash_only_snapshot_not_performance_nav: "现金快照不作为绩效净值",
+      position_quantity_not_reconciled: "持仓数量未闭合",
+      position_quantity_bridge_incomplete: "持仓数量桥不完整"
     }[value] || value || "未知质量标记";
   }
 
@@ -3934,6 +3957,25 @@
       status: ledgerStatus
     });
 
+    const costLedger = state.performanceCostLedger || {};
+    const costSummary = costLedger.summary || {};
+    let costStatus = "warning";
+    let costDetail = "当前交易日暂无可信持仓成本结果";
+    if (costLedger.status === "calculated") {
+      costStatus = "passed";
+      costDetail = formatInt(costSummary.securities) + " 个证券，数量桥全部闭合";
+    } else if (costLedger.status === "estimated") {
+      costDetail = formatInt(costSummary.securities) + " 个证券，" + formatInt(costSummary.missing_fee_items) + " 个费用待配置";
+    } else if (costLedger.status === "blocked") {
+      costStatus = "blocked";
+      costDetail = formatInt(costSummary.quantity_breaks) + " 个数量差异，" + formatInt(costSummary.blocked_items) + " 个成本项阻断";
+    }
+    checks.push({
+      label: "持仓成本连续性",
+      detail: costDetail,
+      status: costStatus
+    });
+
     const reconciliationStatus = reconciliation.status || "";
     let navStatus = "warning";
     let navDetail = "当前交易日暂无 T+1 NAV 对账记录";
@@ -4013,7 +4055,7 @@
     const statusSymbols = { passed: "✓", warning: "!", blocked: "×" };
     els.performanceQualityPanel.dataset.status = overall;
     els.performanceQualityStatus.textContent = labels[overall];
-    els.performanceQualityDate.textContent = daily.trade_date ? displayDate(daily.trade_date) + " · 6 项检查" : "所选区间";
+    els.performanceQualityDate.textContent = daily.trade_date ? displayDate(daily.trade_date) + " · " + checks.length + " 项检查" : "所选区间";
     els.performanceQualityPassed.textContent = formatInt(passed);
     els.performanceQualityWarnings.textContent = formatInt(warnings);
     els.performanceQualityBlocked.textContent = formatInt(blocked);
@@ -4313,8 +4355,8 @@
     els.perfDailyDate.textContent = daily.trade_date ? displayDate(daily.trade_date) : "--";
     els.perfPositions.textContent = formatInt(daily.positions_count);
     els.perfPositionValue.textContent = formatNumber(daily.position_market_value);
-    els.perfUnrealizedPnl.textContent = formatSigned(daily.unrealized_pnl);
-    els.perfUnrealizedPnl.className = classForNumber(daily.unrealized_pnl);
+    els.perfUnrealizedPnl.textContent = daily.unrealized_pnl_available ? formatSigned(daily.unrealized_pnl) : "--";
+    els.perfUnrealizedPnl.className = daily.unrealized_pnl_available ? classForNumber(daily.unrealized_pnl) : "";
     els.perfFills.textContent = formatInt(daily.fills_count);
     els.perfTurnover.textContent = formatNumber(daily.turnover);
     els.perfFee.textContent = formatNumber(daily.fee_total);

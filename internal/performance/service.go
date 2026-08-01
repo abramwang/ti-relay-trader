@@ -27,7 +27,7 @@ const (
 	fillPageLimit           = 500
 	maxFillPages            = 40
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v1"
+	defaultFormulaVersion   = "performance_economic_nav.v2"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -56,6 +56,10 @@ type Store interface {
 	UpdatePerformanceNAVStatus(ctx context.Context, nav ledger.PerformanceNAV) (ledger.PerformanceNAV, error)
 	ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error)
 	UpsertNAVReconciliation(ctx context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error)
+	GetPerformanceInception(ctx context.Context, accountID string) (ledger.PerformanceInception, error)
+	UpsertPerformanceInception(ctx context.Context, item ledger.PerformanceInception) (ledger.PerformanceInception, error)
+	ListPositionCostStates(ctx context.Context, query ledger.PositionCostStateQuery) ([]ledger.PositionCostState, error)
+	UpsertPositionCostState(ctx context.Context, item ledger.PositionCostState) (ledger.PositionCostState, error)
 }
 
 type TradingCalendar interface {
@@ -121,6 +125,17 @@ type EconomicNAVReverseRepoSummary struct {
 	Source      string  `json:"source,omitempty"`
 }
 
+type EconomicNAVValuationSummary struct {
+	OpenVisibleCash          float64 `json:"open_visible_cash"`
+	OpenPositionValue        float64 `json:"open_position_value"`
+	CloseVisibleCash         float64 `json:"close_visible_cash"`
+	ClosePositionValue       float64 `json:"close_position_value"`
+	BrokerOpenPositionValue  float64 `json:"broker_open_position_value"`
+	BrokerClosePositionValue float64 `json:"broker_close_position_value"`
+	PriceSource              string  `json:"price_source"`
+	CostSource               string  `json:"cost_source"`
+}
+
 type EconomicNAVResult struct {
 	AccountID        string                        `json:"account_id"`
 	TradeDate        string                        `json:"trade_date"`
@@ -132,6 +147,7 @@ type EconomicNAVResult struct {
 	DailyPerformance ledger.DailyPerformance       `json:"daily_performance"`
 	CashFlows        EconomicNAVCashFlowSummary    `json:"cash_flows"`
 	ReverseRepo      EconomicNAVReverseRepoSummary `json:"reverse_repo"`
+	Valuation        EconomicNAVValuationSummary   `json:"valuation"`
 	QualityFlags     []string                      `json:"quality_flags,omitempty"`
 }
 
@@ -318,13 +334,65 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		FormulaVersion:   service.formulaVersion,
 		DailyPerformance: daily,
 	}
-	result.QualityFlags = appendUnique(result.QualityFlags, daily.QualityFlags...)
+	for _, flag := range daily.QualityFlags {
+		if flag == "overnight_adjustment_unclassified" {
+			continue
+		}
+		result.QualityFlags = appendUnique(result.QualityFlags, flag)
+	}
 
 	openEconomicNAV, baselineFlags, err := service.openEconomicNAV(ctx, accountID, normalizedDate, daily)
 	if err != nil {
 		return EconomicNAVResult{}, err
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, baselineFlags...)
+
+	contribution, err := service.CalculateContributions(ctx, accountID, normalizedDate)
+	if err != nil {
+		return EconomicNAVResult{}, fmt.Errorf("calculate market valuation: %w", err)
+	}
+	for _, flag := range contribution.QualityFlags {
+		if flag == "account_day_pnl_unavailable" || flag == "attribution_residual_exceeds_warning" {
+			continue
+		}
+		result.QualityFlags = appendUnique(result.QualityFlags, flag)
+	}
+	openObservation, openObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "open")
+	closeObservation, closeObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "close")
+	openVisibleCash := firstPositiveFloat(daily.OpenNetAsset, daily.PreviousNetAsset)
+	closeVisibleCash := firstPositiveFloat(daily.CashTotal, daily.NetAsset)
+	brokerOpenPositionValue := 0.0
+	brokerClosePositionValue := daily.PositionMarketValue
+	if openObservationErr == nil && (openObservation.CashTotal != 0 || openObservation.NetAsset != 0) {
+		openVisibleCash = openObservation.CashTotal
+		brokerOpenPositionValue = openObservation.PositionMarketValue
+	} else {
+		result.QualityFlags = appendUnique(result.QualityFlags, "open_asset_observation_unavailable")
+	}
+	if closeObservationErr == nil && (closeObservation.CashTotal != 0 || closeObservation.NetAsset != 0) {
+		closeVisibleCash = closeObservation.CashTotal
+		brokerClosePositionValue = closeObservation.PositionMarketValue
+	} else {
+		result.QualityFlags = appendUnique(result.QualityFlags, "close_asset_observation_unavailable")
+	}
+	if openVisibleCash > 0 || contribution.Summary.OpenPositionValue > 0 {
+		openEconomicNAV = roundMoney(openVisibleCash + contribution.Summary.OpenPositionValue)
+	}
+	result.Valuation = EconomicNAVValuationSummary{
+		OpenVisibleCash:          roundMoney(openVisibleCash),
+		OpenPositionValue:        contribution.Summary.OpenPositionValue,
+		CloseVisibleCash:         roundMoney(closeVisibleCash),
+		ClosePositionValue:       contribution.Summary.ClosePositionValue,
+		BrokerOpenPositionValue:  roundMoney(brokerOpenPositionValue),
+		BrokerClosePositionValue: roundMoney(brokerClosePositionValue),
+		PriceSource:              "meridian_pre_close_and_close",
+		CostSource:               "excluded_from_nav",
+	}
+	result.QualityFlags = appendUnique(result.QualityFlags, "research_position_valuation", "broker_position_cost_excluded")
+	if contribution.Summary.MissingItems > 0 {
+		status = "blocked"
+		result.QualityFlags = appendUnique(result.QualityFlags, "incomplete_position_valuation")
+	}
 
 	externalFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "external_flow")
 	if err != nil {
@@ -365,7 +433,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	result.ReverseRepo = repoSummary
 	result.QualityFlags = appendUnique(result.QualityFlags, repoFlags...)
 
-	closeEconomicNAV := roundMoney(daily.NetAsset + repoSummary.Receivable)
+	closeEconomicNAV := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue + repoSummary.Receivable)
 	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
 		result.Status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "missing_positive_economic_nav")
@@ -383,6 +451,19 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	accountDayPnL := roundMoney(closeEconomicNAV - openEconomicNAV - externalNetFlow - settlementAdjustment)
+	accountedContribution := roundMoney(contribution.Summary.NetContribution + incomeExpense)
+	attributionResidual := roundMoney(accountDayPnL - accountedContribution)
+	attributionWarningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(openEconomicNAV)*service.warningToleranceBP/10000))
+	if math.Abs(attributionResidual) > attributionWarningThreshold {
+		status = "blocked"
+		result.QualityFlags = appendUnique(result.QualityFlags, "nav_contribution_residual_exceeds_warning")
+	}
+	if contribution.Summary.MissingFeeItems > 0 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "net_performance_fee_incomplete")
+		if status == "finalized" {
+			status = "provisional"
+		}
+	}
 	returnDenominator, weightedFlowDetails, denominatorFlags := calculateReturnDenominator(openEconomicNAV, externalFlows, parsedDate)
 	result.QualityFlags = appendUnique(result.QualityFlags, denominatorFlags...)
 	dailyReturn := 0.0
@@ -400,7 +481,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 	cumulativeNAV := roundRatio(previousCumulative * (1 + dailyReturn))
 	cashManagementPnL := roundMoney(repoSummary.NetInterest + incomeExpense)
-	unattributedPnL := roundMoney(accountDayPnL - cashManagementPnL)
+	unattributedPnL := attributionResidual
 	if math.Abs(unattributedPnL) > 0.000001 {
 		result.QualityFlags = appendUnique(result.QualityFlags, "strategy_attribution_pending")
 	}
@@ -422,6 +503,16 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		DailyReturn:          roundRatio(dailyReturn),
 		CumulativeNAV:        cumulativeNAV,
 		PnLComponents: map[string]any{
+			"securities_and_strategy": map[string]any{
+				"pnl":                  contribution.Summary.NetContribution,
+				"gross_contribution":   contribution.Summary.GrossContribution,
+				"actual_fee":           contribution.Summary.ActualFee,
+				"estimated_fee":        contribution.Summary.EstimatedFee,
+				"effective_fee":        contribution.Summary.EffectiveFee,
+				"missing_items":        contribution.Summary.MissingItems,
+				"missing_fee_items":    contribution.Summary.MissingFeeItems,
+				"attribution_residual": attributionResidual,
+			},
 			"unattributed": map[string]any{
 				"pnl":   unattributedPnL,
 				"scope": "strategy_components_pending",
@@ -442,6 +533,16 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"sell_amount": roundMoney(daily.SellAmount),
 				"turnover":    roundMoney(daily.Turnover),
 				"fee_total":   roundMoney(daily.FeeTotal),
+			},
+			"market_valuation": map[string]any{
+				"open_visible_cash":           roundMoney(openVisibleCash),
+				"open_position_value":         contribution.Summary.OpenPositionValue,
+				"close_visible_cash":          roundMoney(closeVisibleCash),
+				"close_position_value":        contribution.Summary.ClosePositionValue,
+				"broker_open_position_value":  roundMoney(brokerOpenPositionValue),
+				"broker_close_position_value": roundMoney(brokerClosePositionValue),
+				"price_source":                "meridian_pre_close_and_close",
+				"broker_cost_usage":           "excluded",
 			},
 			"cash_bridge": map[string]any{
 				"visible_close_net_asset":        roundMoney(daily.NetAsset),
@@ -786,7 +887,12 @@ func (service *Service) openEconomicNAV(ctx context.Context, accountID, tradeDat
 	}
 	baseline, hasBaseline := latestConfirmedBaseline(baselines, tradeDate)
 	if !hasBaseline {
-		flags = appendUnique(flags, "missing_nav_baseline")
+		inception, inceptionErr := service.store.GetPerformanceInception(ctx, accountID)
+		if inceptionErr != nil || inception.Status != "confirmed" || inception.InceptionDate > tradeDate {
+			flags = appendUnique(flags, "missing_nav_baseline")
+		} else {
+			flags = appendUnique(flags, "performance_inception_baseline")
+		}
 	}
 	if openNAV <= 0 && hasBaseline {
 		openNAV = baseline.InitialEconomicNAV
@@ -886,7 +992,7 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 			sameDateVersion = item.Version
 			continue
 		}
-		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 {
+		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 && item.Status != "blocked" && item.FormulaVersion == service.formulaVersion {
 			previous = item
 		}
 	}

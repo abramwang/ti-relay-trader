@@ -482,6 +482,56 @@ func TestCalculateContributionsDoesNotAssumeMissingOpenPositionIsZero(t *testing
 	}
 }
 
+func TestCalculateContributionsBlocksReconciledSnapshotsWithQuantityMismatch(t *testing.T) {
+	store := &fakePerformanceStore{
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100,
+			}},
+			"close": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  90,
+			}},
+		},
+		daily: ledger.DailyPerformance{OpenNetAsset: 100_000},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "600000.SH", "instrument_type": "stock"},
+			}},
+		},
+		bars: market.MeridianResponse{
+			StatusCode: 200,
+			Payload: map[string]any{"data": []any{
+				map[string]any{"security_id": "600000.SH", "pre_close": 10.0, "close": 10.5},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateContributions(context.Background(), "acct-1", "20260724")
+	if err != nil {
+		t.Fatalf("CalculateContributions() error = %v", err)
+	}
+	item := result.Contributions[0]
+	if item.PnLStatus != "missing" || item.NetContribution != nil || result.Summary.MissingItems != 1 {
+		t.Fatalf("contribution = %#v summary=%#v", item, result.Summary)
+	}
+	if !containsString(item.QualityFlags, "position_quantity_not_reconciled") || !containsString(item.QualityFlags, "position_quantity_bridge_incomplete") {
+		t.Fatalf("quality flags = %#v", item.QualityFlags)
+	}
+}
+
 func TestCalculateContributionsFallsBackToPreviousCloseWithQuantityBridge(t *testing.T) {
 	store := &fakePerformanceStore{
 		fills: []trading.Fill{{
@@ -749,9 +799,9 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 		t.Fatal("Persisted = false, want true")
 	}
 	assertClose(t, result.NAV.OpenEconomicNAV, 980000)
-	assertClose(t, result.NAV.CloseEconomicNAV, 1100010)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1000010)
 	assertClose(t, result.NAV.ExternalNetFlow, 10000)
-	assertClose(t, result.NAV.AccountDayPnL, 110010)
+	assertClose(t, result.NAV.AccountDayPnL, 10010)
 	if result.NAV.FormulaVersion != "performance_economic_nav.unit" {
 		t.Fatalf("formula = %q", result.NAV.FormulaVersion)
 	}
@@ -763,6 +813,176 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 	}
 	if result.NAV.PnLComponents["cash_management"] == nil {
 		t.Fatalf("missing cash management component: %#v", result.NAV.PnLComponents)
+	}
+}
+
+func TestCalculateEconomicNAVUsesMeridianPositionValuationInsteadOfBrokerCost(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-07-24",
+			CashTotal:          899500,
+			NetAsset:           899500,
+			OpenNetAsset:       900000,
+			OpenSnapshotSource: "open",
+		},
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    100,
+				AvgCost:     9999,
+				MarketValue: 999900,
+			}},
+			"close": {{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    150,
+				AvgCost:     8888,
+				MarketValue: 1333200,
+			}},
+		},
+		fills: []trading.Fill{{
+			FillID:         "buy-1",
+			AccountID:      "acct-1",
+			GatewayOrderID: "order-1",
+			Symbol:         "600000",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideBuy,
+			BusinessType:   trading.BusinessTypeStock,
+			Price:          10,
+			Qty:            50,
+		}},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 9.0, "close": 11.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260724", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+	assertClose(t, result.Valuation.OpenPositionValue, 900)
+	assertClose(t, result.Valuation.ClosePositionValue, 1650)
+	assertClose(t, result.NAV.OpenEconomicNAV, 900900)
+	assertClose(t, result.NAV.CloseEconomicNAV, 901150)
+	assertClose(t, result.NAV.AccountDayPnL, 250)
+	if result.Valuation.BrokerOpenPositionValue == result.Valuation.OpenPositionValue || result.Valuation.BrokerClosePositionValue == result.Valuation.ClosePositionValue {
+		t.Fatalf("broker values unexpectedly used: %#v", result.Valuation)
+	}
+	if !containsString(result.QualityFlags, "broker_position_cost_excluded") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+}
+
+func TestCalculateCostLedgerRollsTrustedOpeningCostWithMovingAverage(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-24",
+			Status:                "confirmed",
+			CleanStart:            true,
+			OpeningPositionSource: "broker_open_snapshot",
+		},
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100,
+				AvgCost:   10,
+			}},
+			"close": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  150,
+			}},
+		},
+		fills: []trading.Fill{
+			{FillID: "buy", AccountID: "acct-1", GatewayOrderID: "buy-order", Symbol: "600000", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, Price: 12, Qty: 100, Fee: 2},
+			{FillID: "sell", AccountID: "acct-1", GatewayOrderID: "sell-order", Symbol: "600000", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, BusinessType: trading.BusinessTypeStock, Price: 14, Qty: 50, Fee: 1},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 11.0, "close": 13.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260724", CostLedgerOptions{Persist: true})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || !result.Persisted || len(result.Positions) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	item := result.Positions[0]
+	if item.CloseQuantity != 150 || item.QuantityResidual != 0 {
+		t.Fatalf("quantity state = %#v", item)
+	}
+	assertClose(t, item.CloseTotalCost, 1651.5)
+	assertClose(t, item.AverageCost, 11.01)
+	assertClose(t, item.RealizedPnL, 148.5)
+	assertClose(t, item.CloseMarketValue, 1950)
+	assertClose(t, item.UnrealizedPnL, 298.5)
+	if len(store.costUpserts) != 1 {
+		t.Fatalf("cost upserts = %#v", store.costUpserts)
+	}
+}
+
+func TestCalculateCostLedgerBlocksQuantityMismatch(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-24",
+			Status:                "confirmed",
+			OpeningPositionSource: "broker_open_snapshot",
+		},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, AvgCost: 10}},
+			"close": {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 80}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 10.0, "close": 11.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260724", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "blocked" || result.Summary.QuantityBreaks != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsString(result.Positions[0].QualityFlags, "position_quantity_not_reconciled") {
+		t.Fatalf("quality flags = %#v", result.Positions[0].QualityFlags)
 	}
 }
 
@@ -1176,6 +1396,10 @@ type fakePerformanceStore struct {
 	navUpserts            []ledger.PerformanceNAV
 	navStatusUpdates      []ledger.PerformanceNAV
 	reconciliationUpserts []ledger.NAVReconciliation
+	inception             ledger.PerformanceInception
+	inceptionErr          error
+	costStates            []ledger.PositionCostState
+	costUpserts           []ledger.PositionCostState
 	now                   time.Time
 }
 
@@ -1319,6 +1543,30 @@ func (store *fakePerformanceStore) UpdatePerformanceNAVStatus(_ context.Context,
 
 func (store *fakePerformanceStore) UpsertNAVReconciliation(_ context.Context, item ledger.NAVReconciliation) (ledger.NAVReconciliation, error) {
 	store.reconciliationUpserts = append(store.reconciliationUpserts, item)
+	return item, nil
+}
+
+func (store *fakePerformanceStore) GetPerformanceInception(_ context.Context, _ string) (ledger.PerformanceInception, error) {
+	if store.inceptionErr != nil {
+		return ledger.PerformanceInception{}, store.inceptionErr
+	}
+	if store.inception.AccountID == "" {
+		return ledger.PerformanceInception{}, sql.ErrNoRows
+	}
+	return store.inception, nil
+}
+
+func (store *fakePerformanceStore) UpsertPerformanceInception(_ context.Context, item ledger.PerformanceInception) (ledger.PerformanceInception, error) {
+	store.inception = item
+	return item, nil
+}
+
+func (store *fakePerformanceStore) ListPositionCostStates(_ context.Context, _ ledger.PositionCostStateQuery) ([]ledger.PositionCostState, error) {
+	return store.costStates, nil
+}
+
+func (store *fakePerformanceStore) UpsertPositionCostState(_ context.Context, item ledger.PositionCostState) (ledger.PositionCostState, error) {
+	store.costUpserts = append(store.costUpserts, item)
 	return item, nil
 }
 

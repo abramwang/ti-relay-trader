@@ -144,7 +144,7 @@ def main() -> int:
         raise AssertionError(f"performance chart is undersized: {diagnostics}")
     if diagnostics["paintedSamples"] < 500:
         raise AssertionError(f"performance chart is blank: {diagnostics}")
-    if diagnostics["qualityItems"] != 6:
+    if diagnostics["qualityItems"] != 7:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")
     if diagnostics["horizontalOverflow"]:
         raise AssertionError(f"page has horizontal overflow: {diagnostics}")

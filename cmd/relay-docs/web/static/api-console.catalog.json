@@ -205,6 +205,60 @@
     ]
   },
   {
+    "id": "performance-inception",
+    "group": "绩效",
+    "title": "绩效起算配置",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/inception",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "307000051387" }
+    ]
+  },
+  {
+    "id": "performance-inception-save",
+    "group": "绩效",
+    "title": "保存绩效起算配置",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/inception",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "307000051387" },
+      { "name": "inception_date", "label": "inception_date", "source": "body", "required": true, "defaultValue": "20260729" },
+      { "name": "status", "label": "status", "source": "body", "type": "select", "defaultValue": "confirmed", "options": ["draft", "confirmed", "voided"] },
+      { "name": "clean_start", "label": "clean_start", "source": "body", "type": "checkbox", "defaultValue": "true" },
+      { "name": "opening_cash", "label": "opening_cash", "source": "body", "type": "number", "defaultValue": "0" },
+      { "name": "opening_position_source", "label": "opening_position_source", "source": "body", "defaultValue": "broker_open_snapshot" },
+      { "name": "cost_source", "label": "cost_source", "source": "body", "defaultValue": "broker_open_snapshot" },
+      { "name": "description", "label": "description", "source": "body", "defaultValue": "可信成本起算" },
+      { "name": "confirmed_by", "label": "confirmed_by", "source": "body", "defaultValue": "api-console" }
+    ]
+  },
+  {
+    "id": "position-cost-preview",
+    "group": "绩效",
+    "title": "持仓成本账预览",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/performance/cost-ledger/preview",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "307000051387" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "required": true, "defaultValue": "20260729" }
+    ]
+  },
+  {
+    "id": "position-cost-rebuild",
+    "group": "绩效",
+    "title": "持仓成本账重建",
+    "method": "POST",
+    "path": "/v1/accounts/{account_id}/performance/cost-ledger/rebuild",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "307000051387" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "required": true, "defaultValue": "20260729" }
+    ]
+  },
+  {
     "id": "reverse-repo-preview",
     "group": "绩效",
     "title": "逆回购估算预览",

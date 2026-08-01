@@ -38,7 +38,7 @@ performance:
   # Keep this false until the 9092 endpoint is protected by trusted access
   # control. Read-only performance and reconciliation APIs remain available.
   settings_write_enabled: false
-  formula_version: "performance_economic_nav.v1"
+  formula_version: "performance_economic_nav.v2"
   etf_t0_friction_rate: 0.0015
   auto_tolerance_cny: 50
   auto_tolerance_bp: 0.1
