@@ -323,6 +323,28 @@ func TestTradeDateOrderScopeMigrationReplacesCompatibilityKeys(t *testing.T) {
 	}
 }
 
+func TestPerformanceNAVGoldMigrationAddsVersionedAuditedInput(t *testing.T) {
+	upSQL := readMigration(t, "000021_performance_nav_gold.up.sql")
+	for _, snippet := range []string{
+		"CREATE TABLE performance_nav_gold_versions",
+		"GENERATED ALWAYS AS (close_asset - daily_pnl) STORED",
+		"GENERATED ALWAYS AS (close_asset - daily_pnl - carried_open_asset) STORED",
+		"UNIQUE (account_id, trade_date, source, version)",
+		"CREATE UNIQUE INDEX performance_nav_gold_versions_current_unique",
+		"WHERE is_current",
+		"status <> 'confirmed' OR (confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL)",
+		"raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("performance NAV gold migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000021_performance_nav_gold.down.sql")
+	if !strings.Contains(downSQL, "DROP TABLE IF EXISTS performance_nav_gold_versions") {
+		t.Fatal("performance NAV gold rollback missing table drop")
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

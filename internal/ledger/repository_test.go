@@ -733,6 +733,87 @@ func TestUpsertPerformanceNAVBuildsVersionedWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[14], `"strategy_attribution_pending"`)
 }
 
+func TestUpsertPerformanceNAVGoldBuildsVersionedAuditedWrite(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+	confirmedAt := time.Date(2026, 8, 1, 16, 30, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60))
+
+	_, err := repo.UpsertPerformanceNAVGold(context.Background(), PerformanceNAVGold{
+		AccountID:        " acct-1 ",
+		TradeDate:        "20260729",
+		Status:           "confirmed",
+		CarriedOpenAsset: 5320996.04,
+		CloseAsset:       5329753.88,
+		DailyPnL:         8745.97,
+		Source:           "manual_user_confirmed",
+		SourceRef:        "testdata/performance/manual.csv",
+		ConfirmedBy:      "user",
+		ConfirmedAt:      confirmedAt,
+		RawPayload:       map[string]any{"row_number": 16},
+	})
+	if err == nil {
+		t.Fatal("UpsertPerformanceNAVGold() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "WITH existing_current AS")
+	requireQueryContains(t, exec.query, "UPDATE performance_nav_gold_versions")
+	requireQueryContains(t, exec.query, "INSERT INTO performance_nav_gold_versions")
+	requireQueryContains(t, exec.query, "NOT EXISTS (SELECT 1 FROM existing_current)")
+	requireArgLen(t, exec.args, 13)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-07-29" {
+		t.Fatalf("identity args = %#v/%#v", exec.args[0], exec.args[1])
+	}
+	if exec.args[6] != "excluding_fund_occupancy" || exec.args[7] != "manual_user_confirmed" {
+		t.Fatalf("scope/source args = %#v/%#v", exec.args[6], exec.args[7])
+	}
+	hash, ok := exec.args[9].(string)
+	if !ok || len(hash) != 64 {
+		t.Fatalf("content hash = %#v", exec.args[9])
+	}
+	assertJSONContains(t, exec.args[12], `"row_number":16`)
+}
+
+func TestUpsertPerformanceNAVGoldRequiresConfirmationAudit(t *testing.T) {
+	repo := NewRepository(&recordingQueryExecutor{})
+
+	_, err := repo.UpsertPerformanceNAVGold(context.Background(), PerformanceNAVGold{
+		AccountID:        "acct-1",
+		TradeDate:        "20260729",
+		Status:           "confirmed",
+		CarriedOpenAsset: 100,
+		CloseAsset:       101,
+		DailyPnL:         1,
+		SourceRef:        "manual.csv",
+	})
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("UpsertPerformanceNAVGold() error = %v, want ErrInvalidLedgerInput", err)
+	}
+}
+
+func TestListPerformanceNAVGoldBuildsCurrentSeriesRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListPerformanceNAVGold(context.Background(), PerformanceNAVGoldQuery{
+		AccountID: "acct-1",
+		DateFrom:  "20260701",
+		DateTo:    "20260731",
+		Status:    "confirmed",
+		Source:    "manual_user_confirmed",
+	})
+	if err == nil {
+		t.Fatal("ListPerformanceNAVGold() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM performance_nav_gold_versions")
+	requireQueryContains(t, exec.query, "AND ($6 OR is_current)")
+	requireQueryContains(t, exec.query, "ORDER BY trade_date, source, version DESC")
+	requireArgLen(t, exec.args, 6)
+	if exec.args[0] != "acct-1" || exec.args[5] != false {
+		t.Fatalf("query args = %#v", exec.args)
+	}
+}
+
 func TestUpdatePerformanceNAVStatusBuildsCurrentVersionUpdate(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
