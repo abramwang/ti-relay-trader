@@ -160,6 +160,42 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 }
 
+func TestStatusChecksExternalWorkerAndEventBridge(t *testing.T) {
+	cfg := statusConfigWithTradingDay(t, false)
+	embedded := false
+	cfg.Worker.EmbeddedLedgerSync = &embedded
+	workerPinged := false
+	bridgePinged := false
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{},
+		WorkerPing: func(context.Context) error {
+			workerPinged = true
+			return nil
+		},
+		EventBridgePing: func(context.Context) error {
+			bridgePinged = true
+			return nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Data StatusView `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !workerPinged || !bridgePinged {
+		t.Fatalf("external runtime pings worker=%v bridge=%v", workerPinged, bridgePinged)
+	}
+	if envelope.Data.Dependencies["worker"].Status != "ok" || envelope.Data.Dependencies["event_bridge"].Status != "ok" {
+		t.Fatalf("external runtime dependencies = %#v", envelope.Data.Dependencies)
+	}
+}
+
 func TestStatusDegradedAndDoesNotLeakDependencyErrors(t *testing.T) {
 	cfg := statusConfigWithTradingDay(t, true)
 	cfg.Database.DSN = "postgres://configured"
@@ -576,6 +612,48 @@ func TestAccountAssetEnrichesMissingMarketValueFromPositions(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("response missing %s: %s", want, rec.Body.String())
 		}
+	}
+}
+
+func TestAccountAssetUsesStoredPositionValuesWithoutMarketLookup(t *testing.T) {
+	marketRequests := 0
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		marketRequests++
+		http.Error(w, "unexpected market lookup", http.StatusInternalServerError)
+	}))
+	defer meridian.Close()
+
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID:   "acct-1",
+			CashTotal:   1000,
+			MarketValue: 0,
+		}},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    100,
+				MarketValue: 720,
+			}},
+			Count: 1,
+		},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if marketRequests != 0 {
+		t.Fatalf("market requests = %d, want 0", marketRequests)
+	}
+	if !strings.Contains(rec.Body.String(), `"market_value":720`) {
+		t.Fatalf("response missing stored position market value: %s", rec.Body.String())
 	}
 }
 

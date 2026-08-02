@@ -6,9 +6,9 @@
 
 已新增 `relayctl ledger-sync`，用于把前置服务输出的 Redis Stream 消息写入 PostgreSQL 账本。
 
-`2026-06-14` 起，9092 docs/api 模式也会在本地配置包含 PostgreSQL 和 Redis 时启动轻量后台同步循环，持续消费测试 Redis `reply/event` 并更新本地账本。同步循环现在支持 PostgreSQL `stream_checkpoints` 位点表：如果存在 checkpoint，就从对应 stream 的 `last_stream_id` 继续读取；如果不存在，则按配置起点从 `0` 追赶历史。
+docs/api 模式可通过 `worker.embedded_ledger_sync=true` 启动内嵌同步循环，供测试和兼容部署使用。同步循环支持 PostgreSQL `stream_checkpoints` 位点表：如果存在 checkpoint，就从对应 stream 的 `last_stream_id` 继续读取；如果不存在，则按配置起点从 `0` 追赶历史。
 
-同日正式 `worker` 模式已接入同一套同步循环，可持续消费 `reply/event/hb/dlq`，并将每条 output stream 的消费位点、处理计数和最近错误摘要写入 `stream_checkpoints`。生产化建议将持续同步放到 worker 进程，9092 API 进程专注处理 HTTP 请求。
+正式 `relay-worker` 使用同一套同步实现持续消费 `reply/event/hb/dlq`，并将每条 output stream 的消费位点、处理计数和最近错误摘要写入 `stream_checkpoints`。生产配置设置 `worker.embedded_ledger_sync=false`，由 worker 独占消费，9092 API 进程专注处理 HTTP 请求和 SSE。
 
 多账户常驻同步使用一次聚合 `XREAD` 同时监听全部 output stream，并为每条 stream 独立维护 checkpoint。旧实现会对每条空 stream 顺序执行一次 1 秒阻塞读取，6 个账户、3 个角色会把一次完整扫描放大到约 18 秒；聚合读取把空闲等待收敛为全局最多 1 秒，同时保留逐 stream 处理、错误隔离和位点恢复语义。每个非空批次日志包含 `processing_duration_ms`，用于区分 Redis 等待和 PostgreSQL 合并耗时。
 
@@ -27,7 +27,7 @@ OC v1.2 增量兼容已经落地：`order.cancel.event/order.cancel.rejected` �
 5. `order.cancel.event/order.cancel.rejected`：写入 `order_cancel_attempts` 并发布 `order.cancel.rejected` SSE，不修改 `orders`。
 6. `transfer.event`：写入 `etf_component_transfers`，不混入普通 `fills`。
 
-`relayctl ledger-sync` 命令是受控批处理入口，不会写入 `cmd.trade` 或 `cmd.query`，也不会移动 consumer group 位点。自动资金持仓刷新在 9092 docs/api 轻量后台同步循环和正式 worker 中均可启用。
+`relayctl ledger-sync` 命令是受控批处理入口，不会写入 `cmd.trade` 或 `cmd.query`，也不会移动 consumer group 位点。自动资金持仓刷新在内嵌同步循环和独立 worker 中均可启用。
 
 `hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`CANCEL_RESPONSE_TIMEOUT` 还会生成 `reconciliation_required=true` 的撤单审计记录。
 

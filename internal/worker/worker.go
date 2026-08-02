@@ -12,12 +12,22 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/orderflow"
 	"ti-relay-trader/internal/redisstream"
 )
 
 func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	return RunWithOptions(ctx, cfg, logger, RunOptions{})
+}
+
+type RunOptions struct {
+	OnReady       func()
+	PublishEvents bool
+}
+
+func RunWithOptions(ctx context.Context, cfg config.Config, logger *slog.Logger, opts RunOptions) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -50,6 +60,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	cancelPing()
 
 	repo := ledger.NewRepository(db)
+	eventNotifier := events.NewPostgresNotifier(db)
 	publisher, err := redisstream.OpenRedisCommandPublisher(cfg.Redis)
 	if err != nil {
 		return err
@@ -82,6 +93,10 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		)
 	}
 
+	if opts.OnReady != nil {
+		opts.OnReady()
+	}
+
 	err = redisstream.RunLedgerSyncLoop(ctx, cfg, repo, redisstream.LedgerSyncLoopOptions{
 		StartID:     "0",
 		Count:       200,
@@ -94,6 +109,24 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			}
 			reason := fmt.Sprintf("worker-ledger:%s order_events=%d fills=%d", change.LastStreamID, change.OrderEvents, change.Fills)
 			autoRefresh.RequestAccounts(change.AccountIDs, reason)
+		},
+		OnLedgerChange: func(callbackCtx context.Context, change redisstream.LedgerChange) {
+			if !opts.PublishEvents {
+				return
+			}
+			for _, event := range events.FromLedgerChange(change) {
+				notifyCtx, cancel := context.WithTimeout(callbackCtx, 2*time.Second)
+				err := eventNotifier.Notify(notifyCtx, event)
+				cancel()
+				if err != nil {
+					logger.Warn("relay_worker_event_notify_failed",
+						"event_type", event.Type,
+						"stream", change.Stream,
+						"last_stream_id", change.LastStreamID,
+						"error", err,
+					)
+				}
+			}
 		},
 	}, logger.With("component", "worker-ledger-sync"))
 	if err != nil {

@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成；N12 的 API Console 命名集合、JSON 导入导出和响应断言已完成，剩余券商测试环境批量下单视图和 API/worker 进程拆分。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
-- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 启动生产查询/订阅模式，`service.environment=production`，生产 Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；当前收盘后有 38 条历史数据质量 DLQ 待审核，因此运行汇总为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，`enabled=true`、`trading_enabled=false`、`auto_refresh=false`。允许手动账户/资产/持仓/订单/成交查询刷新和订单成交推送订阅，不开放下单或撤单交易权限。容器重启后由 cron `@reboot` 拉起 9092，并每分钟执行一次幂等健康守护；服务日志写入 `/tmp/relay-docs.log`，守护日志写入 `/var/log/relay/relay-docs-service-cron.log`。该文件包含凭据且不提交；生产 Redis 凭据只允许进入未跟踪本地配置或安全运行环境，不写入仓库。
-- 最近更新时间: `2026-08-01`
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成；N12 的 API Console 命名集合、JSON 导入导出、响应断言和 API/worker 独立进程已经完成，仅剩券商测试环境批量下单视图。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。`/v1/status` 中 `worker`、`event_bridge`、Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；38 条历史数据质量 DLQ 待审核，因此运行汇总仍为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
+- 最近更新时间: `2026-08-02`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -71,6 +71,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 ├── README.md
 ├── cmd/
 │   ├── relay-docs/      # 9092 文档门户入口，不包含交易核心逻辑
+│   ├── relay-worker/    # 独立 Redis Stream 消费、账本写入和事件通知进程
 │   └── relayctl/        # 运维和联调 CLI，当前包含 Redis Stream 探测、账本同步和 migration
 ├── config/              # 本地配置、示例配置、环境变量模板
 ├── docs/                # 设计文档、接口文档、状态补充说明
@@ -78,7 +79,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 │   ├── api/             # 9092 API 服务、健康检查、交易接口、页面和状态查询
 │   ├── config/          # Go 配置加载、服务模式和账户路由配置模型
 │   ├── db/              # PostgreSQL migration runner
-│   ├── events/          # 9092 进程内 SSE 事件 hub
+│   ├── events/          # SSE hub 与 PostgreSQL 跨进程账本事件桥
 │   ├── httpx/           # HTTP request_id、中间件、统一 JSON envelope
 │   ├── ledger/          # PostgreSQL 账本写入 repository，覆盖账户、订单、事件、成交和原始 stream 消息
 │   ├── logging/         # 结构化日志初始化
@@ -197,7 +198,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 配置加载增加生产切换护栏：校验账户交易开关、生产模拟账户冲突和 Redis Stream 前缀与 `redis.env/broker/gateway` 一致性。
 - [x] 首页新增运行环境控制台，直观展示当前测试/生产环境、配置文件、Redis/数据库配置、账户路由、下单权限、自动刷新和切换 runbook 入口。
 - [x] 首页运行环境控制台新增测试/生产候选配置卡片和本机切换命令，真实切换通过 `scripts/switch-relay-env.sh` 执行，生产下单权限默认被脚本拦截。
-- [x] 新增 `scripts/relay-docs-service.sh` 管理 9092 常驻进程，并安装 root crontab `RELAY_DOCS_AUTOSTART` 块，容器启动和进程异常退出后会自动恢复生产只读服务。
+- [x] 新增 `scripts/relay-runtime-service.sh` 统一管理独立 API/worker 常驻进程，并安装 root crontab `RELAY_RUNTIME_AUTOSTART` 块；容器启动或任一进程异常退出后会自动恢复生产只读服务。
 - [x] `/jobs` 任务页在非交易日明确展示“交易日任务跳过”；9092 watchdog 不再每分钟请求 `/v1/status`，Meridian 客户端和启动脚本均避免继承容器代理环境。
 - [x] 2026-07-26 重新审计开发路线图：P2 标准接口标记完成，P8/P10 调整为持续优化阶段，并把绩效归因、stream 可观测、账本环境隔离、人工复核、回归测试和发布运维拆成可验收任务。
 - [x] 账户路由新增 `alias` 默认显示名，`GET /v1/accounts` 返回账户别名，`/trade` 可编辑别名并落库到 PostgreSQL `accounts.account_name`；首页接入账户表和 `/operations` 也统一优先显示落库别名。
@@ -209,8 +210,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 记录前置测试环境已启动，并已基于 Redis Stream 完成查询、下单、撤单和事件消费联调。
 - [x] 新增 Redis Stream 只读探测命令 `relayctl redis-probe` 和账户前缀扫描命令 `relayctl redis-scan`，支持本地配置和 `HX_REDIS_*` 环境变量。
 - [x] 新增 Redis Stream 到 PostgreSQL 账本同步命令 `relayctl ledger-sync`，支持 `reply/event` 归档和完整事件落盘。
-- [x] 9092 docs/api 模式启动轻量后台同步循环，持续消费测试 Redis `reply/event` 并更新 PostgreSQL 订单、成交、资金和持仓账本。
-- [x] 正式 worker 模式接入 Redis 同步循环，可持续消费 `reply/event/hb/dlq` 并通过 PostgreSQL `stream_checkpoints` 恢复位点。
+- [x] docs/api 模式保留可配置的内嵌同步循环，供测试和单进程兼容部署使用。
+- [x] 生产正式切换为独立 worker 消费 `reply/event/hb/dlq`，通过 PostgreSQL `stream_checkpoints` 恢复位点，并用 PostgreSQL `LISTEN/NOTIFY` 向 API SSE 转发账本事件。
 - [x] 新增 Apifox 风格接口测试台 `/api-console`，用于 API 联调。
 - [x] 9092 文档门户同源挂载 `/v1/*` API handler，修复接口测试台无法发送请求查看返回的问题。
 - [x] 参考 Meridian API 测试页优化 `/api-console`，每个接口按 path/query/body 参数生成表单，响应同时提供 JSON 和表格视图。
@@ -307,8 +308,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 3. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
-6. 完成 N12 剩余项：API Console 可保存/导出的请求样例和响应断言集合，以及仅券商测试环境可用的 `/trade` 批量下单测试视图。
-7. 将 API、worker、docs 拆分为独立常驻进程，补齐各自日志采集和独立回滚入口；统一只读发布验收与回滚清单已经完成。
+6. 完成 N12 剩余项：仅券商测试环境可用的 `/trade` 批量下单测试视图；生产只读套件继续阻止所有写请求。
 
 ## README 状态维护规则
 
@@ -329,8 +329,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 生产前置在柜台关闭后会出现 `QueryMatches/QueryAsset/QueryPositions fail, ret[-1]`，此时 Redis 心跳和 Relay 服务仍可正常，但不能再依赖柜台查询刷新当日资金、持仓和成交。生产 `post_close_settlement` 应固定在交易日 15:01 `Asia/Shanghai` 运行，超过柜台服务窗口后只能用 Relay 已落库账本做 `--skip-refresh` 快照或等次日可查询窗口补跑。
 - 生产 OC 由部署计划在交易日 15:30 关停；Relay 机器上的 15:10 `stop_services.sh` 只关闭本地行情采集进程，不包含 OC trader commander。Relay 的 gateway/stream 告警窗口已同步延长到 15:30。14:56 作为策略停止新增交易和预结算观察起点，15:01 仍执行资金、持仓、订单、成交权威刷新并固化日终快照。
 - 生产 `pre_open_init` 已安装到 root crontab 的 `RELAY_TRADER_CRON` 管理块，时间为交易日 09:01 `Asia/Shanghai`；日志写入 `/var/log/relay/pre_open_init.log`，报告写入 `/var/log/relay/reports/pre_open_init.json`。
-- 9092 常驻进程已安装到 root crontab 的 `RELAY_DOCS_AUTOSTART` 管理块，`@reboot` 和每分钟 watchdog 都调用 `scripts/relay-docs-service.sh start`。该脚本默认读取 `config/relay.prod.yaml`，生产配置若出现 `trading_enabled=true` 会拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true` 完成人工风险确认。
-- `RELAY_DOCS_AUTOSTART` 的分钟级 watchdog 只检查 `/healthz` 和进程参数，不再调用 `/v1/status`；`/v1/status` 仍会查询 Meridian 交易日状态，但 Meridian Go 客户端和启动脚本已禁用 `HTTP_PROXY/HTTPS_PROXY` 继承，避免内网交易日查询走失效本地代理并刷 WARN。
+- 生产常驻进程已安装到 root crontab 的 `RELAY_RUNTIME_AUTOSTART` 管理块，`@reboot` 和每分钟 watchdog 都调用 `scripts/relay-runtime-service.sh start`。API 和 worker 使用独立 PID、日志、当前/上一版二进制及回滚入口；生产配置若出现 `trading_enabled=true`，启动脚本仍会拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true` 完成人工风险确认。
+- `RELAY_RUNTIME_AUTOSTART` 的分钟级 watchdog 分别检查 API `/healthz` 和 worker 本机 `/readyz`，不调用完整 `/v1/status`；Meridian Go 客户端和启动脚本继续禁用 `HTTP_PROXY/HTTPS_PROXY` 继承，避免内网请求误走代理。
 - 业务时间口径已统一为 `Asia/Shanghai`；HTTP envelope、`/healthz`、SSE、Redis command `sent_at`、探测/同步报告和账本 API 展示时间已输出东八区。账本内部 `received_at`、checkpoint 和 PostgreSQL `timestamptz` 仍记录绝对时刻，API 序列化层会省略零值时间字段。
 - 每日交易主流程已完成 Python 任务、任务运行报告落盘、盘前 open 资产快照、收盘后 close 资产/持仓快照落盘、`reconciliation_runs` 批次 upsert、`reconciliation_inputs` 输入摘要、`reconciliation_breaks` 差异记录和账户日终权益/PnL 输入汇总第一版；`/v1/reconciliations/review-report` 与 `/jobs` 已提供按交易日、按账户的可导出人工复核报告。
 - 盘前/盘后任务的账户级查询异常不会再直接把整体任务置为失败：例如新账户柜台未准备好、某账户暂时没有资产快照，会在 report 的 `account_errors` 中独立标注。若资金/持仓刷新未在本地账本确认，该账户会进入 `snapshot_blocked_accounts` 并从本次 open/close 快照账户列表中剔除，避免把早盘或旧持仓固化为日终持仓。整体任务失败只保留给 Relay 状态异常、交易日解析失败、所有账户快照均被阻断、快照接口不可用或数据库写入失败等系统级问题。
@@ -340,10 +340,9 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - P8 价格与基准计算只接入 Meridian `bars`；ETF T0 另读取 Meridian PCF 现金清单中的 `unit_subscribe_redeem` 做最小申赎单位校验，不使用 PCF 还原基金管理人最终清算。交易端暂不接入实时 level2 数据，也不规划 `trades/orders/order-queues`，避免把不存在或非必要的数据源纳入核心路径。
 - `GET /v1/meridian/market/bars` 当前是同源薄代理，不做字段映射和持久化；当 `trade_date` 为空或等于东八区当天时，会先调用 Meridian 交易日接口取得 `previous_or_current_trading_date`。当前交易日 15:00 前使用 `data_scope=realtime`，15:00 后使用 `auto` 让 Meridian 选择当日归档数据；非交易日自动回退到最近交易日 historical。bars 代理对标准化后同 key 请求做 2 秒短缓存、singleflight 合并和 60 秒 stale fallback，降低读压下直接 bars 查询和绩效 benchmark 对上游的重复冲击。
 - `/trade` 分钟 K 线图只用于手工测试与点位理解；买卖点来自本地订单/成交账本，不新增行情字段定义。成交点优先于委托点，同一订单已有成交时不会重复绘制委托价。`/trade#performance` 后续改为净值曲线、收益贡献和交易归因等绩效图。
-- 9092 当前线上仍运行文档门户模式；真实交易 API 需要以 `service.mode=api` 和本地凭据配置启动。
-- 9092 文档门户模式已同源挂载 `/v1/*` API handler；`/v1/status`、`/v1/schema` 等基础接口可直接从 `/api-console` 发送请求。若启动时未加载数据库和 Redis 本地配置，交易写接口和账本查询会返回明确的服务不可用或空结果。
-- `/healthz` 只表示 9092 进程存活；`/v1/status` 才包含 PostgreSQL、Redis、订单服务、行情代理、事件流和自动刷新状态。健康检查只返回 `ok/error/timeout/not_configured` 等摘要，不返回 DSN、密码、Token 或 Redis URL。
-- 当前刷新 API 只负责写入前置 `cmd.query`；9092 轻量后台同步循环和 worker 都可消费测试 Redis `reply/event` 并合并到本地账表。正式生产化建议用 `service.mode=worker` 承接持续同步，用 9092 API 进程专注服务请求。
+- 9092 当前线上运行 `service.mode=api`，同一进程同时提供文档门户和 `/v1/*` API；生产 Redis output stream 只由独立 `relay-worker` 消费，避免 API 重启影响持续落账。
+- `/healthz` 只表示 9092 API 进程存活；`/v1/status` 还检查 PostgreSQL、Redis、worker、本地事件桥、订单服务、行情代理、事件流和自动刷新。健康摘要不返回 DSN、密码、Token 或 Redis URL。
+- 当前刷新 API 只负责写入前置 `cmd.query`；独立 worker 合并 reply/event 到本地账表，PostgreSQL 事件桥把成功落账后的变化转发给 API SSE。测试环境仍可通过 `worker.embedded_ledger_sync=true` 使用兼容的单进程同步方式。
 - 下单幂等同时由应用层预检和 PostgreSQL 原子占位保证：先查 `account_id + gateway_order_id` 与 `account_id + idempotency_key`，新订单使用 insert-only 写入；`000019` 为非空 `orders(account_id, idempotency_key)` 增加部分唯一索引。相同 payload 的并发冲突会回查并返回 `replayed=true`，不同 payload 返回 `IDEMPOTENCY_CONFLICT`，两者都不会再次发布 Redis 命令。`order.list.query` 的请求键只保留在 raw 审计，不写入订单幂等字段。
 - 2026-06-14 压测暴露测试前置会在不同订单间复用 `fill_id/match_stream_id`；`000005` 先将成交唯一键调整为订单作用域，`000012` 再加入 `trade_date`。Redis Stream 协议仍要求同一当日订单内成交编号稳定。
 - 同轮排查过程中曾观察到原始 `adapter_context.order_status_name=unAccept` 与标准订单 `filled` 不一致；回放完整事件后目标订单 raw 状态已更新为 `dealt`。若后续再次出现 raw status 与标准状态冲突，Relay 继续以标准字段和数量口径保证账本终态，并建议前置侧澄清原始状态字段语义。
@@ -358,7 +357,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - SDK 不参与测试/生产环境选择；SDK 只连接 `base_url`，实际后端是测试 Redis 还是生产 Redis 完全由 relay 服务端配置、账户路由和交易权限决定。
 - 测试与生产已使用独立 PostgreSQL 数据库，分别为 `relay_trader_test` 和 `relay_trader`；两套未跟踪配置均声明 `database.expected_name`，配置 DSN 指向错误库时会在启动前拒绝。`scripts/check-database-isolation.sh` 可随时复核真实连接目标和 migration 版本。
 - 接口测试台当前可在 9092 文档门户同源发送 `/v1/*` 请求；资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接口需要启动时加载本地 PostgreSQL、测试 Redis 和账户路由配置。
-- 资金/持仓/订单/成交查询默认读取 PostgreSQL 本地账表；可通过刷新接口主动发前置 `cmd.query`，由 9092 轻量后台同步循环或正式 worker 合并 reply 到本地账表。
+- 资金/持仓/订单/成交查询默认读取 PostgreSQL 本地账表；可通过刷新接口主动发前置 `cmd.query`，生产由独立 worker 合并 reply，测试兼容部署也可启用 API 内嵌同步循环。
 - 持仓查询现在保留前置/柜台原始 `sellable_qty`，不会把 `sellable_qty=0` 自动改成 `quantity`；当前持仓 API 会 best-effort 通过 Meridian instruments 补齐 `name`。若前置持仓回包 `avg_cost=0` 且该证券当前持仓不可卖、当日买入成交数量覆盖当前持仓，API 返回会用本地成交账本加权均价临时补偿成本价，raw stream 和账本原始持仓仍保留前置给出的 0，便于后续排查前置字段。
 - `position_page` 按账户全量持仓批次处理：`partial` reply 逐条 upsert，收到同一 `origin_message_id/correlation_id` 的 `completed` reply 后，Relay 会清理本次查询开始前仍未更新的旧 `positions` 行；当前持仓查询也会过滤 `quantity <= 0`，避免已经卖空或旧批次残留的标的继续污染资金持仓页。
 - `order_page/fill_page` 合并路径已实现并通过单元测试覆盖；测试前置返回非空查询页后，可继续补一组真实样例归档和回放记录。
@@ -595,3 +594,5 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 发布 `performance_position_cost.v2` 并应用生产迁移 `000023_position_cost_corporate_actions`。成本账保存上一 close、券商 open、公司行为类型/因子/数量差和 Meridian 原始上下文；数量比匹配 `ex_factor` 时保持总成本并调整单位成本，数量不变时只标记价格除权，无法闭合时阻断。测试覆盖 `588200.SH` 3 倍 ETF 份额折算、`600000.SH` 价格除权和错误数量阻断；债享5号 7 月 30 日生产只读试算 156 个证券无误报、数量差异为 0。9092 已更新，生产交易权限保持关闭。
 - `2026-08-01`: 发布 `performance_position_cost.v3`，复用现有 T0 归因和 Meridian PCF 单位门禁，将普通持仓保存为 `CORE`、完整买入赎回组保存为 `ETF_T0:{group_id}`。T0 买入成本不再进入 ETF 底仓，赎回后成本池日内归零；赎回名义价格不生成虚假收益，IOPV 退出价值和 15bp 摩擦继续由贡献模块计算。显式完整组可 calculated，历史推断组为 estimated，候选歧义和未闭合组 blocked。混合底仓/T0 单测及临时 PostgreSQL 同证券双成本池写读测试通过。
 - `2026-08-01`: 完成 N12 API Console 命名测试集合：以 `relay.api_console_collection.v1` 在浏览器本地保存端点、表单和断言，支持版本化 JSON 导入导出且不保存 Base URL、不自动执行请求。新增 HTTP 状态、JSON 路径存在/等值/类型和耗时断言；Playwright 已验证保存、刷新恢复、导出、清空后导入、断言执行、六账户和历史订单表格，浏览器网络层未产生写请求。9092 已部署新资源，生产仍为六账户只读、下单账户 0。
+- `2026-08-02`: 完成 N12 API/worker 生产进程拆分：新增独立 `cmd/relay-worker` 和仅回环地址开放的健康端口，生产 API 禁用内嵌 Redis 同步，由 worker 独占 24 条 output stream、checkpoint 和账本落库。账本成功变更通过版本化 PostgreSQL `LISTEN/NOTIFY` 事件桥回到原 SSE，订单、成交、资金和持仓回调语义保持兼容。`/v1/status` 新增 `worker/event_bridge` 依赖；API 与 worker 具备独立日志、PID、当前/上一版二进制和回滚入口，统一 `RELAY_RUNTIME_AUTOSTART` 支持容器启动及分钟级自恢复。生产实测独立重启 worker 不影响 API，24 条 stream lag 为 0，六账户仍全部只读、下单账户 0；38 条历史 DLQ 继续独立保留为 attention。环境切换脚本也已接入统一运行时，并持久化当前配置选择。
+- `2026-08-02`: 双进程发布验收过程中发现 Meridian 195 证券批量快照会拖慢 SDK 资金/持仓冒烟，以及非交易日默认最近交易日可能误走缺失的 close 持仓快照。资金汇总现优先复用已落库持仓市值，持仓行情补全设为 3 秒 best-effort；终端从 `/v1/status` 提前采用 Meridian 最近交易日，该默认日期读取最新柜台持仓，只有更早日期读取历史 close。修正 Playwright 分页异步等待和三任务卡告警断言后，统一生产只读发布验收 12/12 通过，报告为 `/tmp/relay-readonly-release-20260802.json`；SDK、交易终端、API Console、绩效、任务和运维页面均通过，交易写请求为 0。

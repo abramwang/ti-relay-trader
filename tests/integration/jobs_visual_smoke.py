@@ -82,6 +82,7 @@ def main() -> int:
                         (cell) => cell.textContent?.trim() === '告警通知'
                     ).length
                     : 0,
+                jobCards: document.querySelectorAll('.job-card').length,
                 documentOverflow:
                     document.documentElement.scrollWidth > window.innerWidth,
                 reviewTableOverflow:
@@ -102,7 +103,8 @@ def main() -> int:
         raise AssertionError(f"trade-date selection did not stick: {diagnostics}")
     if not any("15:05:01" in value for value in diagnostics["jobTimes"]):
         raise AssertionError(f"job times are not rendered in Asia/Shanghai: {diagnostics}")
-    if not diagnostics["alertHeader"] or diagnostics["alertCells"] != 2 or diagnostics["alertCardLabels"] != 2:
+    if (not diagnostics["alertHeader"] or diagnostics["alertCells"] != diagnostics["jobRows"] or
+            diagnostics["alertCardLabels"] != diagnostics["jobCards"]):
         raise AssertionError(f"alert delivery state is not rendered: {diagnostics}")
     if diagnostics["documentOverflow"]:
         raise AssertionError(f"page has horizontal document overflow: {diagnostics}")

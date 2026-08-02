@@ -169,7 +169,7 @@ relay 的业务时间统一使用 `Asia/Shanghai`，即东八区 UTC+8。A 股�
 
 ## 自动资金持仓刷新
 
-9092 docs/api 常驻服务在启动轻量后台 Redis `reply/event` 同步循环时，会监听订单和成交落账结果。如果某个账户出现 `order.event` 或 `fill.event`，relay 会自动向该账户的 `cmd.query` 写入一轮资金和持仓查询命令。
+生产由独立 `relay-worker` 监听订单和成交落账结果；开发环境若保留内嵌同步，则由 docs/API 进程执行相同逻辑。如果某个账户出现 `order.event` 或 `fill.event`，worker 会按配置向该账户的 `cmd.query` 写入一轮资金和持仓查询命令。
 
 默认配置：
 
@@ -202,47 +202,48 @@ go run ./cmd/relay-docs -root .
 RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/relay-docs -root .
 ```
 
-如需试运行 API 或 worker，将本地未提交配置里的 `service.mode` 改为 `api` 或 `worker`。API 模式提供 9092 HTTP 服务；worker 模式不监听 HTTP，负责 Redis output stream 持续同步、checkpoint 落盘和订单/成交事件驱动的资金持仓自动刷新。
+`cmd/relay-docs` 继续支持 `docs/api/worker` 兼容模式。正式生产使用独立 `cmd/relay-worker`，无需把共享生产配置的 `service.mode` 临时改成 `worker`。
 
 worker 模式示例：
 
 ```bash
-RELAY_CONFIG_PATH=/home/ti-relay-trader/config/relay.prod.yaml go run ./cmd/relay-docs
+go run ./cmd/relay-worker -config /home/ti-relay-trader/config/relay.prod.yaml
 ```
 
-生产化建议将 API/docs 进程和 worker 进程拆开部署，避免 HTTP 重启影响 Redis 消费位点推进。
+生产已将 API/docs 和 worker 拆开部署；跨进程账本事件通过 PostgreSQL `LISTEN/NOTIFY` 回到 9092 SSE hub，HTTP 重启不影响 Redis checkpoint 推进。
 
 ### 9092 常驻服务脚本
 
-容器内 9092 由 `scripts/relay-docs-service.sh` 管理。默认读取未提交的 `config/relay.prod.yaml`，监听 `0.0.0.0:9092`，日志写入 `/tmp/relay-docs.log`，PID 写入 `/tmp/relay-docs.pid`。
+容器内由 `scripts/relay-runtime-service.sh` 统一守护 API 和 worker；两个进程仍可独立操作。9092 日志写入 `/var/log/relay/relay-api.log`，worker 日志写入 `/var/log/relay/relay-worker.log`，PID 和当前/上一版本二进制位于未跟踪 `.runtime/`。
 
 常用命令：
 
 ```bash
-scripts/relay-docs-service.sh status
-scripts/relay-docs-service.sh start
-scripts/relay-docs-service.sh stop
+scripts/relay-runtime-service.sh status
 scripts/relay-docs-service.sh restart
+scripts/relay-worker-service.sh restart
+scripts/relay-runtime-service.sh rollback-api
+scripts/relay-runtime-service.sh rollback-worker
 ```
 
 安装容器启动自恢复和进程健康守护：
 
 ```bash
-scripts/relay-docs-service.sh install-cron
+scripts/relay-runtime-service.sh install-cron
 ```
 
-该命令会在 root crontab 中维护 `RELAY_DOCS_AUTOSTART` 块：
+该命令会删除旧的 `RELAY_DOCS_AUTOSTART` 块，并在 root crontab 中维护 `RELAY_RUNTIME_AUTOSTART` 块：
 
 ```cron
-# RELAY_DOCS_AUTOSTART_BEGIN
-@reboot cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-docs-service.sh start >> /var/log/relay/relay-docs-service-cron.log 2>&1
-* * * * * cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-docs-service.sh start >> /var/log/relay/relay-docs-service-cron.log 2>&1
-# RELAY_DOCS_AUTOSTART_END
+# RELAY_RUNTIME_AUTOSTART_BEGIN
+@reboot cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-runtime-service.sh start >> /var/log/relay/relay-runtime-service-cron.log 2>&1
+* * * * * cd /home/ti-relay-trader && /home/ti-relay-trader/scripts/relay-runtime-service.sh start >> /var/log/relay/relay-runtime-service-cron.log 2>&1
+# RELAY_RUNTIME_AUTOSTART_END
 ```
 
 脚本启动前会做生产护栏检查：当 `RELAY_EXPECTED_ENV=production` 时，配置必须声明 `service.environment=production`；如果配置里存在 `trading_enabled: true`，脚本默认拒绝自动启动，除非显式设置 `RELAY_ALLOW_PRODUCTION_TRADING=true`。因此生产下单权限不会因为容器重启被静默放开。
 
-分钟级 watchdog 的 `start` 路径只检查 `/healthz` 和 9092 进程参数，不会每分钟请求 `/v1/status`。`/v1/status` 会查询 Meridian 交易日信息，如果容器中存在临时 `HTTP_PROXY/HTTPS_PROXY`，可能让内网 Meridian 请求走失效代理；`relay-docs-service.sh`、`switch-relay-env.sh` 和 Go Meridian 客户端都会避免继承这些代理环境。
+分钟级 watchdog 分别检查 9092 `/healthz` 和本机 worker `/readyz`，不会每分钟请求 `/v1/status`。`/v1/status` 会继续查询 Meridian 交易日信息；运行脚本和 Go Meridian 客户端都会避免继承外部 HTTP 代理。详细拓扑、事件桥和回滚语义见 `docs/RUNTIME_PROCESSES.md`。
 
 ## 日志与响应
 

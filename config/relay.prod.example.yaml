@@ -49,6 +49,11 @@ operations:
   lag_critical_entries: 5000
   snapshot_cache_seconds: 5
 
+worker:
+  embedded_ledger_sync: false
+  health_addr: "127.0.0.1:19092"
+  health_url: "http://127.0.0.1:19092/readyz"
+
 auto_refresh:
   enabled: true
   debounce_seconds: 2

@@ -145,8 +145,8 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 当前边界
 
-1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
-2. 实时推送当前使用 9092 内部事件 hub 和 SSE；正式生产化后应由持久化位点 worker 继续驱动同一个事件出口。
+1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。交易终端启动时也会先采用 `/v1/status.trading_day.previous_or_current_trading_date` 设置默认日期；该日期的资金持仓使用最新柜台账本，手工选择更早日期才读取 close 历史快照。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
+2. 实时推送使用 9092 内部事件 hub 和 SSE；生产由持久化位点 worker 成功落账后发送 PostgreSQL 通知，API 事件桥接收后驱动同一个 SSE 出口。
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。
 5. 代码补全当前使用 Meridian `/v1/metadata/instruments`，按 `exchange/instrument_type/status/limit/cursor` 取证券主数据并在前端过滤输入前缀。持仓、委托和成交表格中的“证券名称”列使用同一个 Meridian metadata 薄代理，并按当前可见表格代码通过 `security_ids` 批量补齐 `name/instrument_type`；这些字段只作为页面展示和价格精度辅助，不写入 relay 自定义证券主数据。若需要更多名称、拼音、行业等补全能力，应在 Meridian 增加/完善接口，而不是在 relay 内自建标准。
@@ -154,9 +154,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 后续工作
 
-1. 将 SSE 事件源从 9092 轻量同步循环迁移到正式 worker，并持久化 Redis Stream 位点。
-2. 在 Meridian 提供更完整证券主数据搜索能力后，增强代码输入的名称/拼音补全。
-3. 支持批量下单测试视图。
-4. 支持请求模板保存。
-5. 增加订单详情里的前置原始 reply/event 链路查看。
-6. 在现有页面和绩效 Playwright 冒烟测试上继续扩展账户切换、异常接口和写权限护栏场景。
+1. 在 Meridian 提供更完整证券主数据搜索能力后，增强代码输入的名称/拼音补全。
+2. 支持仅券商测试环境可用的批量下单测试视图。
+3. 增加订单详情里的前置原始 reply/event 链路查看。
+4. 在现有页面和绩效 Playwright 冒烟测试上继续扩展账户切换、异常接口和写权限护栏场景。

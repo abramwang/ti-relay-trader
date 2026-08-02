@@ -121,7 +121,10 @@ def main() -> int:
             first_page_symbol = descending_symbols[0]
             page.locator("#positionsNextPage").click()
             page.wait_for_function(
-                """() => (document.querySelector('#positionsPageInfo')?.textContent || '').includes('第 2 页')""",
+                """(firstSymbol) =>
+                    (document.querySelector('#positionsPageInfo')?.textContent || '').includes('第 2 页') &&
+                    (document.querySelector('#positionsBody tr[data-position-security-id] td:first-child')?.textContent || '').trim() !== firstSymbol""",
+                arg=first_page_symbol,
                 timeout=10_000,
             )
             second_page_symbol = page.locator("#positionsBody tr[data-position-security-id] td:first-child").first.inner_text()

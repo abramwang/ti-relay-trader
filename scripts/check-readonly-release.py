@@ -96,6 +96,7 @@ def verify_read_only_target(base_url: str, account_id: str) -> dict[str, Any]:
     accounts = accounts_payload.get("accounts") or []
     environment = str(status.get("environment") or "")
     trading_enabled = int((status.get("accounts") or {}).get("trading_enabled") or 0)
+    dependencies = status.get("dependencies") or {}
 
     require(environment == "production", f"target environment must be production, got {environment!r}")
     require(trading_enabled == 0, f"production trading guard failed: {trading_enabled} account(s) enabled")
@@ -103,6 +104,8 @@ def verify_read_only_target(base_url: str, account_id: str) -> dict[str, Any]:
     selected = next((account for account in accounts if account.get("account_id") == account_id), None)
     require(selected is not None, f"account {account_id} is not available")
     require(not selected.get("trading_enabled"), f"account {account_id} has trading enabled")
+    require((dependencies.get("worker") or {}).get("status") == "ok", "external worker is not healthy")
+    require((dependencies.get("event_bridge") or {}).get("status") == "ok", "postgres event bridge is not healthy")
 
     return {
         "environment": environment,
@@ -111,6 +114,8 @@ def verify_read_only_target(base_url: str, account_id: str) -> dict[str, Any]:
         "trading_enabled": trading_enabled,
         "selected_account_enabled": bool(selected.get("enabled")),
         "selected_account_trading_enabled": bool(selected.get("trading_enabled")),
+        "worker_status": (dependencies.get("worker") or {}).get("status"),
+        "event_bridge_status": (dependencies.get("event_bridge") or {}).get("status"),
     }
 
 
@@ -131,6 +136,7 @@ def request_json(url: str) -> dict[str, Any]:
 def build_commands(args: argparse.Namespace, base_url: str) -> list[tuple[str, list[str]]]:
     python = sys.executable
     commands: list[tuple[str, list[str]]] = [
+        ("runtime-processes", ["scripts/relay-runtime-service.sh", "status"]),
         (
             "api-catalog",
             [python, "scripts/check-api-catalog.py", "--base-url", base_url],

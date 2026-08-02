@@ -29,16 +29,18 @@ import (
 )
 
 type Dependencies struct {
-	Orders       OrderService
-	Jobs         JobRunStore
-	Settlements  SettlementStore
-	Accounts     AccountAliasStore
-	Performance  PerformanceService
-	Operations   OperationsService
-	Market       *market.MeridianClient
-	Events       *events.Hub
-	DatabasePing HealthCheckFunc
-	RedisPing    HealthCheckFunc
+	Orders          OrderService
+	Jobs            JobRunStore
+	Settlements     SettlementStore
+	Accounts        AccountAliasStore
+	Performance     PerformanceService
+	Operations      OperationsService
+	Market          *market.MeridianClient
+	Events          *events.Hub
+	DatabasePing    HealthCheckFunc
+	RedisPing       HealthCheckFunc
+	WorkerPing      HealthCheckFunc
+	EventBridgePing HealthCheckFunc
 }
 
 type HealthCheckFunc func(context.Context) error
@@ -162,8 +164,10 @@ type Server struct {
 }
 
 type statusHealthChecks struct {
-	Database HealthCheckFunc
-	Redis    HealthCheckFunc
+	Database    HealthCheckFunc
+	Redis       HealthCheckFunc
+	Worker      HealthCheckFunc
+	EventBridge HealthCheckFunc
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -196,8 +200,10 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		market:  marketClient,
 		events:  deps.Events,
 		health: statusHealthChecks{
-			Database: deps.DatabasePing,
-			Redis:    deps.RedisPing,
+			Database:    deps.DatabasePing,
+			Redis:       deps.RedisPing,
+			Worker:      deps.WorkerPing,
+			EventBridge: deps.EventBridgePing,
 		},
 	}
 	if server.events == nil {
@@ -1703,8 +1709,13 @@ func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset tradin
 		s.logger.Warn("asset_position_totals_unavailable", "account_id", asset.AccountID, "error", err)
 		return asset
 	}
-	s.enrichPositionsForPnL(ctx, positions, trading.PositionQuery{AccountID: asset.AccountID})
 	totals := summarizePositionAssetTotals(positions)
+	if totals.marketValue <= 0 {
+		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		s.enrichPositionsForPnL(enrichmentCtx, positions, trading.PositionQuery{AccountID: asset.AccountID})
+		cancel()
+		totals = summarizePositionAssetTotals(positions)
+	}
 	if totals.marketValue <= 0 {
 		return asset
 	}
@@ -1800,8 +1811,10 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 		s.writeOrderError(w, r, err)
 		return
 	}
-	s.enrichPositionNames(r.Context(), result.Positions)
-	s.enrichPositionsForPnL(r.Context(), result.Positions, query)
+	enrichmentCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	s.enrichPositionNames(enrichmentCtx, result.Positions)
+	s.enrichPositionsForPnL(enrichmentCtx, result.Positions, query)
+	cancel()
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -4203,7 +4216,7 @@ func (s *Server) latestJobRunStatus(ctx context.Context) map[string]JobRunStatus
 }
 
 func (s *Server) dependencyStatus(ctx context.Context) map[string]DependencyStatus {
-	return map[string]DependencyStatus{
+	dependencies := map[string]DependencyStatus{
 		"database":      s.pingDependency(ctx, strings.TrimSpace(s.cfg.Database.DSN) != "", s.health.Database),
 		"redis":         s.pingDependency(ctx, strings.TrimSpace(s.cfg.Redis.URL) != "", s.health.Redis),
 		"order_service": serviceDependency(s.orders != nil),
@@ -4211,6 +4224,14 @@ func (s *Server) dependencyStatus(ctx context.Context) map[string]DependencyStat
 		"event_stream":  serviceDependency(s.events != nil),
 		"auto_refresh":  configDependency(s.cfg.AutoRefreshEnabled()),
 	}
+	if s.cfg.EmbeddedLedgerSyncEnabled() {
+		dependencies["worker"] = DependencyStatus{Status: "ok", Configured: true, Message: "embedded"}
+		dependencies["event_bridge"] = DependencyStatus{Status: "ok", Configured: true, Message: "embedded"}
+	} else {
+		dependencies["worker"] = s.pingDependency(ctx, true, s.health.Worker)
+		dependencies["event_bridge"] = s.pingDependency(ctx, true, s.health.EventBridge)
+	}
+	return dependencies
 }
 
 func (s *Server) pingDependency(ctx context.Context, configured bool, checker HealthCheckFunc) DependencyStatus {
@@ -4247,7 +4268,7 @@ func configDependency(enabled bool) DependencyStatus {
 }
 
 func statusFromDependencies(dependencies map[string]DependencyStatus) string {
-	for _, name := range []string{"database", "redis", "order_service", "stream_runtime"} {
+	for _, name := range []string{"database", "redis", "order_service", "worker", "event_bridge", "stream_runtime"} {
 		dep, ok := dependencies[name]
 		if !ok {
 			continue

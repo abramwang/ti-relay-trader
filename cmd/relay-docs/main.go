@@ -152,6 +152,12 @@ var (
 			Description: "本地配置文件、凭据管理、cron 后台任务和部署运行约定。",
 		},
 		{
+			Slug:        "runtime-processes",
+			Title:       "API 与 Worker 常驻进程",
+			Path:        "docs/RUNTIME_PROCESSES.md",
+			Description: "生产进程拆分、跨进程事件桥、独立健康检查、日志、自启动和回滚入口。",
+		},
+		{
 			Slug:        "release-checklist",
 			Title:       "发布检查清单",
 			Path:        "docs/RELEASE_CHECKLIST.md",
@@ -271,6 +277,8 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 		apiCleanup = func() {}
 	}
 	defer apiCleanup()
+	stopEventBridge := startPostgresEventBridge(context.Background(), cfg, eventHub, &apiDeps, logger)
+	defer stopEventBridge()
 	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, apiDeps.Orders, eventHub, logger)
 	defer stopLedgerSync()
 
@@ -326,6 +334,8 @@ func runAPIServer(cfg relayconfig.Config, flagAddr string, addrWasSet bool, logg
 		return err
 	}
 	defer cleanup()
+	stopEventBridge := startPostgresEventBridge(context.Background(), cfg, eventHub, &deps, logger)
+	defer stopEventBridge()
 	stopLedgerSync := startLedgerSyncLoop(context.Background(), cfg, ledgerWriter, deps.Orders, eventHub, logger)
 	defer stopLedgerSync()
 
@@ -437,10 +447,17 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 	if redisPublisher != nil {
 		deps.RedisPing = redisPublisher.Ping
 	}
+	if !cfg.EmbeddedLedgerSyncEnabled() {
+		deps.WorkerPing = worker.HealthCheckURL(cfg.Worker.HealthURL, string(cfg.Service.Environment))
+	}
 	return deps, repo, cleanup, nil
 }
 
 func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer redisstream.LedgerWriter, refresher orderflow.AccountRefresher, eventHub *events.Hub, logger *slog.Logger) func() {
+	if !cfg.EmbeddedLedgerSyncEnabled() {
+		logger.Info("relay_ledger_sync_loop_disabled", "reason", "external worker configured")
+		return func() {}
+	}
 	if writer == nil || strings.TrimSpace(cfg.Redis.URL) == "" {
 		logger.Warn("relay_ledger_sync_loop_disabled", "reason", "redis url or ledger writer missing")
 		return func() {}
@@ -488,7 +505,7 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 				autoRefresh.RequestAccounts(change.AccountIDs, reason)
 			},
 			OnLedgerChange: func(_ context.Context, change redisstream.LedgerChange) {
-				publishLedgerEvents(eventHub, change)
+				events.PublishLedgerChange(eventHub, change)
 			},
 		}, logger.With("component", "ledger-sync-loop"))
 		if err != nil && syncCtx.Err() == nil {
@@ -505,62 +522,17 @@ func startLedgerSyncLoop(ctx context.Context, cfg relayconfig.Config, writer red
 	}
 }
 
-func publishLedgerEvents(eventHub *events.Hub, change redisstream.LedgerChange) {
-	if eventHub == nil {
-		return
+func startPostgresEventBridge(ctx context.Context, cfg relayconfig.Config, eventHub *events.Hub, deps *api.Dependencies, logger *slog.Logger) func() {
+	if cfg.EmbeddedLedgerSyncEnabled() {
+		return func() {}
 	}
-	base := events.Event{
-		AccountIDs:   change.AccountIDs,
-		Source:       "redis-ledger-sync",
-		Stream:       change.Stream,
-		LastStreamID: change.LastStreamID,
-		Data: map[string]any{
-			"role":            change.Role,
-			"orders":          change.Orders,
-			"order_events":    change.OrderEvents,
-			"cancel_attempts": change.CancelAttempts,
-			"cancel_failures": change.CancelFailures,
-			"fills":           change.Fills,
-			"transfers":       change.Transfers,
-			"assets":          change.Assets,
-			"positions":       change.Positions,
-			"last_stream_id":  change.LastStreamID,
-		},
+	if strings.TrimSpace(cfg.Database.DSN) == "" {
+		logger.Warn("relay_postgres_event_listener_disabled", "reason", "database.dsn is required")
+		return func() {}
 	}
-	if change.Orders > 0 || change.OrderEvents > 0 {
-		event := base
-		event.Type = events.TypeOrderChanged
-		eventHub.Publish(event)
-	}
-	if change.CancelFailures > 0 {
-		for _, attempt := range change.CancelFailureItems {
-			event := base
-			event.Type = events.TypeOrderCancelRejected
-			event.Data = map[string]any{
-				"role":            change.Role,
-				"cancel_attempts": change.CancelAttempts,
-				"cancel_failures": change.CancelFailures,
-				"cancel_attempt":  attempt,
-				"last_stream_id":  change.LastStreamID,
-			}
-			eventHub.Publish(event)
-		}
-	}
-	if change.Fills > 0 || change.Transfers > 0 {
-		event := base
-		event.Type = events.TypeFillChanged
-		eventHub.Publish(event)
-	}
-	if change.Assets > 0 {
-		event := base
-		event.Type = events.TypeAssetChanged
-		eventHub.Publish(event)
-	}
-	if change.Positions > 0 {
-		event := base
-		event.Type = events.TypePositionsChanged
-		eventHub.Publish(event)
-	}
+	listener := events.StartPostgresListener(ctx, cfg.Database.DSN, eventHub, logger.With("component", "postgres-event-listener"))
+	deps.EventBridgePing = listener.Health
+	return listener.Close
 }
 
 func runWorkerMode(cfg relayconfig.Config, logger *slog.Logger) error {

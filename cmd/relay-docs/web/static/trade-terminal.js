@@ -462,6 +462,11 @@
     return date !== "" && date === currentBusinessDate();
   }
 
+  function isCurrentPositionLedgerDate(value) {
+    const date = compactDate(value);
+    return date !== "" && (date === currentBusinessDate() || date === compactDate(defaultLedgerDate()));
+  }
+
   function terminalDefaultDate() {
     return compactDate(state.defaultTradeDate) ||
       compactDate(state.marketSnapshot && state.marketSnapshot.trade_date) ||
@@ -1024,6 +1029,11 @@
       const dependencies = data.dependencies || {};
       const apiOK = data.status === "ok";
       updateEnvironmentBadge(data.environment);
+      const tradingDay = data.trading_day || {};
+      const statusTradeDate = compactDate(tradingDay.previous_or_current_trading_date || tradingDay.trade_date);
+      if (statusTradeDate) {
+        setTerminalDefaultDate(statusTradeDate, "meridian-trading-day", { applyToInputs: true });
+      }
       setStatus(els.apiStatus, apiOK, "API: " + (apiOK ? "connected" : data.status || "degraded"));
       setStatus(els.redisStatus, dependencyOK(dependencies.redis), dependencyLabel("Redis", dependencies.redis));
       setStatus(els.dbStatus, dependencyOK(dependencies.database), dependencyLabel("DB", dependencies.database));
@@ -1539,7 +1549,7 @@
 
   async function fetchAssetForExport(accountID, tradeDate, encoded = false) {
     const encodedAccountID = encoded ? accountID : encodeURIComponent(accountID);
-    if (isCurrentBusinessDate(tradeDate)) {
+    if (isCurrentPositionLedgerDate(tradeDate)) {
       const data = await request("/v1/accounts/" + encodedAccountID + "/asset");
       return data.asset || null;
     }
@@ -1587,7 +1597,7 @@
       params.set("cursor", state.positionsPage.cursor);
     }
     let path = "/v1/accounts/" + accountID + "/positions";
-    if (!isCurrentBusinessDate(tradeDate)) {
+    if (!isCurrentPositionLedgerDate(tradeDate)) {
       path = "/v1/accounts/" + accountID + "/positions/history";
       params.set("trade_date", tradeDate);
     }
@@ -1596,7 +1606,7 @@
 
   async function fetchAllPositionsForExport(accountID, tradeDate) {
     const encodedAccountID = encodeURIComponent(accountID);
-    const current = isCurrentBusinessDate(tradeDate);
+    const current = isCurrentPositionLedgerDate(tradeDate);
     const path = current
       ? "/v1/accounts/" + encodedAccountID + "/positions"
       : "/v1/accounts/" + encodedAccountID + "/positions/history";
@@ -1860,7 +1870,7 @@
           csvNumber(view.dayPnlRatio),
           csvNumber(position.settled_profit),
           position.shareholder_id || "",
-          position.snapshot_type || (isCurrentBusinessDate(tradeDate) ? "current" : "close"),
+          position.snapshot_type || (isCurrentPositionLedgerDate(tradeDate) ? "current" : "close"),
           position.updated_at || ""
         ]));
       }
@@ -1885,7 +1895,7 @@
     const tradeDate = selectedAssetTradeDateSafe();
     const accountID = state.activeAccount;
     const force = Boolean(options.force);
-    if (!accountID || !isCurrentBusinessDate(tradeDate)) {
+    if (!accountID || !isCurrentPositionLedgerDate(tradeDate)) {
       closePositionQuoteStreams();
       state.allPositions = [];
       state.allPositionsAccount = accountID || "";
@@ -2786,7 +2796,7 @@
 
   function livePortfolioTotals() {
     const tradeDate = selectedAssetTradeDateSafe();
-    if (!isCurrentBusinessDate(tradeDate) ||
+    if (!isCurrentPositionLedgerDate(tradeDate) ||
       state.positionStatsDirty ||
       state.allPositionsAccount !== state.activeAccount ||
       state.allPositionsLoadedDate !== tradeDate) {
@@ -2886,7 +2896,7 @@
 
   function clientPositionPagingEnabled() {
     const tradeDate = selectedAssetTradeDateSafe();
-    return isCurrentBusinessDate(tradeDate) &&
+    return isCurrentPositionLedgerDate(tradeDate) &&
       !state.positionStatsDirty &&
       state.allPositionsAccount === state.activeAccount &&
       state.allPositionsLoadedDate === tradeDate &&

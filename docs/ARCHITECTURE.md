@@ -1,6 +1,6 @@
 # relay 架构与当前实现
 
-更新时间：`2026-06-14`
+更新时间：`2026-08-02`
 
 ## 结论摘要
 
@@ -65,7 +65,7 @@ relay Python jobs
 | `internal/logging` | 结构化日志初始化，默认 JSON 输出 |
 | `internal/httpx` | HTTP request_id、中间件、统一 JSON envelope 和标准错误码骨架 |
 | `internal/api` | API handler、统一交易接口、SSE 事件流、依赖健康检查、任务状态和页面工作台 |
-| `internal/events` | 9092 进程内事件 hub，将账本变化广播到 SSE |
+| `internal/events` | 账本事件标准化、PostgreSQL `LISTEN/NOTIFY` 跨进程桥和 API 进程内 SSE hub |
 | `internal/ledger` | PostgreSQL 账本 repository，封装订单、成交、资金、持仓、任务和原始 stream 归档 |
 | `internal/market` | Meridian 同源薄代理客户端，不重新定义行情字段 |
 | `internal/orderflow` | 订单/撤单/刷新 API 编排，负责路由、幂等、草稿订单和 Redis command 发布 |
@@ -185,7 +185,9 @@ output stream 消费由 `internal/redisstream` 统一解析。所有消息先归
 7. `event + fill.event` 写入 `fills`。
 8. `hb/dlq` 当前原始归档，后续进入 gateway 状态和告警页面。
 
-9092 docs/api 进程和正式 worker 都复用同一套同步循环。生产部署建议使用 worker 常驻消费 output stream，API 进程专注处理 HTTP 请求。消费位点写入 `stream_checkpoints(stream_key)`，重启后从 `last_stream_id` 继续 `XREAD`；如果没有 checkpoint，则按配置起点从 `0` 追赶历史。重复消费依靠 PostgreSQL 唯一约束和 `ON CONFLICT` 保持幂等。
+docs/api 进程和正式 worker 复用同一套同步实现，但生产只允许独立 worker 消费 output stream，API 进程专注 HTTP、页面和 SSE。消费位点写入 `stream_checkpoints(stream_key)`，重启后从 `last_stream_id` 继续 `XREAD`；如果没有 checkpoint，则按配置起点从 `0` 追赶历史。重复消费依靠 PostgreSQL 唯一约束和 `ON CONFLICT` 保持幂等。
+
+worker 成功落账后向固定 PostgreSQL channel 发布版本化账本事件，API 通过长期 `LISTEN` 连接接收并广播为原有 SSE 事件。数据库通知只传递已脱敏的状态摘要，不承载原始柜台报文；连接中断会自动重连，并在 `/v1/status.dependencies.event_bridge` 中暴露状态。独立 worker 通过仅回环地址可访问的 `/readyz` 提供存活/就绪检查，API 将结果展示为 `dependencies.worker`。详细启停、日志和回滚口径见 [RUNTIME_PROCESSES.md](/home/ti-relay-trader/docs/RUNTIME_PROCESSES.md:1)。
 
 订单和成交落账后，服务端会通过自动刷新调度器按账户合并触发 `account.asset.query` 和 `account.positions.query`，默认 2 秒 debounce、20 秒 cooldown，避免每条订单推送都查询柜台。
 
@@ -299,8 +301,9 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
   -> Redis {prefix}:cmd.trade XADD order.submit
   -> raw_stream_messages 归档 command
   -> 前置 reply/event/fill.event 回流
-  -> worker/docs-api sync 合并 orders/order_events/fills
-  -> 9092 SSE 广播 order.changed/fill.changed
+  -> relay-worker 合并 orders/order_events/fills
+  -> PostgreSQL NOTIFY 账本事件
+  -> relay-api LISTEN 并广播 order.changed/fill.changed SSE
 ```
 
 查询刷新：

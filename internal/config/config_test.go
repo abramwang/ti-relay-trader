@@ -55,6 +55,38 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 		cfg.Operations.SnapshotCacheSeconds != 5 {
 		t.Fatalf("operations defaults = %+v", cfg.Operations)
 	}
+	if !cfg.EmbeddedLedgerSyncEnabled() {
+		t.Fatal("embedded ledger sync should remain enabled by default")
+	}
+	if cfg.Worker.HealthAddr != "127.0.0.1:19092" || cfg.Worker.HealthURL != "http://127.0.0.1:19092/readyz" {
+		t.Fatalf("worker defaults = %+v", cfg.Worker)
+	}
+}
+
+func TestDecodeCanSelectExternalWorker(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(`
+worker:
+  embedded_ledger_sync: false
+  health_addr: "127.0.0.1:19093"
+  health_url: "http://127.0.0.1:19093/readyz"
+`))
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if cfg.EmbeddedLedgerSyncEnabled() {
+		t.Fatal("embedded ledger sync should be disabled")
+	}
+}
+
+func TestDecodeRejectsNonLoopbackWorkerHealth(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+worker:
+  health_addr: "0.0.0.0:9093"
+  health_url: "http://relay-worker.internal:9093/readyz"
+`))
+	if err == nil || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestDecodeRejectsInvalidETFT0FrictionRate(t *testing.T) {

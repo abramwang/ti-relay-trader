@@ -9,7 +9,8 @@ Usage:
   scripts/switch-relay-env.sh production --allow-production-trading
 
 Switch the local 9092 relay service between local test and production
-configuration files. The script never prints Redis/PostgreSQL credentials.
+configuration files. The selected config survives container/process restarts,
+and the script never prints Redis/PostgreSQL credentials.
 
 Safety:
   - test uses config/relay.test.yaml when present, otherwise config/relay.local.yaml.
@@ -108,57 +109,22 @@ if [[ "$EXPECTED_ENV" == "test" ]]; then
   fi
 fi
 
-BIN="${RELAY_DOCS_BIN:-/tmp/relay-docs}"
-PID_FILE="${RELAY_DOCS_PID_FILE:-/tmp/relay-docs.pid}"
-LOG_FILE="${RELAY_DOCS_LOG_FILE:-/tmp/relay-docs.log}"
-ADDR="${RELAY_DOCS_ADDR:-}"
+RUNTIME_SERVICE="$ROOT/scripts/relay-runtime-service.sh"
+ACTIVE_CONFIG="$ROOT/.runtime/active-config.yaml"
+ACTIVE_ENV_FILE="$ROOT/.runtime/expected-environment"
 
-printf 'Building relay docs binary...\n'
-go build -o "$BIN" ./cmd/relay-docs
+"$RUNTIME_SERVICE" stop
+mkdir -p "$ROOT/.runtime"
+ln -sfn "$(realpath "$CONFIG")" "$ACTIVE_CONFIG"
+printf '%s\n' "$EXPECTED_ENV" > "$ACTIVE_ENV_FILE"
 
-old_pids=()
-if [[ -f "$PID_FILE" ]]; then
-  old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
-    old_pids+=("$old_pid")
-  fi
+if [[ "$ALLOW_PROD_TRADING" == "true" ]]; then
+  export RELAY_ALLOW_PRODUCTION_TRADING=true
 fi
-while IFS= read -r pid; do
-  [[ -n "$pid" ]] || continue
-  old_pids+=("$pid")
-done < <(pgrep -f "$BIN .* -root $ROOT" 2>/dev/null || true)
-
-if [[ ${#old_pids[@]} -gt 0 ]]; then
-  printf 'Stopping existing relay docs process...\n'
-  printf '%s\n' "${old_pids[@]}" | sort -u | while read -r pid; do
-    kill "$pid" 2>/dev/null || true
-  done
-  sleep 1
-fi
-
-printf 'Starting relay 9092 with %s...\n' "$(realpath --relative-to="$ROOT" "$CONFIG" 2>/dev/null || printf '%s' "$CONFIG")"
-if [[ -n "$ADDR" ]]; then
-  prepare_relay_env
-  setsid "$BIN" -config "$CONFIG" -root "$ROOT" -addr "$ADDR" > "$LOG_FILE" 2>&1 < /dev/null &
-else
-  prepare_relay_env
-  setsid "$BIN" -config "$CONFIG" -root "$ROOT" > "$LOG_FILE" 2>&1 < /dev/null &
-fi
-new_pid=$!
-printf '%s\n' "$new_pid" > "$PID_FILE"
-
-for _ in $(seq 1 20); do
-  if curl -fsS "http://127.0.0.1:9092/healthz" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.5
-done
-
-curl -fsS "http://127.0.0.1:9092/healthz" >/dev/null || {
-  tail -n 80 "$LOG_FILE" >&2 || true
-  die "relay did not become healthy"
-}
+prepare_relay_env
+printf 'Starting relay runtime with %s...\n' "$(realpath --relative-to="$ROOT" "$CONFIG" 2>/dev/null || printf '%s' "$CONFIG")"
+"$RUNTIME_SERVICE" start
 
 status_summary="$(curl -fsS "http://127.0.0.1:9092/v1/status" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print("{} {} trading_enabled={}".format(d["environment"], d["status"], d["accounts"]["trading_enabled"]))')"
 printf 'Relay switched: %s\n' "$status_summary"
-printf 'PID: %s\nLog: %s\n' "$new_pid" "$LOG_FILE"
+"$RUNTIME_SERVICE" status

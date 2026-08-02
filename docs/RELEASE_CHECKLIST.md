@@ -1,6 +1,6 @@
 # Relay 发布检查清单
 
-更新时间：`2026-07-31`
+更新时间：`2026-08-02`
 
 ## 适用范围
 
@@ -44,9 +44,9 @@ python3 scripts/check-readonly-release.py \
 ## 发布与观察
 
 - [ ] 记录发布 commit、配置版本、migration 版本、操作人和东八区发布时间。
-- [ ] 使用 `scripts/relay-docs-service.sh restart` 重启 9092，并确认 watchdog 不发生重复拉起。
+- [ ] 使用 `scripts/relay-docs-service.sh restart` 或 `scripts/relay-worker-service.sh restart` 独立发布目标进程；确认另一个 PID 不变且 watchdog 不重复拉起。
 - [ ] 独立 worker 发布时先停止旧实例，确认 checkpoint 已落库，再启动新实例；API 与 worker 不同时滚动变更 Redis wire schema。
-- [ ] 检查 `/healthz`、`/v1/status`、`/v1/operations/status` 和 `/jobs`。
+- [ ] 检查 `scripts/relay-runtime-service.sh status`、`/healthz`、worker `/readyz`、`/v1/status`、`/v1/operations/status` 和 `/jobs`；`worker/event_bridge` 必须为 `ok`。
 - [ ] 确认六账户路由、24 条 output stream checkpoint/lag、DLQ 数量和 gateway 状态符合当前交易阶段。
 - [ ] 确认盘前 `09:01`、盘后 `15:01` 和 OC `15:30` 的职责窗口没有被配置覆盖。
 - [ ] 观察服务日志、worker 日志、cron 日志和告警投递；凭据、订单原始报文不得进入发布报告。
@@ -55,8 +55,8 @@ python3 scripts/check-readonly-release.py \
 ## 回滚
 
 1. 立即保持或恢复 `trading_enabled=false`，停止新的交易写入。
-2. 停止新 API/worker 实例，保留 PostgreSQL `raw_stream_messages`、stream checkpoint 和任务报告，不清空 Redis Stream/Pending。
-3. 回滚到已记录的上一个 Git commit 和配套配置；wire schema 有变化时同时按兼容通知回滚 OC/Relay。
+2. 仅停止需要回滚的 API 或 worker，保留 PostgreSQL `raw_stream_messages`、stream checkpoint 和任务报告，不清空 Redis Stream/Pending。
+3. 可先执行 `scripts/relay-runtime-service.sh rollback-api|rollback-worker` 切换该进程上一二进制；配置或 wire schema 有变化时仍需回滚已记录的 Git commit、配套配置和 OC 兼容版本。
 4. 数据库只允许恢复到新库，完成 migration、约束、关键行数和 raw archive 重放验收后再切换 DSN；禁止直接覆盖生产库。
 5. 启动只读服务，执行本页完整自动验收；确认订单、成交、ETF 划转和账户日期作用域无孤立/重复后，才结束回滚。
 

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -31,6 +33,7 @@ type Config struct {
 	Market      MarketConfig         `yaml:"market"`
 	Performance PerformanceConfig    `yaml:"performance"`
 	Operations  OperationsConfig     `yaml:"operations"`
+	Worker      WorkerConfig         `yaml:"worker"`
 	AutoRefresh AutoRefreshConfig    `yaml:"auto_refresh"`
 	Accounts    []AccountRouteConfig `yaml:"accounts"`
 	Jobs        map[string]JobConfig `yaml:"jobs"`
@@ -92,6 +95,12 @@ type OperationsConfig struct {
 	LagWarningEntries     int64 `yaml:"lag_warning_entries"`
 	LagCriticalEntries    int64 `yaml:"lag_critical_entries"`
 	SnapshotCacheSeconds  int   `yaml:"snapshot_cache_seconds"`
+}
+
+type WorkerConfig struct {
+	EmbeddedLedgerSync *bool  `yaml:"embedded_ledger_sync"`
+	HealthAddr         string `yaml:"health_addr"`
+	HealthURL          string `yaml:"health_url"`
 }
 
 type AutoRefreshConfig struct {
@@ -242,6 +251,12 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Operations.SnapshotCacheSeconds == 0 {
 		cfg.Operations.SnapshotCacheSeconds = 5
 	}
+	if cfg.Worker.HealthAddr == "" {
+		cfg.Worker.HealthAddr = "127.0.0.1:19092"
+	}
+	if cfg.Worker.HealthURL == "" {
+		cfg.Worker.HealthURL = "http://127.0.0.1:19092/readyz"
+	}
 	if cfg.AutoRefresh.DebounceSeconds == 0 {
 		cfg.AutoRefresh.DebounceSeconds = 2
 	}
@@ -320,6 +335,27 @@ func (cfg Config) Validate() error {
 	if cfg.Operations.SnapshotCacheSeconds < 1 {
 		return fmt.Errorf("operations.snapshot_cache_seconds must be positive")
 	}
+	if strings.TrimSpace(cfg.Worker.HealthAddr) == "" {
+		return errors.New("worker.health_addr is required")
+	}
+	healthHost, _, err := net.SplitHostPort(cfg.Worker.HealthAddr)
+	if err != nil || !isLoopbackHost(healthHost) {
+		return errors.New("worker.health_addr must use a loopback host and explicit port")
+	}
+	if strings.TrimSpace(cfg.Worker.HealthURL) == "" {
+		return errors.New("worker.health_url is required")
+	}
+	healthURL, err := url.Parse(strings.TrimSpace(cfg.Worker.HealthURL))
+	if err != nil || healthURL.Scheme != "http" || healthURL.Host == "" {
+		return errors.New("worker.health_url must be a valid http URL")
+	}
+	healthURLHost := healthURL.Hostname()
+	if !isLoopbackHost(healthURLHost) {
+		return errors.New("worker.health_url must use a loopback host")
+	}
+	if healthURL.Path != "/readyz" {
+		return errors.New("worker.health_url path must be /readyz")
+	}
 	if cfg.AutoRefresh.DebounceSeconds < 0 {
 		return fmt.Errorf("auto_refresh.debounce_seconds must be non-negative")
 	}
@@ -360,6 +396,19 @@ func (cfg Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (cfg Config) EmbeddedLedgerSyncEnabled() bool {
+	return cfg.Worker.EmbeddedLedgerSync == nil || *cfg.Worker.EmbeddedLedgerSync
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (mode Mode) Valid() bool {

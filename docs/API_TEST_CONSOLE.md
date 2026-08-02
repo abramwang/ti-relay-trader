@@ -147,7 +147,7 @@ GET http://meridian-data.quantstage.com/v1/market/bars?security_id=600000.SH&tra
 2. 页面不会自动发送任何请求；导入或加载集合也只恢复表单和断言。
 3. 交易写接口仅在启动配置包含 PostgreSQL、测试 Redis 和账户路由时可用，且账户配置必须 `enabled=true`、`trading_enabled=true`。
 4. 实盘账户会使用另一套 Redis 连接方式，测试 Redis 与实盘 Redis 不混用。
-5. 资金/持仓/订单/成交查询默认只读本地 PostgreSQL 账表；刷新接口会发送测试前置 `cmd.query`，需要 9092 轻量同步循环、`ledger-sync` 或正式 worker 合并 reply 后才能在查询接口看到最新数据。
+5. 资金/持仓/订单/成交查询默认只读本地 PostgreSQL 账表；刷新接口会发送前置 `cmd.query`，需要独立 worker、测试兼容的 API 内嵌同步循环或 `ledger-sync` 合并 reply 后才能在查询接口看到最新数据。
 6. 若 9092 以纯文档配置启动，测试台仍可发送 `/v1/status`、`/v1/schema` 和 `/v1/accounts`，交易和账本接口会返回明确的不可用或空结果。
 
 ## 后续工作
