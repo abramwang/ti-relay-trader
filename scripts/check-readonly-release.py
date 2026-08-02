@@ -197,6 +197,23 @@ def build_commands(args: argparse.Namespace, base_url: str) -> list[tuple[str, l
                     ],
                 ),
                 (
+                    f"batch-order-{suffix}",
+                    [
+                        str(browser_python),
+                        "tests/integration/batch_order_interaction_smoke.py",
+                        "--base-url",
+                        base_url,
+                        "--account-id",
+                        args.account_id,
+                        "--width",
+                        str(width),
+                        "--height",
+                        str(height),
+                        "--output",
+                        f"/tmp/relay-batch-order-release-{suffix}.png",
+                    ],
+                ),
+                (
                     f"api-console-{suffix}",
                     [
                         str(browser_python),

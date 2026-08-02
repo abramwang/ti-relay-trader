@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260729-0012">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260802-0013">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -51,6 +51,7 @@
       <nav class="terminal-nav">
         <span class="terminal-nav-label">交易</span>
         <a class="active" href="/trade" data-view-link="trade"><span>↗</span>下单与行情</a>
+        <a href="/trade#batch" data-view-link="batch"><span>＋</span>批量下单</a>
         <a href="/trade#orders" data-view-link="orders"><span>▤</span>订单监控</a>
         <a href="/trade#asset" data-view-link="asset"><span>▥</span>资金持仓</a>
         <span class="terminal-nav-label">分析</span>
@@ -243,6 +244,95 @@
             <button type="button" id="ordersPrevPage">上一页</button>
             <button type="button" id="ordersNextPage">下一页</button>
           </div>
+        </div>
+      </section>
+
+      <section class="trade-panel batch-panel" id="batchPanel" aria-label="批量下单测试">
+        <div class="batch-toolbar">
+          <div>
+            <h2>批量下单测试</h2>
+            <span id="batchWorkspaceStatus">等待环境与账户权限检查</span>
+          </div>
+          <div class="batch-context-controls">
+            <label>
+              <span>账户</span>
+              <select id="batchAccount"></select>
+            </label>
+            <label class="batch-idempotency-field">
+              <span>批次幂等键</span>
+              <input id="batchIdempotencyKey" autocomplete="off" spellcheck="false" data-batch-write>
+            </label>
+            <button type="button" id="regenerateBatchKeyButton" data-batch-write title="重新生成批次幂等键" aria-label="重新生成批次幂等键">↻</button>
+          </div>
+        </div>
+
+        <div class="batch-guard" id="batchGuard" data-status="checking">
+          <strong id="batchGuardTitle">权限检查中</strong>
+          <span id="batchGuardMessage">正在确认服务环境与账户交易权限。</span>
+        </div>
+
+        <div class="batch-import-bar">
+          <textarea id="batchPasteInput" rows="2" placeholder="600000.SH,B,9.67,100" data-batch-write aria-label="粘贴批量委托"></textarea>
+          <button type="button" id="importBatchButton" data-batch-write title="按代码、方向、价格、数量导入">导入行</button>
+          <button type="button" id="addBatchRowButton" data-batch-write title="新增一笔委托">＋ 新增</button>
+          <button type="button" id="resetBatchButton" data-batch-write>清空</button>
+        </div>
+
+        <div class="batch-summary">
+          <div><span>委托笔数</span><strong id="batchOrderCount">0</strong></div>
+          <div><span>买入金额</span><strong id="batchBuyAmount">0.00</strong></div>
+          <div><span>卖出金额</span><strong id="batchSellAmount">0.00</strong></div>
+          <div><span>申购 / 赎回</span><strong id="batchETFCount">0 / 0</strong></div>
+          <div><span>校验结果</span><strong id="batchValidationCount">待校验</strong></div>
+        </div>
+
+        <div class="batch-workspace">
+          <div class="batch-table-wrap">
+            <table class="batch-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>代码</th>
+                  <th>市场</th>
+                  <th>方向</th>
+                  <th>业务</th>
+                  <th>开平</th>
+                  <th class="num">价格</th>
+                  <th class="num">数量</th>
+                  <th>客户端编号</th>
+                  <th>Relay 订单号</th>
+                  <th>状态</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="batchOrdersBody"></tbody>
+            </table>
+          </div>
+          <aside class="batch-result" aria-label="批量请求结果">
+            <div class="batch-result-head">
+              <div>
+                <h3>请求结果</h3>
+                <span id="batchResultStatus">尚未提交</span>
+              </div>
+              <button type="button" id="copyBatchResultButton" title="复制结果 JSON" aria-label="复制结果 JSON">⧉</button>
+            </div>
+            <dl class="batch-result-meta">
+              <div><dt>Message ID</dt><dd id="batchMessageID">--</dd></div>
+              <div><dt>Stream ID</dt><dd id="batchStreamID">--</dd></div>
+              <div><dt>Request ID</dt><dd id="batchRequestID">--</dd></div>
+              <div><dt>发布状态</dt><dd id="batchPublishStatus">--</dd></div>
+            </dl>
+            <pre id="batchResultJSON">{}</pre>
+          </aside>
+        </div>
+
+        <div class="batch-submit-bar">
+          <div>
+            <strong id="batchValidationTitle">编辑批次</strong>
+            <span id="batchValidationMessage">填写或导入委托后进行校验。</span>
+          </div>
+          <button type="button" id="validateBatchButton" data-batch-write>校验批次</button>
+          <button type="button" class="batch-submit-button" id="submitBatchButton" data-batch-write disabled>确认提交</button>
         </div>
       </section>
 
@@ -658,6 +748,27 @@
       </section>
     </main>
 
+    <dialog class="batch-confirm-dialog" id="batchConfirmDialog">
+      <form method="dialog">
+        <div class="batch-confirm-head">
+          <span>批量交易确认</span>
+          <button value="cancel" aria-label="关闭">×</button>
+        </div>
+        <div class="batch-confirm-body">
+          <strong id="batchConfirmHeadline">--</strong>
+          <p id="batchConfirmDetail">--</p>
+          <label>
+            <span>输入账户后四位确认</span>
+            <input id="batchConfirmInput" autocomplete="off" inputmode="numeric">
+          </label>
+        </div>
+        <div class="batch-confirm-actions">
+          <button value="cancel">取消</button>
+          <button type="button" class="danger" id="confirmBatchSubmitButton" disabled>发送批次</button>
+        </div>
+      </form>
+    </dialog>
+
     <aside class="detail-panel">
       <div class="detail-head">
         <div>
@@ -695,6 +806,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20260801-0014"></script>
+  <script defer src="/assets/trade-terminal.js?v=20260802-0015"></script>
 </body>
 </html>

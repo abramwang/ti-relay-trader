@@ -42,7 +42,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -389,6 +390,28 @@ button {
   grid-row: 1;
 }
 
+.terminal-shell.view-batch .terminal-main {
+  grid-column: 2 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.terminal-shell.view-batch .market-panel,
+.terminal-shell.view-batch .chart-panel,
+.terminal-shell.view-batch .portfolio-panel,
+.terminal-shell.view-batch .blotter-panel,
+.terminal-shell.view-batch .performance-panel,
+.terminal-shell.view-batch .performance-settings-panel,
+.terminal-shell.view-batch .detail-panel {
+  display: none;
+}
+
+.terminal-shell.view-batch .batch-panel {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+}
+
 .trade-panel {
   min-width: 0;
   min-height: 0;
@@ -407,6 +430,11 @@ button {
 .performance-settings-panel {
   display: none;
   grid-template-rows: 68px 82px minmax(0, 1fr);
+}
+
+.batch-panel {
+  display: none;
+  grid-template-rows: 68px 48px 66px 62px minmax(0, 1fr) 60px;
 }
 
 .market-panel {
@@ -3122,5 +3150,493 @@ tr.selected,
 
   .terminal-shell.view-asset .portfolio-panel table {
     min-width: 1180px;
+  }
+}
+
+/* Batch order test workbench. */
+.batch-toolbar,
+.batch-submit-bar,
+.batch-result-head,
+.batch-confirm-head,
+.batch-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-toolbar {
+  gap: 24px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.batch-toolbar h2,
+.batch-result-head h3 {
+  margin: 0;
+  color: #eef0f5;
+  letter-spacing: 0;
+}
+
+.batch-toolbar h2 {
+  font-size: 17px;
+}
+
+.batch-toolbar > div:first-child > span,
+.batch-result-head span,
+.batch-submit-bar span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.batch-context-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) minmax(260px, 360px) 36px;
+  align-items: end;
+  gap: 8px;
+}
+
+.batch-context-controls label {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.batch-context-controls input,
+.batch-context-controls select,
+.batch-context-controls button,
+.batch-import-bar button,
+.batch-submit-bar button,
+.batch-confirm-dialog input,
+.batch-confirm-dialog button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #181c26;
+  color: var(--text);
+}
+
+.batch-context-controls input,
+.batch-context-controls select,
+.batch-confirm-dialog input {
+  width: 100%;
+  padding: 6px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.batch-context-controls button {
+  width: 36px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.batch-guard {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  background: rgba(255, 152, 0, 0.06);
+}
+
+.batch-guard strong {
+  color: #ffb84d;
+  font-size: 12px;
+}
+
+.batch-guard span {
+  color: #a9adb7;
+  font-size: 12px;
+}
+
+.batch-guard[data-status="ready"] {
+  border-left-color: var(--sell);
+  background: var(--sell-soft);
+}
+
+.batch-guard[data-status="ready"] strong {
+  color: #39bca8;
+}
+
+.batch-guard[data-status="blocked"] {
+  border-left-color: var(--buy);
+  background: var(--buy-soft);
+}
+
+.batch-guard[data-status="blocked"] strong {
+  color: #ff6270;
+}
+
+.batch-import-bar {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) 76px 86px 66px;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #1a1e28;
+}
+
+.batch-import-bar textarea {
+  width: 100%;
+  height: 46px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 9px;
+  background: #11151e;
+  color: var(--text);
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.batch-import-bar button,
+.batch-submit-bar button {
+  padding: 0 12px;
+  font-weight: 700;
+}
+
+.batch-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.batch-summary div {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 18px;
+  border-right: 1px solid var(--line);
+}
+
+.batch-summary span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.batch-summary strong {
+  color: #eef0f5;
+  font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.batch-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.batch-table-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+}
+
+.batch-table {
+  width: 100%;
+  min-width: 1280px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.batch-table th,
+.batch-table td {
+  height: 42px;
+  padding: 5px 6px;
+  border-right: 1px solid rgba(54, 58, 69, 0.55);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.batch-table th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  height: 34px;
+  background: #181c26;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: left;
+}
+
+.batch-table th:nth-child(1) { width: 38px; }
+.batch-table th:nth-child(2) { width: 112px; }
+.batch-table th:nth-child(3) { width: 66px; }
+.batch-table th:nth-child(4) { width: 76px; }
+.batch-table th:nth-child(5) { width: 76px; }
+.batch-table th:nth-child(6) { width: 70px; }
+.batch-table th:nth-child(7) { width: 90px; }
+.batch-table th:nth-child(8) { width: 92px; }
+.batch-table th:nth-child(9) { width: 180px; }
+.batch-table th:nth-child(10) { width: 210px; }
+.batch-table th:nth-child(11) { width: 120px; }
+.batch-table th:nth-child(12) { width: 44px; }
+
+.batch-table td:first-child {
+  color: var(--muted);
+  text-align: center;
+}
+
+.batch-table input,
+.batch-table select {
+  width: 100%;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 3px 6px;
+  background: #171b24;
+  color: var(--text);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.batch-table input:focus,
+.batch-table select:focus {
+  outline: 1px solid var(--primary);
+  border-color: var(--primary);
+}
+
+.batch-table tr.invalid input,
+.batch-table tr.invalid select {
+  border-color: rgba(242, 54, 69, 0.65);
+}
+
+.batch-row-status {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.batch-row-status strong,
+.batch-row-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-row-status strong {
+  color: #a9adb7;
+  font-size: 10px;
+}
+
+.batch-row-status span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.batch-row-status.error strong,
+.batch-row-status.error span {
+  color: #ff6270;
+}
+
+.batch-row-status.accepted strong {
+  color: #39bca8;
+}
+
+.batch-remove-button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.batch-remove-button:hover {
+  color: var(--buy);
+}
+
+.batch-result {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 14px 14px;
+  overflow: auto;
+  background: #151923;
+}
+
+.batch-result-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 58px;
+  background: #151923;
+}
+
+.batch-result-head h3 {
+  font-size: 13px;
+}
+
+.batch-result-head button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #1e222d;
+  color: var(--muted);
+}
+
+.batch-result-meta {
+  display: grid;
+  gap: 0;
+  margin: 0 0 10px;
+}
+
+.batch-result-meta div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.batch-result-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.batch-result-meta dd {
+  margin: 0;
+  overflow: hidden;
+  color: #c8d2e3;
+  font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#batchResultJSON {
+  min-height: 120px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #10131b;
+  color: #aab7ca;
+  font: 10px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.batch-submit-bar {
+  gap: 10px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--line);
+  background: #181c26;
+}
+
+.batch-submit-bar > div {
+  display: grid;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.batch-submit-bar > div strong {
+  color: #eef0f5;
+  font-size: 12px;
+}
+
+.batch-submit-bar .batch-submit-button,
+.batch-confirm-actions .danger {
+  border-color: var(--buy);
+  background: var(--buy);
+  color: #fff;
+}
+
+.batch-submit-bar button:disabled,
+.batch-import-bar button:disabled,
+.batch-context-controls button:disabled,
+.batch-table input:disabled,
+.batch-table select:disabled,
+.batch-confirm-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.batch-confirm-dialog {
+  width: min(470px, calc(100vw - 40px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1e222d;
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
+.batch-confirm-dialog::backdrop {
+  background: rgba(4, 6, 11, 0.72);
+}
+
+.batch-confirm-dialog form {
+  margin: 0;
+}
+
+.batch-confirm-head,
+.batch-confirm-actions {
+  min-height: 50px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.batch-confirm-head span {
+  color: #eef0f5;
+  font-weight: 750;
+}
+
+.batch-confirm-head button {
+  width: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.batch-confirm-body {
+  display: grid;
+  gap: 12px;
+  padding: 18px 14px;
+}
+
+.batch-confirm-body > strong {
+  color: #ff727e;
+  font-size: 15px;
+}
+
+.batch-confirm-body p {
+  margin: 0;
+  color: #a9adb7;
+  font-size: 12px;
+}
+
+.batch-confirm-body label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.batch-confirm-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.batch-confirm-actions button {
+  min-width: 88px;
+  padding: 0 14px;
+}
+
+.terminal-shell.view-batch .toast {
+  bottom: 108px;
+}
+
+@media (max-width: 1400px) {
+  .batch-workspace {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .batch-context-controls {
+    grid-template-columns: 170px 250px 36px;
   }
 }

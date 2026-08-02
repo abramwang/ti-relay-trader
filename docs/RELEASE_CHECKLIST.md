@@ -38,6 +38,7 @@ python3 scripts/check-readonly-release.py \
 - 9092 页面/API 冒烟和 SDK 账户、资金、持仓、订单、成交、SSE 只读检查。
 - 交易终端、API Console、绩效、任务、运维页面的 `1600x1000` 与 `1280x800` Playwright 验收。
 - 交易终端和 API Console 浏览器测试在 Playwright 路由层记录并中止任何 `/v1/*` 非 GET 请求。
+- 批量下单专项测试在浏览器内模拟 `environment=test`；唯一的 `POST /v1/orders/batch` 由 Playwright 路由直接拦截并返回假回执，不会到达 9092、Redis 或 PostgreSQL。
 
 结果写入 `/tmp/relay-readonly-release-<trade_date>.json`，截图写入 `/tmp/relay-*-release-*.png`。快速检查可加 `--single-viewport`，无浏览器环境时可加 `--skip-browser`；正式发布必须运行完整模式。
 

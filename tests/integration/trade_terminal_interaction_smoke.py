@@ -86,6 +86,16 @@ def main() -> int:
             timeout=5_000,
         )
 
+        page.locator('[data-view-link="batch"]').click()
+        page.locator("#batchPanel").wait_for(state="visible", timeout=10_000)
+        page.wait_for_function(
+            """() => (document.querySelector('#batchGuardTitle')?.textContent || '').includes('生产环境只读保护') &&
+                document.querySelector('#validateBatchButton')?.disabled === true &&
+                document.querySelector('#submitBatchButton')?.disabled === true""",
+            timeout=5_000,
+        )
+        page.locator("#validateBatchButton").click(force=True)
+
         page.locator('[data-view-link="asset"]').click()
         page.locator("#assetPanel").wait_for(state="visible", timeout=10_000)
         page.locator("#assetTradeDate").fill(args.trade_date)
@@ -229,6 +239,9 @@ def main() -> int:
                 accountCount: document.querySelectorAll('#orderAccount option').length,
                 submitDisabled: Boolean(document.querySelector('#submitOrderButton')?.disabled),
                 riskText: document.querySelector('#riskAlert')?.textContent || '',
+                batchGuard: document.querySelector('#batchGuardMessage')?.textContent || '',
+                batchValidateDisabled: Boolean(document.querySelector('#validateBatchButton')?.disabled),
+                batchSubmitDisabled: Boolean(document.querySelector('#submitBatchButton')?.disabled),
                 currentView: document.querySelector('#terminalShell')?.className || '',
                 orderPage: document.querySelector('#ordersPageInfo')?.textContent || '',
                 detail: document.querySelector('#detailSub')?.textContent || '',
@@ -254,6 +267,8 @@ def main() -> int:
         raise AssertionError(f"read-only trading protection failed: {diagnostics}")
     if "只读保护" not in diagnostics["riskText"]:
         raise AssertionError(f"read-only risk message is missing: {diagnostics}")
+    if "券商测试环境" not in diagnostics["batchGuard"] or not diagnostics["batchValidateDisabled"] or not diagnostics["batchSubmitDisabled"]:
+        raise AssertionError(f"batch production guard failed: {diagnostics}")
     if diagnostics["horizontalOverflow"]:
         raise AssertionError(f"terminal has horizontal overflow: {diagnostics}")
     if write_requests or console_errors or page_errors or response_errors:

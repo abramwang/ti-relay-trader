@@ -2,7 +2,7 @@
   const state = {
     accounts: [],
     activeAccount: "",
-    environment: "test",
+    environment: "unknown",
     asset: null,
     positions: [],
     allPositions: [],
@@ -91,6 +91,11 @@
     chartAutoRefreshErrorAt: 0,
     streamErrorLoggedAt: 0,
     toastTimer: 0,
+    batchRows: [],
+    batchValidatedSignature: "",
+    batchValidationErrors: new Map(),
+    batchResult: null,
+    batchSubmitting: false,
     tableSorts: {
       positions: { key: "market_value", direction: "desc" },
       orders: { key: "created_at", direction: "desc" },
@@ -126,6 +131,39 @@
     riskAlert: byID("riskAlert"),
     submitOrderButton: byID("submitOrderButton"),
     resetOrderButton: byID("resetOrderButton"),
+    batchAccount: byID("batchAccount"),
+    batchIdempotencyKey: byID("batchIdempotencyKey"),
+    regenerateBatchKeyButton: byID("regenerateBatchKeyButton"),
+    batchWorkspaceStatus: byID("batchWorkspaceStatus"),
+    batchGuard: byID("batchGuard"),
+    batchGuardTitle: byID("batchGuardTitle"),
+    batchGuardMessage: byID("batchGuardMessage"),
+    batchPasteInput: byID("batchPasteInput"),
+    importBatchButton: byID("importBatchButton"),
+    addBatchRowButton: byID("addBatchRowButton"),
+    resetBatchButton: byID("resetBatchButton"),
+    batchOrderCount: byID("batchOrderCount"),
+    batchBuyAmount: byID("batchBuyAmount"),
+    batchSellAmount: byID("batchSellAmount"),
+    batchETFCount: byID("batchETFCount"),
+    batchValidationCount: byID("batchValidationCount"),
+    batchOrdersBody: byID("batchOrdersBody"),
+    batchResultStatus: byID("batchResultStatus"),
+    batchMessageID: byID("batchMessageID"),
+    batchStreamID: byID("batchStreamID"),
+    batchRequestID: byID("batchRequestID"),
+    batchPublishStatus: byID("batchPublishStatus"),
+    batchResultJSON: byID("batchResultJSON"),
+    copyBatchResultButton: byID("copyBatchResultButton"),
+    batchValidationTitle: byID("batchValidationTitle"),
+    batchValidationMessage: byID("batchValidationMessage"),
+    validateBatchButton: byID("validateBatchButton"),
+    submitBatchButton: byID("submitBatchButton"),
+    batchConfirmDialog: byID("batchConfirmDialog"),
+    batchConfirmHeadline: byID("batchConfirmHeadline"),
+    batchConfirmDetail: byID("batchConfirmDetail"),
+    batchConfirmInput: byID("batchConfirmInput"),
+    confirmBatchSubmitButton: byID("confirmBatchSubmitButton"),
     refreshAssetButton: byID("refreshAssetButton"),
     refreshPositionsButton: byID("refreshPositionsButton"),
     refreshOrdersButton: byID("refreshOrdersButton"),
@@ -927,6 +965,9 @@
     if (viewToken === "asset") {
       return "asset";
     }
+    if (viewToken === "batch") {
+      return "batch";
+    }
     if (viewToken === "performance") {
       return "performance";
     }
@@ -956,7 +997,7 @@
   }
 
   function setActiveView(view) {
-    if (!["trade", "orders", "asset", "performance", "snapshots", "logs", "performance-settings"].includes(view)) {
+    if (!["trade", "batch", "orders", "asset", "performance", "snapshots", "logs", "performance-settings"].includes(view)) {
       view = "trade";
     }
     if (view === "logs") {
@@ -964,6 +1005,7 @@
     }
     state.activeView = view;
     els.shell.classList.toggle("view-trade", view === "trade");
+    els.shell.classList.toggle("view-batch", view === "batch");
     els.shell.classList.toggle("view-orders", view === "orders" || view === "logs");
     els.shell.classList.toggle("view-asset", view === "asset");
     els.shell.classList.toggle("view-performance", view === "performance" || view === "snapshots");
@@ -976,6 +1018,9 @@
     renderMonitorSummary();
     renderBlotter();
     renderDetail();
+    if (view === "batch") {
+      renderBatchEditor();
+    }
     if (view === "trade" && state.initialized) {
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
       ensureChartDefaults();
@@ -1055,15 +1100,18 @@
   }
 
   function updateEnvironmentBadge(environment) {
-    const normalized = String(environment || "test").trim().toLowerCase();
-    state.environment = normalized || "test";
+    const normalized = String(environment || "unknown").trim().toLowerCase() || "unknown";
+    state.environment = normalized;
     if (!els.environmentBadge) {
       return;
     }
     els.environmentBadge.classList.toggle("production", normalized === "production");
-    els.environmentBadge.classList.toggle("test", normalized !== "production");
-    els.environmentBadge.textContent = normalized === "production" ? "生产环境" : "测试环境";
-    els.environmentBadge.title = normalized === "production" ? "当前服务连接生产环境" : "当前服务连接测试环境";
+    els.environmentBadge.classList.toggle("test", normalized === "test");
+    els.environmentBadge.textContent = normalized === "production" ? "生产环境" : normalized === "test" ? "测试环境" : "环境检查中";
+    els.environmentBadge.title = normalized === "production"
+      ? "当前服务连接生产环境"
+      : normalized === "test" ? "当前服务连接测试环境" : "尚未确认服务环境";
+    updateBatchGuard();
   }
 
   async function loadAccounts() {
@@ -2252,8 +2300,10 @@
   function renderAccounts() {
     els.accountTabs.innerHTML = "";
     els.orderAccount.innerHTML = "";
+    els.batchAccount.innerHTML = "";
     if (state.accounts.length === 0) {
       els.accountTabs.innerHTML = '<button type="button" class="active">无账户</button>';
+      updateBatchGuard();
       return;
     }
     for (const account of state.accounts) {
@@ -2277,6 +2327,11 @@
         resetLedgerPages();
         resetPositionStats();
         renderAccounts();
+        if (state.activeView === "batch") {
+          els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+          invalidateBatchValidation("账户已切换，请重新校验批次。");
+          renderBatchEditor();
+        }
         connectEventStream();
         await refreshNow();
         if (state.activeView === "trade") {
@@ -2293,6 +2348,9 @@
       option.textContent = label === account.account_id ? suffix : label + " - " + account.account_id;
       option.selected = account.account_id === state.activeAccount;
       els.orderAccount.appendChild(option);
+
+      const batchOption = option.cloneNode(true);
+      els.batchAccount.appendChild(batchOption);
     }
     const editButton = document.createElement("button");
     editButton.type = "button";
@@ -2302,7 +2360,12 @@
     editButton.disabled = !state.activeAccount;
     editButton.addEventListener("click", editActiveAccountAlias);
     els.accountTabs.appendChild(editButton);
+    if (state.activeAccount && /^manual-batch-account-/.test(els.batchIdempotencyKey.value)) {
+      els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+      invalidateBatchValidation("账户上下文已就绪，请校验批次。");
+    }
     updateRisk();
+    updateBatchGuard();
   }
 
   function accountLabel(account) {
@@ -5585,7 +5648,444 @@
     return Number.isFinite(last) ? last : NaN;
   }
 
+  function newBatchToken(prefix) {
+    state.batchSequence = (state.batchSequence || 0) + 1;
+    const random = window.crypto && window.crypto.getRandomValues
+      ? Array.from(window.crypto.getRandomValues(new Uint8Array(4)), (value) => value.toString(16).padStart(2, "0")).join("")
+      : Math.random().toString(16).slice(2, 10);
+    return prefix + "-" + Date.now() + "-" + state.batchSequence + "-" + random;
+  }
+
+  function createBatchRow(values = {}) {
+    const security = splitSecurityID(values.security_id || values.symbol || "");
+    const side = String(values.trade_side || values.side || "B").trim().toUpperCase();
+    const etfFlow = side === "P" || side === "R";
+    return {
+      rowID: newBatchToken("row"),
+      symbol: security.symbol,
+      exchange: String(values.exchange || security.exchange || "SH").trim().toUpperCase(),
+      tradeSide: side,
+      businessType: String(values.business_type || (etfFlow ? "E" : "S")).trim().toUpperCase(),
+      offsetType: String(values.offset_type || (side === "S" || side === "R" ? "C" : "O")).trim().toUpperCase(),
+      price: values.price === undefined ? "" : String(values.price),
+      qty: values.qty === undefined ? "" : String(values.qty),
+      clientOrderID: String(values.client_order_id || newBatchToken("manual-client")),
+      gatewayOrderID: String(values.gateway_order_id || newBatchToken("manual-gateway"))
+    };
+  }
+
+  function newBatchIdempotencyKey() {
+    const accountID = (els.batchAccount && els.batchAccount.value) || state.activeAccount || "account";
+    return "manual-batch-" + accountID + "-" + newBatchToken("request");
+  }
+
+  function initializeBatchEditor() {
+    if (!els.batchIdempotencyKey.value) {
+      els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+    }
+    if (state.batchRows.length === 0) {
+      state.batchRows = [createBatchRow()];
+    }
+    renderBatchEditor();
+  }
+
+  function batchAccountCanTrade() {
+    const accountID = els.batchAccount.value || state.activeAccount;
+    return state.environment === "test" && accountTradingEnabled(accountID);
+  }
+
+  function batchRowPayload(row) {
+    return {
+      client_order_id: String(row.clientOrderID || "").trim(),
+      gateway_order_id: String(row.gatewayOrderID || "").trim(),
+      symbol: normalizeSymbol(row.symbol).replace(/\..*$/, ""),
+      exchange: String(row.exchange || "").trim().toUpperCase(),
+      trade_side: String(row.tradeSide || "").trim().toUpperCase(),
+      business_type: String(row.businessType || "").trim().toUpperCase(),
+      offset_type: String(row.offsetType || "").trim().toUpperCase(),
+      price: Number(row.price),
+      qty: Number.parseInt(row.qty, 10)
+    };
+  }
+
+  function batchRequestPayload() {
+    return {
+      account_id: els.batchAccount.value || state.activeAccount,
+      orders: state.batchRows.map(batchRowPayload),
+      idempotency_key: els.batchIdempotencyKey.value.trim()
+    };
+  }
+
+  function batchSignature() {
+    return JSON.stringify(batchRequestPayload());
+  }
+
+  function invalidateBatchValidation(message = "批次内容已变化，请重新校验。") {
+    state.batchValidatedSignature = "";
+    state.batchValidationErrors = new Map();
+    els.batchValidationTitle.textContent = "待重新校验";
+    els.batchValidationMessage.textContent = message;
+    els.batchValidationCount.textContent = "待校验";
+    for (const row of els.batchOrdersBody.querySelectorAll("tr.invalid")) {
+      row.classList.remove("invalid");
+    }
+    for (const status of els.batchOrdersBody.querySelectorAll(".batch-row-status:not(.accepted)")) {
+      status.classList.remove("error");
+      const title = status.querySelector("strong");
+      const detail = status.querySelector("span");
+      if (title) {
+        title.textContent = "待校验";
+      }
+      if (detail) {
+        detail.textContent = "";
+      }
+    }
+    updateBatchGuard();
+  }
+
+  function validateBatchRows() {
+    const errors = new Map();
+    const gatewayIDs = new Set();
+    const clientIDs = new Set();
+    for (const row of state.batchRows) {
+      const order = batchRowPayload(row);
+      const rowErrors = [];
+      if (!/^\d{6}$/.test(order.symbol)) {
+        rowErrors.push("代码需为 6 位数字");
+      }
+      if (!["SH", "SZ", "BJ"].includes(order.exchange)) {
+        rowErrors.push("市场无效");
+      }
+      if (!["B", "S", "P", "R"].includes(order.trade_side)) {
+        rowErrors.push("方向无效");
+      }
+      if (!["S", "E"].includes(order.business_type)) {
+        rowErrors.push("业务类型无效");
+      }
+      if (!["O", "C", ""].includes(order.offset_type)) {
+        rowErrors.push("开平标志无效");
+      }
+      if (!Number.isFinite(order.price) || order.price <= 0) {
+        rowErrors.push("价格需大于 0");
+      }
+      if (!Number.isInteger(order.qty) || order.qty <= 0) {
+        rowErrors.push("数量需为正整数");
+      }
+      if (!order.client_order_id) {
+        rowErrors.push("客户端编号为空");
+      } else if (clientIDs.has(order.client_order_id)) {
+        rowErrors.push("客户端编号重复");
+      }
+      if (!order.gateway_order_id) {
+        rowErrors.push("Relay 订单号为空");
+      } else if (gatewayIDs.has(order.gateway_order_id)) {
+        rowErrors.push("Relay 订单号重复");
+      }
+      clientIDs.add(order.client_order_id);
+      gatewayIDs.add(order.gateway_order_id);
+      if (rowErrors.length > 0) {
+        errors.set(row.rowID, rowErrors.join("；"));
+      }
+    }
+    if (state.batchRows.length === 0) {
+      errors.set("batch", "至少需要一笔委托");
+    }
+    if (!els.batchIdempotencyKey.value.trim()) {
+      errors.set("batch-key", "批次幂等键不能为空");
+    }
+    state.batchValidationErrors = errors;
+    return errors;
+  }
+
+  function batchOption(value, label, selected) {
+    return '<option value="' + value + '"' + (value === selected ? " selected" : "") + ">" + label + "</option>";
+  }
+
+  function batchRowResult(row) {
+    const orders = state.batchResult && Array.isArray(state.batchResult.orders) ? state.batchResult.orders : [];
+    return orders.find((order) => order.gateway_order_id === row.gatewayOrderID) || null;
+  }
+
+  function renderBatchRows() {
+    if (state.batchRows.length === 0) {
+      els.batchOrdersBody.innerHTML = '<tr><td colspan="12"><div class="empty-state">批次为空，请新增或导入委托</div></td></tr>';
+      return;
+    }
+    const writable = batchAccountCanTrade() && !state.batchSubmitting;
+    const validated = state.batchValidatedSignature && state.batchValidatedSignature === batchSignature();
+    els.batchOrdersBody.innerHTML = state.batchRows.map((row, index) => {
+      const error = state.batchValidationErrors.get(row.rowID) || "";
+      const result = batchRowResult(row);
+      const status = result ? statusText(result.status) : validated ? "校验通过" : error ? "校验失败" : "待校验";
+      const statusDetail = result ? (result.gateway_order_id || "") : error;
+      const statusClass = error ? "error" : result ? "accepted" : "";
+      const disabled = writable ? "" : " disabled";
+      return `
+        <tr data-batch-row-id="${escapeHTML(row.rowID)}" class="${error ? "invalid" : ""}">
+          <td>${index + 1}</td>
+          <td><input value="${escapeHTML(row.symbol)}" data-batch-field="symbol" data-batch-write inputmode="numeric"${disabled}></td>
+          <td><select data-batch-field="exchange" data-batch-write${disabled}>${batchOption("SH", "SH", row.exchange)}${batchOption("SZ", "SZ", row.exchange)}${batchOption("BJ", "BJ", row.exchange)}</select></td>
+          <td><select data-batch-field="tradeSide" data-batch-write${disabled}>${batchOption("B", "买入", row.tradeSide)}${batchOption("S", "卖出", row.tradeSide)}${batchOption("P", "申购", row.tradeSide)}${batchOption("R", "赎回", row.tradeSide)}</select></td>
+          <td><select data-batch-field="businessType" data-batch-write${disabled}>${batchOption("S", "证券", row.businessType)}${batchOption("E", "ETF", row.businessType)}</select></td>
+          <td><select data-batch-field="offsetType" data-batch-write${disabled}>${batchOption("O", "开仓", row.offsetType)}${batchOption("C", "平仓", row.offsetType)}${batchOption("", "空", row.offsetType)}</select></td>
+          <td><input type="number" min="0" step="0.001" value="${escapeHTML(row.price)}" data-batch-field="price" data-batch-write${disabled}></td>
+          <td><input type="number" min="1" step="1" value="${escapeHTML(row.qty)}" data-batch-field="qty" data-batch-write${disabled}></td>
+          <td><input value="${escapeHTML(row.clientOrderID)}" data-batch-field="clientOrderID" data-batch-write spellcheck="false"${disabled}></td>
+          <td><input value="${escapeHTML(row.gatewayOrderID)}" data-batch-field="gatewayOrderID" data-batch-write spellcheck="false"${disabled}></td>
+          <td><span class="batch-row-status ${statusClass}" title="${escapeHTML(statusDetail)}"><strong>${escapeHTML(status)}</strong><span>${escapeHTML(statusDetail)}</span></span></td>
+          <td><button type="button" class="batch-remove-button" data-remove-batch-row="${escapeHTML(row.rowID)}" data-batch-write title="删除本行" aria-label="删除第 ${index + 1} 行"${disabled}>×</button></td>
+        </tr>`;
+    }).join("");
+  }
+
+  function renderBatchSummary() {
+    let buyAmount = 0;
+    let sellAmount = 0;
+    let purchaseCount = 0;
+    let redemptionCount = 0;
+    for (const row of state.batchRows) {
+      const order = batchRowPayload(row);
+      const amount = Number.isFinite(order.price) && Number.isFinite(order.qty) ? order.price * order.qty : 0;
+      if (order.trade_side === "B" || order.trade_side === "P") {
+        buyAmount += amount;
+      } else {
+        sellAmount += amount;
+      }
+      purchaseCount += order.trade_side === "P" ? 1 : 0;
+      redemptionCount += order.trade_side === "R" ? 1 : 0;
+    }
+    els.batchOrderCount.textContent = formatInt(state.batchRows.length);
+    els.batchBuyAmount.textContent = formatNumber(buyAmount, 2);
+    els.batchSellAmount.textContent = formatNumber(sellAmount, 2);
+    els.batchETFCount.textContent = purchaseCount + " / " + redemptionCount;
+  }
+
+  function renderBatchResult() {
+    const result = state.batchResult;
+    if (!result) {
+      els.batchResultStatus.textContent = "尚未提交";
+      els.batchMessageID.textContent = "--";
+      els.batchStreamID.textContent = "--";
+      els.batchRequestID.textContent = "--";
+      els.batchPublishStatus.textContent = "--";
+      els.batchResultJSON.textContent = "{}";
+      return;
+    }
+    const isError = Boolean(result.error);
+    const orderCount = Array.isArray(result.orders) ? result.orders.length : 0;
+    els.batchResultStatus.textContent = isError ? "提交失败" : result.replayed ? "幂等重放" : "已发布 " + orderCount + " 笔";
+    els.batchMessageID.textContent = result.message_id || "--";
+    els.batchStreamID.textContent = result.stream_id || (result.published && result.published.stream_id) || "--";
+    els.batchRequestID.textContent = result.request_id || "--";
+    els.batchPublishStatus.textContent = isError ? "失败" : result.replayed ? "replayed" : "published";
+    els.batchResultJSON.textContent = JSON.stringify(result, null, 2);
+  }
+
+  function renderBatchEditor() {
+    renderBatchRows();
+    renderBatchSummary();
+    renderBatchResult();
+    updateBatchGuard();
+  }
+
+  function updateBatchGuard() {
+    if (!els.batchGuard) {
+      return;
+    }
+    const accountID = els.batchAccount.value || state.activeAccount;
+    let status = "blocked";
+    let title = "批量交易已锁定";
+    let message = "当前账户未开启交易权限。";
+    if (state.environment === "unknown") {
+      status = "checking";
+      title = "权限检查中";
+      message = "尚未确认服务环境，终端不会发送批量交易请求。";
+    } else if (state.environment === "production") {
+      title = "生产环境只读保护";
+      message = "批量下单测试仅在券商测试环境开放，生产环境不会发送此类请求。";
+    } else if (!accountID) {
+      title = "未选择账户";
+      message = "选择已开启交易权限的测试账户后才能编辑批次。";
+    } else if (!accountTradingEnabled(accountID)) {
+      title = "测试账户只读";
+      message = "账户 " + accountID + " 未开启交易权限，批量写入已锁定。";
+    } else {
+      status = "ready";
+      title = "券商测试环境可写";
+      message = "账户 " + accountID + " 已开启交易权限；提交前仍需校验批次并输入账户后四位确认。";
+    }
+    const writable = status === "ready" && !state.batchSubmitting;
+    els.batchGuard.dataset.status = status;
+    els.batchGuardTitle.textContent = title;
+    els.batchGuardMessage.textContent = message;
+    els.batchWorkspaceStatus.textContent = state.batchSubmitting ? "批次提交中" : message;
+    for (const control of document.querySelectorAll("[data-batch-write]")) {
+      control.disabled = !writable;
+    }
+    els.validateBatchButton.disabled = !writable || state.batchRows.length === 0;
+    const validationCurrent = Boolean(state.batchValidatedSignature) && state.batchValidatedSignature === batchSignature();
+    els.submitBatchButton.disabled = !writable || !validationCurrent;
+    els.submitBatchButton.textContent = validationCurrent ? "确认提交 " + state.batchRows.length + " 笔" : "确认提交";
+  }
+
+  function handleBatchFieldChange(target) {
+    const rowElement = target.closest("tr[data-batch-row-id]");
+    const row = rowElement && state.batchRows.find((item) => item.rowID === rowElement.dataset.batchRowId);
+    const field = target.dataset.batchField;
+    if (!row || !field) {
+      return;
+    }
+    if (field === "symbol") {
+      const security = splitSecurityID(target.value);
+      row.symbol = security.symbol;
+      if (normalizeSymbol(target.value).includes(".")) {
+        row.exchange = security.exchange;
+      }
+      target.value = row.symbol;
+    } else {
+      row[field] = target.value;
+    }
+    if (field === "tradeSide") {
+      const etfFlow = row.tradeSide === "P" || row.tradeSide === "R";
+      row.businessType = etfFlow ? "E" : "S";
+      row.offsetType = row.tradeSide === "S" || row.tradeSide === "R" ? "C" : "O";
+      invalidateBatchValidation();
+      renderBatchEditor();
+      return;
+    }
+    invalidateBatchValidation();
+    renderBatchSummary();
+  }
+
+  function importBatchRows() {
+    if (!batchAccountCanTrade()) {
+      updateBatchGuard();
+      showToast("当前环境或账户不可进行批量下单测试", "error");
+      return;
+    }
+    const lines = els.batchPasteInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const imported = [];
+    for (const line of lines) {
+      if (/^(代码|symbol|security_id)[,\t ]/i.test(line)) {
+        continue;
+      }
+      let fields = line.includes("\t") ? line.split("\t") : line.split(",");
+      if (fields.length < 4) {
+        fields = line.split(/\s+/);
+      }
+      const sideMap = { "买": "B", "买入": "B", "卖": "S", "卖出": "S", "申购": "P", "赎回": "R" };
+      const sideRaw = String(fields[1] || "").trim();
+      imported.push(createBatchRow({
+        security_id: String(fields[0] || "").trim(),
+        trade_side: sideMap[sideRaw] || sideRaw.toUpperCase(),
+        price: String(fields[2] || "").trim(),
+        qty: String(fields[3] || "").trim(),
+        business_type: String(fields[4] || "").trim(),
+        offset_type: String(fields[5] || "").trim()
+      }));
+    }
+    if (imported.length === 0) {
+      showToast("没有识别到可导入的委托行", "error");
+      return;
+    }
+    const onlyBlankRow = state.batchRows.length === 1 && !state.batchRows[0].symbol && !state.batchRows[0].price && !state.batchRows[0].qty;
+    state.batchRows = onlyBlankRow ? imported : state.batchRows.concat(imported);
+    els.batchPasteInput.value = "";
+    invalidateBatchValidation("已导入 " + imported.length + " 笔委托，请校验批次。");
+    renderBatchEditor();
+    showToast("已导入 " + imported.length + " 笔委托");
+  }
+
+  function validateBatch() {
+    if (!batchAccountCanTrade()) {
+      updateBatchGuard();
+      showToast("当前环境或账户不可进行批量下单测试", "error");
+      return false;
+    }
+    const errors = validateBatchRows();
+    if (errors.size > 0) {
+      state.batchValidatedSignature = "";
+      els.batchValidationTitle.textContent = "校验未通过";
+      els.batchValidationMessage.textContent = "发现 " + errors.size + " 处问题，请修正红色行后重新校验。";
+      els.batchValidationCount.textContent = "失败 " + errors.size;
+      renderBatchEditor();
+      showToast("批次校验未通过", "error");
+      return false;
+    }
+    state.batchValidatedSignature = batchSignature();
+    els.batchValidationTitle.textContent = "校验通过";
+    els.batchValidationMessage.textContent = "批次已锁定到当前内容；继续点击确认提交。";
+    els.batchValidationCount.textContent = "通过 " + state.batchRows.length;
+    renderBatchEditor();
+    showToast("批次校验通过");
+    return true;
+  }
+
+  function openBatchConfirmation() {
+    if (!batchAccountCanTrade() || !state.batchValidatedSignature || state.batchValidatedSignature !== batchSignature()) {
+      invalidateBatchValidation();
+      showToast("请重新校验批次", "error");
+      return;
+    }
+    const accountID = els.batchAccount.value || state.activeAccount;
+    const account = state.accounts.find((item) => item.account_id === accountID);
+    els.batchConfirmHeadline.textContent = "即将向 " + accountLabel(account || { account_id: accountID }) + " 发送 " + state.batchRows.length + " 笔委托";
+    els.batchConfirmDetail.textContent = "批次幂等键 " + els.batchIdempotencyKey.value.trim();
+    els.batchConfirmInput.value = "";
+    els.confirmBatchSubmitButton.disabled = true;
+    els.batchConfirmDialog.showModal();
+    els.batchConfirmInput.focus();
+  }
+
+  async function submitBatch() {
+    if (state.batchSubmitting) {
+      return;
+    }
+    if (!batchAccountCanTrade() || !state.batchValidatedSignature || state.batchValidatedSignature !== batchSignature()) {
+      if (els.batchConfirmDialog.open) {
+        els.batchConfirmDialog.close();
+      }
+      invalidateBatchValidation();
+      showToast("批次权限或内容已变化，未发送请求", "error");
+      return;
+    }
+    const payload = batchRequestPayload();
+    const suffix = payload.account_id.slice(-4);
+    if (els.batchConfirmInput.value.trim() !== suffix) {
+      showToast("账户后四位不匹配，未发送请求", "error");
+      return;
+    }
+    els.batchConfirmDialog.close();
+    state.batchSubmitting = true;
+    updateBatchGuard();
+    try {
+      const result = await request("/v1/orders/batch", { method: "POST", body: payload });
+      state.batchResult = result;
+      state.batchValidatedSignature = "";
+      els.batchValidationTitle.textContent = "批次已提交";
+      els.batchValidationMessage.textContent = "再次发送前需要重新校验，避免连续重复提交。";
+      els.batchValidationCount.textContent = result.replayed ? "已重放" : "已提交";
+      pushLog("info", "批量下单已提交", result.message_id || result.idempotency_key || "");
+      showToast("批量下单已提交 " + state.batchRows.length + " 笔");
+      renderBatchEditor();
+      refreshNow().catch((err) => pushLog("warn", "批量下单后账本刷新失败", err.message));
+    } catch (err) {
+      state.batchResult = {
+        error: err.message,
+        details: err.payload || null,
+        request: payload
+      };
+      pushLog("error", "批量下单失败", err.message);
+      showToast("批量下单失败：" + err.message, "error");
+      renderBatchEditor();
+    } finally {
+      state.batchSubmitting = false;
+      updateBatchGuard();
+    }
+  }
+
   function updateRisk() {
+    updateBatchGuard();
     const canTrade = selectedOrderAccountCanTrade();
     els.submitOrderButton.disabled = !canTrade;
     els.submitOrderButton.title = canTrade ? "" : "当前账户未开启交易权限";
@@ -5919,6 +6419,80 @@
         await loadPerformanceSettings();
       }
     });
+    els.batchAccount.addEventListener("change", async () => {
+      state.activeAccount = els.batchAccount.value;
+      state.performanceLoaded = false;
+      state.performanceContribution = null;
+      state.performanceSettingsLoaded = false;
+      state.selectedOrderID = "";
+      resetLedgerPages();
+      resetPositionStats();
+      renderAccounts();
+      els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+      invalidateBatchValidation("账户已切换，请重新校验批次。");
+      renderBatchEditor();
+      connectEventStream();
+      await refreshNow();
+    });
+    els.batchIdempotencyKey.addEventListener("input", () => invalidateBatchValidation());
+    els.regenerateBatchKeyButton.addEventListener("click", () => {
+      els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+      invalidateBatchValidation("已生成新的批次幂等键，请重新校验。");
+    });
+    els.addBatchRowButton.addEventListener("click", () => {
+      state.batchRows.push(createBatchRow());
+      invalidateBatchValidation("已新增委托，请完成填写并重新校验。");
+      renderBatchEditor();
+    });
+    els.resetBatchButton.addEventListener("click", () => {
+      state.batchRows = [createBatchRow()];
+      state.batchResult = null;
+      els.batchPasteInput.value = "";
+      els.batchIdempotencyKey.value = newBatchIdempotencyKey();
+      invalidateBatchValidation("批次已清空。");
+      renderBatchEditor();
+    });
+    els.importBatchButton.addEventListener("click", importBatchRows);
+    els.batchOrdersBody.addEventListener("input", (event) => {
+      if (event.target.matches("input[data-batch-field]")) {
+        handleBatchFieldChange(event.target);
+      }
+    });
+    els.batchOrdersBody.addEventListener("change", (event) => {
+      if (event.target.matches("select[data-batch-field]")) {
+        handleBatchFieldChange(event.target);
+      }
+    });
+    els.batchOrdersBody.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-remove-batch-row]");
+      if (!button) {
+        return;
+      }
+      state.batchRows = state.batchRows.filter((row) => row.rowID !== button.dataset.removeBatchRow);
+      invalidateBatchValidation("已删除委托，请重新校验批次。");
+      renderBatchEditor();
+    });
+    els.validateBatchButton.addEventListener("click", validateBatch);
+    els.submitBatchButton.addEventListener("click", openBatchConfirmation);
+    els.batchConfirmInput.addEventListener("input", () => {
+      const accountID = els.batchAccount.value || state.activeAccount;
+      els.confirmBatchSubmitButton.disabled = els.batchConfirmInput.value.trim() !== accountID.slice(-4);
+    });
+    els.batchConfirmInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !els.confirmBatchSubmitButton.disabled) {
+        event.preventDefault();
+        submitBatch();
+      }
+    });
+    els.confirmBatchSubmitButton.addEventListener("click", submitBatch);
+    els.copyBatchResultButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(els.batchResultJSON.textContent || "{}");
+        showToast("请求结果已复制");
+      } catch (err) {
+        showToast("复制失败：" + err.message, "error");
+      }
+    });
     for (const button of document.querySelectorAll(".side-switch button")) {
       button.addEventListener("click", () => updateSide(button.dataset.side));
     }
@@ -6117,6 +6691,8 @@
   }
 
   async function boot() {
+    updateEnvironmentBadge(els.environmentBadge && els.environmentBadge.dataset.environment);
+    initializeBatchEditor();
     setActiveView(viewFromLocation());
     renderQuote();
     renderDepthBook();

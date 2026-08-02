@@ -22,6 +22,7 @@
 - 已增加任务复核页 Playwright 只读测试：`tests/integration/jobs_visual_smoke.py`，覆盖交易日选择、六账户复核结论、任务时间东八区格式、无横向溢出、无控制台错误和无 HTTP 错误。
 - 运维页 Playwright 会动态读取 `/v1/accounts`，验证六个 gateway 和账户筛选器均使用 PostgreSQL 落库别名，不回退显示旧的“生产查询账户”配置名。
 - 已增加交易终端 Playwright 交互测试：`tests/integration/trade_terminal_interaction_smoke.py`，覆盖生产环境/账户切换、只读下单护栏、日期查询、持仓和订单分页/排序、持仓联动代码、分钟 K 线 canvas 及订单详情。
+- 已增加批量下单 Playwright 交互测试：`tests/integration/batch_order_interaction_smoke.py`，用浏览器路由模拟券商测试环境和拦截批量 POST，覆盖粘贴导入、编辑后校验失效、账户后四位确认、标准请求体及发布结果；真实生产页面仍验证零写请求。
 - 已增加 API Console Playwright 交互测试：`tests/integration/api_console_interaction_smoke.py`，覆盖状态、账户、历史订单表单填写、请求预览、JSON/表格响应、命名集合保存/恢复、JSON 导入导出和响应断言，并在浏览器路由层中止所有 `/v1/*` 写请求。
 - 已增加 API catalog 一致性检查：`scripts/check-api-catalog.py`，校验 67 个 catalog 条目、Go handler 注册模式、源码 schema 和在线 `/v1/schema`。
 - 已增加生产只读发布验收入口：`scripts/check-readonly-release.py`，先强制校验 `environment=production`、`trading_enabled=0`，再组合单元测试、SDK、API 和双视口 Playwright；清单见 `docs/RELEASE_CHECKLIST.md`。
@@ -48,6 +49,10 @@ python3 -m venv .venv
   --base-url http://127.0.0.1:9092 \
   --trade-date 2026-07-31
 
+.venv/bin/python tests/integration/batch_order_interaction_smoke.py \
+  --base-url http://127.0.0.1:9092 \
+  --account-id 314000046830
+
 python3 scripts/check-readonly-release.py \
   --base-url http://127.0.0.1:9092 \
   --account-id 314000046830 \
@@ -60,7 +65,6 @@ python3 scripts/check-readonly-release.py \
 
 ## 后续计划
 
-1. 增加券商测试环境批量下单视图和写链路回归；生产只读套件继续严格禁止写请求。
-2. 将现有临时 PostgreSQL migration/repository 集成脚本接入外部 CI。
-3. 增加盘后对账和绩效贡献的更多固定样例数据测试；人工复核报告已有 API 固定样例和生产只读 Playwright 验收。
-4. [x] 增加 gateway 心跳、stream lag、非交易时段抑制和 DLQ 处置写保护测试；`operations_visual_smoke.py` 验证生产 6 gateway / 24 output stream 页面。
+1. 将现有临时 PostgreSQL migration/repository 集成脚本接入外部 CI。
+2. 增加盘后对账和绩效贡献的更多固定样例数据测试；人工复核报告已有 API 固定样例和生产只读 Playwright 验收。
+3. [x] 增加 gateway 心跳、stream lag、非交易时段抑制和 DLQ 处置写保护测试；`operations_visual_smoke.py` 验证生产 6 gateway / 24 output stream 页面。

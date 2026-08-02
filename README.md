@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化。N9-N11 已完成；N12 的 API Console 命名集合、JSON 导入导出、响应断言和 API/worker 独立进程已经完成，仅剩券商测试环境批量下单视图。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。`/trade#batch` 已提供仅券商测试环境可写的批量下单工作台，生产浏览器回归保持零写请求。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。`/v1/status` 中 `worker`、`event_bridge`、Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；38 条历史数据质量 DLQ 待审核，因此运行汇总仍为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
 - 最近更新时间: `2026-08-02`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -217,7 +217,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 参考 Meridian API 测试页优化 `/api-console`，每个接口按 path/query/body 参数生成表单，响应同时提供 JSON 和表格视图。
 - [x] 将接口测试台从 Go 内联字符串拆分为 `web/templates/api_console.html`、`web/static/api-console.css`、`web/static/api-console.js` 和 `web/static/api-console.catalog.json`，由 Go `embed` 打包。
 - [x] 新增 9092 页面轻量冒烟测试脚本 `tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、关键静态资源、基础 API 和 SDK 下载入口。
-- [x] 按 `reference/relay-agent-delivery` 统一 9092 前端视觉和信息架构：共享 56px 全局顶栏与深色 Token；交易终端保留独立六视图导航；API Console 改为三栏 Workbench；任务页并列历史记录与报告 Inspector；文档、SDK、测试和项目树共用三栏只读阅读器。
+- [x] 按 `reference/relay-agent-delivery` 统一 9092 前端视觉和信息架构：共享 56px 全局顶栏与深色 Token；交易终端保留独立工作区导航；API Console 改为三栏 Workbench；任务页并列历史记录与报告 Inspector；文档、SDK、测试和项目树共用三栏只读阅读器。
 - [x] 新增 `/trade` 手动交易测试终端，参考成熟交易软件布局，支持账户切换、资金持仓、委托成交、下单、撤单、订单详情和轮询状态高亮。
 - [x] 新增 PostgreSQL 首版账本 migration，覆盖账户、网关、订单、事件、成交、原始 stream、资金、持仓和对账表。
 - [x] 新增 `stream_checkpoints` migration，持久化 Redis Stream 消费位点、处理计数和最近错误摘要。
@@ -233,6 +233,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 实现 API 模式 `GET /v1/orders` 和 `GET /v1/fills`，从 PostgreSQL 账本读取订单和成交，支持常用过滤条件和 limit 上限。
 - [x] 实现 API 模式 `GET /v1/accounts/{account_id}/asset` 和 `GET /v1/accounts/{account_id}/positions`，从 PostgreSQL 最新资金快照和当前持仓表读取。
 - [x] 实现 API 模式 `POST /v1/orders/batch`，支持批内校验、子订单草稿落盘、Redis `order.batch.submit` 写入和命令 raw 归档。
+- [x] `/trade#batch` 提供批量下单测试工作台，支持粘贴导入、逐行编辑、批次/订单唯一编号、校验失效、账户后四位确认和发布结果查看；只在券商测试环境且账户交易权限开启时可写。
 - [x] 确认测试下单参考行情口径：优先从 Meridian 读取 `2026-06-12` 分钟线；`600000.SH` 在 `15:00` 的 1m close 为 `9.67`，可作为测试委托参考价。
 - [x] 实现 API 模式 `POST /v1/accounts/{account_id}/asset/refresh` 和 `POST /v1/accounts/{account_id}/positions/refresh`，写入 Redis `cmd.query` 并通过 `ledger-sync` 合并 `asset_page/position_page` 到 PostgreSQL。
 - [x] 实现 API 模式 `POST /v1/accounts/{account_id}/orders/refresh` 和 `POST /v1/accounts/{account_id}/fills/refresh`，写入 Redis `cmd.query` 并通过 `ledger-sync` 合并非空 `order_page/fill_page` 到 PostgreSQL。
@@ -308,7 +309,6 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 3. 完成 OC v1.2 联合验收：撤单拒绝/超时、长订单 ID 跨重启、重复查询完整 reply 重放和 PEL 清零；生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
-6. 完成 N12 剩余项：仅券商测试环境可用的 `/trade` 批量下单测试视图；生产只读套件继续阻止所有写请求。
 
 ## README 状态维护规则
 
@@ -596,3 +596,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 完成 N12 API Console 命名测试集合：以 `relay.api_console_collection.v1` 在浏览器本地保存端点、表单和断言，支持版本化 JSON 导入导出且不保存 Base URL、不自动执行请求。新增 HTTP 状态、JSON 路径存在/等值/类型和耗时断言；Playwright 已验证保存、刷新恢复、导出、清空后导入、断言执行、六账户和历史订单表格，浏览器网络层未产生写请求。9092 已部署新资源，生产仍为六账户只读、下单账户 0。
 - `2026-08-02`: 完成 N12 API/worker 生产进程拆分：新增独立 `cmd/relay-worker` 和仅回环地址开放的健康端口，生产 API 禁用内嵌 Redis 同步，由 worker 独占 24 条 output stream、checkpoint 和账本落库。账本成功变更通过版本化 PostgreSQL `LISTEN/NOTIFY` 事件桥回到原 SSE，订单、成交、资金和持仓回调语义保持兼容。`/v1/status` 新增 `worker/event_bridge` 依赖；API 与 worker 具备独立日志、PID、当前/上一版二进制和回滚入口，统一 `RELAY_RUNTIME_AUTOSTART` 支持容器启动及分钟级自恢复。生产实测独立重启 worker 不影响 API，24 条 stream lag 为 0，六账户仍全部只读、下单账户 0；38 条历史 DLQ 继续独立保留为 attention。环境切换脚本也已接入统一运行时，并持久化当前配置选择。
 - `2026-08-02`: 双进程发布验收过程中发现 Meridian 195 证券批量快照会拖慢 SDK 资金/持仓冒烟，以及非交易日默认最近交易日可能误走缺失的 close 持仓快照。资金汇总现优先复用已落库持仓市值，持仓行情补全设为 3 秒 best-effort；终端从 `/v1/status` 提前采用 Meridian 最近交易日，该默认日期读取最新柜台持仓，只有更早日期读取历史 close。修正 Playwright 分页异步等待和三任务卡告警断言后，统一生产只读发布验收 12/12 通过，报告为 `/tmp/relay-readonly-release-20260802.json`；SDK、交易终端、API Console、绩效、任务和运维页面均通过，交易写请求为 0。
+- `2026-08-02`: 完成 N12 批量下单测试工作台：`/trade#batch` 支持 CSV/TSV 粘贴导入、`B/S/P/R` 与 `S/E` 逐行编辑、客户端/Relay 订单号和批次幂等键、金额汇总、校验后内容变更失效、账户后四位二次确认，以及 Message/Stream/Request ID 和逐笔草稿状态回显。写控件只在 `environment=test` 且账户 `trading_enabled=true` 时开放；生产强制操作验证零写请求。新增独立 Playwright 测试，用浏览器 mock 测试环境并拦截批量 POST 验证标准请求体；统一生产只读发布验收 19/19 通过，报告为 `/tmp/relay-readonly-release-20260802-batch.json`。N12 至此完成，生产继续保持六账户只读、下单账户 0。
