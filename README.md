@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。`/trade#batch` 已提供仅券商测试环境可写的批量下单工作台，生产浏览器回归保持零写请求。Relay 已接受 QuantStage pandas 基线：公共 SDK 和交易运行时继续保持零 pandas 依赖，未来交割单/golden/DataFrame 工具通过 constraints 固定 `pandas==2.3.3`。当前主线为 N13 可信成本账与绩效重建：`performance_economic_nav.v2.1`、`performance_position_cost.v3`、账户起算锚点、Meridian 持仓重估、公司行为数量桥、ETF T0/底仓分账、人工金标和 OC 当日订单实费已落地。当前等待首个 OC 新版本后的完整交易日，按账户独立验收订单、成交、费用、资金持仓、Meridian 行情和公司行为后计算。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。`/trade#batch` 已提供仅券商测试环境可写的批量下单工作台，生产浏览器回归保持零写请求。Relay 已接受 QuantStage pandas 基线：公共 SDK 和交易运行时继续保持零 pandas 依赖，未来交割单/golden/DataFrame 工具通过 constraints 固定 `pandas==2.3.3`。当前主线为 N13 可信成本账与绩效重建：代码暂时冻结，下一执行窗口为用户确认的 `2026-08-03` 完整交易日；届时以 OC 新版本实盘数据逐账户验收订单、成交、实际费用、资金持仓、Meridian 行情、公司行为、成本账和 economic NAV。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失暂不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。`/v1/status` 中 `worker`、`event_bridge`、Redis、PostgreSQL、Meridian、订单服务和事件流均正常，24 条输出 stream lag 为 0；38 条历史数据质量 DLQ 待审核，因此运行汇总仍为 `degraded/attention`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
 - 最近更新时间: `2026-08-02`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -312,6 +312,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
 
+下一交易日验收顺序固定为：OC 启动后先检查 heartbeat 和历史 PEL/DLQ 恢复；盘中核对实时 `order.event/fill.event/transfer.event` 覆盖与唯一性；有成交后查询六账户当日 `fee_page`，检查 `fee_complete/association_complete`、稳定费用编号和订单关联；15:01 盘后任务刷新权威资金、持仓、订单、成交和费用并写 close 快照；17:45 在 Meridian 日线同步后检查 `performance_daily`、成本池和 economic NAV。单账户异常独立标记，不覆盖原始账本，也不拿新费率反推历史。
+
 ## README 状态维护规则
 
 后续每次完成重要工作，都需要同步更新以下内容：
@@ -600,3 +602,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-02`: 双进程发布验收过程中发现 Meridian 195 证券批量快照会拖慢 SDK 资金/持仓冒烟，以及非交易日默认最近交易日可能误走缺失的 close 持仓快照。资金汇总现优先复用已落库持仓市值，持仓行情补全设为 3 秒 best-effort；终端从 `/v1/status` 提前采用 Meridian 最近交易日，该默认日期读取最新柜台持仓，只有更早日期读取历史 close。修正 Playwright 分页异步等待和三任务卡告警断言后，统一生产只读发布验收 12/12 通过，报告为 `/tmp/relay-readonly-release-20260802.json`；SDK、交易终端、API Console、绩效、任务和运维页面均通过，交易写请求为 0。
 - `2026-08-02`: 完成 N12 批量下单测试工作台：`/trade#batch` 支持 CSV/TSV 粘贴导入、`B/S/P/R` 与 `S/E` 逐行编辑、客户端/Relay 订单号和批次幂等键、金额汇总、校验后内容变更失效、账户后四位二次确认，以及 Message/Stream/Request ID 和逐笔草稿状态回显。写控件只在 `environment=test` 且账户 `trading_enabled=true` 时开放；生产强制操作验证零写请求。新增独立 Playwright 测试，用浏览器 mock 测试环境并拦截批量 POST 验证标准请求体；统一生产只读发布验收 19/19 通过，报告为 `/tmp/relay-readonly-release-20260802-batch.json`。N12 至此完成，生产继续保持六账户只读、下单账户 0。
 - `2026-08-02`: 响应 Prism 跨项目 pandas 基线提案，Relay 确认采用“公共兼容范围 `>=2.3,<3`、生产/回放/golden 精确 `2.3.3`”的共同口径。当前 API/worker 为 Go，`relay-sdk 0.1.24` 为标准库且 `dependencies=[]`，项目 `.venv` 未安装 pandas/NumPy/PyArrow/Polars，因此不新增运行时包或重建 SDK；新增 `configs/constraints/quantstage-pandas.txt`、Relay DataFrame 策略文档和单测，未来交割单导入、绩效 golden 或临时对账工具必须在隔离环境使用该约束。
+- `2026-08-02`: 用户确认下一步等待 `2026-08-03` 完整交易日，不继续增加功能。届时按 OC heartbeat/PEL 恢复、实时订单成交与 ETF 划转、六账户 `fee_page` 实际费用、15:01 close 结算和 17:45 绩效任务的顺序联合验收；目标是一次性定位并解决订单费用及其它可靠性问题，生产交易权限继续保持关闭。
