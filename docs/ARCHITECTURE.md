@@ -85,6 +85,8 @@ relay Python jobs
 
 SDK 设计见 [docs/PYTHON_SDK.md](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)。
 
+`relay-sdk` 和现有交易日任务保持标准库实现，不把 pandas 作为公共或生产运行时依赖。需要交割单导入、绩效 golden fixture 或临时 DataFrame 对账时，使用隔离环境并由 `configs/constraints/quantstage-pandas.txt` 固定 `pandas==2.3.3`；未来若发布可选 DataFrame extra，其公共兼容范围为 `pandas>=2.3,<3`。跨服务继续传 JSON、CSV 或明确 schema 的 Arrow/Parquet，不传 pandas 对象或 pickle。详细口径见 [docs/PYTHON_DATAFRAME_POLICY.md](/home/ti-relay-trader/docs/PYTHON_DATAFRAME_POLICY.md:1)。
+
 当前主要 HTTP 接口：
 
 | 模块 | 接口 |

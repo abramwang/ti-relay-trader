@@ -29,6 +29,7 @@
 - 已增加 API/worker 跨进程事件桥集成测试：`tests/integration/event_bridge_smoke_test.go` 在显式提供生产式测试配置时直接发送 PostgreSQL 通知，验证 API SSE 能收到对应账本事件，全程不写 Redis 命令或交易账表。
 - 已增加 API handler、交易 schema/状态机、订单编排/幂等、Redis command/envelope/账本同步、成交去重、自动刷新、Meridian 客户端、事件 hub 和 PostgreSQL repository 单元测试。
 - 已增加 Python 交易日任务测试，覆盖非交易日跳过、账户级异常隔离和快照流程关键语义。
+- 已增加 Python DataFrame 版本策略测试，固定 `pandas==2.3.3` constraints，并防止纯标准库 `relay-sdk` 无意引入 pandas/NumPy/PyArrow/Polars。
 - 已保留可选 PostgreSQL repository 集成测试，设置 `RELAY_LEDGER_TEST_DATABASE_URL` 后运行真实 migration/写库验证。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 

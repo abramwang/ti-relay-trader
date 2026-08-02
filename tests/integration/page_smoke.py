@@ -109,6 +109,7 @@ def build_checks(sdk_version: str) -> list[Check]:
     return [
         Check("home", "/", "text", ("relay 文档门户", "/api-console", "/trade", "/docs/python-sdk", "<th>别名</th>")),
         Check("docs-readme", "/docs/readme", "text", ("线程恢复卡片", "当前进展")),
+        Check("python-dataframe-policy", "/docs/python-dataframe-policy", "text", ("Relay Python DataFrame 版本策略", "pandas==2.3.3", "dependencies=[]")),
         Check("release-checklist", "/docs/release-checklist", "text", ("发布检查清单", "生产只读全量验收", "回滚")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),
         Check("api-console", "/api-console", "text", ("接口测试台", "api-console-v2", "已保存集合", "响应断言", "api-console.js")),

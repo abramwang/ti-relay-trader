@@ -146,6 +146,12 @@ var (
 			Description: "面向策略开发的 9092 API Python 客户端封装设计。",
 		},
 		{
+			Slug:        "python-dataframe-policy",
+			Title:       "Python DataFrame 版本策略",
+			Path:        "docs/PYTHON_DATAFRAME_POLICY.md",
+			Description: "QuantStage pandas 共同基线、Relay 零运行时依赖边界和隔离工具约束。",
+		},
+		{
 			Slug:        "operations",
 			Title:       "运行配置与任务管理",
 			Path:        "docs/OPERATIONS.md",
