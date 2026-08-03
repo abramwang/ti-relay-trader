@@ -391,6 +391,10 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	if openVisibleCash > 0 || contribution.Summary.OpenPositionValue > 0 {
 		openEconomicNAV = roundMoney(openVisibleCash + contribution.Summary.OpenPositionValue)
 	}
+	valuationPriceSource := "meridian_1d_pre_close_and_close"
+	if containsStringValue(contribution.QualityFlags, "meridian_level1_close_fallback") {
+		valuationPriceSource = "meridian_level1_pre_close_and_last"
+	}
 	result.Valuation = EconomicNAVValuationSummary{
 		OpenVisibleCash:          roundMoney(openVisibleCash),
 		OpenPositionValue:        contribution.Summary.OpenPositionValue,
@@ -398,7 +402,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		ClosePositionValue:       contribution.Summary.ClosePositionValue,
 		BrokerOpenPositionValue:  roundMoney(brokerOpenPositionValue),
 		BrokerClosePositionValue: roundMoney(brokerClosePositionValue),
-		PriceSource:              "meridian_pre_close_and_close",
+		PriceSource:              valuationPriceSource,
 		CostSource:               "excluded_from_nav",
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, "research_position_valuation", "broker_position_cost_excluded")
@@ -599,7 +603,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"close_position_value":        contribution.Summary.ClosePositionValue,
 				"broker_open_position_value":  roundMoney(brokerOpenPositionValue),
 				"broker_close_position_value": roundMoney(brokerClosePositionValue),
-				"price_source":                "meridian_pre_close_and_close",
+				"price_source":                valuationPriceSource,
 				"broker_cost_usage":           "excluded",
 			},
 			"cash_bridge": map[string]any{

@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的实时与收盘账本已通过：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查，所有订单、成交和划转均有实时 event 覆盖；六账户命令组 `pending=0,lag=0`，18 条历史 query PEL 正确转为真实关联的 `QUERY_INTERRUPTED` 后 ACK，无新增 `BAD_RECOVERED_COMMAND`。OC 已修正资金查询矛盾终态并新增持仓总成本质量字段；Relay 已接入 `total_cost/avg_cost_source/cost_complete`、隔离华鑫伪市值，并为盘前/盘后任务增加查询命令终态门禁。由于 OC 按部署计划在交易日 15:30 关闭，本轮运行态复测安排在下一次 `broker_ready=true` 且 15:30 前完成；15:10 只关闭本机行情采集，不是 OC 查询截止时间。OC 无历史查询能力，7 月历史缺口不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的实时与收盘账本已通过：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查，所有订单、成交和划转均有实时 event 覆盖；六账户命令组 `pending=0,lag=0`。17:45 首轮绩效发现 Meridian 当日 `1d` 尚未生成及 7 月 31 日成本状态缺口，现已使用 Meridian Level1 `pre_close/last` 作为仅限当前交易日的估值回退，并对明确配置为可信柜台日初成本的账户按当前 open 快照重锚。生产复算得到 3 个活跃账户 `ready`、成本数量残差均为 0、实际费用覆盖 100%；零资产账户 `307000051389` 独立 blocked。计算仍为只读 preview，正式绩效写保护未放开。OC 无历史查询能力，7 月历史缺口不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。heartbeat unsupported 误报已修复；收盘后 6 个 gateway 正常进入 `off_hours`，24 条输出 stream healthy、lag 为 0。当前 56 条 pending DLQ 由原 38 条历史记录和本次 18 条预期 `QUERY_INTERRUPTED` 恢复审计组成，因此运行汇总仍为 `degraded/attention`，当前 Redis/数据库/worker/API/行情链路均正常。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
 - 最近更新时间: `2026-08-03`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -312,13 +312,13 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 
 ## 待办事项
 
-1. 完成 N13 新数据口径验收的绩效阶段：实时账本、实际费用、15:01 权威刷新和 close 快照已通过；等待 17:45 `performance_daily` 对 `307000051387/1388/1389` 和债享5号验证行情、成本账、数量桥和 economic NAV。只有 `ready` 账户才能进入正式绩效发布。7 月历史缺口不再调用 OC 或推断补齐，后续单独导入券商交割单。
+1. N13 首个完整交易日绩效验收已得到 3 个活跃账户 `ready`、1 个零资产账户独立 blocked；继续观察后续连续完整交易日，并在人工抽查通过后分账户开放正式绩效发布。7 月历史缺口不调用 OC 或推断补齐，后续单独导入券商交割单。
 2. ETF T0 成本池和 PCF 单位门禁已完成；后续等待权威数据补充现金替代、跨市场代买代卖和公募回款结算输入，不在 Relay 内估造清算事实。
 3. OC 资金查询修正和 Relay 查询终态门禁均已完成代码接入；下一次 OC `broker_ready=true` 后、15:30 关停前，复测六账户资金与持仓查询只产生唯一 completed final reply，并确认 `cmd.query pending=0,lag=0`、成本来源与券商终端一致。后续受控交易机会继续补充撤单超时、长订单 ID 跨重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 样本。生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
 
-`2026-08-03` 验收顺序中 heartbeat/PEL 恢复、实时 `order.event/fill.event/transfer.event`、当日 `fee_page` 和 15:01 收盘权威账本/close 快照均已完成。剩余步骤为 17:45 在 Meridian 日线同步后检查 `performance_daily`、成本池、数量桥和 economic NAV。单账户异常独立标记，不覆盖原始账本，也不拿新费率反推历史。
+`2026-08-03` 验收顺序中的 heartbeat/PEL 恢复、实时 `order.event/fill.event/transfer.event`、当日 `fee_page`、15:01 收盘权威账本/close 快照及绩效试算均已完成。三个活跃账户数量桥闭合并进入 `ready`，零资产账户保持独立 blocked；结果不覆盖原始账本，也不拿新费率反推历史。
 
 ## README 状态维护规则
 
@@ -598,7 +598,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-01`: 定位债享5号 7 月 23 日连续净值阻断：账户 NAV 与人工金标只差 `0.004028` 元，订单/成交数量闭合；155 个股票卖出项缺实际费用，`1,567,206.34` 元卖出额对应 `1,075.885972` 元归因残差，即 `6.864992 bp`，超过 537.56 元警告阈值。7 月 22 日小额卖出残差仅 277.89 元并未阻断，残差随成交额放大，符合费用缺失。Relay 不从金标倒推实际费用，下一步等待 OC 结算费用或账户独立费率合同参数。
 - `2026-08-01`: 按 OC 新文档接入订单实际费用：新增 `fee.list.query/fee_page` 解析和 `000022_order_fee_records`，稳定键为 `account_id + fee_record_id`，完整性门禁为 `fee_complete && association_complete`。普通证券贡献、移动成本账和逆回购优先使用订单费用且同一订单只扣一次；ETF 申赎 T0 保持独立 15bp 摩擦模型。新增费用查询/刷新 API、API Console、盘后刷新步骤并发布 `relay-sdk 0.1.23`；费用先于订单到达时，相同记录重放也会补全订单关联。迁移 22 已应用到生产，交易权限保持关闭；`2026-08-01` 为非交易日且 OC 已离线，因此未向生产 Stream 发布无效查询，首个交易日仍需完成六账户 `fee_page` 实数验收。OC 当前只支持柜台当前交易日，历史费用仍需独立导入。Go 全量测试、SDK 18/18、任务测试和临时 PostgreSQL 全迁移集成测试通过。
 - `2026-08-01`: 绩效优先级再次收紧：OC 不具备历史查询能力，当前不以最新费率外推 7 月历史，也不以衍生 close 替代 7 月 31 日 OC 缺失快照；历史等待券商交割单后通过独立导入流程补齐。当前先保证 OC 新版本后的完整交易日可逐账户通过订单、成交、费用、资金持仓和 Meridian 行情门禁并正常计算，Meridian `adjust-factors` 保留为随后开发任务。
-- `2026-08-01`: 新增只读 `performance_daily` 每日绩效计算任务，生产计划为交易日 17:45，位于 Meridian 17:35 日线同步之后；任务对可信四账户分别试算移动成本账和 economic NAV，输出 `ready/attention/blocked`、费用完整性和质量标记，单户异常不使整批失败，也不绕过绩效写保护。SDK `0.1.24` 新增 `preview_cost_ledger/rebuild_cost_ledger`。用 7 月 30 日旧账本演练得到 0 ready、2 attention、2 blocked：两户准确识别历史费用缺失，`307000051387` 准确识别数量桥阻断，零资产账户独立阻断；任务本身 `ok=true`，未写入历史绩效。
+- `2026-08-01`: 新增只读 `performance_daily` 每日绩效计算任务，生产计划为交易日 17:45，位于 Meridian 盘后分钟线和 Level1 归档之后；任务对可信四账户分别试算移动成本账和 economic NAV，输出 `ready/attention/blocked`、费用完整性和质量标记，单户异常不使整批失败，也不绕过绩效写保护。SDK `0.1.24` 新增 `preview_cost_ledger/rebuild_cost_ledger`。用 7 月 30 日旧账本演练得到 0 ready、2 attention、2 blocked：两户准确识别历史费用缺失，`307000051387` 准确识别数量桥阻断，零资产账户独立阻断；任务本身 `ok=true`，未写入历史绩效。
 - `2026-08-01`: 明确交易可用性与费用完备性分离：订单核心字段及成交关联完整时，即使缺少费用也继续用于数量、成本、成交额和毛收益；费用覆盖按当日有成交的唯一订单统计，缺口仅使净绩效保持 provisional、标记等待券商交割单，不把订单判为无效数据。
 - `2026-08-01`: `performance_daily` 已接入通用任务告警：绩效 `blocked` 账户聚合为 critical，费用待完善的 `attention` 账户聚合为 warning，并与任务交易日共同生成幂等去重键。Go 全包、后台任务 21 项、SDK 18 项和 `relay-sdk 0.1.24` 发布包检查通过；生产任务配置与 cron 均为交易日 17:45，计算过程只读且不查询 OC。
 - `2026-08-01`: 发布 `performance_position_cost.v2` 并应用生产迁移 `000023_position_cost_corporate_actions`。成本账保存上一 close、券商 open、公司行为类型/因子/数量差和 Meridian 原始上下文；数量比匹配 `ex_factor` 时保持总成本并调整单位成本，数量不变时只标记价格除权，无法闭合时阻断。测试覆盖 `588200.SH` 3 倍 ETF 份额折算、`600000.SH` 价格除权和错误数量阻断；债享5号 7 月 30 日生产只读试算 156 个证券无误报、数量差异为 0。9092 已更新，生产交易权限保持关闭。
@@ -614,3 +614,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-03`: 修复 15:01 盘后结算失败。六账户刷新均成功，但 `307000051388/1387` 的资金持仓在约 47 秒回写，刚好越过共享 45 秒门限；其余四账户快照接口实际 10.01 秒返回 202，又被普通 10 秒客户端提前判超时。共享新鲜度窗口调整为 60 秒，结算快照使用独立 30 秒 HTTP 超时，每账户 Meridian 持仓估值补全限制为 3 秒。15:15 在不查询已关停 OC 的前提下使用 15:02 权威本地账本恢复结算，6 份 close 资产和 150 条 close 持仓全部落库，任务 `succeeded`。同时确认唯一差异是 `159915.SZ` ETF 赎回按 99 条 transfer 入账却被普通 fill 数量规则误报，现已将 `P/R` 申赎排除出普通 order/fill 数量核对。
 - `2026-08-03`: 完成 OC v1.2 收盘实盘验收。最终 15,756 笔订单全部终态，15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项唯一性、关联、业务语义、东八区时间及金额闭合检查，异常计数全部为 0；所有订单、成交和划转均有实时 event 覆盖，盘后查询没有补出实时漏单。六账户命令组 `pending=0,lag=0`，当天没有新增恢复类 DLQ；12 条自然撤单拒绝全部使用 Relay 标准账户并在 adapter context 保留柜台账户，因此 OC `70c966d/7110a76/701d5af` 三项更新均通过。新发现 OC P1：18 次资金查询都先返回有效 partial 数据页，约 2 毫秒后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落库，但 OC 应改为单一 completed final page，Relay 日任务也将补命令终态门禁。详细证据见 `docs/OC_V1_2_VALIDATION_REPORT_20260803.md`。
 - `2026-08-03`: 按 `RELAY_COMPATIBILITY_NOTICE_20260803.md` 完成 Relay 兼容改造。持仓及快照新增柜台总成本、成本来源和完整性字段；同步层停止把华鑫 `TotalPosCost` 误作标准市值，绩效成本池只信任完整总成本或无新质量字段的历史兼容均价。新增 `/v1/query-status/{origin_message_id}` 和 SDK `0.1.25`，盘前/盘后任务要求资产、持仓新鲜度与唯一 completed final 查询终态同时通过，旧“有效资金页后 failed”样本会被明确阻断。生产 migration `000024` 已应用，API/worker 重启健康，统一只读发布验收 13/13 通过并保存在 `/tmp/relay-readonly-release-20260803-oc-compat.json`；生产下单账户仍为 0。OC 由部署计划在 15:30 关闭，下一交易窗口在 `broker_ready=true` 后、15:30 前完成新回包实测。
+- `2026-08-03`: 完成首个新协议交易日的绩效阶段验收。17:45 首轮正确暴露两个输入问题：Meridian 当日 `1d` 尚未生成，以及最新成本状态停在 7 月 30 日、缺少实际上一交易日 7 月 31 日。Relay 现仅对当前交易日用 Meridian Level1 `pre_close/last` 回退；成本状态断档默认阻断，仅对账户配置明确声明可信 `broker_open_snapshot` 且成本完整的持仓按当日 open 重锚。生产只读复算得到 3 个活跃账户 `ready`，实际费用覆盖 100%、数量桥和成本残差均为 0；债享5号、`307000051388`、`307000051387` 日收益分别为 `-0.597286%`、`-0.214503%`、`-0.236797%`。零资产 `307000051389` 独立 blocked。Go 全包、任务 26 项和 SDK 19 项测试通过；任务报告已落库，成本/NAV 仍为 preview，生产下单与绩效写权限均未开放。

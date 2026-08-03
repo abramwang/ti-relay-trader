@@ -390,7 +390,7 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股生产环境交易日收盘后结算，15:01 Asia/Shanghai。
 1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock python3 -m relay.jobs.post_close_settlement --persist --trigger cron --output /var/log/relay/reports/post_close_settlement.json >> /var/log/relay/post_close_settlement.log 2>&1
 
-# Meridian 17:35 日线同步完成后，逐账户执行只读绩效计算和质量门禁。
+# Meridian 盘后分钟线和 Level1 归档完成后，逐账户执行只读绩效计算和质量门禁。
 45 17 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-performance-daily.lock python3 -m relay.jobs.performance_daily --account-id 307000051387 --account-id 307000051388 --account-id 307000051389 --account-id 314000046830 --persist --trigger cron --output /var/log/relay/reports/performance_daily.json >> /var/log/relay/performance_daily.log 2>&1
 ```
 

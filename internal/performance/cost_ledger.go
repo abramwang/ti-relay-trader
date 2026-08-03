@@ -123,6 +123,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	for _, position := range openPositions {
 		openBySecurity[contributionSecurityID(position.Symbol, position.Exchange)] = position
 	}
+	reanchoredFromBrokerOpen := false
 	if normalizedDate == inception.InceptionDate {
 		result.OpeningSource = inception.OpeningPositionSource
 		for _, position := range openPositions {
@@ -148,7 +149,37 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		if err != nil {
 			return CostLedgerResult{}, err
 		}
-		if len(previous) == 0 {
+		gap, _, _ := service.previousCostStateGap(ctx, normalizedDate, previous)
+		needsTrustedReanchor := gap || (len(previous) == 0 && len(openPositions) > 0)
+		if needsTrustedReanchor && strings.EqualFold(strings.TrimSpace(inception.CostSource), "broker_open_snapshot") {
+			result.OpeningSource = "broker_open_snapshot_cost_reanchor"
+			reanchoredFromBrokerOpen = true
+			if gap {
+				result.QualityFlags = appendUnique(result.QualityFlags, "previous_cost_state_gap_reanchored")
+			} else {
+				result.QualityFlags = appendUnique(result.QualityFlags, "missing_previous_cost_state_reanchored")
+			}
+			for _, position := range openPositions {
+				key := contributionSecurityID(position.Symbol, position.Exchange)
+				state := newCostWorkingState(accountID, normalizedDate, position.Symbol, string(position.Exchange), result.OpeningSource)
+				state.quantity = position.Quantity
+				state.cost = trustedBrokerPositionCost(position)
+				state.item.PreviousCloseQuantity = position.Quantity
+				state.item.BrokerOpenQuantity = position.Quantity
+				state.item.OpenQuantity = position.Quantity
+				state.item.OpenTotalCost = state.cost
+				state.flags = appendUnique(state.flags, "broker_open_cost_reanchor")
+				if position.Quantity > 0 && state.cost <= 0 {
+					state.flags = appendUnique(state.flags, "missing_trusted_open_cost")
+					state.item.Status = "blocked"
+				}
+				working[key] = state
+			}
+		} else if gap {
+			result.Status = "blocked"
+			result.QualityFlags = appendUnique(result.QualityFlags, "previous_cost_state_gap")
+			return result, nil
+		} else if len(previous) == 0 {
 			openPositions, openErr := service.listContributionPositions(ctx, accountID, normalizedDate, "open")
 			if openErr != nil {
 				return CostLedgerResult{}, openErr
@@ -159,22 +190,23 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 				return result, nil
 			}
 			result.QualityFlags = appendUnique(result.QualityFlags, "empty_clean_start_continuation")
-		}
-		for _, previousState := range previous {
-			if previousState.CostBucket != "CORE" || previousState.CloseQuantity == 0 {
-				continue
+		} else {
+			for _, previousState := range previous {
+				if previousState.CostBucket != "CORE" || previousState.CloseQuantity == 0 {
+					continue
+				}
+				key := strings.TrimSpace(previousState.Symbol) + "." + strings.TrimSpace(previousState.Exchange)
+				state := newCostWorkingState(accountID, normalizedDate, previousState.Symbol, previousState.Exchange, result.OpeningSource)
+				state.quantity = previousState.CloseQuantity
+				state.cost = previousState.CloseTotalCost
+				state.item.OpenQuantity = previousState.CloseQuantity
+				state.item.OpenTotalCost = previousState.CloseTotalCost
+				if previousState.Status == "blocked" {
+					state.flags = appendUnique(state.flags, "previous_cost_state_blocked")
+					state.item.Status = "blocked"
+				}
+				working[key] = state
 			}
-			key := strings.TrimSpace(previousState.Symbol) + "." + strings.TrimSpace(previousState.Exchange)
-			state := newCostWorkingState(accountID, normalizedDate, previousState.Symbol, previousState.Exchange, result.OpeningSource)
-			state.quantity = previousState.CloseQuantity
-			state.cost = previousState.CloseTotalCost
-			state.item.OpenQuantity = previousState.CloseQuantity
-			state.item.OpenTotalCost = previousState.CloseTotalCost
-			if previousState.Status == "blocked" {
-				state.flags = appendUnique(state.flags, "previous_cost_state_blocked")
-				state.item.Status = "blocked"
-			}
-			working[key] = state
 		}
 	}
 
@@ -259,7 +291,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
 	t0Buckets := buildT0CostBuckets(accountID, normalizedDate, t0Groups)
-	if normalizedDate != inception.InceptionDate {
+	if normalizedDate != inception.InceptionDate && !reanchoredFromBrokerOpen {
 		factors, factorsAvailable, factorFlags := service.loadCorporateActionFactors(ctx, normalizedDate, securityIDs)
 		result.QualityFlags = appendUnique(result.QualityFlags, factorFlags...)
 		for key, state := range working {
@@ -507,4 +539,31 @@ func trustedBrokerPositionCost(position trading.Position) float64 {
 		return roundMoney(position.AvgCost * float64(position.Quantity))
 	}
 	return 0
+}
+
+func (service *Service) previousCostStateGap(
+	ctx context.Context,
+	tradeDate string,
+	previous []ledger.PositionCostState,
+) (bool, string, string) {
+	if service.calendar == nil || len(previous) == 0 {
+		return false, "", ""
+	}
+	_, parsed, err := parseTradeDate(tradeDate)
+	if err != nil {
+		return false, "", ""
+	}
+	status, err := service.calendar.TradingDayStatus(ctx, parsed.AddDate(0, 0, -1).Format("20060102"))
+	if err != nil || strings.TrimSpace(status.PreviousOrCurrentTradingDate) == "" {
+		return false, "", ""
+	}
+	expectedDate, _, err := parseTradeDate(status.PreviousOrCurrentTradingDate)
+	if err != nil {
+		return false, "", ""
+	}
+	previousDate, _, err := parseTradeDate(previous[0].TradeDate)
+	if err != nil {
+		return true, strings.TrimSpace(previous[0].TradeDate), expectedDate
+	}
+	return previousDate != expectedDate, previousDate, expectedDate
 }

@@ -138,6 +138,7 @@ type contributionInstrument struct {
 	Exchange       string
 	Name           string
 	InstrumentType string
+	PriceSource    string
 	PreClose       float64
 	Close          float64
 	HasPreClose    bool
@@ -725,13 +726,87 @@ func (service *Service) loadContributionInstruments(ctx context.Context, tradeDa
 				instrument.Close = value
 				instrument.HasClose = true
 			}
+			if instrument.HasPreClose || instrument.HasClose {
+				instrument.PriceSource = "meridian_1d_unadjusted"
+			}
 			if instrument.InstrumentType == "" {
 				instrument.InstrumentType = strings.ToLower(contributionString(row["instrument_type"]))
 			}
 			items[securityID] = instrument
 		}
+
+		if tradeDate == service.now().In(timeutil.Location()).Format("2006-01-02") {
+			usedLevel1 := service.fillCurrentContributionPricesFromLevel1(ctx, tradeDate, batch, items)
+			if usedLevel1 {
+				flags = appendUnique(flags, "meridian_level1_close_fallback")
+			}
+		}
 	}
 	return items, flags
+}
+
+func (service *Service) fillCurrentContributionPricesFromLevel1(
+	ctx context.Context,
+	tradeDate string,
+	securityIDs []string,
+	items map[string]contributionInstrument,
+) bool {
+	missing := make([]string, 0, len(securityIDs))
+	for _, securityID := range securityIDs {
+		instrument := items[securityID]
+		if !instrument.HasPreClose || !instrument.HasClose {
+			missing = append(missing, securityID)
+		}
+	}
+	if len(missing) == 0 {
+		return false
+	}
+	response, err := service.market.MarketSnapshots(ctx, url.Values{
+		"security_ids": {strings.Join(missing, ",")},
+		"trade_date":   {strings.ReplaceAll(tradeDate, "-", "")},
+		"data_scope":   {"realtime"},
+		"market_level": {"level1"},
+		"limit":        {strconv.Itoa(len(missing))},
+	})
+	if err != nil || response.StatusCode >= http.StatusBadRequest {
+		return false
+	}
+	used := false
+	for _, row := range contributionRows(response.Payload) {
+		if corporateActionDate(row["trade_date"]) != tradeDate {
+			continue
+		}
+		securityID := strings.ToUpper(contributionString(row["security_id"]))
+		instrument, ok := items[securityID]
+		if !ok {
+			continue
+		}
+		rowUsed := false
+		if !instrument.HasPreClose {
+			if value, ok := contributionFloat(row["pre_close"]); ok && value > 0 {
+				instrument.PreClose = value
+				instrument.HasPreClose = true
+				rowUsed = true
+			}
+		}
+		if !instrument.HasClose {
+			if value, ok := contributionFloat(row["last"]); ok && value > 0 {
+				instrument.Close = value
+				instrument.HasClose = true
+				rowUsed = true
+			}
+		}
+		if rowUsed {
+			if instrument.PriceSource == "" {
+				instrument.PriceSource = "meridian_level1_snapshot"
+			} else if instrument.PriceSource != "meridian_level1_snapshot" {
+				instrument.PriceSource += "+meridian_level1_snapshot"
+			}
+			items[securityID] = instrument
+			used = true
+		}
+	}
+	return used
 }
 
 func (service *Service) loadPCFRedemptionUnits(ctx context.Context, tradeDate string, fills []trading.Fill) (map[string]int64, []string) {
@@ -1075,7 +1150,7 @@ func calculateOrdinaryContribution(
 		Orders:         len(bucket.orders),
 		Fills:          len(bucket.fills),
 		PnLStatus:      "calculated",
-		PriceSource:    "meridian_1d_unadjusted",
+		PriceSource:    firstNonBlank(instrument.PriceSource, "meridian_1d_unadjusted"),
 	}
 	componentCandidate := hasRedemption &&
 		item.OpenQuantity == 0 &&

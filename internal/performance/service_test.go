@@ -146,6 +146,74 @@ func TestContributionFeeForFillChargesAuthoritativeOrderFeeOnce(t *testing.T) {
 	}
 }
 
+func TestLoadContributionInstrumentsFallsBackToCurrentLevel1Snapshot(t *testing.T) {
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{}}},
+		snapshots: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "trade_date": 20260803, "pre_close": 9.54, "last": 9.67,
+		}}}},
+	}
+	service, err := New(Options{
+		Store:  &fakePerformanceStore{},
+		Market: marketClient,
+		Now: func() time.Time {
+			return time.Date(2026, 8, 3, 17, 45, 0, 0, timeutil.Location())
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	instruments, flags := service.loadContributionInstruments(context.Background(), "2026-08-03", []string{"600000.SH"})
+	instrument := instruments["600000.SH"]
+	if !instrument.HasPreClose || !instrument.HasClose || instrument.PreClose != 9.54 || instrument.Close != 9.67 {
+		t.Fatalf("instrument = %#v", instrument)
+	}
+	if instrument.PriceSource != "meridian_level1_snapshot" || !containsString(flags, "meridian_level1_close_fallback") {
+		t.Fatalf("price source/flags = %q / %#v", instrument.PriceSource, flags)
+	}
+	if len(marketClient.queries) != 3 {
+		t.Fatalf("market queries = %#v", marketClient.queries)
+	}
+	snapshotQuery := marketClient.queries[2]
+	if snapshotQuery.Get("trade_date") != "20260803" || snapshotQuery.Get("data_scope") != "realtime" || snapshotQuery.Get("market_level") != "level1" {
+		t.Fatalf("snapshot query = %s", snapshotQuery.Encode())
+	}
+}
+
+func TestLoadContributionInstrumentsDoesNotUseLevel1ForHistoricalDate(t *testing.T) {
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{}}},
+		snapshots: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "trade_date": 20260801, "pre_close": 9.54, "last": 9.67,
+		}}}},
+	}
+	service, err := New(Options{
+		Store:  &fakePerformanceStore{},
+		Market: marketClient,
+		Now: func() time.Time {
+			return time.Date(2026, 8, 3, 17, 45, 0, 0, timeutil.Location())
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	instruments, flags := service.loadContributionInstruments(context.Background(), "2026-08-01", []string{"600000.SH"})
+	if instruments["600000.SH"].HasPreClose || instruments["600000.SH"].HasClose {
+		t.Fatalf("historical instrument = %#v", instruments["600000.SH"])
+	}
+	if containsString(flags, "meridian_level1_close_fallback") || len(marketClient.queries) != 2 {
+		t.Fatalf("historical flags/queries = %#v / %#v", flags, marketClient.queries)
+	}
+}
+
 func TestCalculateOrderFeeDayCoverageRequiresEveryExecutedOrder(t *testing.T) {
 	fills := []trading.Fill{
 		{FillID: "fill-1", GatewayOrderID: "order-1", Price: 10, Qty: 100},
@@ -1207,6 +1275,99 @@ func TestCalculateCostLedgerBlocksQuantityMismatch(t *testing.T) {
 	}
 	if !containsString(result.Positions[0].QualityFlags, "position_quantity_not_reconciled") {
 		t.Fatalf("quality flags = %#v", result.Positions[0].QualityFlags)
+	}
+}
+
+func TestCalculateCostLedgerReanchorsTrustedBrokerCostAcrossTradingDayGap(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-28",
+			Status:                "confirmed",
+			OpeningPositionSource: "broker_open_snapshot",
+			CostSource:            "broker_open_snapshot",
+		},
+		costStates: []ledger.PositionCostState{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-30",
+			Symbol:         "600000",
+			Exchange:       "SH",
+			CostBucket:     "CORE",
+			Status:         "calculated",
+			CloseQuantity:  300,
+			CloseTotalCost: 3000,
+		}},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, AvgCost: 10}},
+			"close": {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 10.0, "close": 11.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Calendar: weekdayCalendar{}, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260803", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || result.OpeningSource != "broker_open_snapshot_cost_reanchor" {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsString(result.QualityFlags, "previous_cost_state_gap_reanchored") || len(result.Positions) != 1 {
+		t.Fatalf("quality/positions = %#v / %#v", result.QualityFlags, result.Positions)
+	}
+	item := result.Positions[0]
+	if item.OpenQuantity != 100 || item.CloseQuantity != 100 || item.QuantityResidual != 0 {
+		t.Fatalf("quantity state = %#v", item)
+	}
+	assertClose(t, item.OpenTotalCost, 1000)
+	assertClose(t, item.CloseTotalCost, 1000)
+}
+
+func TestCalculateCostLedgerBlocksTradingDayGapWithoutTrustedBrokerCost(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-28",
+			Status:                "confirmed",
+			OpeningPositionSource: "relay_previous_close",
+			CostSource:            "relay_moving_average",
+		},
+		costStates: []ledger.PositionCostState{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-30",
+			Symbol:         "600000",
+			Exchange:       "SH",
+			CostBucket:     "CORE",
+			Status:         "calculated",
+			CloseQuantity:  300,
+			CloseTotalCost: 3000,
+		}},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, AvgCost: 10}},
+			"close": {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+		},
+	}
+	service, err := New(Options{Store: store, Calendar: weekdayCalendar{}, Market: &fakeContributionMarket{}})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260803", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "blocked" || !containsString(result.QualityFlags, "previous_cost_state_gap") {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
