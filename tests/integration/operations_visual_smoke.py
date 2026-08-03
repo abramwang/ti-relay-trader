@@ -59,9 +59,12 @@ def main() -> int:
         )
         page.wait_for_function(
             """() => {
-                const updated = document.querySelector("#operationsUpdatedAt")
-                    ?.textContent || "";
-                return updated.includes("刷新");
+                const gateways = document.querySelectorAll("#gatewayBody tr");
+                const streams = document.querySelectorAll("#streamBody tr");
+                const accounts = document.querySelectorAll("#operationsAccountFilter option");
+                const writeMode = document.querySelector("#dlqWriteMode")?.textContent || "";
+                return gateways.length === 6 && streams.length === 24 &&
+                    accounts.length === 7 && !writeMode.includes("读取中");
             }""",
             timeout=20_000,
         )
