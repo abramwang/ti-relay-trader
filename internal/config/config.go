@@ -122,8 +122,10 @@ type AccountRouteConfig struct {
 }
 
 type JobConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Schedule string `yaml:"schedule"`
+	Enabled   bool   `yaml:"enabled"`
+	Schedule  string `yaml:"schedule"`
+	Trigger   string `yaml:"trigger"`
+	DependsOn string `yaml:"depends_on"`
 }
 
 func Load(path string) (*Config, error) {

@@ -78,6 +78,23 @@ worker:
 	}
 }
 
+func TestDecodeJobSuccessDependency(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(`
+jobs:
+  performance_daily:
+    enabled: true
+    trigger: job_success
+    depends_on: post_close_settlement
+`))
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	job := cfg.Jobs["performance_daily"]
+	if job.Trigger != "job_success" || job.DependsOn != "post_close_settlement" || job.Schedule != "" {
+		t.Fatalf("performance job = %+v", job)
+	}
+}
+
 func TestDecodeRejectsNonLoopbackWorkerHealth(t *testing.T) {
 	_, err := Decode(strings.NewReader(`
 worker:

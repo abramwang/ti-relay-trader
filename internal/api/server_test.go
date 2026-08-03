@@ -83,6 +83,7 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	cfg.Jobs = map[string]config.JobConfig{
 		"pre_open_init":         {Enabled: true, Schedule: "1 9 * * 1-5"},
 		"post_close_settlement": {Enabled: true, Schedule: "30 15 * * 1-5"},
+		"performance_daily":     {Enabled: true, Trigger: "job_success", DependsOn: "post_close_settlement"},
 	}
 	cfg.Accounts = []config.AccountRouteConfig{
 		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:prod:v1:huaxin:gw-1", Enabled: true, TradingEnabled: true},
@@ -157,6 +158,10 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 	if envelope.Data.Jobs["pre_open_init"].ExpectedTime != "09:01" || envelope.Data.Jobs["post_close_settlement"].ExpectedTime != "15:30" {
 		t.Fatalf("job schedules = %#v", envelope.Data.Jobs)
+	}
+	performanceJob := envelope.Data.Jobs["performance_daily"]
+	if performanceJob.Trigger != "job_success" || performanceJob.DependsOn != "post_close_settlement" || performanceJob.ExpectedTime != "" {
+		t.Fatalf("performance job dependency = %#v", performanceJob)
 	}
 }
 

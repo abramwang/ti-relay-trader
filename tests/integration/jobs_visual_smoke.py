@@ -65,7 +65,11 @@ def main() -> int:
         page.wait_for_timeout(300)
 
         diagnostics = page.evaluate(
-            """() => ({
+            """() => {
+                const performanceCard = Array.from(
+                    document.querySelectorAll('.job-card')
+                ).find((card) => card.querySelector('h2')?.textContent?.includes('每日绩效计算'));
+                return ({
                 reviewRows: document.querySelectorAll('#reviewAccountsBody tr').length,
                 jobRows: document.querySelectorAll('#jobRunsBody tr').length,
                 reviewStatus: document.querySelector('#reviewStatus')?.textContent || '',
@@ -83,12 +87,16 @@ def main() -> int:
                     ).length
                     : 0,
                 jobCards: document.querySelectorAll('.job-card').length,
+                performancePlan: Array.from(
+                    performanceCard?.querySelectorAll('dl > div > dd') || []
+                ).slice(0, 2).map((item) => item.textContent?.trim() || ''),
                 documentOverflow:
                     document.documentElement.scrollWidth > window.innerWidth,
                 reviewTableOverflow:
                     document.querySelector('.review-table-wrap')?.scrollWidth >
                     document.querySelector('.review-table-wrap')?.clientWidth,
-            })"""
+                });
+            }"""
         )
         page.screenshot(path=str(output), full_page=True)
         browser.close()
@@ -112,6 +120,8 @@ def main() -> int:
     if (not diagnostics["alertHeader"] or diagnostics["alertCells"] != diagnostics["jobRows"] or
             diagnostics["alertCardLabels"] != diagnostics["jobCards"]):
         raise AssertionError(f"alert delivery state is not rendered: {diagnostics}")
+    if diagnostics["performancePlan"] != ["交易日 盘后结算成功后", "上游任务成功"]:
+        raise AssertionError(f"performance dependency plan is incorrect: {diagnostics}")
     if diagnostics["documentOverflow"]:
         raise AssertionError(f"page has horizontal document overflow: {diagnostics}")
     if console_errors or page_errors or response_errors:

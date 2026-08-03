@@ -49,7 +49,7 @@ python3 scripts/check-readonly-release.py \
 - [ ] 独立 worker 发布时先停止旧实例，确认 checkpoint 已落库，再启动新实例；API 与 worker 不同时滚动变更 Redis wire schema。
 - [ ] 检查 `scripts/relay-runtime-service.sh status`、`/healthz`、worker `/readyz`、`/v1/status`、`/v1/operations/status` 和 `/jobs`；`worker/event_bridge` 必须为 `ok`。
 - [ ] 确认六账户路由、24 条 output stream checkpoint/lag、DLQ 数量和 gateway 状态符合当前交易阶段。
-- [ ] 确认盘前 `09:01`、盘后 `15:01` 和 OC `15:30` 的职责窗口没有被配置覆盖。
+- [ ] 确认盘前 `09:01`、盘后 `15:01`、盘后成功触发绩效和 OC `15:30` 的职责窗口没有被配置覆盖。
 - [ ] 观察服务日志、worker 日志、cron 日志和告警投递；凭据、订单原始报文不得进入发布报告。
 - [ ] 重新运行完整只读验收，并归档 JSON 报告与异常说明。
 

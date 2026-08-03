@@ -81,7 +81,8 @@ jobs:
     schedule: "1 15 * * 1-5"
   performance_daily:
     enabled: true
-    schedule: "45 17 * * 1-5"
+    trigger: "job_success"
+    depends_on: "post_close_settlement"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

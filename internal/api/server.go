@@ -4346,6 +4346,8 @@ func jobScheduleViews(jobs map[string]config.JobConfig, timezone string) map[str
 			Enabled:      job.Enabled,
 			Schedule:     strings.TrimSpace(job.Schedule),
 			ExpectedTime: expectedTimeFromCron(job.Schedule),
+			Trigger:      strings.TrimSpace(job.Trigger),
+			DependsOn:    strings.TrimSpace(job.DependsOn),
 			Timezone:     timezone,
 		}
 	}
@@ -4424,6 +4426,8 @@ type JobScheduleView struct {
 	Enabled      bool   `json:"enabled"`
 	Schedule     string `json:"schedule,omitempty"`
 	ExpectedTime string `json:"expected_time,omitempty"`
+	Trigger      string `json:"trigger,omitempty"`
+	DependsOn    string `json:"depends_on,omitempty"`
 	Timezone     string `json:"timezone"`
 }
 

@@ -24,7 +24,7 @@
   const knownJobs = [
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
     { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:01", purpose: "固化日终快照和对账输入" },
-    { name: "performance_daily", title: "每日绩效计算", expectedTime: "17:45", purpose: "逐账户计算成本账和经济净值质量" },
+    { name: "performance_daily", title: "每日绩效计算", expectedTime: "", purpose: "盘后结算成功后计算成本账和经济净值质量" },
   ];
   const expectedRunGraceMinutes = 5;
 
@@ -156,6 +156,8 @@
       enabled,
       schedule: configured.schedule || "",
       expectedTime: configured.expected_time || known.expectedTime || "",
+      trigger: configured.trigger || "",
+      dependsOn: configured.depends_on || "",
       timezone: configured.timezone || (status && status.timezone) || "Asia/Shanghai",
       purpose: known.purpose || "",
     };
@@ -163,6 +165,9 @@
 
   function expectedLabel(schedule) {
     if (!schedule.enabled) return "未启用";
+    if (schedule.trigger === "job_success" && schedule.dependsOn) {
+      return `交易日 ${jobTitle(schedule.dependsOn)}成功后`;
+    }
     const time = schedule.expectedTime || "";
     if (time) return `交易日 ${time} ${schedule.timezone || ""}`.trim();
     return schedule.schedule ? `${schedule.schedule} ${schedule.timezone || ""}`.trim() : "--";
@@ -225,7 +230,7 @@
     return normalizeDate(run.target_trade_date) === normalizeDate(tradeDate);
   }
 
-  function dailyState(run, schedule, status) {
+  function dailyState(run, schedule, status, runsByName) {
     if (!schedule.enabled) return { label: "未启用", className: "skipped" };
     const tradeDate = status && status.trading_day && status.trading_day.date;
     if (runMatchesTradeDate(run, tradeDate)) {
@@ -238,6 +243,24 @@
     }
     if (isNonTradingDay(status)) {
       return { label: "非交易日跳过", className: "skipped" };
+    }
+    if (schedule.trigger === "job_success" && schedule.dependsOn) {
+      const dependency = runsByName && runsByName.get(schedule.dependsOn);
+      if (!runMatchesTradeDate(dependency, tradeDate)) {
+        return { label: `等待${jobTitle(schedule.dependsOn)}`, className: "running" };
+      }
+      const dependencyStatus = statusLabel(dependency.status, dependency.skipped);
+      if (dependency.skipped) return { label: "依赖已跳过", className: "skipped" };
+      if (!["succeeded", "completed", "ok"].includes(dependencyStatus)) {
+        return dependencyStatus === "running"
+          ? { label: `等待${jobTitle(schedule.dependsOn)}`, className: "running" }
+          : { label: "依赖失败", className: "failed" };
+      }
+      const finishedAt = Date.parse(dependency.finished_at || "");
+      if (Number.isFinite(finishedAt) && Date.now() - finishedAt > expectedRunGraceMinutes * 60 * 1000) {
+        return { label: "今日未完成", className: "failed" };
+      }
+      return { label: "等待运行", className: "running" };
     }
     const expected = minutesOfDay(schedule.expectedTime);
     const now = currentMinutes(schedule.timezone);
@@ -385,7 +408,7 @@
       const latestRun = byName.get(name);
       const todayRun = sameTradeDate(latestRun, statusView) ? latestRun : null;
       const schedule = jobSchedule(statusView, name);
-      const state = dailyState(todayRun, schedule, statusView);
+      const state = dailyState(todayRun, schedule, statusView, byName);
       const status = todayRun ? statusLabel(todayRun.status, todayRun.skipped) : "";
       return `
         <article class="job-card">
@@ -396,7 +419,7 @@
           <p class="job-purpose">${escapeHTML(schedule.purpose || "--")}</p>
           <dl>
             <div><dt>计划时间</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
-            <div><dt>cron</dt><dd>${escapeHTML(schedule.schedule || "--")}</dd></div>
+            <div><dt>触发方式</dt><dd>${escapeHTML(schedule.trigger === "job_success" ? "上游任务成功" : (schedule.schedule || "--"))}</dd></div>
             <div><dt>所选日期</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
             <div><dt>本次运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
             <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>

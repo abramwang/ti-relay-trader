@@ -19,11 +19,11 @@ relay 每个交易日需要两个稳定流程：
 | 盘前初始化 | `pre_open_init` | 09:01-09:20 `Asia/Shanghai` | 确认交易日、依赖、账户、昨夜位点、初始资金持仓和风险基线 |
 | 收盘预结算观察 | 常驻账本同步 | 14:56 起 `Asia/Shanghai` | 策略停止新增交易，继续接收尾单回报并观察 stream lag |
 | 收盘后结算 | `post_close_settlement` | 生产默认 15:01 `Asia/Shanghai` | 追平订单/成交、刷新订单级实际费用、生成日终快照、对账和盈亏输入 |
-| 每日绩效计算 | `performance_daily` | 生产默认 17:45 `Asia/Shanghai` | OC 账本和 Meridian 盘后估值输入齐备后，逐账户试算成本账、经济净值和质量门禁 |
+| 每日绩效计算 | `performance_daily` | `post_close_settlement` 成功后 | close 快照成功落库后，逐账户试算成本账、经济净值和质量门禁 |
 
 生产环境默认在交易日 15:01 执行，OC 由部署计划在 15:30 关停。14:56 只是策略侧停止新增交易和预结算观察起点，不直接固化日终快照；15:00 前仍可能出现尾单回报，因此资金、持仓、订单和成交的权威刷新仍在 15:01 统一发起。测试环境可按联调需要手工触发或调整 cron，但配置和日志都必须明确是 `Asia/Shanghai`。
 
-`performance_daily` 默认在 17:45 执行，晚于 Meridian 盘后分钟线和 Level1 归档。任务优先使用 Meridian 当日 `1d`；若当前交易日的 `1d` 尚未生成，则使用同源 Level1 `pre_close/last` 并留下质量标记。任务只读取 Relay 本地账本和 Meridian，不查询 OC、不修改历史数据，也不绕过 `performance.settings_write_enabled`；每个账户分别输出 `ready/attention/blocked`，单户质量问题不会拖累其他账户。历史缺口等待券商交割单导入后另行重建。
+`performance_daily` 不再固定等待到 17:45，而由 15:01 启动的盘后流水线在 `post_close_settlement` 成功持久化后立即触发，并显式复用该报告的 `target_trade_date`。任务优先使用 Meridian 当日 `1d`；若当前交易日的 `1d` 尚未生成，则使用同源 Level1 `pre_close/last` 并留下质量标记。任务只读取 Relay 本地账本和 Meridian，不查询 OC、不修改历史数据，也不绕过 `performance.settings_write_enabled`；每个账户分别输出 `ready/attention/blocked`，单户质量问题不会拖累其他账户。盘后结算失败或非交易日时不会启动绩效任务，历史缺口等待券商交割单导入后另行重建。
 
 ## 盘前初始化
 
