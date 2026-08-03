@@ -221,6 +221,10 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 		return processReplyEnvelope(ctx, writer, envelope, result)
 	case "event":
 		return processEventEnvelope(ctx, writer, envelope, result)
+	case "heartbeat":
+		// Heartbeats are archived and checkpointed for observability, but do not
+		// produce ledger records.
+		return result
 	default:
 		if envelope.EventType == "order.event" ||
 			envelope.EventType == "fill.event" ||

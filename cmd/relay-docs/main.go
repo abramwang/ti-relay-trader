@@ -212,6 +212,12 @@ var (
 			Description: "Relay 兼容改造、数据库迁移、测试结果和下一交易窗口待验收项。",
 		},
 		{
+			Slug:        "oc-v1-2-validation-20260803",
+			Title:       "OC v1.2 交易日盘中验收",
+			Path:        "docs/OC_V1_2_VALIDATION_REPORT_20260803.md",
+			Description: "历史 PEL 恢复、实时订单成交、ETF 划转和订单实际费用生产验收结果。",
+		},
+		{
 			Slug:        "tests",
 			Title:       "测试目录索引",
 			Path:        "tests/README.md",

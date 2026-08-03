@@ -1176,6 +1176,24 @@ func TestProcessLedgerEntryArchivesUnknownEventWithoutLedgerFailure(t *testing.T
 	}
 }
 
+func TestProcessLedgerEntryArchivesHeartbeatWithoutUnsupportedError(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:hb", "7-2", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"heartbeat",
+			"message_id":"hb-1",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{"state":"UP","broker_ready":true}
+		}`,
+	})
+
+	if result.Archived != 1 || result.Unsupported != 0 || result.Skipped != 0 || result.LedgerErrors != 0 ||
+		len(writer.raw) != 1 {
+		t.Fatalf("heartbeat result/writer = %#v / %#v", result, writer.raw)
+	}
+}
+
 func TestProcessLedgerEntryUpdatesDraftForIncompleteOrderEvent(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "3-0", map[string]any{
