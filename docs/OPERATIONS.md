@@ -428,7 +428,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
   --output outputs/jobs/performance_daily.json
 ```
 
-当前三个任务都会输出 JSON 报告。`pre_open_init` 与 `post_close_settlement` 包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 45 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 45 秒，也不会在等待期间重复查询柜台。`pre_open_init` 写入 `open_snapshot`；`post_close_settlement` 额外发布 `fee.list.query` 后写入 `settlement_snapshot`。费用查询只支持 OC 当前柜台交易日，不用于历史补跑。`performance_daily` 不再查询柜台，只调用成本账和经济净值只读试算，按账户输出 `ready/attention/blocked`、费用完整性和质量标记。单个账户异常独立标注，系统依赖失败等全局问题才会让任务整体失败。非交易日默认以 `ok=true, skipped=true` 结束。
+当前三个任务都会输出 JSON 报告。`pre_open_init` 与 `post_close_settlement` 包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 60 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 60 秒，也不会在等待期间重复查询柜台。`pre_open_init` 写入 `open_snapshot`；`post_close_settlement` 额外发布 `fee.list.query` 后使用独立 30 秒 HTTP 超时写入 `settlement_snapshot`，避免多账户落库刚好越过普通请求的 10 秒超时。费用查询只支持 OC 当前柜台交易日，不用于历史补跑。`performance_daily` 不再查询柜台，只调用成本账和经济净值只读试算，按账户输出 `ready/attention/blocked`、费用完整性和质量标记。单个账户异常独立标注，系统依赖失败等全局问题才会让任务整体失败。非交易日默认以 `ok=true, skipped=true` 结束。
 
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 

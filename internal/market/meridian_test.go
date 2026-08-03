@@ -566,6 +566,68 @@ func TestMarketBarsUsesAutoForCurrentTradingDayAfterClose(t *testing.T) {
 	}
 }
 
+func TestMarketBarsFallsBackToRealtimeWhileCurrentDayArchiveIsEmpty(t *testing.T) {
+	var barsScopes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case tradingDayPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"date":                             20260803,
+					"is_trading_day":                   true,
+					"previous_or_current_trading_date": 20260803,
+				},
+			})
+		case barsPath:
+			scope := r.URL.Query().Get("data_scope")
+			barsScopes = append(barsScopes, scope)
+			if scope == "auto" {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{},
+					"meta": map[string]any{"data_scope": "historical"},
+				})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"security_id": "159915.SZ",
+					"trade_date":  20260803,
+					"datetime":    "2026-08-03T15:00:00+08:00",
+					"frequency":   "1m",
+					"close":       3.327,
+				}},
+				"meta": map[string]any{"data_scope": "realtime"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	client.now = func() time.Time {
+		return time.Date(2026, 8, 3, 7, 5, 0, 0, time.UTC)
+	}
+
+	response, err := client.MarketBars(context.Background(), url.Values{
+		"security_id": {"159915.SZ"},
+		"trade_date":  {"20260803"},
+		"frequency":   {"1m"},
+	})
+	if err != nil {
+		t.Fatalf("MarketBars: %v", err)
+	}
+	if got, want := strings.Join(barsScopes, ","), "auto,realtime"; got != want {
+		t.Fatalf("bars scopes = %q, want %q", got, want)
+	}
+	if closePrice := firstBarsClose(t, response); closePrice != 3.327 {
+		t.Fatalf("fallback close = %v, want 3.327", closePrice)
+	}
+}
+
 func TestMarketBarsCoalescesConcurrentRequests(t *testing.T) {
 	var mu sync.Mutex
 	requests := 0

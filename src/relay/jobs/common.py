@@ -32,8 +32,9 @@ TIMEZONE_NAME = "Asia/Shanghai"
 DEFAULT_BASE_URL = "http://relay-trader.quantstage.com"
 DEFAULT_MERIDIAN_BASE_URL = "http://meridian-data.quantstage.com"
 DEFAULT_QUERY_LIMIT = 500
-DEFAULT_REFRESH_TIMEOUT_SECONDS = 45.0
+DEFAULT_REFRESH_TIMEOUT_SECONDS = 60.0
 DEFAULT_REFRESH_POLL_SECONDS = 1.0
+DEFAULT_SETTLEMENT_TIMEOUT_SECONDS = 30.0
 FRESHNESS_CHECK_STEPS = {"asset", "positions"}
 REQUIRED_JOB_DEPENDENCIES = ("database", "redis", "order_service", "market", "event_stream")
 
@@ -73,6 +74,7 @@ class JobOptions:
     account_ids: tuple[str, ...] = ()
     target_date: str = ""
     timeout: float = 10.0
+    settlement_timeout_seconds: float = DEFAULT_SETTLEMENT_TIMEOUT_SECONDS
     refresh_wait_seconds: float = 1.0
     refresh_timeout_seconds: float = DEFAULT_REFRESH_TIMEOUT_SECONDS
     refresh_poll_seconds: float = DEFAULT_REFRESH_POLL_SECONDS
@@ -98,6 +100,12 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument("--account-id", action="append", default=[], help="account id to process; can be repeated")
     parser.add_argument("--target-date", default="", help="business date in YYYYMMDD or YYYY-MM-DD; defaults to today in Asia/Shanghai")
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+    parser.add_argument(
+        "--settlement-timeout-seconds",
+        type=float,
+        default=DEFAULT_SETTLEMENT_TIMEOUT_SECONDS,
+        help="HTTP timeout for the multi-account settlement snapshot request",
+    )
     parser.add_argument("--refresh-wait-seconds", type=float, default=1.0, help="seconds to wait after publishing refresh commands")
     parser.add_argument(
         "--refresh-timeout-seconds",
@@ -129,6 +137,7 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         account_ids=account_ids,
         target_date=normalize_trade_date(args.target_date),
         timeout=args.timeout,
+        settlement_timeout_seconds=max(args.settlement_timeout_seconds, args.timeout, 0.1),
         refresh_wait_seconds=max(args.refresh_wait_seconds, 0.0),
         refresh_timeout_seconds=max(args.refresh_timeout_seconds, 0.0),
         refresh_poll_seconds=max(args.refresh_poll_seconds, 0.05),
@@ -426,9 +435,10 @@ def run_daily_job(
             report["ok"] = False
             report["errors"].append(error)
             return finish_report(report)
+        snapshot_client = settlement_snapshot_client(relay_client, options)
         settlement_value, settlement_report = capture_call(
             "record_settlement_snapshot",
-            relay_client.record_settlement_snapshot,
+            snapshot_client.record_settlement_snapshot,
             trade_date=trading_day.target_trade_date,
             account_ids=snapshot_accounts,
             run_id=settlement_run_id,
@@ -447,6 +457,18 @@ def run_daily_job(
                 report["errors"].append(f"{snapshot_type} snapshot failed: {errors}")
 
     return finish_report(report)
+
+
+def settlement_snapshot_client(client: Any, options: JobOptions) -> Any:
+    if not isinstance(client, RelayClient) or client.timeout >= options.settlement_timeout_seconds:
+        return client
+    return RelayClient(
+        client.base_url,
+        account_id=client.account_id,
+        timeout=options.settlement_timeout_seconds,
+        api_key=client.api_key,
+        trust_env=False,
+    )
 
 
 def start_account_flow(

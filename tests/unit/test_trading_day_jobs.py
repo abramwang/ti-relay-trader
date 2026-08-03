@@ -18,7 +18,9 @@ from relay.jobs.common import (  # noqa: E402
     run_daily_performance,
     run_post_close_settlement,
     run_pre_open_init,
+    settlement_snapshot_client,
 )
+from relay_sdk import RelayClient  # noqa: E402
 
 
 class FakeReceipt:
@@ -202,6 +204,26 @@ def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
 
 
 class TradingDayJobTest(unittest.TestCase):
+    def test_settlement_snapshot_uses_dedicated_longer_timeout(self) -> None:
+        client = RelayClient(
+            "http://relay.example.test",
+            account_id="acct-1",
+            timeout=10,
+            api_key="test-key",
+            trust_env=False,
+        )
+
+        snapshot_client = settlement_snapshot_client(
+            client,
+            JobOptions(job_name="post_close_settlement"),
+        )
+
+        self.assertIsNot(snapshot_client, client)
+        self.assertEqual(snapshot_client.timeout, 30)
+        self.assertEqual(snapshot_client.base_url, client.base_url)
+        self.assertEqual(snapshot_client.account_id, client.account_id)
+        self.assertEqual(snapshot_client.api_key, client.api_key)
+
     def test_daily_performance_isolates_account_quality_results(self) -> None:
         client = FakeClient()
         client.accounts = [

@@ -3550,7 +3550,9 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 	}
 	if len(positionResult.Positions) > 0 {
-		s.enrichPositionsForPnL(ctx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
+		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		s.enrichPositionsForPnL(enrichmentCtx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
+		cancel()
 	}
 	ordersResult, err := s.listAllSettlementOrders(ctx, accountID, tradeDate)
 	if err != nil {
@@ -3787,6 +3789,9 @@ func orderFillQuantityBreaks(runID string, accountID string, orders []trading.Or
 	}
 	out := make([]ledger.ReconciliationBreak, 0)
 	for _, order := range orders {
+		if order.TradeSide == trading.TradeSidePurchase || order.TradeSide == trading.TradeSideRedemption {
+			continue
+		}
 		if order.CumFilledQty == 0 {
 			continue
 		}

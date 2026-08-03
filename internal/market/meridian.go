@@ -243,6 +243,7 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
 	query := cloneValues(values)
+	dataScopeExplicit := strings.TrimSpace(query.Get("data_scope")) != ""
 	today := client.today()
 	if shouldUseBarsPreviousTradingDay(query, today) {
 		date := strings.TrimSpace(query.Get("trade_date"))
@@ -256,7 +257,17 @@ func (client *MeridianClient) MarketBars(ctx context.Context, values url.Values)
 			}
 		}
 	}
-	return client.cachedBars(ctx, query)
+	response, err := client.cachedBars(ctx, query)
+	if err != nil || dataScopeExplicit || !shouldFallbackCurrentBarsToRealtime(query, response, today) {
+		return response, err
+	}
+	realtimeQuery := cloneValues(query)
+	realtimeQuery.Set("data_scope", "realtime")
+	realtimeResponse, realtimeErr := client.cachedBars(ctx, realtimeQuery)
+	if realtimeErr == nil && meridianResponseHasRows(realtimeResponse) {
+		return realtimeResponse, nil
+	}
+	return response, nil
 }
 
 func (client *MeridianClient) cachedBars(ctx context.Context, values url.Values) (MeridianResponse, error) {
@@ -485,6 +496,21 @@ func defaultBarsDataScope(tradeDate, today string, now time.Time) string {
 		return "auto"
 	}
 	return "realtime"
+}
+
+func shouldFallbackCurrentBarsToRealtime(values url.Values, response MeridianResponse, today string) bool {
+	if _, hasError := response.Payload["error"]; hasError {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(values.Get("data_scope")), "auto") &&
+		compactMeridianDate(strings.TrimSpace(values.Get("trade_date"))) == today &&
+		response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices &&
+		!meridianResponseHasRows(response)
+}
+
+func meridianResponseHasRows(response MeridianResponse) bool {
+	rows, ok := response.Payload["data"].([]any)
+	return ok && len(rows) > 0
 }
 
 func meridianDateString(value any) string {

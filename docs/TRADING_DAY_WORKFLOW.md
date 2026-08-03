@@ -81,7 +81,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 2. 通过 Meridian 交易日接口解析目标交易日。
 3. 非交易日默认跳过账户刷新，返回 `ok=true, skipped=true`。
 4. 先向所有启用账户发布资金、持仓、订单、成交刷新命令，再进入等待阶段；单账户异常不会阻塞其它账户发出查询。
-5. 所有账户共享一个最多 45 秒的新鲜度等待窗口，轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间；不会按账户分别累计 45 秒，也不会在等待阶段反复查询柜台。
+5. 所有账户共享一个最多 60 秒的新鲜度等待窗口，轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间；不会按账户分别累计 60 秒，也不会在等待阶段反复查询柜台。
 6. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
 7. 输出 JSON 报告，可通过 `--output` 写入文件。
 8. 若某账户资金/持仓刷新未确认，则该账户进入 `snapshot_blocked_accounts`，不参与本次 open/close 快照落盘，避免把早盘或旧持仓固化为日终持仓。

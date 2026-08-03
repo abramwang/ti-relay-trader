@@ -2083,6 +2083,31 @@ func TestSettlementSnapshotAccountErrorIsNonFatal(t *testing.T) {
 	}
 }
 
+func TestOrderFillQuantityBreaksSkipETFTransferOrders(t *testing.T) {
+	orders := []trading.Order{
+		{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gw-sell",
+			TradeSide:      trading.TradeSideSell,
+			BusinessType:   trading.BusinessTypeStock,
+			CumFilledQty:   200,
+		},
+		{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gw-redemption",
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			CumFilledQty:   1_000_000,
+		},
+	}
+
+	breaks := orderFillQuantityBreaks("run-1", "acct-1", orders, nil)
+
+	if len(breaks) != 1 || breaks[0].ObjectID != "gw-sell" {
+		t.Fatalf("breaks = %#v, want only the secondary-market sell mismatch", breaks)
+	}
+}
+
 func TestReconciliationBreaksQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		breaks: []ledger.ReconciliationBreak{{
