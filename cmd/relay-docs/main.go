@@ -218,6 +218,12 @@ var (
 			Description: "历史 PEL 恢复、实时账本、订单费用、撤单拒绝、收盘快照和资金查询终态验收结果。",
 		},
 		{
+			Slug:        "oc-compatibility-20260803",
+			Title:       "OC 资金终态与持仓成本兼容",
+			Path:        "docs/RELAY_COMPATIBILITY_NOTICE_20260803.md",
+			Description: "OC 资金查询单一终态、持仓总成本质量字段和市值边界。",
+		},
+		{
 			Slug:        "tests",
 			Title:       "测试目录索引",
 			Path:        "tests/README.md",

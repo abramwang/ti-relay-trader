@@ -1,6 +1,6 @@
 # relay Python SDK 当前实现
 
-更新时间：`2026-07-29`
+更新时间：`2026-08-03`
 
 ## 目标
 
@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.21`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.25`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,12 +35,13 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.24.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.25.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率和异常订单。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 20. `list_transfers()` 和 `ComponentTransfer` 独立读取 ETF 申赎成分股划转，不把划转混入普通成交。
 21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
+22. `get_query_status(origin_message_id)` 查询 OC 刷新命令的归档终态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
 
 尚未完成：
 
@@ -88,15 +89,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.24.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.25.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -257,7 +258,7 @@ client.refresh_orders()
 client.refresh_fills()
 ```
 
-刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。`refresh_fees()` 发布 `fee.list.query`，`list_order_fees()` 读取订单级费用；OC 当前只支持柜台当前交易日。盘后结算任务会在刷新后轮询本地账本时间戳，确认资产和持仓已晚于本轮刷新开始时间；如果未确认，会把账户加入 `snapshot_blocked_accounts`，避免写入旧日终持仓。
+刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。可将回执的 `message_id` 传给 `get_query_status()`，确认命令只有一个 `completed` final reply；`failed`、缺 final 或矛盾终态均不能视为成功。`refresh_fees()` 发布 `fee.list.query`，`list_order_fees()` 读取订单级费用；OC 当前只支持柜台当前交易日。盘前和盘后任务会同时检查资产/持仓账本时间戳与查询终态，任一条件不满足都会阻断对应账户快照。
 
 ### 任务报告和结算快照落库
 
@@ -324,6 +325,7 @@ client = RelayClient(
 | `refresh_positions(account_id=None)` | `POST /v1/accounts/{account_id}/positions/refresh` | 触发持仓前置查询 |
 | `refresh_orders(account_id=None)` | `POST /v1/accounts/{account_id}/orders/refresh` | 触发订单前置查询 |
 | `refresh_fills(account_id=None)` | `POST /v1/accounts/{account_id}/fills/refresh` | 触发成交前置查询 |
+| `get_query_status(origin_message_id)` | `GET /v1/query-status/{origin_message_id}` | 查询刷新命令是否具有唯一 completed final 终态 |
 | `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
 | `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
@@ -379,7 +381,8 @@ SDK 模型和 9092 API schema 一一对应：
 | --- | --- |
 | `Account` | 账户配置和状态 |
 | `Asset` | 资金资产 |
-| `Position` | 持仓、可卖数量、总持仓浮盈和当日持仓浮盈 |
+| `Position` | 持仓、可卖数量、总成本及来源完整性、总持仓浮盈和当日持仓浮盈 |
+| `QueryCommandStatus` | 查询命令终态、预期结果类型和归档 reply 明细 |
 | `OrderRequest` | 下单请求 |
 | `OrderReceipt` | 下单命令回执 |
 | `Order` | 订单状态 |

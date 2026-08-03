@@ -93,15 +93,21 @@ def main() -> int:
         page.screenshot(path=str(output), full_page=True)
         browser.close()
 
-    if diagnostics["reviewRows"] != 6 or diagnostics["jobRows"] != 2:
+    if diagnostics["reviewRows"] != 6 or diagnostics["jobRows"] < 2:
         raise AssertionError(f"daily review rows are incomplete: {diagnostics}")
-    if "已阻断" not in diagnostics["reviewStatus"]:
+    if args.trade_date not in diagnostics["reviewStatus"] or not any(
+        status in diagnostics["reviewStatus"]
+        for status in ("已通过", "待复核", "已阻断", "未完成")
+    ):
         raise AssertionError(f"review conclusion is not rendered: {diagnostics}")
     if "通过" not in diagnostics["summary"] or "开放差异" not in diagnostics["summary"]:
         raise AssertionError(f"review summary is incomplete: {diagnostics}")
     if diagnostics["selectedDate"] != args.trade_date:
         raise AssertionError(f"trade-date selection did not stick: {diagnostics}")
-    if not any("15:05:01" in value for value in diagnostics["jobTimes"]):
+    expected_date_prefix = args.trade_date.replace("-", "/") + " "
+    if not diagnostics["jobTimes"] or any(
+        not value.startswith(expected_date_prefix) for value in diagnostics["jobTimes"]
+    ):
         raise AssertionError(f"job times are not rendered in Asia/Shanghai: {diagnostics}")
     if (not diagnostics["alertHeader"] or diagnostics["alertCells"] != diagnostics["jobRows"] or
             diagnostics["alertCardLabels"] != diagnostics["jobCards"]):

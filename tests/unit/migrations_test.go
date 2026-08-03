@@ -386,6 +386,30 @@ func TestPositionCostCorporateActionsMigrationAddsAuditedInputs(t *testing.T) {
 	}
 }
 
+func TestOCPositionCostQualityMigrationAddsExplicitBrokerCostFields(t *testing.T) {
+	upSQL := readMigration(t, "000024_oc_position_cost_quality.up.sql")
+	for _, snippet := range []string{
+		"ADD COLUMN total_cost NUMERIC(20, 6)",
+		"ADD COLUMN avg_cost_source TEXT",
+		"ADD COLUMN cost_complete BOOLEAN",
+		"Broker-reported total position cost; not market value.",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("OC position cost quality migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000024_oc_position_cost_quality.down.sql")
+	for _, snippet := range []string{
+		"DROP COLUMN IF EXISTS cost_complete",
+		"DROP COLUMN IF EXISTS avg_cost_source",
+		"DROP COLUMN IF EXISTS total_cost",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("OC position cost quality rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func readMigration(t *testing.T, name string) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "migrations", "postgres", name)

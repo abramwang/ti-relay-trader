@@ -16,6 +16,8 @@ docs/api 模式可通过 `worker.embedded_ledger_sync=true` 启动内嵌同步�
 
 当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`。`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 不代表可安全推断的业务拒单，Relay 只归档并提示重试或先查询对账，不修改订单终态。
 
+OC 2026-08-03 起在 `position_page.items[]` 提供 `total_cost/avg_cost_source/cost_complete`。Relay 原样持久化这些成本质量字段，但不再信任华鑫旧 `market_value`，因为该字段承载的是 `TotalPosCost`；标准持仓市值由 Meridian 行情重估。若 `avg_cost_source` 已明确为 `unavailable`，绩效成本账必须阻断，不能回退使用旧均价。
+
 OC v1.2 增量兼容已经落地：`order.cancel.event/order.cancel.rejected` 和 `CANCEL_RESPONSE_TIMEOUT` 只写入独立的 `order_cancel_attempts` 审计表，绝不覆盖原订单状态或下单拒绝原因；`order.batch.submit.payload.failed_orders[]` 按 `index/gateway_order_id` 逐笔回写失败子单；未知事件继续保留 raw 并推进 checkpoint。心跳读取 `redis_ready/broker_ready/order_snapshot_ready/accepting_trade_commands/accepting_cancel_commands`，运维状态不再把“Redis 心跳存活”等同于“柜台全部就绪”。
 
 首批同步范围：
@@ -118,6 +120,8 @@ action 到 stream 的映射：
 2. 写入 `raw_stream_messages`，唯一键为 `stream_key + stream_id`。
 3. 根据 `message_type/action/result_type/event_type` 合并标准账表。
 4. 成功处理后更新 `stream_checkpoints`。
+
+所有 query reply 还会按 `origin_message_id` 聚合为命令终态。成功必须只有一个 `completed` 终态，且 `result_type` 与 action 匹配、`chunk.is_last=true`；数据页之后出现 `failed`、缺 final 或重复终态均不会被视为成功。只读 `GET /v1/query-status/{origin_message_id}` 暴露该判定，盘前/盘后任务在写 open/close 快照前同时检查查询终态和账本新鲜度。
 
 `reply` 合并：
 

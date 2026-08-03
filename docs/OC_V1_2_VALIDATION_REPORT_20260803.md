@@ -175,7 +175,7 @@ worker 原先会归档 heartbeat，但随后进入 unsupported 分支，把每�
 
 ## 尚待验证
 
-1. OC 修复 `account.asset.query` 的矛盾终态后，再用一个真实账户确认只返回 `completed asset_page`，且 `cmd.query pending=0, lag=0`。
-2. Relay 日任务增加查询终态关联门禁，避免有效数据页后的 failed 终态被时间戳门禁掩盖。
+1. OC 已按 `RELAY_COMPATIBILITY_NOTICE_20260803.md` 修复 `account.asset.query` 的矛盾终态；下一交易窗口在 `broker_ready=true` 后、部署计划 15:30 关停前，用六个真实账户确认只返回 `completed asset_page`，且 `cmd.query pending=0, lag=0`。
+2. Relay 日任务查询终态关联门禁已完成：按 refresh `message_id` 检查唯一 completed final reply，失败、缺 final 或矛盾终态会阻断该账户快照。待下一交易窗口做运行态验收。
 3. 17:45 `performance_daily` 对四个可信成本账户的费用覆盖、成本池、数量桥和 economic NAV 结果。
 4. 本日没有自然产生撤单超时、batch 部分失败或 `COMMAND_OUTCOME_UNKNOWN` 样本，这些低频写链路继续等待受控交易机会。

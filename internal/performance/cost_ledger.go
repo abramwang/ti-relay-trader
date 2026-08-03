@@ -129,11 +129,11 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			key := contributionSecurityID(position.Symbol, position.Exchange)
 			state := newCostWorkingState(accountID, normalizedDate, position.Symbol, string(position.Exchange), result.OpeningSource)
 			state.quantity = position.Quantity
-			state.cost = roundMoney(position.AvgCost * float64(position.Quantity))
+			state.cost = trustedBrokerPositionCost(position)
 			state.item.OpenQuantity = position.Quantity
 			state.item.BrokerOpenQuantity = position.Quantity
 			state.item.OpenTotalCost = state.cost
-			if position.Quantity > 0 && position.AvgCost <= 0 {
+			if position.Quantity > 0 && state.cost <= 0 {
 				state.flags = appendUnique(state.flags, "missing_trusted_open_cost")
 				state.item.Status = "blocked"
 			}
@@ -275,7 +275,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			state.quantity = openPosition.Quantity
 			state.item.BrokerOpenQuantity = openPosition.Quantity
 			state.item.OpenQuantity = openPosition.Quantity
-			state.item.OpenTotalCost = roundMoney(openPosition.AvgCost * float64(openPosition.Quantity))
+			state.item.OpenTotalCost = trustedBrokerPositionCost(openPosition)
 			state.cost = state.item.OpenTotalCost
 			state.item.Status = "blocked"
 			state.flags = appendUnique(state.flags, "opening_position_without_previous_cost")
@@ -494,4 +494,17 @@ func containsStringValue(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func trustedBrokerPositionCost(position trading.Position) float64 {
+	if position.CostComplete && position.TotalCost > 0 {
+		return roundMoney(position.TotalCost)
+	}
+	if position.AvgCostSource != "" {
+		return 0
+	}
+	if position.AvgCost > 0 && position.Quantity > 0 {
+		return roundMoney(position.AvgCost * float64(position.Quantity))
+	}
+	return 0
 }

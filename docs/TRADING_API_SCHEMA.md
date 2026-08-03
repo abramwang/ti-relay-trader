@@ -124,6 +124,9 @@ rejected
   "initial_qty": 100,
   "today_qty": 0,
   "avg_cost": 9.54,
+  "total_cost": 954.0,
+  "avg_cost_source": "broker_total_position_cost",
+  "cost_complete": true,
   "market_value": 954.0,
   "unrealized_pnl": 0.0,
   "day_unrealized_pnl": 0.0,
@@ -136,6 +139,8 @@ rejected
 当前持仓账本只展示 `quantity > 0` 的 `positions` 行。`position_page` 被视为账户全量快照批次：同一 `origin_message_id/correlation_id` 下的 `partial` 回包逐条 upsert，`completed` 回包到达后清理该账户本次查询开始前仍未更新的旧当前持仓，避免旧批次残留标的被误认为仍持有。历史持仓查询仍读取 `position_snapshots`，不受当前表清理影响。
 
 持仓盈亏统一保留两列：`unrealized_pnl` 是按买入成本计算的总持仓浮盈；`day_unrealized_pnl` 是当日持仓浮动贡献，老仓按今日开盘价作日内基准，当日买入按当日买入成交成本作基准。当前持仓查询会在账本字段缺失或行情更新时结合 Meridian level1 snapshot 和当日成交账本重算，历史持仓查询只读取 `position_snapshots` 已落盘字段。
+
+OC 2026-08-03 版本为持仓增加 `total_cost`、`avg_cost_source` 和 `cost_complete`。Relay 优先使用 `cost_complete=true` 的柜台总成本作为可信起算成本；`avg_cost_source=unavailable` 时不得回退信任 `avg_cost`。旧 OC 的 `market_value` 实际承载 `TotalPosCost`，不是盯市市值，因此 Relay 不再把该字段直接写入标准市值；当前市值统一使用 Meridian 行情重估，只有 OC 同时提供可靠 `last_price` 时才可在同步层计算 `quantity * last_price`。
 
 ### SubmitOrderRequest
 
@@ -334,6 +339,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
+| `GET` | `/v1/query-status/{origin_message_id}` | - | `QueryCommandStatus` | 已实现，从归档 reply 判断查询是否存在唯一 completed final 终态 |
 | `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
@@ -383,6 +389,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `POST /v1/orders/batch` 会为每笔子订单写入本地草稿，再向 Redis `cmd.trade` 写入一条 `order.batch.submit` command。批量请求的 `202 Accepted` 不表示交易所接单或成交，最终仍以回流事件为准。
 
 当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders`、`GET /v1/fills` 和 `GET /v1/transfers` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 同步循环把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL；同一 `fill_page` 中的普通成交和 `component_transfers[]` 会分别入账。
+
+刷新回执中的 `message_id` 是查询终态关联键。`GET /v1/query-status/{origin_message_id}` 要求查询只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。盘前初始化和盘后结算同时检查本地账本新鲜度与该终态，不能用新鲜时间戳掩盖 OC 查询失败。
 
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 

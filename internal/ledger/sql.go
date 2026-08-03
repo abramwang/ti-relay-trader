@@ -1044,6 +1044,29 @@ GROUP BY stream_role, COALESCE(message_type, ''), COALESCE(action, ''), COALESCE
 ORDER BY stream_role, message_type, action, event_type
 `
 
+const queryCommandRepliesSQL = `
+SELECT
+    COALESCE(body->>'message_id', ''),
+    COALESCE(account_id, ''),
+    COALESCE(action, ''),
+    COALESCE(status, ''),
+    COALESCE(code, ''),
+    COALESCE(body->>'message', ''),
+    COALESCE(body->>'result_type', ''),
+    CASE lower(COALESCE(body #>> '{chunk,is_last}', 'false'))
+        WHEN 'true' THEN TRUE
+        ELSE FALSE
+    END,
+    COALESCE(request_id, ''),
+    stream_key,
+    stream_id,
+    received_at
+FROM raw_stream_messages
+WHERE message_type = 'reply'
+  AND origin_message_id = $1
+ORDER BY received_at, raw_message_pk
+`
+
 const positionSelectColumns = `
 SELECT
     account_id,
@@ -1056,6 +1079,9 @@ SELECT
     initial_qty,
     today_qty,
     avg_cost,
+    total_cost,
+    avg_cost_source,
+    cost_complete,
     last_price,
     market_value,
     unrealized_pnl,
@@ -1079,6 +1105,9 @@ SELECT
     initial_qty,
     today_qty,
     avg_cost,
+    total_cost,
+    avg_cost_source,
+    cost_complete,
     last_price,
     market_value,
     unrealized_pnl,
@@ -1100,6 +1129,9 @@ INSERT INTO positions (
     initial_qty,
     today_qty,
     avg_cost,
+    total_cost,
+    avg_cost_source,
+    cost_complete,
     last_price,
     market_value,
     unrealized_pnl,
@@ -1111,7 +1143,8 @@ INSERT INTO positions (
     updated_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21
 )
 ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     name = EXCLUDED.name,
@@ -1120,6 +1153,9 @@ ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     initial_qty = EXCLUDED.initial_qty,
     today_qty = EXCLUDED.today_qty,
     avg_cost = EXCLUDED.avg_cost,
+    total_cost = EXCLUDED.total_cost,
+    avg_cost_source = EXCLUDED.avg_cost_source,
+    cost_complete = EXCLUDED.cost_complete,
     last_price = EXCLUDED.last_price,
     market_value = EXCLUDED.market_value,
     unrealized_pnl = EXCLUDED.unrealized_pnl,
@@ -1150,6 +1186,9 @@ INSERT INTO position_snapshots (
     initial_qty,
     today_qty,
     avg_cost,
+    total_cost,
+    avg_cost_source,
+    cost_complete,
     last_price,
     market_value,
     unrealized_pnl,
@@ -1161,7 +1200,8 @@ INSERT INTO position_snapshots (
     captured_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21, $22, $23
 )
 ON CONFLICT (trade_date, account_id, snapshot_type, symbol, exchange) DO UPDATE SET
     name = EXCLUDED.name,
@@ -1170,6 +1210,9 @@ ON CONFLICT (trade_date, account_id, snapshot_type, symbol, exchange) DO UPDATE 
     initial_qty = EXCLUDED.initial_qty,
     today_qty = EXCLUDED.today_qty,
     avg_cost = EXCLUDED.avg_cost,
+    total_cost = EXCLUDED.total_cost,
+    avg_cost_source = EXCLUDED.avg_cost_source,
+    cost_complete = EXCLUDED.cost_complete,
     last_price = EXCLUDED.last_price,
     market_value = EXCLUDED.market_value,
     unrealized_pnl = EXCLUDED.unrealized_pnl,

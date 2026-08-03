@@ -986,6 +986,37 @@ func TestRefreshAccountAsset(t *testing.T) {
 	}
 }
 
+func TestQueryStatusReturnsArchivedTerminalState(t *testing.T) {
+	store := &fakeSettlementStore{queryStatus: ledger.QueryCommandStatus{
+		OriginMessageID:    "msg-asset-1",
+		AccountID:          "acct-1",
+		Action:             redisstream.ActionAccountAsset,
+		ExpectedResultType: "asset_page",
+		State:              "completed",
+		Terminal:           true,
+		Success:            true,
+		ReplyCount:         1,
+		TerminalCount:      1,
+	}}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/query-status/msg-asset-1", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if store.queryStatusMessageID != "msg-asset-1" {
+		t.Fatalf("origin_message_id = %q", store.queryStatusMessageID)
+	}
+	if !strings.Contains(rec.Body.String(), `"state":"completed"`) || !strings.Contains(rec.Body.String(), `"success":true`) {
+		t.Fatalf("query status response = %s", rec.Body.String())
+	}
+}
+
 func TestRefreshAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		refreshPositionsResult: orderflow.RefreshQueryResult{
@@ -3184,6 +3215,8 @@ type fakeSettlementStore struct {
 	performanceSeriesAccountID string
 	performanceSeriesDateFrom  string
 	performanceSeriesDateTo    string
+	queryStatus                ledger.QueryCommandStatus
+	queryStatusMessageID       string
 	err                        error
 }
 
@@ -3294,6 +3327,14 @@ func (store *fakeSettlementStore) RawStreamSummary(_ context.Context, _ string, 
 		return nil, store.err
 	}
 	return []ledger.RawStreamSummaryBucket{{Role: "event", MessageType: "event", EventType: "order.event", Count: 1}}, nil
+}
+
+func (store *fakeSettlementStore) GetQueryCommandStatus(_ context.Context, originMessageID string) (ledger.QueryCommandStatus, error) {
+	store.queryStatusMessageID = originMessageID
+	if store.err != nil {
+		return ledger.QueryCommandStatus{}, store.err
+	}
+	return store.queryStatus, nil
 }
 
 func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun) (ledger.JobRun, error) {

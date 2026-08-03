@@ -109,6 +109,9 @@ class Position:
     initial_qty: int = 0
     today_qty: int = 0
     avg_cost: float = 0.0
+    total_cost: float = 0.0
+    avg_cost_source: str = ""
+    cost_complete: bool = False
     last_price: float = 0.0
     market_value: float = 0.0
     unrealized_pnl: float = 0.0
@@ -130,6 +133,9 @@ class Position:
             initial_qty=_int(data, "initial_qty"),
             today_qty=_int(data, "today_qty"),
             avg_cost=_float(data, "avg_cost"),
+            total_cost=_float(data, "total_cost"),
+            avg_cost_source=_text(data, "avg_cost_source"),
+            cost_complete=_bool(data, "cost_complete"),
             last_price=_float(data, "last_price"),
             market_value=_float(data, "market_value"),
             unrealized_pnl=_float(data, "unrealized_pnl"),
@@ -432,6 +438,75 @@ class CommandReceipt:
     @property
     def status(self) -> str:
         return self.order.status if self.order else ""
+
+
+@dataclass(frozen=True)
+class QueryReplyStatus:
+    message_id: str = ""
+    account_id: str = ""
+    action: str = ""
+    status: str = ""
+    code: str = ""
+    message: str = ""
+    result_type: str = ""
+    is_last: bool = False
+    request_id: str = ""
+    stream_key: str = ""
+    stream_id: str = ""
+    received_at: str = ""
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "QueryReplyStatus":
+        return cls(
+            message_id=_text(data, "message_id"),
+            account_id=_text(data, "account_id"),
+            action=_text(data, "action"),
+            status=_text(data, "status"),
+            code=_text(data, "code"),
+            message=_text(data, "message"),
+            result_type=_text(data, "result_type"),
+            is_last=_bool(data, "is_last"),
+            request_id=_text(data, "request_id"),
+            stream_key=_text(data, "stream_key"),
+            stream_id=_text(data, "stream_id"),
+            received_at=_text(data, "received_at"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class QueryCommandStatus:
+    origin_message_id: str = ""
+    account_id: str = ""
+    action: str = ""
+    expected_result_type: str = ""
+    state: str = "pending"
+    terminal: bool = False
+    success: bool = False
+    contradictory: bool = False
+    reply_count: int = 0
+    terminal_count: int = 0
+    replies: tuple[QueryReplyStatus, ...] = ()
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "QueryCommandStatus":
+        replies = data.get("replies") if isinstance(data.get("replies"), list) else []
+        return cls(
+            origin_message_id=_text(data, "origin_message_id"),
+            account_id=_text(data, "account_id"),
+            action=_text(data, "action"),
+            expected_result_type=_text(data, "expected_result_type"),
+            state=_text(data, "state") or "pending",
+            terminal=_bool(data, "terminal"),
+            success=_bool(data, "success"),
+            contradictory=_bool(data, "contradictory"),
+            reply_count=_int(data, "reply_count"),
+            terminal_count=_int(data, "terminal_count"),
+            replies=tuple(QueryReplyStatus.from_dict(item) for item in replies if isinstance(item, Mapping)),
+            raw=dict(data),
+        )
 
 
 @dataclass(frozen=True)

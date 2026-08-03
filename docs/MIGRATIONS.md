@@ -213,6 +213,7 @@ scripts/test-postgres-integration.sh
 11. `etf_component_transfers` 与 `fills` 分表：普通成交只接受正价格、正数量和稳定订单标识，ETF 申购赎回成分划转保持独立 transfer 语义，空 `component_value` 必须保留为 `NULL`。
 12. `raw_stream_messages` 对 `stream_role=dlq AND action=adapter.data_quality` 建部分索引，供后续质量告警和人工处置查询。
 13. `stream_dlq_reviews` 通过 `(stream_key, stream_id)` 外键关联 raw DLQ，每次确认、忽略或标记已重放均追加不可变记录；当前状态取最新 `review_id`，未审核消息视为 `pending`。
+14. `000024_oc_position_cost_quality` 为当前持仓和历史快照增加 `total_cost/avg_cost_source/cost_complete`；这些字段记录柜台成本质量，绝不能代替行情市值。
 
 ## 手动执行示例
 
@@ -235,6 +236,7 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000020_performance_cost_ledger
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000021_performance_nav_gold.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000022_order_fee_records.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000023_position_cost_corporate_actions.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000024_oc_position_cost_quality.up.sql
 ```
 
 使用 relayctl：

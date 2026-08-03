@@ -8,7 +8,7 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的实时与收盘账本已通过：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查，所有订单、成交和划转均有实时 event 覆盖；六账户命令组 `pending=0,lag=0`，18 条历史 query PEL 正确转为真实关联的 `QUERY_INTERRUPTED` 后 ACK，无新增 `BAD_RECOVERED_COMMAND`。12 条真实撤单拒绝均使用 Relay 标准账户，柜台账户只保留在 adapter context，昨天 OC 的三项定向修复已通过实盘验收。15:15 已恢复完成六账户 close 资产及 150 条正持仓快照，下一步等待 17:45 绩效任务验证成本池、数量桥和 economic NAV。新发现 OC P1：`account.asset.query` 在有效资金页后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落账，但 OC 需修正终态，Relay 日任务也要增加命令终态门禁。OC 无历史查询能力，7 月历史缺口不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的实时与收盘账本已通过：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查，所有订单、成交和划转均有实时 event 覆盖；六账户命令组 `pending=0,lag=0`，18 条历史 query PEL 正确转为真实关联的 `QUERY_INTERRUPTED` 后 ACK，无新增 `BAD_RECOVERED_COMMAND`。OC 已修正资金查询矛盾终态并新增持仓总成本质量字段；Relay 已接入 `total_cost/avg_cost_source/cost_complete`、隔离华鑫伪市值，并为盘前/盘后任务增加查询命令终态门禁。由于 OC 按部署计划在交易日 15:30 关闭，本轮运行态复测安排在下一次 `broker_ready=true` 且 15:30 前完成；15:10 只关闭本机行情采集，不是 OC 查询截止时间。OC 无历史查询能力，7 月历史缺口不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。heartbeat unsupported 误报已修复；收盘后 6 个 gateway 正常进入 `off_hours`，24 条输出 stream healthy、lag 为 0。当前 56 条 pending DLQ 由原 38 条历史记录和本次 18 条预期 `QUERY_INTERRUPTED` 恢复审计组成，因此运行汇总仍为 `degraded/attention`，当前 Redis/数据库/worker/API/行情链路均正常。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
 - 最近更新时间: `2026-08-03`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
@@ -139,8 +139,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
 | `http://relay-trader.quantstage.com/operations` | Gateway 心跳、Redis Stream lag、checkpoint 与 DLQ 运维 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -308,12 +308,13 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 修复 worker 把合法 heartbeat 计为 unsupported 的运维误报；heartbeat 仍归档并推进 checkpoint，部署后 6 条心跳 stream 和 24 条 output stream 全部健康。
 - [x] 修复当前交易日分钟 K 线在 15:00 后的归档空窗：默认 `auto` 查询若正常返回空数据，Relay 会回退 Meridian `realtime`，历史归档有数据后仍优先使用 historical，终端无需硬编码新的行情口径。
 - [x] 完成 `2026-08-03` OC 收盘实盘验收：六账户 `cmd.trade/cmd.query pending=0,lag=0`，最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查；订单、成交和划转实时覆盖率均为 100%，12 条真实撤单拒绝账户字段符合 v1.2 协议，六账户 close 资产和 150 条正持仓完成固化。
+- [x] 接入 OC 2026-08-03 兼容更新：持仓成本质量字段已进入当前/历史持仓和绩效成本池，华鑫旧 `market_value=TotalPosCost` 不再作为标准市值；新增查询终态 API 与 SDK，并让盘前/盘后任务同时校验账本新鲜度和唯一 completed final reply。
 
 ## 待办事项
 
 1. 完成 N13 新数据口径验收的绩效阶段：实时账本、实际费用、15:01 权威刷新和 close 快照已通过；等待 17:45 `performance_daily` 对 `307000051387/1388/1389` 和债享5号验证行情、成本账、数量桥和 economic NAV。只有 `ready` 账户才能进入正式绩效发布。7 月历史缺口不再调用 OC 或推断补齐，后续单独导入券商交割单。
 2. ETF T0 成本池和 PCF 单位门禁已完成；后续等待权威数据补充现金替代、跨市场代买代卖和公募回款结算输入，不在 Relay 内估造清算事实。
-3. OC v1.2 的 PEL 恢复、实时订单成交、ETF 划转、实际费用和撤单拒绝账户语义已通过；先修正资金查询“有效数据页后又返回 failed”的矛盾终态，并给 Relay 日任务增加命令终态门禁。后续受控交易机会继续补充撤单超时、长订单 ID 跨重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 样本。生产交易权限继续保持关闭。
+3. OC 资金查询修正和 Relay 查询终态门禁均已完成代码接入；下一次 OC `broker_ready=true` 后、15:30 关停前，复测六账户资金与持仓查询只产生唯一 completed final reply，并确认 `cmd.query pending=0,lag=0`、成本来源与券商终端一致。后续受控交易机会继续补充撤单超时、长订单 ID 跨重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 样本。生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
 
@@ -377,7 +378,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -612,3 +613,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-03`: 修复交易终端当日分钟 K 线在 15:00 后空白的问题。根因是 Relay 按时间切换到 Meridian `data_scope=auto` 后，上游在实时 journal 与当日 historical 归档之间存在空窗，接口 HTTP 200 但 `data=[]`；同证券 `realtime` 仍有完整分钟线。当前默认 auto 查询为空时会即时回退 realtime，显式 data_scope 请求保持原语义；新增盘后归档空窗单测并完成生产发布。
 - `2026-08-03`: 修复 15:01 盘后结算失败。六账户刷新均成功，但 `307000051388/1387` 的资金持仓在约 47 秒回写，刚好越过共享 45 秒门限；其余四账户快照接口实际 10.01 秒返回 202，又被普通 10 秒客户端提前判超时。共享新鲜度窗口调整为 60 秒，结算快照使用独立 30 秒 HTTP 超时，每账户 Meridian 持仓估值补全限制为 3 秒。15:15 在不查询已关停 OC 的前提下使用 15:02 权威本地账本恢复结算，6 份 close 资产和 150 条 close 持仓全部落库，任务 `succeeded`。同时确认唯一差异是 `159915.SZ` ETF 赎回按 99 条 transfer 入账却被普通 fill 数量规则误报，现已将 `P/R` 申赎排除出普通 order/fill 数量核对。
 - `2026-08-03`: 完成 OC v1.2 收盘实盘验收。最终 15,756 笔订单全部终态，15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项唯一性、关联、业务语义、东八区时间及金额闭合检查，异常计数全部为 0；所有订单、成交和划转均有实时 event 覆盖，盘后查询没有补出实时漏单。六账户命令组 `pending=0,lag=0`，当天没有新增恢复类 DLQ；12 条自然撤单拒绝全部使用 Relay 标准账户并在 adapter context 保留柜台账户，因此 OC `70c966d/7110a76/701d5af` 三项更新均通过。新发现 OC P1：18 次资金查询都先返回有效 partial 数据页，约 2 毫秒后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落库，但 OC 应改为单一 completed final page，Relay 日任务也将补命令终态门禁。详细证据见 `docs/OC_V1_2_VALIDATION_REPORT_20260803.md`。
+- `2026-08-03`: 按 `RELAY_COMPATIBILITY_NOTICE_20260803.md` 完成 Relay 兼容改造。持仓及快照新增柜台总成本、成本来源和完整性字段；同步层停止把华鑫 `TotalPosCost` 误作标准市值，绩效成本池只信任完整总成本或无新质量字段的历史兼容均价。新增 `/v1/query-status/{origin_message_id}` 和 SDK `0.1.25`，盘前/盘后任务要求资产、持仓新鲜度与唯一 completed final 查询终态同时通过，旧“有效资金页后 failed”样本会被明确阻断。生产 migration `000024` 已应用，API/worker 重启健康，统一只读发布验收 13/13 通过并保存在 `/tmp/relay-readonly-release-20260803-oc-compat.json`；生产下单账户仍为 0。OC 由部署计划在 15:30 关闭，下一交易窗口在 `broker_ready=true` 后、15:30 前完成新回包实测。

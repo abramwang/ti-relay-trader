@@ -1120,8 +1120,11 @@ func positionsFromReplyEnvelope(envelope EntryEnvelope) ([]trading.Position, []a
 			InitialQty:       item.InitialQty,
 			TodayQty:         item.TodayQty,
 			AvgCost:          item.AvgCost,
+			TotalCost:        item.TotalCost,
+			AvgCostSource:    item.AvgCostSource,
+			CostComplete:     item.CostComplete,
 			LastPrice:        item.LastPrice,
-			MarketValue:      item.MarketValue,
+			MarketValue:      reliablePositionMarketValue(item),
 			UnrealizedPnL:    item.UnrealizedPnL,
 			DayUnrealizedPnL: item.DayUnrealizedPnL,
 			SettledProfit:    item.SettledProfit,
@@ -1747,12 +1750,22 @@ type positionPayload struct {
 	InitialQty       int64   `json:"initial_qty"`
 	TodayQty         int64   `json:"today_qty"`
 	AvgCost          float64 `json:"avg_cost"`
+	TotalCost        float64 `json:"total_cost"`
+	AvgCostSource    string  `json:"avg_cost_source"`
+	CostComplete     bool    `json:"cost_complete"`
 	LastPrice        float64 `json:"last_price"`
 	MarketValue      float64 `json:"market_value"`
 	UnrealizedPnL    float64 `json:"unrealized_pnl"`
 	DayUnrealizedPnL float64 `json:"day_unrealized_pnl"`
 	SettledProfit    float64 `json:"settled_profit"`
 	ShareholderID    string  `json:"shareholder_id"`
+}
+
+func reliablePositionMarketValue(item positionPayload) float64 {
+	if item.Quantity <= 0 || item.LastPrice <= 0 {
+		return 0
+	}
+	return float64(item.Quantity) * item.LastPrice
 }
 
 func mergeEnvelopeFields(payload *orderPayload, envelope EntryEnvelope) {

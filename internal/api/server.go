@@ -88,6 +88,10 @@ type SettlementStore interface {
 	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
 }
 
+type QueryStatusStore interface {
+	GetQueryCommandStatus(ctx context.Context, originMessageID string) (ledger.QueryCommandStatus, error)
+}
+
 type AccountAliasStore interface {
 	AccountAliases(ctx context.Context, accountIDs []string) (map[string]string, error)
 	UpsertAccountAlias(ctx context.Context, accountID string, brokerID string, alias string) error
@@ -230,6 +234,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
+	mux.HandleFunc("/v1/query-status/", server.handleQueryStatus)
 	mux.HandleFunc("/v1/operations/status", server.handleOperationsStatus)
 	mux.HandleFunc("/v1/operations/dlq/reviews", server.handleDeadLetterReviews)
 	mux.HandleFunc("/v1/operations/dlq/review", server.handleDeadLetterReview)
@@ -247,6 +252,29 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/", server.handleNotFound)
 
 	return httpx.RequestLogger(logger)(mux)
+}
+
+func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	store, ok := s.settles.(QueryStatusStore)
+	if !ok || store == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "query status store is unavailable", nil)
+		return
+	}
+	originMessageID, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/v1/query-status/"))
+	if err != nil || strings.TrimSpace(originMessageID) == "" || strings.Contains(originMessageID, "/") {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid origin_message_id", nil)
+		return
+	}
+	result, err := store.GetQueryCommandStatus(r.Context(), originMessageID)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {

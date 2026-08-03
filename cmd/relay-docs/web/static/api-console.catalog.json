@@ -439,6 +439,17 @@
     ]
   },
   {
+    "id": "query-status",
+    "group": "账户",
+    "title": "查询命令终态",
+    "method": "GET",
+    "path": "/v1/query-status/{origin_message_id}",
+    "status": "ready",
+    "fields": [
+      { "name": "origin_message_id", "label": "刷新回执 message_id", "source": "path", "required": true, "defaultValue": "" }
+    ]
+  },
+  {
     "id": "submit-order",
     "group": "交易",
     "title": "单笔下单",

@@ -316,8 +316,11 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
   -> Redis {prefix}:cmd.query XADD account.*.query/order.list.query/fill.list.query
   -> 前置 reply asset_page/position_page/order_page/fill_page
   -> PostgreSQL asset_snapshots/positions/orders/fills
+  -> 按 origin_message_id 校验唯一 completed final 查询终态
   -> 本地 GET 查询和 SSE/轮询刷新页面
 ```
+
+盘前和盘后任务不能只以 `updated_at` 判断刷新成功。每个 refresh receipt 的 `message_id` 必须关联到唯一 `completed` reply，且 `result_type` 与 action 匹配、`chunk.is_last=true`；失败、缺终态或矛盾终态会独立阻断该账户快照。生产 OC 当前由部署计划在交易日 `15:30 Asia/Shanghai` 关闭，`15:01` 权威结算处于有效查询窗口内，Relay 不把本机 `15:10` 行情采集关闭任务解释为 OC 离线。
 
 收盘后结算：
 

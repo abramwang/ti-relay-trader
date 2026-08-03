@@ -18,6 +18,7 @@ from relay.jobs.common import (  # noqa: E402
     run_daily_performance,
     run_post_close_settlement,
     run_pre_open_init,
+    refreshed_query_terminal_status,
     settlement_snapshot_client,
 )
 from relay_sdk import RelayClient  # noqa: E402
@@ -25,7 +26,13 @@ from relay_sdk import RelayClient  # noqa: E402
 
 class FakeReceipt:
     def __init__(self, account_id: str, action: str) -> None:
-        self.raw = {"account_id": account_id, "action": action, "stream_id": f"{action}-1"}
+        self.message_id = f"msg-{account_id}-{action}"
+        self.raw = {
+            "account_id": account_id,
+            "action": action,
+            "message_id": self.message_id,
+            "stream_id": f"{action}-1",
+        }
 
 
 class FakeClient:
@@ -47,6 +54,8 @@ class FakeClient:
         self.cost_status: dict[str, str] = {}
         self.nav_status: dict[str, str] = {}
         self.performance_flags: dict[str, list[str]] = {}
+        self.query_statuses: dict[str, dict[str, object]] = {}
+        self.query_actions: dict[str, str] = {}
 
     def status(self):
         return self.status_value
@@ -68,6 +77,31 @@ class FakeClient:
 
     def refresh_positions(self, account_id: str):
         return self._refresh(account_id, "account.positions.query")
+
+    def get_query_status(self, origin_message_id: str):
+        status = self.query_statuses.get(origin_message_id)
+        if status is not None:
+            return dict(status)
+        action = self.query_actions.get(origin_message_id, "")
+        expected = {
+            "order.list.query": "order_page",
+            "fill.list.query": "fill_page",
+            "fee.list.query": "fee_page",
+            "account.asset.query": "asset_page",
+            "account.positions.query": "position_page",
+        }.get(action, "")
+        return {
+            "origin_message_id": origin_message_id,
+            "action": action,
+            "expected_result_type": expected,
+            "state": "completed",
+            "terminal": True,
+            "success": True,
+            "contradictory": False,
+            "reply_count": 1,
+            "terminal_count": 1,
+            "replies": [{"status": "completed", "result_type": expected, "is_last": True}],
+        }
 
     def get_asset(self, account_id: str):
         if account_id in self.asset_errors:
@@ -155,7 +189,9 @@ class FakeClient:
             self.asset_updated_at[account_id] = datetime.now(BUSINESS_TZ)
         if action == "account.positions.query" and account_id not in self.lagging_positions:
             self.position_updated_at[account_id] = datetime.now(BUSINESS_TZ)
-        return FakeReceipt(account_id, action)
+        receipt = FakeReceipt(account_id, action)
+        self.query_actions[receipt.message_id] = action
+        return receipt
 
 
 class BatchGateClient(FakeClient):
@@ -169,7 +205,9 @@ class BatchGateClient(FakeClient):
 
     def _refresh(self, account_id: str, action: str) -> FakeReceipt:
         self.refresh_calls.append((account_id, action))
-        return FakeReceipt(account_id, action)
+        receipt = FakeReceipt(account_id, action)
+        self.query_actions[receipt.message_id] = action
+        return receipt
 
     def _release_refreshes(self) -> None:
         position_queries = {
@@ -432,6 +470,75 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(report["snapshot_account_ids"], [])
         self.assertIn("no account has confirmed refreshed asset/positions", report["settlement_snapshot"]["error"])
         self.assertEqual(client.settlement_calls, [])
+
+    def test_post_close_blocks_fresh_asset_with_failed_query_terminal(self) -> None:
+        client = FakeClient()
+        message_id = "msg-acct-1-account.asset.query"
+        client.query_statuses[message_id] = {
+            "origin_message_id": message_id,
+            "account_id": "acct-1",
+            "action": "account.asset.query",
+            "expected_result_type": "asset_page",
+            "state": "failed",
+            "terminal": True,
+            "success": False,
+            "contradictory": False,
+            "reply_count": 2,
+            "terminal_count": 1,
+            "replies": [
+                {"status": "partial", "result_type": "asset_page", "is_last": False},
+                {"status": "failed", "result_type": "error_result", "code": "QUERY_EMPTY_RESULT"},
+            ],
+        }
+
+        report = run_post_close_settlement(
+            JobOptions(
+                job_name="post_close_settlement",
+                account_ids=("acct-1",),
+                refresh_wait_seconds=0,
+                refresh_timeout_seconds=0.05,
+                refresh_poll_seconds=0.01,
+            ),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        account = report["accounts"][0]
+        self.assertTrue(account["refresh_freshness"]["asset_fresh"])
+        self.assertTrue(account["refresh_freshness"]["query_terminal_failure"])
+        self.assertTrue(account["snapshot_blocked"])
+        self.assertIn("QUERY_EMPTY_RESULT", account["errors"][0])
+        self.assertFalse(report["ok"])
+        self.assertEqual(client.settlement_calls, [])
+
+    def test_query_terminal_without_archived_reply_remains_pending(self) -> None:
+        client = FakeClient()
+        message_id = "msg-acct-1-account.asset.query"
+        client.query_statuses[message_id] = {
+            "origin_message_id": message_id,
+            "state": "pending",
+            "terminal": False,
+            "success": False,
+            "reply_count": 0,
+            "terminal_count": 0,
+            "replies": [],
+        }
+        report = {
+            "refresh": [{
+                "step": "asset",
+                "ok": True,
+                "result": {
+                    "message_id": message_id,
+                    "action": "account.asset.query",
+                },
+            }],
+        }
+
+        status = refreshed_query_terminal_status(client, report)
+
+        self.assertFalse(status["ok"])
+        self.assertFalse(status["terminal_failure"])
+        self.assertEqual(status["commands"]["asset"]["state"], "pending")
 
 
 if __name__ == "__main__":

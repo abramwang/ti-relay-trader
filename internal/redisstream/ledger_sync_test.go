@@ -80,7 +80,7 @@ func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 			"status":"partial",
 			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
 			"produced_at":"2026-06-13T10:00:01Z",
-			"payload":{"items":[{"account_id":"00030484","symbol":"600000","exchange":"SH","quantity":100,"sellable_qty":80,"avg_cost":9.54,"market_value":954,"shareholder_id":"A00030484"}]}
+			"payload":{"items":[{"account_id":"00030484","symbol":"600000","exchange":"SH","quantity":100,"sellable_qty":80,"avg_cost":9.54,"total_cost":954,"avg_cost_source":"broker_total_position_cost","cost_complete":true,"market_value":954,"shareholder_id":"A00030484"}]}
 		}`,
 	})
 
@@ -89,6 +89,13 @@ func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 	}
 	if len(writer.positions) != 1 || writer.positions[0].position.Symbol != "600000" {
 		t.Fatalf("positions = %#v", writer.positions)
+	}
+	position := writer.positions[0].position
+	if position.TotalCost != 954 || position.AvgCostSource != "broker_total_position_cost" || !position.CostComplete {
+		t.Fatalf("position cost quality = %#v", position)
+	}
+	if position.MarketValue != 0 {
+		t.Fatalf("broker TotalPosCost leaked into standardized market_value: %#v", position)
 	}
 }
 

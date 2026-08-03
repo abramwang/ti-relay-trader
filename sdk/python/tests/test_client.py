@@ -47,7 +47,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "data": {"asset": {"account_id": "acct-1", "net_asset": 123.45}}})
             return
         if parsed.path == "/v1/accounts/acct-1/positions":
-            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100}]}})
+            self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100, "avg_cost": 9.54, "total_cost": 954.0, "avg_cost_source": "broker_total_position_cost", "cost_complete": True}]}})
             return
         if parsed.path == "/v1/accounts/acct-1/positions/history":
             self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "trade_date": "2026-06-12", "snapshot_type": query.get("snapshot_type", ["close"])[0], "symbol": "600000", "quantity": 100}]}})
@@ -167,6 +167,26 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/v1/jobs/runs":
             self._json({"ok": True, "data": {"runs": [{"job_name": "post_close_settlement", "target_trade_date": query.get("trade_date", [""])[0]}]}})
+            return
+        if parsed.path == "/v1/query-status/msg-asset-1":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "origin_message_id": "msg-asset-1",
+                        "account_id": "acct-1",
+                        "action": "account.asset.query",
+                        "expected_result_type": "asset_page",
+                        "state": "completed",
+                        "terminal": True,
+                        "success": True,
+                        "contradictory": False,
+                        "reply_count": 1,
+                        "terminal_count": 1,
+                        "replies": [{"status": "completed", "result_type": "asset_page", "is_last": True}],
+                    },
+                }
+            )
             return
         if parsed.path == "/v1/meridian/market/bars":
             self._json(
@@ -606,10 +626,21 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.status()["status"], "ok")
         self.assertEqual(self.client.list_accounts()[0].account_id, "acct-1")
         self.assertEqual(self.client.get_asset().net_asset, 123.45)
-        self.assertEqual(self.client.get_positions()[0].symbol, "600000")
+        position = self.client.get_positions()[0]
+        self.assertEqual(position.symbol, "600000")
+        self.assertEqual(position.total_cost, 954.0)
+        self.assertEqual(position.avg_cost_source, "broker_total_position_cost")
+        self.assertTrue(position.cost_complete)
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
         self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
+
+    def test_query_status_returns_terminal_model(self):
+        status = self.client.get_query_status("msg-asset-1")
+        self.assertEqual(status.state, "completed")
+        self.assertTrue(status.success)
+        self.assertEqual(status.expected_result_type, "asset_page")
+        self.assertEqual(status.replies[0].result_type, "asset_page")
 
     def test_history_queries_use_history_endpoints(self):
         open_position = self.client.get_positions(history=True, trade_date="20260612", snapshot_type="open")[0]

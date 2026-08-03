@@ -36,6 +36,8 @@ def main() -> None:
         status.get("status") in allowed_statuses,
         f"service status is not accepted: {status.get('status')!r}",
     )
+    if status.get("status") == "degraded":
+        require_core_dependencies(status)
 
     accounts = client.list_accounts()
     require(accounts, "no accounts returned by /v1/accounts")
@@ -95,6 +97,13 @@ def dependency_statuses(status: dict[str, Any]) -> dict[str, str]:
         if isinstance(value, dict):
             output[name] = str(value.get("status", ""))
     return output
+
+
+def require_core_dependencies(status: dict[str, Any]) -> None:
+    dependencies = dependency_statuses(status)
+    required = ("database", "redis", "worker", "event_bridge", "market", "order_service", "event_stream")
+    unhealthy = [f"{name}={dependencies.get(name) or 'missing'}" for name in required if dependencies.get(name) != "ok"]
+    require(not unhealthy, "degraded status has unhealthy core dependencies: " + ", ".join(unhealthy))
 
 
 def require(condition: bool, message: str) -> None:

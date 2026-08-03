@@ -153,6 +153,9 @@ type Position struct {
 	InitialQty       int64     `json:"initial_qty,omitempty"`
 	TodayQty         int64     `json:"today_qty,omitempty"`
 	AvgCost          float64   `json:"avg_cost"`
+	TotalCost        float64   `json:"total_cost,omitempty"`
+	AvgCostSource    string    `json:"avg_cost_source,omitempty"`
+	CostComplete     bool      `json:"cost_complete"`
 	LastPrice        float64   `json:"last_price,omitempty"`
 	MarketValue      float64   `json:"market_value"`
 	UnrealizedPnL    float64   `json:"unrealized_pnl,omitempty"`

@@ -13,12 +13,23 @@ from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import RelayConnectionError, RelayError, RelayTimeoutError, error_from_payload
-from .models import Account, Asset, CommandReceipt, ComponentTransfer, Fill, Order, OrderFeeRecord, Position, RelayEvent
+from .models import (
+    Account,
+    Asset,
+    CommandReceipt,
+    ComponentTransfer,
+    Fill,
+    Order,
+    OrderFeeRecord,
+    Position,
+    QueryCommandStatus,
+    RelayEvent,
+)
 from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.24"
+SDK_VERSION = "0.1.25"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -142,6 +153,15 @@ class RelayClient:
         """Ask OC for order-level fees for its current broker trading day."""
 
         return self._refresh("fees", account_id)
+
+    def get_query_status(self, origin_message_id: str) -> QueryCommandStatus:
+        """Return the archived OC reply terminal state for a published query."""
+
+        message_id = str(origin_message_id).strip()
+        if not message_id:
+            raise ValueError("origin_message_id is required")
+        data = self._request("GET", f"/v1/query-status/{parse.quote(message_id, safe='')}")
+        return QueryCommandStatus.from_dict(data)
 
     def list_orders(
         self,

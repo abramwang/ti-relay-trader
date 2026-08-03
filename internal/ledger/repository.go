@@ -90,6 +90,35 @@ type RawStreamMessage struct {
 	ReceivedAt     time.Time
 }
 
+type QueryReplyStatus struct {
+	MessageID  string    `json:"message_id,omitempty"`
+	AccountID  string    `json:"account_id,omitempty"`
+	Action     string    `json:"action,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	Code       string    `json:"code,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	ResultType string    `json:"result_type,omitempty"`
+	IsLast     bool      `json:"is_last"`
+	RequestID  string    `json:"request_id,omitempty"`
+	StreamKey  string    `json:"stream_key,omitempty"`
+	StreamID   string    `json:"stream_id,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+type QueryCommandStatus struct {
+	OriginMessageID    string             `json:"origin_message_id"`
+	AccountID          string             `json:"account_id,omitempty"`
+	Action             string             `json:"action,omitempty"`
+	ExpectedResultType string             `json:"expected_result_type,omitempty"`
+	State              string             `json:"state"`
+	Terminal           bool               `json:"terminal"`
+	Success            bool               `json:"success"`
+	Contradictory      bool               `json:"contradictory"`
+	ReplyCount         int                `json:"reply_count"`
+	TerminalCount      int                `json:"terminal_count"`
+	Replies            []QueryReplyStatus `json:"replies"`
+}
+
 type StreamCheckpoint struct {
 	StreamKey       string         `json:"stream_key"`
 	Role            string         `json:"stream_role"`
@@ -1176,6 +1205,9 @@ func (repo *Repository) UpsertPosition(ctx context.Context, position trading.Pos
 		normalized.InitialQty,
 		normalized.TodayQty,
 		normalized.AvgCost,
+		normalized.TotalCost,
+		normalized.AvgCostSource,
+		normalized.CostComplete,
 		nullFloat64(normalized.LastPrice),
 		normalized.MarketValue,
 		normalized.UnrealizedPnL,
@@ -1263,6 +1295,9 @@ func (repo *Repository) UpsertPositionSnapshotWithType(ctx context.Context, posi
 		normalized.InitialQty,
 		normalized.TodayQty,
 		normalized.AvgCost,
+		normalized.TotalCost,
+		normalized.AvgCostSource,
+		normalized.CostComplete,
 		nullFloat64(normalized.LastPrice),
 		normalized.MarketValue,
 		normalized.UnrealizedPnL,
@@ -2047,6 +2082,125 @@ func (repo *Repository) RawStreamSummary(ctx context.Context, accountID string, 
 		return nil, fmt.Errorf("raw stream summary rows: %w", err)
 	}
 	return buckets, nil
+}
+
+func (repo *Repository) GetQueryCommandStatus(ctx context.Context, originMessageID string) (QueryCommandStatus, error) {
+	if repo == nil || repo.exec == nil {
+		return QueryCommandStatus{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	originMessageID = strings.TrimSpace(originMessageID)
+	if originMessageID == "" {
+		return QueryCommandStatus{}, fmt.Errorf("%w: origin_message_id is required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return QueryCommandStatus{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, queryCommandRepliesSQL, originMessageID)
+	if err != nil {
+		return QueryCommandStatus{}, fmt.Errorf("query command status %s: %w", originMessageID, err)
+	}
+	defer rows.Close()
+
+	result := QueryCommandStatus{
+		OriginMessageID: originMessageID,
+		State:           "pending",
+		Replies:         []QueryReplyStatus{},
+	}
+	for rows.Next() {
+		var reply QueryReplyStatus
+		if err := rows.Scan(
+			&reply.MessageID,
+			&reply.AccountID,
+			&reply.Action,
+			&reply.Status,
+			&reply.Code,
+			&reply.Message,
+			&reply.ResultType,
+			&reply.IsLast,
+			&reply.RequestID,
+			&reply.StreamKey,
+			&reply.StreamID,
+			&reply.ReceivedAt,
+		); err != nil {
+			return QueryCommandStatus{}, fmt.Errorf("scan query command status: %w", err)
+		}
+		if result.AccountID == "" {
+			result.AccountID = reply.AccountID
+		}
+		if result.Action == "" {
+			result.Action = reply.Action
+		}
+		result.Replies = append(result.Replies, reply)
+	}
+	if err := rows.Err(); err != nil {
+		return QueryCommandStatus{}, fmt.Errorf("query command status rows: %w", err)
+	}
+
+	return summarizeQueryCommandStatus(result), nil
+}
+
+func summarizeQueryCommandStatus(result QueryCommandStatus) QueryCommandStatus {
+	result.State = "pending"
+	result.Terminal = false
+	result.Success = false
+	result.Contradictory = false
+	result.TerminalCount = 0
+	result.ReplyCount = len(result.Replies)
+	result.ExpectedResultType = expectedQueryResultType(result.Action)
+	var completedValid int
+	var completedInvalid int
+	var failed int
+	var dataPages int
+	for _, reply := range result.Replies {
+		if reply.ResultType == result.ExpectedResultType && reply.ResultType != "" {
+			dataPages++
+		}
+		switch strings.ToLower(strings.TrimSpace(reply.Status)) {
+		case "completed":
+			result.TerminalCount++
+			if reply.IsLast && (result.ExpectedResultType == "" || reply.ResultType == result.ExpectedResultType) {
+				completedValid++
+			} else {
+				completedInvalid++
+			}
+		case "failed", "rejected":
+			result.TerminalCount++
+			failed++
+		}
+	}
+	result.Terminal = result.TerminalCount > 0
+	result.Contradictory = failed > 0 && dataPages > 0
+	switch {
+	case result.TerminalCount > 1:
+		result.State = "invalid"
+		result.Contradictory = true
+	case failed == 1:
+		result.State = "failed"
+	case completedInvalid == 1:
+		result.State = "invalid"
+	case completedValid == 1:
+		result.State = "completed"
+		result.Success = true
+	}
+	return result
+}
+
+func expectedQueryResultType(action string) string {
+	switch strings.TrimSpace(action) {
+	case "account.asset.query":
+		return "asset_page"
+	case "account.positions.query":
+		return "position_page"
+	case "order.list.query":
+		return "order_page"
+	case "fill.list.query":
+		return "fill_page"
+	case "fee.list.query":
+		return "fee_page"
+	default:
+		return ""
+	}
 }
 
 func (repo *Repository) queryer() (Queryer, error) {
@@ -3274,6 +3428,9 @@ func scanPosition(row rowScanner) (trading.Position, error) {
 		&position.InitialQty,
 		&position.TodayQty,
 		&position.AvgCost,
+		&position.TotalCost,
+		&position.AvgCostSource,
+		&position.CostComplete,
 		&lastPrice,
 		&position.MarketValue,
 		&position.UnrealizedPnL,
@@ -3311,6 +3468,9 @@ func scanPositionSnapshot(row rowScanner) (trading.Position, error) {
 		&position.InitialQty,
 		&position.TodayQty,
 		&position.AvgCost,
+		&position.TotalCost,
+		&position.AvgCostSource,
+		&position.CostComplete,
 		&lastPrice,
 		&position.MarketValue,
 		&position.UnrealizedPnL,

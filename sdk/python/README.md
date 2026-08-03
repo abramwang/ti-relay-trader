@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.24.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz"
 ```
 
 ## Quick Start
@@ -54,6 +54,19 @@ receipt = client.submit_order(
 
 print(receipt.gateway_order_id, receipt.status)
 ```
+
+Refresh methods return a command receipt. Use its `message_id` to verify that
+OC produced one completed final query reply:
+
+```python
+receipt = client.refresh_asset()
+query = client.get_query_status(receipt.message_id)
+print(query.state, query.success, query.expected_result_type)
+```
+
+`Position` exposes `total_cost`, `avg_cost_source`, and `cost_complete`. A false
+`cost_complete` with an explicit source must not be treated as a trusted
+performance cost.
 
 `submit_order()` and `cancel_order()` return command receipts. A successful
 receipt means relay accepted and published the command; the final exchange state

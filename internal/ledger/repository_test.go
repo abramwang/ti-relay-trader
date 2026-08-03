@@ -1111,7 +1111,9 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 		Quantity:      100,
 		SellableQty:   80,
 		AvgCost:       9.54,
-		MarketValue:   954,
+		TotalCost:     954,
+		AvgCostSource: "broker_total_position_cost",
+		CostComplete:  true,
 		ShareholderID: "A0001",
 	}, "query", map[string]any{"source": "front"}, updatedAt)
 	if err != nil {
@@ -1120,11 +1122,14 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO positions")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, symbol, exchange)")
-	requireArgLen(t, exec.args, 18)
+	requireArgLen(t, exec.args, 21)
 	if exec.args[0] != "acct-1" || exec.args[1] != "600000" || exec.args[3] != trading.ExchangeSH {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[3])
 	}
-	assertJSONContains(t, exec.args[16], `"source":"front"`)
+	if exec.args[9] != float64(954) || exec.args[10] != "broker_total_position_cost" || exec.args[11] != true {
+		t.Fatalf("cost quality args = %#v", exec.args[9:12])
+	}
+	assertJSONContains(t, exec.args[19], `"source":"front"`)
 }
 
 func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
@@ -1144,7 +1149,7 @@ func TestUpsertPositionPreservesZeroSellableQty(t *testing.T) {
 		t.Fatalf("UpsertPosition() error = %v", err)
 	}
 
-	requireArgLen(t, exec.args, 18)
+	requireArgLen(t, exec.args, 21)
 	if exec.args[5] != int64(0) {
 		t.Fatalf("sellable_qty arg = %#v, want 0", exec.args[5])
 	}
@@ -1178,14 +1183,15 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 	capturedAt := time.Date(2026, 6, 14, 16, 5, 0, 0, time.UTC)
 
 	err := repo.UpsertPositionSnapshotWithType(context.Background(), trading.Position{
-		AccountID:   "acct-1",
-		TradeDate:   "20260612",
-		Symbol:      "600000",
-		Exchange:    trading.ExchangeSH,
-		Quantity:    100,
-		SellableQty: 100,
-		AvgCost:     9.54,
-		MarketValue: 954,
+		AccountID:    "acct-1",
+		TradeDate:    "20260612",
+		Symbol:       "600000",
+		Exchange:     trading.ExchangeSH,
+		Quantity:     100,
+		SellableQty:  100,
+		AvgCost:      9.54,
+		TotalCost:    954,
+		CostComplete: true,
 	}, "close", "post_close_settlement", map[string]any{"source": "settlement"}, capturedAt)
 	if err != nil {
 		t.Fatalf("UpsertPositionSnapshot() error = %v", err)
@@ -1193,14 +1199,63 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO position_snapshots")
 	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, snapshot_type, symbol, exchange)")
-	requireArgLen(t, exec.args, 20)
+	requireArgLen(t, exec.args, 23)
 	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" || exec.args[2] != "close" {
 		t.Fatalf("snapshot identity args = %#v", exec.args[:3])
 	}
-	if exec.args[17] != "post_close_settlement" {
-		t.Fatalf("source arg = %#v", exec.args[17])
+	if exec.args[20] != "post_close_settlement" {
+		t.Fatalf("source arg = %#v", exec.args[20])
 	}
-	assertJSONContains(t, exec.args[18], `"source":"settlement"`)
+	assertJSONContains(t, exec.args[21], `"source":"settlement"`)
+}
+
+func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing.T) {
+	completed := summarizeQueryCommandStatus(QueryCommandStatus{
+		OriginMessageID: "msg-asset-1",
+		Action:          "account.asset.query",
+		Replies: []QueryReplyStatus{{
+			Status:     "completed",
+			ResultType: "asset_page",
+			IsLast:     true,
+		}},
+	})
+	if !completed.Success || !completed.Terminal || completed.State != "completed" || completed.TerminalCount != 1 {
+		t.Fatalf("completed status = %#v", completed)
+	}
+
+	contradictory := summarizeQueryCommandStatus(QueryCommandStatus{
+		OriginMessageID: "msg-asset-2",
+		Action:          "account.asset.query",
+		Replies: []QueryReplyStatus{
+			{Status: "partial", ResultType: "asset_page"},
+			{Status: "failed", ResultType: "error_result", Code: "QUERY_EMPTY_RESULT"},
+			{Status: "completed", ResultType: "asset_page", IsLast: true},
+		},
+	})
+	if contradictory.Success || !contradictory.Contradictory || contradictory.State != "invalid" || contradictory.TerminalCount != 2 {
+		t.Fatalf("contradictory status = %#v", contradictory)
+	}
+
+	invalid := summarizeQueryCommandStatus(QueryCommandStatus{
+		OriginMessageID: "msg-position-1",
+		Action:          "account.positions.query",
+		Replies:         []QueryReplyStatus{{Status: "completed", ResultType: "position_page", IsLast: false}},
+	})
+	if invalid.Success || invalid.State != "invalid" {
+		t.Fatalf("invalid final status = %#v", invalid)
+	}
+
+	failedAfterData := summarizeQueryCommandStatus(QueryCommandStatus{
+		OriginMessageID: "msg-asset-3",
+		Action:          "account.asset.query",
+		Replies: []QueryReplyStatus{
+			{Status: "partial", ResultType: "asset_page"},
+			{Status: "failed", ResultType: "error_result", Code: "QUERY_EMPTY_RESULT"},
+		},
+	})
+	if failedAfterData.Success || failedAfterData.State != "failed" || !failedAfterData.Contradictory {
+		t.Fatalf("failed-after-data status = %#v", failedAfterData)
+	}
 }
 
 func TestUpsertStreamCheckpointBuildsCursorWrite(t *testing.T) {

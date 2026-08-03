@@ -967,6 +967,9 @@ rejected
         "quantity": 100,
         "sellable_qty": 100,
         "avg_cost": 9.54,
+        "total_cost": 954.0,
+        "avg_cost_source": "broker_total_position_cost",
+        "cost_complete": true,
         "market_value": 954.0,
         "shareholder_id": "A00030484"
       }
@@ -994,6 +997,10 @@ rejected
 ```
 
 第三方必须把 final chunk 作为查询结束信号。
+
+OC 2026-08-03 版本为持仓增加可选成本质量字段：`total_cost` 是柜台总持仓成本，`avg_cost_source` 说明均价来源，`cost_complete` 表示成本源是否可用。华鑫历史字段 `market_value` 实际同样承载 `TotalPosCost`，并非行情市值；Relay 只保留其原始报文用于审计，标准持仓市值必须使用 Meridian 行情与持仓数量计算。
+
+Relay 按 `origin_message_id` 汇总每次查询的 reply。成功查询必须且只能有一个 `status=completed` 终态，并满足对应 `result_type` 和 `chunk.is_last=true`；数据页之后出现 `failed`、缺少 final chunk 或存在多个终态都不能视为成功。
 
 ### 17.3 订单查询 `order_page`
 

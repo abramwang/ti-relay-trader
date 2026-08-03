@@ -649,11 +649,22 @@ def wait_for_refreshed_ledgers(
             attempts[account_id] += 1
             refresh_started_at = datetime.fromisoformat(str(account_report["refresh_started_at"]))
             freshness = refreshed_ledger_status(client, account_id, required, refresh_started_at)
+            terminal_status = refreshed_query_terminal_status(client, account_report)
+            freshness["query_terminals"] = terminal_status["commands"]
+            freshness["query_terminals_ok"] = terminal_status["ok"]
+            freshness["query_terminal_failure"] = terminal_status["terminal_failure"]
+            freshness["ok"] = bool(freshness.get("ok")) and bool(terminal_status["ok"])
             freshness["attempts"] = attempts[account_id]
             last_reports[account_id] = freshness
             if freshness.get("ok"):
                 freshness["fresh_after_seconds"] = round(time.monotonic() - started_waiting_at, 3)
                 account_report["refresh_freshness"] = freshness
+                del pending[account_id]
+            elif terminal_status["terminal_failure"]:
+                freshness["error"] = query_terminal_error(terminal_status)
+                account_report["refresh_freshness"] = freshness
+                account_report["snapshot_blocked"] = True
+                account_report["errors"].append(str(freshness["error"]))
                 del pending[account_id]
 
         remaining = deadline - time.monotonic()
@@ -676,13 +687,117 @@ def wait_for_refreshed_ledgers(
 
 
 def refresh_timeout_error(report: Mapping[str, Any], timeout_seconds: float) -> str:
+    commands = report.get("query_terminals")
+    command_states = "-"
+    if isinstance(commands, Mapping):
+        command_states = ",".join(
+            f"{step}:{str(value.get('state') or 'unknown')}"
+            for step, value in commands.items()
+            if isinstance(value, Mapping)
+        ) or "-"
     return (
         f"asset/positions refresh not visible in local ledger after "
         f"{timeout_seconds:.1f}s; "
         f"asset_updated_at={report.get('asset_updated_at') or '-'}, "
         f"positions_latest_updated_at={report.get('positions_latest_updated_at') or '-'}, "
-        f"positions_count={report.get('positions_count', 0)}"
+        f"positions_count={report.get('positions_count', 0)}, "
+        f"query_terminals={command_states}"
     )
+
+
+def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, Any]) -> dict[str, Any]:
+    commands: dict[str, dict[str, Any]] = {}
+    terminal_failure = False
+    refreshes = account_report.get("refresh")
+    if not isinstance(refreshes, list) or not refreshes:
+        return {"ok": False, "terminal_failure": True, "commands": commands}
+
+    for refresh in refreshes:
+        if not isinstance(refresh, Mapping):
+            continue
+        step = str(refresh.get("step") or "").strip()
+        if refresh.get("error"):
+            commands[step or "unknown"] = {
+                "state": "invalid",
+                "error": str(refresh.get("error")),
+            }
+            terminal_failure = True
+            continue
+        result = refresh.get("result")
+        if not isinstance(result, Mapping):
+            commands[step or "unknown"] = {
+                "state": "invalid",
+                "error": "refresh receipt missing result",
+            }
+            terminal_failure = True
+            continue
+        message_id = str(result.get("message_id") or "").strip()
+        expected_action = str(result.get("action") or "").strip()
+        if not message_id:
+            commands[step or "unknown"] = {
+                "state": "invalid",
+                "action": expected_action,
+                "error": "refresh receipt missing message_id",
+            }
+            terminal_failure = True
+            continue
+        try:
+            value = client.get_query_status(message_id)
+            status = result_to_jsonable(value)
+            if not isinstance(status, Mapping):
+                raise RuntimeError("query status response is invalid")
+            command = dict(status)
+        except Exception as exc:  # noqa: BLE001 - transient status lookup remains pending until timeout.
+            commands[step] = {
+                "origin_message_id": message_id,
+                "action": expected_action,
+                "state": "pending",
+                "error": str(exc),
+            }
+            continue
+
+        action = str(command.get("action") or "").strip()
+        state = str(command.get("state") or "pending").strip()
+        success = bool(command.get("success")) and state == "completed"
+        if expected_action and action and action != expected_action:
+            state = "invalid"
+            success = False
+            command["state"] = state
+            command["success"] = False
+            command["error"] = f"query action mismatch: expected {expected_action}, got {action or '-'}"
+        commands[step] = command
+        if state in {"failed", "invalid"}:
+            terminal_failure = True
+        elif not success:
+            continue
+
+    return {
+        "ok": bool(commands) and all(
+            isinstance(command, Mapping)
+            and command.get("state") == "completed"
+            and bool(command.get("success"))
+            for command in commands.values()
+        ),
+        "terminal_failure": terminal_failure,
+        "commands": commands,
+    }
+
+
+def query_terminal_error(report: Mapping[str, Any]) -> str:
+    failures: list[str] = []
+    commands = report.get("commands")
+    if isinstance(commands, Mapping):
+        for step, value in commands.items():
+            if not isinstance(value, Mapping) or value.get("state") not in {"failed", "invalid"}:
+                continue
+            replies = value.get("replies")
+            code = ""
+            if isinstance(replies, list) and replies and isinstance(replies[-1], Mapping):
+                code = str(replies[-1].get("code") or "")
+            failures.append(
+                f"{step}:{value.get('state')}:{code or value.get('error') or '-'}"
+            )
+    return "query terminal validation failed; " + (", ".join(failures) or "unknown command outcome")
 
 
 def refreshed_ledger_status(

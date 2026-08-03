@@ -23,6 +23,8 @@ from .models import (
     RelayEvent,
     Order,
     OrderFeeRecord,
+    QueryCommandStatus,
+    QueryReplyStatus,
 )
 
 __all__ = [
@@ -35,6 +37,8 @@ __all__ = [
     "Order",
     "OrderFeeRecord",
     "Position",
+    "QueryCommandStatus",
+    "QueryReplyStatus",
     "RelayClient",
     "RelayBrokerNotReadyError",
     "RelayCancelRejectedError",
@@ -49,4 +53,4 @@ __all__ = [
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.24"
+__version__ = "0.1.25"

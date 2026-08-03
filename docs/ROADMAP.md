@@ -33,7 +33,7 @@
 3. 从 OC 新版本后的第一个完整交易日开始建立每日绩效流水线：盘后确认订单、成交、订单实际费用、资金、持仓和 Meridian 日线齐备，逐账户计算成本账和经济净值；账户异常独立标记，不拖累其他账户。
 4. 历史订单、成交、费用和缺失 close 快照不再作为当前主线推断修复；保留原始缺口，后续取得券商交割单后通过独立导入和重建流程补齐。
 5. 股票和 ETF 公司行为校正及 ETF T0/底仓分账已接入 `performance_position_cost.v3`；下一步等待首个新协议完整交易日做真实订单组、因子与券商持仓联合验收。
-6. OC v1.2 的 PEL 恢复、实时账本、ETF 划转、订单实际费用和撤单拒绝账户语义已经通过 `2026-08-03` 完整交易日验收；当前联合整改项转为 `account.asset.query` 在有效数据页后错误返回 `QUERY_EMPTY_RESULT` 的矛盾终态，以及 Relay 日任务对应的命令终态门禁。
+6. OC v1.2 的 PEL 恢复、实时账本、ETF 划转、订单实际费用和撤单拒绝账户语义已经通过 `2026-08-03` 完整交易日验收；资金查询矛盾终态与 Relay 日任务终态门禁已完成代码整改，下一交易窗口在 OC `broker_ready=true` 后、15:30 前完成真实回包和持仓成本联合复测。
 7. N12 暂列次优先级：后续补 API Console 断言集合、券商测试环境批量下单视图，以及 API/worker 独立常驻进程。
 
 ### N13 可信成本账与绩效重建
@@ -195,8 +195,9 @@
 - [x] 非交易日 `trading_day.phase` 返回明确的 `non_trading`，避免仅按时钟显示 `continuous`。
 - [x] 增加任务失败、账户异常、刷新超时和快照阻断告警：使用默认关闭的通用 Webhook 聚合投递，带稳定幂等键、失败重试和同一 `job_runs` 投递审计；非交易日正常跳过与 dry-run 不告警。
 - 保留 09:01 盘前初始化和 15:01 生产盘后结算口径。
-- [ ] 增加日任务查询命令终态门禁：按 `message_id/origin_message_id` 关联数据页和最终 reply；发现数据页后出现 failed、缺 completed final chunk 或查询结果相互矛盾时，保留原始账本但把对应账户标记为 attention/blocked。
-- [ ] 联合 OC 修复资金查询终态：当前每次 `account.asset.query` 都先返回有效 `asset_page status=partial`，随后对同一命令返回 `QUERY_EMPTY_RESULT status=failed`；修复后应只产生 `completed asset_page + chunk.is_last=true`。
+- [x] 增加日任务查询命令终态门禁：按 `message_id/origin_message_id` 关联数据页和最终 reply；发现数据页后出现 failed、缺 completed final chunk 或查询结果相互矛盾时，保留原始账本但阻断对应账户快照。
+- [x] OC 已修复资金查询终态：缓存有效资金行并在查询结束时只发布 `completed asset_page + chunk.is_last=true`；Relay 已完成兼容接入。
+- [ ] 下一交易窗口联合实测六账户资金/持仓新回包，要求唯一 completed final、`cmd.query pending=0,lag=0`，并核对新增成本质量字段；有效查询窗口截至 OC 部署计划 15:30。
 - [x] 多账户刷新改为全账户先发命令、共享 60 秒新鲜度窗口，消除按账户串行等待并覆盖六账户实测约 47 秒的尾部回包。
 - [x] Redis output stream 改为单次聚合 `XREAD`，消除空 stream 每轮约 18 秒的顺序阻塞。
 - [x] 明确 14:56 策略停单、15:01 权威结算、15:30 OC 关停的分阶段窗口。

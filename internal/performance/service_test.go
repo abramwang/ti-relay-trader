@@ -2088,6 +2088,22 @@ func containsString(items []string, want string) bool {
 	return false
 }
 
+func TestTrustedBrokerPositionCostPrefersCompleteTotalCost(t *testing.T) {
+	position := trading.Position{
+		Quantity:     100,
+		AvgCost:      9.54,
+		TotalCost:    960,
+		CostComplete: true,
+	}
+	assertClose(t, trustedBrokerPositionCost(position), 960)
+
+	position.CostComplete = false
+	assertClose(t, trustedBrokerPositionCost(position), 954)
+
+	position.AvgCostSource = "unavailable"
+	assertClose(t, trustedBrokerPositionCost(position), 0)
+}
+
 type weekdayCalendar struct{}
 
 func (weekdayCalendar) TradingDayStatus(_ context.Context, date string) (market.TradingDayStatus, error) {

@@ -23,6 +23,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Check relay-sdk release artifacts")
     parser.add_argument("--build", action="store_true", help="rebuild tar.gz before checking")
     parser.add_argument("--live-smoke", action="store_true", help="also run read-only live smoke against 9092")
+    parser.add_argument(
+        "--allow-degraded",
+        action="store_true",
+        help="allow aggregate degraded status when all core dependencies remain healthy",
+    )
     parser.add_argument("--base-url", default="http://relay-trader.quantstage.com", help="relay base URL for live smoke")
     parser.add_argument("--account-id", default="", help="account id for live smoke")
     args = parser.parse_args()
@@ -48,6 +53,8 @@ def main() -> None:
         ]
         if args.account_id:
             cmd.extend(["--account-id", args.account_id])
+        if args.allow_degraded:
+            cmd.append("--allow-degraded")
         run(cmd)
 
     print(f"relay-sdk {version} release check passed")
