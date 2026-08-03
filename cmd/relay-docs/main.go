@@ -213,9 +213,9 @@ var (
 		},
 		{
 			Slug:        "oc-v1-2-validation-20260803",
-			Title:       "OC v1.2 交易日盘中验收",
+			Title:       "OC v1.2 全日收盘验收",
 			Path:        "docs/OC_V1_2_VALIDATION_REPORT_20260803.md",
-			Description: "历史 PEL 恢复、实时订单成交、ETF 划转和订单实际费用生产验收结果。",
+			Description: "历史 PEL 恢复、实时账本、订单费用、撤单拒绝、收盘快照和资金查询终态验收结果。",
 		},
 		{
 			Slug:        "tests",

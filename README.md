@@ -8,8 +8,8 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的盘中链路与盘后结算均已通过：OC 启动后正确清理 18 条历史 query PEL，六账户命令组均 `pending=0,lag=0`；自然实时链路落库 3,986 笔订单、3,869 笔普通成交和 99 笔 ETF 划转，无重复、孤立或上下文字段错配；四个有订单账户取得 3,984 条实际费用，完整率和订单关联率均为 100%。15:01 首轮结算因两个账户约 47 秒尾部回包越过 45 秒门限、快照接口 10.01 秒越过 10 秒客户端超时而失败；门限和超时已修正，15:15 使用同一批权威本地账本恢复完成六账户 close 资产及 150 条持仓快照。下一步等待 17:45 绩效任务，继续验证成本池、数量桥和 economic NAV。OC 无历史查询能力，7 月历史费用、旧成交缺口及 7 月 31 日 close 缺失不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
-- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。heartbeat unsupported 误报已修复，6 个 gateway online、24 条输出 stream healthy、lag 为 0。当前 56 条 pending DLQ 由原 38 条历史记录和本次 18 条预期 `QUERY_INTERRUPTED` 恢复审计组成，因此运行汇总仍为 `degraded/attention`，当前 Redis/数据库/worker/API/行情链路均正常。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。`2026-08-03` 完整交易日的实时与收盘账本已通过：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查，所有订单、成交和划转均有实时 event 覆盖；六账户命令组 `pending=0,lag=0`，18 条历史 query PEL 正确转为真实关联的 `QUERY_INTERRUPTED` 后 ACK，无新增 `BAD_RECOVERED_COMMAND`。12 条真实撤单拒绝均使用 Relay 标准账户，柜台账户只保留在 adapter context，昨天 OC 的三项定向修复已通过实盘验收。15:15 已恢复完成六账户 close 资产及 150 条正持仓快照，下一步等待 17:45 绩效任务验证成本池、数量桥和 economic NAV。新发现 OC P1：`account.asset.query` 在有效资金页后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落账，但 OC 需修正终态，Relay 日任务也要增加命令终态门禁。OC 无历史查询能力，7 月历史缺口不推断修复，等待券商交割单导入。生产保持 6 个只读账户、下单账户 0。
+- 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。heartbeat unsupported 误报已修复；收盘后 6 个 gateway 正常进入 `off_hours`，24 条输出 stream healthy、lag 为 0。当前 56 条 pending DLQ 由原 38 条历史记录和本次 18 条预期 `QUERY_INTERRUPTED` 恢复审计组成，因此运行汇总仍为 `degraded/attention`，当前 Redis/数据库/worker/API/行情链路均正常。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
 - 最近更新时间: `2026-08-03`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
@@ -307,16 +307,17 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 完成订单实际费用首个生产交易日验收：四账户 3,984 条 `broker_order_fund_detail` 全部费用完整、订单关联完整且稳定 ID 唯一，普通订单 turnover 与逐笔成交金额一致；两笔柜台前数量不足拒单无伪费用记录。
 - [x] 修复 worker 把合法 heartbeat 计为 unsupported 的运维误报；heartbeat 仍归档并推进 checkpoint，部署后 6 条心跳 stream 和 24 条 output stream 全部健康。
 - [x] 修复当前交易日分钟 K 线在 15:00 后的归档空窗：默认 `auto` 查询若正常返回空数据，Relay 会回退 Meridian `realtime`，历史归档有数据后仍优先使用 historical，终端无需硬编码新的行情口径。
+- [x] 完成 `2026-08-03` OC 收盘实盘验收：六账户 `cmd.trade/cmd.query pending=0,lag=0`，最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查；订单、成交和划转实时覆盖率均为 100%，12 条真实撤单拒绝账户字段符合 v1.2 协议，六账户 close 资产和 150 条正持仓完成固化。
 
 ## 待办事项
 
-1. 完成 N13 新数据口径验收的收盘阶段：盘中订单、成交、ETF 划转和实际费用已通过；等待 15:01 `post_close_settlement` 验证权威资金持仓及 close 快照，再由 17:45 `performance_daily` 对 `307000051387/1388/1389` 和债享5号验证行情、成本账和 economic NAV。只有 `ready` 账户才能进入正式绩效发布。7 月历史缺口不再调用 OC 或推断补齐，后续单独导入券商交割单。
+1. 完成 N13 新数据口径验收的绩效阶段：实时账本、实际费用、15:01 权威刷新和 close 快照已通过；等待 17:45 `performance_daily` 对 `307000051387/1388/1389` 和债享5号验证行情、成本账、数量桥和 economic NAV。只有 `ready` 账户才能进入正式绩效发布。7 月历史缺口不再调用 OC 或推断补齐，后续单独导入券商交割单。
 2. ETF T0 成本池和 PCF 单位门禁已完成；后续等待权威数据补充现金替代、跨市场代买代卖和公募回款结算输入，不在 Relay 内估造清算事实。
-3. OC v1.2 的 PEL 恢复、实时订单成交、ETF 划转和实际费用已通过；后续受控交易机会继续补充撤单拒绝/超时、长订单 ID 跨重启、batch 部分失败和重复查询完整 reply 重放样本。生产交易权限继续保持关闭。
+3. OC v1.2 的 PEL 恢复、实时订单成交、ETF 划转、实际费用和撤单拒绝账户语义已通过；先修正资金查询“有效数据页后又返回 failed”的矛盾终态，并给 Relay 日任务增加命令终态门禁。后续受控交易机会继续补充撤单超时、长订单 ID 跨重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 样本。生产交易权限继续保持关闭。
 4. 为 N11 通用 Webhook 告警配置真实内部接收端，并在下一交易日验证任务失败、账户异常、刷新超时和快照阻断通知；当前安全默认关闭。
 5. 为本机数据库备份增加异机副本、加密、保留周期和恢复时间告警。
 
-`2026-08-03` 验收顺序中 heartbeat/PEL 恢复、实时 `order.event/fill.event/transfer.event` 和当日 `fee_page` 已完成。剩余步骤为 15:01 盘后任务刷新权威资金、持仓、订单、成交和费用并写 close 快照，以及 17:45 在 Meridian 日线同步后检查 `performance_daily`、成本池和 economic NAV。单账户异常独立标记，不覆盖原始账本，也不拿新费率反推历史。
+`2026-08-03` 验收顺序中 heartbeat/PEL 恢复、实时 `order.event/fill.event/transfer.event`、当日 `fee_page` 和 15:01 收盘权威账本/close 快照均已完成。剩余步骤为 17:45 在 Meridian 日线同步后检查 `performance_daily`、成本池、数量桥和 economic NAV。单账户异常独立标记，不覆盖原始账本，也不拿新费率反推历史。
 
 ## README 状态维护规则
 
@@ -610,3 +611,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-03`: 完成 OC v1.2 交易日盘中联合验收。OC 启动后将 18 条历史 query PEL 全部转为带真实 stream、entry ID 和原始 body 的 `QUERY_INTERRUPTED` 并 ACK，六账户 `cmd.trade/cmd.query` 均 `pending=0,lag=0`，没有新增 `BAD_RECOVERED_COMMAND`。自然实时链路共落库 3,986 笔订单、3,869 笔普通成交和 99 笔 ETF 划转，无重复、孤立、上下文字段错配或异常时间；一笔 `159915.SZ` 赎回正确隔离为 99 条 transfer。四个有订单账户显式费用查询取得 3,984 条实际费用，完整率和订单关联率均为 100%，合计 6,696.1344 元。Relay 同时修复 heartbeat 被 worker 误计 unsupported 的运维误报，部署后 6 个 gateway online、24 条 output stream healthy、lag 为 0。详细证据见 `docs/OC_V1_2_VALIDATION_REPORT_20260803.md`；下一步等待 15:01 盘后结算和 17:45 绩效任务。
 - `2026-08-03`: 修复交易终端当日分钟 K 线在 15:00 后空白的问题。根因是 Relay 按时间切换到 Meridian `data_scope=auto` 后，上游在实时 journal 与当日 historical 归档之间存在空窗，接口 HTTP 200 但 `data=[]`；同证券 `realtime` 仍有完整分钟线。当前默认 auto 查询为空时会即时回退 realtime，显式 data_scope 请求保持原语义；新增盘后归档空窗单测并完成生产发布。
 - `2026-08-03`: 修复 15:01 盘后结算失败。六账户刷新均成功，但 `307000051388/1387` 的资金持仓在约 47 秒回写，刚好越过共享 45 秒门限；其余四账户快照接口实际 10.01 秒返回 202，又被普通 10 秒客户端提前判超时。共享新鲜度窗口调整为 60 秒，结算快照使用独立 30 秒 HTTP 超时，每账户 Meridian 持仓估值补全限制为 3 秒。15:15 在不查询已关停 OC 的前提下使用 15:02 权威本地账本恢复结算，6 份 close 资产和 150 条 close 持仓全部落库，任务 `succeeded`。同时确认唯一差异是 `159915.SZ` ETF 赎回按 99 条 transfer 入账却被普通 fill 数量规则误报，现已将 `P/R` 申赎排除出普通 order/fill 数量核对。
+- `2026-08-03`: 完成 OC v1.2 收盘实盘验收。最终 15,756 笔订单全部终态，15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项唯一性、关联、业务语义、东八区时间及金额闭合检查，异常计数全部为 0；所有订单、成交和划转均有实时 event 覆盖，盘后查询没有补出实时漏单。六账户命令组 `pending=0,lag=0`，当天没有新增恢复类 DLQ；12 条自然撤单拒绝全部使用 Relay 标准账户并在 adapter context 保留柜台账户，因此 OC `70c966d/7110a76/701d5af` 三项更新均通过。新发现 OC P1：18 次资金查询都先返回有效 partial 数据页，约 2 毫秒后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落库，但 OC 应改为单一 completed final page，Relay 日任务也将补命令终态门禁。详细证据见 `docs/OC_V1_2_VALIDATION_REPORT_20260803.md`。

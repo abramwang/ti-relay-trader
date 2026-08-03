@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-08-01`
+更新时间：`2026-08-03`
 
 ## 状态口径
 
@@ -33,7 +33,7 @@
 3. 从 OC 新版本后的第一个完整交易日开始建立每日绩效流水线：盘后确认订单、成交、订单实际费用、资金、持仓和 Meridian 日线齐备，逐账户计算成本账和经济净值；账户异常独立标记，不拖累其他账户。
 4. 历史订单、成交、费用和缺失 close 快照不再作为当前主线推断修复；保留原始缺口，后续取得券商交割单后通过独立导入和重建流程补齐。
 5. 股票和 ETF 公司行为校正及 ETF T0/底仓分账已接入 `performance_position_cost.v3`；下一步等待首个新协议完整交易日做真实订单组、因子与券商持仓联合验收。
-6. 完成 OC v1.2 联合验收：下一次启动使用现存 PEL 验证 `QUERY_INTERRUPTED`、pending 清零且不再产生伪 `BAD_RECOVERED_COMMAND`。
+6. OC v1.2 的 PEL 恢复、实时账本、ETF 划转、订单实际费用和撤单拒绝账户语义已经通过 `2026-08-03` 完整交易日验收；当前联合整改项转为 `account.asset.query` 在有效数据页后错误返回 `QUERY_EMPTY_RESULT` 的矛盾终态，以及 Relay 日任务对应的命令终态门禁。
 7. N12 暂列次优先级：后续补 API Console 断言集合、券商测试环境批量下单视图，以及 API/worker 独立常驻进程。
 
 ### N13 可信成本账与绩效重建
@@ -68,7 +68,8 @@
 - [x] 公司行为接入 Meridian `/v1/metadata/adjust-factors`：新增 `000023_position_cost_corporate_actions`；物理数量以券商 open 为权威，数量比匹配因子时保持总成本并调整单位成本，数量不变时按价格除权，无法闭合时阻断。原始 Meridian 上下文可审计且不覆盖 OC 持仓。
 - [x] 实现 `CORE` 与 `ETF_T0:{group_id}` 虚拟成本分账：复用贡献模块的显式/历史订单组和 Meridian PCF 单位门禁，T0 买入成本不再污染 ETF 底仓；显式完整组日内归零，历史歧义或未闭合组阻断。现金替代、跨市场代买代卖和公募回款仍等待权威结算输入。
 - [x] 绩效页面增加成本连续性、估值来源、公式版本和正式/阻断状态；被阻断日期不计入正式收益曲线，无 v2 NAV 的旧现金快照只作诊断。
-- [ ] 验收首个 OC 实费版本后的完整交易日：四个可信账户逐项检查订单成交关联、订单费用覆盖、open/close 资金持仓、Meridian 估值、数量桥、成本账和 economic NAV；`ready` 才允许进入正式发布，`attention/blocked` 必须保留账户级原因且不影响其他账户。
+- [x] 完成首个 OC 实费版本完整交易日的交易与收盘数据门禁：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查；所有订单、成交和划转均有实时 event 覆盖，六账户 close 资产和 150 条正持仓完成固化与复核。
+- [ ] 完成首个 OC 实费版本完整交易日的绩效阶段：17:45 对四个可信账户逐项检查 Meridian 估值、数量桥、成本账和 economic NAV；`ready` 才允许进入正式发布，`attention/blocked` 必须保留账户级原因且不影响其他账户。
 - [ ] 四账户连续完整交易日通过后，按可信锚点和数据质量分批开放正式绩效发布；其他账户及历史区间继续只读诊断，原始柜台数据与旧公式版本不原地覆盖。
 
 `2026-08-01` 首轮回算现状：
@@ -122,7 +123,7 @@
 - [x] 新增只读 `performance/trade-quality`：输出有成交订单率、完全成交率、数量成交率、撤单率、拒单率、未终态和异常明细；订单成交按交易日关联，`/trade#performance`、API Console 和 `relay-sdk 0.1.18` 已同步。
 - [x] 对齐 OC v1.1 数据质量协议：稳定外部订单 ID 作为不透明值使用，普通成交与 ETF 划转分表，`adapter.data_quality` DLQ 纳入消费统计，新增划转 API、终端页签和归档重放。
 - [x] 对齐 OC v1.2 增量协议：撤单动作结果独立审计且不污染订单状态，batch `failed_orders[]` 逐单回写，`COMMAND_OUTCOME_UNKNOWN` 保持结果未知，运维页展示 broker/snapshot/交易/撤单真实就绪字段，未知事件 raw 归档后继续推进消费。
-- [ ] 联合验证 OC v1.2：不可撤订单产生 `order.cancel.rejected`、超时进入需对账审计、长 ID 跨 OC 重启保持不变、重复查询完整重放且 PEL 清零。
+- [ ] 联合验证 OC v1.2：真实撤单拒绝的标准账户语义和查询 PEL 恢复已通过；继续等待撤单超时、长 ID 跨 OC 重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 的低频实盘样本。
 - [x] 审计 Meridian SDK 至 `0.1.17` 并同步 Relay 所需增量：ETF PCF/现金清单/状态薄代理、实时分钟 Bar SSE、交易日显式字段；ETF T0 使用 `unit_subscribe_redeem` 做最小申赎单位质量校验，分钟线分块、replay/task/cursor 和行业分类保留在 Prism/回测边界。Relay Go HTTP 链路不依赖 Python SDK。
 - [x] `/trade#performance` 新增 ECharts 主图：账户 close 净值归一化序列、上证指数基准、超额收益，以及账户/基准回撤双层联动展示。
 - [x] 建立正式数据质量区：按资产快照与资金桥、Meridian 基准行情、收益归因输入、订单成交账本、经济净值与 T+1 对账、盘前初始化与盘后结算六项检查展示通过/提示/阻断。
@@ -178,7 +179,7 @@
 - [x] 形成 OC 同日 ID 冲突、订单/成交错配的复现报告和联合验收标准。
 - [x] 交易质量接口增加证券/方向/业务类型错配和终态时间完整性检查；终态事件与盘后权威查询统一使用同日事件证据。
 - [x] 2026-07-31 次交易日复验：6,898 个实时/查询订单身份和 8,318 个实时/查询成交身份错配均为 0，`307000051387` 的实时上下文错位已关闭。
-- [ ] 验收 OC 查询命令 PEL 修复：`70c966d/7110a76` 已部署，等待下一次 OC 启动确认六账户现存 18 条 pending 清零且恢复关联字段正确。
+- [x] 验收 OC 查询命令 PEL 修复：`70c966d/7110a76` 在 `2026-08-03` 启动时将六账户 18 条历史 query PEL 转为真实关联的 `QUERY_INTERRUPTED` 后 ACK；最终 `cmd.trade/cmd.query pending=0, lag=0`，无新增 `BAD_RECOVERED_COMMAND`。
 - [x] 增加临时 PostgreSQL migration/repository 集成测试脚本，自动建库、迁移、测试和销毁。
 - [x] 增加 custom-format 备份、SHA256/manifest 校验和临时库恢复脚本；完成 2026-07-31 全量生产备份及按交易日幂等回放演练，孤立记录、重复幂等键和未验证约束均为 0。
 
@@ -194,6 +195,8 @@
 - [x] 非交易日 `trading_day.phase` 返回明确的 `non_trading`，避免仅按时钟显示 `continuous`。
 - [x] 增加任务失败、账户异常、刷新超时和快照阻断告警：使用默认关闭的通用 Webhook 聚合投递，带稳定幂等键、失败重试和同一 `job_runs` 投递审计；非交易日正常跳过与 dry-run 不告警。
 - 保留 09:01 盘前初始化和 15:01 生产盘后结算口径。
+- [ ] 增加日任务查询命令终态门禁：按 `message_id/origin_message_id` 关联数据页和最终 reply；发现数据页后出现 failed、缺 completed final chunk 或查询结果相互矛盾时，保留原始账本但把对应账户标记为 attention/blocked。
+- [ ] 联合 OC 修复资金查询终态：当前每次 `account.asset.query` 都先返回有效 `asset_page status=partial`，随后对同一命令返回 `QUERY_EMPTY_RESULT status=failed`；修复后应只产生 `completed asset_page + chunk.is_last=true`。
 - [x] 多账户刷新改为全账户先发命令、共享 60 秒新鲜度窗口，消除按账户串行等待并覆盖六账户实测约 47 秒的尾部回包。
 - [x] Redis output stream 改为单次聚合 `XREAD`，消除空 stream 每轮约 18 秒的顺序阻塞。
 - [x] 明确 14:56 策略停单、15:01 权威结算、15:30 OC 关停的分阶段窗口。
