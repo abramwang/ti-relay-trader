@@ -54,6 +54,8 @@
     performanceReviewSettingsError: "",
     performanceLoaded: false,
     performanceError: "",
+    performanceSelectedDate: "",
+    performanceSeriesFallback: false,
     performanceSettings: null,
     feeRules: [],
     cashLedgerEntries: [],
@@ -217,30 +219,30 @@
     perfBenchmarkInput: byID("perfBenchmarkInput"),
     loadPerformanceButton: byID("loadPerformanceButton"),
     downloadPerformanceButton: byID("downloadPerformanceButton"),
-    perfNetAsset: byID("perfNetAsset"),
-    perfStartNetAsset: byID("perfStartNetAsset"),
-    perfEconomicNav: byID("perfEconomicNav"),
-    perfEconomicStatus: byID("perfEconomicStatus"),
-    perfEconomicReturn: byID("perfEconomicReturn"),
-    perfEconomicPnl: byID("perfEconomicPnl"),
+    performanceFocus: byID("performanceFocus"),
+    perfFocusDate: byID("perfFocusDate"),
+    perfCalculationStatus: byID("perfCalculationStatus"),
+    perfCalculationMeta: byID("perfCalculationMeta"),
+    perfOpenEconomicNav: byID("perfOpenEconomicNav"),
+    perfOpenEconomicBreakdown: byID("perfOpenEconomicBreakdown"),
+    perfCloseEconomicNav: byID("perfCloseEconomicNav"),
+    perfCloseEconomicBreakdown: byID("perfCloseEconomicBreakdown"),
+    perfAccountDayPnl: byID("perfAccountDayPnl"),
+    perfPnlBreakdown: byID("perfPnlBreakdown"),
+    perfAccountDailyReturn: byID("perfAccountDailyReturn"),
+    perfReturnDenominator: byID("perfReturnDenominator"),
     perfExternalFlow: byID("perfExternalFlow"),
-    perfQualityFlags: byID("perfQualityFlags"),
-    perfOpenNetAsset: byID("perfOpenNetAsset"),
-    perfOpenSource: byID("perfOpenSource"),
-    perfOvernightAdjustment: byID("perfOvernightAdjustment"),
-    perfPreviousNetAsset: byID("perfPreviousNetAsset"),
-    perfIntradayPnl: byID("perfIntradayPnl"),
-    perfIntradayReturn: byID("perfIntradayReturn"),
-    perfTotalPnl: byID("perfTotalPnl"),
-    perfRows: byID("perfRows"),
+    perfOperatingTurnover: byID("perfOperatingTurnover"),
+    perfActualFee: byID("perfActualFee"),
+    perfQuantityBridge: byID("perfQuantityBridge"),
+    perfFormulaVersion: byID("perfFormulaVersion"),
+    perfValuationSource: byID("perfValuationSource"),
+    perfCostSource: byID("perfCostSource"),
+    perfFeeCoverage: byID("perfFeeCoverage"),
     perfTotalReturn: byID("perfTotalReturn"),
-    perfDailyReturn: byID("perfDailyReturn"),
     perfMaxDrawdown: byID("perfMaxDrawdown"),
-    perfDailyPnl: byID("perfDailyPnl"),
     perfBenchmarkReturn: byID("perfBenchmarkReturn"),
-    perfBenchmarkID: byID("perfBenchmarkID"),
     perfExcessReturn: byID("perfExcessReturn"),
-    perfBenchmarkDays: byID("perfBenchmarkDays"),
     performanceChart: byID("performanceChart"),
     performanceChartRange: byID("performanceChartRange"),
     performanceQualityPanel: byID("performanceQualityPanel"),
@@ -3488,6 +3490,8 @@
     els.loadPerformanceButton.disabled = true;
     try {
       let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      const selectedDate = params.dateTo;
+      let seriesFallback = false;
       if (!isCurrentLoad()) {
         return;
       }
@@ -3501,19 +3505,11 @@
           return;
         }
         const fallbackSeries = Array.isArray(fallbackData.series) ? fallbackData.series : [];
-        const latestDate = compactDate(fallbackSeries[fallbackSeries.length - 1] && fallbackSeries[fallbackSeries.length - 1].trade_date);
-        if (latestDate) {
-          params.dateFrom = latestDate;
-          params.dateTo = latestDate;
-          els.perfDateFrom.value = latestDate;
-          els.perfDateTo.value = latestDate;
-          query.set("date_from", latestDate);
-          query.set("date_to", latestDate);
-          data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
-          if (!isCurrentLoad()) {
-            return;
-          }
-          pushLog("info", "绩效日期已回退", displayDate(latestDate) + " 最近已结算交易日");
+        if (fallbackSeries.length > 0) {
+          data = fallbackData;
+          seriesFallback = true;
+          const latestDate = compactDate(fallbackSeries[fallbackSeries.length - 1] && fallbackSeries[fallbackSeries.length - 1].trade_date);
+          pushLog("info", "绩效图表使用最近正式序列", displayDate(selectedDate) + " 当日试算 · 序列截至 " + displayDate(latestDate));
         }
       }
       state.performanceError = "";
@@ -3522,10 +3518,12 @@
       state.performanceCostLedger = null;
       state.performanceEconomicNAV = null;
       state.performanceNAVReconciliation = null;
+      state.performanceSelectedDate = selectedDate;
+      state.performanceSeriesFallback = seriesFallback;
       state.performanceSummary = data.summary || null;
       state.performanceSeries = Array.isArray(data.series) ? data.series : [];
-      state.performanceDaily = state.performanceSeries[state.performanceSeries.length - 1] || null;
-      const dailyDate = compactDate(state.performanceDaily && state.performanceDaily.trade_date) || params.dateTo;
+      state.performanceDaily = state.performanceSeries.find((item) => compactDate(item && item.trade_date) === selectedDate) || null;
+      const dailyDate = selectedDate;
       const qualityQuery = new URLSearchParams({
         date_from: params.dateFrom,
         date_to: params.dateTo
@@ -3605,6 +3603,8 @@
       }
       state.performanceLoaded = false;
       state.performanceError = err.message;
+      state.performanceSelectedDate = "";
+      state.performanceSeriesFallback = false;
       state.performanceSummary = null;
       state.performanceSeries = [];
       state.performanceDaily = null;
@@ -3932,6 +3932,11 @@
       broker_position_cost_excluded: "柜台持仓成本已隔离",
       broker_unrealized_pnl_excluded: "柜台累计浮盈已隔离",
       performance_inception_baseline: "使用可信绩效起算点",
+      meridian_level1_close_fallback: "当日估值使用 Meridian Level1",
+      previous_cost_state_gap_reanchored: "成本断档已按可信日初重锚",
+      broker_open_cost_reanchor: "使用柜台日初成本重锚",
+      missing_previous_cost_state_reanchored: "缺失前序成本已按可信日初重锚",
+      previous_cost_state_gap: "上一交易日成本状态缺失",
       nav_contribution_residual_exceeds_warning: "净值与贡献残差超限",
       net_performance_fee_incomplete: "净收益费用不完整",
       performance_nav_blocked: "正式绩效已阻断",
@@ -3952,8 +3957,45 @@
       external_flow_time_estimated_mid_session: "外部资金发生时间按盘中估算",
       order_fee_day_incomplete: "当日成交订单费用覆盖不完整",
       broker_delivery_statement_pending: "等待券商交割单补齐费用",
-      net_performance_fee_estimated: "净收益仍使用估算费用"
+      net_performance_fee_estimated: "净收益仍使用估算费用",
+      missing_positive_economic_nav: "缺少正经济净值",
+      missing_open_economic_nav: "缺少日初经济净值",
+      open_asset_observation_unavailable: "日初资产观测不可用",
+      close_asset_observation_unavailable: "日终资产观测不可用"
     }[value] || value || "未知质量标记";
+  }
+
+  function performanceValuationSourceLabel(value) {
+    return {
+      meridian_level1_pre_close_and_last: "Meridian Level1 · pre_close / last",
+      meridian_1d_pre_close_and_close: "Meridian 1d · pre_close / close",
+      meridian_pre_close_and_close: "Meridian · pre_close / close"
+    }[value] || value || "--";
+  }
+
+  function performanceCostSourceLabel(value) {
+    return {
+      broker_open_snapshot_cost_reanchor: "可信柜台日初成本重锚",
+      broker_open_snapshot: "可信柜台日初成本",
+      relay_previous_close_cost: "Relay 上一日移动成本",
+      relay_moving_average: "Relay 移动加权成本"
+    }[value] || value || "--";
+  }
+
+  function performanceCalculationState(nav, costLedger, feeSummary) {
+    if (!nav || numericOrNull(nav.close_economic_nav) === null) {
+      return { status: "waiting", label: "暂无结果" };
+    }
+    if (nav.status === "blocked" || costLedger.status === "blocked") {
+      return { status: "blocked", label: "计算阻断" };
+    }
+    if (nav.status === "finalized") {
+      return { status: "finalized", label: "正式定稿" };
+    }
+    if (costLedger.status === "calculated" && feeSummary.fee_coverage_complete === true) {
+      return { status: "ready", label: "试算可用" };
+    }
+    return { status: "attention", label: "需要关注" };
   }
 
   function performanceQualityChecks() {
@@ -3974,17 +4016,25 @@
     ));
     const checks = [];
 
+    const hasEconomicNAV = numericOrNull(nav.open_economic_nav) !== null && numericOrNull(nav.close_economic_nav) !== null;
+    const blockingNAVFlagNames = new Set([
+      "missing_open_economic_nav",
+      "missing_positive_economic_nav",
+      "open_asset_observation_unavailable",
+      "close_asset_observation_unavailable",
+      "performance_nav_blocked"
+    ]);
+    const blockingNAVFlags = flags.filter((flag) => blockingNAVFlagNames.has(String(flag)));
     let snapshotStatus = "passed";
-    let snapshotDetail = formatInt(series.length) + " 个 close 样本，日初来源 " + (daily.open_snapshot_source || "--");
-    if (series.length === 0) {
+    let snapshotDetail = hasEconomicNAV
+      ? "当日经济净值输入完整 · " + performanceValuationSourceLabel((economic.valuation || {}).price_source)
+      : formatInt(series.length) + " 个 close 样本，日初来源 " + (daily.open_snapshot_source || "--");
+    if (nav.status === "blocked" || blockingNAVFlags.length > 0) {
       snapshotStatus = "blocked";
-      snapshotDetail = "所选区间没有可用的 close 资产快照";
-    } else if (flags.length > 0) {
-      snapshotStatus = flags.some((flag) => String(flag).startsWith("missing_")) ? "blocked" : "warning";
-      snapshotDetail = flags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ");
-      if (flags.length > 2) {
-        snapshotDetail += " +" + (flags.length - 2);
-      }
+      snapshotDetail = blockingNAVFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") || "经济净值已阻断";
+    } else if (!hasEconomicNAV && series.length === 0) {
+      snapshotStatus = "blocked";
+      snapshotDetail = "所选交易日没有可用经济净值或 close 资产快照";
     }
     checks.push({
       label: "资产快照与资金桥",
@@ -4212,7 +4262,12 @@
       return value === null ? null : value * 100;
     });
     const summary = state.performanceSummary || {};
-    els.performanceChartRange.textContent = formatInt(rows.length) + " 个交易日 · close 净值归一化 1.0000 · " + (summary.benchmark_security_id || "未设置基准");
+    els.performanceChartRange.textContent = [
+      state.performanceSeriesFallback ? "最近正式序列" : "所选区间",
+      formatInt(rows.length) + " 个交易日",
+      displayDate(rows[0].trade_date) + " 至 " + displayDate(rows[rows.length - 1].trade_date),
+      summary.benchmark_security_id || "未设置基准"
+    ].join(" · ");
     chart.setOption({
       animationDuration: 260,
       backgroundColor: "transparent",
@@ -4392,67 +4447,74 @@
     const nav = economic.nav || {};
     const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
     const cashFlows = economic.cash_flows || {};
-    const reverseRepo = economic.reverse_repo || {};
     const navFlags = Array.isArray(economic.quality_flags) ? economic.quality_flags : (Array.isArray(nav.quality_flags) ? nav.quality_flags : []);
+    const valuation = economic.valuation || {};
+    const pnlComponents = nav.pnl_components || {};
+    const securityPnL = pnlComponents.securities_and_strategy || {};
+    const tradingObservation = pnlComponents.trading_observation || {};
+    const unattributed = pnlComponents.unattributed || {};
+    const costLedger = state.performanceCostLedger || {};
+    const costSummary = costLedger.summary || {};
+    const selectedDate = state.performanceSelectedDate || compactDate(daily.trade_date) || compactDate(els.perfDateTo.value);
+    const calculationState = performanceCalculationState(nav, costLedger, securityPnL);
+    const actualFee = numericOrNull(securityPnL.actual_fee) ?? numericOrNull(securityPnL.effective_fee) ?? numericOrNull(daily.fee_total);
+    const turnover = numericOrNull(tradingObservation.turnover) ?? numericOrNull(daily.turnover);
+    const feeRequired = Number(securityPnL.fee_required_orders) || 0;
+    const feeCovered = Number(securityPnL.fee_covered_orders) || 0;
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
-      summary.date_from && summary.date_to ? displayDate(summary.date_from) + " 至 " + displayDate(summary.date_to) : "close 快照序列",
+      selectedDate ? displayDate(selectedDate) + " 当日试算" : "等待交易日",
+      state.performanceSeriesFallback && latest.trade_date ? "正式曲线截至 " + displayDate(latest.trade_date) : "",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
-      daily.open_snapshot_source ? "日初 " + daily.open_snapshot_source : "",
-      nav.status ? "经济净值 " + nav.status : "",
-      reverseRepo.principal_treatment && reverseRepo.principal_treatment !== "none" ? "逆回购本金 " + ({ embedded: "资金内嵌", separate: "独立应收", ambiguous: "待确认" }[reverseRepo.principal_treatment] || reverseRepo.principal_treatment) : "",
-      reconciliation.status ? "对账 " + reconciliation.status : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
-    els.perfNetAsset.textContent = formatNumber(summary.end_net_asset ?? latest.net_asset);
-    els.perfStartNetAsset.textContent = "期初 " + formatNumber(summary.start_net_asset);
-    els.perfEconomicNav.textContent = formatNumber(nav.close_economic_nav);
-    els.perfEconomicStatus.textContent = [
-      nav.status || "preview --",
-      reconciliation.status ? "对账 " + reconciliation.status : "",
-      economic.persisted ? "persisted" : (nav.close_economic_nav ? "preview" : "")
+    els.performanceFocus.dataset.status = calculationState.status;
+    els.perfFocusDate.textContent = [activeAccountLabel(), selectedDate ? displayDate(selectedDate) : ""].filter(Boolean).join(" · ") || "等待选择交易日";
+    els.perfCalculationStatus.textContent = calculationState.label;
+    els.perfCalculationMeta.textContent = [
+      economic.persisted ? "已落库" : (numericOrNull(nav.close_economic_nav) !== null ? "只读 preview" : "尚未计算"),
+      nav.status || "",
+      navFlags.length ? navFlags.length + " 项质量标记" : ""
     ].filter(Boolean).join(" · ");
-    els.perfEconomicReturn.textContent = formatPercent(nav.daily_return);
-    els.perfEconomicReturn.className = classForNumber(nav.daily_return);
-    els.perfEconomicPnl.textContent = "PnL " + formatSigned(nav.account_day_pnl);
-    els.perfEconomicPnl.className = classForNumber(nav.account_day_pnl);
+    els.perfOpenEconomicNav.textContent = formatNumber(nav.open_economic_nav);
+    els.perfOpenEconomicBreakdown.textContent = "可见资金 " + formatNumber(valuation.open_visible_cash) + " · 持仓 " + formatNumber(valuation.open_position_value);
+    els.perfCloseEconomicNav.textContent = formatNumber(nav.close_economic_nav);
+    els.perfCloseEconomicBreakdown.textContent = "可见资金 " + formatNumber(valuation.close_visible_cash) + " · 持仓 " + formatNumber(valuation.close_position_value);
+    els.perfAccountDayPnl.textContent = formatSigned(nav.account_day_pnl);
+    els.perfAccountDayPnl.className = classForNumber(nav.account_day_pnl);
+    els.perfPnlBreakdown.textContent = "证券 " + formatSigned(securityPnL.pnl) + " · 未归因 " + formatSigned(unattributed.pnl);
+    els.perfAccountDailyReturn.textContent = formatPercent(nav.daily_return);
+    els.perfAccountDailyReturn.className = classForNumber(nav.daily_return);
+    els.perfReturnDenominator.textContent = "收益分母 " + formatNumber(nav.return_denominator);
     els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
     els.perfExternalFlow.className = classForNumber(cashFlows.external_net_flow);
-    els.perfQualityFlags.textContent = navFlags.length ? navFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") + (navFlags.length > 2 ? " +" + (navFlags.length - 2) : "") : "质量 ok";
-    els.perfOpenNetAsset.textContent = formatNumber(daily.open_net_asset);
-    els.perfOpenSource.textContent = [
-      daily.open_snapshot_source || "--",
-      daily.open_captured_at ? shortDateTime(daily.open_captured_at) : ""
-    ].filter(Boolean).join(" · ");
-    els.perfOvernightAdjustment.textContent = formatSigned(daily.overnight_adjustment);
-    els.perfOvernightAdjustment.className = classForNumber(daily.overnight_adjustment);
-    els.perfPreviousNetAsset.textContent = "上日 " + formatNumber(daily.previous_net_asset);
-    els.perfIntradayPnl.textContent = formatSigned(daily.intraday_pnl);
-    els.perfIntradayPnl.className = classForNumber(daily.intraday_pnl);
-    els.perfIntradayReturn.textContent = "收益 " + formatPercent(daily.intraday_return);
-    els.perfTotalPnl.textContent = formatSigned(summary.total_pnl);
-    els.perfTotalPnl.className = classForNumber(summary.total_pnl);
-    els.perfRows.textContent = "样本 " + formatInt(summary.count);
+    els.perfOperatingTurnover.textContent = formatNumber(turnover);
+    els.perfActualFee.textContent = formatNumber(actualFee);
+    els.perfQuantityBridge.textContent = costLedger.status
+      ? formatInt(costSummary.securities) + " 证券 · " + formatInt(costSummary.quantity_breaks) + " 差异"
+      : "--";
+    els.perfFormulaVersion.textContent = nav.formula_version || economic.formula_version || "--";
+    els.perfValuationSource.textContent = performanceValuationSourceLabel(valuation.price_source);
+    els.perfCostSource.textContent = performanceCostSourceLabel(costLedger.opening_source);
+    els.perfFeeCoverage.textContent = feeRequired > 0
+      ? formatInt(feeCovered) + " / " + formatInt(feeRequired) + " 笔" + (securityPnL.fee_coverage_complete ? " · 完整" : " · 待补")
+      : (securityPnL.fee_coverage_complete === true ? "无需费用 · 完整" : "--");
     els.perfTotalReturn.textContent = formatPercent(summary.total_return);
     els.perfTotalReturn.className = classForNumber(summary.total_return);
-    els.perfDailyReturn.textContent = "close " + formatPercent(daily.return_rate);
     els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown);
     els.perfMaxDrawdown.className = classForNumber(summary.max_drawdown);
-    els.perfDailyPnl.textContent = "close " + formatSigned(daily.daily_pnl);
     els.perfBenchmarkReturn.textContent = formatPercent(summary.benchmark_total_return);
     els.perfBenchmarkReturn.className = classForNumber(summary.benchmark_total_return);
-    els.perfBenchmarkID.textContent = "基准 " + (summary.benchmark_security_id || "--");
     els.perfExcessReturn.textContent = formatPercent(summary.excess_total_return);
     els.perfExcessReturn.className = classForNumber(summary.excess_total_return);
-    els.perfBenchmarkDays.textContent = "bars " + formatInt(summary.benchmark_observation_days);
-    els.perfDailyDate.textContent = daily.trade_date ? displayDate(daily.trade_date) : "--";
+    els.perfDailyDate.textContent = selectedDate ? displayDate(selectedDate) : "--";
     els.perfPositions.textContent = formatInt(daily.positions_count);
-    els.perfPositionValue.textContent = formatNumber(daily.position_market_value);
-    els.perfUnrealizedPnl.textContent = daily.unrealized_pnl_available ? formatSigned(daily.unrealized_pnl) : "--";
-    els.perfUnrealizedPnl.className = daily.unrealized_pnl_available ? classForNumber(daily.unrealized_pnl) : "";
-    els.perfFills.textContent = formatInt(daily.fills_count);
-    els.perfTurnover.textContent = formatNumber(daily.turnover);
-    els.perfFee.textContent = formatNumber(daily.fee_total);
+    els.perfPositionValue.textContent = formatNumber(valuation.close_position_value ?? daily.position_market_value);
+    els.perfUnrealizedPnl.textContent = numericOrNull(costSummary.unrealized_pnl) !== null ? formatSigned(costSummary.unrealized_pnl) : "--";
+    els.perfUnrealizedPnl.className = numericOrNull(costSummary.unrealized_pnl) !== null ? classForNumber(costSummary.unrealized_pnl) : "";
+    els.perfFills.textContent = formatInt(tradingObservation.fills_count ?? daily.fills_count);
+    els.perfTurnover.textContent = formatNumber(turnover);
+    els.perfFee.textContent = formatNumber(actualFee);
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
     renderNAVReconciliation(reconciliation, nav);
     renderPerformanceContributions();
@@ -4462,7 +4524,9 @@
     setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
-      : (state.performanceLoaded ? "已加载 " + formatInt(series.length) + " 条" : "等待查询");
+      : (state.performanceLoaded
+        ? (state.performanceSeriesFallback ? "当日试算已加载 · 最近正式序列 " + formatInt(series.length) + " 条" : "已加载 " + formatInt(series.length) + " 条")
+        : "等待查询");
     if (series.length === 0) {
       els.performanceSeriesBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
       return;

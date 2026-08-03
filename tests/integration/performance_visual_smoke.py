@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=1600)
     parser.add_argument("--height", type=int, default=1280)
     parser.add_argument("--output", default="/tmp/relay-performance-smoke.png")
+    parser.add_argument("--account-id", default="")
     return parser.parse_args()
 
 
@@ -66,6 +67,23 @@ def main() -> int:
             }""",
             timeout=60_000,
         )
+        if args.account_id:
+            account_button = page.locator(
+                f'#accountTabs button[title*="{args.account_id}"]'
+            )
+            account_button.wait_for(state="visible", timeout=15_000)
+            account_button.click()
+            page.wait_for_function(
+                """(accountID) => {
+                    const active = document.querySelector("#accountTabs button.active");
+                    const status = document.querySelector("#performanceStatus")?.textContent || "";
+                    return active?.title.includes(accountID) &&
+                        !document.querySelector("#loadPerformanceButton")?.disabled &&
+                        (status.includes("已加载") || status.includes("查询失败"));
+                }""",
+                arg=args.account_id,
+                timeout=60_000,
+            )
         page.locator("#perfDateFrom").fill(args.date_from)
         page.locator("#perfDateTo").fill(args.date_to)
         page.locator("#perfBenchmarkInput").fill("000001.SH")
@@ -90,7 +108,6 @@ def main() -> int:
                     document.querySelector("#performanceRangeHint")?.textContent || "";
                 return !button?.disabled &&
                     (text.includes("已加载") || text.includes("查询失败")) &&
-                    hint.includes(expected.dateFrom) &&
                     hint.includes(expected.dateTo);
             }""",
             arg=expected_range,
@@ -134,6 +151,19 @@ def main() -> int:
                     qualityStatus:
                         document.querySelector("#performanceQualityStatus")
                             ?.textContent || "",
+                    selectedDateFrom:
+                        document.querySelector("#perfDateFrom")?.value || "",
+                    selectedDateTo:
+                        document.querySelector("#perfDateTo")?.value || "",
+                    focusDate:
+                        document.querySelector("#perfFocusDate")?.textContent || "",
+                    calculationStatus:
+                        document.querySelector("#perfCalculationStatus")?.textContent || "",
+                    primaryMetrics: Array.from(
+                        document.querySelectorAll(".performance-primary-metrics strong")
+                    ).map((item) => item.textContent || ""),
+                    actualFee:
+                        document.querySelector("#perfActualFee")?.textContent || "",
                 };
             }"""
         )
@@ -148,6 +178,12 @@ def main() -> int:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")
     if diagnostics["horizontalOverflow"]:
         raise AssertionError(f"page has horizontal overflow: {diagnostics}")
+    if diagnostics["selectedDateFrom"] != args.date_from or diagnostics["selectedDateTo"] != args.date_to:
+        raise AssertionError(f"performance query date changed unexpectedly: {diagnostics}")
+    if expected_range["dateTo"] not in diagnostics["focusDate"]:
+        raise AssertionError(f"selected performance date is not prominent: {diagnostics}")
+    if len(diagnostics["primaryMetrics"]) != 4:
+        raise AssertionError(f"primary performance metrics are incomplete: {diagnostics}")
     if console_errors or page_errors or response_errors:
         raise AssertionError(
             json.dumps(

@@ -1320,23 +1320,11 @@ tr.flash {
   color: var(--navy);
 }
 
-.performance-summary {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  border-bottom: 1px solid var(--line);
-}
-
 .settings-summary {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
   background: #fff;
-}
-
-.performance-summary div {
-  min-width: 0;
-  padding: 13px 16px;
-  border-right: 1px solid var(--line-soft);
 }
 
 .settings-summary div {
@@ -1345,7 +1333,6 @@ tr.flash {
   border-right: 1px solid var(--line-soft);
 }
 
-.performance-summary span,
 .settings-summary span,
 .daily-grid span,
 .bars-summary span {
@@ -1353,17 +1340,6 @@ tr.flash {
   color: #475467;
   font-size: 12px;
   font-weight: 800;
-}
-
-.performance-summary strong {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 21px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .settings-summary strong {
@@ -1377,12 +1353,191 @@ tr.flash {
   white-space: nowrap;
 }
 
-.performance-summary small {
+.performance-focus {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.performance-focus-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  background: #181c26;
+}
+
+.performance-focus-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.performance-focus-head span,
+.performance-primary-metrics span,
+.performance-operating-metrics span,
+.performance-method-strip span,
+.performance-range-summary span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.performance-focus-head > div:first-child strong {
+  overflow: hidden;
+  color: #eef0f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-calculation-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.performance-calculation-state strong {
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted-soft);
+  font-size: 11px;
+  text-align: center;
+}
+
+.performance-calculation-state span {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-focus[data-status="ready"] .performance-focus-head,
+.performance-focus[data-status="finalized"] .performance-focus-head {
+  border-left-color: var(--sell);
+}
+
+.performance-focus[data-status="ready"] .performance-calculation-state strong,
+.performance-focus[data-status="finalized"] .performance-calculation-state strong {
+  border-color: rgba(8, 153, 129, 0.55);
+  background: rgba(8, 153, 129, 0.1);
+  color: #42c6ad;
+}
+
+.performance-focus[data-status="attention"] .performance-focus-head {
+  border-left-color: var(--warning);
+}
+
+.performance-focus[data-status="attention"] .performance-calculation-state strong {
+  border-color: rgba(255, 152, 0, 0.55);
+  background: rgba(255, 152, 0, 0.1);
+  color: #ffb44d;
+}
+
+.performance-focus[data-status="blocked"] .performance-focus-head {
+  border-left-color: var(--buy);
+}
+
+.performance-focus[data-status="blocked"] .performance-calculation-state strong {
+  border-color: rgba(242, 54, 69, 0.55);
+  background: rgba(242, 54, 69, 0.1);
+  color: #ff7d88;
+}
+
+.performance-primary-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.performance-primary-metrics > div {
+  min-width: 0;
+  padding: 10px 14px 9px;
+  border-right: 1px solid var(--line);
+}
+
+.performance-primary-metrics strong {
   display: block;
   margin-top: 2px;
+  overflow: hidden;
+  color: #eef0f5;
+  font: 700 22px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-primary-metrics small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
   color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-operating-metrics,
+.performance-method-strip,
+.performance-range-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.performance-operating-metrics {
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+  background: #1b1f29;
+}
+
+.performance-operating-metrics > div,
+.performance-method-strip > div,
+.performance-range-summary > div {
+  min-width: 0;
+  padding: 7px 14px;
+  border-right: 1px solid var(--line);
+}
+
+.performance-operating-metrics strong,
+.performance-range-summary strong {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  color: #d8dbe2;
+  font: 650 13px/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-method-strip {
+  min-height: 38px;
+  background: #151923;
+}
+
+.performance-method-strip > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.performance-method-strip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #aeb1bb;
+  font: 10px/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .performance-overview {
@@ -1396,7 +1551,21 @@ tr.flash {
 }
 
 .performance-chart-section {
-  grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-rows: 44px 52px minmax(0, 1fr);
+}
+
+.performance-range-summary {
+  border-bottom: 1px solid var(--line);
+  background: #181c26;
+}
+
+.performance-range-summary > div {
+  padding-top: 8px;
+  padding-bottom: 7px;
+}
+
+.performance-range-summary strong {
+  font-size: 14px;
 }
 
 .performance-chart-toolbar > div:first-child,
@@ -2921,7 +3090,6 @@ tr.flash {
 .metric-strip strong,
 .asset-detail-strip strong,
 .monitor-summary strong,
-.performance-summary strong,
 .settings-summary strong,
 .daily-grid strong,
 .bars-summary strong {

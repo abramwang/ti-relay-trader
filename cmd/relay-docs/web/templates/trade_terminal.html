@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260802-0013">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20260803-0014">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -360,20 +360,52 @@
           </div>
         </div>
 
-        <div class="performance-summary">
-          <div><span>期末净资产</span><strong id="perfNetAsset">--</strong><small id="perfStartNetAsset">期初 --</small></div>
-          <div><span>经济净值</span><strong id="perfEconomicNav">--</strong><small id="perfEconomicStatus">preview --</small></div>
-          <div><span>经济收益</span><strong id="perfEconomicReturn">--</strong><small id="perfEconomicPnl">PnL --</small></div>
-          <div><span>资金桥</span><strong id="perfExternalFlow">--</strong><small id="perfQualityFlags">质量 --</small></div>
-          <div><span>日初资产</span><strong id="perfOpenNetAsset">--</strong><small id="perfOpenSource">open --</small></div>
-          <div><span>隔夜调整</span><strong id="perfOvernightAdjustment">--</strong><small id="perfPreviousNetAsset">上日 --</small></div>
-          <div><span>日内盈亏</span><strong id="perfIntradayPnl">--</strong><small id="perfIntradayReturn">收益 --</small></div>
-          <div><span>区间盈亏</span><strong id="perfTotalPnl">--</strong><small id="perfRows">样本 --</small></div>
-          <div><span>累计收益</span><strong id="perfTotalReturn">--</strong><small id="perfDailyReturn">当日 --</small></div>
-          <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong><small id="perfDailyPnl">当日 --</small></div>
-          <div><span>基准收益</span><strong id="perfBenchmarkReturn">--</strong><small id="perfBenchmarkID">基准 --</small></div>
-          <div><span>超额收益</span><strong id="perfExcessReturn">--</strong><small id="perfBenchmarkDays">样本 --</small></div>
-        </div>
+        <section class="performance-focus" id="performanceFocus" data-status="waiting" aria-label="当日绩效概览">
+          <div class="performance-focus-head">
+            <div>
+              <span>当日经济净值</span>
+              <strong id="perfFocusDate">等待选择交易日</strong>
+            </div>
+            <div class="performance-calculation-state">
+              <strong id="perfCalculationStatus">待计算</strong>
+              <span id="perfCalculationMeta">选择账户和交易日后读取只读试算</span>
+            </div>
+          </div>
+          <div class="performance-primary-metrics">
+            <div>
+              <span>日初经济净值</span>
+              <strong id="perfOpenEconomicNav">--</strong>
+              <small id="perfOpenEconomicBreakdown">可见资金 -- · 持仓 --</small>
+            </div>
+            <div>
+              <span>日终经济净值</span>
+              <strong id="perfCloseEconomicNav">--</strong>
+              <small id="perfCloseEconomicBreakdown">可见资金 -- · 持仓 --</small>
+            </div>
+            <div>
+              <span>当日盈亏</span>
+              <strong id="perfAccountDayPnl">--</strong>
+              <small id="perfPnlBreakdown">证券贡献 -- · 归因残差 --</small>
+            </div>
+            <div>
+              <span>当日收益率</span>
+              <strong id="perfAccountDailyReturn">--</strong>
+              <small id="perfReturnDenominator">收益分母 --</small>
+            </div>
+          </div>
+          <div class="performance-operating-metrics">
+            <div><span>外部资金净流入</span><strong id="perfExternalFlow">--</strong></div>
+            <div><span>当日成交额</span><strong id="perfOperatingTurnover">--</strong></div>
+            <div><span>实际交易费用</span><strong id="perfActualFee">--</strong></div>
+            <div><span>持仓数量桥</span><strong id="perfQuantityBridge">--</strong></div>
+          </div>
+          <div class="performance-method-strip">
+            <div><span>公式</span><strong id="perfFormulaVersion">--</strong></div>
+            <div><span>估值行情</span><strong id="perfValuationSource">--</strong></div>
+            <div><span>成本起点</span><strong id="perfCostSource">--</strong></div>
+            <div><span>费用覆盖</span><strong id="perfFeeCoverage">--</strong></div>
+          </div>
+        </section>
 
         <div class="performance-overview">
           <section class="performance-section performance-chart-section">
@@ -388,6 +420,12 @@
                 <span class="excess">超额收益</span>
                 <span class="drawdown">回撤</span>
               </div>
+            </div>
+            <div class="performance-range-summary">
+              <div><span>区间累计收益</span><strong id="perfTotalReturn">--</strong></div>
+              <div><span>最大回撤</span><strong id="perfMaxDrawdown">--</strong></div>
+              <div><span>基准累计收益</span><strong id="perfBenchmarkReturn">--</strong></div>
+              <div><span>超额累计收益</span><strong id="perfExcessReturn">--</strong></div>
             </div>
             <div class="performance-chart-shell">
               <div id="performanceChart" class="performance-chart" role="img" aria-label="账户净值、上证指数基准、超额收益和回撤图"></div>
@@ -507,7 +545,7 @@
           <aside class="performance-side">
             <section class="performance-section daily-section">
               <div class="section-toolbar">
-                <h2>日终快照</h2>
+                <h2>持仓与交易</h2>
                 <span id="perfDailyDate">--</span>
               </div>
               <div class="daily-grid">
@@ -516,7 +554,7 @@
                 <div><span>浮动盈亏</span><strong id="perfUnrealizedPnl">--</strong></div>
                 <div><span>成交笔数</span><strong id="perfFills">--</strong></div>
                 <div><span>成交额</span><strong id="perfTurnover">--</strong></div>
-                <div><span>费用</span><strong id="perfFee">--</strong></div>
+                <div><span>实际费用</span><strong id="perfFee">--</strong></div>
               </div>
               <p id="perfCapturedAt">captured_at --</p>
             </section>

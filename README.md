@@ -266,7 +266,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - [x] 新增 `GET /v1/meridian/market/bars` 同源薄代理，保留 Meridian `market_bar.v1` 原始字段，并在 API Console 提供 bars 表单测试入口。
 - [x] 新增 `GET /v1/accounts/{account_id}/performance/series`，按区间读取 close 资产快照，返回账户日绩效、累计收益和最大回撤；API Console 已提供表单测试入口。
 - [x] 新增 `GET /v1/accounts/{account_id}/performance/series.csv`，导出账户绩效序列 CSV，作为研究侧导出输入第一版。
-- [x] `/trade` 新增 `#performance` 绩效分析工作区，直观展示区间净资产/收益/回撤、日终快照、绩效序列表、CSV 下载和 Meridian bars 查询结果。
+- [x] `/trade` 新增 `#performance` 绩效分析工作区：首屏按所选交易日突出日初/日终经济净值、当日盈亏和收益率，展示实际费用、数量桥及估值/成本来源；下方保留区间收益、回撤、贡献、交易质量、对账和 CSV。
 - [x] 新增 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`，明确绩效分析页定位、指标口径、数据来源、页面结构、估算标记和分阶段实现计划。
 - [x] `/trade` 取消单独“盘后对账”导航入口，盘后展示收敛到“绩效分析”；底层结算快照、reconciliation inputs/breaks 和 API Console 调试入口保留。
 - [x] 订单、成交、当前持仓和历史持仓查询新增服务端 `cursor` 翻页响应 `next_cursor`；`/trade` 的订单监控和资金持仓工作区支持按交易日查询并使用服务端分页。
@@ -615,3 +615,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-03`: 完成 OC v1.2 收盘实盘验收。最终 15,756 笔订单全部终态，15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项唯一性、关联、业务语义、东八区时间及金额闭合检查，异常计数全部为 0；所有订单、成交和划转均有实时 event 覆盖，盘后查询没有补出实时漏单。六账户命令组 `pending=0,lag=0`，当天没有新增恢复类 DLQ；12 条自然撤单拒绝全部使用 Relay 标准账户并在 adapter context 保留柜台账户，因此 OC `70c966d/7110a76/701d5af` 三项更新均通过。新发现 OC P1：18 次资金查询都先返回有效 partial 数据页，约 2 毫秒后又为同一命令返回 `QUERY_EMPTY_RESULT/failed`；资金已落库，但 OC 应改为单一 completed final page，Relay 日任务也将补命令终态门禁。详细证据见 `docs/OC_V1_2_VALIDATION_REPORT_20260803.md`。
 - `2026-08-03`: 按 `RELAY_COMPATIBILITY_NOTICE_20260803.md` 完成 Relay 兼容改造。持仓及快照新增柜台总成本、成本来源和完整性字段；同步层停止把华鑫 `TotalPosCost` 误作标准市值，绩效成本池只信任完整总成本或无新质量字段的历史兼容均价。新增 `/v1/query-status/{origin_message_id}` 和 SDK `0.1.25`，盘前/盘后任务要求资产、持仓新鲜度与唯一 completed final 查询终态同时通过，旧“有效资金页后 failed”样本会被明确阻断。生产 migration `000024` 已应用，API/worker 重启健康，统一只读发布验收 13/13 通过并保存在 `/tmp/relay-readonly-release-20260803-oc-compat.json`；生产下单账户仍为 0。OC 由部署计划在 15:30 关闭，下一交易窗口在 `broker_ready=true` 后、15:30 前完成新回包实测。
 - `2026-08-03`: 完成首个新协议交易日的绩效阶段验收。17:45 首轮正确暴露两个输入问题：Meridian 当日 `1d` 尚未生成，以及最新成本状态停在 7 月 30 日、缺少实际上一交易日 7 月 31 日。Relay 现仅对当前交易日用 Meridian Level1 `pre_close/last` 回退；成本状态断档默认阻断，仅对账户配置明确声明可信 `broker_open_snapshot` 且成本完整的持仓按当日 open 重锚。生产只读复算得到 3 个活跃账户 `ready`，实际费用覆盖 100%、数量桥和成本残差均为 0；债享5号、`307000051388`、`307000051387` 日收益分别为 `-0.597286%`、`-0.214503%`、`-0.236797%`。零资产 `307000051389` 独立 blocked。Go 全包、任务 26 项和 SDK 19 项测试通过；任务报告已落库，成本/NAV 仍为 preview，生产下单与绩效写权限均未开放。
+- `2026-08-03`: 重构 `/trade#performance` 首屏。修复单日没有正式序列时自动改写查询日期、导致当日 preview 被历史数据覆盖的问题；所选交易日现在始终保持不变，最近正式序列只作为图表背景。首屏固定展示日初/日终经济净值、当日盈亏和收益率，并展开可见资金/持仓估值、外部资金、成交额、OC 实际费用、数量桥、公式、行情来源、成本起点和费用覆盖。债享5号 8 月 3 日页面显示 `5,294,055.25 / 5,262,434.62 / -31,620.63 / -0.60%`，实际费用 `2,714.83` 元，与生产试算一致；零资产账户正确显示计算阻断。1600x1000、1280x800 和历史区间 Playwright 均通过，无横向溢出、控制台或 HTTP 错误。
