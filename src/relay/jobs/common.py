@@ -197,6 +197,7 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
     ready_accounts: list[str] = []
     attention_accounts: list[str] = []
     blocked_accounts: list[str] = []
+    not_applicable_accounts: list[str] = []
     for account_report in report["accounts"]:
         account_id = str(account_report["account_id"])
         cost_value, cost_report = capture_call(
@@ -240,7 +241,19 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
             }
             for flag in flags
         )
-        if errors or cost_status == "blocked" or nav_status == "blocked":
+        not_applicable = performance_account_not_applicable(
+            account_report=account_report,
+            cost=cost,
+            nav=nav,
+            errors=errors,
+            cost_status=cost_status,
+            nav_status=nav_status,
+            flags=flags,
+        )
+        if not_applicable:
+            status = "not_applicable"
+            not_applicable_accounts.append(account_id)
+        elif errors or cost_status == "blocked" or nav_status == "blocked":
             status = "blocked"
             blocked_accounts.append(account_id)
         elif fee_incomplete:
@@ -256,6 +269,7 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
             "fee_complete": not fee_incomplete,
             "quality_flags": flags,
             "errors": errors,
+            "reason": "empty_account_without_performance_baseline" if not_applicable else "",
             "cost_ledger": performance_calculation_summary(cost, include_positions=True),
             "economic_nav": performance_calculation_summary(nav),
         }
@@ -265,15 +279,68 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
         "ready": len(ready_accounts),
         "attention": len(attention_accounts),
         "blocked": len(blocked_accounts),
+        "not_applicable": len(not_applicable_accounts),
     }
     report["performance_ready_accounts"] = ready_accounts
     report["performance_attention_accounts"] = attention_accounts
     report["performance_blocked_accounts"] = blocked_accounts
+    report["performance_not_applicable_accounts"] = not_applicable_accounts
     if attention_accounts or blocked_accounts:
         report.setdefault("warnings", []).append(
             "daily performance has account-level attention or blocked results"
         )
     return report
+
+
+def performance_account_not_applicable(
+    *,
+    account_report: Mapping[str, Any],
+    cost: Any,
+    nav: Any,
+    errors: list[str],
+    cost_status: str,
+    nav_status: str,
+    flags: list[str],
+) -> bool:
+    """Identify a clean-start account with no capital or trading activity."""
+    if errors or cost_status == "blocked" or nav_status != "blocked":
+        return False
+    if "empty_clean_start_continuation" not in flags or "missing_positive_economic_nav" not in flags:
+        return False
+
+    snapshot = account_report.get("snapshot")
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    asset = snapshot.get("asset")
+    asset = asset if isinstance(asset, Mapping) else {}
+    cost_summary = cost.get("summary") if isinstance(cost, Mapping) else {}
+    cost_summary = cost_summary if isinstance(cost_summary, Mapping) else {}
+    cash_flows = nav.get("cash_flows") if isinstance(nav, Mapping) else {}
+    cash_flows = cash_flows if isinstance(cash_flows, Mapping) else {}
+
+    activity_values = (
+        snapshot.get("orders_count"),
+        snapshot.get("fills_count"),
+        snapshot.get("positions_count"),
+        asset.get("net_asset"),
+        asset.get("cash_available"),
+        asset.get("market_value"),
+        cost_summary.get("open_quantity"),
+        cost_summary.get("buy_quantity"),
+        cost_summary.get("sell_quantity"),
+        cost_summary.get("close_quantity"),
+        cash_flows.get("external_flow_count"),
+        cash_flows.get("settlement_count"),
+        cash_flows.get("income_expense_count"),
+        cash_flows.get("internal_flow_count"),
+        cash_flows.get("external_net_flow"),
+        cash_flows.get("settlement_adjustment"),
+        cash_flows.get("income_expense"),
+        cash_flows.get("internal_transfer"),
+    )
+    try:
+        return all(abs(float(value or 0)) <= 0.000001 for value in activity_values)
+    except (TypeError, ValueError):
+        return False
 
 
 def performance_calculation_summary(value: Any, *, include_positions: bool = False) -> dict[str, Any]:

@@ -54,6 +54,7 @@ class FakeClient:
         self.cost_status: dict[str, str] = {}
         self.nav_status: dict[str, str] = {}
         self.performance_flags: dict[str, list[str]] = {}
+        self.empty_accounts: set[str] = set()
         self.query_statuses: dict[str, dict[str, object]] = {}
         self.query_actions: dict[str, str] = {}
 
@@ -106,6 +107,14 @@ class FakeClient:
     def get_asset(self, account_id: str):
         if account_id in self.asset_errors:
             raise RuntimeError("asset snapshot not found")
+        if account_id in self.empty_accounts:
+            return SimpleNamespace(
+                account_id=account_id,
+                net_asset=0.0,
+                cash_available=0.0,
+                market_value=0.0,
+                updated_at=self.asset_updated_at.get(account_id, self.default_asset_updated_at),
+            )
         return SimpleNamespace(
             account_id=account_id,
             net_asset=1000.0,
@@ -115,6 +124,8 @@ class FakeClient:
         )
 
     def get_positions(self, account_id: str):
+        if account_id in self.empty_accounts:
+            return []
         return [
             SimpleNamespace(
                 account_id=account_id,
@@ -125,15 +136,21 @@ class FakeClient:
         ]
 
     def list_orders(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
+        if account_id in self.empty_accounts:
+            return []
         return [
             SimpleNamespace(account_id=account_id, gateway_order_id="gw-working", is_terminal=False),
             SimpleNamespace(account_id=account_id, gateway_order_id="gw-filled", is_terminal=True),
         ]
 
     def list_fills(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
+        if account_id in self.empty_accounts:
+            return []
         return [SimpleNamespace(account_id=account_id, fill_id="fill-1")]
 
     def list_order_fees(self, account_id: str, *, limit: int, trade_date: str | None = None):
+        if account_id in self.empty_accounts:
+            return []
         return [
             SimpleNamespace(
                 account_id=account_id,
@@ -280,7 +297,10 @@ class TradingDayJobTest(unittest.TestCase):
         )
 
         self.assertTrue(report["ok"])
-        self.assertEqual(report["performance_summary"], {"accounts": 3, "ready": 1, "attention": 1, "blocked": 1})
+        self.assertEqual(
+            report["performance_summary"],
+            {"accounts": 3, "ready": 1, "attention": 1, "blocked": 1, "not_applicable": 0},
+        )
         self.assertEqual(report["performance_ready_accounts"], ["acct-ready"])
         self.assertEqual(report["performance_attention_accounts"], ["acct-attention"])
         self.assertEqual(report["performance_blocked_accounts"], ["acct-blocked"])
@@ -288,6 +308,57 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(report["accounts"][1]["performance"]["status"], "attention")
         self.assertFalse(report["accounts"][1]["performance"]["fee_complete"])
         self.assertEqual(report["accounts"][2]["performance"]["status"], "blocked")
+
+    def test_daily_performance_marks_empty_clean_start_not_applicable(self) -> None:
+        client = FakeClient()
+        client.accounts = [SimpleNamespace(account_id="acct-empty", enabled=True)]
+        client.empty_accounts.add("acct-empty")
+        client.nav_status["acct-empty"] = "blocked"
+        client.performance_flags["acct-empty"] = [
+            "empty_clean_start_continuation",
+            "missing_positive_economic_nav",
+        ]
+
+        report = run_daily_performance(
+            JobOptions(job_name="performance_daily"),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertEqual(
+            report["performance_summary"],
+            {"accounts": 1, "ready": 0, "attention": 0, "blocked": 0, "not_applicable": 1},
+        )
+        self.assertEqual(report["performance_not_applicable_accounts"], ["acct-empty"])
+        self.assertEqual(report["performance_blocked_accounts"], [])
+        self.assertEqual(report["accounts"][0]["performance"]["status"], "not_applicable")
+        self.assertEqual(
+            report["accounts"][0]["performance"]["reason"],
+            "empty_account_without_performance_baseline",
+        )
+        self.assertNotIn(
+            "daily performance has account-level attention or blocked results",
+            report.get("warnings", []),
+        )
+
+    def test_daily_performance_does_not_skip_empty_marker_with_trading_activity(self) -> None:
+        client = FakeClient()
+        client.accounts = [SimpleNamespace(account_id="acct-active", enabled=True)]
+        client.nav_status["acct-active"] = "blocked"
+        client.performance_flags["acct-active"] = [
+            "empty_clean_start_continuation",
+            "missing_positive_economic_nav",
+        ]
+
+        report = run_daily_performance(
+            JobOptions(job_name="performance_daily"),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertEqual(report["performance_blocked_accounts"], ["acct-active"])
+        self.assertEqual(report["performance_not_applicable_accounts"], [])
+        self.assertEqual(report["accounts"][0]["performance"]["status"], "blocked")
 
     def test_stream_runtime_attention_does_not_block_daily_job(self) -> None:
         client = FakeClient()

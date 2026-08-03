@@ -193,6 +193,16 @@ class JobAlertTest(unittest.TestCase):
         self.assertEqual(delivery["severity"], "warning")
         self.assertEqual(delivery["issue_types"], ["performance_attention"])
 
+    def test_performance_not_applicable_account_does_not_alert(self) -> None:
+        report = base_report()
+        report["job"] = "performance_daily"
+        report["performance_not_applicable_accounts"] = ["acct-empty"]
+
+        delivery = dispatch_daily_job_alert(report, config=AlertConfig())
+
+        self.assertFalse(delivery["required"])
+        self.assertEqual(delivery["status"], "not_required")
+
     def test_main_persists_alert_delivery_into_same_job_run(self) -> None:
         options = common.JobOptions(job_name="post_close_settlement", persist=True, trigger="cron")
         calls = []

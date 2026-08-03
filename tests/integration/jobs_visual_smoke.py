@@ -69,6 +69,22 @@ def main() -> int:
                 const performanceCard = Array.from(
                     document.querySelectorAll('.job-card')
                 ).find((card) => card.querySelector('h2')?.textContent?.includes('每日绩效计算'));
+                const latestTableStarts = {};
+                Array.from(document.querySelectorAll('#jobRunsBody tr')).forEach((row) => {
+                    const cells = row.querySelectorAll('td');
+                    const title = cells[0]?.childNodes[0]?.textContent?.trim() || '';
+                    if (title && !latestTableStarts[title]) latestTableStarts[title] = cells[4]?.textContent?.trim() || '';
+                });
+                const cardRuns = Array.from(document.querySelectorAll('.job-card')).map((card) => {
+                    const currentRun = Array.from(card.querySelectorAll('dl > div')).find(
+                        (item) => item.querySelector('dt')?.textContent?.trim() === '本次运行'
+                    );
+                    return {
+                        title: card.querySelector('h2')?.textContent?.trim() || '',
+                        status: card.querySelector('.status-badge')?.textContent?.trim() || '',
+                        currentRun: currentRun?.querySelector('dd')?.textContent?.trim() || '',
+                    };
+                });
                 return ({
                 reviewRows: document.querySelectorAll('#reviewAccountsBody tr').length,
                 jobRows: document.querySelectorAll('#jobRunsBody tr').length,
@@ -90,6 +106,8 @@ def main() -> int:
                 performancePlan: Array.from(
                     performanceCard?.querySelectorAll('dl > div > dd') || []
                 ).slice(0, 2).map((item) => item.textContent?.trim() || ''),
+                latestTableStarts,
+                cardRuns,
                 documentOverflow:
                     document.documentElement.scrollWidth > window.innerWidth,
                 reviewTableOverflow:
@@ -122,6 +140,13 @@ def main() -> int:
         raise AssertionError(f"alert delivery state is not rendered: {diagnostics}")
     if diagnostics["performancePlan"] != ["交易日 盘后结算成功后", "上游任务成功"]:
         raise AssertionError(f"performance dependency plan is incorrect: {diagnostics}")
+    stale_cards = [
+        card for card in diagnostics["cardRuns"]
+        if diagnostics["latestTableStarts"].get(card["title"])
+        and diagnostics["latestTableStarts"][card["title"]] not in card["currentRun"]
+    ]
+    if stale_cards:
+        raise AssertionError(f"job cards do not show the latest selected-day runs: {diagnostics}")
     if diagnostics["documentOverflow"]:
         raise AssertionError(f"page has horizontal document overflow: {diagnostics}")
     if console_errors or page_errors or response_errors:

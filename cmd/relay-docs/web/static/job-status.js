@@ -289,6 +289,17 @@
     return `${date} / ${status} / ${start}`;
   }
 
+  function latestRunsByName(runs) {
+    const latest = new Map();
+    runs.forEach((run) => {
+      const current = latest.get(run.job_name);
+      const runTime = Date.parse(run.finished_at || run.started_at || "") || 0;
+      const currentTime = Date.parse(current && (current.finished_at || current.started_at) || "") || 0;
+      if (!current || runTime > currentTime) latest.set(run.job_name, run);
+    });
+    return latest;
+  }
+
   function snapshotResult(run) {
     const report = run && run.report;
     if (!report || typeof report !== "object") return null;
@@ -341,10 +352,15 @@
     const status = delivery.status || "unknown";
     if (status === "delivered") return { label: `已通知${delivery.attempts > 1 ? ` (${delivery.attempts}次)` : ""}`, className: "succeeded" };
     if (status === "not_required") {
-      return { label: delivery.configured ? "无需通知 · 通道可用" : "无需通知 · 通道未启用", className: "skipped" };
+      return { label: "未检测到告警", className: "skipped" };
     }
     if (status === "suppressed") return { label: "演练已抑制", className: "skipped" };
-    if (status === "disabled") return { label: "需通知 · 通道未启用", className: "failed" };
+    if (status === "disabled") {
+      return {
+        label: "检测到告警 · 未配置外部通知",
+        className: delivery.severity === "critical" ? "failed" : "running",
+      };
+    }
     if (status === "misconfigured") return { label: "告警配置不完整", className: "failed" };
     if (status === "failed") return { label: "通知失败", className: "failed" };
     return { label: status, className: "" };
@@ -356,6 +372,14 @@
     if (report.skipped) return report.skip_reason || "skipped";
     const snapshot = snapshotResult(run);
     const parts = [];
+    const performance = report.performance_summary;
+    if (performance && typeof performance === "object") {
+      parts.push(`正常 ${Number(performance.ready || 0)}`);
+      if (Number(performance.attention || 0)) parts.push(`关注 ${Number(performance.attention)}`);
+      if (Number(performance.blocked || 0)) parts.push(`阻断 ${Number(performance.blocked)}`);
+      if (Number(performance.not_applicable || 0)) parts.push(`不适用 ${Number(performance.not_applicable)}`);
+      return parts.join(" · ");
+    }
     if (snapshot) {
       if (Array.isArray(snapshot.accounts)) parts.push(`账户 ${snapshot.accounts.length}`);
       if (snapshot.asset_snapshots !== undefined) parts.push(`资产快照 ${snapshot.asset_snapshots}`);
@@ -401,7 +425,7 @@
   }
 
   function renderCards(statusView, runs) {
-    const byName = new Map(runs.map((run) => [run.job_name, run]));
+    const byName = latestRunsByName(runs);
     const names = [...knownJobs.map((item) => item.name), ...runs.map((run) => run.job_name)]
       .filter((name, index, array) => name && array.indexOf(name) === index);
     els.cards.innerHTML = names.map((name) => {
