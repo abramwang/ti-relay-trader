@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,6 +119,45 @@ func TestCalculateContributionsUsesPositionCashFlowIdentity(t *testing.T) {
 	barQuery := marketClient.queries[1]
 	if barQuery.Get("start_date") != "20260724" || barQuery.Get("end_date") != "20260724" || barQuery.Get("trade_date") != "" {
 		t.Fatalf("bar query = %s", barQuery.Encode())
+	}
+}
+
+func TestCalculateContributionsCoalescesConcurrentRequests(t *testing.T) {
+	store := &blockingPerformanceStore{
+		fakePerformanceStore: &fakePerformanceStore{dailyErr: sql.ErrNoRows},
+		started:              make(chan struct{}),
+		release:              make(chan struct{}),
+	}
+	service, err := New(Options{Store: store})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	const workers = 8
+	start := make(chan struct{})
+	results := make(chan error, workers)
+	for range workers {
+		go func() {
+			<-start
+			_, callErr := service.CalculateContributions(context.Background(), "acct-1", "20260724")
+			results <- callErr
+		}()
+	}
+	close(start)
+	select {
+	case <-store.started:
+	case <-time.After(time.Second):
+		t.Fatal("contribution calculation did not reach the store")
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(store.release)
+	for range workers {
+		if callErr := <-results; callErr != nil {
+			t.Fatalf("CalculateContributions() error = %v", callErr)
+		}
+	}
+	if calls := store.calls.Load(); calls != 1 {
+		t.Fatalf("ListOrders() calls = %d, want 1", calls)
 	}
 }
 
@@ -2061,6 +2101,25 @@ type fakePerformanceStore struct {
 	costStates            []ledger.PositionCostState
 	costUpserts           []ledger.PositionCostState
 	now                   time.Time
+}
+
+type blockingPerformanceStore struct {
+	*fakePerformanceStore
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (store *blockingPerformanceStore) ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error) {
+	if store.calls.Add(1) == 1 {
+		close(store.started)
+		select {
+		case <-store.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return store.fakePerformanceStore.ListOrders(ctx, query)
 }
 
 type fakeContributionMarket struct {

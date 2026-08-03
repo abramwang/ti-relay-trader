@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
 	"ti-relay-trader/internal/timeutil"
@@ -101,6 +103,7 @@ type Service struct {
 	autoToleranceBP     float64
 	warningToleranceCNY float64
 	warningToleranceBP  float64
+	contributionFlights singleflight.Group
 	ids                 atomic.Uint64
 }
 

@@ -53,6 +53,7 @@
     performanceReviewBusy: false,
     performanceReviewSettingsError: "",
     performanceLoaded: false,
+    performanceDetailsLoading: false,
     performanceError: "",
     performanceSelectedDate: "",
     performanceSeriesFallback: false,
@@ -998,6 +999,14 @@
     setActiveView(view);
   }
 
+  function viewUsesLiveAccountData(view = state.activeView) {
+    return ["trade", "batch", "orders", "asset", "logs"].includes(view);
+  }
+
+  function viewUsesPositionQuotes(view = state.activeView) {
+    return view === "trade" || view === "asset";
+  }
+
   function setActiveView(view) {
     if (!["trade", "batch", "orders", "asset", "performance", "snapshots", "logs", "performance-settings"].includes(view)) {
       view = "trade";
@@ -1005,7 +1014,11 @@
     if (view === "logs") {
       state.selectedTab = "logs";
     }
+    const previousView = state.activeView;
     state.activeView = view;
+    if (!viewUsesPositionQuotes(view)) {
+      closePositionQuoteStreams();
+    }
     els.shell.classList.toggle("view-trade", view === "trade");
     els.shell.classList.toggle("view-batch", view === "batch");
     els.shell.classList.toggle("view-orders", view === "orders" || view === "logs");
@@ -1066,6 +1079,9 @@
       if (state.activeAccount && !state.performanceSettingsLoaded) {
         loadPerformanceSettings().catch((err) => pushLog("warn", "绩效设置查询失败", err.message));
       }
+    }
+    if (state.initialized && previousView !== view && viewUsesLiveAccountData(view)) {
+      loadAccountData().catch((err) => pushLog("warn", "账户数据刷新失败", err.message));
     }
   }
 
@@ -1278,7 +1294,7 @@
 
   function refreshPositionQuoteStreams() {
     const tradeDate = selectedAssetTradeDateSafe();
-    if (!window.EventSource || !state.activeAccount || !isCurrentBusinessDate(tradeDate)) {
+    if (!viewUsesPositionQuotes() || !window.EventSource || !state.activeAccount || !isCurrentBusinessDate(tradeDate)) {
       closePositionQuoteStreams();
       return;
     }
@@ -1398,6 +1414,9 @@
 
   function scheduleStreamRefresh() {
     window.clearTimeout(state.streamRefreshTimer);
+    if (!viewUsesLiveAccountData()) {
+      return;
+    }
     state.streamRefreshTimer = window.setTimeout(() => {
       loadAccountData().catch((err) => pushLog("error", "实时刷新失败", err.message));
     }, 150);
@@ -2335,7 +2354,9 @@
           renderBatchEditor();
         }
         connectEventStream();
-        await refreshNow();
+        if (viewUsesLiveAccountData()) {
+          await refreshNow();
+        }
         if (state.activeView === "trade") {
           await loadTradeChartBars({ silent: true });
         }
@@ -3488,6 +3509,7 @@
     }
     els.performanceStatus.textContent = "查询中...";
     els.loadPerformanceButton.disabled = true;
+    state.performanceDetailsLoading = true;
     try {
       let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
       const selectedDate = params.dateTo;
@@ -3523,6 +3545,9 @@
       state.performanceSummary = data.summary || null;
       state.performanceSeries = Array.isArray(data.series) ? data.series : [];
       state.performanceDaily = state.performanceSeries.find((item) => compactDate(item && item.trade_date) === selectedDate) || null;
+      state.performanceLoaded = true;
+      state.performanceDetailsLoading = true;
+      renderPerformance();
       const dailyDate = selectedDate;
       const qualityQuery = new URLSearchParams({
         date_from: params.dateFrom,
@@ -3594,7 +3619,7 @@
         state.performanceNAVReconciliation = null;
         pushLog("warn", "经济净值对账读取失败", displayDate(dailyDate) + " " + reconciliationResult.reason.message);
       }
-      state.performanceLoaded = true;
+      state.performanceDetailsLoading = false;
       renderPerformance();
       showToast("绩效数据已更新");
     } catch (err) {
@@ -3602,6 +3627,7 @@
         return;
       }
       state.performanceLoaded = false;
+      state.performanceDetailsLoading = false;
       state.performanceError = err.message;
       state.performanceSelectedDate = "";
       state.performanceSeriesFallback = false;
@@ -3799,7 +3825,8 @@
     }).join("");
 
     if (rows.length === 0) {
-      els.performanceContributionBody.innerHTML = '<tr><td colspan="10"><div class="empty-state">当前交易日暂无可归因证券，或归因输入尚未完成</div></td></tr>';
+      const emptyText = state.performanceDetailsLoading ? "证券贡献计算中..." : "当前交易日暂无可归因证券，或归因输入尚未完成";
+      els.performanceContributionBody.innerHTML = '<tr><td colspan="10"><div class="empty-state">' + emptyText + '</div></td></tr>';
       return;
     }
     els.performanceContributionBody.innerHTML = rows.map((item) => {
@@ -4176,14 +4203,14 @@
     }
     const series = state.performanceSeries || [];
     const daily = state.performanceDaily || series[series.length - 1] || {};
-    if (!state.performanceLoaded) {
+    if (!state.performanceLoaded || state.performanceDetailsLoading) {
       els.performanceQualityPanel.dataset.status = "waiting";
-      els.performanceQualityStatus.textContent = "待检查";
-      els.performanceQualityDate.textContent = "等待结算数据";
+      els.performanceQualityStatus.textContent = state.performanceDetailsLoading ? "计算中" : "待检查";
+      els.performanceQualityDate.textContent = state.performanceDetailsLoading ? "曲线已加载，正在计算明细" : "等待结算数据";
       els.performanceQualityPassed.textContent = "--";
       els.performanceQualityWarnings.textContent = "--";
       els.performanceQualityBlocked.textContent = "--";
-      els.performanceQualityList.innerHTML = '<div class="empty-state">查询绩效后显示快照、行情、归因、对账与任务检查</div>';
+      els.performanceQualityList.innerHTML = '<div class="empty-state">' + (state.performanceDetailsLoading ? "正在读取归因、成本、对账与任务状态..." : "查询绩效后显示快照、行情、归因、对账与任务检查") + '</div>';
       return;
     }
     const checks = performanceQualityChecks();
@@ -4525,7 +4552,9 @@
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
       : (state.performanceLoaded
-        ? (state.performanceSeriesFallback ? "当日试算已加载 · 最近正式序列 " + formatInt(series.length) + " 条" : "已加载 " + formatInt(series.length) + " 条")
+        ? (state.performanceDetailsLoading
+          ? "曲线已加载 · 明细计算中..."
+          : (state.performanceSeriesFallback ? "当日试算已加载 · 最近正式序列 " + formatInt(series.length) + " 条" : "已加载 " + formatInt(series.length) + " 条"))
         : "等待查询");
     if (series.length === 0) {
       els.performanceSeriesBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
@@ -6471,7 +6500,9 @@
       resetLedgerPages();
       resetPositionStats();
       connectEventStream();
-      await refreshNow();
+      if (viewUsesLiveAccountData()) {
+        await refreshNow();
+      }
       if (state.activeView === "trade") {
         await loadTradeChartBars({ silent: true });
         scheduleChartAutoRefresh();
@@ -6789,9 +6820,21 @@
       renderAll();
     }
     window.setInterval(() => {
-      refreshNow().catch((err) => pushLog("error", "轮询刷新失败", err.message));
+      if (state.performanceDetailsLoading || !viewUsesLiveAccountData() || state.streamConnected) {
+        return;
+      }
+      loadAccountData().catch((err) => pushLog("error", "轮询刷新失败", err.message));
     }, 3000);
     window.setInterval(() => {
+      if (state.performanceDetailsLoading) {
+        return;
+      }
+      loadStatus().catch((err) => pushLog("warn", "状态轮询失败", err.message));
+    }, 10000);
+    window.setInterval(() => {
+      if (state.activeView !== "trade" || state.performanceDetailsLoading) {
+        return;
+      }
       loadQuoteForInput().catch((err) => pushLog("warn", "行情轮询失败", err.message));
     }, 5000);
     window.addEventListener("beforeunload", closeTerminalStreams);

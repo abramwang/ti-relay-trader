@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from time import perf_counter
 
 from playwright.sync_api import sync_playwright
 
@@ -87,6 +88,7 @@ def main() -> int:
         page.locator("#perfDateFrom").fill(args.date_from)
         page.locator("#perfDateTo").fill(args.date_to)
         page.locator("#perfBenchmarkInput").fill("000001.SH")
+        query_started_at = perf_counter()
         page.locator("#loadPerformanceButton").click()
         page.wait_for_function(
             """() => (
@@ -94,6 +96,17 @@ def main() -> int:
             ).includes("查询中")""",
             timeout=10_000,
         )
+        page.wait_for_function(
+            """() => {
+                const status =
+                    document.querySelector("#performanceStatus")?.textContent || "";
+                const canvas = document.querySelector("#performanceChart canvas");
+                return status.includes("曲线已加载") &&
+                    Boolean(canvas && canvas.width > 0 && canvas.height > 0);
+            }""",
+            timeout=15_000,
+        )
+        chart_elapsed_ms = round((perf_counter() - query_started_at) * 1000, 1)
         expected_range = {
             "dateFrom": (
                 f"{args.date_from[:4]}-{args.date_from[4:6]}-{args.date_from[6:]}"
@@ -116,13 +129,14 @@ def main() -> int:
         status = page.locator("#performanceStatus").inner_text()
         if "查询失败" in status:
             raise AssertionError(status)
+        details_elapsed_ms = round((perf_counter() - query_started_at) * 1000, 1)
         page.locator("#performanceChart canvas").wait_for(
             state="visible", timeout=15_000
         )
         page.wait_for_timeout(400)
 
         diagnostics = page.evaluate(
-            """() => {
+            """(timings) => {
                 const canvas = document.querySelector("#performanceChart canvas");
                 const shell = document.querySelector("#terminalShell");
                 const pixels = canvas
@@ -164,8 +178,14 @@ def main() -> int:
                     ).map((item) => item.textContent || ""),
                     actualFee:
                         document.querySelector("#perfActualFee")?.textContent || "",
+                    chartElapsedMs: timings.chartElapsedMs,
+                    detailsElapsedMs: timings.detailsElapsedMs,
                 };
-            }"""
+            }""",
+            arg={
+                "chartElapsedMs": chart_elapsed_ms,
+                "detailsElapsedMs": details_elapsed_ms,
+            },
         )
         page.screenshot(path=str(output), full_page=False)
         browser.close()
@@ -174,6 +194,10 @@ def main() -> int:
         raise AssertionError(f"performance chart is undersized: {diagnostics}")
     if diagnostics["paintedSamples"] < 500:
         raise AssertionError(f"performance chart is blank: {diagnostics}")
+    if diagnostics["chartElapsedMs"] > 5_000:
+        raise AssertionError(f"performance chart rendered too slowly: {diagnostics}")
+    if diagnostics["detailsElapsedMs"] > 10_000:
+        raise AssertionError(f"performance details loaded too slowly: {diagnostics}")
     if diagnostics["qualityItems"] != 7:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")
     if diagnostics["horizontalOverflow"]:

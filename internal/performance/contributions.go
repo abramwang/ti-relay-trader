@@ -186,7 +186,20 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 	if err != nil {
 		return ContributionResult{}, err
 	}
+	value, err, _ := service.contributionFlights.Do(accountID+"|"+normalizedDate, func() (any, error) {
+		return service.calculateContributions(ctx, accountID, normalizedDate)
+	})
+	if err != nil {
+		return ContributionResult{}, err
+	}
+	result, ok := value.(ContributionResult)
+	if !ok {
+		return ContributionResult{}, errors.New("invalid contribution calculation result")
+	}
+	return result, nil
+}
 
+func (service *Service) calculateContributions(ctx context.Context, accountID, normalizedDate string) (ContributionResult, error) {
 	orders, err := service.listContributionOrders(ctx, accountID, normalizedDate)
 	if err != nil {
 		return ContributionResult{}, err
