@@ -2136,7 +2136,10 @@ func TestCalculateTradeQualitySummarizesExecutionAndAnomalies(t *testing.T) {
 	if summary.CancelledOrders != 1 || summary.RejectedOrders != 1 || summary.NonTerminalOrders != 1 {
 		t.Fatalf("status summary = %#v", summary)
 	}
-	if summary.AbnormalOrders != 3 || summary.OrphanFillGroups != 1 || summary.AnomalyItems != 4 {
+	if summary.RejectedOrdersWithReason != 1 || summary.RejectedOrdersMissingReason != 0 {
+		t.Fatalf("rejection evidence summary = %#v", summary)
+	}
+	if summary.AbnormalOrders != 2 || summary.OrphanFillGroups != 1 || summary.AnomalyItems != 3 {
 		t.Fatalf("anomaly summary = %#v, anomalies=%#v", summary, result.Anomalies)
 	}
 	if summary.Fills != 4 || summary.FillQuantity != 250 {
@@ -2162,6 +2165,37 @@ func TestCalculateTradeQualitySummarizesExecutionAndAnomalies(t *testing.T) {
 	}
 	if tradeQualityHasAnomalyFlag(result.Anomalies, "partial-cancel", "broker_error_message") {
 		t.Fatalf("normal broker cancelled status treated as error: %#v", result.Anomalies)
+	}
+	if tradeQualityHasAnomalyFlag(result.Anomalies, "rejected", "rejected_order_missing_reason") {
+		t.Fatalf("evidenced broker rejection treated as data anomaly: %#v", result.Anomalies)
+	}
+}
+
+func TestTradeQualityRejectedOrderRequiresReasonEvidence(t *testing.T) {
+	terminalAt := time.Date(2026, 7, 24, 10, 0, 0, 0, timeutil.Location())
+	order := trading.Order{
+		GatewayOrderID: "rejected-without-reason",
+		TradeDate:      "2026-07-24",
+		Symbol:         "600000",
+		Exchange:       trading.ExchangeSH,
+		OrderQty:       100,
+		Status:         trading.OrderStatusRejected,
+		GatewayStatus:  trading.GatewayStatusRejected,
+		IsTerminal:     true,
+		CreatedAt:      terminalAt,
+		TerminalAt:     terminalAt,
+	}
+
+	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	if !containsString(anomaly.Flags, "rejected_order_missing_reason") {
+		t.Fatalf("missing rejection reason not flagged: %#v", anomaly.Flags)
+	}
+
+	order.RejectCode = trading.ErrorCode("BROKER_REJECTED")
+	order.RejectMessage = "VIP:找不到持仓"
+	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	if len(anomaly.Flags) != 0 {
+		t.Fatalf("evidenced rejection treated as data anomaly: %#v", anomaly.Flags)
 	}
 }
 

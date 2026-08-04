@@ -145,6 +145,8 @@ client.record_settlement_snapshot(
 )
 ```
 
+`get_trade_quality()` 返回服务端当前交易质量公式。`trade_quality.v3` 的 `summary` 分别提供 `rejected_orders`、`rejected_orders_with_reason` 和 `rejected_orders_missing_reason`；有完整柜台原因的业务拒单保留在拒单统计中，不进入 `anomalies`。
+
 `record_settlement_snapshot()` does not query OC by itself. Run refresh commands
 first and wait until the local ledger has merged fresh asset/position replies.
 

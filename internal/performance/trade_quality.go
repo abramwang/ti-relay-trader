@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v2"
+	tradeQualityFormulaVersion = "trade_quality.v3"
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
 )
@@ -35,27 +35,29 @@ type TradeQualityResult struct {
 }
 
 type TradeQualitySummary struct {
-	Orders                int     `json:"orders"`
-	OrdersWithFills       int     `json:"orders_with_fills"`
-	FullyFilledOrders     int     `json:"fully_filled_orders"`
-	PartiallyFilledOrders int     `json:"partially_filled_orders"`
-	CancelledOrders       int     `json:"cancelled_orders"`
-	RejectedOrders        int     `json:"rejected_orders"`
-	NonTerminalOrders     int     `json:"non_terminal_orders"`
-	AbnormalOrders        int     `json:"abnormal_orders"`
-	OrphanFillGroups      int     `json:"orphan_fill_groups"`
-	AnomalyItems          int     `json:"anomaly_items"`
-	Fills                 int     `json:"fills"`
-	OrderQuantity         int64   `json:"order_quantity"`
-	ExecutedQuantity      int64   `json:"executed_quantity"`
-	FillQuantity          int64   `json:"fill_quantity"`
-	ExecutedOrderRate     float64 `json:"executed_order_rate"`
-	FullFillRate          float64 `json:"full_fill_rate"`
-	QuantityFillRate      float64 `json:"quantity_fill_rate"`
-	CancelRate            float64 `json:"cancel_rate"`
-	RejectRate            float64 `json:"reject_rate"`
-	Turnover              float64 `json:"turnover"`
-	Fee                   float64 `json:"fee"`
+	Orders                      int     `json:"orders"`
+	OrdersWithFills             int     `json:"orders_with_fills"`
+	FullyFilledOrders           int     `json:"fully_filled_orders"`
+	PartiallyFilledOrders       int     `json:"partially_filled_orders"`
+	CancelledOrders             int     `json:"cancelled_orders"`
+	RejectedOrders              int     `json:"rejected_orders"`
+	RejectedOrdersWithReason    int     `json:"rejected_orders_with_reason"`
+	RejectedOrdersMissingReason int     `json:"rejected_orders_missing_reason"`
+	NonTerminalOrders           int     `json:"non_terminal_orders"`
+	AbnormalOrders              int     `json:"abnormal_orders"`
+	OrphanFillGroups            int     `json:"orphan_fill_groups"`
+	AnomalyItems                int     `json:"anomaly_items"`
+	Fills                       int     `json:"fills"`
+	OrderQuantity               int64   `json:"order_quantity"`
+	ExecutedQuantity            int64   `json:"executed_quantity"`
+	FillQuantity                int64   `json:"fill_quantity"`
+	ExecutedOrderRate           float64 `json:"executed_order_rate"`
+	FullFillRate                float64 `json:"full_fill_rate"`
+	QuantityFillRate            float64 `json:"quantity_fill_rate"`
+	CancelRate                  float64 `json:"cancel_rate"`
+	RejectRate                  float64 `json:"reject_rate"`
+	Turnover                    float64 `json:"turnover"`
+	Fee                         float64 `json:"fee"`
 }
 
 type TradeQualityAnomaly struct {
@@ -170,6 +172,11 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 			result.Summary.CancelledOrders++
 		case trading.OrderStatusRejected:
 			result.Summary.RejectedOrders++
+			if tradeQualityBrokerMessage(order) != "" {
+				result.Summary.RejectedOrdersWithReason++
+			} else {
+				result.Summary.RejectedOrdersMissingReason++
+			}
 		}
 		if !order.Status.Terminal() {
 			result.Summary.NonTerminalOrders++
@@ -386,8 +393,9 @@ func matchTradeQualityFillGroup(groups map[string]qualityFillGroup, keysByOrder 
 func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup qualityFillGroup) TradeQualityAnomaly {
 	flags := make([]string, 0)
 	ledgerFilledQuantity := fillGroup.quantity
-	if order.Status == trading.OrderStatusRejected {
-		flags = append(flags, "rejected_order")
+	brokerMessage := tradeQualityBrokerMessage(order)
+	if order.Status == trading.OrderStatusRejected && brokerMessage == "" {
+		flags = append(flags, "rejected_order_missing_reason")
 	}
 	if !order.Status.Terminal() {
 		flags = append(flags, "non_terminal_order")
@@ -437,7 +445,6 @@ func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup q
 		order.TerminalAt.In(timeutil.Location()).Format("2006-01-02") != tradeDate {
 		flags = append(flags, "terminal_trade_date_mismatch")
 	}
-	brokerMessage := tradeQualityBrokerMessage(order)
 	if brokerMessage != "" && order.Status != trading.OrderStatusRejected {
 		flags = append(flags, "broker_error_message")
 	}

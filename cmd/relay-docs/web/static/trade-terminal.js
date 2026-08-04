@@ -268,6 +268,7 @@
     tradeQualityFullRate: byID("tradeQualityFullRate"),
     tradeQualityQuantityRate: byID("tradeQualityQuantityRate"),
     tradeQualityCancelReject: byID("tradeQualityCancelReject"),
+    tradeQualityRejectEvidence: byID("tradeQualityRejectEvidence"),
     tradeQualityOpen: byID("tradeQualityOpen"),
     tradeQualityAnomalies: byID("tradeQualityAnomalies"),
     minuteChart: byID("minuteChart"),
@@ -3860,6 +3861,7 @@
   function tradeQualityFlagLabel(value) {
     return {
       rejected_order: "拒单",
+      rejected_order_missing_reason: "拒单缺少原因",
       non_terminal_order: "未终态",
       invalid_order_quantity: "委托量无效",
       invalid_quantity: "废单数量",
@@ -3896,6 +3898,7 @@
     els.tradeQualityFullRate.textContent = formatQualityRate(summary.full_fill_rate);
     els.tradeQualityQuantityRate.textContent = formatQualityRate(summary.quantity_fill_rate);
     els.tradeQualityCancelReject.textContent = formatInt(summary.cancelled_orders) + " / " + formatInt(summary.rejected_orders);
+    els.tradeQualityRejectEvidence.textContent = formatInt(summary.rejected_orders_with_reason) + " / " + formatInt(summary.rejected_orders_missing_reason);
     els.tradeQualityOpen.textContent = formatInt(summary.non_terminal_orders);
     els.tradeQualityAnomalies.textContent = formatInt(summary.anomaly_items);
 
@@ -4107,8 +4110,13 @@
 
     const anomalyItems = Number(tradeSummary.anomaly_items) || 0;
     const nonTerminalOrders = Number(tradeSummary.non_terminal_orders) || 0;
+    const rejectedOrders = Number(tradeSummary.rejected_orders) || 0;
+    const rejectedOrdersWithReason = Number(tradeSummary.rejected_orders_with_reason) || 0;
     let ledgerStatus = "passed";
     let ledgerDetail = formatInt(tradeSummary.orders) + " 笔委托，未发现账本一致性异常";
+    if (rejectedOrders > 0 && rejectedOrdersWithReason === rejectedOrders) {
+      ledgerDetail = formatInt(tradeSummary.orders) + " 笔委托，" + formatInt(rejectedOrders) + " 笔业务拒单均有完整原因";
+    }
     if (!state.performanceTradeQuality) {
       ledgerStatus = "warning";
       ledgerDetail = "交易质量接口未返回结果";
