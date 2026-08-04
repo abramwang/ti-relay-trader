@@ -17,6 +17,9 @@ outputs/backups/
 outputs/restore-drills/
 .runtime/
 
+# Broker delivery statements contain account transaction details and stay local.
+reference/*_20??????.csv
+
 # Python cache and local environments.
 __pycache__/
 .pytest_cache/
