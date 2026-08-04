@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v1"
+	tradeQualityFormulaVersion = "trade_quality.v2"
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
 )
@@ -114,6 +114,10 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		return TradeQualityResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	feeRecords, err := service.listTradeQualityOrderFees(ctx, accountID, normalizedFrom, normalizedTo)
+	if err != nil {
+		return TradeQualityResult{}, err
+	}
 
 	result := TradeQualityResult{
 		AccountID:       accountID,
@@ -125,6 +129,7 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		GeneratedAt:     service.now().In(timeutil.Location()),
 	}
 	fillGroups, fillGroupKeysByOrder := buildTradeQualityFillGroups(fills)
+	authoritativeFees, feeKeysByOrder := buildTradeQualityOrderFees(feeRecords)
 	usedFillGroups := make(map[string]bool)
 
 	for _, order := range orders {
@@ -182,7 +187,11 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		result.Summary.Fills += len(group.fills)
 		result.Summary.FillQuantity += group.quantity
 		result.Summary.Turnover += group.turnover
-		result.Summary.Fee += group.fee
+		effectiveFee := group.fee
+		if orderFee, ok := matchTradeQualityOrderFee(authoritativeFees, feeKeysByOrder, key); ok {
+			effectiveFee = orderFee.TotalFee
+		}
+		result.Summary.Fee += effectiveFee
 		if usedFillGroups[key] {
 			continue
 		}
@@ -283,6 +292,27 @@ func (service *Service) listTradeQualityFills(ctx context.Context, accountID, da
 	return nil, fmt.Errorf("trade quality fills exceed %d rows", contributionPageLimit*maxContributionPages)
 }
 
+func (service *Service) listTradeQualityOrderFees(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.OrderFeeRecord, error) {
+	items := make([]ledger.OrderFeeRecord, 0)
+	for page := 0; page < maxFeePages; page++ {
+		batch, err := service.store.ListOrderFeeRecords(ctx, ledger.OrderFeeRecordQuery{
+			AccountID: accountID,
+			DateFrom:  dateFrom,
+			DateTo:    dateTo,
+			Limit:     feePageLimit,
+			Cursor:    strconv.Itoa(page * feePageLimit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list trade quality order fees: %w", err)
+		}
+		items = append(items, batch...)
+		if len(batch) < feePageLimit {
+			return items, nil
+		}
+	}
+	return nil, fmt.Errorf("trade quality order fees exceed %d rows", feePageLimit*maxFeePages)
+}
+
 func buildTradeQualityFillGroups(fills []trading.Fill) (map[string]qualityFillGroup, map[string][]string) {
 	groups := make(map[string]qualityFillGroup)
 	keysByOrder := make(map[string][]string)
@@ -301,6 +331,38 @@ func buildTradeQualityFillGroups(fills []trading.Fill) (map[string]qualityFillGr
 		}
 	}
 	return groups, keysByOrder
+}
+
+func buildTradeQualityOrderFees(records []ledger.OrderFeeRecord) (map[string]ledger.OrderFeeRecord, map[string][]string) {
+	fees := make(map[string]ledger.OrderFeeRecord)
+	keysByOrder := make(map[string][]string)
+	for _, record := range records {
+		gatewayOrderID := strings.TrimSpace(record.GatewayOrderID)
+		if gatewayOrderID == "" || !record.FeeComplete || !record.AssociationComplete || strings.TrimSpace(record.FeeSource) == "unavailable" {
+			continue
+		}
+		key := tradeQualityKey(normalizedQualityDate(record.TradeDate), gatewayOrderID)
+		current, exists := fees[key]
+		if !exists || record.FeeAsOf.After(current.FeeAsOf) {
+			fees[key] = record
+		}
+		if !tradeQualityContainsString(keysByOrder[gatewayOrderID], key) {
+			keysByOrder[gatewayOrderID] = append(keysByOrder[gatewayOrderID], key)
+		}
+	}
+	return fees, keysByOrder
+}
+
+func matchTradeQualityOrderFee(fees map[string]ledger.OrderFeeRecord, keysByOrder map[string][]string, fillGroupKey string) (ledger.OrderFeeRecord, bool) {
+	if fee, ok := fees[fillGroupKey]; ok {
+		return fee, true
+	}
+	_, gatewayOrderID, _ := strings.Cut(fillGroupKey, "\x00")
+	if tradeQualityKeyDate(fillGroupKey) == "" && len(keysByOrder[gatewayOrderID]) == 1 {
+		fee, ok := fees[keysByOrder[gatewayOrderID][0]]
+		return fee, ok
+	}
+	return ledger.OrderFeeRecord{}, false
 }
 
 func matchTradeQualityFillGroup(groups map[string]qualityFillGroup, keysByOrder map[string][]string, exactKey, gatewayOrderID string) (qualityFillGroup, string) {

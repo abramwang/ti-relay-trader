@@ -15,7 +15,7 @@ Relay 接受 QuantStage 的 pandas 共同基线，但当前不在生产交易链
 | Go API/worker | 无 Python DataFrame 运行时依赖 |
 | `relay-sdk` | 保持 Python 标准库实现，`dependencies=[]` |
 | 盘前、盘后和每日绩效任务 | 当前不依赖 pandas；继续使用 JSON/CSV 和标准库模型 |
-| 绩效 golden fixture、交割单一次性离线核验、临时对账工具 | 如使用 pandas，必须通过项目 constraints 固定 `pandas==2.3.3`；核验结果不导入标准账本 |
+| 绩效 golden fixture、交割单一次性离线核验、临时对账工具 | 如使用 pandas，必须通过项目 constraints 固定 `pandas==2.3.3`；核验结果不形成日常自动导入流程，历史修复仍需唯一关联、审计和用户确认 |
 | 未来公共 SDK DataFrame extra | 只有形成明确需求后才增加，兼容范围必须是 `pandas>=2.3,<3` |
 
 精确约束文件为：

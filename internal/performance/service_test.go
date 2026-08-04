@@ -1958,6 +1958,19 @@ func TestCalculateTradeQualitySummarizesExecutionAndAnomalies(t *testing.T) {
 			{FillID: "fill-mismatch-1", AccountID: "acct-1", GatewayOrderID: "fill-mismatch", TradeDate: "2026-07-24", Symbol: "159900", Exchange: trading.ExchangeSZ, Price: 4.8, Qty: 80, Fee: 0.8},
 			{FillID: "orphan-1", AccountID: "acct-1", GatewayOrderID: "missing-order", TradeDate: "2026-07-24", Symbol: "601318", Exchange: trading.ExchangeSH, Price: 60, Qty: 30, Fee: 0.6},
 		},
+		orderFees: []ledger.OrderFeeRecord{
+			{
+				AccountID:           "acct-1",
+				FeeRecordID:         "fee-filled-ok",
+				TradeDate:           "2026-07-24",
+				GatewayOrderID:      "filled-ok",
+				TotalFee:            6.25,
+				FeeComplete:         true,
+				AssociationComplete: true,
+				FeeSource:           "broker_order_fund_detail",
+				FeeAsOf:             updatedAt,
+			},
+		},
 	}
 	service, err := New(Options{Store: store, Now: func() time.Time { return updatedAt }})
 	if err != nil {
@@ -1987,7 +2000,7 @@ func TestCalculateTradeQualitySummarizesExecutionAndAnomalies(t *testing.T) {
 	if summary.ExecutedOrderRate != 0.6 || summary.FullFillRate != 0.4 || summary.QuantityFillRate != 0.44 {
 		t.Fatalf("rates = %#v", summary)
 	}
-	if summary.Turnover != 3664 || summary.Fee != 2.9 {
+	if summary.Turnover != 3664 || summary.Fee != 8.15 {
 		t.Fatalf("turnover/fee = %#v", summary)
 	}
 	if len(store.orderQueries) != 1 || store.orderQueries[0].DateFrom != "2026-07-24" || store.orderQueries[0].DateTo != "2026-07-24" {
@@ -2035,6 +2048,37 @@ func TestTradeQualityDoesNotMatchReusedOrderIDAcrossDates(t *testing.T) {
 	)
 	if matchedKey != "" || group.quantity != 0 {
 		t.Fatalf("cross-date fill matched key=%q group=%#v", matchedKey, group)
+	}
+}
+
+func TestTradeQualityOrderFeeDoesNotMatchReusedOrderIDAcrossDates(t *testing.T) {
+	fees, keysByOrder := buildTradeQualityOrderFees([]ledger.OrderFeeRecord{
+		{
+			GatewayOrderID:      "reused-order",
+			TradeDate:           "2026-07-23",
+			TotalFee:            1.25,
+			FeeComplete:         true,
+			AssociationComplete: true,
+			FeeSource:           "broker_order_fund_detail",
+			FeeAsOf:             time.Date(2026, 7, 23, 15, 0, 0, 0, timeutil.Location()),
+		},
+		{
+			GatewayOrderID:      "reused-order",
+			TradeDate:           "2026-07-24",
+			TotalFee:            2.5,
+			FeeComplete:         true,
+			AssociationComplete: true,
+			FeeSource:           "broker_order_fund_detail",
+			FeeAsOf:             time.Date(2026, 7, 24, 15, 0, 0, 0, timeutil.Location()),
+		},
+	})
+
+	fee, ok := matchTradeQualityOrderFee(fees, keysByOrder, tradeQualityKey("2026-07-24", "reused-order"))
+	if !ok || fee.TotalFee != 2.5 {
+		t.Fatalf("exact fee = %#v/%t, want 2026-07-24 fee", fee, ok)
+	}
+	if _, ok := matchTradeQualityOrderFee(fees, keysByOrder, tradeQualityKey("", "reused-order")); ok {
+		t.Fatal("undated fill group matched an ambiguous cross-date order fee")
 	}
 }
 
