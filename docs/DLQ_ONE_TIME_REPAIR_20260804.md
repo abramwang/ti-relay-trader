@@ -105,3 +105,9 @@ SHA-256：`e2685215739cd4cd3aa9806af046190993b7be249edb32a6eabcb23f37cd3945`
 修复先使用同一事务完整 ROLLBACK 演练，再正式提交：追加一条带审计上下文的 cancelled 事件，订单改为 `cum_filled_qty=0/leaves_qty=0/cancelled_qty=1,000,000/is_terminal=true`，对应 `post_close_settlement-20260714` 对账断点由 open 改为 resolved。原始 3 条 Redis 消息和原 accepted/working 事件没有修改。修复后债享5号 `2026-07-01..2026-08-04` 的未终态订单为 0，页面不再显示该阻断。
 
 修复前快照位于忽略 Git 的 `outputs/backups/relay-debt5-terminal-repair-20260804/`：订单 1 条、事件 2 条、对账断点 1 条、原始证据 3 条；对应 SHA-256 分别为 `ff168740...609`、`d5d03974...0d2`、`cb37d797...5bf` 和 `a693a9d6...1aa`。
+
+## 债享5号全区间交易账表修复
+
+用户进一步确认：最近历史区间内，券商交割单能够证明正确且 Relay 已有 OC 稳定订单身份的交易日，可作为历史账表基准。债享5号 30 个 OC 交易日的 15,551 个有成交订单与交割单逐笔闭合；由此定位并受控修正 11 个旧上下文订单外壳、2 条重复 canonical fill，补齐 13,455 条历史实际费用 `21,398.66 CNY`。修复后未终态、孤立成交、订单/成交上下文错配和成交数量差异均为 0。
+
+本次仍不建设交割单导入 API、批次或定时任务。完整匹配规则、事务边界、绩效重建和备份哈希见 `docs/DEBT5_HISTORICAL_LEDGER_RECONCILIATION_20260804.md`。

@@ -119,6 +119,11 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	if err != nil {
 		return CostLedgerResult{}, err
 	}
+	if normalizedDate != inception.InceptionDate && len(openPositions) == 0 {
+		var openPositionFlags []string
+		openPositions, openPositionFlags = service.previousClosePositionFallback(ctx, accountID, normalizedDate)
+		result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
+	}
 	openBySecurity := make(map[string]trading.Position, len(openPositions))
 	for _, position := range openPositions {
 		openBySecurity[contributionSecurityID(position.Symbol, position.Exchange)] = position
@@ -150,6 +155,10 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			return CostLedgerResult{}, err
 		}
 		gap, _, _ := service.previousCostStateGap(ctx, normalizedDate, previous)
+		if gap && inception.CleanStart && len(openPositions) == 0 && positionCostStatesAreFlat(previous) {
+			gap = false
+			result.QualityFlags = appendUnique(result.QualityFlags, "empty_clean_start_continuation")
+		}
 		needsTrustedReanchor := gap || (len(previous) == 0 && len(openPositions) > 0)
 		if needsTrustedReanchor && strings.EqualFold(strings.TrimSpace(inception.CostSource), "broker_open_snapshot") {
 			result.OpeningSource = "broker_open_snapshot_cost_reanchor"
@@ -434,6 +443,18 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		result.Persisted = true
 	}
 	return result, nil
+}
+
+func positionCostStatesAreFlat(states []ledger.PositionCostState) bool {
+	if len(states) == 0 {
+		return false
+	}
+	for _, state := range states {
+		if state.Status == "blocked" || state.QuantityResidual != 0 || state.CloseQuantity != 0 || math.Abs(state.CloseTotalCost) >= 0.000001 {
+			return false
+		}
+	}
+	return true
 }
 
 func newCostWorkingState(accountID, tradeDate, symbol, exchange, openingSource string) *costWorkingState {

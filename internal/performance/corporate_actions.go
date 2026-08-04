@@ -117,6 +117,12 @@ func applyCorporateActionOpening(
 		state.item.CorporateActionSource = factor.source
 		state.item.CorporateActionContext = factor.raw
 	}
+	if previousCloseQuantity == 0 && brokerOpenQuantity == 0 {
+		state.item.CorporateActionFactor = 0
+		state.item.CorporateActionSource = ""
+		state.item.CorporateActionContext = nil
+		return
+	}
 	if brokerOpenQuantity == previousCloseQuantity {
 		if hasFactor {
 			state.item.CorporateActionType = "price_adjustment"

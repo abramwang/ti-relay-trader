@@ -1281,6 +1281,81 @@ func TestCalculateCostLedgerRollsTrustedOpeningCostWithMovingAverage(t *testing.
 	}
 }
 
+func TestCalculateCostLedgerUsesPreviousCloseWhenOpenSnapshotIsMissing(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-22",
+			Status:                "confirmed",
+			CleanStart:            true,
+			OpeningPositionSource: "confirmed_empty_security_position",
+		},
+		costStates: []ledger.PositionCostState{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-22",
+			Symbol:         "600000",
+			Exchange:       "SH",
+			CostBucket:     "CORE",
+			Status:         "calculated",
+			CloseQuantity:  100,
+			CloseTotalCost: 1000,
+		}},
+		positionsByDate: map[string][]trading.Position{
+			"2026-07-22|close": {{
+				AccountID: "acct-1",
+				TradeDate: "2026-07-22",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  100,
+			}},
+		},
+		fills: []trading.Fill{{
+			FillID:         "sell",
+			AccountID:      "acct-1",
+			GatewayOrderID: "sell-order",
+			Symbol:         "600000",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideSell,
+			BusinessType:   trading.BusinessTypeStock,
+			Price:          11,
+			Qty:            100,
+			Fee:            1,
+		}},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 10.0, "close": 11.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Calendar: weekdayCalendar{}, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260723", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || len(result.Positions) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsString(result.QualityFlags, "open_positions_from_previous_close") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+	item := result.Positions[0]
+	if item.OpenQuantity != 100 || item.SellQuantity != 100 || item.CloseQuantity != 0 || item.QuantityResidual != 0 {
+		t.Fatalf("quantity state = %#v", item)
+	}
+	assertClose(t, item.OpenTotalCost, 1000)
+	assertClose(t, item.RealizedPnL, 99)
+	if containsString(item.QualityFlags, "unexplained_open_quantity_change") {
+		t.Fatalf("unexpected corporate action mismatch: %#v", item.QualityFlags)
+	}
+}
+
 func TestCalculateCostLedgerBlocksQuantityMismatch(t *testing.T) {
 	store := &fakePerformanceStore{
 		inception: ledger.PerformanceInception{
@@ -1371,6 +1446,76 @@ func TestCalculateCostLedgerReanchorsTrustedBrokerCostAcrossTradingDayGap(t *tes
 	}
 	assertClose(t, item.OpenTotalCost, 1000)
 	assertClose(t, item.CloseTotalCost, 1000)
+}
+
+func TestCalculateCostLedgerContinuesCleanStartAcrossFlatStateGap(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-22",
+			Status:                "confirmed",
+			CleanStart:            true,
+			OpeningPositionSource: "confirmed_empty_security_position",
+			CostSource:            "broker_open_snapshot",
+		},
+		costStates: []ledger.PositionCostState{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-07-23",
+			Symbol:         "600000",
+			Exchange:       "SH",
+			CostBucket:     "CORE",
+			Status:         "calculated",
+			CloseQuantity:  0,
+			CloseTotalCost: 0,
+		}},
+		positionsByDate: map[string][]trading.Position{
+			"2026-07-27|close": {{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
+		},
+		fills: []trading.Fill{{
+			FillID:         "buy",
+			AccountID:      "acct-1",
+			GatewayOrderID: "buy-order",
+			Symbol:         "600000",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideBuy,
+			BusinessType:   trading.BusinessTypeStock,
+			Price:          10,
+			Qty:            100,
+			Fee:            1,
+		}},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 10.0, "close": 10.0,
+		}}}},
+		adjustFactors: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "ex_date": 20260727, "ex_factor": 0.95, "source": "mysql_ti_db",
+		}}}},
+	}
+	service, err := New(Options{Store: store, Calendar: weekdayCalendar{}, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260727", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || result.OpeningSource != "relay_previous_close_cost" {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsString(result.QualityFlags, "empty_clean_start_continuation") || containsString(result.QualityFlags, "previous_cost_state_gap_reanchored") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+	if len(result.Positions) != 1 || result.Positions[0].CloseQuantity != 100 || result.Positions[0].QuantityResidual != 0 {
+		t.Fatalf("positions = %#v", result.Positions)
+	}
+	if result.Summary.CorporateActions != 0 || result.Positions[0].CorporateActionType != "none" || containsString(result.QualityFlags, "corporate_action_price_adjustment") {
+		t.Fatalf("zero opening position must not receive corporate action: %#v", result)
+	}
 }
 
 func TestCalculateCostLedgerBlocksTradingDayGapWithoutTrustedBrokerCost(t *testing.T) {
