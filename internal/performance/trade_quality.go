@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v3"
+	tradeQualityFormulaVersion = "trade_quality.v5"
+	maxTradeQualityPages       = 120
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
 )
@@ -116,6 +117,7 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		return TradeQualityResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	fills = filterTradeQualityOrdinaryFills(fills, orders)
 	feeRecords, err := service.listTradeQualityOrderFees(ctx, accountID, normalizedFrom, normalizedTo)
 	if err != nil {
 		return TradeQualityResult{}, err
@@ -151,7 +153,11 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		if matchedKey != "" {
 			usedFillGroups[matchedKey] = true
 		}
-		executedQuantity := group.quantity
+		executionGroup := group
+		if tradeQualityUsesOrderExecution(order) {
+			executionGroup.quantity = order.CumFilledQty
+		}
+		executedQuantity := executionGroup.quantity
 		if order.OrderQty > 0 && executedQuantity > order.OrderQty {
 			executedQuantity = order.OrderQty
 		}
@@ -161,10 +167,10 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		}
 
 		fullyFilled := order.Status == trading.OrderStatusFilled ||
-			(order.OrderQty > 0 && group.quantity >= order.OrderQty && order.LeavesQty == 0)
+			(order.OrderQty > 0 && executionGroup.quantity >= order.OrderQty && order.LeavesQty == 0)
 		if fullyFilled {
 			result.Summary.FullyFilledOrders++
-		} else if group.quantity > 0 {
+		} else if executionGroup.quantity > 0 {
 			result.Summary.PartiallyFilledOrders++
 		}
 		switch order.Status {
@@ -182,7 +188,7 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 			result.Summary.NonTerminalOrders++
 		}
 
-		anomaly := tradeQualityOrderAnomaly(order, orderDate, group)
+		anomaly := tradeQualityOrderAnomaly(order, orderDate, executionGroup)
 		if len(anomaly.Flags) > 0 {
 			result.Summary.AbnormalOrders++
 			result.Anomalies = append(result.Anomalies, anomaly)
@@ -257,7 +263,7 @@ func (service *Service) resolveTradeQualityRange(ctx context.Context, dateFrom, 
 
 func (service *Service) listTradeQualityOrders(ctx context.Context, accountID, dateFrom, dateTo string) ([]trading.Order, error) {
 	items := make([]trading.Order, 0)
-	for page := 0; page < maxContributionPages; page++ {
+	for page := 0; page < maxTradeQualityPages; page++ {
 		batch, err := service.store.ListOrders(ctx, trading.OrderQuery{
 			AccountID: accountID,
 			DateFrom:  dateFrom,
@@ -274,12 +280,12 @@ func (service *Service) listTradeQualityOrders(ctx context.Context, accountID, d
 			return items, nil
 		}
 	}
-	return nil, fmt.Errorf("trade quality orders exceed %d rows", contributionPageLimit*maxContributionPages)
+	return nil, fmt.Errorf("trade quality orders exceed %d rows", contributionPageLimit*maxTradeQualityPages)
 }
 
 func (service *Service) listTradeQualityFills(ctx context.Context, accountID, dateFrom, dateTo string) ([]trading.Fill, error) {
 	items := make([]trading.Fill, 0)
-	for page := 0; page < maxContributionPages; page++ {
+	for page := 0; page < maxTradeQualityPages; page++ {
 		batch, err := service.store.ListFills(ctx, trading.FillQuery{
 			AccountID: accountID,
 			DateFrom:  dateFrom,
@@ -296,7 +302,36 @@ func (service *Service) listTradeQualityFills(ctx context.Context, accountID, da
 			return items, nil
 		}
 	}
-	return nil, fmt.Errorf("trade quality fills exceed %d rows", contributionPageLimit*maxContributionPages)
+	return nil, fmt.Errorf("trade quality fills exceed %d rows", contributionPageLimit*maxTradeQualityPages)
+}
+
+func tradeQualityUsesOrderExecution(order trading.Order) bool {
+	if order.BusinessType != trading.BusinessTypeETF {
+		return false
+	}
+	return order.TradeSide == trading.TradeSidePurchase || order.TradeSide == trading.TradeSideRedemption
+}
+
+func filterTradeQualityOrdinaryFills(fills []trading.Fill, orders []trading.Order) []trading.Fill {
+	transferOrderKeys := make(map[string]struct{})
+	for _, order := range orders {
+		if !tradeQualityUsesOrderExecution(order) {
+			continue
+		}
+		transferOrderKeys[tradeQualityKey(tradeQualityOrderDate(order), order.GatewayOrderID)] = struct{}{}
+	}
+	if len(transferOrderKeys) == 0 {
+		return fills
+	}
+	ordinary := make([]trading.Fill, 0, len(fills))
+	for _, fill := range fills {
+		key := tradeQualityKey(tradeQualityFillDate(fill), fill.GatewayOrderID)
+		if _, excluded := transferOrderKeys[key]; excluded {
+			continue
+		}
+		ordinary = append(ordinary, fill)
+	}
+	return ordinary
 }
 
 func (service *Service) listTradeQualityOrderFees(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.OrderFeeRecord, error) {
@@ -403,7 +438,7 @@ func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup q
 	if order.OrderQty <= 0 {
 		flags = append(flags, "invalid_order_quantity")
 	}
-	if order.InvalidQty > 0 {
+	if order.InvalidQty > 0 && !tradeQualityRejectedInvalidQuantityIsExpected(order, ledgerFilledQuantity, brokerMessage) {
 		flags = append(flags, "invalid_quantity")
 	}
 	if order.CumFilledQty != ledgerFilledQuantity {
@@ -476,6 +511,17 @@ func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup q
 		TerminalAt:             order.TerminalAt,
 		LastUpdatedAt:          tradeQualityOrderTime(order),
 	}
+}
+
+func tradeQualityRejectedInvalidQuantityIsExpected(order trading.Order, ledgerFilledQuantity int64, brokerMessage string) bool {
+	return order.Status == trading.OrderStatusRejected &&
+		brokerMessage != "" &&
+		order.OrderQty > 0 &&
+		order.InvalidQty > 0 &&
+		order.InvalidQty <= order.OrderQty &&
+		order.CumFilledQty == 0 &&
+		ledgerFilledQuantity == 0 &&
+		order.LeavesQty == 0
 }
 
 func tradeQualityOrphanFillAnomaly(key string, group qualityFillGroup) TradeQualityAnomaly {

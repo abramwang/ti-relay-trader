@@ -140,6 +140,12 @@ var (
 			Description: "人工净值金标的版本化审计、事务导入、幂等规则、独立对比和重建门禁。",
 		},
 		{
+			Slug:        "fuying13-performance-audit-20260804",
+			Title:       "富盈13号绩效起算审计",
+			Path:        "docs/FUYING13_PERFORMANCE_AUDIT_20260804.md",
+			Description: "富盈13号交割单闭合、历史费用与终态修复、交易质量及绩效起算边界。",
+		},
+		{
 			Slug:        "python-sdk",
 			Title:       "Python SDK",
 			Path:        "docs/PYTHON_SDK.md",

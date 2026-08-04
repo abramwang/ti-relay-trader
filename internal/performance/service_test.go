@@ -2193,9 +2193,75 @@ func TestTradeQualityRejectedOrderRequiresReasonEvidence(t *testing.T) {
 
 	order.RejectCode = trading.ErrorCode("BROKER_REJECTED")
 	order.RejectMessage = "VIP:找不到持仓"
+	order.InvalidQty = order.OrderQty
 	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
 	if len(anomaly.Flags) != 0 {
 		t.Fatalf("evidenced rejection treated as data anomaly: %#v", anomaly.Flags)
+	}
+}
+
+func TestCalculateTradeQualityUsesOrderExecutionForETFTransfer(t *testing.T) {
+	terminalAt := time.Date(2026, 8, 4, 10, 19, 50, 0, timeutil.Location())
+	store := &fakePerformanceStore{
+		orders: []trading.Order{{
+			AccountID:      "acct-1",
+			GatewayOrderID: "etf-redemption",
+			TradeDate:      "2026-08-04",
+			Symbol:         "588200",
+			Exchange:       trading.ExchangeSH,
+			TradeSide:      trading.TradeSideRedemption,
+			BusinessType:   trading.BusinessTypeETF,
+			OrderQty:       4_500_000,
+			CumFilledQty:   4_500_000,
+			Status:         trading.OrderStatusFilled,
+			GatewayStatus:  trading.GatewayStatusFilled,
+			IsTerminal:     true,
+			CreatedAt:      terminalAt,
+			TerminalAt:     terminalAt,
+			LastUpdatedAt:  terminalAt,
+		}},
+		fills: []trading.Fill{
+			{
+				FillID:         "legacy-redemption-cash-difference",
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-redemption",
+				TradeDate:      "2026-08-04",
+				Symbol:         "159900",
+				Exchange:       trading.ExchangeSZ,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeETF,
+				Price:          350_114.10,
+				Qty:            1,
+			},
+			{
+				FillID:         "relay-summary:etf-redemption",
+				AccountID:      "acct-1",
+				GatewayOrderID: "etf-redemption",
+				TradeDate:      "2026-08-04",
+				Symbol:         "588200",
+				Exchange:       trading.ExchangeSH,
+				TradeSide:      trading.TradeSideRedemption,
+				BusinessType:   trading.BusinessTypeStock,
+				Price:          1,
+				Qty:            4_500_000,
+			},
+		},
+	}
+	service, err := New(Options{Store: store, Now: func() time.Time { return terminalAt }})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateTradeQuality(context.Background(), "acct-1", "20260804", "20260804")
+	if err != nil {
+		t.Fatalf("CalculateTradeQuality() error = %v", err)
+	}
+	if result.Summary.OrdersWithFills != 1 || result.Summary.FullyFilledOrders != 1 ||
+		result.Summary.ExecutedQuantity != 4_500_000 || result.Summary.QuantityFillRate != 1 {
+		t.Fatalf("ETF transfer execution summary = %#v", result.Summary)
+	}
+	if result.Summary.Fills != 0 || result.Summary.AnomalyItems != 0 || len(result.Anomalies) != 0 {
+		t.Fatalf("ETF transfer order treated as ordinary fill anomaly: %#v", result)
 	}
 }
 
