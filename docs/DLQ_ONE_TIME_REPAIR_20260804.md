@@ -4,7 +4,7 @@
 
 业务时区：`Asia/Shanghai`
 
-范围：生产账户 `307000051387`，交易日 `2026-07-30`
+范围：生产账户 `307000051387/2026-07-30`；追加复核 `314000046830/2026-07-14`
 
 ## 边界
 
@@ -95,3 +95,13 @@ SHA-256：`e2685215739cd4cd3aa9806af046190993b7be249edb32a6eabcb23f37cd3945`
 | `reconciliation_breaks_before.csv` | 8 | `46033da650944953221efcf092acfc8b3db1e09493913c083a75a3de258e48f1` |
 
 同目录 `repair_followup.sql` 为实际执行事务，只保存在本机忽略目录。正式执行前使用相同 SQL 将 `COMMIT` 替换为 `ROLLBACK` 完成全量断言演练。
+
+## 债享5号历史终态追加修复
+
+绩效页面查询覆盖 7 月上旬的长区间时，`314000046830` 的“订单与成交账本”仍有一项阻断。定位结果为 `2026-07-14` 的稳定订单 `external-huaxin-31400004683001-110010180010003`：`512760.SH` 买入 1,000,000 份、限价 1.36，OC 原始流只有 accepted/working 两条事件，15:05 的旧查询仍回报 queued，订单没有任何成交。
+
+完整交割单 `reference/314000046830_20260804.csv` 的 SHA-256 为 `3342452559335c41b47afa737bb4fe4c1f7fcf4f639ba9ed083753177d1eaea9`。当日交割单有 `512760.SH` 卖出和手工冻结记录，但没有对应买入成交；结合 A 股当日委托不跨日有效，足以确认该零成交订单在交易日结束时已失效，无法仅凭现有证据区分主动撤单与交易所日终失效，因此标准终态统一恢复为 cancelled，并将 `terminal_time_basis` 明确记录为 `A_share_trading_day_close`。
+
+修复先使用同一事务完整 ROLLBACK 演练，再正式提交：追加一条带审计上下文的 cancelled 事件，订单改为 `cum_filled_qty=0/leaves_qty=0/cancelled_qty=1,000,000/is_terminal=true`，对应 `post_close_settlement-20260714` 对账断点由 open 改为 resolved。原始 3 条 Redis 消息和原 accepted/working 事件没有修改。修复后债享5号 `2026-07-01..2026-08-04` 的未终态订单为 0，页面不再显示该阻断。
+
+修复前快照位于忽略 Git 的 `outputs/backups/relay-debt5-terminal-repair-20260804/`：订单 1 条、事件 2 条、对账断点 1 条、原始证据 3 条；对应 SHA-256 分别为 `ff168740...609`、`d5d03974...0d2`、`cb37d797...5bf` 和 `a693a9d6...1aa`。
