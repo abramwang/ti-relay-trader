@@ -218,6 +218,12 @@ var (
 			Description: "历史 PEL 恢复、实时账本、订单费用、撤单拒绝、收盘快照和资金查询终态验收结果。",
 		},
 		{
+			Slug:        "oc-v1-2-validation-20260804",
+			Title:       "OC v1.2 修复生产复测",
+			Path:        "docs/OC_V1_2_VALIDATION_REPORT_20260804.md",
+			Description: "资金查询唯一终态、持仓成本增强及当日订单成交费用质量复测结果。",
+		},
+		{
 			Slug:        "oc-compatibility-20260803",
 			Title:       "OC 资金终态与持仓成本兼容",
 			Path:        "docs/RELAY_COMPATIBILITY_NOTICE_20260803.md",
