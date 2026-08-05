@@ -841,7 +841,7 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
             status = result_to_jsonable(value)
             if not isinstance(status, Mapping):
                 raise RuntimeError("query status response is invalid")
-            command = dict(status)
+            command = compact_query_status_for_report(status)
         except Exception as exc:  # noqa: BLE001 - transient status lookup remains pending until timeout.
             commands[step] = {
                 "origin_message_id": message_id,
@@ -876,6 +876,31 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
         "terminal_failure": terminal_failure,
         "commands": commands,
     }
+
+
+def compact_query_status_for_report(status: Mapping[str, Any]) -> dict[str, Any]:
+    command = dict(status)
+    replies = command.get("replies")
+    if not isinstance(replies, list) or len(replies) <= 4:
+        return command
+
+    evidence_indexes = {0, len(replies) - 1}
+    for index, reply in enumerate(replies):
+        if not isinstance(reply, Mapping):
+            continue
+        if (
+            bool(reply.get("is_last"))
+            or str(reply.get("status") or "").lower() in {"failed", "rejected"}
+            or str(reply.get("result_type") or "").lower() == "error_result"
+        ):
+            evidence_indexes.add(index)
+    selected_indexes = sorted(evidence_indexes)
+    if len(selected_indexes) > 6:
+        selected_indexes = selected_indexes[:1] + selected_indexes[-5:]
+    command["replies"] = [replies[index] for index in selected_indexes]
+    command["replies_truncated"] = True
+    command["replies_in_report"] = len(selected_indexes)
+    return command
 
 
 def query_terminal_error(report: Mapping[str, Any]) -> str:

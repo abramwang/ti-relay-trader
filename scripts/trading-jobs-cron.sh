@@ -26,7 +26,7 @@ TZ=Asia/Shanghai
 RELAY_HOME=$ROOT_DIR
 RELAY_CONFIG_PATH=$ROOT_DIR/config/relay.prod.yaml
 PYTHONPATH=$ROOT_DIR/src:$ROOT_DIR/sdk/python
-RELAY_BASE_URL=http://relay-trader.quantstage.com
+RELAY_BASE_URL=http://127.0.0.1:9092
 RELAY_PERFORMANCE_ACCOUNT_IDS=$PERFORMANCE_ACCOUNT_IDS
 
 # Relay A-share pre-open initialization, 09:01 Asia/Shanghai.

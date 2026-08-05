@@ -649,6 +649,60 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertFalse(status["terminal_failure"])
         self.assertEqual(status["commands"]["asset"]["state"], "pending")
 
+    def test_query_terminal_report_keeps_counts_and_compacts_reply_evidence(self) -> None:
+        client = FakeClient()
+        message_id = "msg-acct-1-order.list.query"
+        replies = [
+            {
+                "message_id": f"reply-{index}",
+                "status": "partial",
+                "result_type": "order_page",
+                "is_last": False,
+            }
+            for index in range(100)
+        ]
+        replies.append(
+            {
+                "message_id": "reply-final",
+                "status": "failed",
+                "result_type": "error_result",
+                "is_last": True,
+                "code": "QUERY_FAILED",
+                "message": "broker query failed",
+            }
+        )
+        client.query_statuses[message_id] = {
+            "origin_message_id": message_id,
+            "action": "order.list.query",
+            "state": "failed",
+            "terminal": True,
+            "success": False,
+            "contradictory": True,
+            "reply_count": len(replies),
+            "terminal_count": 1,
+            "replies": replies,
+        }
+        report = {
+            "refresh": [{
+                "step": "orders",
+                "ok": True,
+                "result": {
+                    "message_id": message_id,
+                    "action": "order.list.query",
+                },
+            }],
+        }
+
+        status = refreshed_query_terminal_status(client, report)
+
+        command = status["commands"]["orders"]
+        self.assertTrue(status["terminal_failure"])
+        self.assertEqual(command["reply_count"], 101)
+        self.assertTrue(command["replies_truncated"])
+        self.assertEqual(command["replies_in_report"], 2)
+        self.assertEqual(command["replies"][0]["message_id"], "reply-0")
+        self.assertEqual(command["replies"][-1]["code"], "QUERY_FAILED")
+
 
 if __name__ == "__main__":
     unittest.main()
