@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -36,7 +37,7 @@ def main() -> int:
         page = browser.new_page(
             viewport={"width": args.width, "height": args.height},
             device_scale_factor=1,
-            accept_downloads=False,
+            accept_downloads=True,
         )
         page.on(
             "console",
@@ -111,6 +112,17 @@ def main() -> int:
             timeout=45_000,
         )
         position_count = page.locator("#positionsBody tr[data-position-security-id]").count()
+        previous_close_header = page.locator('th[data-sort-table="positions"][data-sort-key="pre_close"]')
+        if previous_close_header.count() != 1 or previous_close_header.inner_text().strip() != "昨日收盘":
+            raise AssertionError("position previous-close column is unavailable")
+        if page.locator("#positionsBody tr[data-position-security-id] td.position-pre-close-price").count() != position_count:
+            raise AssertionError("position previous-close cells do not match visible positions")
+        previous_close_header.click()
+        page.wait_for_function(
+            """() => document.querySelector('th[data-sort-table="positions"][data-sort-key="pre_close"]')
+                ?.getAttribute('aria-sort') === 'descending'""",
+            timeout=5_000,
+        )
         open_price_header = page.locator('th[data-sort-table="positions"][data-sort-key="open_price"]')
         if open_price_header.count() != 1 or open_price_header.inner_text().strip() != "今日开盘":
             raise AssertionError("position open-price column is unavailable")
@@ -143,8 +155,12 @@ def main() -> int:
             page.locator("#positionsNextPage").click()
             page.wait_for_function(
                 """(firstSymbol) =>
-                    (document.querySelector('#positionsPageInfo')?.textContent || '').includes('第 2 页') &&
-                    (document.querySelector('#positionsBody tr[data-position-security-id] td:first-child')?.textContent || '').trim() !== firstSymbol""",
+                    (document.querySelector('#positionsPageInfo')?.textContent || '').includes('第 2 页') && (() => {
+                        const secondPageSymbol = (document.querySelector(
+                            '#positionsBody tr[data-position-security-id] td:first-child'
+                        )?.textContent || '').trim();
+                        return secondPageSymbol !== '' && secondPageSymbol !== firstSymbol;
+                    })()""",
                 arg=first_page_symbol,
                 timeout=10_000,
             )
@@ -156,6 +172,19 @@ def main() -> int:
                 """() => (document.querySelector('#positionsPageInfo')?.textContent || '').includes('第 1 页')""",
                 timeout=10_000,
             )
+
+        with page.expect_download(timeout=30_000) as download_info:
+            page.locator("#exportAssetButton").click()
+        csv_text = Path(download_info.value.path()).read_text(encoding="utf-8-sig")
+        csv_rows = list(csv.reader(csv_text.splitlines()))
+        position_header = next(
+            (row for row in csv_rows if row and row[0] == "账户ID" and "昨日收盘价" in row),
+            None,
+        )
+        if position_header is None or "今日开盘价" not in position_header:
+            raise AssertionError("position CSV is missing previous-close/open columns")
+        if position_header.index("昨日收盘价") + 1 != position_header.index("今日开盘价"):
+            raise AssertionError("position CSV previous-close/open columns are out of order")
 
         position_row = page.locator("#positionsBody tr[data-position-security-id]").first
         focused_security_id = position_row.get_attribute("data-position-security-id") or ""

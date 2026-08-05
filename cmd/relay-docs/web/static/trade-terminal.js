@@ -1721,6 +1721,7 @@
     return {
       quote: null,
       quoteItem: position,
+      previousClosePrice: null,
       openPrice: null,
       price,
       marketValue,
@@ -1764,6 +1765,8 @@
       return finiteNumber(position.avg_cost);
     case "last_price":
       return finiteNumber(view.price);
+    case "pre_close":
+      return finiteNumber(view.previousClosePrice);
     case "open_price":
       return finiteNumber(view.openPrice);
     case "market_value":
@@ -1916,7 +1919,7 @@
         csvLine(["持仓明细"]),
         csvLine([
           "账户ID", "交易日", "代码", "市场", "证券名称", "持仓数量", "可用数量",
-          "日初数量", "当日数量", "成本价", "账本现价", "导出现价", "今日开盘价", "市值",
+          "日初数量", "当日数量", "成本价", "账本现价", "导出现价", "昨日收盘价", "今日开盘价", "市值",
           "持仓盈亏", "盈亏比例(%)", "当日盈亏", "当日盈亏比例(%)", "已结算盈亏",
           "股东代码", "快照类型", "更新时间"
         ])
@@ -1936,6 +1939,7 @@
           csvNumber(position.avg_cost),
           csvNumber(position.last_price),
           csvNumber(view.price),
+          csvNumber(view.previousClosePrice),
           csvNumber(view.openPrice),
           csvNumber(view.marketValue),
           csvNumber(view.pnl),
@@ -2606,6 +2610,7 @@
     const qty = finiteNumber(position.quantity);
     const avgCost = finiteNumber(position.avg_cost);
     const quotedLast = finiteNumber(quote && quote.last);
+    const previousClosePrice = finiteNumber(quote && quote.pre_close);
     const openPrice = finiteNumber(quote && quote.open);
     const ledgerLast = finiteNumber(position.last_price);
     const price = quotedLast !== null && quotedLast > 0 ? quotedLast : ledgerLast;
@@ -2646,6 +2651,7 @@
     return {
       quote,
       quoteItem: quote || position,
+      previousClosePrice,
       openPrice,
       price,
       marketValue,
@@ -2742,6 +2748,8 @@
       return finiteNumber(position.avg_cost);
     case "last_price":
       return finiteNumber(view.price);
+    case "pre_close":
+      return finiteNumber(view.previousClosePrice);
     case "open_price":
       return finiteNumber(view.openPrice);
     case "market_value":
@@ -2941,7 +2949,7 @@
   function renderPositions() {
     const rows = positionTableRows();
     if (rows.length === 0) {
-      els.positionsBody.innerHTML = '<tr><td colspan="10"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
+      els.positionsBody.innerHTML = '<tr><td colspan="11"><div class="empty-state">暂无 ' + escapeHTML(displayDate(selectedAssetTradeDateSafe())) + ' 持仓数据</div></td></tr>';
       updateSortHeaders("positions");
       renderPositionsPager();
       return;
@@ -2965,6 +2973,7 @@
           <td class="security-name">${escapeHTML(securityNameText(position))}</td>
           <td class="num">${formatInt(position.quantity)}<br><span class="muted">${formatInt(position.sellable_qty)}</span></td>
           <td class="num">${formatPrice(position.avg_cost, view.quoteItem)}<br><span class="${priceClass}">${formatPrice(view.price, view.quoteItem)}</span></td>
+          <td class="num position-reference-price position-pre-close-price">${formatPrice(view.previousClosePrice, view.quoteItem)}</td>
           <td class="num position-open-price">${formatPrice(view.openPrice, view.quoteItem)}</td>
           <td class="num">${formatNumber(view.marketValue)}</td>
           <td class="num ${pnlClass}">${formatSigned(pnl)}<br>${pnlRatioText}</td>
