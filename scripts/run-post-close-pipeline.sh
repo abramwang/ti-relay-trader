@@ -6,6 +6,7 @@ PYTHON_BIN="${RELAY_PYTHON_BIN:-python3}"
 REPORT_DIR="${RELAY_JOB_REPORT_DIR:-/var/log/relay/reports}"
 PERFORMANCE_LOCK="${RELAY_PERFORMANCE_LOCK:-/tmp/relay-performance-daily.lock}"
 PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-}"
+PERFORMANCE_HTTP_TIMEOUT_SECONDS="${RELAY_PERFORMANCE_HTTP_TIMEOUT_SECONDS:-30}"
 
 mkdir -p "$REPORT_DIR"
 
@@ -90,6 +91,7 @@ echo "relay post-close pipeline: settlement succeeded for $trade_date; starting 
 if ! flock -n "$PERFORMANCE_LOCK" "$PYTHON_BIN" -m relay.jobs.performance_daily \
   "${performance_args[@]}" \
   --target-date "$trade_date" \
+  --timeout "$PERFORMANCE_HTTP_TIMEOUT_SECONDS" \
   --persist \
   --trigger post_close_success \
   --output "$performance_report"; then

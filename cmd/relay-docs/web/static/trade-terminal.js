@@ -3976,6 +3976,15 @@
       ambiguous_t0_order_group: "T0 订单组存在歧义",
       incomplete_t0_order_group: "T0 订单组未闭合",
       missing_transfer_link: "缺少成分划转关联",
+      component_sale_linked_to_transfer: "成分卖出已关联实际划转",
+      component_sales_linked_to_transfer: "成分卖出已关联实际划转",
+      component_transfer_quantity_reconciled: "成分划转与卖出数量已闭合",
+      component_transfer_sell_quantity_mismatch: "成分划转与卖出数量不一致",
+      component_sales_excluded_from_position_cost: "实际划转成分卖出已从成本账剥离",
+      etf_t0_execution_fee_incomplete: "ETF T0 实际费用不完整",
+      etf_redemption_settlement_estimated: "ETF 赎回待结算资产使用估值",
+      etf_settlement_pending: "等待 ETF 最终清算到账",
+      attribution_residual_within_tolerance: "净值与贡献残差处于容差内",
       research_position_valuation: "持仓使用 Meridian 行情重估",
       broker_position_cost_excluded: "柜台持仓成本已隔离",
       broker_unrealized_pnl_excluded: "柜台累计浮盈已隔离",
@@ -4532,7 +4541,12 @@
     els.perfOpenEconomicNav.textContent = formatNumber(nav.open_economic_nav);
     els.perfOpenEconomicBreakdown.textContent = "可见资金 " + formatNumber(valuation.open_visible_cash) + " · 持仓 " + formatNumber(valuation.open_position_value);
     els.perfCloseEconomicNav.textContent = formatNumber(nav.close_economic_nav);
-    els.perfCloseEconomicBreakdown.textContent = "可见资金 " + formatNumber(valuation.close_visible_cash) + " · 持仓 " + formatNumber(valuation.close_position_value);
+    const etfSettlementEstimate = numericOrNull(valuation.etf_settlement_estimate) || 0;
+    els.perfCloseEconomicBreakdown.textContent = [
+      "可见资金 " + formatNumber(valuation.close_visible_cash),
+      "持仓 " + formatNumber(valuation.close_position_value),
+      Math.abs(etfSettlementEstimate) > 0.000001 ? "ETF 待结算 " + formatSigned(etfSettlementEstimate) : ""
+    ].filter(Boolean).join(" · ");
     els.perfAccountDayPnl.textContent = formatSigned(nav.account_day_pnl);
     els.perfAccountDayPnl.className = classForNumber(nav.account_day_pnl);
     els.perfPnlBreakdown.textContent = "证券 " + formatSigned(securityPnL.pnl) + " · 未归因 " + formatSigned(unattributed.pnl);

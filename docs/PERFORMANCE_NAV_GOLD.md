@@ -67,7 +67,7 @@ go run ./cmd/relayctl performance-gold-import \
 
 ## 对比
 
-`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行 `performance_economic_nav.v2.1` 预览：
+`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行当前配置的经济净值公式预览；生产默认已升级为 `performance_economic_nav.v2.2`：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \

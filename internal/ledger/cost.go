@@ -157,7 +157,7 @@ func (repo *Repository) UpsertPositionCostState(ctx context.Context, item Positi
 	item.TradeDate = date
 	item.CostBucket = firstLedgerValue(item.CostBucket, "CORE")
 	item.Status = firstLedgerValue(item.Status, "calculated")
-	item.FormulaVersion = firstLedgerValue(item.FormulaVersion, "performance_position_cost.v3")
+	item.FormulaVersion = firstLedgerValue(item.FormulaVersion, "performance_position_cost.v3.1")
 	item.FeeSource = firstLedgerValue(item.FeeSource, "none")
 	item.CorporateActionType = firstLedgerValue(item.CorporateActionType, "none")
 	item.Source = firstLedgerValue(item.Source, "relay.performance.cost_ledger")

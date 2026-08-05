@@ -402,13 +402,13 @@ OC 无法确定单笔委托身份或发现普通成交与订单证券、交易�
 
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 返回 `ContributionResult`。普通股票和 ETF 截面使用 `close_value + sell_amount - buy_amount - open_value - effective_fee`；期初价格取 Meridian 当日 `pre_close`，期末价格取 Meridian 当日 `close`，缺失时才回退券商 open/close 持仓快照并标记质量缺口。费用优先使用 `order_fee_records` 中 `fee_complete=true && association_complete=true` 的 OC 订单实际费用，同一订单无论有多少成交只扣一次；其次才使用可信成交费用或账户生效费率，缺少规则时标记 `missing_fee_rule`。
 
-`GET /v1/accounts/{account_id}/performance/cost-ledger/preview?trade_date=YYYYMMDD` 只读试算 `performance_position_cost.v3`，`POST .../cost-ledger/rebuild` 在开启绩效写保护后保存结果。非起算日以上一 close 成本状态承接总成本，以当日券商 open 持仓作为物理数量，并查询 Meridian `adjust-factors`：数量比匹配 `ex_factor` 时保存 `corporate_action_type=quantity_adjustment`，总成本不变、单位成本随数量调整；因子存在但数量不变时保存 `price_adjustment`；无法闭合时保存 `mismatch` 并阻断。普通持仓使用 `cost_bucket=CORE`；完整 ETF T0 买入/赎回组使用 `ETF_T0:{group_id}`，买入成本与底仓隔离且赎回后日内归零。赎回名义价格不进入成本账，IOPV 退出估值与 15bp 摩擦仍由 contributions 返回。摘要增加 `t0_cost_buckets/t0_blocked_buckets/t0_buy_quantity/t0_redemption_quantity/t0_buy_amount`。
+`GET /v1/accounts/{account_id}/performance/cost-ledger/preview?trade_date=YYYYMMDD` 只读试算 `performance_position_cost.v3.1`，`POST .../cost-ledger/rebuild` 在开启绩效写保护后保存结果。非起算日以上一 close 成本状态承接总成本，以当日券商 open 持仓作为物理数量，并查询 Meridian `adjust-factors`：数量比匹配 `ex_factor` 时保存 `corporate_action_type=quantity_adjustment`，总成本不变、单位成本随数量调整；因子存在但数量不变时保存 `price_adjustment`；无法闭合时保存 `mismatch` 并阻断。普通持仓使用 `cost_bucket=CORE`；完整 ETF T0 买入/赎回组使用 `ETF_T0:{group_id}`，买入成本与底仓隔离且赎回后日内归零。只有与 OC 实际 `transfer.event` 按篮子、证券、时间和数量闭合的成分卖出才会在移动成本前剥离；PCF 不用于合成跨市场划转。赎回名义价格不进入成本账，IOPV 退出估值与 15bp 摩擦仍由 contributions 返回。
 
 `POST /v1/accounts/{account_id}/fees/refresh` 发布 OC `fee.list.query`，只支持 OC 当前柜台交易日；`GET /v1/accounts/{account_id}/fees` 查询已落库的订单费用，支持 `trade_date/date_from/date_to/gateway_order_id/fee_complete/limit/cursor`。`fee_page.account_total_fee` 仅用于账户级核对，不参与逐订单累计；费用记录由 `account_id + fee_record_id` 幂等更新，只有完整且关联成功的订单费用可进入绩效。历史费用不由该刷新接口回补。
 
 费用缺失不等于订单不可用。订单和成交核心字段及关联完整时，Relay 仍使用它计算数量桥、移动成本、成交额和毛收益；费用完整性按当日有成交的唯一 `gateway_order_id` 单独统计。覆盖不完整时，贡献摘要返回 `fee_required_orders/fee_covered_orders/fee_coverage_complete/fee_coverage_source`，并将净绩效标记为 provisional、等待券商交割单，不把订单标记为数据质量失败。
 
-ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订单的多条成交先按 `gateway_order_id` 聚合；历史买单只有在赎回前的目标委托量精确闭合赎回量时才组成推断 T0 订单组，其实际成交额作为买入成本。估算退出价值使用每条赎回成交时刻之前最近的 Meridian historical Level1 `iopv * qty`，再按服务端 `performance.etf_t0_friction_rate` 扣减综合摩擦成本。无法闭合买单、缺 IOPV 或缺价格时不返回伪精确盈亏，而是标记 `missing/estimated`。无日初/日终持仓且只有卖出的赎回成分股归为 `etf_component_transfer`，只保留成交额并从 T0 估算收益中排除，避免与 IOPV 退出价值重复计算。逆回购本金不进入普通卖出额，只有按实际占款天数计算的净息进入 `cash_management`。
+ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订单的多条成交先按 `gateway_order_id` 聚合；历史买单只有在赎回前的目标委托量精确闭合赎回量时才组成推断 T0 订单组，其实际成交额作为买入成本。估算退出价值使用每条赎回成交时刻之前最近的 Meridian historical Level1 `iopv * qty`，再按服务端 `performance.etf_t0_friction_rate` 扣减综合摩擦成本。无法闭合买单、缺 IOPV 或缺价格时不返回伪精确盈亏，而是标记 `missing/estimated`。赎回成分卖出必须命中实际 transfer 数量链路后才归为 `etf_component_transfer` 并从 T0 估算收益中排除；响应通过 `linked_component_sales`、`etf_settlement_estimate` 和对应质量标记展示已实现成分现金与估算在途清算资产。逆回购本金不进入普通卖出额，只有按实际占款天数计算的净息进入 `cash_management`。
 
 `GET /v1/accounts/{account_id}/performance/trade-quality` 是只读交易质量接口，支持单日 `trade_date` 或区间 `date_from/date_to`。接口完整扫描本地订单、成交和订单费用账本，不触发 OC 查询；成交先按 `account_id + trade_date + gateway_order_id + fill_id` 去重，并在存在真实成交时排除同订单的 `relay-summary:*` 汇总成交。`trade_quality.v5` 的费用按 `trade_date + gateway_order_id` 精确关联：完整订单费用存在时覆盖该订单成交行费用且只计一次，否则回退成交费用，跨日复用订单号不会串账。普通二级市场订单以 fill 账本作为执行数量证据；`P/R + business_type=E` 的 ETF 申购赎回以订单终态 `cum_filled_qty` 和独立 transfer 账本表达，历史 OC 写入普通 fill 表的申赎本体、现金差额和旧 summary 记录也会从普通成交统计中排除，不再误报数量、证券或业务类型错配。申赎订单仍纳入有成交订单率与数量成交率。区间容量独立支持最多 60,000 条订单和 60,000 条成交，不再受证券贡献 20,000 行上限影响。`summary` 返回有实际成交订单率、完全成交率、按委托数量计算的成交率、撤单率、拒单率、拒单有原因/缺原因数量、未终态订单、异常订单、孤立成交、成交额和费用。业务拒单是有效交易结果：终态为 `rejected` 且有 `reject_message` 或 OC 柜台原因时只计入拒单统计，不计入数据质量异常；有完整原因、零成交且 `invalid_qty` 不超过委托量的整笔无效申报同样属于拒单结果。缺少拒绝原因时才返回 `rejected_order_missing_reason`。`anomalies` 继续返回未终态、订单/成交数量不一致、成交证券/方向/业务类型错配、终态时间缺失或跨日、终态冲突、非拒单柜台错误残留和成交缺委托等可追溯明细。OC 委托时间与 Redis 事件时间存在精度差时，`terminal_before_created` 使用 5 秒容差。`gateway_order_id` 只按账户内交易日唯一处理，区间统计不会把跨交易日复用的同 ID 错误关联。
 
@@ -426,17 +426,19 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 使用普通证券现金流恒等式 `close_value + sell_amount - buy_amount - open_value - effective_fee`。ETF 申赎 T0 使用赎回成交时刻之前最近的 Meridian Level1 IOPV 作为估算退出价值，并扣除配置项 `performance.etf_t0_friction_rate`；多个赎回组最多 8 路并发查询 IOPV。缺少当日 open 持仓时，只在前一交易日 close 快照存在且 `open + buy - sell = close` 数量桥闭合时估算，否则返回 `pnl_status=missing`，不会把缺失持仓当作 0。接口只读，不触发 OC 查询。
 
-`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的 v2.1 公式为：
+`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 的 v2.2 公式为：
 
 ```text
-base_close_nav = close_visible_cash + meridian_close_position_value
+actual_execution_fee = unique(t0_buy_order_fee + redemption_parent_order_fee + linked_component_sell_order_fee)
+etf_settlement_estimate = iopv_exit_value - linked_component_sales - estimated_friction + actual_execution_fee
+base_close_nav = close_visible_cash + meridian_close_position_value + etf_settlement_estimate
 principal_receivable = reverse_repo_principal - principal_already_in_visible_cash
 close_economic_nav = base_close_nav + principal_receivable
 account_day_pnl = close_economic_nav - open_economic_nav - external_net_flow - settlement_adjustment
 daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_flow_i))
 ```
 
-其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`。逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算；系统比较含/不含本金两条候选 NAV 对正式证券贡献的残差，输出 `principal_treatment=embedded/separate/ambiguous`、`principal_cash_overlap`、`principal_receivable`、`resolution_residual` 和 `alternate_residual`，歧义时阻断。`estimated_net_interest/estimated_receivable` 只作诊断，不进入正式 NAV/PnL；实际净息由确认的 `income_expense` 在到账日进入 `cash_management`。剩余 `account_day_pnl` 暂记 `unattributed` 并标记 `strategy_attribution_pending`。
+其中 `open_economic_nav` 优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`。ETF 待结算估值只在 T0 买入/赎回、实际 transfer/成分卖出和 OC 订单费用全部闭合时生成；它是 IOPV + 15bp 研究估值，不是公募最终清算事实，因此 NAV 保持 provisional。逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算；系统比较含/不含本金两条候选 NAV 对正式证券贡献的残差，输出 `principal_treatment=embedded/separate/ambiguous`、`principal_cash_overlap`、`principal_receivable`、`resolution_residual` 和 `alternate_residual`，歧义时阻断。超过告警阈值的剩余差额标记 `strategy_attribution_pending`；阈值内差额标记 `attribution_residual_within_tolerance`，后续由 T+1 实际清算对账。
 
 `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览 T+1 对账；`POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 持久化对账结果，仍由 `performance.settings_write_enabled` 控制。`observed_trade_date` 为空时会通过 Meridian 交易日接口向后取下一交易日。第一版公式为 `observed_open_assets = asset_snapshots(open).cash_total + sum(position_snapshots(open).market_value)`，再扣减 `provisional_close_economic_nav`、盘前已确认 `external_flow` 和盘前已确认 `income_expense` 后得到 `residual`；状态按配置阈值写为 `auto_completed/review_required/blocked`。
 

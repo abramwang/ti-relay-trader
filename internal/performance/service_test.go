@@ -555,10 +555,52 @@ func TestBuildT0GroupsFlagsPCFRedemptionUnitMismatch(t *testing.T) {
 	if !containsString(groups[0].flags, "redemption_quantity_not_pcf_unit_multiple") {
 		t.Fatalf("quality flags = %#v", groups[0].flags)
 	}
-	item := service.calculateT0Contribution(context.Background(), "2026-07-24", groups[0], 10_000_000)
+	item := service.calculateT0Contribution(context.Background(), "2026-07-24", groups[0], nil, false, nil, 10_000_000)
 	if item.PnLStatus != "missing" || item.NetContribution != nil {
 		t.Fatalf("mismatched PCF unit contribution = %#v", item)
 	}
+}
+
+func TestCalculateT0ContributionEstimatesOutstandingSettlementFromLinkedSales(t *testing.T) {
+	location := timeutil.Location()
+	buyTime := time.Date(2026, 8, 5, 9, 40, 0, 0, location)
+	redeemTime := buyTime.Add(5 * time.Minute)
+	group := t0RedemptionGroup{
+		securityID:     "159381.SZ",
+		groupID:        "redeem-order",
+		redemptionUnit: 1_000_000,
+		buyFills: []trading.Fill{{
+			FillID: "buy-fill", GatewayOrderID: "buy-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideBuy, Price: 4.8, Qty: 1_000_000, MatchedAt: buyTime,
+		}},
+		redemptions: []trading.Fill{{
+			FillID: "redeem-fill", GatewayOrderID: "redeem-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 1_000_000, MatchedAt: redeemTime,
+		}},
+	}
+	componentFills := []trading.Fill{{
+		FillID: "component-fill", GatewayOrderID: "component-order", Symbol: "301536", Exchange: trading.ExchangeSZ,
+		TradeSide: trading.TradeSideSell, Price: 400, Qty: 100, MatchedAt: redeemTime.Add(time.Second),
+	}}
+	service := &Service{
+		market: &fakeContributionMarket{snapshots: market.MeridianResponse{StatusCode: http.StatusOK, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "159381.SZ", "iopv": 4.82, "timestamp": "2026-08-05T09:45:00+08:00",
+		}}}}},
+		etfT0FrictionRate: 0.0015,
+	}
+	item := service.calculateT0Contribution(context.Background(), "2026-08-05", group, componentFills, true, map[string]ledger.OrderFeeRecord{
+		"buy-order":       {GatewayOrderID: "buy-order", TotalFee: 100},
+		"redeem-order":    {GatewayOrderID: "redeem-order", TotalFee: 50},
+		"component-order": {GatewayOrderID: "component-order", TotalFee: 200},
+	}, 10_000_000)
+
+	if item.ETFSettlementEstimate == nil {
+		t.Fatalf("settlement estimate missing: %#v", item)
+	}
+	assertClose(t, item.LinkedComponentSales, 40_000)
+	assertClose(t, item.ActualFee, 350)
+	assertClose(t, item.EstimatedFee, 7_230)
+	assertClose(t, *item.ETFSettlementEstimate, 4_773_120)
 }
 
 func TestRedemptionFillsFromComponentTransfersUsesOnlyParentETFRecord(t *testing.T) {
@@ -607,9 +649,51 @@ func TestRedemptionFillsFromComponentTransfersUsesOnlyParentETFRecord(t *testing
 	}
 }
 
+func TestBuildComponentSaleLinksUsesActualTransferQuantitiesOnly(t *testing.T) {
+	matchedAt := time.Date(2026, 8, 5, 9, 45, 24, 0, timeutil.Location())
+	orders := []trading.Order{{
+		AccountID: "acct-1", GatewayOrderID: "redeem-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+		TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, OrderQty: 2_000_000,
+		BasketID: "etfarb#159381", AcceptedAt: matchedAt,
+	}}
+	transfers := []trading.ComponentTransfer{
+		{
+			FillID: "parent", AccountID: "acct-1", GatewayOrderID: "redeem-order",
+			Symbol: "159381", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption,
+			BusinessType: trading.BusinessTypeETF, ComponentSymbol: "159381", ComponentExchange: trading.ExchangeSZ,
+			ComponentQty: 2_000_000, BasketID: "etfarb#159381", MatchedAt: matchedAt,
+		},
+		{
+			FillID: "component", AccountID: "acct-1", GatewayOrderID: "redeem-order",
+			Symbol: "301536", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption,
+			BusinessType: trading.BusinessTypeETF, ComponentSymbol: "301536", ComponentExchange: trading.ExchangeSZ,
+			ComponentQty: 300, BasketID: "etfarb#159381", MatchedAt: matchedAt,
+		},
+	}
+	fills := []trading.Fill{
+		{FillID: "sz-1", AccountID: "acct-1", GatewayOrderID: "sell-sz", Symbol: "301536", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideSell, Qty: 100, BasketID: "etfarb#159381.SZSE#094525#s", MatchedAt: matchedAt.Add(5 * time.Second)},
+		{FillID: "sz-2", AccountID: "acct-1", GatewayOrderID: "sell-sz", Symbol: "301536", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideSell, Qty: 100, BasketID: "etfarb#159381.SZSE#094525#s", MatchedAt: matchedAt.Add(5 * time.Second)},
+		{FillID: "sz-3", AccountID: "acct-1", GatewayOrderID: "sell-sz", Symbol: "301536", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideSell, Qty: 100, BasketID: "etfarb#159381.SZSE#094525#s", MatchedAt: matchedAt.Add(5 * time.Second)},
+		{FillID: "sh-unlinked", AccountID: "acct-1", GatewayOrderID: "sell-sh", Symbol: "600000", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Qty: 100, BasketID: "etfarb#159381.SZSE#094525#s", MatchedAt: matchedAt.Add(5 * time.Second)},
+	}
+
+	links := buildComponentSaleLinks(orders, fills, transfers)
+	if len(links.byFill) != 3 || !componentTransferGroupComplete(links.groups["redeem-order"]) {
+		t.Fatalf("links = %#v", links)
+	}
+	if links.excludes(fills[3]) {
+		t.Fatalf("untransferred cross-market security was linked: %#v", fills[3])
+	}
+}
+
 func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 	matchedAt := time.Date(2026, 7, 24, 10, 8, 0, 0, timeutil.Location())
 	store := &fakePerformanceStore{
+		orders: []trading.Order{{
+			AccountID: "acct-1", GatewayOrderID: "redeem-order", Symbol: "159915", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, OrderQty: 1_000_000,
+			BasketID: "etfarb#159915", AcceptedAt: matchedAt,
+		}},
 		fills: []trading.Fill{
 			{
 				FillID:         "redeem",
@@ -632,7 +716,22 @@ func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 				BusinessType:   trading.BusinessTypeStock,
 				Price:          400,
 				Qty:            100,
+				BasketID:       "etfarb#159915.SZSE#100800#s",
 				MatchedAt:      matchedAt.Add(time.Minute),
+			},
+		},
+		transfers: []trading.ComponentTransfer{
+			{
+				FillID: "parent-transfer", AccountID: "acct-1", GatewayOrderID: "redeem-order",
+				Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption,
+				BusinessType: trading.BusinessTypeETF, Qty: 1_000_000, ComponentSymbol: "159915",
+				ComponentExchange: trading.ExchangeSZ, ComponentQty: 1_000_000, BasketID: "etfarb#159915", MatchedAt: matchedAt,
+			},
+			{
+				FillID: "component-transfer", AccountID: "acct-1", GatewayOrderID: "redeem-order",
+				Symbol: "300750", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption,
+				BusinessType: trading.BusinessTypeETF, Qty: 100, ComponentSymbol: "300750",
+				ComponentExchange: trading.ExchangeSZ, ComponentQty: 100, BasketID: "etfarb#159915", MatchedAt: matchedAt,
 			},
 		},
 		daily: ledger.DailyPerformance{OpenNetAsset: 10_000_000},
@@ -672,6 +771,9 @@ func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 	}
 	if containsString(component.QualityFlags, "missing_fee_rule") {
 		t.Fatalf("component flags = %#v", component.QualityFlags)
+	}
+	if containsString(component.QualityFlags, "missing_transfer_link") || !containsString(component.QualityFlags, "component_transfer_quantity_reconciled") {
+		t.Fatalf("component transfer flags = %#v", component.QualityFlags)
 	}
 }
 
@@ -1735,7 +1837,12 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 			{
 				AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "159915", Exchange: trading.ExchangeSZ,
 				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, OrderQty: 1000,
-				T0OrderGroupID: "basket-1", AcceptedAt: redeemTime,
+				T0OrderGroupID: "basket-1", BasketID: "etfarb#159915", AcceptedAt: redeemTime,
+			},
+			{
+				AccountID: "acct-1", GatewayOrderID: "component-sell", Symbol: "300750", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideSell, BusinessType: trading.BusinessTypeStock, OrderQty: 100,
+				BasketID: "etfarb#159915.SZSE#101001#s", AcceptedAt: redeemTime.Add(time.Second),
 			},
 		},
 		fills: []trading.Fill{
@@ -1753,6 +1860,23 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 				FillID: "t0-redeem-fill", AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "159915", Exchange: trading.ExchangeSZ,
 				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 1000,
 				T0OrderGroupID: "basket-1", MatchedAt: redeemTime,
+			},
+			{
+				FillID: "component-sell-fill", AccountID: "acct-1", GatewayOrderID: "component-sell", Symbol: "300750", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideSell, BusinessType: trading.BusinessTypeStock, Price: 400, Qty: 100,
+				BasketID: "etfarb#159915.SZSE#101001#s", MatchedAt: redeemTime.Add(time.Second),
+			},
+		},
+		transfers: []trading.ComponentTransfer{
+			{
+				FillID: "parent-transfer", AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "159915", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, ComponentSymbol: "159915",
+				ComponentExchange: trading.ExchangeSZ, ComponentQty: 1000, BasketID: "etfarb#159915", MatchedAt: redeemTime,
+			},
+			{
+				FillID: "component-transfer", AccountID: "acct-1", GatewayOrderID: "t0-redeem", Symbol: "300750", Exchange: trading.ExchangeSZ,
+				TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, ComponentSymbol: "300750",
+				ComponentExchange: trading.ExchangeSZ, ComponentQty: 100, BasketID: "etfarb#159915", MatchedAt: redeemTime,
 			},
 		},
 	}
@@ -1776,7 +1900,7 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 	if err != nil {
 		t.Fatalf("CalculateCostLedger() error = %v", err)
 	}
-	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3" {
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.1" {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(result.Positions) != 2 || result.Summary.T0CostBuckets != 1 || result.Summary.T0BlockedBuckets != 0 {
@@ -1803,6 +1927,9 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 	}
 	if result.Summary.T0BuyQuantity != 1000 || result.Summary.T0RedemptionQuantity != 1000 || result.Summary.T0BuyAmount != 4800 {
 		t.Fatalf("t0 summary = %#v", result.Summary)
+	}
+	if !containsString(result.QualityFlags, "component_sales_excluded_from_position_cost") || containsString(result.QualityFlags, "sell_quantity_exceeds_cost_position") {
+		t.Fatalf("component cost flags = %#v", result.QualityFlags)
 	}
 }
 
@@ -2364,6 +2491,7 @@ type fakePerformanceStore struct {
 	orders                []trading.Order
 	orderQueries          []trading.OrderQuery
 	fills                 []trading.Fill
+	transfers             []trading.ComponentTransfer
 	positions             map[string][]trading.Position
 	positionsByDate       map[string][]trading.Position
 	feeRules              []ledger.FeeRule
@@ -2453,6 +2581,10 @@ func (store *fakePerformanceStore) ListOrders(_ context.Context, query trading.O
 func (store *fakePerformanceStore) ListFills(_ context.Context, query trading.FillQuery) ([]trading.Fill, error) {
 	store.fillQueries = append(store.fillQueries, query)
 	return store.fills, nil
+}
+
+func (store *fakePerformanceStore) ListComponentTransfers(_ context.Context, _ trading.ComponentTransferQuery) ([]trading.ComponentTransfer, error) {
+	return store.transfers, nil
 }
 
 func (store *fakePerformanceStore) ListOrderFeeRecords(_ context.Context, _ ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error) {

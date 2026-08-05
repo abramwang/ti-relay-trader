@@ -28,7 +28,7 @@ const (
 	StrategyETFComponentTransfer = "etf_component_transfer"
 	StrategyUnattributed         = "unattributed"
 
-	contributionFormulaVersion = "performance_contribution.v1"
+	contributionFormulaVersion = "performance_contribution.v1.1"
 	contributionPageLimit      = 500
 	maxContributionPages       = 40
 	contributionMarketBatch    = 100
@@ -74,62 +74,68 @@ type ContributionSummary struct {
 	FeeCoverageComplete    bool    `json:"fee_coverage_complete"`
 	FeeCoverageSource      string  `json:"fee_coverage_source"`
 	ExcludedItems          int     `json:"excluded_items"`
+	LinkedComponentSales   float64 `json:"linked_component_sales"`
+	ETFSettlementEstimate  float64 `json:"etf_settlement_estimate"`
 }
 
 type SecurityContribution struct {
-	SecurityID         string     `json:"security_id"`
-	Symbol             string     `json:"symbol"`
-	Exchange           string     `json:"exchange"`
-	Name               string     `json:"name,omitempty"`
-	InstrumentType     string     `json:"instrument_type,omitempty"`
-	StrategyType       string     `json:"strategy_type"`
-	StrategyID         string     `json:"strategy_id,omitempty"`
-	OpenQuantity       int64      `json:"open_quantity"`
-	CloseQuantity      int64      `json:"close_quantity"`
-	BuyQuantity        int64      `json:"buy_quantity"`
-	SellQuantity       int64      `json:"sell_quantity"`
-	RedemptionQuantity int64      `json:"redemption_quantity,omitempty"`
-	RedemptionUnit     int64      `json:"redemption_unit,omitempty"`
-	BuyAmount          float64    `json:"buy_amount"`
-	SellAmount         float64    `json:"sell_amount"`
-	Turnover           float64    `json:"turnover"`
-	OpenPrice          *float64   `json:"open_price,omitempty"`
-	ClosePrice         *float64   `json:"close_price,omitempty"`
-	OpenValue          float64    `json:"open_value"`
-	CloseValue         float64    `json:"close_value"`
-	MarketValue        float64    `json:"market_value"`
-	Weight             float64    `json:"weight"`
-	ActualFee          float64    `json:"actual_fee"`
-	EstimatedFee       float64    `json:"estimated_fee"`
-	EffectiveFee       float64    `json:"effective_fee"`
-	FeeSource          string     `json:"fee_source"`
-	GrossContribution  *float64   `json:"gross_contribution,omitempty"`
-	NetContribution    *float64   `json:"net_contribution,omitempty"`
-	ContributionBPS    *float64   `json:"contribution_bps,omitempty"`
-	EstimatedExitValue *float64   `json:"estimated_exit_value,omitempty"`
-	ReferenceIOPV      *float64   `json:"reference_iopv,omitempty"`
-	ReferenceTime      *time.Time `json:"reference_time,omitempty"`
-	PnLStatus          string     `json:"pnl_status"`
-	EstimationMethod   string     `json:"estimation_method,omitempty"`
-	PriceSource        string     `json:"price_source,omitempty"`
-	Orders             int        `json:"orders"`
-	Fills              int        `json:"fills"`
-	QualityFlags       []string   `json:"quality_flags,omitempty"`
+	SecurityID            string     `json:"security_id"`
+	Symbol                string     `json:"symbol"`
+	Exchange              string     `json:"exchange"`
+	Name                  string     `json:"name,omitempty"`
+	InstrumentType        string     `json:"instrument_type,omitempty"`
+	StrategyType          string     `json:"strategy_type"`
+	StrategyID            string     `json:"strategy_id,omitempty"`
+	OpenQuantity          int64      `json:"open_quantity"`
+	CloseQuantity         int64      `json:"close_quantity"`
+	BuyQuantity           int64      `json:"buy_quantity"`
+	SellQuantity          int64      `json:"sell_quantity"`
+	RedemptionQuantity    int64      `json:"redemption_quantity,omitempty"`
+	RedemptionUnit        int64      `json:"redemption_unit,omitempty"`
+	BuyAmount             float64    `json:"buy_amount"`
+	SellAmount            float64    `json:"sell_amount"`
+	Turnover              float64    `json:"turnover"`
+	OpenPrice             *float64   `json:"open_price,omitempty"`
+	ClosePrice            *float64   `json:"close_price,omitempty"`
+	OpenValue             float64    `json:"open_value"`
+	CloseValue            float64    `json:"close_value"`
+	MarketValue           float64    `json:"market_value"`
+	Weight                float64    `json:"weight"`
+	ActualFee             float64    `json:"actual_fee"`
+	EstimatedFee          float64    `json:"estimated_fee"`
+	EffectiveFee          float64    `json:"effective_fee"`
+	FeeSource             string     `json:"fee_source"`
+	GrossContribution     *float64   `json:"gross_contribution,omitempty"`
+	NetContribution       *float64   `json:"net_contribution,omitempty"`
+	ContributionBPS       *float64   `json:"contribution_bps,omitempty"`
+	EstimatedExitValue    *float64   `json:"estimated_exit_value,omitempty"`
+	LinkedComponentSales  float64    `json:"linked_component_sales,omitempty"`
+	ETFSettlementEstimate *float64   `json:"etf_settlement_estimate,omitempty"`
+	ReferenceIOPV         *float64   `json:"reference_iopv,omitempty"`
+	ReferenceTime         *time.Time `json:"reference_time,omitempty"`
+	PnLStatus             string     `json:"pnl_status"`
+	EstimationMethod      string     `json:"estimation_method,omitempty"`
+	PriceSource           string     `json:"price_source,omitempty"`
+	Orders                int        `json:"orders"`
+	Fills                 int        `json:"fills"`
+	QualityFlags          []string   `json:"quality_flags,omitempty"`
 }
 
 type StrategyContribution struct {
-	StrategyType    string   `json:"strategy_type"`
-	Securities      int      `json:"securities"`
-	BuyAmount       float64  `json:"buy_amount"`
-	SellAmount      float64  `json:"sell_amount"`
-	Turnover        float64  `json:"turnover"`
-	EffectiveFee    float64  `json:"effective_fee"`
-	NetContribution float64  `json:"net_contribution"`
-	ContributionBPS float64  `json:"contribution_bps"`
-	EstimatedItems  int      `json:"estimated_items"`
-	MissingItems    int      `json:"missing_items"`
-	ExcludedItems   int      `json:"excluded_items"`
-	QualityFlags    []string `json:"quality_flags,omitempty"`
+	StrategyType          string   `json:"strategy_type"`
+	Securities            int      `json:"securities"`
+	BuyAmount             float64  `json:"buy_amount"`
+	SellAmount            float64  `json:"sell_amount"`
+	Turnover              float64  `json:"turnover"`
+	EffectiveFee          float64  `json:"effective_fee"`
+	NetContribution       float64  `json:"net_contribution"`
+	ContributionBPS       float64  `json:"contribution_bps"`
+	EstimatedItems        int      `json:"estimated_items"`
+	MissingItems          int      `json:"missing_items"`
+	ExcludedItems         int      `json:"excluded_items"`
+	LinkedComponentSales  float64  `json:"linked_component_sales"`
+	ETFSettlementEstimate float64  `json:"etf_settlement_estimate"`
+	QualityFlags          []string `json:"quality_flags,omitempty"`
 }
 
 type contributionInstrument struct {
@@ -217,7 +223,9 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	feeCoverage := calculateOrderFeeDayCoverage(fills, authoritativeFees)
 	consumedOrderFees := make(map[string]bool)
 	ordinaryFillCount := len(fills)
-	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
+	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
+	redemptionTransferFills := redemptionFillsFromComponentTransfers(orders, fills, transfers)
+	componentLinks := buildComponentSaleLinks(orders, fills, transfers)
 	if transferErr == nil && len(redemptionTransferFills) > 0 {
 		fills = append(fills, redemptionTransferFills...)
 		fills = dedupeContributionFills(fills)
@@ -257,6 +265,10 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	} else if len(redemptionTransferFills) > 0 {
 		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_from_transfer_ledger")
 	}
+	if len(componentLinks.byFill) > 0 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "component_sales_linked_to_transfer")
+	}
+	result.QualityFlags = appendUnique(result.QualityFlags, componentLinks.flags...)
 	result.Summary.Orders = len(orders)
 	result.Summary.Fills = ordinaryFillCount
 
@@ -316,7 +328,7 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
-	for _, item := range service.calculateT0Contributions(ctx, normalizedDate, t0Groups, result.Summary.OpenEconomicNAV) {
+	for _, item := range service.calculateT0Contributions(ctx, normalizedDate, t0Groups, componentLinks, authoritativeFees, result.Summary.OpenEconomicNAV) {
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
 	}
@@ -334,7 +346,7 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		}
 		bucket.orders = filteredOrders
 		bucket.fills = filteredFills
-		item := calculateOrdinaryContribution(bucket, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, hasRedemption)
+		item := calculateOrdinaryContribution(bucket, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, hasRedemption, componentLinks.bucketLink(filteredFills))
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
 	}
@@ -481,13 +493,7 @@ func (service *Service) previousClosePositionFallback(ctx context.Context, accou
 	return positions, []string{"open_positions_from_previous_close"}
 }
 
-func (service *Service) listRedemptionTransferFills(
-	ctx context.Context,
-	accountID string,
-	tradeDate string,
-	orders []trading.Order,
-	fills []trading.Fill,
-) ([]trading.Fill, error) {
+func (service *Service) listContributionComponentTransfers(ctx context.Context, accountID, tradeDate string) ([]trading.ComponentTransfer, error) {
 	store, ok := service.store.(interface {
 		ListComponentTransfers(context.Context, trading.ComponentTransferQuery) ([]trading.ComponentTransfer, error)
 	})
@@ -514,7 +520,7 @@ func (service *Service) listRedemptionTransferFills(
 			return nil, fmt.Errorf("contribution component transfers exceed %d rows", contributionPageLimit*maxContributionPages)
 		}
 	}
-	return redemptionFillsFromComponentTransfers(orders, fills, transfers), nil
+	return transfers, nil
 }
 
 func redemptionFillsFromComponentTransfers(orders []trading.Order, fills []trading.Fill, transfers []trading.ComponentTransfer) []trading.Fill {
@@ -1003,7 +1009,14 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 	return groups, consumedOrders, consumedFills
 }
 
-func (service *Service) calculateT0Contributions(ctx context.Context, tradeDate string, groups []t0RedemptionGroup, openNAV float64) []SecurityContribution {
+func (service *Service) calculateT0Contributions(
+	ctx context.Context,
+	tradeDate string,
+	groups []t0RedemptionGroup,
+	componentLinks componentSaleLinks,
+	authoritativeFees map[string]ledger.OrderFeeRecord,
+	openNAV float64,
+) []SecurityContribution {
 	items := make([]SecurityContribution, len(groups))
 	if len(groups) == 0 {
 		return items
@@ -1021,14 +1034,35 @@ func (service *Service) calculateT0Contributions(ctx context.Context, tradeDate 
 			defer waitGroup.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			items[index] = service.calculateT0Contribution(ctx, tradeDate, group, openNAV)
+			if len(group.redemptions) == 0 {
+				items[index] = SecurityContribution{
+					SecurityID:       group.securityID,
+					Symbol:           group.instrument.Symbol,
+					Exchange:         group.instrument.Exchange,
+					StrategyType:     StrategyETFRedemptionT0,
+					PnLStatus:        "missing",
+					EstimationMethod: "missing_redemption_fill",
+					QualityFlags:     []string{"incomplete_t0_order_group"},
+				}
+				return
+			}
+			componentFills, transferComplete := componentLinks.linkedFills(group.redemptions[0].GatewayOrderID)
+			items[index] = service.calculateT0Contribution(ctx, tradeDate, group, componentFills, transferComplete, authoritativeFees, openNAV)
 		}()
 	}
 	waitGroup.Wait()
 	return items
 }
 
-func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate string, group t0RedemptionGroup, openNAV float64) SecurityContribution {
+func (service *Service) calculateT0Contribution(
+	ctx context.Context,
+	tradeDate string,
+	group t0RedemptionGroup,
+	componentFills []trading.Fill,
+	transferComplete bool,
+	authoritativeFees map[string]ledger.OrderFeeRecord,
+	openNAV float64,
+) SecurityContribution {
 	symbol, exchange := splitContributionSecurityID(group.securityID)
 	item := SecurityContribution{
 		SecurityID:       group.securityID,
@@ -1050,6 +1084,21 @@ func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate s
 	for _, fill := range group.buyFills {
 		item.BuyQuantity += fill.Qty
 		item.BuyAmount += contributionFillAmount(fill)
+	}
+	for _, fill := range componentFills {
+		item.LinkedComponentSales += contributionFillAmount(fill)
+	}
+	item.LinkedComponentSales = roundMoney(item.LinkedComponentSales)
+	actualExecutionFee, executionFeeComplete := t0ActualExecutionFee(group.buyFills, group.redemptions, componentFills, authoritativeFees)
+	item.ActualFee = actualExecutionFee
+	if len(componentFills) > 0 {
+		item.QualityFlags = appendUnique(item.QualityFlags, "component_sales_linked_to_transfer")
+	}
+	if !transferComplete {
+		item.QualityFlags = appendUnique(item.QualityFlags, "component_transfer_sell_quantity_mismatch")
+	}
+	if !executionFeeComplete {
+		item.QualityFlags = appendUnique(item.QualityFlags, "etf_t0_execution_fee_incomplete")
 	}
 
 	var exitValue float64
@@ -1097,8 +1146,40 @@ func (service *Service) calculateT0Contribution(ctx context.Context, tradeDate s
 		item.ContributionBPS = contributionBPSPointer(net, openNAV)
 		item.PnLStatus = "estimated"
 		item.QualityFlags = appendUnique(item.QualityFlags, "etf_t0_iopv_estimate", "configured_friction_estimate")
+		if transferComplete && executionFeeComplete {
+			settlementEstimate := roundMoney(exitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee)
+			item.ETFSettlementEstimate = floatPointer(settlementEstimate)
+			item.QualityFlags = appendUnique(item.QualityFlags, "etf_redemption_settlement_estimated")
+		}
 	}
 	return item
+}
+
+func t0ActualExecutionFee(buyFills, redemptionFills, componentFills []trading.Fill, authoritativeFees map[string]ledger.OrderFeeRecord) (float64, bool) {
+	seen := make(map[string]bool)
+	fee := 0.0
+	complete := true
+	fills := make([]trading.Fill, 0, len(buyFills)+len(redemptionFills)+len(componentFills))
+	fills = append(fills, buyFills...)
+	fills = append(fills, redemptionFills...)
+	fills = append(fills, componentFills...)
+	for _, fill := range fills {
+		gatewayOrderID := strings.TrimSpace(fill.GatewayOrderID)
+		if gatewayOrderID == "" || seen[gatewayOrderID] {
+			continue
+		}
+		seen[gatewayOrderID] = true
+		if record, ok := authoritativeFees[gatewayOrderID]; ok {
+			fee += record.TotalFee
+			continue
+		}
+		if contributionFillHasCompleteActualFee(fill) {
+			fee += fill.Fee
+			continue
+		}
+		complete = false
+	}
+	return roundMoney(fee), complete && len(seen) > 0
 }
 
 func (service *Service) loadRedemptionIOPV(ctx context.Context, tradeDate string, fill trading.Fill) (float64, time.Time, bool) {
@@ -1149,6 +1230,7 @@ func calculateOrdinaryContribution(
 	consumedOrderFees map[string]bool,
 	openNAV float64,
 	hasRedemption bool,
+	componentLink componentSaleBucketLink,
 ) SecurityContribution {
 	instrument := bucket.instrument
 	item := SecurityContribution{
@@ -1170,6 +1252,7 @@ func calculateOrdinaryContribution(
 		item.CloseQuantity == 0 &&
 		!isETFInstrument(instrument.InstrumentType) &&
 		allContributionFillsSell(bucket.fills)
+	componentLinked := componentCandidate && componentLink.allFillsLinked && componentLink.linkedQuantity > 0
 
 	if instrument.HasPreClose {
 		item.OpenPrice = floatPointer(instrument.PreClose)
@@ -1208,7 +1291,7 @@ func calculateOrdinaryContribution(
 		case trading.TradeSideRedemption:
 			item.RedemptionQuantity += fill.Qty
 		}
-		if !componentCandidate {
+		if !componentLinked {
 			fillFee := contributionFeeForFill(fill, instrument, rules, authoritativeFees, consumedOrderFees)
 			fees.actual += fillFee.actual
 			fees.estimated += fillFee.estimated
@@ -1232,14 +1315,23 @@ func calculateOrdinaryContribution(
 	}
 	item.StrategyID = dominantContributionStrategyID(bucket.orders, bucket.fills)
 
-	componentOnly := componentCandidate && item.BuyQuantity == 0 && item.SellQuantity > 0
+	componentOnly := componentLinked && item.BuyQuantity == 0 && item.SellQuantity > 0
 	if componentOnly && !isETFInstrument(instrument.InstrumentType) {
 		item.StrategyType = StrategyETFComponentTransfer
+		item.StrategyID = componentLink.redemptionGatewayOrderID
 		item.PnLStatus = "excluded"
 		item.FeeSource = "included_in_etf_t0_friction"
 		item.EstimationMethod = "component_sale_excluded_from_etf_t0_estimate"
-		item.QualityFlags = appendUnique(item.QualityFlags, "component_sale_excluded_from_estimated_etf_t0", "missing_transfer_link")
+		item.QualityFlags = appendUnique(item.QualityFlags, "component_sale_excluded_from_estimated_etf_t0", "component_sale_linked_to_transfer")
+		if componentLink.groupComplete {
+			item.QualityFlags = appendUnique(item.QualityFlags, "component_transfer_quantity_reconciled")
+		} else {
+			item.QualityFlags = appendUnique(item.QualityFlags, "component_transfer_sell_quantity_mismatch")
+		}
 		return item
+	}
+	if componentCandidate && !componentLinked {
+		item.QualityFlags = appendUnique(item.QualityFlags, "missing_transfer_link")
 	}
 
 	impliedCloseQuantity := item.OpenQuantity + item.BuyQuantity - item.SellQuantity
@@ -1428,6 +1520,10 @@ func finalizeContributionResult(result *ContributionResult) {
 		result.Summary.ActualFee += item.ActualFee
 		result.Summary.EstimatedFee += item.EstimatedFee
 		result.Summary.EffectiveFee += item.EffectiveFee
+		result.Summary.LinkedComponentSales += item.LinkedComponentSales
+		if item.ETFSettlementEstimate != nil {
+			result.Summary.ETFSettlementEstimate += *item.ETFSettlementEstimate
+		}
 		if containsStringValue(item.QualityFlags, "missing_fee_rule") {
 			result.Summary.MissingFeeItems++
 		}
@@ -1442,6 +1538,10 @@ func finalizeContributionResult(result *ContributionResult) {
 		strategy.SellAmount += item.SellAmount
 		strategy.Turnover += item.Turnover
 		strategy.EffectiveFee += item.EffectiveFee
+		strategy.LinkedComponentSales += item.LinkedComponentSales
+		if item.ETFSettlementEstimate != nil {
+			strategy.ETFSettlementEstimate += *item.ETFSettlementEstimate
+		}
 		strategy.QualityFlags = appendUnique(strategy.QualityFlags, item.QualityFlags...)
 
 		switch item.PnLStatus {
@@ -1472,6 +1572,8 @@ func finalizeContributionResult(result *ContributionResult) {
 	result.Summary.ActualFee = roundMoney(result.Summary.ActualFee)
 	result.Summary.EstimatedFee = roundMoney(result.Summary.EstimatedFee)
 	result.Summary.EffectiveFee = roundMoney(result.Summary.EffectiveFee)
+	result.Summary.LinkedComponentSales = roundMoney(result.Summary.LinkedComponentSales)
+	result.Summary.ETFSettlementEstimate = roundMoney(result.Summary.ETFSettlementEstimate)
 	result.Summary.GrossContribution = roundMoney(result.Summary.GrossContribution)
 	result.Summary.NetContribution = roundMoney(result.Summary.NetContribution)
 	if result.Summary.OpenEconomicNAV > 0 {
@@ -1489,6 +1591,8 @@ func finalizeContributionResult(result *ContributionResult) {
 		strategy.SellAmount = roundMoney(strategy.SellAmount)
 		strategy.Turnover = roundMoney(strategy.Turnover)
 		strategy.EffectiveFee = roundMoney(strategy.EffectiveFee)
+		strategy.LinkedComponentSales = roundMoney(strategy.LinkedComponentSales)
+		strategy.ETFSettlementEstimate = roundMoney(strategy.ETFSettlementEstimate)
 		strategy.NetContribution = roundMoney(strategy.NetContribution)
 		if result.Summary.OpenEconomicNAV > 0 {
 			strategy.ContributionBPS = roundRatio(strategy.NetContribution / result.Summary.OpenEconomicNAV * 10000)

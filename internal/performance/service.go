@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.1"
+	defaultFormulaVersion   = "performance_economic_nav.v2.2"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -146,6 +146,7 @@ type EconomicNAVValuationSummary struct {
 	OpenPositionValue        float64 `json:"open_position_value"`
 	CloseVisibleCash         float64 `json:"close_visible_cash"`
 	ClosePositionValue       float64 `json:"close_position_value"`
+	ETFSettlementEstimate    float64 `json:"etf_settlement_estimate"`
 	BrokerOpenPositionValue  float64 `json:"broker_open_position_value"`
 	BrokerClosePositionValue float64 `json:"broker_close_position_value"`
 	PriceSource              string  `json:"price_source"`
@@ -403,10 +404,17 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		OpenPositionValue:        contribution.Summary.OpenPositionValue,
 		CloseVisibleCash:         roundMoney(closeVisibleCash),
 		ClosePositionValue:       contribution.Summary.ClosePositionValue,
+		ETFSettlementEstimate:    contribution.Summary.ETFSettlementEstimate,
 		BrokerOpenPositionValue:  roundMoney(brokerOpenPositionValue),
 		BrokerClosePositionValue: roundMoney(brokerClosePositionValue),
 		PriceSource:              valuationPriceSource,
 		CostSource:               "excluded_from_nav",
+	}
+	if math.Abs(contribution.Summary.ETFSettlementEstimate) > 0.000001 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_settlement_estimated", "etf_settlement_pending")
+		if status == "finalized" {
+			status = "provisional"
+		}
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, "research_position_valuation", "broker_position_cost_excluded")
 	if contribution.Summary.MissingItems > 0 {
@@ -472,7 +480,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		status = "provisional"
 	}
 
-	closeEconomicNAV := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue + repoSummary.Receivable)
+	closeEconomicNAV := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue + repoSummary.Receivable + contribution.Summary.ETFSettlementEstimate)
 	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
 		result.Status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "missing_positive_economic_nav")
@@ -532,8 +540,13 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	cumulativeNAV := roundRatio(previousCumulative * (1 + dailyReturn))
 	cashManagementPnL := roundMoney(repoSummary.RecognizedNetInterest + incomeExpense)
 	unattributedPnL := attributionResidual
-	if math.Abs(unattributedPnL) > 0.000001 {
+	unattributedScope := "reconciled"
+	if math.Abs(unattributedPnL) > attributionWarningThreshold {
 		result.QualityFlags = appendUnique(result.QualityFlags, "strategy_attribution_pending")
+		unattributedScope = "strategy_components_pending"
+	} else if math.Abs(unattributedPnL) > 0.000001 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "attribution_residual_within_tolerance")
+		unattributedScope = "within_tolerance"
 	}
 
 	now := service.now()
@@ -561,6 +574,8 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"actual_fee":                             contribution.Summary.ActualFee,
 				"estimated_fee":                          contribution.Summary.EstimatedFee,
 				"effective_fee":                          contribution.Summary.EffectiveFee,
+				"linked_component_sales":                 contribution.Summary.LinkedComponentSales,
+				"etf_settlement_estimate":                contribution.Summary.ETFSettlementEstimate,
 				"missing_items":                          contribution.Summary.MissingItems,
 				"missing_fee_items":                      contribution.Summary.MissingFeeItems,
 				"fee_required_orders":                    contribution.Summary.FeeRequiredOrders,
@@ -571,7 +586,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			},
 			"unattributed": map[string]any{
 				"pnl":   unattributedPnL,
-				"scope": "strategy_components_pending",
+				"scope": unattributedScope,
 			},
 			"cash_management": map[string]any{
 				"pnl":                                  cashManagementPnL,
@@ -604,6 +619,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"open_position_value":         contribution.Summary.OpenPositionValue,
 				"close_visible_cash":          roundMoney(closeVisibleCash),
 				"close_position_value":        contribution.Summary.ClosePositionValue,
+				"etf_settlement_estimate":     contribution.Summary.ETFSettlementEstimate,
 				"broker_open_position_value":  roundMoney(brokerOpenPositionValue),
 				"broker_close_position_value": roundMoney(brokerClosePositionValue),
 				"price_source":                valuationPriceSource,

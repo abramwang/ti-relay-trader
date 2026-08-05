@@ -14,7 +14,7 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
-const positionCostFormulaVersion = "performance_position_cost.v3"
+const positionCostFormulaVersion = "performance_position_cost.v3.1"
 
 type CostLedgerOptions struct {
 	Persist bool `json:"persist"`
@@ -228,7 +228,9 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		return CostLedgerResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
-	redemptionTransferFills, transferErr := service.listRedemptionTransferFills(ctx, accountID, normalizedDate, orders, fills)
+	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
+	redemptionTransferFills := redemptionFillsFromComponentTransfers(orders, fills, transfers)
+	componentLinks := buildComponentSaleLinks(orders, fills, transfers)
 	if transferErr != nil {
 		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_transfer_ledger_unavailable")
 	} else if len(redemptionTransferFills) > 0 {
@@ -236,10 +238,15 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		fills = dedupeContributionFills(fills)
 		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_from_transfer_ledger")
 	}
+	result.QualityFlags = appendUnique(result.QualityFlags, componentLinks.flags...)
 	ordinaryFills := fills[:0]
 	for _, fill := range fills {
 		if strings.TrimSpace(fill.Symbol) == reverseRepoSymbol && fill.Exchange == trading.ExchangeSH {
 			result.QualityFlags = appendUnique(result.QualityFlags, "reverse_repo_excluded_from_position_cost")
+			continue
+		}
+		if componentLinks.excludes(fill) {
+			result.QualityFlags = appendUnique(result.QualityFlags, "component_sales_excluded_from_position_cost", "component_sales_linked_to_transfer")
 			continue
 		}
 		ordinaryFills = append(ordinaryFills, fill)
