@@ -54,3 +54,26 @@
 ## Relay 侧处置
 
 Relay 不把该矛盾终态降级为成功，也不绕过债享5号的 close 快照门禁。任务报告改为保留 reply 总数、首条和最终/错误证据，完整分页继续保存在 raw archive；生产任务回写改走本机 9092。`2026-08-05 15:12` 补跑后，任务报告由约 3 MB 降至 83 KB 并成功落库，其余五账户正常完成 close 快照，债享5号保持账户级 blocked，等待 OC 修正后再单户补跑。
+
+## 修复验收
+
+OC 更新并于 `2026-08-05 15:51 Asia/Shanghai` 临时恢复后，Relay 连续执行两次只读 `order.list.query`：
+
+| 轮次 | origin message | reply count | terminal count | state | contradictory |
+| --- | --- | ---: | ---: | --- | --- |
+| 1 | `msg-orders-query-1785916281731657865-1` | 524 | 1 | completed | false |
+| 2 | `msg-orders-query-1785916297583061410-2` | 524 | 1 | completed | false |
+
+两次最后一页均为 `status=completed/result_type=order_page/chunk.is_last=true`，没有查询级 `QUERY_FAILED`。对应订单 `external-huaxin-31400004683001-12001A180004501` 为 `cancelled/cancelled/is_terminal=true`，`reject_code/reject_message` 为空；`20046:市价单不能满足成交条件撤单` 同时保存在订单 `adapter_context.status_message/cancel_reason/broker_status_text`。
+
+随后使用正式 `scripts/run-post-close-pipeline.sh` 补跑 `20260805`：
+
+- `post_close_settlement-20260805-1785916378018731000` 于 `15:52:58..15:54:25` 成功；
+- 六账户查询终态全部通过，账户错误为 0；
+- 写入 6 份 close 资产、233 条 close 持仓；
+- 结算覆盖 4,710 笔订单、5,496 笔成交，未终态订单和 reconciliation break 均为 0；
+- 债享5号写入 1 份 close 资产和 146 条 close 持仓，523 笔订单全部纳入；
+- 下游 `performance_daily` 正常触发，债享5号为 ready；另两个账户的 ETF T0 成本质量阻断属于独立绩效问题；
+- 完成后 24 条 output stream lag/pending 为 0，六账户命令 pending 为 0，DLQ pending 为 0。
+
+本事故关闭，OC 订单查询终态修复通过生产实盘验收。
