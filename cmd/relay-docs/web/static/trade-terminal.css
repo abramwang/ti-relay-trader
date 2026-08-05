@@ -1044,6 +1044,10 @@ td {
   font-size: 12px;
 }
 
+.position-open-price {
+  white-space: nowrap;
+}
+
 .row-title {
   display: grid;
   gap: 2px;

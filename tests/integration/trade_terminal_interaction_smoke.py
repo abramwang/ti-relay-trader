@@ -111,6 +111,17 @@ def main() -> int:
             timeout=45_000,
         )
         position_count = page.locator("#positionsBody tr[data-position-security-id]").count()
+        open_price_header = page.locator('th[data-sort-table="positions"][data-sort-key="open_price"]')
+        if open_price_header.count() != 1 or open_price_header.inner_text().strip() != "今日开盘":
+            raise AssertionError("position open-price column is unavailable")
+        if page.locator("#positionsBody tr[data-position-security-id] td.position-open-price").count() != position_count:
+            raise AssertionError("position open-price cells do not match visible positions")
+        open_price_header.click()
+        page.wait_for_function(
+            """() => document.querySelector('th[data-sort-table="positions"][data-sort-key="open_price"]')
+                ?.getAttribute('aria-sort') === 'descending'""",
+            timeout=5_000,
+        )
         symbol_header = page.locator('th[data-sort-table="positions"][data-sort-key="symbol"]')
         symbol_header.click()
         page.wait_for_function(
