@@ -35,6 +35,8 @@ DEFAULT_QUERY_LIMIT = 500
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 60.0
 DEFAULT_REFRESH_POLL_SECONDS = 1.0
 DEFAULT_SETTLEMENT_TIMEOUT_SECONDS = 30.0
+DEFAULT_DEPENDENCY_READY_TIMEOUT_SECONDS = 60.0
+DEFAULT_DEPENDENCY_RETRY_SECONDS = 3.0
 FRESHNESS_CHECK_STEPS = {"asset", "positions"}
 REQUIRED_JOB_DEPENDENCIES = ("database", "redis", "order_service", "market", "event_stream")
 
@@ -74,6 +76,8 @@ class JobOptions:
     account_ids: tuple[str, ...] = ()
     target_date: str = ""
     timeout: float = 10.0
+    dependency_ready_timeout_seconds: float = 0.0
+    dependency_retry_seconds: float = DEFAULT_DEPENDENCY_RETRY_SECONDS
     settlement_timeout_seconds: float = DEFAULT_SETTLEMENT_TIMEOUT_SECONDS
     refresh_wait_seconds: float = 1.0
     refresh_timeout_seconds: float = DEFAULT_REFRESH_TIMEOUT_SECONDS
@@ -100,6 +104,23 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument("--account-id", action="append", default=[], help="account id to process; can be repeated")
     parser.add_argument("--target-date", default="", help="business date in YYYYMMDD or YYYY-MM-DD; defaults to today in Asia/Shanghai")
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+    parser.add_argument(
+        "--dependency-ready-timeout-seconds",
+        type=float,
+        default=float(
+            os.getenv(
+                "RELAY_JOB_DEPENDENCY_READY_TIMEOUT_SECONDS",
+                str(DEFAULT_DEPENDENCY_READY_TIMEOUT_SECONDS),
+            )
+        ),
+        help="maximum seconds to wait for required relay dependencies to become healthy",
+    )
+    parser.add_argument(
+        "--dependency-retry-seconds",
+        type=float,
+        default=float(os.getenv("RELAY_JOB_DEPENDENCY_RETRY_SECONDS", str(DEFAULT_DEPENDENCY_RETRY_SECONDS))),
+        help="seconds between required dependency health checks",
+    )
     parser.add_argument(
         "--settlement-timeout-seconds",
         type=float,
@@ -137,6 +158,8 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         account_ids=account_ids,
         target_date=normalize_trade_date(args.target_date),
         timeout=args.timeout,
+        dependency_ready_timeout_seconds=max(args.dependency_ready_timeout_seconds, 0.0),
+        dependency_retry_seconds=max(args.dependency_retry_seconds, 0.1),
         settlement_timeout_seconds=max(args.settlement_timeout_seconds, args.timeout, 0.1),
         refresh_wait_seconds=max(args.refresh_wait_seconds, 0.0),
         refresh_timeout_seconds=max(args.refresh_timeout_seconds, 0.0),
@@ -426,8 +449,9 @@ def run_daily_job(
         report["skip_reason"] = "target date is not an A-share trading day"
         return finish_report(report)
 
-    status_value, status_report = capture_call("status", relay_client.status)
+    status_value, status_report, dependency_wait = wait_for_daily_job_dependencies(relay_client, options)
     report["status"] = status_report
+    report["dependency_wait"] = dependency_wait
     if status_report.get("error"):
         report["ok"] = False
         report["errors"].append(status_report["error"])
@@ -440,6 +464,10 @@ def run_daily_job(
     if isinstance(status_value, Mapping) and status_value.get("status") == "degraded":
         report.setdefault("warnings", []).append(
             "relay status is degraded, but all daily-job dependencies are healthy"
+        )
+    if dependency_wait["attempts"] > 1:
+        report.setdefault("warnings", []).append(
+            f"relay required dependencies recovered after {dependency_wait['attempts']} checks"
         )
 
     accounts_value, accounts_report = capture_call("list_accounts", relay_client.list_accounts)
@@ -986,6 +1014,44 @@ def daily_job_status_error(status: Any) -> str:
         if dependency_status != "ok":
             return f"relay required dependency {name!r} is {dependency_status!r}"
     return ""
+
+
+def wait_for_daily_job_dependencies(
+    client: Any,
+    options: JobOptions,
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    started = time.monotonic()
+    deadline = started + options.dependency_ready_timeout_seconds
+    attempts: list[dict[str, Any]] = []
+
+    while True:
+        status_value, status_report = capture_call("status", client.status)
+        status_error = status_report.get("error") or daily_job_status_error(status_value)
+        attempts.append(
+            {
+                "attempt": len(attempts) + 1,
+                "checked_at": now_iso(),
+                "ok": not bool(status_error),
+                "error": str(status_error or ""),
+            }
+        )
+        if not status_error:
+            break
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(options.dependency_retry_seconds, remaining))
+
+    wait_report = {
+        "attempts": len(attempts),
+        "waited_seconds": round(time.monotonic() - started, 3),
+        "timeout_seconds": options.dependency_ready_timeout_seconds,
+        "retry_seconds": options.dependency_retry_seconds,
+        "recovered": len(attempts) > 1 and not bool(attempts[-1]["error"]),
+        "checks": attempts,
+    }
+    return status_value, status_report, wait_report
 
 
 def capture_call(

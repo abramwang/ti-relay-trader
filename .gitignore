@@ -14,6 +14,7 @@ build/
 *.pid
 tmp/
 outputs/backups/
+outputs/jobs/
 outputs/restore-drills/
 .runtime/
 

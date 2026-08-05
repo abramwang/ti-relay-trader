@@ -40,6 +40,8 @@ class FakeClient:
         self.refresh_calls: list[tuple[str, str]] = []
         self.settlement_calls: list[dict[str, object]] = []
         self.status_value: dict[str, object] = {"status": "ok", "timezone": "Asia/Shanghai"}
+        self.status_values: list[dict[str, object]] = []
+        self.status_calls = 0
         self.accounts = [
             SimpleNamespace(account_id="acct-1", enabled=True),
             SimpleNamespace(account_id="acct-disabled", enabled=False),
@@ -59,6 +61,9 @@ class FakeClient:
         self.query_actions: dict[str, str] = {}
 
     def status(self):
+        self.status_calls += 1
+        if self.status_values:
+            return self.status_values.pop(0)
         return self.status_value
 
     def list_accounts(self):
@@ -407,6 +412,39 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(report["trading_day"]["target_trade_date"], "20260615")
         self.assertIn("database", report["errors"][0])
         self.assertEqual(client.refresh_calls, [])
+
+    def test_pre_open_waits_for_transient_required_dependency(self) -> None:
+        client = FakeClient()
+        client.status_values = [
+            {
+                "status": "degraded",
+                "dependencies": {
+                    "database": {"status": "ok"},
+                    "redis": {"status": "timeout"},
+                    "order_service": {"status": "ok"},
+                    "market": {"status": "ok"},
+                    "event_stream": {"status": "ok"},
+                },
+            },
+            {"status": "ok", "timezone": "Asia/Shanghai"},
+        ]
+
+        report = run_pre_open_init(
+            JobOptions(
+                job_name="pre_open_init",
+                refresh_wait_seconds=0,
+                dependency_ready_timeout_seconds=0.05,
+                dependency_retry_seconds=0.01,
+            ),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(client.status_calls, 2)
+        self.assertTrue(report["dependency_wait"]["recovered"])
+        self.assertEqual(report["dependency_wait"]["attempts"], 2)
+        self.assertIn("recovered after 2 checks", report["warnings"][-1])
 
     def test_pre_open_refreshes_enabled_accounts(self) -> None:
         client = FakeClient()
