@@ -167,6 +167,8 @@ Meridian `etf-pcf-status` 显示 `2026-07-24` 同步成功。相关 PCF：
 
 由于跨市场成分不会全部划入证券账户，部分成分由基金管理人代买代卖；基金网站披露的实际成交价、现金替代、现金差额和回款周期又没有统一标准接口，因此 Relay 暂不追求从成分成交还原精确清算盈亏。Meridian PCF 只用于校验最小申赎单位、篮子结构和实物成分数量，不作为基金管理人最终清算单。
 
+`159381.SZ` 是深交所上市的跨市场 ETF，PCF 同时含上海和深圳成分。Relay 不得按完整 PCF 猜测本账户应收成分：最小申赎单位仍取 Meridian 当日 `etf_cash_component.v1.unit_subscribe_redeem`，实际划入证券、数量和时间以 OC `transfer.event` 为权威。未划入的跨市场成分、现金替代和公募回款保留在资金/NAV 残差中，不生成虚构成交。
+
 已确认采用 `estimated_iopv_15bp` 近似口径。对每笔赎回：
 
 ```text
@@ -760,6 +762,7 @@ open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且�
 1. 后端聚合成交额、费用、open/close 持仓、证券贡献和策略汇总。
 2. ETF T0 合并同一赎回订单的多条普通成交；OC v1.1 未提供普通赎回成交时，以独立 transfer 账本中的 ETF 本体记录作为赎回时点信号。两种路径都使用不晚于赎回时刻的 Meridian IOPV，并隔离可精确闭合赎回量的历史买入订单组。
 3. 从 Meridian `etf_cash_component.v1.unit_subscribe_redeem` 读取目标交易日最小申赎单位。赎回量不是整数倍时标记 `redemption_quantity_not_pcf_unit_multiple` 并停止该组收益计算；PCF 缺失时保留既有历史估算路径，但明确标记 `missing_meridian_etf_redemption_unit`，不得把未校验结果解释为精确清算。
+   Meridian 生产 PCF 已改为交易日 `09:00 Asia/Shanghai` 盘前同步；Relay 对当日计算只接受目标 `trade_date` 的记录。上游未就绪时保留缺失质量标记，不默认将前一交易日单位冒充当日 PCF。
 4. ETF 成分股卖出从 IOPV 估值收益中排除，逆回购只把净息计入现金管理。
 5. `/trade#performance` 默认展示证券贡献表，可切换到原净值序列；估算、缺失和排除状态可见。
 6. Go 单元测试覆盖普通持仓现金流恒等式、ETF T0 多成交聚合和 PCF 最小申赎单位不匹配。
