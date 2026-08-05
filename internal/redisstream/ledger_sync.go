@@ -1571,52 +1571,55 @@ func unixMilliOrZero(value time.Time) int64 {
 }
 
 type orderPayload struct {
-	AccountID         string  `json:"account_id"`
-	ClientOrderID     string  `json:"client_order_id"`
-	GatewayOrderID    string  `json:"gateway_order_id"`
-	OrderID           int64   `json:"order_id"`
-	OrderStreamID     string  `json:"order_stream_id"`
-	Symbol            string  `json:"symbol"`
-	Name              string  `json:"name"`
-	Exchange          string  `json:"exchange"`
-	TradeSide         string  `json:"trade_side"`
-	BusinessType      string  `json:"business_type"`
-	OffsetType        string  `json:"offset_type"`
-	LimitPrice        float64 `json:"limit_price"`
-	Price             float64 `json:"price"`
-	OrderQty          int64   `json:"order_qty"`
-	Qty               int64   `json:"qty"`
-	SubmittedQty      int64   `json:"submitted_qty"`
-	CumFilledQty      int64   `json:"cum_filled_qty"`
-	LeavesQty         int64   `json:"leaves_qty"`
-	CancelledQty      int64   `json:"cancelled_qty"`
-	InvalidQty        int64   `json:"invalid_qty"`
-	AvgFillPrice      float64 `json:"avg_fill_price"`
-	Fee               float64 `json:"fee"`
-	FeeComplete       bool    `json:"fee_complete"`
-	FeeSource         string  `json:"fee_source"`
-	FeeAsOf           string  `json:"fee_as_of"`
-	Status            string  `json:"status"`
-	GatewayStatus     string  `json:"gateway_status"`
-	AdapterStatusCode int     `json:"adapter_status_code"`
-	AdapterStatusName string  `json:"adapter_status_name"`
-	AdapterStatus     string  `json:"adapter_status"`
-	IsTerminal        bool    `json:"is_terminal"`
-	RejectCode        string  `json:"reject_code"`
-	RejectMessage     string  `json:"reject_message"`
-	ShareholderID     string  `json:"shareholder_id"`
-	TradeDate         string  `json:"trade_date"`
-	StrategyType      string  `json:"strategy_type"`
-	StrategyID        string  `json:"strategy_id"`
-	BasketID          string  `json:"basket_id"`
-	ParentOrderID     string  `json:"parent_order_id"`
-	T0OrderGroupID    string  `json:"t0_order_group_id"`
-	CreatedAt         string  `json:"created_at"`
-	AcceptedAt        string  `json:"accepted_at"`
-	InsertedAt        string  `json:"inserted_at"`
-	LastUpdatedAt     string  `json:"last_updated_at"`
-	UpdateTime        string  `json:"update_time"`
-	TerminalAt        string  `json:"terminal_at"`
+	AccountID         string         `json:"account_id"`
+	ClientOrderID     string         `json:"client_order_id"`
+	GatewayOrderID    string         `json:"gateway_order_id"`
+	OrderID           int64          `json:"order_id"`
+	OrderStreamID     string         `json:"order_stream_id"`
+	Symbol            string         `json:"symbol"`
+	Name              string         `json:"name"`
+	Exchange          string         `json:"exchange"`
+	TradeSide         string         `json:"trade_side"`
+	BusinessType      string         `json:"business_type"`
+	OffsetType        string         `json:"offset_type"`
+	LimitPrice        float64        `json:"limit_price"`
+	Price             float64        `json:"price"`
+	OrderQty          int64          `json:"order_qty"`
+	Qty               int64          `json:"qty"`
+	SubmittedQty      int64          `json:"submitted_qty"`
+	CumFilledQty      int64          `json:"cum_filled_qty"`
+	LeavesQty         int64          `json:"leaves_qty"`
+	CancelledQty      int64          `json:"cancelled_qty"`
+	InvalidQty        int64          `json:"invalid_qty"`
+	AvgFillPrice      float64        `json:"avg_fill_price"`
+	Fee               float64        `json:"fee"`
+	FeeComplete       bool           `json:"fee_complete"`
+	FeeSource         string         `json:"fee_source"`
+	FeeAsOf           string         `json:"fee_as_of"`
+	Status            string         `json:"status"`
+	GatewayStatus     string         `json:"gateway_status"`
+	AdapterStatusCode int            `json:"adapter_status_code"`
+	AdapterStatusName string         `json:"adapter_status_name"`
+	AdapterStatus     string         `json:"adapter_status"`
+	IsTerminal        bool           `json:"is_terminal"`
+	RejectCode        string         `json:"reject_code"`
+	RejectMessage     string         `json:"reject_message"`
+	StatusMessage     string         `json:"status_message"`
+	CancelReason      string         `json:"cancel_reason"`
+	ShareholderID     string         `json:"shareholder_id"`
+	TradeDate         string         `json:"trade_date"`
+	StrategyType      string         `json:"strategy_type"`
+	StrategyID        string         `json:"strategy_id"`
+	BasketID          string         `json:"basket_id"`
+	ParentOrderID     string         `json:"parent_order_id"`
+	T0OrderGroupID    string         `json:"t0_order_group_id"`
+	CreatedAt         string         `json:"created_at"`
+	AcceptedAt        string         `json:"accepted_at"`
+	InsertedAt        string         `json:"inserted_at"`
+	LastUpdatedAt     string         `json:"last_updated_at"`
+	UpdateTime        string         `json:"update_time"`
+	TerminalAt        string         `json:"terminal_at"`
+	AdapterContext    map[string]any `json:"adapter_context"`
 }
 
 type fillPayload struct {
@@ -2121,7 +2124,6 @@ func firstNonEmpty(values ...string) string {
 func orderPayloadRejectInfo(envelope EntryEnvelope, payload orderPayload, status trading.OrderStatus, gatewayStatus trading.GatewayStatus) (string, string) {
 	code, message := orderErrorInfo(envelope)
 	code = firstNonEmpty(payload.RejectCode, code)
-	message = firstNonEmpty(payload.RejectMessage, message)
 	isRejected := status == trading.OrderStatusRejected ||
 		gatewayStatus == trading.GatewayStatusRejected ||
 		envelope.Status == string(trading.ReplyStatusRejected) ||
@@ -2129,6 +2131,16 @@ func orderPayloadRejectInfo(envelope EntryEnvelope, payload orderPayload, status
 		payload.RejectMessage != "" ||
 		payload.RejectCode != "" ||
 		stringFromMap(envelope.AdapterContext, "error_text") != ""
+	if isRejected {
+		message = firstNonEmpty(
+			payload.RejectMessage,
+			payload.StatusMessage,
+			payload.CancelReason,
+			stringFromMap(payload.AdapterContext, "error_text"),
+			stringFromMap(payload.AdapterContext, "broker_status_text"),
+			message,
+		)
+	}
 	if message == "" {
 		if isRejected {
 			return code, ""
@@ -2236,7 +2248,14 @@ func withFillPayloadContext(context map[string]any, payload fillPayload) map[str
 }
 
 func withOrderPayloadContext(context map[string]any, payload orderPayload) map[string]any {
+	context = mergeContextMaps(context, payload.AdapterContext)
 	extra := map[string]any{"reported_fee_complete": payload.FeeComplete}
+	if statusMessage := strings.TrimSpace(payload.StatusMessage); statusMessage != "" {
+		extra["status_message"] = statusMessage
+	}
+	if cancelReason := strings.TrimSpace(payload.CancelReason); cancelReason != "" {
+		extra["cancel_reason"] = cancelReason
+	}
 	if feeSource := strings.TrimSpace(payload.FeeSource); feeSource != "" {
 		extra["reported_fee_source"] = feeSource
 	}

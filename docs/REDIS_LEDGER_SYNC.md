@@ -123,6 +123,8 @@ action 到 stream 的映射：
 
 所有 query reply 还会按 `origin_message_id` 聚合为命令终态。成功必须只有一个 `completed` 终态，且 `result_type` 与 action 匹配、`chunk.is_last=true`；数据页之后出现 `failed`、缺 final 或重复终态均不会被视为成功。只读 `GET /v1/query-status/{origin_message_id}` 暴露该判定，盘前/盘后任务在写 open/close 快照前同时检查查询终态和账本新鲜度。
 
+华鑫订单查询可能在具体 `order_page.items[]` 上返回单笔业务状态。Relay 会把 `status_message`、`cancel_reason` 和 item 级 `adapter_context` 合并进该订单的 `adapter_context`；rejected 订单继续写标准 `reject_code/reject_message`，cancelled 订单只保留撤单原因，不转换成业务拒单。查询已经返回数据后，OC 可能用 `items=[]`、`broker_terminal_status_ignored=true` 的空 `completed` final 页收口；该页完整保存在原始归档中，只作为成功终态，不删除或覆盖前面的订单。真正带 `query_incomplete=true` 的 `QUERY_FAILED` 即使声明 `partial_data_returned=true`，仍保持失败并阻断对应账户的日任务。
+
 `reply` 合并：
 
 | Reply 类型 | 判定字段 | 落盘目标 |

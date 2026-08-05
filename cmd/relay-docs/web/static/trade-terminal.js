@@ -3147,6 +3147,7 @@
       adapterText(order, "error_text"),
       adapterText(order, "status_msg"),
       adapterText(order, "status_message"),
+      adapterText(order, "cancel_reason"),
       adapterText(order, "broker_status_text")
     );
   }

@@ -206,6 +206,102 @@ func TestProcessLedgerEntryWritesOrderPageReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryPreservesOrderPageBusinessStatusAndFinalAudit(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	pageResult := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-3a", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-order-page-business-status",
+			"origin_message_id":"query-orders-20046",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"partial",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"produced_at":"2026-08-05T15:01:02+08:00",
+			"payload":{"items":[{
+				"gateway_order_id":"external-huaxin-31400004683001-12001A180002454",
+				"order_id":2454,
+				"order_stream_id":"12001A180002454",
+				"account_id":"314000046830",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":100,
+				"cum_filled_qty":0,
+				"leaves_qty":0,
+				"cancelled_qty":100,
+				"limit_price":9.54,
+				"status":"cancelled",
+				"gateway_status":"cancelled",
+				"is_terminal":true,
+				"status_message":"20046:市价单不能满足成交条件撤单",
+				"cancel_reason":"20046:市价单不能满足成交条件撤单",
+				"adapter_context":{
+					"broker_status_text":"20046:市价单不能满足成交条件撤单",
+					"error_text":""
+				}
+			}]}
+		}`,
+	})
+
+	if pageResult.Archived != 1 || pageResult.Replies != 1 || pageResult.Orders != 1 || pageResult.Skipped != 0 {
+		t.Fatalf("page result = %#v", pageResult)
+	}
+	if len(writer.orders) != 1 {
+		t.Fatalf("orders = %#v", writer.orders)
+	}
+	order := writer.orders[0]
+	if order.Status != trading.OrderStatusCancelled || order.GatewayStatus != trading.GatewayStatusCancelled || !order.IsTerminal {
+		t.Fatalf("order state = %s/%s terminal=%v", order.Status, order.GatewayStatus, order.IsTerminal)
+	}
+	if order.RejectCode != "" || order.RejectMessage != "" {
+		t.Fatalf("cancelled order was converted to rejection: %#v", order)
+	}
+	for key, want := range map[string]any{
+		"status_message":     "20046:市价单不能满足成交条件撤单",
+		"cancel_reason":      "20046:市价单不能满足成交条件撤单",
+		"broker_status_text": "20046:市价单不能满足成交条件撤单",
+		"error_text":         "",
+	} {
+		if got := order.AdapterContext[key]; got != want {
+			t.Fatalf("order context[%s] = %#v, want %#v: %#v", key, got, want, order.AdapterContext)
+		}
+	}
+
+	finalResult := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:reply", "1-3b", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-order-page-final",
+			"origin_message_id":"query-orders-20046",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"completed",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"produced_at":"2026-08-05T15:01:03+08:00",
+			"payload":{
+				"items":[],
+				"broker_terminal_status_ignored":true,
+				"adapter_context":{
+					"error_id":20046,
+					"error_text":"20046:市价单不能满足成交条件撤单",
+					"classification":"single_order_business_status"
+				}
+			},
+			"chunk":{"is_last":true}
+		}`,
+	})
+
+	if finalResult.Archived != 1 || finalResult.Replies != 1 || finalResult.Orders != 0 || finalResult.Skipped != 0 {
+		t.Fatalf("final result = %#v", finalResult)
+	}
+	if len(writer.raw) != 2 || !strings.Contains(writer.raw[1].BodyText, `"broker_terminal_status_ignored":true`) {
+		t.Fatalf("final audit was not archived: %#v", writer.raw)
+	}
+}
+
 func TestProcessLedgerEntryScopesReusableBasketGatewayOrderID(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:501000114077:reply", "1-30", map[string]any{

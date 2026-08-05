@@ -1223,6 +1223,18 @@ func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing
 		t.Fatalf("completed status = %#v", completed)
 	}
 
+	completedAfterData := summarizeQueryCommandStatus(QueryCommandStatus{
+		OriginMessageID: "msg-order-1",
+		Action:          "order.list.query",
+		Replies: []QueryReplyStatus{
+			{Status: "partial", ResultType: "order_page"},
+			{Status: "completed", ResultType: "order_page", IsLast: true},
+		},
+	})
+	if !completedAfterData.Success || completedAfterData.Contradictory || completedAfterData.State != "completed" || completedAfterData.TerminalCount != 1 {
+		t.Fatalf("completed-after-data status = %#v", completedAfterData)
+	}
+
 	contradictory := summarizeQueryCommandStatus(QueryCommandStatus{
 		OriginMessageID: "msg-asset-2",
 		Action:          "account.asset.query",
