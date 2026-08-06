@@ -79,6 +79,9 @@ type JobRunStore interface {
 }
 
 type SettlementStore interface {
+	GetAssetSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string) (trading.Asset, error)
+	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
+	PrunePositionSnapshots(ctx context.Context, accountID string, tradeDate string, snapshotType string, keep []trading.Position) (int64, error)
 	UpsertAssetSnapshotForDate(ctx context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertPositionSnapshotWithType(ctx context.Context, position trading.Position, snapshotType string, source string, rawPayload any, capturedAt time.Time) error
 	UpsertReconciliationRun(ctx context.Context, run ledger.ReconciliationRun) (ledger.ReconciliationRun, error)
@@ -3440,7 +3443,7 @@ func (s *Server) handleSettlementSnapshots(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid settlement snapshot body", err.Error())
 		return
 	}
-	if s.settles == nil && !req.DryRun {
+	if s.settles == nil && (!req.DryRun || strings.TrimSpace(req.InputSnapshotType) != "") {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
 		return
 	}
@@ -3483,9 +3486,20 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	}
 	snapshotType := firstNonEmpty(req.SnapshotType, "close")
 	switch snapshotType {
-	case "intraday", "open", "close", "reconcile":
+	case "intraday", "open", "broker_close", "close", "reconcile":
 	default:
-		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_type must be intraday, open, close, or reconcile")
+		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_type must be intraday, open, broker_close, close, or reconcile")
+	}
+	inputSnapshotType := strings.TrimSpace(req.InputSnapshotType)
+	if inputSnapshotType != "" {
+		switch inputSnapshotType {
+		case "intraday", "open", "broker_close", "close", "reconcile":
+		default:
+			return SettlementSnapshotResult{}, fmt.Errorf("input_snapshot_type must be intraday, open, broker_close, close, or reconcile")
+		}
+		if inputSnapshotType == snapshotType {
+			return SettlementSnapshotResult{}, fmt.Errorf("input_snapshot_type must differ from snapshot_type")
+		}
 	}
 	source := firstNonEmpty(req.Source, "post_close_settlement")
 	accountIDs := settlementAccountIDs(req.AccountIDs, s.cfg.Accounts)
@@ -3508,18 +3522,20 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	if req.SnapshotOnly && strings.TrimSpace(req.CapturedAt) == "" {
 		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_only requires captured_at")
 	}
+	captureOnly := req.SnapshotOnly || snapshotType == "broker_close"
 	result := SettlementSnapshotResult{
-		RunID:        runID,
-		TradeDate:    tradeDate,
-		SnapshotType: snapshotType,
-		Source:       source,
-		Status:       "completed",
-		DryRun:       req.DryRun,
-		SnapshotOnly: req.SnapshotOnly,
-		Accounts:     make([]SettlementSnapshotAccountResult, 0, len(accountIDs)),
-		Errors:       []string{},
-		StartedAt:    timeutil.FormatRFC3339Nano(startedAt),
-		CapturedAt:   timeutil.FormatRFC3339Nano(capturedAt),
+		RunID:             runID,
+		TradeDate:         tradeDate,
+		SnapshotType:      snapshotType,
+		Source:            source,
+		Status:            "completed",
+		DryRun:            req.DryRun,
+		InputSnapshotType: inputSnapshotType,
+		SnapshotOnly:      captureOnly,
+		Accounts:          make([]SettlementSnapshotAccountResult, 0, len(accountIDs)),
+		Errors:            []string{},
+		StartedAt:         timeutil.FormatRFC3339Nano(startedAt),
+		CapturedAt:        timeutil.FormatRFC3339Nano(capturedAt),
 	}
 
 	accountResults := make([]SettlementSnapshotAccountResult, len(accountIDs))
@@ -3531,7 +3547,7 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
-				accountResults[index] = s.buildAccountSettlementSnapshot(ctx, accountIDs[index], tradeDate, snapshotType, source, runID, req.DryRun, req.SnapshotOnly, capturedAt, startedAt)
+				accountResults[index] = s.buildAccountSettlementSnapshot(ctx, accountIDs[index], tradeDate, snapshotType, inputSnapshotType, source, runID, req.DryRun, captureOnly, capturedAt, startedAt)
 			}
 		}()
 	}
@@ -3557,7 +3573,7 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	}
 
 	result.CompletedAt = timeutil.FormatRFC3339Nano(timeutil.Now())
-	if !req.DryRun && !req.SnapshotOnly {
+	if !req.DryRun && !captureOnly {
 		run, err := s.settles.UpsertReconciliationRun(ctx, ledger.ReconciliationRun{
 			RunID:        runID,
 			TradeDate:    tradeDate,
@@ -3607,15 +3623,35 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	return result, nil
 }
 
-func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, source string, runID string, dryRun bool, snapshotOnly bool, capturedAt time.Time, rawWindowStart time.Time) SettlementSnapshotAccountResult {
+func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, inputSnapshotType string, source string, runID string, dryRun bool, snapshotOnly bool, capturedAt time.Time, rawWindowStart time.Time) SettlementSnapshotAccountResult {
 	out := SettlementSnapshotAccountResult{AccountID: accountID, Breaks: []ledger.ReconciliationBreak{}}
-	assetResult, err := s.orders.GetAsset(ctx, accountID)
-	if err != nil {
-		out.Errors = append(out.Errors, fmt.Sprintf("asset: %v", err))
-	}
-	positionResult, err := s.orders.ListPositions(ctx, trading.PositionQuery{AccountID: accountID, Limit: 2000})
-	if err != nil {
-		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
+	assetResult := orderflow.GetAssetResult{}
+	positionResult := orderflow.ListPositionsResult{}
+	accountCapturedAt := capturedAt
+	var err error
+	if inputSnapshotType != "" {
+		assetResult.Asset, err = s.settles.GetAssetSnapshot(ctx, accountID, tradeDate, inputSnapshotType)
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("%s asset: %v", inputSnapshotType, err))
+		} else if !assetResult.Asset.UpdatedAt.IsZero() {
+			accountCapturedAt = assetResult.Asset.UpdatedAt
+		}
+		positionResult.Positions, err = s.settles.ListPositionSnapshots(ctx, trading.PositionQuery{
+			AccountID: accountID, TradeDate: tradeDate, SnapshotType: inputSnapshotType, History: true, Limit: 2000,
+		})
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("%s positions: %v", inputSnapshotType, err))
+		}
+		positionResult.Count = len(positionResult.Positions)
+	} else {
+		assetResult, err = s.orders.GetAsset(ctx, accountID)
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("asset: %v", err))
+		}
+		positionResult, err = s.orders.ListPositions(ctx, trading.PositionQuery{AccountID: accountID, Limit: 2000})
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
+		}
 	}
 	if len(positionResult.Positions) > 0 && !snapshotOnly {
 		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -3647,10 +3683,11 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	}
 
 	rawBase := map[string]any{
-		"run_id":        runID,
-		"trade_date":    tradeDate,
-		"snapshot_type": snapshotType,
-		"source":        source,
+		"run_id":              runID,
+		"trade_date":          tradeDate,
+		"snapshot_type":       snapshotType,
+		"input_snapshot_type": inputSnapshotType,
+		"source":              source,
 	}
 	rawSummary := []ledger.RawStreamSummaryBucket{}
 	if s.settles != nil && !snapshotOnly {
@@ -3662,9 +3699,9 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 
 	if !snapshotOnly {
 		out.inputs = append(out.inputs,
-			reconciliationInput(runID, source, accountID, "relay_ledger_summary", capturedAt, relayLedgerSummaryPayload(accountID, tradeDate, assetResult.Asset, positionResult.Positions, ordersResult.Orders, fillsResult.Fills, out, rawBase)),
-			reconciliationInput(runID, source, accountID, "pnl_input_summary", capturedAt, pnlInputSummaryPayload(assetResult.Asset, positionResult.Positions, fillsResult.Fills)),
-			reconciliationInput(runID, source, accountID, "redis_raw_summary", capturedAt, map[string]any{
+			reconciliationInput(runID, source, accountID, "relay_ledger_summary", accountCapturedAt, relayLedgerSummaryPayload(accountID, tradeDate, assetResult.Asset, positionResult.Positions, ordersResult.Orders, fillsResult.Fills, out, rawBase)),
+			reconciliationInput(runID, source, accountID, "pnl_input_summary", accountCapturedAt, pnlInputSummaryPayload(assetResult.Asset, positionResult.Positions, fillsResult.Fills)),
+			reconciliationInput(runID, source, accountID, "redis_raw_summary", accountCapturedAt, map[string]any{
 				"account_id": accountID,
 				"trade_date": tradeDate,
 				"window": map[string]any{
@@ -3673,7 +3710,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 				},
 				"buckets": rawSummary,
 			}),
-			reconciliationInput(runID, source, accountID, "counter_query_summary", capturedAt, map[string]any{
+			reconciliationInput(runID, source, accountID, "counter_query_summary", accountCapturedAt, map[string]any{
 				"account_id": accountID,
 				"trade_date": tradeDate,
 				"errors":     out.Errors,
@@ -3700,7 +3737,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	if len(out.Errors) == 0 && !dryRun {
 		assetRaw := cloneMap(rawBase)
 		assetRaw["asset"] = assetResult.Asset
-		if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, capturedAt); err != nil {
+		if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, accountCapturedAt); err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
 			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "asset_snapshot_missing", "critical", "asset", accountID, map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, assetRaw, fmt.Sprintf("asset %s snapshot was not written", snapshotType)))
 		} else {
@@ -3711,12 +3748,17 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			position.SnapshotType = snapshotType
 			positionRaw := cloneMap(rawBase)
 			positionRaw["position"] = position
-			if err := s.settles.UpsertPositionSnapshotWithType(ctx, position, snapshotType, source, positionRaw, capturedAt); err != nil {
+			if err := s.settles.UpsertPositionSnapshotWithType(ctx, position, snapshotType, source, positionRaw, accountCapturedAt); err != nil {
 				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s/%s.%s: %v", snapshotType, position.Symbol, position.Exchange, err))
 				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, positionRaw, fmt.Sprintf("position %s snapshot was not written", snapshotType)))
 				continue
 			}
 			out.PositionSnapshotsWritten++
+		}
+		if len(out.Errors) == 0 {
+			if _, err := s.settles.PrunePositionSnapshots(ctx, accountID, tradeDate, snapshotType, positionResult.Positions); err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot prune %s: %v", snapshotType, err))
+			}
 		}
 	}
 
@@ -4275,7 +4317,7 @@ func (s *Server) latestJobRunStatus(ctx context.Context) map[string]JobRunStatus
 	if s.jobs == nil {
 		return nil
 	}
-	names := []string{"pre_open_init", "post_close_settlement"}
+	names := []string{"pre_open_init", "post_close_capture", "post_close_settlement"}
 	checkCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	runs, err := s.jobs.LatestJobRuns(checkCtx, names)
@@ -4571,20 +4613,22 @@ type JobRunRequest struct {
 }
 
 type SettlementSnapshotRequest struct {
-	RunID        string   `json:"run_id,omitempty"`
-	TradeDate    string   `json:"trade_date,omitempty"`
-	AccountIDs   []string `json:"account_ids,omitempty"`
-	SnapshotType string   `json:"snapshot_type,omitempty"`
-	Source       string   `json:"source,omitempty"`
-	CapturedAt   string   `json:"captured_at,omitempty"`
-	SnapshotOnly bool     `json:"snapshot_only,omitempty"`
-	DryRun       bool     `json:"dry_run,omitempty"`
+	RunID             string   `json:"run_id,omitempty"`
+	TradeDate         string   `json:"trade_date,omitempty"`
+	AccountIDs        []string `json:"account_ids,omitempty"`
+	SnapshotType      string   `json:"snapshot_type,omitempty"`
+	InputSnapshotType string   `json:"input_snapshot_type,omitempty"`
+	Source            string   `json:"source,omitempty"`
+	CapturedAt        string   `json:"captured_at,omitempty"`
+	SnapshotOnly      bool     `json:"snapshot_only,omitempty"`
+	DryRun            bool     `json:"dry_run,omitempty"`
 }
 
 type SettlementSnapshotResult struct {
 	RunID                string                            `json:"run_id"`
 	TradeDate            string                            `json:"trade_date"`
 	SnapshotType         string                            `json:"snapshot_type"`
+	InputSnapshotType    string                            `json:"input_snapshot_type,omitempty"`
 	Source               string                            `json:"source"`
 	Status               string                            `json:"status"`
 	DryRun               bool                              `json:"dry_run,omitempty"`
@@ -4628,6 +4672,7 @@ func (result SettlementSnapshotResult) summary() map[string]any {
 		"run_id":                result.RunID,
 		"trade_date":            result.TradeDate,
 		"snapshot_type":         result.SnapshotType,
+		"input_snapshot_type":   result.InputSnapshotType,
 		"source":                result.Source,
 		"status":                result.Status,
 		"dry_run":               result.DryRun,

@@ -39,6 +39,7 @@ DEFAULT_DEPENDENCY_READY_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEPENDENCY_RETRY_SECONDS = 3.0
 FRESHNESS_CHECK_STEPS = {"asset", "positions"}
 REQUIRED_JOB_DEPENDENCIES = ("database", "redis", "order_service", "market", "event_stream")
+BROKER_CAPTURE_DEPENDENCIES = ("database", "redis", "order_service", "event_stream")
 
 
 def business_timezone() -> timezone:
@@ -210,11 +211,36 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
         client=client,
         trading_day=trading_day,
         phase="post_close_settlement",
-        refresh_steps=("orders", "fills", "fees", "asset", "positions"),
+        refresh_steps=(),
         check_non_terminal_orders=True,
         settle_snapshots=True,
         snapshot_type="close",
+        input_snapshot_type="broker_close",
         snapshot_report_key="settlement_snapshot",
+    )
+
+
+def run_post_close_capture(options: JobOptions, *, client: Any | None = None, trading_day: TradingDayInfo | None = None) -> dict[str, Any]:
+    requested_date = options.target_date or today_trade_date()
+    capture_day = trading_day or TradingDayInfo(
+        requested_date=requested_date,
+        target_trade_date=requested_date,
+        is_trading_day=True,
+        source="broker_capture_date",
+        raw={},
+    )
+    return run_daily_job(
+        options,
+        client=client,
+        trading_day=capture_day,
+        phase="post_close_capture",
+        refresh_steps=("orders", "fills", "fees", "asset", "positions"),
+        check_non_terminal_orders=True,
+        settle_snapshots=True,
+        snapshot_type="broker_close",
+        snapshot_report_key="broker_close_snapshot",
+        required_dependencies=BROKER_CAPTURE_DEPENDENCIES,
+        use_status_trading_day_hint=True,
     )
 
 
@@ -417,7 +443,10 @@ def run_daily_job(
     check_non_terminal_orders: bool,
     settle_snapshots: bool = False,
     snapshot_type: str = "close",
+    input_snapshot_type: str = "",
     snapshot_report_key: str = "settlement_snapshot",
+    required_dependencies: tuple[str, ...] = REQUIRED_JOB_DEPENDENCIES,
+    use_status_trading_day_hint: bool = False,
 ) -> dict[str, Any]:
     started_at = now_iso()
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
@@ -463,14 +492,18 @@ def run_daily_job(
         report["skip_reason"] = "target date is not an A-share trading day"
         return finish_report(report)
 
-    status_value, status_report, dependency_wait = wait_for_daily_job_dependencies(relay_client, options)
+    status_value, status_report, dependency_wait = wait_for_daily_job_dependencies(
+        relay_client,
+        options,
+        required_dependencies=required_dependencies,
+    )
     report["status"] = status_report
     report["dependency_wait"] = dependency_wait
     if status_report.get("error"):
         report["ok"] = False
         report["errors"].append(status_report["error"])
         return finish_report(report)
-    status_error = daily_job_status_error(status_value)
+    status_error = daily_job_status_error(status_value, required_dependencies=required_dependencies)
     if status_error:
         report["ok"] = False
         report["errors"].append(status_error)
@@ -483,6 +516,19 @@ def run_daily_job(
         report.setdefault("warnings", []).append(
             f"relay required dependencies recovered after {dependency_wait['attempts']} checks"
         )
+
+    if use_status_trading_day_hint and not options.allow_non_trading_day and isinstance(status_value, Mapping):
+        status_trading_day = status_value.get("trading_day")
+        if isinstance(status_trading_day, Mapping) and status_trading_day.get("is_trading_day") is False:
+            report["trading_day"] = {
+                **report["trading_day"],
+                "is_trading_day": False,
+                "source": "relay_status_meridian_hint",
+                "raw": result_to_jsonable(status_trading_day),
+            }
+            report["skipped"] = True
+            report["skip_reason"] = "relay status identifies target date as a non-trading day"
+            return finish_report(report)
 
     accounts_value, accounts_report = capture_call("list_accounts", relay_client.list_accounts)
     report["accounts_query"] = accounts_report
@@ -552,6 +598,7 @@ def run_daily_job(
             account_ids=snapshot_accounts,
             run_id=settlement_run_id,
             snapshot_type=snapshot_type,
+            input_snapshot_type=input_snapshot_type or None,
             source=phase,
             captured_at=options.snapshot_captured_at or None,
             snapshot_only=options.snapshot_only,
@@ -1036,7 +1083,11 @@ def select_accounts(accounts: Iterable[Any], requested: tuple[str, ...]) -> list
     return selected
 
 
-def daily_job_status_error(status: Any) -> str:
+def daily_job_status_error(
+    status: Any,
+    *,
+    required_dependencies: tuple[str, ...] = REQUIRED_JOB_DEPENDENCIES,
+) -> str:
     if not isinstance(status, Mapping):
         return "relay status response is invalid"
     status_name = str(status.get("status", "")).strip()
@@ -1047,7 +1098,7 @@ def daily_job_status_error(status: Any) -> str:
     dependencies = status.get("dependencies")
     if not isinstance(dependencies, Mapping):
         return "relay status is 'degraded' and dependency details are unavailable"
-    for name in REQUIRED_JOB_DEPENDENCIES:
+    for name in required_dependencies:
         dependency = dependencies.get(name)
         if not isinstance(dependency, Mapping):
             return f"relay required dependency {name!r} is unavailable"
@@ -1060,6 +1111,8 @@ def daily_job_status_error(status: Any) -> str:
 def wait_for_daily_job_dependencies(
     client: Any,
     options: JobOptions,
+    *,
+    required_dependencies: tuple[str, ...] = REQUIRED_JOB_DEPENDENCIES,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     started = time.monotonic()
     deadline = started + options.dependency_ready_timeout_seconds
@@ -1067,7 +1120,10 @@ def wait_for_daily_job_dependencies(
 
     while True:
         status_value, status_report = capture_call("status", client.status)
-        status_error = status_report.get("error") or daily_job_status_error(status_value)
+        status_error = status_report.get("error") or daily_job_status_error(
+            status_value,
+            required_dependencies=required_dependencies,
+        )
         attempts.append(
             {
                 "attempt": len(attempts) + 1,

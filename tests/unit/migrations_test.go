@@ -218,6 +218,30 @@ func TestOpenAssetSnapshotMigrationExtendsSnapshotType(t *testing.T) {
 	}
 }
 
+func TestBrokerCloseSnapshotMigrationExtendsAssetAndPositionTypes(t *testing.T) {
+	upSQL := readMigration(t, "000025_broker_close_snapshots.up.sql")
+	for _, snippet := range []string{
+		"asset_snapshots_type_check",
+		"position_snapshots_type_check",
+		"'open', 'broker_close', 'close'",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("broker close snapshot migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000025_broker_close_snapshots.down.sql")
+	for _, snippet := range []string{
+		"DELETE FROM position_snapshots",
+		"DELETE FROM asset_snapshots",
+		"snapshot_type = 'broker_close'",
+		"'intraday', 'open', 'close', 'reconcile'",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("broker close snapshot rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func TestPositionDayPnLMigrationAddsColumnsAndViewMetric(t *testing.T) {
 	upSQL := readMigration(t, "000008_position_day_pnl.up.sql")
 	for _, snippet := range []string{

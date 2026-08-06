@@ -29,7 +29,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.26"
+SDK_VERSION = "0.1.27"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -355,6 +355,7 @@ class RelayClient:
         account_ids: Iterable[str] | None = None,
         run_id: str | None = None,
         snapshot_type: str = "close",
+        input_snapshot_type: str | None = None,
         source: str = "post_close_settlement",
         captured_at: str | None = None,
         snapshot_only: bool = False,
@@ -367,6 +368,7 @@ class RelayClient:
             "trade_date": trade_date,
             "account_ids": list(account_ids or ([self.account_id] if self.account_id else [])),
             "snapshot_type": snapshot_type,
+            "input_snapshot_type": input_snapshot_type,
             "source": source,
             "captured_at": captured_at,
             "snapshot_only": snapshot_only,

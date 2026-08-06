@@ -33,8 +33,8 @@ RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS=60
 # Relay A-share pre-open initialization, 09:01 Asia/Shanghai.
 1 9 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --settlement-timeout-seconds \$RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS --persist --trigger cron --output $CRON_LOG_DIR/reports/pre_open_init.json >> $CRON_LOG_DIR/pre_open_init.log 2>&1
 
-# Settlement starts at 15:01. Daily performance follows only after settlement succeeds.
-1 15 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock \$RELAY_HOME/scripts/run-post-close-pipeline.sh >> $CRON_LOG_DIR/post_close_pipeline.log 2>&1
+# Broker close capture starts at 15:01. Settlement and performance follow their successful upstream jobs.
+1 15 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock \$RELAY_HOME/scripts/run-post-close-pipeline.sh >> $CRON_LOG_DIR/post_close_pipeline.log 2>&1
 $MARKER_END
 EOF
   } | crontab -

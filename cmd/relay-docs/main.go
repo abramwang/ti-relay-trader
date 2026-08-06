@@ -999,7 +999,7 @@ func (s *portalServer) handleAPIConsole(w http.ResponseWriter, r *http.Request) 
 		Summary:    "Form-based API console",
 		Head:       template.HTML(`<link rel="stylesheet" href="/assets/api-console.css?v=20260801-0006">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260801-0006"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/api-console.js?v=20260806-0001"></script>`),
 		ProjectDir: s.root,
 	})
 }
@@ -1054,7 +1054,7 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Summary:    "Daily jobs and background process monitor",
 		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260727-0005">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260803-0004"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260806-0001"></script>`),
 		ProjectDir: s.root,
 	})
 }

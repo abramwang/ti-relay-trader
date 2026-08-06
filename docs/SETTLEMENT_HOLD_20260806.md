@@ -95,3 +95,10 @@ Meridian becomes healthy. Resume only after all of these conditions are met:
 5. Settlement and performance are run separately so close snapshot quality can
    be reviewed before performance starts.
 
+After this incident Relay split the future production flow into
+`post_close_capture -> post_close_settlement -> performance_daily`.
+`post_close_capture` writes immutable `broker_close` asset/position snapshots
+without requiring Meridian; settlement later promotes those snapshots and does
+not query OC again. This is not retroactive: no `broker_close` exists for
+`2026-08-06` because OC had already closed before the new capture stage was
+deployed.

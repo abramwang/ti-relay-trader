@@ -14,7 +14,7 @@ PIPELINE = ROOT / "scripts" / "run-post-close-pipeline.sh"
 
 
 class PostClosePipelineTest(unittest.TestCase):
-    def run_pipeline(self, state: str) -> tuple[subprocess.CompletedProcess[str], str]:
+    def run_pipeline(self, capture_state: str, settlement_state: str = "ready") -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
             fake_python = temp / "python"
@@ -36,13 +36,36 @@ class PostClosePipelineTest(unittest.TestCase):
                         handle.write(" ".join(sys.argv[1:]) + "\\n")
                     output = Path(sys.argv[sys.argv.index("--output") + 1])
                     output.parent.mkdir(parents=True, exist_ok=True)
-                    if "relay.jobs.post_close_settlement" in sys.argv:
-                        state = os.environ["PIPELINE_POST_STATE"]
+                    if "relay.jobs.post_close_capture" in sys.argv:
+                        state = os.environ["PIPELINE_CAPTURE_STATE"]
                         report = {
                             "ok": state != "failed",
                             "skipped": state == "skipped",
                             "trading_day": {"target_trade_date": "20260803"},
-                            "settlement_snapshot": {"ok": state == "ready"},
+                            "broker_close_snapshot": {
+                                "ok": state == "ready",
+                                "result": {
+                                    "status": "completed",
+                                    "account_error_count": 0,
+                                    "accounts": [
+                                        {"account_id": "acct-1", "asset_snapshot_written": True, "errors": []},
+                                        {"account_id": "acct-2", "asset_snapshot_written": True, "errors": []},
+                                    ],
+                                },
+                            },
+                        }
+                        output.write_text(json.dumps(report), encoding="utf-8")
+                        raise SystemExit(1 if state == "failed" else 0)
+                    if "relay.jobs.post_close_settlement" in sys.argv:
+                        state = os.environ["PIPELINE_SETTLEMENT_STATE"]
+                        report = {
+                            "ok": state == "ready",
+                            "skipped": False,
+                            "trading_day": {"target_trade_date": "20260803"},
+                            "settlement_snapshot": {
+                                "ok": state == "ready",
+                                "result": {"status": "completed" if state == "ready" else "failed", "account_error_count": 0},
+                            },
                         }
                         output.write_text(json.dumps(report), encoding="utf-8")
                         raise SystemExit(1 if state == "failed" else 0)
@@ -59,7 +82,8 @@ class PostClosePipelineTest(unittest.TestCase):
                 "RELAY_PERFORMANCE_LOCK": str(temp / "performance.lock"),
                 "RELAY_PERFORMANCE_ACCOUNT_IDS": "acct-1,acct-2",
                 "PIPELINE_CALLS": str(calls),
-                "PIPELINE_POST_STATE": state,
+                "PIPELINE_CAPTURE_STATE": capture_state,
+                "PIPELINE_SETTLEMENT_STATE": settlement_state,
             }
             result = subprocess.run(
                 [str(PIPELINE)],
@@ -74,26 +98,41 @@ class PostClosePipelineTest(unittest.TestCase):
     def test_runs_performance_after_successful_settlement(self) -> None:
         result, calls = self.run_pipeline("ready")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("relay.jobs.post_close_capture", calls)
         self.assertIn("relay.jobs.post_close_settlement", calls)
         self.assertIn("relay.jobs.performance_daily", calls)
         self.assertIn("--target-date 20260803", calls)
         self.assertIn("--trigger post_close_success", calls)
         self.assertIn("--settlement-timeout-seconds 60", calls)
+        self.assertIn("--trigger post_close_capture_success", calls)
+        self.assertIn("--skip-refresh", calls)
+        self.assertIn("--account-id acct-1 --account-id acct-2", calls)
 
-    def test_does_not_run_performance_after_failed_settlement(self) -> None:
+    def test_does_not_run_settlement_after_failed_capture(self) -> None:
         result, calls = self.run_pipeline("failed")
         self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("relay.jobs.post_close_settlement", calls)
         self.assertNotIn("relay.jobs.performance_daily", calls)
 
-    def test_does_not_run_performance_without_successful_close_snapshot(self) -> None:
+    def test_does_not_run_settlement_without_successful_broker_snapshot(self) -> None:
         result, calls = self.run_pipeline("incomplete")
         self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("relay.jobs.post_close_settlement", calls)
         self.assertNotIn("relay.jobs.performance_daily", calls)
 
     def test_does_not_run_performance_on_non_trading_day(self) -> None:
         result, calls = self.run_pipeline("skipped")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("relay.jobs.post_close_settlement", calls)
         self.assertNotIn("relay.jobs.performance_daily", calls)
+
+    def test_keeps_broker_snapshot_when_settlement_is_deferred(self) -> None:
+        result, calls = self.run_pipeline("ready", "failed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("relay.jobs.post_close_capture", calls)
+        self.assertIn("relay.jobs.post_close_settlement", calls)
+        self.assertNotIn("relay.jobs.performance_daily", calls)
+        self.assertIn("broker close snapshot remains available", result.stderr)
 
 
 if __name__ == "__main__":

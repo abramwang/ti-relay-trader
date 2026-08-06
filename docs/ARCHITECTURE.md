@@ -325,12 +325,16 @@ relay 同时保留本地、前置和交易所三个订单编号口径：
 收盘后结算：
 
 ```text
-cron/manual python -m relay.jobs.post_close_settlement
-  -> /v1/status 依赖检查和交易日判断
-  -> 触发资金/持仓/订单/成交 refresh
-  -> 读取本地账本快照摘要
-  -> POST /v1/settlements/snapshots
+15:01 cron/manual python -m relay.jobs.post_close_capture
+  -> 只校验 DB/Redis/order service/event stream，不把 Meridian 作为依赖
+  -> 触发资金/持仓/订单/成交/费用 refresh，并校验唯一 completed final
+  -> POST /v1/settlements/snapshots(snapshot_type=broker_close)
+  -> 固化不可变券商最终资金/持仓
+  -> 成功账户触发 python -m relay.jobs.post_close_settlement
+  -> 校验 Meridian，读取 broker_close 而不再查询 OC
+  -> POST /v1/settlements/snapshots(snapshot_type=close,input_snapshot_type=broker_close)
   -> 写入 close 资产快照、持仓快照、reconciliation run/input/break
+  -> 成功后触发 performance_daily
   -> POST /v1/jobs/runs
   -> /jobs 和 /v1/status 展示任务结果
 ```

@@ -16,6 +16,7 @@ from relay.jobs.common import (  # noqa: E402
     JobOptions,
     TradingDayInfo,
     run_daily_performance,
+    run_post_close_capture,
     run_post_close_settlement,
     run_pre_open_init,
     refreshed_query_terminal_status,
@@ -556,11 +557,11 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(report["open_snapshot"]["result"]["account_error_count"], 0)
         self.assertEqual(client.settlement_calls[0]["account_ids"], ["acct-1"])
 
-    def test_post_close_can_run_for_selected_account_on_non_trading_day(self) -> None:
+    def test_post_close_capture_can_run_for_selected_account_on_non_trading_day(self) -> None:
         client = FakeClient()
-        report = run_post_close_settlement(
+        report = run_post_close_capture(
             JobOptions(
-                job_name="post_close_settlement",
+                job_name="post_close_capture",
                 account_ids=("acct-1",),
                 allow_non_trading_day=True,
                 refresh_wait_seconds=0,
@@ -579,14 +580,16 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(len(client.settlement_calls), 1)
         self.assertEqual(client.settlement_calls[0]["trade_date"], "20260612")
         self.assertEqual(client.settlement_calls[0]["account_ids"], ["acct-1"])
-        self.assertEqual(report["settlement_snapshot"]["result"]["status"], "completed")
+        self.assertEqual(client.settlement_calls[0]["snapshot_type"], "broker_close")
+        self.assertIsNone(client.settlement_calls[0]["input_snapshot_type"])
+        self.assertEqual(report["broker_close_snapshot"]["result"]["status"], "completed")
 
-    def test_post_close_blocks_stale_positions_snapshot(self) -> None:
+    def test_post_close_capture_blocks_stale_positions_snapshot(self) -> None:
         client = FakeClient()
         client.lagging_positions = {"acct-1"}
-        report = run_post_close_settlement(
+        report = run_post_close_capture(
             JobOptions(
-                job_name="post_close_settlement",
+                job_name="post_close_capture",
                 account_ids=("acct-1",),
                 refresh_wait_seconds=0,
                 refresh_timeout_seconds=0.01,
@@ -599,10 +602,10 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertFalse(report["ok"])
         self.assertEqual(report["snapshot_blocked_accounts"], ["acct-1"])
         self.assertEqual(report["snapshot_account_ids"], [])
-        self.assertIn("no account has confirmed refreshed asset/positions", report["settlement_snapshot"]["error"])
+        self.assertIn("no account has confirmed refreshed asset/positions", report["broker_close_snapshot"]["error"])
         self.assertEqual(client.settlement_calls, [])
 
-    def test_post_close_blocks_fresh_asset_with_failed_query_terminal(self) -> None:
+    def test_post_close_capture_blocks_fresh_asset_with_failed_query_terminal(self) -> None:
         client = FakeClient()
         message_id = "msg-acct-1-account.asset.query"
         client.query_statuses[message_id] = {
@@ -622,9 +625,9 @@ class TradingDayJobTest(unittest.TestCase):
             ],
         }
 
-        report = run_post_close_settlement(
+        report = run_post_close_capture(
             JobOptions(
-                job_name="post_close_settlement",
+                job_name="post_close_capture",
                 account_ids=("acct-1",),
                 refresh_wait_seconds=0,
                 refresh_timeout_seconds=0.05,
@@ -641,6 +644,44 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertIn("QUERY_EMPTY_RESULT", account["errors"][0])
         self.assertFalse(report["ok"])
         self.assertEqual(client.settlement_calls, [])
+
+    def test_post_close_capture_ignores_market_degradation(self) -> None:
+        client = FakeClient()
+        client.status_value = {
+            "status": "degraded",
+            "timezone": "Asia/Shanghai",
+            "dependencies": {
+                "database": {"status": "ok"},
+                "redis": {"status": "ok"},
+                "order_service": {"status": "ok"},
+                "market": {"status": "degraded"},
+                "event_stream": {"status": "ok"},
+            },
+        }
+
+        report = run_post_close_capture(
+            JobOptions(job_name="post_close_capture", refresh_wait_seconds=0),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(client.settlement_calls[0]["snapshot_type"], "broker_close")
+        self.assertIn("relay status is degraded", report["warnings"][0])
+
+    def test_post_close_settlement_promotes_broker_close_without_oc_refresh(self) -> None:
+        client = FakeClient()
+
+        report = run_post_close_settlement(
+            JobOptions(job_name="post_close_settlement"),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(client.refresh_calls, [])
+        self.assertEqual(client.settlement_calls[0]["snapshot_type"], "close")
+        self.assertEqual(client.settlement_calls[0]["input_snapshot_type"], "broker_close")
 
     def test_query_terminal_without_archived_reply_remains_pending(self) -> None:
         client = FakeClient()

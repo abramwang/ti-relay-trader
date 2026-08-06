@@ -65,9 +65,13 @@ jobs:
   pre_open_init:
     enabled: false
     schedule: "1 9 * * 1-5"
-  post_close_settlement:
+  post_close_capture:
     enabled: false
     schedule: "45 15 * * 1-5"
+  post_close_settlement:
+    enabled: false
+    trigger: "job_success"
+    depends_on: "post_close_capture"
   performance_daily:
     enabled: false
     trigger: "job_success"

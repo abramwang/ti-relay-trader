@@ -591,6 +591,29 @@ ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
 LIMIT 1
 `
 
+const assetSnapshotSQL = `
+SELECT
+    account_id,
+    cash_available,
+    cash_total,
+    net_asset,
+    market_value,
+    stock_value,
+    fund_value,
+    commission,
+    day_profit,
+    position_profit,
+    close_profit,
+    credit,
+    captured_at
+FROM asset_snapshots
+WHERE account_id = $1
+    AND trade_date = $2::date
+    AND snapshot_type = $3
+ORDER BY captured_at DESC, asset_snapshot_pk DESC
+LIMIT 1
+`
+
 const assetPositionObservationSQL = `
 WITH asset AS (
     SELECT

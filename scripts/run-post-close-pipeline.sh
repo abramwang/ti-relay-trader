@@ -11,6 +11,7 @@ SETTLEMENT_HTTP_TIMEOUT_SECONDS="${RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "$REPORT_DIR"
 
+capture_report="$REPORT_DIR/post_close_capture.json"
 post_report="$REPORT_DIR/post_close_settlement.json"
 performance_report="$REPORT_DIR/performance_daily.json"
 target_args=()
@@ -18,18 +19,18 @@ if [[ -n "${RELAY_TARGET_DATE:-}" ]]; then
   target_args=(--target-date "$RELAY_TARGET_DATE")
 fi
 
-echo "relay post-close pipeline: starting settlement"
-if ! "$PYTHON_BIN" -m relay.jobs.post_close_settlement \
+echo "relay post-close pipeline: starting broker close capture"
+if ! "$PYTHON_BIN" -m relay.jobs.post_close_capture \
   --persist \
   --trigger cron \
   --settlement-timeout-seconds "$SETTLEMENT_HTTP_TIMEOUT_SECONDS" \
-  --output "$post_report" \
+  --output "$capture_report" \
   "${target_args[@]}"; then
-  echo "relay post-close pipeline: settlement failed; performance skipped" >&2
+  echo "relay post-close pipeline: broker close capture failed; settlement and performance skipped" >&2
   exit 1
 fi
 
-readarray -t settlement_state < <("$PYTHON_BIN" - "$post_report" <<'PY'
+readarray -t capture_state < <("$PYTHON_BIN" - "$capture_report" <<'PY'
 import json
 import sys
 
@@ -42,35 +43,88 @@ elif report.get("ok") is not True:
     print("failed")
     print("")
 else:
-    snapshot = report.get("settlement_snapshot") or {}
-    if snapshot.get("ok") is not True or snapshot.get("error"):
+    snapshot = report.get("broker_close_snapshot") or {}
+    result = snapshot.get("result") or {}
+    successful_accounts = [
+        str(item.get("account_id"))
+        for item in result.get("accounts", [])
+        if item.get("asset_snapshot_written") is True and not item.get("errors")
+    ]
+    if snapshot.get("ok") is not True or snapshot.get("error") or result.get("status") != "completed" or not successful_accounts:
         print("failed")
         print("")
     else:
         trading_day = report.get("trading_day") or {}
         print("ready")
         print(str(trading_day.get("target_trade_date") or ""))
+        for account_id in successful_accounts:
+            print(account_id)
 PY
 )
 
-case "${settlement_state[0]:-failed}" in
+case "${capture_state[0]:-failed}" in
   skipped)
-    echo "relay post-close pipeline: non-trading day; performance skipped"
+    echo "relay post-close pipeline: non-trading day; settlement and performance skipped"
     exit 0
     ;;
   ready)
     ;;
   *)
-    echo "relay post-close pipeline: settlement report is not successful; performance skipped" >&2
+    echo "relay post-close pipeline: broker close capture report is not successful; settlement and performance skipped" >&2
     exit 1
     ;;
 esac
 
-trade_date="${settlement_state[1]:-}"
+trade_date="${capture_state[1]:-}"
 if [[ ! "$trade_date" =~ ^[0-9]{8}$ ]]; then
-  echo "relay post-close pipeline: invalid settlement target_trade_date [$trade_date]" >&2
+  echo "relay post-close pipeline: invalid broker capture target_trade_date [$trade_date]" >&2
   exit 1
 fi
+
+settlement_account_args=()
+for account_id in "${capture_state[@]:2}"; do
+  if [[ -n "$account_id" ]]; then
+    settlement_account_args+=(--account-id "$account_id")
+  fi
+done
+if [[ ${#settlement_account_args[@]} -eq 0 ]]; then
+  echo "relay post-close pipeline: broker capture returned no successful accounts" >&2
+  exit 1
+fi
+
+echo "relay post-close pipeline: broker close captured for $trade_date; starting settlement"
+if ! "$PYTHON_BIN" -m relay.jobs.post_close_settlement \
+  "${settlement_account_args[@]}" \
+  --target-date "$trade_date" \
+  --skip-refresh \
+  --persist \
+  --trigger post_close_capture_success \
+  --settlement-timeout-seconds "$SETTLEMENT_HTTP_TIMEOUT_SECONDS" \
+  --output "$post_report"; then
+  echo "relay post-close pipeline: settlement deferred or failed; broker close snapshot remains available" >&2
+  exit 1
+fi
+
+readarray -t settlement_state < <("$PYTHON_BIN" - "$post_report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    report = json.load(handle)
+snapshot = report.get("settlement_snapshot") or {}
+result = snapshot.get("result") or {}
+if report.get("ok") is True and not report.get("skipped") and snapshot.get("ok") is True and result.get("status") == "completed" and not result.get("account_error_count", 0):
+    print("ready")
+else:
+    print("failed")
+PY
+)
+
+if [[ "${settlement_state[0]:-failed}" != "ready" ]]; then
+  echo "relay post-close pipeline: settlement report is not successful; performance skipped" >&2
+  exit 1
+fi
+
 if [[ -z "$PERFORMANCE_ACCOUNT_IDS" ]]; then
   echo "relay post-close pipeline: RELAY_PERFORMANCE_ACCOUNT_IDS is required" >&2
   exit 2

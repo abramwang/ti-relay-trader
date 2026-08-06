@@ -738,6 +738,24 @@ func TestGetAssetPositionObservationBuildsSnapshotRead(t *testing.T) {
 	}
 }
 
+func TestGetAssetSnapshotBuildsExactBrokerCloseRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetAssetSnapshot(context.Background(), "acct-1", "20260612", "broker_close")
+	if err == nil {
+		t.Fatal("GetAssetSnapshot() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM asset_snapshots")
+	requireQueryContains(t, exec.query, "trade_date = $2::date")
+	requireQueryContains(t, exec.query, "snapshot_type = $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" || exec.args[2] != "broker_close" {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
 func TestListDailyPerformanceBuildsSeriesRead(t *testing.T) {
 	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
 	repo := NewRepository(exec)
@@ -1096,6 +1114,26 @@ func TestListPositionSnapshotsBuildsCursorOffset(t *testing.T) {
 	requireArgLen(t, exec.args, 6)
 	if exec.args[4] != 20 || exec.args[5] != 50 {
 		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
+func TestPrunePositionSnapshotsKeepsOnlyFinalBrokerPositions(t *testing.T) {
+	exec := &recordingExecutor{result: rowsAffectedResult(1)}
+	repo := NewRepository(exec)
+
+	_, err := repo.PrunePositionSnapshots(context.Background(), "acct-1", "20260612", "broker_close", []trading.Position{
+		{Symbol: "600000", Exchange: trading.ExchangeSH},
+		{Symbol: "000001", Exchange: trading.ExchangeSZ},
+	})
+	if err != nil {
+		t.Fatalf("PrunePositionSnapshots() error = %v", err)
+	}
+
+	requireQueryContains(t, exec.query, "DELETE FROM position_snapshots")
+	requireQueryContains(t, exec.query, "AND NOT ((symbol = $4 AND exchange = $5) OR (symbol = $6 AND exchange = $7))")
+	requireArgLen(t, exec.args, 7)
+	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" || exec.args[2] != "broker_close" {
+		t.Fatalf("identity args = %#v", exec.args[:3])
 	}
 }
 

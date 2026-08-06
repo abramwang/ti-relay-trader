@@ -387,9 +387,9 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股交易日盘前初始化，09:01 Asia/Shanghai。前置程序 09:00 启动后再查询。
 1 9 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --persist --trigger cron --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
 
-# A 股生产环境盘后流水线，15:01 开始结算，成功后立即计算每日绩效。
+# A 股生产环境盘后流水线，15:01 先独立捕获券商数据，再结算和计算绩效。
 RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,307000051389,314000046830
-1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-settlement.lock $RELAY_HOME/scripts/run-post-close-pipeline.sh >> /var/log/relay/post_close_pipeline.log 2>&1
+1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock $RELAY_HOME/scripts/run-post-close-pipeline.sh >> /var/log/relay/post_close_pipeline.log 2>&1
 ```
 
 生产 OC 的部署计划当前在 15:30 关停。Relay 机器上另有一条 15:10 调用 `/home/dist/production_env/stop_services.sh` 的历史计划，该脚本只关闭本地行情采集进程，不包含 OC trader commander，不应再用它推断交易前置的关停时间。
@@ -419,8 +419,15 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init \
   --dry-run \
   --output outputs/jobs/pre_open_init.dry-run.json
 
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_capture \
+  --base-url http://relay-trader.quantstage.com \
+  --dry-run \
+  --output outputs/jobs/post_close_capture.dry-run.json
+
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement \
   --base-url http://relay-trader.quantstage.com \
+  --target-date YYYYMMDD \
+  --skip-refresh \
   --dry-run \
   --output outputs/jobs/post_close_settlement.dry-run.json
 
@@ -433,7 +440,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
   --output outputs/jobs/performance_daily.json
 ```
 
-当前三个任务都会输出 JSON 报告。`pre_open_init` 与 `post_close_settlement` 包含交易日、依赖状态、账户范围、刷新命令回执、资金/持仓/订单/成交快照摘要和未终态订单列表。任务启动时对数据库、Redis、订单服务、行情和事件流等必需依赖提供默认 60 秒的有限就绪等待，每 3 秒复检，并在 `dependency_wait` 中保留检查次数、耗时和每次错误；持续异常仍会失败，可通过 `RELAY_JOB_DEPENDENCY_READY_TIMEOUT_SECONDS` 和 `RELAY_JOB_DEPENDENCY_RETRY_SECONDS` 调整。查询终态在任务报告中保留总回复数、状态、首条及终态/错误证据，完整分页仍由 PostgreSQL raw archive 和 `/v1/query-status/{origin_message_id}` 提供，避免高频账户把任务报告膨胀到反向代理请求上限。生产 cron 使用 `127.0.0.1:9092` 进行任务查询和报告回写，不依赖公网 Nginx。任务先向所有账户发布刷新命令，再让所有账户共享一个最多 60 秒的新鲜度等待窗口；轮询只读取 Relay 本地账本，确认资金和持仓的 `updated_at/captured_at` 已晚于本轮刷新开始时间，不会按账户分别累计 60 秒，也不会在等待期间重复查询柜台。`pre_open_init` 写入 `open_snapshot`；`post_close_settlement` 额外发布 `fee.list.query`。open/close 快照最多并行处理 3 个账户，只对成本缺失或存在当日新增数量的持仓查询当日成交，并使用独立 60 秒 HTTP 超时；可通过 `RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS` 调整。费用查询只支持 OC 当前柜台交易日，不用于历史补跑。`scripts/run-post-close-pipeline.sh` 只在盘后报告成功、未跳过且 close 快照无错误时启动 `performance_daily`，并把同一 `target_trade_date` 传给下游；`performance_daily` 不再查询柜台，只调用成本账和经济净值只读试算，按账户输出 `ready/attention/blocked/not_applicable`、费用完整性和质量标记。`not_applicable` 只用于可信空起点且资金、持仓、订单、成交和资金流水全部为零的账户；存在任何活动或其它阻断原因时仍输出 `blocked`。单个账户异常独立标注，系统依赖失败等全局问题才会让任务整体失败。非交易日不会启动下游绩效。
+盘后流水线输出三份独立 JSON 报告。`post_close_capture` 在 15:01 只校验数据库、Redis、订单服务和事件流，向所有账户发布资金、持仓、订单、成交和费用查询；Meridian 即使 degraded 也不会阻断。查询终态和新鲜度通过后写入 `broker_close` 资金持仓，成功账户集合原样传给下游。`post_close_settlement` 才校验 Meridian，并使用 `input_snapshot_type=broker_close` 生成正式 `close`、对账输入和差异；它带 `--skip-refresh`，不会再次连接 OC。若 Meridian 故障，捕获任务仍为成功，结算报告明确失败/延后；恢复后以 `--target-date YYYYMMDD` 重跑即可，不受 OC 已关闭或次日 current positions 覆盖影响。正式结算成功后才启动 `performance_daily`。各任务均提供默认 60 秒依赖等待和多账户最多 3 路快照并发，完整查询证据保存在 PostgreSQL raw archive 和 `/v1/query-status/{origin_message_id}`。
 
 快照恢复默认仍使用实际调用时间。仅当资金/持仓账本内容已确认来自原任务且不能再次查询柜台时，才可传入 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写。`snapshot_only` 必须和 `captured_at` 同时使用，只固化源资金/持仓，不按当前行情重估，不读取当前订单/成交，也不写 reconciliation；API 还会校验 `captured_at` 的日期必须与 `trade_date` 一致。
 

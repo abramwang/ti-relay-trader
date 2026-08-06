@@ -168,6 +168,7 @@ migrations/postgres/000001_init_ledger.down.sql
 当前第一版 `pre_open_init` 和 `post_close_settlement` 会通过 9092 `POST /v1/settlements/snapshots` 写入：
 
 - `asset_snapshots(open)`、`position_snapshots(snapshot_type=open)`：盘前刷新后写入当日账户日初资产和日初持仓，用于把逆回购回款、隔夜清算、占款释放、资金划转和公司行为后的实际券商持仓从日内交易收益中拆开。
+- `asset_snapshots(broker_close)`、`position_snapshots(snapshot_type=broker_close)`：15:01 由 `post_close_capture` 在不依赖 Meridian 的前提下固化 OC 最终资金和持仓；这是正式结算的不可变券商输入，不参与研究视图和绩效发布。
 - `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`：收盘后写入日终资产、日终持仓和对账批次。
 - `reconciliation_inputs`：按账户记录 relay 标准账本摘要、PnL 输入摘要、Redis raw stream 窗口摘要和柜台查询摘要。
 - `reconciliation_breaks`：按账户记录未终态订单、订单成交数量不一致、资产/持仓快照缺失和账户刷新失败。账户级查询异常只影响该账户的 break/warning，不直接把整个 `pre_open_init` 或 `post_close_settlement` 任务标为失败。

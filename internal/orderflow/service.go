@@ -1010,9 +1010,9 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	}
 	if normalized.SnapshotType != "" {
 		switch normalized.SnapshotType {
-		case "intraday", "open", "close", "reconcile":
+		case "intraday", "open", "broker_close", "close", "reconcile":
 		default:
-			return normalized, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", trading.ErrInvalidSchema)
+			return normalized, fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", trading.ErrInvalidSchema)
 		}
 	}
 	if normalized.Limit <= 0 {

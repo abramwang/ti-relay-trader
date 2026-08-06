@@ -82,7 +82,8 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	cfg.Redis.URL = "redis://configured"
 	cfg.Jobs = map[string]config.JobConfig{
 		"pre_open_init":         {Enabled: true, Schedule: "1 9 * * 1-5"},
-		"post_close_settlement": {Enabled: true, Schedule: "30 15 * * 1-5"},
+		"post_close_capture":    {Enabled: true, Schedule: "1 15 * * 1-5"},
+		"post_close_settlement": {Enabled: true, Trigger: "job_success", DependsOn: "post_close_capture"},
 		"performance_daily":     {Enabled: true, Trigger: "job_success", DependsOn: "post_close_settlement"},
 	}
 	cfg.Accounts = []config.AccountRouteConfig{
@@ -156,8 +157,12 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	if envelope.Data.JobRuns["pre_open_init"].RunID != "pre-open-1" {
 		t.Fatalf("job runs = %#v", envelope.Data.JobRuns)
 	}
-	if envelope.Data.Jobs["pre_open_init"].ExpectedTime != "09:01" || envelope.Data.Jobs["post_close_settlement"].ExpectedTime != "15:30" {
+	if envelope.Data.Jobs["pre_open_init"].ExpectedTime != "09:01" || envelope.Data.Jobs["post_close_capture"].ExpectedTime != "15:01" {
 		t.Fatalf("job schedules = %#v", envelope.Data.Jobs)
+	}
+	settlementJob := envelope.Data.Jobs["post_close_settlement"]
+	if settlementJob.Trigger != "job_success" || settlementJob.DependsOn != "post_close_capture" || settlementJob.ExpectedTime != "" {
+		t.Fatalf("settlement job dependency = %#v", settlementJob)
 	}
 	performanceJob := envelope.Data.Jobs["performance_daily"]
 	if performanceJob.Trigger != "job_success" || performanceJob.DependsOn != "post_close_settlement" || performanceJob.ExpectedTime != "" {
@@ -2164,6 +2169,95 @@ func TestSettlementSnapshotOnlyRecoverySkipsEnrichmentAndReconciliation(t *testi
 	}
 }
 
+func TestBrokerCloseSnapshotCapturesCurrentBrokerLedgerWithoutMarketOrReconciliation(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1300000}},
+		positionsResult: orderflow.ListPositionsResult{Positions: []trading.Position{{
+			AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH,
+			Quantity: 100, AvgCost: 9.5, LastPrice: 9.6,
+		}}, Count: 1},
+		listOrdersErr: errors.New("orders must not be queried during broker capture"),
+		listFillsErr:  errors.New("fills must not be queried during broker capture"),
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post_close_capture-20260615",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"broker_close",
+		"source":"post_close_capture"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "broker_close" {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].snapshotType != "broker_close" {
+		t.Fatalf("position snapshots = %#v", store.positionSnapshots)
+	}
+	if service.orderQuery.AccountID != "" || service.fillQuery.AccountID != "" || store.reconciliation.RunID != "" {
+		t.Fatalf("broker capture queried settlement ledgers or wrote reconciliation")
+	}
+	if !strings.Contains(rec.Body.String(), `"snapshot_only":true`) {
+		t.Fatalf("response missing capture-only state: %s", rec.Body.String())
+	}
+}
+
+func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testing.T) {
+	capturedAt := time.Date(2026, 6, 15, 15, 1, 7, 0, timeutil.Location())
+	service := &fakeOrderSubmitter{
+		assetErr:         errors.New("current asset must not be read"),
+		positionsErr:     errors.New("current positions must not be read"),
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}, Count: 0},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{
+		assetSnapshotResult: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, UpdatedAt: capturedAt},
+		positionSnapshotResults: []trading.Position{{
+			AccountID: "acct-1", TradeDate: "2026-06-15", SnapshotType: "broker_close",
+			Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, UpdatedAt: capturedAt,
+		}},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post_close_settlement-20260615",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"input_snapshot_type":"broker_close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.assetAccountID != "" || service.positionQuery.AccountID != "" {
+		t.Fatalf("promotion read current ledger: asset=%q positions=%#v", service.assetAccountID, service.positionQuery)
+	}
+	if store.assetSnapshotQueryType != "broker_close" || store.positionSnapshotQuery.SnapshotType != "broker_close" {
+		t.Fatalf("source snapshot queries = %q/%#v", store.assetSnapshotQueryType, store.positionSnapshotQuery)
+	}
+	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "close" || !store.assetSnapshots[0].capturedAt.Equal(capturedAt) {
+		t.Fatalf("promoted asset snapshots = %#v", store.assetSnapshots)
+	}
+	if store.reconciliation.RunID != "post_close_settlement-20260615" {
+		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
 func TestSettlementSnapshotAccountErrorIsNonFatal(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		assetErr: errors.New("asset snapshot not found"),
@@ -3313,7 +3407,38 @@ type fakeSettlementStore struct {
 	performanceSeriesDateTo    string
 	queryStatus                ledger.QueryCommandStatus
 	queryStatusMessageID       string
+	assetSnapshotResult        trading.Asset
+	assetSnapshotQueryType     string
+	positionSnapshotResults    []trading.Position
+	positionSnapshotQuery      trading.PositionQuery
+	prunedSnapshotType         string
+	prunedPositions            []trading.Position
 	err                        error
+}
+
+func (store *fakeSettlementStore) GetAssetSnapshot(_ context.Context, _ string, _ string, snapshotType string) (trading.Asset, error) {
+	store.assetSnapshotQueryType = snapshotType
+	if store.err != nil {
+		return trading.Asset{}, store.err
+	}
+	return store.assetSnapshotResult, nil
+}
+
+func (store *fakeSettlementStore) ListPositionSnapshots(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {
+	store.positionSnapshotQuery = query
+	if store.err != nil {
+		return nil, store.err
+	}
+	return append([]trading.Position(nil), store.positionSnapshotResults...), nil
+}
+
+func (store *fakeSettlementStore) PrunePositionSnapshots(_ context.Context, _ string, _ string, snapshotType string, keep []trading.Position) (int64, error) {
+	store.prunedSnapshotType = snapshotType
+	store.prunedPositions = append([]trading.Position(nil), keep...)
+	if store.err != nil {
+		return 0, store.err
+	}
+	return 0, nil
 }
 
 func (store *fakeAccountAliasStore) AccountAliases(_ context.Context, accountIDs []string) (map[string]string, error) {

@@ -23,7 +23,8 @@
 
   const knownJobs = [
     { name: "pre_open_init", title: "盘前初始化", expectedTime: "09:01", purpose: "刷新账户并写入日初资产" },
-    { name: "post_close_settlement", title: "盘后结算", expectedTime: "15:01", purpose: "固化日终快照和对账输入" },
+    { name: "post_close_capture", title: "券商收盘捕获", expectedTime: "15:01", purpose: "独立查询并固化券商最终资金、持仓和交易账本" },
+    { name: "post_close_settlement", title: "盘后结算", expectedTime: "", purpose: "基于券商收盘快照补行情并生成正式对账输入" },
     { name: "performance_daily", title: "每日绩效计算", expectedTime: "", purpose: "盘后结算成功后计算成本账和经济净值质量" },
   ];
   const expectedRunGraceMinutes = 5;
@@ -303,7 +304,7 @@
   function snapshotResult(run) {
     const report = run && run.report;
     if (!report || typeof report !== "object") return null;
-    const wrapper = report.settlement_snapshot || report.open_snapshot;
+    const wrapper = report.settlement_snapshot || report.broker_close_snapshot || report.open_snapshot;
     return wrapper && wrapper.result ? wrapper.result : null;
   }
 

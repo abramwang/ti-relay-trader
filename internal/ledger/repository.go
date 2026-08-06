@@ -887,6 +887,50 @@ func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (t
 	return asset, nil
 }
 
+func (repo *Repository) GetAssetSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string) (trading.Asset, error) {
+	if repo == nil || repo.exec == nil {
+		return trading.Asset{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return trading.Asset{}, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	var err error
+	tradeDate, err = normalizeTradeDate(tradeDate)
+	if err != nil {
+		return trading.Asset{}, err
+	}
+	if tradeDate == "" {
+		return trading.Asset{}, fmt.Errorf("%w: trade_date is required", ErrInvalidLedgerInput)
+	}
+	snapshotType = strings.TrimSpace(snapshotType)
+	switch snapshotType {
+	case "intraday", "open", "broker_close", "close", "reconcile":
+	default:
+		return trading.Asset{}, fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return trading.Asset{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, assetSnapshotSQL, accountID, tradeDate, snapshotType)
+	if err != nil {
+		return trading.Asset{}, fmt.Errorf("get asset snapshot %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return trading.Asset{}, fmt.Errorf("get asset snapshot %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+		}
+		return trading.Asset{}, fmt.Errorf("%w: %s asset snapshot %s/%s", ErrAssetNotFound, snapshotType, accountID, tradeDate)
+	}
+	asset, err := scanAsset(rows)
+	if err != nil {
+		return trading.Asset{}, fmt.Errorf("scan asset snapshot %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+	}
+	return asset, nil
+}
+
 func (repo *Repository) GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (DailyPerformance, error) {
 	if repo == nil || repo.exec == nil {
 		return DailyPerformance{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
@@ -950,9 +994,9 @@ func (repo *Repository) GetAssetPositionObservation(ctx context.Context, account
 		snapshotType = "open"
 	}
 	switch snapshotType {
-	case "intraday", "open", "close", "reconcile":
+	case "intraday", "open", "broker_close", "close", "reconcile":
 	default:
-		return AssetPositionObservation{}, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
+		return AssetPositionObservation{}, fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", ErrInvalidLedgerInput)
 	}
 
 	queryer, err := repo.queryer()
@@ -1263,9 +1307,9 @@ func (repo *Repository) UpsertPositionSnapshotWithType(ctx context.Context, posi
 		snapshotType = firstNonEmpty(normalized.SnapshotType, "close")
 	}
 	switch snapshotType {
-	case "intraday", "open", "close", "reconcile":
+	case "intraday", "open", "broker_close", "close", "reconcile":
 	default:
-		return fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
+		return fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", ErrInvalidLedgerInput)
 	}
 	if capturedAt.IsZero() {
 		capturedAt = repo.now()
@@ -1312,6 +1356,54 @@ func (repo *Repository) UpsertPositionSnapshotWithType(ctx context.Context, posi
 		return fmt.Errorf("upsert position snapshot %s/%s.%s: %w", normalized.AccountID, normalized.Symbol, normalized.Exchange, err)
 	}
 	return nil
+}
+
+func (repo *Repository) PrunePositionSnapshots(ctx context.Context, accountID string, tradeDate string, snapshotType string, keep []trading.Position) (int64, error) {
+	if repo == nil || repo.exec == nil {
+		return 0, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	var err error
+	tradeDate, err = normalizeTradeDate(tradeDate)
+	if err != nil {
+		return 0, err
+	}
+	if tradeDate == "" {
+		return 0, fmt.Errorf("%w: trade_date is required", ErrInvalidLedgerInput)
+	}
+	snapshotType = strings.TrimSpace(snapshotType)
+	switch snapshotType {
+	case "intraday", "open", "broker_close", "close", "reconcile":
+	default:
+		return 0, fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", ErrInvalidLedgerInput)
+	}
+
+	args := []any{accountID, tradeDate, snapshotType}
+	query := strings.Builder{}
+	query.WriteString("DELETE FROM position_snapshots WHERE account_id = $1 AND trade_date = $2::date AND snapshot_type = $3")
+	if len(keep) > 0 {
+		query.WriteString(" AND NOT (")
+		for index, position := range keep {
+			if index > 0 {
+				query.WriteString(" OR ")
+			}
+			args = append(args, strings.TrimSpace(position.Symbol), position.Exchange)
+			query.WriteString(fmt.Sprintf("(symbol = $%d AND exchange = $%d)", len(args)-1, len(args)))
+		}
+		query.WriteString(")")
+	}
+	result, err := repo.exec.ExecContext(ctx, query.String(), args...)
+	if err != nil {
+		return 0, fmt.Errorf("prune position snapshots %s/%s/%s: %w", accountID, tradeDate, snapshotType, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune position snapshot rows affected: %w", err)
+	}
+	return rows, nil
 }
 
 func (repo *Repository) InsertFill(ctx context.Context, fill trading.Fill, stream StreamRef, source SourceRef) error {
@@ -2327,9 +2419,9 @@ func normalizePositionQuery(query trading.PositionQuery) (trading.PositionQuery,
 	}
 	if query.SnapshotType != "" {
 		switch query.SnapshotType {
-		case "intraday", "open", "close", "reconcile":
+		case "intraday", "open", "broker_close", "close", "reconcile":
 		default:
-			return query, fmt.Errorf("%w: snapshot_type must be intraday, open, close, or reconcile", ErrInvalidLedgerInput)
+			return query, fmt.Errorf("%w: snapshot_type must be intraday, open, broker_close, close, or reconcile", ErrInvalidLedgerInput)
 		}
 	}
 	if _, err := queryCursorOffset(query.Cursor); err != nil {

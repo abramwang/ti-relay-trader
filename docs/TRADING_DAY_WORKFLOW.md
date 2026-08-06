@@ -18,7 +18,8 @@ relay 每个交易日需要两个稳定流程：
 | --- | --- | --- | --- |
 | 盘前初始化 | `pre_open_init` | 09:01-09:20 `Asia/Shanghai` | 确认交易日、依赖、账户、昨夜位点、初始资金持仓和风险基线 |
 | 收盘预结算观察 | 常驻账本同步 | 14:56 起 `Asia/Shanghai` | 策略停止新增交易，继续接收尾单回报并观察 stream lag |
-| 收盘后结算 | `post_close_settlement` | 生产默认 15:01 `Asia/Shanghai` | 追平订单/成交、刷新订单级实际费用、生成日终快照、对账和盈亏输入 |
+| 券商收盘捕获 | `post_close_capture` | 生产默认 15:01 `Asia/Shanghai` | 不依赖 Meridian，追平订单/成交/费用并固化 OC 最终资金持仓 |
+| 收盘后结算 | `post_close_settlement` | `post_close_capture` 成功后 | 从 `broker_close` 补行情并生成正式日终快照、对账和盈亏输入 |
 | 每日绩效计算 | `performance_daily` | `post_close_settlement` 成功后 | close 快照成功落库后，逐账户试算成本账、经济净值和质量门禁 |
 
 生产环境默认在交易日 15:01 执行，OC 由部署计划在 15:30 关停。14:56 只是策略侧停止新增交易和预结算观察起点，不直接固化日终快照；15:00 前仍可能出现尾单回报，因此资金、持仓、订单和成交的权威刷新仍在 15:01 统一发起。测试环境可按联调需要手工触发或调整 cron，但配置和日志都必须明确是 `Asia/Shanghai`。
@@ -43,17 +44,17 @@ relay 每个交易日需要两个稳定流程：
 
 ## 收盘后结算
 
-`post_close_settlement` 的建议步骤：
+盘后流水线的建议步骤：
 
 1. 14:56 起停止策略侧新增交易，或将账户切换为只读/人工确认状态；常驻账本同步继续接收尾单回报。
 2. 等待 Redis `reply/event` 流短时间稳定，并持续消费到最新 checkpoint。
-3. 对每个启用账户重新查询资金、持仓、订单和成交，确保本地账本与柜台终态对齐。
+3. `post_close_capture` 对每个启用账户重新查询资金、持仓、订单、成交和费用，确保本地账本与柜台终态对齐；这一阶段只依赖 OC、Redis、Relay 和 PostgreSQL，不依赖 Meridian。
 4. 将订单状态更新到终态；仍未终态的订单写入异常列表，供人工复核。
-5. 写入 `asset_snapshots`、`position_snapshots` 和必要的 `cash_ledger` 日终流水。
-6. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
-7. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
-8. 为盈亏统计准备输入：日终权益、持仓市值、成交金额、费用、已实现盈亏和浮动盈亏。
-9. 输出结算报告，并把任务状态暴露给 `/v1/status` 或后续运维页面。
+5. 先写入 `asset_snapshots(broker_close)` 和 `position_snapshots(broker_close)`，记录实际券商捕获时间；行情故障时到此即可安全结束并等待补跑。
+6. `post_close_settlement` 从 `broker_close` 读取资金持仓，补充 Meridian 行情后写入正式 `close`；不再查询 OC，也不读取可能已被次日覆盖的 current positions。
+7. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
+8. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
+9. 为盈亏统计准备输入并输出结算报告；正式结算成功后再触发 `performance_daily`。
 
 任务完成状态不等于所有账户都已通过。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 会把同日盘前、盘后 `job_runs.report_json` 与 `reconciliation_breaks` 聚合为账户级复核报告：展示日初/日终资产、持仓、订单、成交、未终态订单、开放差异和快照阻断原因，并给出 `passed`、`attention`、`blocked` 或 `pending` 结论。未传日期时，非交易日自动读取 Meridian 返回的最近交易日；`/jobs` 支持按交易日查看并导出该 JSON 报告。
 
@@ -61,10 +62,11 @@ relay 每个交易日需要两个稳定流程：
 
 ## 配置建议
 
-当前已实现两个 Python 任务入口：
+当前已实现三个交易日 Python 任务入口：
 
 ```bash
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://relay-trader.quantstage.com
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_capture --base-url http://relay-trader.quantstage.com
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com
 ```
 
@@ -72,13 +74,14 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 
 ```bash
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://relay-trader.quantstage.com --persist --trigger cron
-PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com --persist --trigger cron
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_capture --base-url http://relay-trader.quantstage.com --persist --trigger cron
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com --target-date YYYYMMDD --persist --trigger post_close_capture_success
 ```
 
 两个任务都会：
 
 1. 检查 `/v1/status`。
-2. 通过 Meridian 交易日接口解析目标交易日。
+2. 盘前和正式结算通过 Meridian 交易日接口解析目标交易日；`post_close_capture` 直接使用东八区目标日期，Meridian 不可用不会阻断 OC 查询。若 `/v1/status` 已明确返回非交易日，可正常跳过。
 3. 非交易日默认跳过账户刷新，返回 `ok=true, skipped=true`。
 4. 先向所有启用账户发布资金、持仓、订单、成交刷新命令，再进入等待阶段；单账户异常不会阻塞其它账户发出查询。
 5. 所有账户共享一个最多 60 秒的新鲜度等待窗口，轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间；不会按账户分别累计 60 秒，也不会在等待阶段反复查询柜台。
@@ -86,7 +89,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 7. 输出 JSON 报告，可通过 `--output` 写入文件。
 8. 若某账户资金/持仓刷新未确认，则该账户进入 `snapshot_blocked_accounts`，不参与本次 open/close 快照落盘，避免把早盘或旧持仓固化为日终持仓。
 9. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`。
-10. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
+10. `post_close_capture` 写入 `broker_close`；`post_close_settlement` 使用 `input_snapshot_type=broker_close` 写入 `close` 和 `reconciliation_runs`。前者负责查询 OC，后者不再查询 OC。
     - 多账户快照最多并行处理 3 个账户，open/close 调用使用默认 60 秒独立超时。
     - 故障恢复可在确认资金/持仓账本仍是原任务数据后使用 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写；恢复模式不读取当前订单成交、不做当前行情重估，也不写 reconciliation。
 11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。

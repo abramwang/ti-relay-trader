@@ -214,6 +214,7 @@ def build_daily_job_alert(
     public_url = config.public_url or str(report.get("base_url") or "").rstrip("/")
     job_label = {
         "pre_open_init": "盘前初始化",
+        "post_close_capture": "券商收盘数据捕获",
         "post_close_settlement": "盘后结算",
         "performance_daily": "每日绩效计算",
     }.get(job_name, job_name)
