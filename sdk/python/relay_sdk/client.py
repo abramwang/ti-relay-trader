@@ -29,7 +29,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.25"
+SDK_VERSION = "0.1.26"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -356,6 +356,8 @@ class RelayClient:
         run_id: str | None = None,
         snapshot_type: str = "close",
         source: str = "post_close_settlement",
+        captured_at: str | None = None,
+        snapshot_only: bool = False,
         dry_run: bool = False,
     ) -> Mapping[str, Any]:
         """Persist post-close asset/position snapshots and a reconciliation run."""
@@ -366,6 +368,8 @@ class RelayClient:
             "account_ids": list(account_ids or ([self.account_id] if self.account_id else [])),
             "snapshot_type": snapshot_type,
             "source": source,
+            "captured_at": captured_at,
+            "snapshot_only": snapshot_only,
             "dry_run": dry_run,
         }
         return self._request("POST", "/v1/settlements/snapshots", json_body=payload)

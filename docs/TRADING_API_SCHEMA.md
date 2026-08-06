@@ -461,7 +461,7 @@ ETF PCF 三个接口同样是透明代理，不转换字符串数值，也不在
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 
-`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source` 和可选 `dry_run`，其中 `snapshot_type` 支持 `intraday/open/close/reconcile`。`pre_open_init` 使用 `snapshot_type=open` 写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`，用于绩效分析区分隔夜调整、公司行为后的实际持仓和日内盈亏；`post_close_settlement` 使用 `snapshot_type=close` 写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`。该接口不向前置发送查询命令；调用前应先执行资金/持仓/订单/成交 refresh 并等待账本合并。
+`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source`，以及可选的 `captured_at`、`snapshot_only`、`dry_run`；其中 `snapshot_type` 支持 `intraday/open/close/reconcile`。`captured_at` 必须是带时区的 RFC3339 时间且日期与 `trade_date` 一致，仅用于已经确认源账本时间的故障恢复；响应也会返回最终使用的 `captured_at`。`snapshot_only=true` 必须同时提供 `captured_at`，只固化源资金/持仓，不按当前行情重估、不读取当前订单成交、不写 reconciliation。`pre_open_init` 使用 `snapshot_type=open` 写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`，用于绩效分析区分隔夜调整、公司行为后的实际持仓和日内盈亏；`post_close_settlement` 使用 `snapshot_type=close` 写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`。多账户请求最多并行处理 3 个账户并保持响应账户顺序。该接口不向前置发送查询命令；调用前应先执行资金/持仓/订单/成交 refresh 并等待账本合并。
 
 ## 后续工作
 

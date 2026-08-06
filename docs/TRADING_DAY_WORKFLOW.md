@@ -87,6 +87,8 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 8. 若某账户资金/持仓刷新未确认，则该账户进入 `snapshot_blocked_accounts`，不参与本次 open/close 快照落盘，避免把早盘或旧持仓固化为日终持仓。
 9. `pre_open_init` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(open)` 和 `position_snapshots(snapshot_type=open)`。
 10. `post_close_settlement` 会调用 `/v1/settlements/snapshots`，按目标交易日写入 `asset_snapshots(close)`、`position_snapshots(snapshot_type=close)` 和 `reconciliation_runs`；`--dry-run` 时只返回预演结果，不写库。
+    - 多账户快照最多并行处理 3 个账户，open/close 调用使用默认 60 秒独立超时。
+    - 故障恢复可在确认资金/持仓账本仍是原任务数据后使用 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写；恢复模式不读取当前订单成交、不做当前行情重估，也不写 reconciliation。
 11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 12. `/v1/status.trading_day.phase` 在 Meridian 明确当前日期不是交易日时返回 `non_trading`，不再按本地时钟误显示 `continuous` 或 `post_close`。
 13. 任务结束后按报告聚合外部告警：任务失败或快照阻断为 `critical`，单账户异常为 `warning`；刷新超时、阻断账户和错误摘要写入 `relay.alert.v1` Webhook。非交易日正常跳过和 dry-run 不发送，投递结果回写同一条 `job_runs`。

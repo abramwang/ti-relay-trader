@@ -7,6 +7,7 @@ REPORT_DIR="${RELAY_JOB_REPORT_DIR:-/var/log/relay/reports}"
 PERFORMANCE_LOCK="${RELAY_PERFORMANCE_LOCK:-/tmp/relay-performance-daily.lock}"
 PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-}"
 PERFORMANCE_HTTP_TIMEOUT_SECONDS="${RELAY_PERFORMANCE_HTTP_TIMEOUT_SECONDS:-30}"
+SETTLEMENT_HTTP_TIMEOUT_SECONDS="${RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "$REPORT_DIR"
 
@@ -21,6 +22,7 @@ echo "relay post-close pipeline: starting settlement"
 if ! "$PYTHON_BIN" -m relay.jobs.post_close_settlement \
   --persist \
   --trigger cron \
+  --settlement-timeout-seconds "$SETTLEMENT_HTTP_TIMEOUT_SECONDS" \
   --output "$post_report" \
   "${target_args[@]}"; then
   echo "relay post-close pipeline: settlement failed; performance skipped" >&2

@@ -34,7 +34,7 @@ DEFAULT_MERIDIAN_BASE_URL = "http://meridian-data.quantstage.com"
 DEFAULT_QUERY_LIMIT = 500
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 60.0
 DEFAULT_REFRESH_POLL_SECONDS = 1.0
-DEFAULT_SETTLEMENT_TIMEOUT_SECONDS = 30.0
+DEFAULT_SETTLEMENT_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEPENDENCY_READY_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEPENDENCY_RETRY_SECONDS = 3.0
 FRESHNESS_CHECK_STEPS = {"asset", "positions"}
@@ -79,6 +79,8 @@ class JobOptions:
     dependency_ready_timeout_seconds: float = 0.0
     dependency_retry_seconds: float = DEFAULT_DEPENDENCY_RETRY_SECONDS
     settlement_timeout_seconds: float = DEFAULT_SETTLEMENT_TIMEOUT_SECONDS
+    snapshot_captured_at: str = ""
+    snapshot_only: bool = False
     refresh_wait_seconds: float = 1.0
     refresh_timeout_seconds: float = DEFAULT_REFRESH_TIMEOUT_SECONDS
     refresh_poll_seconds: float = DEFAULT_REFRESH_POLL_SECONDS
@@ -124,8 +126,18 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument(
         "--settlement-timeout-seconds",
         type=float,
-        default=DEFAULT_SETTLEMENT_TIMEOUT_SECONDS,
+        default=float(os.getenv("RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS", str(DEFAULT_SETTLEMENT_TIMEOUT_SECONDS))),
         help="HTTP timeout for the multi-account settlement snapshot request",
+    )
+    parser.add_argument(
+        "--snapshot-captured-at",
+        default="",
+        help="optional RFC3339 business timestamp used when recovering a previously captured snapshot",
+    )
+    parser.add_argument(
+        "--snapshot-only",
+        action="store_true",
+        help="recovery mode: persist source asset/positions only; requires --snapshot-captured-at",
     )
     parser.add_argument("--refresh-wait-seconds", type=float, default=1.0, help="seconds to wait after publishing refresh commands")
     parser.add_argument(
@@ -161,6 +173,8 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         dependency_ready_timeout_seconds=max(args.dependency_ready_timeout_seconds, 0.0),
         dependency_retry_seconds=max(args.dependency_retry_seconds, 0.1),
         settlement_timeout_seconds=max(args.settlement_timeout_seconds, args.timeout, 0.1),
+        snapshot_captured_at=args.snapshot_captured_at.strip(),
+        snapshot_only=args.snapshot_only,
         refresh_wait_seconds=max(args.refresh_wait_seconds, 0.0),
         refresh_timeout_seconds=max(args.refresh_timeout_seconds, 0.0),
         refresh_poll_seconds=max(args.refresh_poll_seconds, 0.05),
@@ -539,6 +553,8 @@ def run_daily_job(
             run_id=settlement_run_id,
             snapshot_type=snapshot_type,
             source=phase,
+            captured_at=options.snapshot_captured_at or None,
+            snapshot_only=options.snapshot_only,
             dry_run=options.dry_run,
         )
         report[snapshot_report_key] = settlement_report

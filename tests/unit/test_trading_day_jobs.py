@@ -279,7 +279,7 @@ class TradingDayJobTest(unittest.TestCase):
         )
 
         self.assertIsNot(snapshot_client, client)
-        self.assertEqual(snapshot_client.timeout, 30)
+        self.assertEqual(snapshot_client.timeout, 60)
         self.assertEqual(snapshot_client.base_url, client.base_url)
         self.assertEqual(snapshot_client.account_id, client.account_id)
         self.assertEqual(snapshot_client.api_key, client.api_key)
@@ -471,7 +471,29 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(client.settlement_calls[0]["snapshot_type"], "open")
         self.assertEqual(client.settlement_calls[0]["source"], "pre_open_init")
         self.assertEqual(client.settlement_calls[0]["trade_date"], "20260615")
+        self.assertIsNone(client.settlement_calls[0]["captured_at"])
         self.assertEqual(report["open_snapshot"]["result"]["status"], "completed")
+
+    def test_pre_open_can_recover_snapshot_at_original_capture_time(self) -> None:
+        client = FakeClient()
+        captured_at = "2026-06-15T09:01:04.75751+08:00"
+
+        report = run_pre_open_init(
+            JobOptions(
+                job_name="pre_open_init",
+                refresh_wait_seconds=0,
+                skip_refresh=True,
+                snapshot_captured_at=captured_at,
+                snapshot_only=True,
+            ),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(client.refresh_calls, [])
+        self.assertEqual(client.settlement_calls[0]["captured_at"], captured_at)
+        self.assertTrue(client.settlement_calls[0]["snapshot_only"])
 
     def test_daily_job_dispatches_all_accounts_before_shared_refresh_wait(self) -> None:
         client = BatchGateClient()

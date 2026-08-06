@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ti-relay-trader/internal/config"
@@ -46,8 +47,9 @@ type Dependencies struct {
 type HealthCheckFunc func(context.Context) error
 
 const (
-	settlementPageLimit = 500
-	settlementMaxRows   = 20000
+	settlementPageLimit          = 500
+	settlementMaxRows            = 20000
+	settlementAccountConcurrency = 3
 )
 
 type OrderService interface {
@@ -723,15 +725,19 @@ func (s *Server) todayBuyCostsForPositions(ctx context.Context, positions []trad
 	}
 	needed := make(map[string]positionFillCost)
 	for _, position := range positions {
-		if position.Quantity <= 0 {
+		targetQuantity := effectiveTodayPositionQty(position)
+		if positionNeedsFillDerivedCost(position) {
+			targetQuantity = position.Quantity
+		}
+		if targetQuantity <= 0 {
 			continue
 		}
 		if id := securityID(position.Symbol, string(position.Exchange)); id != "" {
 			target := needed[id]
 			target.symbol = position.Symbol
 			target.exchange = position.Exchange
-			if position.Quantity > target.quantity {
-				target.quantity = position.Quantity
+			if targetQuantity > target.quantity {
+				target.quantity = targetQuantity
 			}
 			needed[id] = target
 		}
@@ -3488,6 +3494,20 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	}
 	runID := firstNonEmpty(req.RunID, fmt.Sprintf("%s-%s", source, strings.ReplaceAll(tradeDate, "-", "")))
 	startedAt := timeutil.Now()
+	capturedAt := startedAt
+	if value := strings.TrimSpace(req.CapturedAt); value != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			return SettlementSnapshotResult{}, fmt.Errorf("captured_at must be RFC3339 with timezone: %w", err)
+		}
+		capturedAt = timeutil.InBusinessLocation(parsed)
+		if capturedAt.Format("2006-01-02") != tradeDate {
+			return SettlementSnapshotResult{}, fmt.Errorf("captured_at date must match trade_date")
+		}
+	}
+	if req.SnapshotOnly && strings.TrimSpace(req.CapturedAt) == "" {
+		return SettlementSnapshotResult{}, fmt.Errorf("snapshot_only requires captured_at")
+	}
 	result := SettlementSnapshotResult{
 		RunID:        runID,
 		TradeDate:    tradeDate,
@@ -3495,13 +3515,33 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		Source:       source,
 		Status:       "completed",
 		DryRun:       req.DryRun,
+		SnapshotOnly: req.SnapshotOnly,
 		Accounts:     make([]SettlementSnapshotAccountResult, 0, len(accountIDs)),
 		Errors:       []string{},
 		StartedAt:    timeutil.FormatRFC3339Nano(startedAt),
+		CapturedAt:   timeutil.FormatRFC3339Nano(capturedAt),
 	}
 
-	for _, accountID := range accountIDs {
-		accountResult := s.buildAccountSettlementSnapshot(ctx, accountID, tradeDate, snapshotType, source, runID, req.DryRun, startedAt)
+	accountResults := make([]SettlementSnapshotAccountResult, len(accountIDs))
+	jobs := make(chan int)
+	workerCount := min(settlementAccountConcurrency, len(accountIDs))
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				accountResults[index] = s.buildAccountSettlementSnapshot(ctx, accountIDs[index], tradeDate, snapshotType, source, runID, req.DryRun, req.SnapshotOnly, capturedAt, startedAt)
+			}
+		}()
+	}
+	for index := range accountIDs {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+
+	for _, accountResult := range accountResults {
 		result.Accounts = append(result.Accounts, accountResult)
 		result.AssetSnapshots += boolAsInt(accountResult.AssetSnapshotWritten)
 		result.PositionSnapshots += accountResult.PositionSnapshotsWritten
@@ -3517,7 +3557,7 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	}
 
 	result.CompletedAt = timeutil.FormatRFC3339Nano(timeutil.Now())
-	if !req.DryRun {
+	if !req.DryRun && !req.SnapshotOnly {
 		run, err := s.settles.UpsertReconciliationRun(ctx, ledger.ReconciliationRun{
 			RunID:        runID,
 			TradeDate:    tradeDate,
@@ -3567,7 +3607,7 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 	return result, nil
 }
 
-func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, source string, runID string, dryRun bool, capturedAt time.Time) SettlementSnapshotAccountResult {
+func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, source string, runID string, dryRun bool, snapshotOnly bool, capturedAt time.Time, rawWindowStart time.Time) SettlementSnapshotAccountResult {
 	out := SettlementSnapshotAccountResult{AccountID: accountID, Breaks: []ledger.ReconciliationBreak{}}
 	assetResult, err := s.orders.GetAsset(ctx, accountID)
 	if err != nil {
@@ -3577,18 +3617,22 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	if err != nil {
 		out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 	}
-	if len(positionResult.Positions) > 0 {
+	if len(positionResult.Positions) > 0 && !snapshotOnly {
 		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		s.enrichPositionsForPnL(enrichmentCtx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
 		cancel()
 	}
-	ordersResult, err := s.listAllSettlementOrders(ctx, accountID, tradeDate)
-	if err != nil {
-		out.Errors = append(out.Errors, fmt.Sprintf("orders: %v", err))
-	}
-	fillsResult, err := s.listAllSettlementFills(ctx, accountID, tradeDate)
-	if err != nil {
-		out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
+	ordersResult := orderflow.ListOrdersResult{}
+	fillsResult := orderflow.ListFillsResult{}
+	if !snapshotOnly {
+		ordersResult, err = s.listAllSettlementOrders(ctx, accountID, tradeDate)
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("orders: %v", err))
+		}
+		fillsResult, err = s.listAllSettlementFills(ctx, accountID, tradeDate)
+		if err != nil {
+			out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
+		}
 	}
 	out.PositionsCount = len(positionResult.Positions)
 	out.OrdersCount = len(ordersResult.Orders)
@@ -3609,47 +3653,49 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		"source":        source,
 	}
 	rawSummary := []ledger.RawStreamSummaryBucket{}
-	if s.settles != nil {
-		rawSummary, err = s.settles.RawStreamSummary(ctx, accountID, capturedAt, timeutil.Now())
+	if s.settles != nil && !snapshotOnly {
+		rawSummary, err = s.settles.RawStreamSummary(ctx, accountID, rawWindowStart, timeutil.Now())
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("raw stream summary: %v", err))
 		}
 	}
 
-	out.inputs = append(out.inputs,
-		reconciliationInput(runID, source, accountID, "relay_ledger_summary", capturedAt, relayLedgerSummaryPayload(accountID, tradeDate, assetResult.Asset, positionResult.Positions, ordersResult.Orders, fillsResult.Fills, out, rawBase)),
-		reconciliationInput(runID, source, accountID, "pnl_input_summary", capturedAt, pnlInputSummaryPayload(assetResult.Asset, positionResult.Positions, fillsResult.Fills)),
-		reconciliationInput(runID, source, accountID, "redis_raw_summary", capturedAt, map[string]any{
-			"account_id": accountID,
-			"trade_date": tradeDate,
-			"window": map[string]any{
-				"start": timeutil.FormatRFC3339Nano(capturedAt),
-				"end":   timeutil.FormatRFC3339Nano(timeutil.Now()),
-			},
-			"buckets": rawSummary,
-		}),
-		reconciliationInput(runID, source, accountID, "counter_query_summary", capturedAt, map[string]any{
-			"account_id": accountID,
-			"trade_date": tradeDate,
-			"errors":     out.Errors,
-			"queries": map[string]any{
-				"asset_ok":     assetResult.Asset.AccountID != "",
-				"positions_ok": positionResult.Positions != nil,
-				"orders_ok":    ordersResult.Orders != nil,
-				"fills_ok":     fillsResult.Fills != nil,
-			},
-		}),
-	)
+	if !snapshotOnly {
+		out.inputs = append(out.inputs,
+			reconciliationInput(runID, source, accountID, "relay_ledger_summary", capturedAt, relayLedgerSummaryPayload(accountID, tradeDate, assetResult.Asset, positionResult.Positions, ordersResult.Orders, fillsResult.Fills, out, rawBase)),
+			reconciliationInput(runID, source, accountID, "pnl_input_summary", capturedAt, pnlInputSummaryPayload(assetResult.Asset, positionResult.Positions, fillsResult.Fills)),
+			reconciliationInput(runID, source, accountID, "redis_raw_summary", capturedAt, map[string]any{
+				"account_id": accountID,
+				"trade_date": tradeDate,
+				"window": map[string]any{
+					"start": timeutil.FormatRFC3339Nano(rawWindowStart),
+					"end":   timeutil.FormatRFC3339Nano(timeutil.Now()),
+				},
+				"buckets": rawSummary,
+			}),
+			reconciliationInput(runID, source, accountID, "counter_query_summary", capturedAt, map[string]any{
+				"account_id": accountID,
+				"trade_date": tradeDate,
+				"errors":     out.Errors,
+				"queries": map[string]any{
+					"asset_ok":     assetResult.Asset.AccountID != "",
+					"positions_ok": positionResult.Positions != nil,
+					"orders_ok":    ordersResult.Orders != nil,
+					"fills_ok":     fillsResult.Fills != nil,
+				},
+			}),
+		)
 
-	for _, errText := range out.Errors {
-		out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "account_refresh_failed", "critical", "account", accountID, map[string]any{"error": errText}, nil, "settlement account query or raw summary failed"))
-	}
-	for _, order := range ordersResult.Orders {
-		if !order.IsTerminal && !order.Status.Terminal() {
-			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "non_terminal_order", "warning", "order", order.GatewayOrderID, orderBreakPayload(order), nil, "order is not terminal at settlement"))
+		for _, errText := range out.Errors {
+			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "account_refresh_failed", "critical", "account", accountID, map[string]any{"error": errText}, nil, "settlement account query or raw summary failed"))
 		}
+		for _, order := range ordersResult.Orders {
+			if !order.IsTerminal && !order.Status.Terminal() {
+				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "non_terminal_order", "warning", "order", order.GatewayOrderID, orderBreakPayload(order), nil, "order is not terminal at settlement"))
+			}
+		}
+		out.breaks = append(out.breaks, orderFillQuantityBreaks(runID, accountID, ordersResult.Orders, fillsResult.Fills)...)
 	}
-	out.breaks = append(out.breaks, orderFillQuantityBreaks(runID, accountID, ordersResult.Orders, fillsResult.Fills)...)
 
 	if len(out.Errors) == 0 && !dryRun {
 		assetRaw := cloneMap(rawBase)
@@ -4530,6 +4576,8 @@ type SettlementSnapshotRequest struct {
 	AccountIDs   []string `json:"account_ids,omitempty"`
 	SnapshotType string   `json:"snapshot_type,omitempty"`
 	Source       string   `json:"source,omitempty"`
+	CapturedAt   string   `json:"captured_at,omitempty"`
+	SnapshotOnly bool     `json:"snapshot_only,omitempty"`
 	DryRun       bool     `json:"dry_run,omitempty"`
 }
 
@@ -4540,7 +4588,9 @@ type SettlementSnapshotResult struct {
 	Source               string                            `json:"source"`
 	Status               string                            `json:"status"`
 	DryRun               bool                              `json:"dry_run,omitempty"`
+	SnapshotOnly         bool                              `json:"snapshot_only,omitempty"`
 	StartedAt            string                            `json:"started_at"`
+	CapturedAt           string                            `json:"captured_at"`
 	CompletedAt          string                            `json:"completed_at"`
 	AssetSnapshots       int                               `json:"asset_snapshots"`
 	PositionSnapshots    int                               `json:"position_snapshots"`
@@ -4581,6 +4631,8 @@ func (result SettlementSnapshotResult) summary() map[string]any {
 		"source":                result.Source,
 		"status":                result.Status,
 		"dry_run":               result.DryRun,
+		"snapshot_only":         result.SnapshotOnly,
+		"captured_at":           result.CapturedAt,
 		"asset_snapshots":       result.AssetSnapshots,
 		"position_snapshots":    result.PositionSnapshots,
 		"orders_count":          result.OrdersCount,

@@ -783,6 +783,37 @@ func TestAccountPositionsDerivesZeroAvgCostFromTodayBuyFills(t *testing.T) {
 	}
 }
 
+func TestAccountPositionsSkipsFillQueryForCarriedPositionWithCost(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID:   "acct-1",
+				Symbol:      "600000",
+				Exchange:    trading.ExchangeSH,
+				Quantity:    100,
+				SellableQty: 100,
+				TodayQty:    0,
+				AvgCost:     9.5,
+			}},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.fillQuery.AccountID != "" {
+		t.Fatalf("carried position should not query current fills: %#v", service.fillQuery)
+	}
+}
+
 func TestAccountPositionsComputesTotalAndDayPnLFromQuotesAndTodayFills(t *testing.T) {
 	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2055,7 +2086,8 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 		"trade_date":"20260615",
 		"account_ids":["acct-1"],
 		"snapshot_type":"open",
-		"source":"pre_open_init"
+		"source":"pre_open_init",
+		"captured_at":"2026-06-15T09:01:04.75751+08:00"
 	}`))
 	rec := httptest.NewRecorder()
 
@@ -2070,8 +2102,65 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].snapshotType != "open" || store.positionSnapshots[0].position.SnapshotType != "open" {
 		t.Fatalf("open position snapshots = %#v", store.positionSnapshots)
 	}
+	wantCapturedAt := time.Date(2026, 6, 15, 9, 1, 4, 757510000, timeutil.Location())
+	if !store.assetSnapshots[0].capturedAt.Equal(wantCapturedAt) || !store.positionSnapshots[0].capturedAt.Equal(wantCapturedAt) {
+		t.Fatalf("snapshot captured_at asset=%s position=%s, want %s", store.assetSnapshots[0].capturedAt, store.positionSnapshots[0].capturedAt, wantCapturedAt)
+	}
+	if !strings.Contains(rec.Body.String(), `"captured_at":"2026-06-15T09:01:04.75751+08:00"`) {
+		t.Fatalf("response missing captured_at: %s", rec.Body.String())
+	}
 	if store.reconciliation.RunID != "pre_open_init-20260615" || store.reconciliation.Source != "pre_open_init" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
+func TestSettlementSnapshotOnlyRecoverySkipsEnrichmentAndReconciliation(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{
+			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1300000},
+		},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH,
+				Quantity: 100, SellableQty: 100, AvgCost: 9.5, LastPrice: 9.6,
+			}},
+			Count: 1,
+		},
+		listOrdersErr: errors.New("orders must not be queried"),
+		listFillsErr:  errors.New("fills must not be queried"),
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders:      service,
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"pre_open_init-20260615-recovery",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"open",
+		"source":"pre_open_init_recovery",
+		"captured_at":"2026-06-15T09:01:04+08:00",
+		"snapshot_only":true
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if service.orderQuery.AccountID != "" || service.fillQuery.AccountID != "" {
+		t.Fatalf("snapshot-only recovery queried orders/fills: order=%#v fill=%#v", service.orderQuery, service.fillQuery)
+	}
+	if len(store.inputs) != 0 || store.reconciliation.RunID != "" {
+		t.Fatalf("snapshot-only recovery wrote reconciliation: inputs=%#v run=%#v", store.inputs, store.reconciliation)
+	}
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.LastPrice != 9.6 {
+		t.Fatalf("snapshot-only recovery changed source position: %#v", store.positionSnapshots)
+	}
+	if !strings.Contains(rec.Body.String(), `"snapshot_only":true`) || !strings.Contains(rec.Body.String(), `"reconciliation_inputs":0`) {
+		t.Fatalf("response missing snapshot-only summary: %s", rec.Body.String())
 	}
 }
 
@@ -3203,11 +3292,13 @@ type fakeSettlementStore struct {
 		tradeDate    string
 		snapshotType string
 		source       string
+		capturedAt   time.Time
 	}
 	positionSnapshots []struct {
 		position     trading.Position
 		snapshotType string
 		source       string
+		capturedAt   time.Time
 	}
 	reconciliation             ledger.ReconciliationRun
 	inputs                     []ledger.ReconciliationInput
@@ -3251,7 +3342,7 @@ func (store *fakeAccountAliasStore) UpsertAccountAlias(_ context.Context, accoun
 	return nil
 }
 
-func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, _ any, _ time.Time) error {
+func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, asset trading.Asset, tradeDate string, snapshotType string, source string, _ any, capturedAt time.Time) error {
 	if store.err != nil {
 		return store.err
 	}
@@ -3260,11 +3351,12 @@ func (store *fakeSettlementStore) UpsertAssetSnapshotForDate(_ context.Context, 
 		tradeDate    string
 		snapshotType string
 		source       string
-	}{asset: asset, tradeDate: tradeDate, snapshotType: snapshotType, source: source})
+		capturedAt   time.Time
+	}{asset: asset, tradeDate: tradeDate, snapshotType: snapshotType, source: source, capturedAt: capturedAt})
 	return nil
 }
 
-func (store *fakeSettlementStore) UpsertPositionSnapshotWithType(_ context.Context, position trading.Position, snapshotType string, source string, _ any, _ time.Time) error {
+func (store *fakeSettlementStore) UpsertPositionSnapshotWithType(_ context.Context, position trading.Position, snapshotType string, source string, _ any, capturedAt time.Time) error {
 	if store.err != nil {
 		return store.err
 	}
@@ -3272,7 +3364,8 @@ func (store *fakeSettlementStore) UpsertPositionSnapshotWithType(_ context.Conte
 		position     trading.Position
 		snapshotType string
 		source       string
-	}{position: position, snapshotType: snapshotType, source: source})
+		capturedAt   time.Time
+	}{position: position, snapshotType: snapshotType, source: source, capturedAt: capturedAt})
 	return nil
 }
 

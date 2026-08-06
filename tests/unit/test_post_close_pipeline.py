@@ -78,6 +78,7 @@ class PostClosePipelineTest(unittest.TestCase):
         self.assertIn("relay.jobs.performance_daily", calls)
         self.assertIn("--target-date 20260803", calls)
         self.assertIn("--trigger post_close_success", calls)
+        self.assertIn("--settlement-timeout-seconds 60", calls)
 
     def test_does_not_run_performance_after_failed_settlement(self) -> None:
         result, calls = self.run_pipeline("failed")

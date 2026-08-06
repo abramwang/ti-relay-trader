@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.25`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.26`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.25.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.26.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -89,15 +89,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.26.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.25.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.26.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.26.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.26.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -286,11 +286,13 @@ client.record_settlement_snapshot(
     run_id="post_close_settlement-20260625",
     snapshot_type="close",
     source="post_close_settlement",
+    captured_at=None,
+    snapshot_only=False,
     dry_run=False,
 )
 ```
 
-`record_settlement_snapshot(snapshot_type="open")` 会写日初资产快照和日初持仓快照；`snapshot_type="close"` 会写收盘资产、日终持仓快照和 reconciliation run。`dry_run=True` 可用于检查输入和返回摘要，不写库。
+`record_settlement_snapshot(snapshot_type="open")` 会写日初资产快照和日初持仓快照；`snapshot_type="close"` 会写收盘资产、日终持仓快照和 reconciliation run。`dry_run=True` 可用于检查输入和返回摘要，不写库。`captured_at` 仅用于故障恢复，必须传入与 `trade_date` 同日、带东八区偏移的 RFC3339 时间；普通流程应留空，由 Relay 使用当前业务时间。`snapshot_only=True` 必须同时提供 `captured_at`，只写源资金/持仓，不读取当前订单成交、不重估行情、不写 reconciliation。
 
 ## 接口清单
 

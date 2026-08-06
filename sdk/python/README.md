@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.25.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.26.tar.gz"
 ```
 
 ## Quick Start
@@ -141,6 +141,8 @@ client.record_settlement_snapshot(
     run_id="post_close_settlement-20260625",
     snapshot_type="close",
     source="post_close_settlement",
+    captured_at=None,
+    snapshot_only=False,
     dry_run=False,
 )
 ```
@@ -149,6 +151,10 @@ client.record_settlement_snapshot(
 
 `record_settlement_snapshot()` does not query OC by itself. Run refresh commands
 first and wait until the local ledger has merged fresh asset/position replies.
+The optional `captured_at` is reserved for audited recovery and must be an
+RFC3339 timestamp whose business date matches `trade_date`. Use
+`snapshot_only=True` with it to persist source asset/positions without current
+quote enrichment, order/fill reads, or reconciliation writes.
 
 P8 helper methods are available for strategy and research tooling:
 

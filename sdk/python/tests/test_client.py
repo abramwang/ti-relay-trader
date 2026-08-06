@@ -759,6 +759,8 @@ class RelayClientTest(unittest.TestCase):
             trade_date="20260612",
             account_ids=["acct-1"],
             run_id="settlement-20260612",
+            captured_at="2026-06-12T15:01:04+08:00",
+            snapshot_only=True,
             dry_run=True,
         )
 
@@ -767,6 +769,8 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual((method, path), ("POST", "/v1/settlements/snapshots"))
         self.assertEqual(body["trade_date"], "20260612")
         self.assertEqual(body["account_ids"], ["acct-1"])
+        self.assertEqual(body["captured_at"], "2026-06-12T15:01:04+08:00")
+        self.assertTrue(body["snapshot_only"])
         self.assertTrue(body["dry_run"])
 
     def test_submit_order_generates_traceable_ids(self):
