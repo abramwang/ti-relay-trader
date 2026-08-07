@@ -217,6 +217,7 @@ def run_post_close_settlement(options: JobOptions, *, client: Any | None = None,
         snapshot_type="close",
         input_snapshot_type="broker_close",
         snapshot_report_key="settlement_snapshot",
+        classify_day_end_expiry=True,
     )
 
 
@@ -242,6 +243,7 @@ def run_post_close_capture(options: JobOptions, *, client: Any | None = None, tr
         required_dependencies=BROKER_CAPTURE_DEPENDENCIES,
         use_status_trading_day_hint=True,
         raw_ledger_reads=True,
+        classify_day_end_expiry=True,
     )
 
 
@@ -254,6 +256,7 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
         phase="performance_daily",
         refresh_steps=(),
         check_non_terminal_orders=True,
+        classify_day_end_expiry=True,
     )
     if report.get("skipped") or not report.get("accounts"):
         return report
@@ -449,6 +452,7 @@ def run_daily_job(
     required_dependencies: tuple[str, ...] = REQUIRED_JOB_DEPENDENCIES,
     use_status_trading_day_hint: bool = False,
     raw_ledger_reads: bool = False,
+    classify_day_end_expiry: bool = False,
 ) -> dict[str, Any]:
     started_at = now_iso()
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
@@ -565,6 +569,7 @@ def run_daily_job(
             check_non_terminal_orders=check_non_terminal_orders,
             include_fees="fees" in refresh_steps,
             raw_ledger_reads=raw_ledger_reads,
+            classify_day_end_expiry=classify_day_end_expiry,
         )
 
     report["accounts"] = account_reports
@@ -676,6 +681,7 @@ def complete_account_flow(
     check_non_terminal_orders: bool,
     include_fees: bool = False,
     raw_ledger_reads: bool = False,
+    classify_day_end_expiry: bool = False,
 ) -> None:
     account_id = str(account_report["account_id"])
     asset_reader = raw_ledger_reader(client, "asset") if raw_ledger_reads else client.get_asset
@@ -727,19 +733,46 @@ def complete_account_flow(
         "fees": fees_value,
     }
     account_report["queries"] = snapshot_reports
-    account_report["snapshot"] = summarize_snapshot(snapshot_values, check_non_terminal_orders=check_non_terminal_orders)
+    account_report["snapshot"] = summarize_snapshot(
+        snapshot_values,
+        check_non_terminal_orders=check_non_terminal_orders,
+        classify_day_end_expiry=classify_day_end_expiry,
+        trade_date=trade_date,
+    )
     for result in snapshot_reports.values():
         if result.get("error"):
             account_report["errors"].append(result["error"])
 
 
-def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders: bool) -> dict[str, Any]:
+def summarize_snapshot(
+    snapshot: Mapping[str, Any],
+    *,
+    check_non_terminal_orders: bool,
+    classify_day_end_expiry: bool = False,
+    trade_date: str = "",
+    observed_at: datetime | None = None,
+) -> dict[str, Any]:
     asset = snapshot.get("asset")
     positions = snapshot.get("positions") or []
     orders = snapshot.get("orders") or []
     fills = snapshot.get("fills") or []
     fees = snapshot.get("fees") or []
-    non_terminal_orders = [order for order in orders if not bool(getattr(order, "is_terminal", False))]
+    classify_expiry_now = classify_day_end_expiry and trade_date_is_closed(
+        trade_date,
+        observed_at or datetime.now(BUSINESS_TZ),
+    )
+    day_end_expired_orders = [
+        order for order in orders
+        if classify_expiry_now and is_queued_day_order_expiry_candidate(order)
+    ]
+    day_end_expired_ids = {
+        str(getattr(order, "gateway_order_id", "")) for order in day_end_expired_orders
+    }
+    non_terminal_orders = [
+        order for order in orders
+        if not bool(getattr(order, "is_terminal", False))
+        and str(getattr(order, "gateway_order_id", "")) not in day_end_expired_ids
+    ]
     summary = {
         "asset": model_summary(asset, fields=("account_id", "net_asset", "cash_available", "market_value")),
         "positions_count": len(positions),
@@ -756,6 +789,7 @@ def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders
             and bool(getattr(fee, "association_complete", False))
         ),
         "non_terminal_orders": len(non_terminal_orders),
+        "day_end_expired_orders": len(day_end_expired_orders),
     }
     asset_updated_at = model_datetime(asset, fields=("updated_at", "captured_at"))
     if asset_updated_at is not None:
@@ -764,7 +798,49 @@ def summarize_snapshot(snapshot: Mapping[str, Any], *, check_non_terminal_orders
         summary["non_terminal_order_ids"] = [
             str(getattr(order, "gateway_order_id", "")) for order in non_terminal_orders[:20]
         ]
+    if day_end_expired_orders:
+        summary["day_end_expired_order_ids"] = [
+            str(getattr(order, "gateway_order_id", "")) for order in day_end_expired_orders[:20]
+        ]
     return summary
+
+
+def is_queued_day_order_expiry_candidate(order: Any) -> bool:
+    status = str(getattr(order, "status", "")).strip().lower()
+    gateway_status = str(getattr(order, "gateway_status", "")).strip().lower()
+    adapter_status_name = str(order_model_value(order, "adapter_status_name", "")).strip().lower()
+    business_type = str(getattr(order, "business_type", "")).strip().upper()
+    return (
+        not bool(getattr(order, "is_terminal", False))
+        and status in {"accepted", "working", "partially_filled"}
+        and gateway_status == "working"
+        and adapter_status_name == "queued"
+        and business_type == "S"
+        and int(getattr(order, "order_qty", 0) or 0) > 0
+        and int(getattr(order, "leaves_qty", 0) or 0) > 0
+    )
+
+
+def order_model_value(order: Any, field_name: str, default: Any = None) -> Any:
+    value = getattr(order, field_name, None)
+    if value not in (None, ""):
+        return value
+    raw = getattr(order, "raw", None)
+    if isinstance(raw, Mapping):
+        return raw.get(field_name, default)
+    return default
+
+
+def trade_date_is_closed(trade_date: str, observed_at: datetime) -> bool:
+    normalized = normalize_trade_date(trade_date)
+    if len(normalized) != 8:
+        return False
+    try:
+        parsed = datetime.strptime(normalized, "%Y%m%d").replace(tzinfo=BUSINESS_TZ)
+    except ValueError:
+        return False
+    close_at = parsed.replace(hour=15, minute=0, second=0, microsecond=0)
+    return observed_at.astimezone(BUSINESS_TZ) >= close_at
 
 
 def wait_for_refreshed_ledgers(

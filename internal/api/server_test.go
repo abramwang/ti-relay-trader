@@ -2183,6 +2183,59 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 	}
 }
 
+func TestSettlementSnapshotResolvesQueuedAshareDayOrderAtClose(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult:     orderflow.GetAssetResult{Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1000}},
+		positionsResult: orderflow.ListPositionsResult{Positions: []trading.Position{}, Count: 0},
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{{
+			AccountID:         "acct-1",
+			GatewayOrderID:    "queued-expiry",
+			TradeDate:         "2026-08-07",
+			Symbol:            "159915",
+			Exchange:          trading.ExchangeSZ,
+			TradeSide:         trading.TradeSideBuy,
+			BusinessType:      trading.BusinessTypeStock,
+			OrderQty:          1000000,
+			LeavesQty:         1000000,
+			Status:            trading.OrderStatusWorking,
+			GatewayStatus:     trading.GatewayStatusWorking,
+			AdapterStatusName: "queued",
+		}}, Count: 1},
+		listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post_close_settlement-20260807",
+		"trade_date":"20260807",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"source":"post_close_settlement",
+		"captured_at":"2026-08-07T15:01:30+08:00"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(store.breaks) != 1 || store.breaks[0].Status != "resolved" || store.breaks[0].Severity != "info" {
+		t.Fatalf("reconciliation breaks = %#v", store.breaks)
+	}
+	if !strings.Contains(rec.Body.String(), `"non_terminal_orders":0`) ||
+		!strings.Contains(rec.Body.String(), `"day_end_expired_orders":1`) ||
+		!strings.Contains(rec.Body.String(), `"reconciliation_breaks":0`) {
+		t.Fatalf("response missing day-end expiry classification: %s", rec.Body.String())
+	}
+	payload := store.breaks[0].InternalPayload
+	if payload["effective_status"] != trading.OrderStatusCancelled || payload["terminal_time_basis"] != "A_share_trading_day_close" || payload["raw_status_preserved"] != true {
+		t.Fatalf("expiry payload = %#v", payload)
+	}
+}
+
 func TestSettlementSnapshotOnlyRecoverySkipsEnrichmentAndReconciliation(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		assetResult: orderflow.GetAssetResult{

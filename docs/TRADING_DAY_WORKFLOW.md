@@ -58,6 +58,8 @@ relay 每个交易日需要两个稳定流程：
 
 任务完成状态不等于所有账户都已通过。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 会把同日盘前、盘后 `job_runs.report_json` 与 `reconciliation_breaks` 聚合为账户级复核报告：展示日初/日终资产、持仓、订单、成交、未终态订单、开放差异和快照阻断原因，并给出 `passed`、`attention`、`blocked` 或 `pending` 结论。未传日期时，非交易日自动读取 Meridian 返回的最近交易日；`/jobs` 支持按交易日查看并导出该 JSON 报告。
 
+A 股普通二级市场委托为当日有效。尾盘集合竞价期间无法主动撤单时，OC 的最终查询可能仍如实返回 `business_type=S + gateway_status=working + adapter_status_name=queued`；收盘后柜台自动失效且不再补发撤单回报。Relay 保留订单原始 `working/queued` 字段，不伪造柜台事件；在 15:00 后的 close 对账和绩效质量层将其归为 `day_end_expired`、等效 `cancelled`，记录 `terminal_time_basis=A_share_trading_day_close`，并把对应 `non_terminal_order` 差异保存为 resolved，而不是要求 OC 补终态。
+
 收盘后结算可以拆分为多个 Python job，但外部状态上应能看到一个完整的 `post_close_settlement` 批次。
 
 ## 配置建议

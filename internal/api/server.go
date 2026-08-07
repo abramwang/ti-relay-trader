@@ -3578,6 +3578,7 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		result.OrdersCount += accountResult.OrdersCount
 		result.FillsCount += accountResult.FillsCount
 		result.NonTerminalOrders += accountResult.NonTerminalOrders
+		result.DayEndExpiredOrders += accountResult.DayEndExpiredOrders
 		result.ReconciliationInputs += accountResult.ReconciliationInputs
 		result.ReconciliationBreaks += accountResult.ReconciliationBreaks
 		if len(accountResult.Errors) > 0 {
@@ -3689,6 +3690,13 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	out.FillsCount = len(fillsResult.Fills)
 	for _, order := range ordersResult.Orders {
 		if !order.IsTerminal && !order.Status.Terminal() {
+			if settlementDayOrderExpired(order, tradeDate, accountCapturedAt, snapshotType) {
+				out.DayEndExpiredOrders++
+				if len(out.DayEndExpiredOrderIDs) < 20 {
+					out.DayEndExpiredOrderIDs = append(out.DayEndExpiredOrderIDs, order.GatewayOrderID)
+				}
+				continue
+			}
 			out.NonTerminalOrders++
 			if len(out.NonTerminalOrderIDs) < 20 {
 				out.NonTerminalOrderIDs = append(out.NonTerminalOrderIDs, order.GatewayOrderID)
@@ -3742,6 +3750,13 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		}
 		for _, order := range ordersResult.Orders {
 			if !order.IsTerminal && !order.Status.Terminal() {
+				if settlementDayOrderExpired(order, tradeDate, accountCapturedAt, snapshotType) {
+					item := reconciliationBreak(runID, accountID, "non_terminal_order", "info", "order", order.GatewayOrderID, dayEndExpiryPayload(order), nil, "queued A-share day order expired at trading-day close without a final broker callback")
+					item.Status = "resolved"
+					item.ResolvedAt = aShareTradingDayClose(tradeDate)
+					out.breaks = append(out.breaks, item)
+					continue
+				}
 				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "non_terminal_order", "warning", "order", order.GatewayOrderID, orderBreakPayload(order), nil, "order is not terminal at settlement"))
 			}
 		}
@@ -3777,7 +3792,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	}
 
 	out.ReconciliationInputs = len(out.inputs)
-	out.ReconciliationBreaks = len(out.breaks)
+	out.ReconciliationBreaks = openReconciliationBreakCount(out.breaks)
 	out.Breaks = append(out.Breaks, out.breaks...)
 	return out
 }
@@ -3858,12 +3873,14 @@ func relayLedgerSummaryPayload(accountID string, tradeDate string, asset trading
 		"market_value":   asset.MarketValue,
 	}
 	payload["counts"] = map[string]any{
-		"positions":           len(positions),
-		"orders":              len(orders),
-		"fills":               len(fills),
-		"non_terminal_orders": result.NonTerminalOrders,
+		"positions":              len(positions),
+		"orders":                 len(orders),
+		"fills":                  len(fills),
+		"non_terminal_orders":    result.NonTerminalOrders,
+		"day_end_expired_orders": result.DayEndExpiredOrders,
 	}
 	payload["non_terminal_order_ids"] = result.NonTerminalOrderIDs
+	payload["day_end_expired_order_ids"] = result.DayEndExpiredOrderIDs
 	return payload
 }
 
@@ -3944,6 +3961,39 @@ func orderBreakPayload(order trading.Order) map[string]any {
 		"cum_filled_qty":   order.CumFilledQty,
 		"leaves_qty":       order.LeavesQty,
 	}
+}
+
+func dayEndExpiryPayload(order trading.Order) map[string]any {
+	payload := orderBreakPayload(order)
+	payload["adapter_status_name"] = order.AdapterStatusName
+	payload["business_type"] = order.BusinessType
+	payload["effective_status"] = trading.OrderStatusCancelled
+	payload["raw_status_preserved"] = true
+	payload["terminal_time_basis"] = "A_share_trading_day_close"
+	return payload
+}
+
+func settlementDayOrderExpired(order trading.Order, tradeDate string, observedAt time.Time, snapshotType string) bool {
+	closeAt := aShareTradingDayClose(tradeDate)
+	return snapshotType == "close" && !closeAt.IsZero() && !observedAt.Before(closeAt) && trading.IsQueuedDayOrderExpiryCandidate(order)
+}
+
+func aShareTradingDayClose(tradeDate string) time.Time {
+	parsed, err := time.ParseInLocation("2006-01-02", tradeDate, timeutil.Location())
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 15, 0, 0, 0, timeutil.Location())
+}
+
+func openReconciliationBreakCount(items []ledger.ReconciliationBreak) int {
+	count := 0
+	for _, item := range items {
+		if item.Status == "" || item.Status == "open" {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err error) {
@@ -4667,6 +4717,7 @@ type SettlementSnapshotResult struct {
 	OrdersCount          int                               `json:"orders_count"`
 	FillsCount           int                               `json:"fills_count"`
 	NonTerminalOrders    int                               `json:"non_terminal_orders"`
+	DayEndExpiredOrders  int                               `json:"day_end_expired_orders"`
 	ReconciliationInputs int                               `json:"reconciliation_inputs"`
 	ReconciliationBreaks int                               `json:"reconciliation_breaks"`
 	AccountErrors        int                               `json:"account_error_count,omitempty"`
@@ -4685,6 +4736,8 @@ type SettlementSnapshotAccountResult struct {
 	FillsCount               int                          `json:"fills_count"`
 	NonTerminalOrders        int                          `json:"non_terminal_orders"`
 	NonTerminalOrderIDs      []string                     `json:"non_terminal_order_ids,omitempty"`
+	DayEndExpiredOrders      int                          `json:"day_end_expired_orders"`
+	DayEndExpiredOrderIDs    []string                     `json:"day_end_expired_order_ids,omitempty"`
 	Errors                   []string                     `json:"errors,omitempty"`
 	ReconciliationInputs     int                          `json:"reconciliation_inputs"`
 	ReconciliationBreaks     int                          `json:"reconciliation_breaks"`
@@ -4695,26 +4748,27 @@ type SettlementSnapshotAccountResult struct {
 
 func (result SettlementSnapshotResult) summary() map[string]any {
 	return map[string]any{
-		"run_id":                result.RunID,
-		"trade_date":            result.TradeDate,
-		"snapshot_type":         result.SnapshotType,
-		"input_snapshot_type":   result.InputSnapshotType,
-		"source":                result.Source,
-		"status":                result.Status,
-		"dry_run":               result.DryRun,
-		"snapshot_only":         result.SnapshotOnly,
-		"captured_at":           result.CapturedAt,
-		"asset_snapshots":       result.AssetSnapshots,
-		"position_snapshots":    result.PositionSnapshots,
-		"orders_count":          result.OrdersCount,
-		"fills_count":           result.FillsCount,
-		"non_terminal_orders":   result.NonTerminalOrders,
-		"reconciliation_inputs": result.ReconciliationInputs,
-		"reconciliation_breaks": result.ReconciliationBreaks,
-		"account_error_count":   result.AccountErrors,
-		"accounts":              result.Accounts,
-		"warnings":              result.Warnings,
-		"errors":                result.Errors,
+		"run_id":                 result.RunID,
+		"trade_date":             result.TradeDate,
+		"snapshot_type":          result.SnapshotType,
+		"input_snapshot_type":    result.InputSnapshotType,
+		"source":                 result.Source,
+		"status":                 result.Status,
+		"dry_run":                result.DryRun,
+		"snapshot_only":          result.SnapshotOnly,
+		"captured_at":            result.CapturedAt,
+		"asset_snapshots":        result.AssetSnapshots,
+		"position_snapshots":     result.PositionSnapshots,
+		"orders_count":           result.OrdersCount,
+		"fills_count":            result.FillsCount,
+		"non_terminal_orders":    result.NonTerminalOrders,
+		"day_end_expired_orders": result.DayEndExpiredOrders,
+		"reconciliation_inputs":  result.ReconciliationInputs,
+		"reconciliation_breaks":  result.ReconciliationBreaks,
+		"account_error_count":    result.AccountErrors,
+		"accounts":               result.Accounts,
+		"warnings":               result.Warnings,
+		"errors":                 result.Errors,
 	}
 }
 

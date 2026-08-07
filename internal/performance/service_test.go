@@ -2313,7 +2313,7 @@ func TestTradeQualityRejectedOrderRequiresReasonEvidence(t *testing.T) {
 		TerminalAt:     terminalAt,
 	}
 
-	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if !containsString(anomaly.Flags, "rejected_order_missing_reason") {
 		t.Fatalf("missing rejection reason not flagged: %#v", anomaly.Flags)
 	}
@@ -2321,9 +2321,44 @@ func TestTradeQualityRejectedOrderRequiresReasonEvidence(t *testing.T) {
 	order.RejectCode = trading.ErrorCode("BROKER_REJECTED")
 	order.RejectMessage = "VIP:找不到持仓"
 	order.InvalidQty = order.OrderQty
-	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if len(anomaly.Flags) != 0 {
 		t.Fatalf("evidenced rejection treated as data anomaly: %#v", anomaly.Flags)
+	}
+}
+
+func TestCalculateTradeQualityTreatsQueuedDayOrderAsExpiredAfterClose(t *testing.T) {
+	location := timeutil.Location()
+	store := &fakePerformanceStore{orders: []trading.Order{{
+		AccountID:         "acct-1",
+		GatewayOrderID:    "queued-expiry",
+		TradeDate:         "2026-08-07",
+		Symbol:            "159915",
+		Exchange:          trading.ExchangeSZ,
+		TradeSide:         trading.TradeSideBuy,
+		BusinessType:      trading.BusinessTypeStock,
+		OrderQty:          1000000,
+		LeavesQty:         1000000,
+		Status:            trading.OrderStatusWorking,
+		GatewayStatus:     trading.GatewayStatusWorking,
+		AdapterStatusName: "queued",
+	}}}
+	service, err := New(Options{Store: store, Now: func() time.Time {
+		return time.Date(2026, 8, 7, 15, 5, 0, 0, location)
+	}})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateTradeQuality(context.Background(), "acct-1", "20260807", "20260807")
+	if err != nil {
+		t.Fatalf("CalculateTradeQuality() error = %v", err)
+	}
+	if result.Summary.DayEndExpiredOrders != 1 || result.Summary.CancelledOrders != 1 || result.Summary.NonTerminalOrders != 0 {
+		t.Fatalf("status summary = %#v", result.Summary)
+	}
+	if result.Summary.AbnormalOrders != 0 || len(result.Anomalies) != 0 {
+		t.Fatalf("queued day-end expiry treated as anomaly: %#v", result.Anomalies)
 	}
 }
 
@@ -2466,13 +2501,13 @@ func TestTradeQualityTerminalTimeAllowsSmallClockSkew(t *testing.T) {
 		CreatedAt:      createdAt,
 		TerminalAt:     createdAt.Add(-3 * time.Second),
 	}
-	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if containsString(anomaly.Flags, "terminal_before_created") {
 		t.Fatalf("small clock skew flagged: %#v", anomaly.Flags)
 	}
 
 	order.TerminalAt = createdAt.Add(-6 * time.Second)
-	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{})
+	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if !containsString(anomaly.Flags, "terminal_before_created") {
 		t.Fatalf("large clock skew not flagged: %#v", anomaly.Flags)
 	}

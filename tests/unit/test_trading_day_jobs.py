@@ -21,6 +21,7 @@ from relay.jobs.common import (  # noqa: E402
     run_pre_open_init,
     refreshed_query_terminal_status,
     settlement_snapshot_client,
+    summarize_snapshot,
 )
 from relay_sdk import RelayClient  # noqa: E402
 
@@ -274,6 +275,40 @@ def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
 
 
 class TradingDayJobTest(unittest.TestCase):
+    def test_post_close_summary_classifies_queued_day_order_as_expired(self) -> None:
+        order = SimpleNamespace(
+            gateway_order_id="queued-expiry",
+            is_terminal=False,
+            status="working",
+            gateway_status="working",
+            business_type="S",
+            order_qty=1_000_000,
+            leaves_qty=1_000_000,
+            raw={"adapter_status_name": "queued"},
+        )
+
+        summary = summarize_snapshot(
+            {"orders": [order]},
+            check_non_terminal_orders=True,
+            classify_day_end_expiry=True,
+            trade_date="20260807",
+            observed_at=datetime(2026, 8, 7, 15, 1, tzinfo=BUSINESS_TZ),
+        )
+
+        self.assertEqual(summary["non_terminal_orders"], 0)
+        self.assertEqual(summary["day_end_expired_orders"], 1)
+        self.assertEqual(summary["day_end_expired_order_ids"], ["queued-expiry"])
+
+        before_close = summarize_snapshot(
+            {"orders": [order]},
+            check_non_terminal_orders=True,
+            classify_day_end_expiry=True,
+            trade_date="20260807",
+            observed_at=datetime(2026, 8, 7, 14, 59, tzinfo=BUSINESS_TZ),
+        )
+        self.assertEqual(before_close["non_terminal_orders"], 1)
+        self.assertEqual(before_close["day_end_expired_orders"], 0)
+
     def test_settlement_snapshot_uses_dedicated_longer_timeout(self) -> None:
         client = RelayClient(
             "http://relay.example.test",

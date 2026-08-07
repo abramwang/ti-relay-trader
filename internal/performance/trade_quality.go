@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v5"
+	tradeQualityFormulaVersion = "trade_quality.v6"
 	maxTradeQualityPages       = 120
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
@@ -45,6 +45,7 @@ type TradeQualitySummary struct {
 	RejectedOrdersWithReason    int     `json:"rejected_orders_with_reason"`
 	RejectedOrdersMissingReason int     `json:"rejected_orders_missing_reason"`
 	NonTerminalOrders           int     `json:"non_terminal_orders"`
+	DayEndExpiredOrders         int     `json:"day_end_expired_orders"`
 	AbnormalOrders              int     `json:"abnormal_orders"`
 	OrphanFillGroups            int     `json:"orphan_fill_groups"`
 	AnomalyItems                int     `json:"anomaly_items"`
@@ -173,10 +174,14 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		} else if executionGroup.quantity > 0 {
 			result.Summary.PartiallyFilledOrders++
 		}
-		switch order.Status {
-		case trading.OrderStatusCancelled:
+		dayEndExpired := tradeQualityDayOrderExpired(order, orderDate, result.GeneratedAt)
+		switch {
+		case dayEndExpired:
 			result.Summary.CancelledOrders++
-		case trading.OrderStatusRejected:
+			result.Summary.DayEndExpiredOrders++
+		case order.Status == trading.OrderStatusCancelled:
+			result.Summary.CancelledOrders++
+		case order.Status == trading.OrderStatusRejected:
 			result.Summary.RejectedOrders++
 			if tradeQualityBrokerMessage(order) != "" {
 				result.Summary.RejectedOrdersWithReason++
@@ -184,11 +189,11 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 				result.Summary.RejectedOrdersMissingReason++
 			}
 		}
-		if !order.Status.Terminal() {
+		if !order.Status.Terminal() && !dayEndExpired {
 			result.Summary.NonTerminalOrders++
 		}
 
-		anomaly := tradeQualityOrderAnomaly(order, orderDate, executionGroup)
+		anomaly := tradeQualityOrderAnomaly(order, orderDate, executionGroup, dayEndExpired)
 		if len(anomaly.Flags) > 0 {
 			result.Summary.AbnormalOrders++
 			result.Anomalies = append(result.Anomalies, anomaly)
@@ -425,14 +430,14 @@ func matchTradeQualityFillGroup(groups map[string]qualityFillGroup, keysByOrder 
 	return qualityFillGroup{}, ""
 }
 
-func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup qualityFillGroup) TradeQualityAnomaly {
+func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup qualityFillGroup, dayEndExpired bool) TradeQualityAnomaly {
 	flags := make([]string, 0)
 	ledgerFilledQuantity := fillGroup.quantity
 	brokerMessage := tradeQualityBrokerMessage(order)
 	if order.Status == trading.OrderStatusRejected && brokerMessage == "" {
 		flags = append(flags, "rejected_order_missing_reason")
 	}
-	if !order.Status.Terminal() {
+	if !order.Status.Terminal() && !dayEndExpired {
 		flags = append(flags, "non_terminal_order")
 	}
 	if order.OrderQty <= 0 {
@@ -511,6 +516,18 @@ func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup q
 		TerminalAt:             order.TerminalAt,
 		LastUpdatedAt:          tradeQualityOrderTime(order),
 	}
+}
+
+func tradeQualityDayOrderExpired(order trading.Order, tradeDate string, observedAt time.Time) bool {
+	if !trading.IsQueuedDayOrderExpiryCandidate(order) {
+		return false
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", tradeDate, timeutil.Location())
+	if err != nil {
+		return false
+	}
+	closeAt := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 15, 0, 0, 0, timeutil.Location())
+	return !observedAt.Before(closeAt)
 }
 
 func tradeQualityRejectedInvalidQuantityIsExpected(order trading.Order, ledgerFilledQuantity int64, brokerMessage string) bool {

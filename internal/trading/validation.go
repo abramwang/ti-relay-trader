@@ -65,6 +65,28 @@ func (status OrderStatus) Terminal() bool {
 	}
 }
 
+// IsQueuedDayOrderExpiryCandidate identifies an A-share day order whose final
+// broker snapshot remains queued even though its unfilled leaves expire at the
+// trading-day close. Callers must additionally verify that they are evaluating
+// the order after that trading day's close.
+func IsQueuedDayOrderExpiryCandidate(order Order) bool {
+	if order.IsTerminal || order.Status.Terminal() || order.BusinessType != BusinessTypeStock {
+		return false
+	}
+	if order.GatewayStatus != GatewayStatusWorking || !strings.EqualFold(strings.TrimSpace(order.AdapterStatusName), "queued") {
+		return false
+	}
+	if order.OrderQty <= 0 || order.LeavesQty <= 0 {
+		return false
+	}
+	switch order.Status {
+	case OrderStatusAccepted, OrderStatusWorking, OrderStatusPartiallyFilled:
+		return true
+	default:
+		return false
+	}
+}
+
 func (status OrderStatus) Valid() bool {
 	switch status {
 	case OrderStatusCreated,

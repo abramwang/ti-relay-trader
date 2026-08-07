@@ -3917,7 +3917,7 @@
     els.tradeQualityQuantityRate.textContent = formatQualityRate(summary.quantity_fill_rate);
     els.tradeQualityCancelReject.textContent = formatInt(summary.cancelled_orders) + " / " + formatInt(summary.rejected_orders);
     els.tradeQualityRejectEvidence.textContent = formatInt(summary.rejected_orders_with_reason) + " / " + formatInt(summary.rejected_orders_missing_reason);
-    els.tradeQualityOpen.textContent = formatInt(summary.non_terminal_orders);
+    els.tradeQualityOpen.textContent = formatInt(summary.non_terminal_orders) + " / " + formatInt(summary.day_end_expired_orders);
     els.tradeQualityAnomalies.textContent = formatInt(summary.anomaly_items);
 
     if (rows.length === 0) {

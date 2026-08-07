@@ -97,6 +97,29 @@ func TestBatchSubmitRejectsDuplicateGatewayOrderID(t *testing.T) {
 	}
 }
 
+func TestIsQueuedDayOrderExpiryCandidate(t *testing.T) {
+	order := Order{
+		BusinessType:      BusinessTypeStock,
+		Status:            OrderStatusWorking,
+		GatewayStatus:     GatewayStatusWorking,
+		AdapterStatusName: "queued",
+		OrderQty:          1000,
+		LeavesQty:         1000,
+	}
+	if !IsQueuedDayOrderExpiryCandidate(order) {
+		t.Fatal("queued A-share day order should be an expiry candidate")
+	}
+	order.AdapterStatusName = "pending_cancel"
+	if IsQueuedDayOrderExpiryCandidate(order) {
+		t.Fatal("non-queued order should not be an expiry candidate")
+	}
+	order.AdapterStatusName = "queued"
+	order.BusinessType = BusinessTypeETF
+	if IsQueuedDayOrderExpiryCandidate(order) {
+		t.Fatal("special ETF business order should not be inferred as a secondary-market day order")
+	}
+}
+
 func TestCancelOrderValidate(t *testing.T) {
 	req := CancelOrderRequest{
 		AccountID:      "acct-1",
