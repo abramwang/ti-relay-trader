@@ -793,7 +793,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 1. `performance_account_inceptions` 保存账户起算日、日初资金、初始持仓/成本来源、策略范围和确认审计；账户范围不在程序中写死。
 2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值、上一 close/券商 open 数量、公司行为因子和数量残差。
 3. 成本账按 `日初数量 + 买入 - 卖出 = 日终数量` 逐证券校验。逆回购从证券成本账中排除，ETF `P/R` 预留独立分账；数量不平时直接阻断，不用柜台成本强行抹平。
-4. `performance_economic_nav.v2.2` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + ETF待结算估值 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
+4. `performance_economic_nav.v2.3` 以 `可见资金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + ETF待结算资产 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；已确认公募返款会先在日初释放来源日待结算估值，再把实际到账与估值之差单列为 ETF 清算差额。预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
@@ -803,6 +803,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 11. 当日 Meridian `1d` 尚未生成时，仅对当前交易日从 Meridian Level1 realtime snapshot 读取同源字段 `pre_close/last` 完成日初/日终估值，并标记 `meridian_level1_close_fallback`；历史交易日仍要求权威 `1d`，不把实时快照扩展为新的历史行情标准。
 12. 成本状态必须连续到实际上一交易日。若存在日期断档，默认标记 `previous_cost_state_gap` 并阻断；只有账户起算配置明确声明 `cost_source=broker_open_snapshot` 且当日 open 成本完整时，才允许以当前券商日初持仓重锚，并保存 `previous_cost_state_gap_reanchored` 审计标记。
 13. `performance_contribution.v1.1` 将 T0 买入、赎回父订单和已关联实物成分卖出的实际 OC 费用按订单去重后聚合到赎回组。`performance_economic_nav.v2.2` 使用 `ETF待结算估值 = IOPV估算退出价值 - 已关联成分卖出额 - 15bp综合摩擦 + 已从可见现金扣除的OC实际费用` 补足在途清算资产；公式不能将 NAV 与正式贡献闭合到告警阈值内时仍保持 blocked，能够闭合时也只能 provisional，等待公募最终清算到账覆盖。
+14. `performance_economic_nav.v2.3` 使用经确认的 `ETF 公募返款` 结算流水冲销来源日估值。结算记录保存来源交易日、原待结算估值、实际到账、确认依据和日期精度；返款不是 `external_flow`。到账日的收益归因只增加 `实际到账 - 原估值` 清算差额，整笔返款不再进入未归因残差；缺少来源日或估值依据时阻断。
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；其中 `307000051387/1388` 已于 `2026-08-05` 发生 ETF 申赎 T0，后续依赖独立 T0 成本池和待结算估值。债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。
 

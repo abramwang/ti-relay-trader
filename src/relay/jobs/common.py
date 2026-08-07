@@ -425,6 +425,7 @@ def performance_calculation_summary(value: Any, *, include_positions: bool = Fal
         "reconciliation",
         "daily_performance",
         "cash_flows",
+        "etf_settlement",
         "reverse_repo",
         "valuation",
         "quality_flags",

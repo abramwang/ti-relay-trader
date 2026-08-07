@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.2"
+	defaultFormulaVersion   = "performance_economic_nav.v2.3"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -123,6 +123,14 @@ type EconomicNAVCashFlowSummary struct {
 	InternalFlowCount  int     `json:"internal_flow_count"`
 }
 
+type EconomicNAVETFSettlementSummary struct {
+	ReceiptAmount      float64          `json:"receipt_amount"`
+	ReleasedEstimate   float64          `json:"released_estimate"`
+	SettlementVariance float64          `json:"settlement_variance"`
+	ReceiptCount       int              `json:"receipt_count"`
+	Details            []map[string]any `json:"details,omitempty"`
+}
+
 type EconomicNAVReverseRepoSummary struct {
 	Orders                int     `json:"orders"`
 	Principal             float64 `json:"principal"`
@@ -144,6 +152,7 @@ type EconomicNAVReverseRepoSummary struct {
 type EconomicNAVValuationSummary struct {
 	OpenVisibleCash          float64 `json:"open_visible_cash"`
 	OpenPositionValue        float64 `json:"open_position_value"`
+	OpenETFSettlementAsset   float64 `json:"open_etf_settlement_asset"`
 	CloseVisibleCash         float64 `json:"close_visible_cash"`
 	ClosePositionValue       float64 `json:"close_position_value"`
 	ETFSettlementEstimate    float64 `json:"etf_settlement_estimate"`
@@ -154,18 +163,19 @@ type EconomicNAVValuationSummary struct {
 }
 
 type EconomicNAVResult struct {
-	AccountID        string                        `json:"account_id"`
-	TradeDate        string                        `json:"trade_date"`
-	Status           string                        `json:"status"`
-	FormulaVersion   string                        `json:"formula_version"`
-	Persisted        bool                          `json:"persisted"`
-	NAV              ledger.PerformanceNAV         `json:"nav"`
-	Reconciliation   ledger.NAVReconciliation      `json:"reconciliation,omitempty"`
-	DailyPerformance ledger.DailyPerformance       `json:"daily_performance"`
-	CashFlows        EconomicNAVCashFlowSummary    `json:"cash_flows"`
-	ReverseRepo      EconomicNAVReverseRepoSummary `json:"reverse_repo"`
-	Valuation        EconomicNAVValuationSummary   `json:"valuation"`
-	QualityFlags     []string                      `json:"quality_flags,omitempty"`
+	AccountID        string                          `json:"account_id"`
+	TradeDate        string                          `json:"trade_date"`
+	Status           string                          `json:"status"`
+	FormulaVersion   string                          `json:"formula_version"`
+	Persisted        bool                            `json:"persisted"`
+	NAV              ledger.PerformanceNAV           `json:"nav"`
+	Reconciliation   ledger.NAVReconciliation        `json:"reconciliation,omitempty"`
+	DailyPerformance ledger.DailyPerformance         `json:"daily_performance"`
+	CashFlows        EconomicNAVCashFlowSummary      `json:"cash_flows"`
+	ETFSettlement    EconomicNAVETFSettlementSummary `json:"etf_settlement"`
+	ReverseRepo      EconomicNAVReverseRepoSummary   `json:"reverse_repo"`
+	Valuation        EconomicNAVValuationSummary     `json:"valuation"`
+	QualityFlags     []string                        `json:"quality_flags,omitempty"`
 }
 
 type EconomicNAVReconcileOptions struct {
@@ -440,7 +450,16 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	externalNetFlow := sumCashAmounts(externalFlows)
-	settlementAdjustment := sumCashAmounts(settlementFlows)
+	settlementAdjustment, etfSettlement, settlementFlags := classifyETFSettlementReceipts(settlementFlows, normalizedDate)
+	result.ETFSettlement = etfSettlement
+	result.QualityFlags = appendUnique(result.QualityFlags, settlementFlags...)
+	if containsStringValue(settlementFlags, "etf_settlement_receipt_invalid") {
+		status = "blocked"
+	}
+	if etfSettlement.ReceiptCount > 0 {
+		openEconomicNAV = roundMoney(openEconomicNAV + etfSettlement.ReleasedEstimate)
+		result.Valuation.OpenETFSettlementAsset = etfSettlement.ReleasedEstimate
+	}
 	incomeExpense := sumCashAmounts(incomeExpenseFlows)
 	internalTransfer := sumCashAmounts(internalFlows)
 	result.CashFlows = EconomicNAVCashFlowSummary{
@@ -460,7 +479,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	repoSummary, repoFlags := service.reverseRepoForEconomicNAV(ctx, accountID, normalizedDate)
 	estimatedCashManagementPnL := strategyNetContribution(contribution, StrategyCashManagement)
 	formalStrategyPnL := roundMoney(contribution.Summary.NetContribution - estimatedCashManagementPnL)
-	formalAttributedPnL := roundMoney(formalStrategyPnL + incomeExpense)
+	formalAttributedPnL := roundMoney(formalStrategyPnL + incomeExpense + etfSettlement.SettlementVariance)
 	attributionWarningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(openEconomicNAV)*service.warningToleranceBP/10000))
 	principalFlags := resolveReverseRepoPrincipal(
 		&repoSummary,
@@ -584,6 +603,14 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"fee_coverage_source":                    contribution.Summary.FeeCoverageSource,
 				"attribution_residual":                   attributionResidual,
 			},
+			"etf_settlement": map[string]any{
+				"pnl":                 etfSettlement.SettlementVariance,
+				"receipt_amount":      etfSettlement.ReceiptAmount,
+				"released_estimate":   etfSettlement.ReleasedEstimate,
+				"settlement_variance": etfSettlement.SettlementVariance,
+				"receipt_count":       etfSettlement.ReceiptCount,
+				"details":             etfSettlement.Details,
+			},
 			"unattributed": map[string]any{
 				"pnl":   unattributedPnL,
 				"scope": unattributedScope,
@@ -617,6 +644,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			"market_valuation": map[string]any{
 				"open_visible_cash":           roundMoney(openVisibleCash),
 				"open_position_value":         contribution.Summary.OpenPositionValue,
+				"open_etf_settlement_asset":   etfSettlement.ReleasedEstimate,
 				"close_visible_cash":          roundMoney(closeVisibleCash),
 				"close_position_value":        contribution.Summary.ClosePositionValue,
 				"etf_settlement_estimate":     contribution.Summary.ETFSettlementEstimate,
@@ -1116,6 +1144,57 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 		total += item.Amount
 	}
 	return roundMoney(total)
+}
+
+func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate string) (float64, EconomicNAVETFSettlementSummary, []string) {
+	genericAdjustment := 0.0
+	summary := EconomicNAVETFSettlementSummary{}
+	flags := make([]string, 0)
+	for _, item := range items {
+		kind := strings.ToLower(strings.TrimSpace(contributionString(item.RawPayload["settlement_kind"])))
+		if kind != "etf_redemption_fund_refund" {
+			genericAdjustment += item.Amount
+			continue
+		}
+
+		sourceTradeDate, _, dateErr := parseTradeDate(contributionString(item.RawPayload["source_trade_date"]))
+		estimatedReceivable, estimateOK := contributionFloat(item.RawPayload["estimated_receivable"])
+		if dateErr != nil || sourceTradeDate >= tradeDate || !estimateOK || estimatedReceivable <= 0 || item.Amount <= 0 {
+			genericAdjustment += item.Amount
+			flags = appendUnique(flags, "etf_settlement_receipt_invalid")
+			continue
+		}
+
+		variance := roundMoney(item.Amount - estimatedReceivable)
+		summary.ReceiptAmount += item.Amount
+		summary.ReleasedEstimate += estimatedReceivable
+		summary.SettlementVariance += variance
+		summary.ReceiptCount++
+		detail := map[string]any{
+			"entry_id":            item.EntryID,
+			"source_trade_date":   sourceTradeDate,
+			"receipt_trade_date":  tradeDate,
+			"receipt_amount":      roundMoney(item.Amount),
+			"released_estimate":   roundMoney(estimatedReceivable),
+			"settlement_variance": variance,
+			"confirmation_source": contributionString(item.RawPayload["confirmation_source"]),
+		}
+		if !item.EffectiveAt.IsZero() {
+			detail["effective_at"] = item.EffectiveAt
+		}
+		summary.Details = append(summary.Details, detail)
+		flags = appendUnique(flags, "etf_settlement_receipt_confirmed", "etf_settlement_estimate_released")
+		if math.Abs(variance) > 0.000001 {
+			flags = appendUnique(flags, "etf_settlement_variance_recognized")
+		}
+		if cashFlowHasDateOnlyPrecision(item) {
+			flags = appendUnique(flags, "etf_settlement_receipt_time_date_only")
+		}
+	}
+	summary.ReceiptAmount = roundMoney(summary.ReceiptAmount)
+	summary.ReleasedEstimate = roundMoney(summary.ReleasedEstimate)
+	summary.SettlementVariance = roundMoney(summary.SettlementVariance)
+	return roundMoney(genericAdjustment), summary, flags
 }
 
 func strategyNetContribution(result ContributionResult, strategyType string) float64 {

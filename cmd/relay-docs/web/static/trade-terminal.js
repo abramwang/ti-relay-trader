@@ -3984,6 +3984,11 @@
       etf_t0_execution_fee_incomplete: "ETF T0 实际费用不完整",
       etf_redemption_settlement_estimated: "ETF 赎回待结算资产使用估值",
       etf_settlement_pending: "等待 ETF 最终清算到账",
+      etf_settlement_receipt_confirmed: "ETF 公募返款已确认",
+      etf_settlement_estimate_released: "ETF 待结算应收已冲销",
+      etf_settlement_variance_recognized: "ETF 清算差额已确认",
+      etf_settlement_receipt_time_date_only: "ETF 返款时间仅精确到交易日",
+      etf_settlement_receipt_invalid: "ETF 返款记录缺少来源日或估值依据",
       attribution_residual_within_tolerance: "净值与贡献残差处于容差内",
       research_position_valuation: "持仓使用 Meridian 行情重估",
       broker_position_cost_excluded: "柜台持仓成本已隔离",
@@ -4509,6 +4514,7 @@
     const nav = economic.nav || {};
     const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
     const cashFlows = economic.cash_flows || {};
+    const etfSettlement = economic.etf_settlement || {};
     const navFlags = Array.isArray(economic.quality_flags) ? economic.quality_flags : (Array.isArray(nav.quality_flags) ? nav.quality_flags : []);
     const valuation = economic.valuation || {};
     const pnlComponents = nav.pnl_components || {};
@@ -4539,7 +4545,12 @@
       navFlags.length ? navFlags.length + " 项质量标记" : ""
     ].filter(Boolean).join(" · ");
     els.perfOpenEconomicNav.textContent = formatNumber(nav.open_economic_nav);
-    els.perfOpenEconomicBreakdown.textContent = "可见资金 " + formatNumber(valuation.open_visible_cash) + " · 持仓 " + formatNumber(valuation.open_position_value);
+    const openETFSettlementAsset = numericOrNull(valuation.open_etf_settlement_asset) || 0;
+    els.perfOpenEconomicBreakdown.textContent = [
+      "可见资金 " + formatNumber(valuation.open_visible_cash),
+      "持仓 " + formatNumber(valuation.open_position_value),
+      Math.abs(openETFSettlementAsset) > 0.000001 ? "ETF 待结算应收 " + formatSigned(openETFSettlementAsset) : ""
+    ].filter(Boolean).join(" · ");
     els.perfCloseEconomicNav.textContent = formatNumber(nav.close_economic_nav);
     const etfSettlementEstimate = numericOrNull(valuation.etf_settlement_estimate) || 0;
     els.perfCloseEconomicBreakdown.textContent = [
@@ -4549,7 +4560,13 @@
     ].filter(Boolean).join(" · ");
     els.perfAccountDayPnl.textContent = formatSigned(nav.account_day_pnl);
     els.perfAccountDayPnl.className = classForNumber(nav.account_day_pnl);
-    els.perfPnlBreakdown.textContent = "证券 " + formatSigned(securityPnL.pnl) + " · 未归因 " + formatSigned(unattributed.pnl);
+    const etfSettlementVariance = numericOrNull(etfSettlement.settlement_variance) || 0;
+    els.perfPnlBreakdown.textContent = [
+      "证券 " + formatSigned(securityPnL.pnl),
+      Number(etfSettlement.receipt_count) > 0 ? "公募返款 " + formatSigned(etfSettlement.receipt_amount) : "",
+      Math.abs(etfSettlementVariance) > 0.000001 ? "清算差额 " + formatSigned(etfSettlementVariance) : "",
+      "未归因 " + formatSigned(unattributed.pnl)
+    ].filter(Boolean).join(" · ");
     els.perfAccountDailyReturn.textContent = formatPercent(nav.daily_return);
     els.perfAccountDailyReturn.className = classForNumber(nav.daily_return);
     els.perfReturnDenominator.textContent = "收益分母 " + formatNumber(nav.return_denominator);

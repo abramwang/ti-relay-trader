@@ -1165,6 +1165,79 @@ func TestCalculateEconomicNAVUsesCashFlowsReverseRepoAndPersists(t *testing.T) {
 	}
 }
 
+func TestCalculateEconomicNAVReleasesConfirmedETFSettlementEstimate(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-08-07",
+			CashTotal:          1_000_100,
+			NetAsset:           1_000_100,
+			OpenNetAsset:       1_000_000,
+			OpenSnapshotSource: "open",
+		},
+		baselines: []ledger.NavBaseline{{
+			AccountID:          "acct-1",
+			EffectiveDate:      "2026-08-01",
+			Status:             "confirmed",
+			InitialEconomicNAV: 1_000_000,
+		}},
+		cashByClass: map[string][]ledger.CashLedgerEntry{
+			"settlement_adjustment": {{
+				EntryID:     "etf-refund-20260807",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-08-07",
+				LedgerType:  "settlement",
+				FlowClass:   "settlement_adjustment",
+				Amount:      100,
+				Status:      "confirmed",
+				EffectiveAt: time.Date(2026, 8, 7, 12, 0, 0, 0, timeutil.Location()),
+				RawPayload: map[string]any{
+					"settlement_kind":          "etf_redemption_fund_refund",
+					"source_trade_date":        "2026-08-05",
+					"estimated_receivable":     60.0,
+					"confirmation_source":      "broker_cash_bridge",
+					"effective_time_precision": "date",
+				},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260807", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_000_060)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1_000_100)
+	assertClose(t, result.NAV.AccountDayPnL, 40)
+	assertClose(t, result.NAV.ReturnDenominator, 1_000_060)
+	assertClose(t, result.NAV.SettlementAdjustment, 0)
+	assertClose(t, result.Valuation.OpenETFSettlementAsset, 60)
+	assertClose(t, result.ETFSettlement.ReceiptAmount, 100)
+	assertClose(t, result.ETFSettlement.ReleasedEstimate, 60)
+	assertClose(t, result.ETFSettlement.SettlementVariance, 40)
+	if result.ETFSettlement.ReceiptCount != 1 {
+		t.Fatalf("receipt count = %d, want 1", result.ETFSettlement.ReceiptCount)
+	}
+	if containsString(result.QualityFlags, "nav_contribution_residual_exceeds_warning") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+	for _, flag := range []string{"etf_settlement_receipt_confirmed", "etf_settlement_estimate_released", "etf_settlement_variance_recognized"} {
+		if !containsString(result.QualityFlags, flag) {
+			t.Fatalf("missing %s in %#v", flag, result.QualityFlags)
+		}
+	}
+	component, ok := result.NAV.PnLComponents["etf_settlement"].(map[string]any)
+	if !ok {
+		t.Fatalf("ETF settlement component = %#v", result.NAV.PnLComponents["etf_settlement"])
+	}
+	assertClose(t, component["pnl"].(float64), 40)
+}
+
 func TestResolveReverseRepoPrincipalUsesAccountingIdentity(t *testing.T) {
 	tests := []struct {
 		name                    string
