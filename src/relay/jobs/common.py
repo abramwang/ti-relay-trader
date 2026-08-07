@@ -241,6 +241,7 @@ def run_post_close_capture(options: JobOptions, *, client: Any | None = None, tr
         snapshot_report_key="broker_close_snapshot",
         required_dependencies=BROKER_CAPTURE_DEPENDENCIES,
         use_status_trading_day_hint=True,
+        raw_ledger_reads=True,
     )
 
 
@@ -447,6 +448,7 @@ def run_daily_job(
     snapshot_report_key: str = "settlement_snapshot",
     required_dependencies: tuple[str, ...] = REQUIRED_JOB_DEPENDENCIES,
     use_status_trading_day_hint: bool = False,
+    raw_ledger_reads: bool = False,
 ) -> dict[str, Any]:
     started_at = now_iso()
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
@@ -552,6 +554,7 @@ def run_daily_job(
         account_reports,
         steps=refresh_steps,
         options=options,
+        raw_ledger_reads=raw_ledger_reads,
     )
     for account_report in account_reports:
         complete_account_flow(
@@ -561,6 +564,7 @@ def run_daily_job(
             query_limit=options.query_limit,
             check_non_terminal_orders=check_non_terminal_orders,
             include_fees="fees" in refresh_steps,
+            raw_ledger_reads=raw_ledger_reads,
         )
 
     report["accounts"] = account_reports
@@ -671,10 +675,13 @@ def complete_account_flow(
     query_limit: int,
     check_non_terminal_orders: bool,
     include_fees: bool = False,
+    raw_ledger_reads: bool = False,
 ) -> None:
     account_id = str(account_report["account_id"])
-    asset_value, asset_report = capture_call("get_asset", client.get_asset, account_id, include_result=False)
-    positions_value, positions_report = capture_call("get_positions", client.get_positions, account_id, include_result=False)
+    asset_reader = raw_ledger_reader(client, "asset") if raw_ledger_reads else client.get_asset
+    positions_reader = raw_ledger_reader(client, "positions") if raw_ledger_reads else client.get_positions
+    asset_value, asset_report = capture_call("get_asset", asset_reader, account_id, include_result=False)
+    positions_value, positions_report = capture_call("get_positions", positions_reader, account_id, include_result=False)
     orders_value, orders_report = capture_call(
         "list_orders",
         client.list_orders,
@@ -766,6 +773,7 @@ def wait_for_refreshed_ledgers(
     *,
     steps: tuple[str, ...],
     options: JobOptions,
+    raw_ledger_reads: bool = False,
 ) -> None:
     if options.dry_run or options.skip_refresh or not account_reports:
         return
@@ -806,7 +814,13 @@ def wait_for_refreshed_ledgers(
         for account_id, account_report in list(pending.items()):
             attempts[account_id] += 1
             refresh_started_at = datetime.fromisoformat(str(account_report["refresh_started_at"]))
-            freshness = refreshed_ledger_status(client, account_id, required, refresh_started_at)
+            freshness = refreshed_ledger_status(
+                client,
+                account_id,
+                required,
+                refresh_started_at,
+                raw_ledger_reads=raw_ledger_reads,
+            )
             terminal_status = refreshed_query_terminal_status(client, account_report)
             freshness["query_terminals"] = terminal_status["commands"]
             freshness["query_terminals_ok"] = terminal_status["ok"]
@@ -988,6 +1002,8 @@ def refreshed_ledger_status(
     account_id: str,
     required: tuple[str, ...],
     refresh_started_at: datetime,
+    *,
+    raw_ledger_reads: bool = False,
 ) -> dict[str, Any]:
     cutoff = refresh_started_at - timedelta(seconds=2)
     report: dict[str, Any] = {
@@ -1001,7 +1017,8 @@ def refreshed_ledger_status(
     asset_error = ""
     if "asset" in required:
         try:
-            asset = client.get_asset(account_id)
+            asset_reader = raw_ledger_reader(client, "asset") if raw_ledger_reads else client.get_asset
+            asset = asset_reader(account_id)
         except Exception as exc:  # noqa: BLE001 - report and keep polling.
             asset_error = str(exc)
     asset_updated_at = model_datetime(asset, fields=("updated_at", "captured_at"))
@@ -1015,7 +1032,8 @@ def refreshed_ledger_status(
     positions_error = ""
     if "positions" in required:
         try:
-            positions = list(client.get_positions(account_id) or [])
+            positions_reader = raw_ledger_reader(client, "positions") if raw_ledger_reads else client.get_positions
+            positions = list(positions_reader(account_id) or [])
         except Exception as exc:  # noqa: BLE001 - report and keep polling.
             positions_error = str(exc)
     positions_latest_updated_at = latest_model_datetime(positions or [], fields=("updated_at", "captured_at"))
@@ -1034,6 +1052,13 @@ def refreshed_ledger_status(
     report["positions_latest_updated_at"] = format_optional_datetime(positions_latest_updated_at)
     report["ok"] = asset_fresh and positions_fresh and not asset_error and not positions_error
     return report
+
+
+def raw_ledger_reader(client: Any, ledger_name: str) -> Any:
+    raw_reader = getattr(client, f"get_{ledger_name}_raw", None)
+    if callable(raw_reader):
+        return raw_reader
+    return getattr(client, f"get_{ledger_name}")
 
 
 def resolve_trading_day(options: JobOptions, requested_date: str) -> TradingDayInfo:

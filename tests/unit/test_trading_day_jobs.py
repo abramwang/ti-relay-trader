@@ -60,6 +60,7 @@ class FakeClient:
         self.empty_accounts: set[str] = set()
         self.query_statuses: dict[str, dict[str, object]] = {}
         self.query_actions: dict[str, str] = {}
+        self.raw_ledger_reads: list[tuple[str, str]] = []
 
     def status(self):
         self.status_calls += 1
@@ -140,6 +141,14 @@ class FakeClient:
                 updated_at=self.position_updated_at.get(account_id, self.default_position_updated_at),
             )
         ]
+
+    def get_asset_raw(self, account_id: str):
+        self.raw_ledger_reads.append(("asset", account_id))
+        return self.get_asset(account_id)
+
+    def get_positions_raw(self, account_id: str):
+        self.raw_ledger_reads.append(("positions", account_id))
+        return self.get_positions(account_id)
 
     def list_orders(self, *, account_id: str, limit: int, trade_date: str | None = None, history: bool | None = None):
         if account_id in self.empty_accounts:
@@ -583,6 +592,8 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(client.settlement_calls[0]["snapshot_type"], "broker_close")
         self.assertIsNone(client.settlement_calls[0]["input_snapshot_type"])
         self.assertEqual(report["broker_close_snapshot"]["result"]["status"], "completed")
+        self.assertGreaterEqual(client.raw_ledger_reads.count(("asset", "acct-1")), 2)
+        self.assertGreaterEqual(client.raw_ledger_reads.count(("positions", "acct-1")), 2)
 
     def test_post_close_capture_blocks_stale_positions_snapshot(self) -> None:
         client = FakeClient()

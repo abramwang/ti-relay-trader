@@ -667,6 +667,37 @@ func TestAccountAssetUsesStoredPositionValuesWithoutMarketLookup(t *testing.T) {
 	}
 }
 
+func TestAccountAssetCanSkipEnrichment(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID:     "acct-1",
+			CashAvailable: 900,
+			CashTotal:     1000,
+			NetAsset:      1000,
+		}},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH,
+				Quantity: 100, MarketValue: 720,
+			}},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset?enrich=false", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if service.positionQuery.AccountID != "" {
+		t.Fatalf("position query should not run when enrichment is disabled: %#v", service.positionQuery)
+	}
+	if strings.Contains(rec.Body.String(), `"market_value":720`) {
+		t.Fatalf("response unexpectedly enriched: %s", rec.Body.String())
+	}
+}
+
 func TestAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		positionsResult: orderflow.ListPositionsResult{
@@ -691,6 +722,39 @@ func TestAccountPositions(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("response missing count: %s", rec.Body.String())
+	}
+}
+
+func TestAccountPositionsCanSkipEnrichment(t *testing.T) {
+	marketRequests := 0
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		marketRequests++
+		http.Error(w, "unexpected enrichment request", http.StatusInternalServerError)
+	}))
+	defer meridian.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	service := &fakeOrderSubmitter{
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100,
+			}},
+			Count: 1,
+		},
+	}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/positions?enrich=false", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if marketRequests != 0 {
+		t.Fatalf("market requests = %d, want 0", marketRequests)
+	}
+	if strings.Contains(rec.Body.String(), `"name":`) {
+		t.Fatalf("response unexpectedly enriched: %s", rec.Body.String())
 	}
 }
 

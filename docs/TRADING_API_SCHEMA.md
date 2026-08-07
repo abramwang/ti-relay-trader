@@ -390,6 +390,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 当前 `GET /v1/accounts/{account_id}/asset`、`GET /v1/accounts/{account_id}/positions`、`GET /v1/orders`、`GET /v1/fills` 和 `GET /v1/transfers` 是本地账本查询，不主动查询柜台。对应的 `POST .../refresh` 接口会向前置发送 `account.asset.query`、`account.positions.query`、`order.list.query` 或 `fill.list.query`，由 9092 同步循环把 `asset_page/position_page/order_page/fill_page` 合并回 PostgreSQL；同一 `fill_page` 中的普通成交和 `component_transfers[]` 会分别入账。
 
+资金和持仓读取默认执行展示层补全；内部券商快照流程使用 `GET .../asset?enrich=false` 与 `GET .../positions?enrich=false` 直接读取 PostgreSQL 中的柜台原始字段，不请求证券名称、行情、成交成本或 Meridian。该参数只关闭读时补全，不改变账本内容；省略时保持原有终端和 SDK 行为。
+
 刷新回执中的 `message_id` 是查询终态关联键。`GET /v1/query-status/{origin_message_id}` 要求查询只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。盘前初始化和盘后结算同时检查本地账本新鲜度与该终态，不能用新鲜时间戳掩盖 OC 查询失败。
 
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。

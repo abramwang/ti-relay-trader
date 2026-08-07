@@ -635,6 +635,12 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
         self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
 
+    def test_raw_asset_and_position_queries_disable_enrichment(self):
+        self.client.get_asset_raw()
+        self.assertEqual(RelayHandler.requests[-1][2]["enrich"], ["false"])
+        self.client.get_positions_raw()
+        self.assertEqual(RelayHandler.requests[-1][2]["enrich"], ["false"])
+
     def test_query_status_returns_terminal_model(self):
         status = self.client.get_query_status("msg-asset-1")
         self.assertEqual(status.state, "completed")

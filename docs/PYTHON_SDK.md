@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.27`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.28`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.27.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.28.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -89,15 +89,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.27.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.28.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -314,8 +314,10 @@ client = RelayClient(
 | --- | --- | --- |
 | `status()` | `GET /v1/status` | 查询 relay 服务和依赖健康 |
 | `list_accounts()` | `GET /v1/accounts` | 查询可用账户 |
-| `get_asset(account_id=None)` | `GET /v1/accounts/{account_id}/asset` | 查询资金资产 |
-| `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询当前持仓 |
+| `get_asset(account_id=None)` | `GET /v1/accounts/{account_id}/asset` | 查询资金资产，默认包含本地持仓汇总补全 |
+| `get_asset_raw(account_id=None)` | `GET /v1/accounts/{account_id}/asset?enrich=false` | 读取柜台原始资金账本，不触发持仓、行情或 Meridian 补全 |
+| `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询当前持仓，默认补全名称、行情和盈亏 |
+| `get_positions_raw(account_id=None)` | `GET /v1/accounts/{account_id}/positions?enrich=false` | 读取柜台原始持仓账本，不触发 Meridian 补全 |
 | `get_positions(history=True, trade_date=..., snapshot_type="close")` | `GET /v1/accounts/{account_id}/positions/history` | 查询历史持仓快照；默认 close，可传 open 读取盘前持仓 |
 | `list_orders(...)` | `GET /v1/orders` | 默认查询当日订单 |
 | `list_orders(history=True, ...)` | `GET /v1/history/orders` | 查询历史订单 |

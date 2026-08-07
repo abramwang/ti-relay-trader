@@ -1728,12 +1728,19 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "order service is unavailable", nil)
 		return
 	}
+	enrich, err := parseEnrichQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid asset query", err.Error())
+		return
+	}
 	result, err := s.orders.GetAsset(r.Context(), accountID)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
 	}
-	result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
+	if enrich {
+		result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
+	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -1843,15 +1850,22 @@ func (s *Server) handleAccountPositions(w http.ResponseWriter, r *http.Request, 
 	if forceHistory {
 		query.History = true
 	}
+	enrich, err := parseEnrichQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid position query", err.Error())
+		return
+	}
 	result, err := s.orders.ListPositions(r.Context(), query)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
 	}
-	enrichmentCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	s.enrichPositionNames(enrichmentCtx, result.Positions)
-	s.enrichPositionsForPnL(enrichmentCtx, result.Positions, query)
-	cancel()
+	if enrich {
+		enrichmentCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		s.enrichPositionNames(enrichmentCtx, result.Positions)
+		s.enrichPositionsForPnL(enrichmentCtx, result.Positions, query)
+		cancel()
+	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
 
@@ -4102,6 +4116,18 @@ func parseBool(value string) bool {
 	default:
 		return false
 	}
+}
+
+func parseEnrichQuery(values url.Values) (bool, error) {
+	raw := strings.TrimSpace(values.Get("enrich"))
+	if raw == "" {
+		return true, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("enrich must be true or false")
+	}
+	return value, nil
 }
 
 func splitQueryCSV(values []string) []string {

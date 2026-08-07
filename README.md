@@ -8,9 +8,9 @@ relay 是量化研究系统的基础数据项目，负责标准化实盘/券商�
 - 工作目录: `/home/ti-relay-trader`
 - 对外端口: `9092`
 - 最终服务口径: `http://relay-trader.quantstage.com`
-- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。债享5号已从 `2026-07-22` 空仓锚点完成连续重建；富盈13号 `2026-06-18..2026-08-03` 的 16,781 个普通成交订单已与券商交割单全部闭合。`2026-08-05` 两个 `159381.SZ` ETF T0 真实样本的 PCF、49 个实物成分划转和 IOPV + 15bp 待结算估值已经闭合。盘后流程已拆成不依赖 Meridian 的 `post_close_capture` 和依赖行情的 `post_close_settlement`：前者在 15:01 先固化 OC 最终资金/持仓为 `broker_close`，后者可在行情恢复后从不可变快照补跑且不再查询 OC。`2026-08-06` 当日改造前已主动暂停任务且错过 OC 查询窗口，因此仍无权威收盘资金持仓、close/reconciliation/NAV；3,085 笔终态订单、3,517 笔成交、595 条 ETF 划转及 42,675 条原始流已落库并完成 PostgreSQL 备份，用户确认 14:37 后无新订单。详见 `docs/SETTLEMENT_HOLD_20260806.md`。生产保持 6 个只读账户、下单账户 0。
+- 当前状态: P0-P4 已完成，P5-P8/P10 持续生产化，N9-N12 已完成。当前主线为 N13 可信成本账与绩效重建。债享5号已从 `2026-07-22` 空仓锚点完成连续重建；富盈13号 `2026-06-18..2026-08-03` 的 16,781 个普通成交订单已与券商交割单全部闭合。`2026-08-05` 两个 `159381.SZ` ETF T0 真实样本的 PCF、49 个实物成分划转和 IOPV + 15bp 待结算估值已经闭合。盘后流程已拆成 `post_close_capture -> post_close_settlement -> performance_daily`：前者在 15:01 仅依赖 OC/Redis/DB，固化最终资金持仓为 `broker_close`；后两步再从不可变快照生成 close、对账和绩效。`2026-08-07` 首个完整生产流水线三阶段均 succeeded，6 份资金和 252 条持仓完成双层快照；新增原始账本 `enrich=false` 后，捕获读取不再触发 Meridian。仍有两项需跟进：富盈13号一笔 `159915.SZ` 100 万份普通买单被 OC 持续查询为 `queued/working`、0 成交；涌盈波动率和智算汇利混合因约 7.34 万元策略归因残差而绩效 blocked。`2026-08-06` 缺失券商收盘快照的历史边界保持不补造，详见 `docs/SETTLEMENT_HOLD_20260806.md`。生产保持 6 个只读账户、下单账户 0。
 - 当前 9092 运行态: 使用未跟踪本地配置 `config/relay.prod.yaml` 运行独立 `relay-api` 和 `relay-worker`。API 监听 `0.0.0.0:9092`，worker 健康端口仅绑定 `127.0.0.1:19092`；worker 独占 Redis output stream 消费和 PostgreSQL 落账，数据库 `LISTEN/NOTIFY` 事件桥将账本变化转发给 API SSE。生产 schema 已升级到 `25 broker_close_snapshots`，任务配置为 `09:01 pre_open_init`、`15:01 post_close_capture`、捕获成功后 `post_close_settlement`、结算成功后 `performance_daily`。当前 API/worker、数据库、Redis、事件桥、行情和订单服务均健康，账户 `trading_enabled=0`。账户路由为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389` 和 `307000051387`，均为 `trading_enabled=false`、`auto_refresh=false`。容器重启和分钟级守护由 cron `RELAY_RUNTIME_AUTOSTART` 调用 `scripts/relay-runtime-service.sh start`；日志分别写入 `/var/log/relay/relay-api.log`、`/var/log/relay/relay-worker.log` 和 `/var/log/relay/relay-runtime-service-cron.log`。本地生产配置包含凭据且不提交。
-- 最近更新时间: `2026-08-06`
+- 最近更新时间: `2026-08-07`
 - 恢复方式: 新线程进入本目录后，先阅读本 README 的“线程恢复卡片”“当前进展”“待办事项”“工作日志”，再继续执行下一项待办。
 
 ## 项目目标
@@ -139,8 +139,8 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 | `http://relay-trader.quantstage.com/trade` | 成熟交易软件风格手动交易测试终端 |
 | `http://relay-trader.quantstage.com/jobs` | 后台任务状态监控，展示盘前初始化、盘后结算等任务 |
 | `http://relay-trader.quantstage.com/operations` | Gateway 心跳、Redis Stream lag、checkpoint 与 DLQ 运维 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz` | Python SDK 安装包 |
-| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz.sha256` | Python SDK 安装包 SHA256 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz` | Python SDK 安装包 |
+| `http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz.sha256` | Python SDK 安装包 SHA256 |
 | `http://relay-trader.quantstage.com/docs` | 文档列表 |
 | `http://relay-trader.quantstage.com/docs/readme` | README |
 | `http://relay-trader.quantstage.com/docs/architecture` | 架构与当前实现 |
@@ -383,7 +383,7 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - 行情和证券主数据字段口径全部以 Meridian 为准；relay 不新增行情标准字段。如需要更多补全能力，应推动 Meridian 增加或完善接口。
 - Meridian `688981.SH` 1m bars 在 2026-06-14 现场验证可直接返回，但响应耗时约 6 秒，超过 Relay 旧默认 5 秒超时；默认超时已调至 15 秒并验证通过。若后续单只标的仍偶发超时，应先检查 Meridian 上游耗时，再评估是否做页面级重试或异步加载。
 - 行情价格精度按 Meridian `instrument_type` 解释：`stock` 保留 2 位，`etf` 保留 3 位；账本订单/成交/持仓若缺少标的类型，则先尝试使用当前快照或已缓存证券主数据匹配，仍无法识别时默认股票 2 位。
-- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.27.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
+- Python SDK 当前可用 `PYTHONPATH=sdk/python`、`python -m pip install -e sdk/python` 或 `python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz"` 安装；安装包由 `scripts/build-python-sdk.py` 生成并提交到 `public/sdk/`。
 - 历史持仓查询读取 `position_snapshots`；默认 `snapshot_type=close`，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。盘前和盘后任务都会通过 `/v1/settlements/snapshots` 写入同交易日、不同 `snapshot_type` 的资产和持仓快照，非交易日补跑时也会按 Meridian 回退后的目标交易日写入。
 - worker 模式当前会从 `stream_checkpoints` 恢复每条 Redis output stream 的 `last_stream_id`；如果 checkpoint 表为空，则按配置的起始位点从 `0` 追赶历史，重复消息依赖账表唯一约束保持幂等。
 - `/v1/status.trading_day` 现在会 best-effort 合并 Meridian 交易日接口结果，暴露 `is_trading_day` 和 `previous_or_current_trading_date`；`/jobs` 在 Meridian 明确非交易日且没有当天任务记录时显示“非交易日跳过”，避免工作日休市误报“今日未完成”。
@@ -644,3 +644,4 @@ RELAY_DOCS_ADDR=0.0.0.0:9092 scripts/serve-docs.sh
 - `2026-08-06`: 排查 09:01 盘前初始化失败：六账户 24 条 OC 查询均唯一 completed、资金和持仓新鲜度全部通过，失败只发生在最终 open 快照。旧接口串行处理账户，并对债享5号 146 个已有可信成本、无当日新增数量的 carried position 逐证券查询当日成交；冷路径六账户 dry-run 为 `34.748s`，正式请求在 `30.031s` 返回 202 时客户端已按 30 秒超时取消，数据库仅留下 2 份 open 资产和 146 条 open 持仓，属于真实部分写入。现仅对成本缺失或当日新增持仓查询成交，多账户最多 3 路并发，盘前/盘后快照独立超时统一为 60 秒；API 冷重启后的首次六账户 dry-run 降至 `0.117s`。新增必须配合原始 `captured_at` 的 `snapshot_only` 恢复模式，不读取盘中订单成交、不做当前行情重估、不写 reconciliation；SDK `0.1.26` 同步暴露两个恢复参数。09:29 使用仍保留 09:01 源时间的本地资金/持仓幂等恢复 6 份 open 资产和 233 条 open 持仓，任务最新状态 `succeeded`、耗时 `1.947s`；生产交易权限保持关闭。
 - `2026-08-06`: Meridian 当日数据链路异常，15:01 自动结算在触发前被主动暂停，close 快照、reconciliation 和绩效均未执行；19:36 恢复标准 cron，只影响当天手工补结算，不影响后续交易日。独立 worker 全天落库 3,085 笔订单且全部终态、3,517 笔普通成交、595 条 ETF 划转和 42,675 条原始 Stream 报文，0 解析错误，heartbeat 持续到 OC 15:30 正常关闭；用户确认 14:37 后没有新下单。19:33 创建 127,814,185 字节 PostgreSQL custom-format 备份并通过 SHA256 校验。由于线程中断跨过 OC 关闭时间，当日没有发出收盘资金/持仓和费用查询；任务页已写 `manual_hold/skipped` 审计，禁止拿 09:01/13:57 数据冒充 close。恢复条件和备份坐标见 `docs/SETTLEMENT_HOLD_20260806.md`。
 - `2026-08-06`: 改造盘后任务依赖边界。新增 `post_close_capture`，15:01 仅依赖 OC/Redis/DB/事件流，刷新订单、成交、费用、最终资金和持仓并写入不可变 `broker_close`；Meridian degraded 不再阻断该阶段。`post_close_settlement` 改为只从 `broker_close` 生成正式 close/reconciliation，不再查询 OC，成功后才触发绩效；多账户只传递实际捕获成功的账户，并在快照重跑后清理已清仓的旧持仓行。schema `000025`、任务状态页、API Console、SDK `0.1.27`、配置和文档已同步，生产迁移与 API/worker 发布完成，所有依赖健康、`trading_enabled=0`。Go 全包及 race、Python 39 项、SDK 19 项、盘后流水线 5 项和 `/jobs` Playwright 冒烟均通过。该改造不追溯补造 `2026-08-06` 缺失的券商收盘快照。
+- `2026-08-07`: 首个 `broker_close -> close -> performance_daily` 生产交易日流水线按依赖顺序完成：15:01 捕获 6 份资金和 252 条持仓，15:02 固化正式 close，随后绩效任务结束；Redis 24 条输出流 lag/pending 为 0，DLQ 无待处理。复核发现原始资金/持仓的新鲜度检查仍经展示 API 触发 Meridian 名称和行情补全，超时虽未阻断落盘但使捕获耗时 56.606 秒；新增 `enrich=false` 原始账本读取并让 `post_close_capture` 全程使用，发布 SDK `0.1.28`，将券商终值抓取与 Meridian 彻底隔离。当天仍有一项业务质量告警：富盈13号 `159915.SZ` 100 万份普通买单在 15:13 再次 OC 查询后仍为 `queued/working`、0 成交，需由 OC/柜台确认日终状态；两个 ETF 账户绩效因策略归因残差约 7.34 万元保持 blocked，不影响券商 close 快照完整性。生产交易权限保持关闭。

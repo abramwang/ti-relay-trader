@@ -29,7 +29,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.27"
+SDK_VERSION = "0.1.28"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -101,10 +101,19 @@ class RelayClient:
 
         return self._request("GET", "/v1/status")
 
-    def get_asset(self, account_id: str | None = None) -> Asset:
+    def get_asset(self, account_id: str | None = None, *, enrich: bool | None = None) -> Asset:
         account_id = self._resolve_account(account_id)
-        data = self._request("GET", f"/v1/accounts/{parse.quote(account_id)}/asset")
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/asset",
+            query={"enrich": enrich},
+        )
         return Asset.from_dict(data.get("asset", data))
+
+    def get_asset_raw(self, account_id: str | None = None) -> Asset:
+        """Return the locally stored broker asset without market-data enrichment."""
+
+        return self.get_asset(account_id, enrich=False)
 
     def get_positions(
         self,
@@ -117,6 +126,7 @@ class RelayClient:
         date_to: str | None = None,
         snapshot_type: str | None = None,
         history: bool | None = None,
+        enrich: bool | None = None,
     ) -> list[Position]:
         account_id = self._resolve_account(account_id)
         path = f"/v1/accounts/{parse.quote(account_id)}/positions"
@@ -133,9 +143,15 @@ class RelayClient:
                 "date_to": date_to,
                 "snapshot_type": snapshot_type,
                 "history": history,
+                "enrich": enrich,
             },
         )
         return [Position.from_dict(item) for item in data.get("positions", [])]
+
+    def get_positions_raw(self, account_id: str | None = None) -> list[Position]:
+        """Return locally stored broker positions without names, quotes, or PnL enrichment."""
+
+        return self.get_positions(account_id, enrich=False)
 
     def refresh_asset(self, account_id: str | None = None) -> CommandReceipt:
         return self._refresh("asset", account_id)
