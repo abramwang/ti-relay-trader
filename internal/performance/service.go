@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.3"
+	defaultFormulaVersion   = "performance_economic_nav.v2.4"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -1159,31 +1159,61 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 
 		sourceTradeDate, _, dateErr := parseTradeDate(contributionString(item.RawPayload["source_trade_date"]))
 		estimatedReceivable, estimateOK := contributionFloat(item.RawPayload["estimated_receivable"])
-		if dateErr != nil || sourceTradeDate >= tradeDate || !estimateOK || estimatedReceivable <= 0 || item.Amount <= 0 {
+		receiptStage := strings.ToLower(strings.TrimSpace(contributionString(item.RawPayload["receipt_stage"])))
+		if receiptStage == "" {
+			receiptStage = "initial"
+		}
+		releasedEstimate := estimatedReceivable
+		releasedRaw, releasedSpecified := item.RawPayload["released_estimate"]
+		releasedOK := true
+		if releasedSpecified {
+			releasedEstimate, releasedOK = contributionFloat(releasedRaw)
+		}
+		settlementGroupID := strings.TrimSpace(contributionString(item.RawPayload["settlement_group_id"]))
+		priorReceiptEntryID := strings.TrimSpace(contributionString(item.RawPayload["prior_receipt_entry_id"]))
+		validStage := receiptStage == "initial" || receiptStage == "supplemental"
+		validSupplemental := receiptStage != "supplemental" || (releasedSpecified && settlementGroupID != "" && priorReceiptEntryID != "")
+		if dateErr != nil || sourceTradeDate >= tradeDate || !estimateOK || estimatedReceivable <= 0 ||
+			!releasedOK || releasedEstimate < 0 || releasedEstimate > estimatedReceivable ||
+			!validStage || !validSupplemental || item.Amount <= 0 {
 			genericAdjustment += item.Amount
 			flags = appendUnique(flags, "etf_settlement_receipt_invalid")
 			continue
 		}
 
-		variance := roundMoney(item.Amount - estimatedReceivable)
+		variance := roundMoney(item.Amount - releasedEstimate)
 		summary.ReceiptAmount += item.Amount
-		summary.ReleasedEstimate += estimatedReceivable
+		summary.ReleasedEstimate += releasedEstimate
 		summary.SettlementVariance += variance
 		summary.ReceiptCount++
 		detail := map[string]any{
-			"entry_id":            item.EntryID,
-			"source_trade_date":   sourceTradeDate,
-			"receipt_trade_date":  tradeDate,
-			"receipt_amount":      roundMoney(item.Amount),
-			"released_estimate":   roundMoney(estimatedReceivable),
-			"settlement_variance": variance,
-			"confirmation_source": contributionString(item.RawPayload["confirmation_source"]),
+			"entry_id":             item.EntryID,
+			"source_trade_date":    sourceTradeDate,
+			"receipt_trade_date":   tradeDate,
+			"receipt_amount":       roundMoney(item.Amount),
+			"estimated_receivable": roundMoney(estimatedReceivable),
+			"released_estimate":    roundMoney(releasedEstimate),
+			"settlement_variance":  variance,
+			"receipt_stage":        receiptStage,
+			"confirmation_source":  contributionString(item.RawPayload["confirmation_source"]),
+		}
+		if settlementGroupID != "" {
+			detail["settlement_group_id"] = settlementGroupID
+		}
+		if priorReceiptEntryID != "" {
+			detail["prior_receipt_entry_id"] = priorReceiptEntryID
 		}
 		if !item.EffectiveAt.IsZero() {
 			detail["effective_at"] = item.EffectiveAt
 		}
 		summary.Details = append(summary.Details, detail)
-		flags = appendUnique(flags, "etf_settlement_receipt_confirmed", "etf_settlement_estimate_released")
+		flags = appendUnique(flags, "etf_settlement_receipt_confirmed")
+		if releasedEstimate > 0.000001 {
+			flags = appendUnique(flags, "etf_settlement_estimate_released")
+		}
+		if receiptStage == "supplemental" {
+			flags = appendUnique(flags, "etf_settlement_supplemental_receipt")
+		}
 		if math.Abs(variance) > 0.000001 {
 			flags = appendUnique(flags, "etf_settlement_variance_recognized")
 		}

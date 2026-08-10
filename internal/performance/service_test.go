@@ -1238,6 +1238,78 @@ func TestCalculateEconomicNAVReleasesConfirmedETFSettlementEstimate(t *testing.T
 	assertClose(t, component["pnl"].(float64), 40)
 }
 
+func TestCalculateEconomicNAVAttributesSupplementalETFSettlementWithoutReleasingEstimateAgain(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-08-10",
+			CashTotal:          1_000_100,
+			NetAsset:           1_000_100,
+			OpenNetAsset:       1_000_000,
+			OpenSnapshotSource: "open",
+		},
+		baselines: []ledger.NavBaseline{{
+			AccountID:          "acct-1",
+			EffectiveDate:      "2026-08-01",
+			Status:             "confirmed",
+			InitialEconomicNAV: 1_000_000,
+		}},
+		cashByClass: map[string][]ledger.CashLedgerEntry{
+			"settlement_adjustment": {{
+				EntryID:     "etf-refund-supplemental-20260810",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-08-10",
+				LedgerType:  "settlement",
+				FlowClass:   "settlement_adjustment",
+				Amount:      100,
+				Status:      "confirmed",
+				EffectiveAt: time.Date(2026, 8, 10, 12, 0, 0, 0, timeutil.Location()),
+				RawPayload: map[string]any{
+					"settlement_kind":        "etf_redemption_fund_refund",
+					"source_trade_date":      "2026-08-05",
+					"estimated_receivable":   60.0,
+					"released_estimate":      0.0,
+					"receipt_stage":          "supplemental",
+					"settlement_group_id":    "etf-redemption-acct-1-20260805",
+					"prior_receipt_entry_id": "etf-refund-20260807",
+					"confirmation_source":    "broker_cash_bridge",
+				},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260810", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_000_000)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1_000_100)
+	assertClose(t, result.NAV.AccountDayPnL, 100)
+	assertClose(t, result.Valuation.OpenETFSettlementAsset, 0)
+	assertClose(t, result.ETFSettlement.ReceiptAmount, 100)
+	assertClose(t, result.ETFSettlement.ReleasedEstimate, 0)
+	assertClose(t, result.ETFSettlement.SettlementVariance, 100)
+	if result.ETFSettlement.ReceiptCount != 1 {
+		t.Fatalf("receipt count = %d, want 1", result.ETFSettlement.ReceiptCount)
+	}
+	for _, flag := range []string{"etf_settlement_receipt_confirmed", "etf_settlement_supplemental_receipt", "etf_settlement_variance_recognized"} {
+		if !containsString(result.QualityFlags, flag) {
+			t.Fatalf("missing %s in %#v", flag, result.QualityFlags)
+		}
+	}
+	if containsString(result.QualityFlags, "etf_settlement_estimate_released") {
+		t.Fatalf("supplemental receipt released estimate again: %#v", result.QualityFlags)
+	}
+	if len(result.ETFSettlement.Details) != 1 || result.ETFSettlement.Details[0]["receipt_stage"] != "supplemental" {
+		t.Fatalf("settlement details = %#v", result.ETFSettlement.Details)
+	}
+}
+
 func TestResolveReverseRepoPrincipalUsesAccountingIdentity(t *testing.T) {
 	tests := []struct {
 		name                    string
