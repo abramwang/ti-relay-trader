@@ -2329,6 +2329,19 @@ func TestBrokerCloseSnapshotCapturesCurrentBrokerLedgerWithoutMarketOrReconcilia
 }
 
 func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/market/bars" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if query.Get("security_ids") != "600000.SH" || query.Get("start_date") != "20260615" || query.Get("end_date") != "20260615" || query.Get("frequency") != "1d" || query.Get("adjustment") != "none" {
+			t.Fatalf("historical bars query = %s", query.Encode())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"600000.SH","trade_date":20260615,"open":9.7,"close":9.8}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
 	capturedAt := time.Date(2026, 6, 15, 15, 1, 7, 0, timeutil.Location())
 	service := &fakeOrderSubmitter{
 		assetErr:         errors.New("current asset must not be read"),
@@ -2343,7 +2356,9 @@ func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testi
 			Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, UpdatedAt: capturedAt,
 		}},
 	}
-	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service, Settlements: store,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
@@ -2368,10 +2383,63 @@ func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testi
 		t.Fatalf("source snapshot queries = %q/%#v", store.assetSnapshotQueryType, store.positionSnapshotQuery)
 	}
 	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "close" || !store.assetSnapshots[0].capturedAt.Equal(capturedAt) {
-		t.Fatalf("promoted asset snapshots = %#v", store.assetSnapshots)
+		t.Fatalf("promoted asset snapshots = %#v, response = %s", store.assetSnapshots, rec.Body.String())
+	}
+	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.LastPrice != 9.8 || math.Abs(store.positionSnapshots[0].position.MarketValue-980) > 0.000001 {
+		t.Fatalf("promoted position snapshots = %#v", store.positionSnapshots)
 	}
 	if store.reconciliation.RunID != "post_close_settlement-20260615" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
+func TestCloseSnapshotDoesNotOverwriteWhenHistoricalBarsAreMissing(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/market/bars" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[],"meta":{"count":0}}`)
+	}))
+	defer meridian.Close()
+
+	capturedAt := time.Date(2026, 6, 15, 15, 1, 7, 0, timeutil.Location())
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}, Count: 0},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{
+		assetSnapshotResult: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, UpdatedAt: capturedAt},
+		positionSnapshotResults: []trading.Position{{
+			AccountID: "acct-1", TradeDate: "2026-06-15", SnapshotType: "broker_close",
+			Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, UpdatedAt: capturedAt,
+		}},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post_close_settlement-20260615",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"input_snapshot_type":"broker_close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 0 || len(store.positionSnapshots) != 0 {
+		t.Fatalf("missing market data must not overwrite close snapshots: assets=%#v positions=%#v", store.assetSnapshots, store.positionSnapshots)
+	}
+	if !strings.Contains(rec.Body.String(), `close market valuation missing for 1 positions: 600000.SH`) {
+		t.Fatalf("response missing valuation error: %s", rec.Body.String())
 	}
 }
 

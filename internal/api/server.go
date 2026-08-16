@@ -706,7 +706,7 @@ func (s *Server) enrichPositionsForPnL(ctx context.Context, positions []trading.
 	}
 
 	quotes := map[string]positionMarketQuote{}
-	if !query.History && tradeDate == timeutil.Now().Format("2006-01-02") {
+	if !query.History {
 		quotes = s.positionMarketQuotes(ctx, positions, tradeDate)
 	}
 	for i := range positions {
@@ -795,6 +795,9 @@ func (s *Server) positionMarketQuotes(ctx context.Context, positions []trading.P
 		return nil
 	}
 	ids := positionSecurityIDs(positions)
+	if tradeDate != timeutil.Now().Format("2006-01-02") {
+		return s.historicalPositionMarketQuotes(ctx, ids, tradeDate)
+	}
 	quotes := make(map[string]positionMarketQuote, len(ids))
 	const chunkSize = 200
 	for offset := 0; offset < len(ids); offset += chunkSize {
@@ -837,6 +840,70 @@ func (s *Server) positionMarketQuotes(ctx context.Context, positions []trading.P
 		}
 	}
 	return quotes
+}
+
+func (s *Server) historicalPositionMarketQuotes(ctx context.Context, ids []string, tradeDate string) map[string]positionMarketQuote {
+	quotes := make(map[string]positionMarketQuote, len(ids))
+	date := strings.ReplaceAll(tradeDate, "-", "")
+	const chunkSize = 200
+	for offset := 0; offset < len(ids); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[offset:end]
+		values := url.Values{
+			"security_ids": {strings.Join(chunk, ",")},
+			"start_date":   {date},
+			"end_date":     {date},
+			"frequency":    {"1d"},
+			"adjustment":   {"none"},
+			"limit":        {strconv.Itoa(len(chunk) * 2)},
+		}
+		response, err := s.market.MarketBars(ctx, values)
+		if err != nil {
+			s.logger.Warn("position_historical_quotes_failed", "trade_date", tradeDate, "error", err)
+			continue
+		}
+		if response.StatusCode >= http.StatusBadRequest {
+			s.logger.Warn("position_historical_quotes_bad_status", "trade_date", tradeDate, "status", response.StatusCode)
+			continue
+		}
+		for _, row := range meridianRows(response.Payload) {
+			id := normalizeSecurityID(stringFromAny(row["security_id"]))
+			if id == "" {
+				continue
+			}
+			var quote positionMarketQuote
+			if openPrice, ok := floatFromAny(row["open"]); ok && openPrice > 0 {
+				quote.open = openPrice
+				quote.hasOpen = true
+			}
+			if closePrice, ok := floatFromAny(row["close"]); ok && closePrice > 0 {
+				quote.last = closePrice
+				quote.hasLast = true
+			}
+			if quote.hasOpen || quote.hasLast {
+				quotes[id] = quote
+			}
+		}
+	}
+	return quotes
+}
+
+func missingPositionValuations(positions []trading.Position) []string {
+	missing := make([]string, 0)
+	for _, position := range positions {
+		if position.Quantity <= 0 || position.MarketValue > 0 {
+			continue
+		}
+		id := securityID(position.Symbol, string(position.Exchange))
+		if id == "" {
+			id = strings.TrimSpace(position.Symbol)
+		}
+		missing = append(missing, id)
+	}
+	return missing
 }
 
 func applyPositionPnL(position *trading.Position, quote positionMarketQuote, todayCost positionFillCost) {
@@ -3672,6 +3739,15 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		s.enrichPositionsForPnL(enrichmentCtx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
 		cancel()
+		if snapshotType == "close" && inputSnapshotType == "broker_close" {
+			if missing := missingPositionValuations(positionResult.Positions); len(missing) > 0 {
+				preview := missing
+				if len(preview) > 10 {
+					preview = preview[:10]
+				}
+				out.Errors = append(out.Errors, fmt.Sprintf("close market valuation missing for %d positions: %s", len(missing), strings.Join(preview, ",")))
+			}
+		}
 	}
 	ordersResult := orderflow.ListOrdersResult{}
 	fillsResult := orderflow.ListFillsResult{}
