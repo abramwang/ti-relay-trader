@@ -1,8 +1,38 @@
-# 2026-08-06 Settlement Hold
+# 2026-08-06 Settlement Hold And Recovery
+
+## Recovery Status (2026-08-17)
+
+The historical hold has been partially resolved for the three first-wave
+performance accounts: `307000051387`, `307000051388`, and `314000046830`.
+The original raw archive and hold evidence remain unchanged.
+
+- Meridian now returns every required unadjusted `1d` bar for the three
+  accounts: 199 distinct securities, 199 rows, zero missing close prices.
+- The 2026-08-07 09:01 position snapshots were rolled back to 2026-08-06 only
+  after a per-security bridge proved
+  `open + ordinary fills + ETF redemption/transfer = next open`. All three
+  accounts have zero quantity mismatches and zero residual quantity. Reverse
+  repo instruments were correctly excluded from persistent positions.
+- The next-open cash source for `307000051387/1388` was reduced by the two
+  confirmed `73,448.939998 CNY` receipts attributed to the 2026-08-05 ETF
+  redemption. `314000046830` had no such adjustment.
+- Recovery inputs were first stored as `reconcile`, dry-run against Meridian,
+  then promoted through the normal `broker_close -> close` API path. The
+  resulting settlement contains three asset snapshots, 228 position rows,
+  12 reconciliation inputs, zero account errors, and zero open breaks.
+- `314000046830` performance is provisional and publishable. The two ETF T0
+  accounts remain blocked by cash attribution residuals of `-74,811.87` and
+  `-95,070.64 CNY`; those NAVs were not published.
+
+The historical Level1 gap no longer blocks position valuation. ETF redemption
+IOPV uses the last complete one-minute Meridian bar when Level1 is absent;
+`159381.SZ` resolves to the 09:37 bar with `iopv=1.1382` and records
+`minute_iopv_fallback`. Daily close bars are never substituted for redemption
+time IOPV.
 
 ## Decision
 
-The `2026-08-06` production post-close settlement is intentionally deferred.
+The `2026-08-06` production post-close settlement was intentionally deferred.
 Meridian's same-day market-data chain was reported incomplete before the
 scheduled 15:01 Asia/Shanghai run. Relay removed the 15:01 cron entry before it
 fired, did not write a close snapshot, and did not start performance
@@ -46,8 +76,9 @@ Raw archive evidence for the Asia/Shanghai calendar day:
 ## Inputs Not Captured At Close
 
 The Codex thread was interrupted until after OC had shut down. Relay therefore
-did not issue the normal 15:01 broker queries. The following inputs are not
-authoritative close data and must remain blocked:
+did not issue the normal 15:01 broker queries. At the time of the hold, the
+following inputs were not authoritative close data and therefore remained
+blocked:
 
 | Input | Latest available source time | Status |
 | --- | --- | --- |
@@ -58,9 +89,9 @@ authoritative close data and must remain blocked:
 | Broker order fees | no `fee.list.query` on 2026-08-06 | Missing |
 | Meridian settlement market data | reported incomplete | Awaiting upstream completion |
 
-The database contains six `open` asset snapshots, 233 `open` position
-snapshots, and six intraday asset records for the date. It contains no close
-asset snapshot, no close position snapshot, no reconciliation run, and no NAV
+At hold time the database contained six `open` asset snapshots, 233 `open`
+position snapshots, and six intraday asset records for the date. It contained
+no close asset snapshot, close position snapshot, reconciliation run, or NAV
 version for `2026-08-06`.
 
 ## Backup
@@ -78,9 +109,10 @@ A PostgreSQL custom-format backup was captured after OC shutdown:
 The backup directory is intentionally excluded from Git. This document records
 the audit coordinates without storing credentials or raw production data.
 
-## Resume Gate
+## Original Resume Gate
 
-Do not run `post_close_settlement --target-date 20260806` merely because
+This gate was applied before the 2026-08-17 audited recovery. Do not run
+`post_close_settlement --target-date 20260806` merely because
 Meridian becomes healthy. Resume only after all of these conditions are met:
 
 1. Meridian confirms the required 2026-08-06 bars, benchmark, instrument, and
@@ -99,6 +131,6 @@ After this incident Relay split the future production flow into
 `post_close_capture -> post_close_settlement -> performance_daily`.
 `post_close_capture` writes immutable `broker_close` asset/position snapshots
 without requiring Meridian; settlement later promotes those snapshots and does
-not query OC again. This is not retroactive: no `broker_close` exists for
-`2026-08-06` because OC had already closed before the new capture stage was
-deployed.
+not query OC again. It was not retroactive at deployment time; the three
+audited historical `broker_close` snapshots described above were added later
+through the explicit recovery path, not by replaying OC.

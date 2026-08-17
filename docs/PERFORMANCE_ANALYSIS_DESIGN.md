@@ -184,12 +184,13 @@ estimated_etf_t0_pnl =
 
 1. `redemption_qty` 取赎回终态成交数量，不使用柜台赎回记录中的名义价格 `1.0/0`。
 2. `iopv_at_redemption` 优先取 Meridian 历史 Level1 中时间不晚于赎回成交时刻的最近一条有效 `iopv`。必须同时保存 `iopv_timestamp` 和 `iopv_lag_ms`，禁止使用赎回时刻之后的快照。
-3. Level1 缺失时，可以降级使用赎回前最后一个完整 1 分钟 bar 的 `iopv`，并标记 `minute_iopv_fallback`；仍无有效值时不计算该笔盈亏，标记 `missing_iopv`。
+3. Level1 缺失时，已实现降级使用赎回前最后一个完整 1 分钟 bar 的 `iopv`，并保存 `price_source=meridian_1m_iopv_fallback`、`minute_iopv_fallback`、bar 时间和时滞；当前赎回分钟不得参与选择，避免使用订单后的信息。仍无有效值时不计算该笔盈亏，标记 `missing_redemption_iopv`。
 4. `attributed_etf_buy_cost` 从订单组识别，不使用当日全部 ETF 买入的加权均价。按账户、交易日、ETF 和买入方向聚合买入委托；一个订单组的委托总量是 Meridian PCF `unit_subscribe_redeem` 的整数倍时，该组关联的实际成交金额归入 T0 成本。交易所拆单后单张子单可以小于最小申赎单位，例如 `588200.SH` 的一个 4,500,000 份订单组实际由同一批次 5 张 900,000 份子单组成。未来订单应显式携带 `t0_order_group_id/basket_id`；历史数据只能结合提交时间簇、连续订单流 ID 和后续赎回数量推断，存在歧义时标记 `ambiguous_t0_order_group`。
 5. 合格订单组发生部分成交、撤单和补单时，以原订单组目标委托量为边界，将补足该目标的后续替代订单及实际成交继续归入同一 T0 批次；无法闭合到整数申赎单位时标记 `incomplete_t0_order_group`，不静默挪用底仓成交补足。
 6. 不属于合格 T0 订单组的 ETF 买入、卖出和剩余数量全部保留在 ETF 底仓调仓成本中。即使同一账户、同一交易日、同一 ETF 同时用于 T0 和底仓，也禁止在两个成本池之间做日均价摊分。
 7. 订单委托量优先采用盘后 `order.list.query` 的最终值。若实时 `order.event.order_qty` 小于 `cum_filled_qty` 或与盘后查询不一致，应使用盘后修正值并标记 `realtime_order_qty_corrected`；盘后仍无法修正时该订单组不可归因。
 8. 固定成本率 `0.0015` 以 IOPV 估算的一篮子价值为基数，统一覆盖 ETF 买入、赎回后成分卖出手续费以及成交价差异的冲击成本。该参数必须配置化、版本化并随结果输出，不能作为无来源常量隐藏在公式中。
+9. OC 实际订单费用不完整时，15bp 主估值仍可生成 provisional 待结算资产；只加回已确认的实际费用，并标记 `etf_t0_execution_fee_incomplete`、`etf_settlement_execution_fee_pending`。缺费用不能破坏数量桥或抹掉整笔在途资产，但不得 finalized。
 9. 实物成分股成交、现金替代和后续回款只用于链路对账与数据质量检查，不再重复计入本估算公式，避免双重计算。
 10. 输出必须使用 `estimated_etf_t0_pnl` 等估算字段，不得写入或展示为券商 `settled_profit`。
 

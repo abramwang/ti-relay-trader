@@ -1104,15 +1104,24 @@ func (service *Service) calculateT0Contribution(
 	var exitValue float64
 	var weightedIOPV float64
 	var referenceQty int64
+	var iopvPriceSource string
 	allIOPV := len(group.redemptions) > 0
 	for _, redemption := range group.redemptions {
 		item.RedemptionQuantity += redemption.Qty
 		item.SellQuantity += redemption.Qty
-		iopv, referenceTime, ok := service.loadRedemptionIOPV(ctx, tradeDate, redemption)
+		iopv, referenceTime, priceSource, ok := service.loadRedemptionIOPV(ctx, tradeDate, redemption)
 		if !ok {
 			allIOPV = false
 			item.QualityFlags = appendUnique(item.QualityFlags, "missing_redemption_iopv")
 			continue
+		}
+		if priceSource == "meridian_1m_iopv_fallback" {
+			item.QualityFlags = appendUnique(item.QualityFlags, "minute_iopv_fallback")
+		}
+		if iopvPriceSource == "" {
+			iopvPriceSource = priceSource
+		} else if iopvPriceSource != priceSource {
+			iopvPriceSource = "meridian_mixed_iopv"
 		}
 		exitValue += float64(redemption.Qty) * iopv
 		weightedIOPV += float64(redemption.Qty) * iopv
@@ -1125,6 +1134,9 @@ func (service *Service) calculateT0Contribution(
 	item.BuyAmount = roundMoney(item.BuyAmount)
 	item.SellAmount = roundMoney(exitValue)
 	item.Turnover = roundMoney(item.BuyAmount + item.SellAmount)
+	if iopvPriceSource != "" {
+		item.PriceSource = iopvPriceSource
+	}
 	if referenceQty > 0 {
 		value := weightedIOPV / float64(referenceQty)
 		item.ReferenceIOPV = floatPointer(value)
@@ -1146,10 +1158,13 @@ func (service *Service) calculateT0Contribution(
 		item.ContributionBPS = contributionBPSPointer(net, openNAV)
 		item.PnLStatus = "estimated"
 		item.QualityFlags = appendUnique(item.QualityFlags, "etf_t0_iopv_estimate", "configured_friction_estimate")
-		if transferComplete && executionFeeComplete {
+		if transferComplete {
 			settlementEstimate := roundMoney(exitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee)
 			item.ETFSettlementEstimate = floatPointer(settlementEstimate)
 			item.QualityFlags = appendUnique(item.QualityFlags, "etf_redemption_settlement_estimated")
+			if !executionFeeComplete {
+				item.QualityFlags = appendUnique(item.QualityFlags, "etf_settlement_execution_fee_pending")
+			}
 		}
 	}
 	return item
@@ -1182,13 +1197,13 @@ func t0ActualExecutionFee(buyFills, redemptionFills, componentFills []trading.Fi
 	return roundMoney(fee), complete && len(seen) > 0
 }
 
-func (service *Service) loadRedemptionIOPV(ctx context.Context, tradeDate string, fill trading.Fill) (float64, time.Time, bool) {
+func (service *Service) loadRedemptionIOPV(ctx context.Context, tradeDate string, fill trading.Fill) (float64, time.Time, string, bool) {
 	if service.market == nil {
-		return 0, time.Time{}, false
+		return 0, time.Time{}, "", false
 	}
 	target := contributionFillTime(fill)
 	if target.IsZero() {
-		return 0, time.Time{}, false
+		return 0, time.Time{}, "", false
 	}
 	target = target.In(timeutil.Location())
 	values := url.Values{
@@ -1201,18 +1216,45 @@ func (service *Service) loadRedemptionIOPV(ctx context.Context, tradeDate string
 		"limit":        {"500"},
 	}
 	response, err := service.market.MarketSnapshots(ctx, values)
-	if err != nil || response.StatusCode >= 400 {
-		return 0, time.Time{}, false
+	if err == nil && response.StatusCode < 400 {
+		if value, referenceTime, ok := latestIOPVBefore(contributionRows(response.Payload), tradeDate, target); ok {
+			return value, referenceTime, "meridian_historical_level1_iopv", true
+		}
 	}
+
+	// A bar timestamp is the start of its minute. Exclude the redemption's
+	// current minute so the fallback never uses information after the order.
+	lastCompleteMinute := target.Truncate(time.Minute).Add(-time.Minute)
+	barValues := url.Values{
+		"security_id": {contributionSecurityID(fill.Symbol, fill.Exchange)},
+		"trade_date":  {strings.ReplaceAll(tradeDate, "-", "")},
+		"frequency":   {"1m"},
+		"adjustment":  {"none"},
+		"start_time":  {lastCompleteMinute.Add(-5 * time.Minute).Format("15:04:05")},
+		"end_time":    {lastCompleteMinute.Format("15:04:05")},
+		"limit":       {"10"},
+	}
+	barResponse, barErr := service.market.MarketBars(ctx, barValues)
+	if barErr != nil || barResponse.StatusCode >= 400 {
+		return 0, time.Time{}, "", false
+	}
+	value, referenceTime, ok := latestIOPVBefore(contributionRows(barResponse.Payload), tradeDate, lastCompleteMinute)
+	if !ok {
+		return 0, time.Time{}, "", false
+	}
+	return value, referenceTime, "meridian_1m_iopv_fallback", true
+}
+
+func latestIOPVBefore(rows []map[string]any, tradeDate string, cutoff time.Time) (float64, time.Time, bool) {
 	var selectedValue float64
 	var selectedTime time.Time
-	for _, row := range contributionRows(response.Payload) {
+	for _, row := range rows {
 		value, ok := contributionFloat(row["iopv"])
 		if !ok || value <= 0 {
 			continue
 		}
 		rowTime, ok := contributionMarketTime(row, tradeDate)
-		if !ok || rowTime.After(target) {
+		if !ok || rowTime.After(cutoff) {
 			continue
 		}
 		if selectedTime.IsZero() || rowTime.After(selectedTime) {

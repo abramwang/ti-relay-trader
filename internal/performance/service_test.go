@@ -480,6 +480,85 @@ func TestCalculateContributionsInfersETFT0GroupAndUsesHistoricalIOPV(t *testing.
 	}
 }
 
+func TestCalculateT0ContributionFallsBackToLastCompleteMinuteIOPV(t *testing.T) {
+	location := timeutil.Location()
+	redeemTime := time.Date(2026, 8, 6, 9, 38, 11, 0, location)
+	group := t0RedemptionGroup{
+		securityID:     "159381.SZ",
+		groupID:        "redeem-order",
+		redemptionUnit: 2_000_000,
+		buyFills: []trading.Fill{{
+			FillID: "buy-fill", GatewayOrderID: "buy-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideBuy, Price: 1.131, Qty: 2_000_000, MatchedAt: redeemTime.Add(-time.Minute),
+		}},
+		redemptions: []trading.Fill{{
+			FillID: "redeem-fill", GatewayOrderID: "redeem-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 2_000_000, MatchedAt: redeemTime,
+		}},
+	}
+	marketClient := &fakeContributionMarket{
+		snapshots: market.MeridianResponse{StatusCode: http.StatusOK, Payload: map[string]any{"data": []any{}}},
+		bars: market.MeridianResponse{StatusCode: http.StatusOK, Payload: map[string]any{"data": []any{
+			map[string]any{"security_id": "159381.SZ", "iopv": 1.1382, "datetime": "2026-08-06T09:37:00+08:00"},
+			map[string]any{"security_id": "159381.SZ", "iopv": 1.1395, "datetime": "2026-08-06T09:38:00+08:00"},
+		}}},
+	}
+	service := &Service{market: marketClient, etfT0FrictionRate: 0.0015}
+
+	item := service.calculateT0Contribution(context.Background(), "2026-08-06", group, nil, true, map[string]ledger.OrderFeeRecord{
+		"buy-order":    {GatewayOrderID: "buy-order", TotalFee: 0},
+		"redeem-order": {GatewayOrderID: "redeem-order", TotalFee: 0},
+	}, 50_000_000)
+
+	if item.PnLStatus != "estimated" || item.ReferenceIOPV == nil || *item.ReferenceIOPV != 1.1382 {
+		t.Fatalf("minute fallback contribution = %#v", item)
+	}
+	if item.PriceSource != "meridian_1m_iopv_fallback" || !containsString(item.QualityFlags, "minute_iopv_fallback") {
+		t.Fatalf("minute fallback provenance = %#v", item)
+	}
+	if len(marketClient.queries) != 2 {
+		t.Fatalf("market queries = %#v", marketClient.queries)
+	}
+	barQuery := marketClient.queries[1]
+	if barQuery.Get("frequency") != "1m" || barQuery.Get("end_time") != "09:37:00" {
+		t.Fatalf("minute fallback query = %s", barQuery.Encode())
+	}
+}
+
+func TestCalculateT0ContributionKeepsSettlementEstimateWhenExecutionFeeIsPending(t *testing.T) {
+	location := timeutil.Location()
+	redeemTime := time.Date(2026, 8, 6, 9, 38, 11, 0, location)
+	group := t0RedemptionGroup{
+		securityID:     "159381.SZ",
+		groupID:        "redeem-order",
+		redemptionUnit: 1_000_000,
+		buyFills: []trading.Fill{{
+			FillID: "buy-fill", GatewayOrderID: "buy-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideBuy, Price: 1.13, Qty: 1_000_000, MatchedAt: redeemTime.Add(-time.Minute),
+		}},
+		redemptions: []trading.Fill{{
+			FillID: "redeem-fill", GatewayOrderID: "redeem-order", Symbol: "159381", Exchange: trading.ExchangeSZ,
+			TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 1_000_000, MatchedAt: redeemTime,
+		}},
+	}
+	service := &Service{
+		market: &fakeContributionMarket{snapshots: market.MeridianResponse{StatusCode: http.StatusOK, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "159381.SZ", "iopv": 1.14, "timestamp": "2026-08-06T09:38:10+08:00",
+		}}}}},
+		etfT0FrictionRate: 0.0015,
+	}
+
+	item := service.calculateT0Contribution(context.Background(), "2026-08-06", group, nil, true, nil, 50_000_000)
+
+	if item.ETFSettlementEstimate == nil {
+		t.Fatalf("settlement estimate missing while fee is pending: %#v", item)
+	}
+	assertClose(t, *item.ETFSettlementEstimate, 1_138_290)
+	if !containsString(item.QualityFlags, "etf_t0_execution_fee_incomplete") || !containsString(item.QualityFlags, "etf_settlement_execution_fee_pending") {
+		t.Fatalf("pending fee provenance = %#v", item.QualityFlags)
+	}
+}
+
 func TestBuildT0GroupsFlagsPCFRedemptionUnitMismatch(t *testing.T) {
 	location := timeutil.Location()
 	buyTime := time.Date(2026, 7, 24, 10, 0, 0, 0, location)
