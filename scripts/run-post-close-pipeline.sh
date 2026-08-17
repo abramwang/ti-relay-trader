@@ -8,16 +8,38 @@ PERFORMANCE_LOCK="${RELAY_PERFORMANCE_LOCK:-/tmp/relay-performance-daily.lock}"
 PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-}"
 PERFORMANCE_HTTP_TIMEOUT_SECONDS="${RELAY_PERFORMANCE_HTTP_TIMEOUT_SECONDS:-30}"
 SETTLEMENT_HTTP_TIMEOUT_SECONDS="${RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS:-60}"
+RELAY_CONFIG_PATH="${RELAY_CONFIG_PATH:-$ROOT_DIR/config/relay.prod.yaml}"
+RELAYCTL_BIN="${RELAYCTL_BIN:-$ROOT_DIR/.runtime/bin/relayctl}"
 
 mkdir -p "$REPORT_DIR"
 
 capture_report="$REPORT_DIR/post_close_capture.json"
 post_report="$REPORT_DIR/post_close_settlement.json"
 performance_report="$REPORT_DIR/performance_daily.json"
+performance_publish_report="$REPORT_DIR/performance_publish.json"
 target_args=()
 if [[ -n "${RELAY_TARGET_DATE:-}" ]]; then
   target_args=(--target-date "$RELAY_TARGET_DATE")
 fi
+
+relayctl_needs_build() {
+  [[ -x "$RELAYCTL_BIN" ]] || return 0
+  find "$ROOT_DIR/cmd/relayctl" "$ROOT_DIR/internal" "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" -newer "$RELAYCTL_BIN" -print -quit 2>/dev/null | grep -q .
+}
+
+build_relayctl() {
+  if ! relayctl_needs_build; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$RELAYCTL_BIN")"
+  local candidate="${RELAYCTL_BIN}.build.$$"
+  echo "relay post-close pipeline: building relayctl"
+  if ! (cd "$ROOT_DIR" && go build -o "$candidate" ./cmd/relayctl); then
+    rm -f "$candidate"
+    return 1
+  fi
+  mv "$candidate" "$RELAYCTL_BIN"
+}
 
 echo "relay post-close pipeline: starting broker close capture"
 if ! "$PYTHON_BIN" -m relay.jobs.post_close_capture \
@@ -131,11 +153,13 @@ if [[ -z "$PERFORMANCE_ACCOUNT_IDS" ]]; then
 fi
 
 performance_args=()
+performance_account_ids=()
 IFS=',' read -r -a configured_accounts <<< "$PERFORMANCE_ACCOUNT_IDS"
 for account_id in "${configured_accounts[@]}"; do
   account_id="${account_id//[[:space:]]/}"
   if [[ -n "$account_id" ]]; then
     performance_args+=(--account-id "$account_id")
+    performance_account_ids+=("$account_id")
   fi
 done
 if [[ ${#performance_args[@]} -eq 0 ]]; then
@@ -143,7 +167,25 @@ if [[ ${#performance_args[@]} -eq 0 ]]; then
   exit 2
 fi
 
-echo "relay post-close pipeline: settlement succeeded for $trade_date; starting performance"
+performance_accounts_csv="$(IFS=,; echo "${performance_account_ids[*]}")"
+echo "relay post-close pipeline: settlement succeeded for $trade_date; publishing performance NAV"
+if ! build_relayctl; then
+  echo "relay post-close pipeline: relayctl build failed" >&2
+  exit 1
+fi
+if ! "$RELAYCTL_BIN" performance-rebuild \
+  -config "$RELAY_CONFIG_PATH" \
+  -accounts "$performance_accounts_csv" \
+  -date-from "$trade_date" \
+  -date-to "$trade_date" \
+  -persist \
+  -timeout 10m \
+  > "$performance_publish_report"; then
+  echo "relay post-close pipeline: performance publication failed" >&2
+  exit 1
+fi
+
+echo "relay post-close pipeline: performance publication completed; recording quality report"
 if ! flock -n "$PERFORMANCE_LOCK" "$PYTHON_BIN" -m relay.jobs.performance_daily \
   "${performance_args[@]}" \
   --target-date "$trade_date" \

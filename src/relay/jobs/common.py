@@ -265,20 +265,23 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
     attention_accounts: list[str] = []
     blocked_accounts: list[str] = []
     not_applicable_accounts: list[str] = []
+    published_accounts: list[str] = []
+    preview_only_accounts: list[str] = []
+    target_trade_date = report["trading_day"]["target_trade_date"]
     for account_report in report["accounts"]:
         account_id = str(account_report["account_id"])
         cost_value, cost_report = capture_call(
             "preview_cost_ledger",
             relay_client.preview_cost_ledger,
             account_id=account_id,
-            trade_date=report["trading_day"]["target_trade_date"],
+            trade_date=target_trade_date,
             include_result=False,
         )
         nav_value, nav_report = capture_call(
             "preview_economic_nav",
             relay_client.preview_economic_nav,
             account_id=account_id,
-            trade_date=report["trading_day"]["target_trade_date"],
+            trade_date=target_trade_date,
             include_result=False,
         )
         cost = result_to_jsonable(cost_value) if cost_value is not None else {}
@@ -329,6 +332,38 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
         else:
             status = "ready"
             ready_accounts.append(account_id)
+
+        official_navs_value, official_navs_report = capture_call(
+            "list_economic_nav",
+            relay_client.list_economic_nav,
+            account_id=account_id,
+            trade_date=target_trade_date,
+            include_result=False,
+        )
+        official_navs = result_to_jsonable(official_navs_value) if official_navs_value is not None else []
+        formula_version = ""
+        if isinstance(nav, Mapping):
+            nested_nav = nav.get("nav") if isinstance(nav.get("nav"), Mapping) else {}
+            formula_version = str(nav.get("formula_version") or nested_nav.get("formula_version") or "")
+        official_nav = next(
+            (
+                item
+                for item in official_navs
+                if isinstance(item, Mapping)
+                and normalize_trade_date(str(item.get("trade_date") or "")) == normalize_trade_date(target_trade_date)
+                and str(item.get("formula_version") or "") == formula_version
+                and str(item.get("status") or "") != "blocked"
+            ),
+            {},
+        ) if isinstance(official_navs, list) else {}
+        if status in {"ready", "attention"} and official_nav:
+            publication_status = "published"
+            published_accounts.append(account_id)
+        elif status in {"ready", "attention"}:
+            publication_status = "preview_only"
+            preview_only_accounts.append(account_id)
+        else:
+            publication_status = status
         account_report["performance"] = {
             "status": status,
             "cost_ledger_status": cost_status,
@@ -337,6 +372,9 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
             "quality_flags": flags,
             "errors": errors,
             "reason": "empty_account_without_performance_baseline" if not_applicable else "",
+            "publication_status": publication_status,
+            "publication_error": str(official_navs_report.get("error") or ""),
+            "official_nav": official_nav,
             "cost_ledger": performance_calculation_summary(cost, include_positions=True),
             "economic_nav": performance_calculation_summary(nav),
         }
@@ -347,14 +385,22 @@ def run_daily_performance(options: JobOptions, *, client: Any | None = None, tra
         "attention": len(attention_accounts),
         "blocked": len(blocked_accounts),
         "not_applicable": len(not_applicable_accounts),
+        "published": len(published_accounts),
+        "preview_only": len(preview_only_accounts),
     }
     report["performance_ready_accounts"] = ready_accounts
     report["performance_attention_accounts"] = attention_accounts
     report["performance_blocked_accounts"] = blocked_accounts
     report["performance_not_applicable_accounts"] = not_applicable_accounts
+    report["performance_published_accounts"] = published_accounts
+    report["performance_preview_only_accounts"] = preview_only_accounts
     if attention_accounts or blocked_accounts:
         report.setdefault("warnings", []).append(
             "daily performance has account-level attention or blocked results"
+        )
+    if preview_only_accounts:
+        report.setdefault("warnings", []).append(
+            "daily performance has publishable previews without an official NAV row"
         )
     return report
 

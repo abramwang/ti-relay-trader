@@ -4044,7 +4044,7 @@
     }[value] || value || "--";
   }
 
-  function performanceCalculationState(nav, costLedger, feeSummary) {
+  function performanceCalculationState(nav, costLedger, feeSummary, published) {
     if (!nav || numericOrNull(nav.close_economic_nav) === null) {
       return { status: "waiting", label: "暂无结果" };
     }
@@ -4053,6 +4053,9 @@
     }
     if (nav.status === "finalized") {
       return { status: "finalized", label: "正式定稿" };
+    }
+    if (published) {
+      return { status: "ready", label: "已发布" };
     }
     if (costLedger.status === "calculated" && feeSummary.fee_coverage_complete === true) {
       return { status: "ready", label: "试算可用" };
@@ -4524,14 +4527,17 @@
     const costLedger = state.performanceCostLedger || {};
     const costSummary = costLedger.summary || {};
     const selectedDate = state.performanceSelectedDate || compactDate(daily.trade_date) || compactDate(els.perfDateTo.value);
-    const calculationState = performanceCalculationState(nav, costLedger, securityPnL);
+    const officialSeriesItem = series.find((item) => compactDate(item.trade_date) === selectedDate) || {};
+    const officialPublished = String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
+      && officialSeriesItem.performance_status !== "blocked";
+    const calculationState = performanceCalculationState(nav, costLedger, securityPnL, officialPublished);
     const actualFee = numericOrNull(securityPnL.actual_fee) ?? numericOrNull(securityPnL.effective_fee) ?? numericOrNull(daily.fee_total);
     const turnover = numericOrNull(tradingObservation.turnover) ?? numericOrNull(daily.turnover);
     const feeRequired = Number(securityPnL.fee_required_orders) || 0;
     const feeCovered = Number(securityPnL.fee_covered_orders) || 0;
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
-      selectedDate ? displayDate(selectedDate) + " 当日试算" : "等待交易日",
+      selectedDate ? displayDate(selectedDate) + (officialPublished ? " 已发布" : " 当日试算") : "等待交易日",
       state.performanceSeriesFallback && latest.trade_date ? "正式曲线截至 " + displayDate(latest.trade_date) : "",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       "Asia/Shanghai"
@@ -4540,7 +4546,7 @@
     els.perfFocusDate.textContent = [activeAccountLabel(), selectedDate ? displayDate(selectedDate) : ""].filter(Boolean).join(" · ") || "等待选择交易日";
     els.perfCalculationStatus.textContent = calculationState.label;
     els.perfCalculationMeta.textContent = [
-      economic.persisted ? "已落库" : (numericOrNull(nav.close_economic_nav) !== null ? "只读 preview" : "尚未计算"),
+      economic.persisted || officialPublished ? "已落库" : (numericOrNull(nav.close_economic_nav) !== null ? "只读 preview" : "尚未计算"),
       nav.status || "",
       navFlags.length ? navFlags.length + " 项质量标记" : ""
     ].filter(Boolean).join(" · ");

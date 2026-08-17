@@ -197,7 +197,7 @@ func runPerformanceRebuild(args []string) error {
 				report.Items = append(report.Items, item)
 				continue
 			}
-			if *persist {
+			if *persist && performanceResultPublishable(cost.Status, nav.Status) {
 				nav, navErr = service.CalculateEconomicNAV(ctx, accountID, dateText, relayperformance.EconomicNAVOptions{Persist: true, Status: "provisional"})
 				item.NAV = nav
 				if navErr != nil {
@@ -208,6 +208,13 @@ func runPerformanceRebuild(args []string) error {
 		}
 	}
 	return writeJSON(report)
+}
+
+func performanceResultPublishable(costStatus, navStatus string) bool {
+	costStatus = strings.TrimSpace(costStatus)
+	navStatus = strings.TrimSpace(navStatus)
+	return (costStatus == "calculated" || costStatus == "estimated") &&
+		(navStatus == "provisional" || navStatus == "finalized")
 }
 
 func parseCLITradeDate(value string) (time.Time, error) {

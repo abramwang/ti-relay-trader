@@ -379,6 +379,8 @@
       if (Number(performance.attention || 0)) parts.push(`关注 ${Number(performance.attention)}`);
       if (Number(performance.blocked || 0)) parts.push(`阻断 ${Number(performance.blocked)}`);
       if (Number(performance.not_applicable || 0)) parts.push(`不适用 ${Number(performance.not_applicable)}`);
+      if (Number(performance.published || 0)) parts.push(`已发布 ${Number(performance.published)}`);
+      if (Number(performance.preview_only || 0)) parts.push(`仅试算 ${Number(performance.preview_only)}`);
       return parts.join(" · ");
     }
     if (snapshot) {

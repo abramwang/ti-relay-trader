@@ -58,6 +58,7 @@ class FakeClient:
         self.cost_status: dict[str, str] = {}
         self.nav_status: dict[str, str] = {}
         self.performance_flags: dict[str, list[str]] = {}
+        self.economic_navs: dict[str, list[dict[str, object]]] = {}
         self.empty_accounts: set[str] = set()
         self.query_statuses: dict[str, dict[str, object]] = {}
         self.query_actions: dict[str, str] = {}
@@ -212,9 +213,13 @@ class FakeClient:
             "account_id": account_id,
             "trade_date": trade_date,
             "status": self.nav_status.get(account_id, "provisional"),
+            "formula_version": "performance_economic_nav.test",
             "persisted": False,
             "quality_flags": self.performance_flags.get(account_id, []),
         }
+
+    def list_economic_nav(self, *, account_id: str, trade_date: str):
+        return self.economic_navs.get(account_id, [])
 
     def _refresh(self, account_id: str, action: str) -> FakeReceipt:
         self.refresh_calls.append((account_id, action))
@@ -339,6 +344,13 @@ class TradingDayJobTest(unittest.TestCase):
         client.performance_flags["acct-attention"] = ["net_performance_fee_incomplete"]
         client.cost_status["acct-blocked"] = "blocked"
         client.performance_flags["acct-blocked"] = ["position_quantity_not_reconciled"]
+        client.economic_navs["acct-ready"] = [
+            {
+                "trade_date": "2026-06-15",
+                "status": "provisional",
+                "formula_version": "performance_economic_nav.test",
+            }
+        ]
 
         report = run_daily_performance(
             JobOptions(job_name="performance_daily"),
@@ -349,11 +361,21 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual(
             report["performance_summary"],
-            {"accounts": 3, "ready": 1, "attention": 1, "blocked": 1, "not_applicable": 0},
+            {
+                "accounts": 3,
+                "ready": 1,
+                "attention": 1,
+                "blocked": 1,
+                "not_applicable": 0,
+                "published": 1,
+                "preview_only": 1,
+            },
         )
         self.assertEqual(report["performance_ready_accounts"], ["acct-ready"])
         self.assertEqual(report["performance_attention_accounts"], ["acct-attention"])
         self.assertEqual(report["performance_blocked_accounts"], ["acct-blocked"])
+        self.assertEqual(report["performance_published_accounts"], ["acct-ready"])
+        self.assertEqual(report["performance_preview_only_accounts"], ["acct-attention"])
         self.assertEqual(report["accounts"][0]["performance"]["status"], "ready")
         self.assertEqual(report["accounts"][1]["performance"]["status"], "attention")
         self.assertFalse(report["accounts"][1]["performance"]["fee_complete"])
@@ -377,7 +399,15 @@ class TradingDayJobTest(unittest.TestCase):
 
         self.assertEqual(
             report["performance_summary"],
-            {"accounts": 1, "ready": 0, "attention": 0, "blocked": 0, "not_applicable": 1},
+            {
+                "accounts": 1,
+                "ready": 0,
+                "attention": 0,
+                "blocked": 0,
+                "not_applicable": 1,
+                "published": 0,
+                "preview_only": 0,
+            },
         )
         self.assertEqual(report["performance_not_applicable_accounts"], ["acct-empty"])
         self.assertEqual(report["performance_blocked_accounts"], [])
