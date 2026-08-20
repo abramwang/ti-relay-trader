@@ -3684,6 +3684,10 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 						result.Errors = append(result.Errors, fmt.Sprintf("reconciliation break %s/%s: %v", item.BreakType, item.ObjectID, err))
 					}
 				}
+				if err := s.resolveSupersededReconciliationBreaks(ctx, runID, accountResult.AccountID, accountResult.breaks); err != nil {
+					result.Status = "failed"
+					result.Errors = append(result.Errors, fmt.Sprintf("resolve reconciliation breaks %s: %v", accountResult.AccountID, err))
+				}
 			}
 			if result.Status == "failed" {
 				run, err := s.settles.UpsertReconciliationRun(ctx, ledger.ReconciliationRun{
@@ -3703,6 +3707,44 @@ func (s *Server) buildSettlementSnapshot(ctx context.Context, req SettlementSnap
 		}
 	}
 	return result, nil
+}
+
+func (s *Server) resolveSupersededReconciliationBreaks(ctx context.Context, runID string, accountID string, current []ledger.ReconciliationBreak) error {
+	openBreaks, err := s.settles.ListReconciliationBreaks(ctx, ledger.ReconciliationBreakQuery{
+		RunID:     runID,
+		AccountID: accountID,
+		Status:    "open",
+		Limit:     1000,
+	})
+	if err != nil {
+		return err
+	}
+	currentKeys := make(map[string]struct{}, len(current))
+	for _, item := range current {
+		currentKeys[reconciliationBreakKey(item)] = struct{}{}
+	}
+	resolvedAt := timeutil.Now()
+	for _, item := range openBreaks {
+		if item.Status != "open" {
+			continue
+		}
+		if _, exists := currentKeys[reconciliationBreakKey(item)]; exists {
+			continue
+		}
+		item.Status = "resolved"
+		item.ResolvedAt = resolvedAt
+		item.InternalPayload = cloneMap(item.InternalPayload)
+		item.InternalPayload["resolution_source"] = "successful_settlement_rerun"
+		item.InternalPayload["resolved_at"] = timeutil.FormatRFC3339Nano(resolvedAt)
+		if err := s.settles.UpsertReconciliationBreak(ctx, item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reconciliationBreakKey(item ledger.ReconciliationBreak) string {
+	return strings.Join([]string{item.RunID, item.AccountID, item.BreakType, item.ObjectType, item.ObjectID}, "\x00")
 }
 
 func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID string, tradeDate string, snapshotType string, inputSnapshotType string, source string, runID string, dryRun bool, snapshotOnly bool, capturedAt time.Time, rawWindowStart time.Time) SettlementSnapshotAccountResult {

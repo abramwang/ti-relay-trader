@@ -444,6 +444,8 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
 
 快照恢复默认仍使用实际调用时间。仅当资金/持仓账本内容已确认来自原任务且不能再次查询柜台时，才可传入 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写。`snapshot_only` 必须和 `captured_at` 同时使用，只固化源资金/持仓，不按当前行情重估，不读取当前订单/成交，也不写 reconciliation；API 还会校验 `captured_at` 的日期必须与 `trade_date` 一致。
 
+局部账户恢复完成后，必须再对当日全部启用账户执行一次 `post_close_settlement --skip-refresh`，让最新任务报告形成完整的账户集合，避免复核页把未包含在局部报告中的已成功账户误判为 `post_close snapshot is missing`。同一稳定结算批次重跑时，本轮不再出现的旧 open 断点会自动转为 `resolved`，并记录 `resolution_source=successful_settlement_rerun`；原始断点内容和 Redis/数据库审计证据继续保留。
+
 任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 
 每日任务已内置 `relay.alert.v1` 通用 JSON Webhook。任务失败、快照阻断和绩效计算阻断为 `critical`；单账户查询异常及费用数据待完善的绩效账户为 `warning`；刷新超时同时标记 `refresh_timeout` 与 `snapshot_blocked`。绩效 `not_applicable` 不发送通知。同一轮多账户异常只聚合投递一次。正常成功、非交易日正常跳过不发送，`--dry-run` 始终抑制通知。每条通知带稳定 `dedupe_key` 和 HTTP `Idempotency-Key`，网络异常、429 和 5xx 最多重试 3 次。投递结果保存到同一条 `job_runs.report.alert_delivery`，可在 `/jobs` 的“告警”列查看；任务结果与通知状态相互独立，通道关闭或投递失败不会把已成功的账表任务改判为失败。

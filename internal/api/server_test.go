@@ -2487,6 +2487,58 @@ func TestSettlementSnapshotAccountErrorIsNonFatal(t *testing.T) {
 	}
 }
 
+func TestSettlementSnapshotSuccessfulRerunResolvesStaleAccountBreak(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult:      orderflow.GetAssetResult{Asset: trading.Asset{AccountID: "acct-1", CashAvailable: 1000}},
+		positionsResult:  orderflow.ListPositionsResult{Positions: []trading.Position{}, Count: 0},
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}, Count: 0},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
+	}
+	store := &fakeSettlementStore{breaks: []ledger.ReconciliationBreak{{
+		RunID:      "post_close_settlement-20260820",
+		AccountID:  "acct-1",
+		BreakType:  "account_refresh_failed",
+		Severity:   "critical",
+		Status:     "open",
+		ObjectType: "account",
+		ObjectID:   "acct-1",
+		InternalPayload: map[string]any{
+			"error": "temporary market timeout",
+		},
+	}}}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders:      service,
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post_close_settlement-20260820",
+		"trade_date":"20260820",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.breaks) != 2 {
+		t.Fatalf("break writes = %#v", store.breaks)
+	}
+	resolved := store.breaks[1]
+	if resolved.Status != "resolved" || resolved.ResolvedAt.IsZero() {
+		t.Fatalf("resolved break = %#v", resolved)
+	}
+	if resolved.InternalPayload["resolution_source"] != "successful_settlement_rerun" {
+		t.Fatalf("resolution payload = %#v", resolved.InternalPayload)
+	}
+	if store.breakQuery.RunID != "post_close_settlement-20260820" || store.breakQuery.AccountID != "acct-1" || store.breakQuery.Status != "open" {
+		t.Fatalf("break query = %#v", store.breakQuery)
+	}
+}
+
 func TestOrderFillQuantityBreaksSkipETFTransferOrders(t *testing.T) {
 	orders := []trading.Order{
 		{
