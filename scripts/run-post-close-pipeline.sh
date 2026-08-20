@@ -8,6 +8,7 @@ PERFORMANCE_LOCK="${RELAY_PERFORMANCE_LOCK:-/tmp/relay-performance-daily.lock}"
 PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-}"
 PERFORMANCE_HTTP_TIMEOUT_SECONDS="${RELAY_PERFORMANCE_HTTP_TIMEOUT_SECONDS:-30}"
 SETTLEMENT_HTTP_TIMEOUT_SECONDS="${RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS:-60}"
+REFRESH_TIMEOUT_SECONDS="${RELAY_REFRESH_TIMEOUT_SECONDS:-180}"
 RELAY_CONFIG_PATH="${RELAY_CONFIG_PATH:-$ROOT_DIR/config/relay.prod.yaml}"
 RELAYCTL_BIN="${RELAYCTL_BIN:-$ROOT_DIR/.runtime/bin/relayctl}"
 
@@ -45,6 +46,7 @@ echo "relay post-close pipeline: starting broker close capture"
 if ! "$PYTHON_BIN" -m relay.jobs.post_close_capture \
   --persist \
   --trigger cron \
+  --refresh-timeout-seconds "$REFRESH_TIMEOUT_SECONDS" \
   --settlement-timeout-seconds "$SETTLEMENT_HTTP_TIMEOUT_SECONDS" \
   --output "$capture_report" \
   "${target_args[@]}"; then

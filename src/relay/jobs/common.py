@@ -144,8 +144,8 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument(
         "--refresh-timeout-seconds",
         type=float,
-        default=DEFAULT_REFRESH_TIMEOUT_SECONDS,
-        help="maximum seconds to wait until refreshed asset/positions are visible in the local ledger",
+        default=float(os.getenv("RELAY_REFRESH_TIMEOUT_SECONDS", str(DEFAULT_REFRESH_TIMEOUT_SECONDS))),
+        help="maximum seconds to wait for successful query terminals and refreshed asset/positions",
     )
     parser.add_argument(
         "--refresh-poll-seconds",
@@ -235,7 +235,7 @@ def run_post_close_capture(options: JobOptions, *, client: Any | None = None, tr
         client=client,
         trading_day=capture_day,
         phase="post_close_capture",
-        refresh_steps=("orders", "fills", "fees", "asset", "positions"),
+        refresh_steps=("asset", "positions", "orders", "fills", "fees"),
         check_non_terminal_orders=True,
         settle_snapshots=True,
         snapshot_type="broker_close",
@@ -991,7 +991,7 @@ def refresh_timeout_error(report: Mapping[str, Any], timeout_seconds: float) -> 
             if isinstance(value, Mapping)
         ) or "-"
     return (
-        f"asset/positions refresh not visible in local ledger after "
+        f"refresh queries and asset/positions did not reach a confirmed ledger state after "
         f"{timeout_seconds:.1f}s; "
         f"asset_updated_at={report.get('asset_updated_at') or '-'}, "
         f"positions_latest_updated_at={report.get('positions_latest_updated_at') or '-'}, "

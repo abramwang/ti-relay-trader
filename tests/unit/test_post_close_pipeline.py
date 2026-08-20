@@ -103,6 +103,7 @@ class PostClosePipelineTest(unittest.TestCase):
         self.assertIn("relay.jobs.performance_daily", calls)
         self.assertIn("--target-date 20260803", calls)
         self.assertIn("--trigger post_close_success", calls)
+        self.assertIn("--refresh-timeout-seconds 180", calls)
         self.assertIn("--settlement-timeout-seconds 60", calls)
         self.assertIn("--trigger post_close_capture_success", calls)
         self.assertIn("--skip-refresh", calls)

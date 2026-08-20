@@ -657,6 +657,16 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertEqual(client.settlement_calls[0]["snapshot_type"], "broker_close")
         self.assertIsNone(client.settlement_calls[0]["input_snapshot_type"])
         self.assertEqual(report["broker_close_snapshot"]["result"]["status"], "completed")
+        self.assertEqual(
+            client.refresh_calls,
+            [
+                ("acct-1", "account.asset.query"),
+                ("acct-1", "account.positions.query"),
+                ("acct-1", "order.list.query"),
+                ("acct-1", "fill.list.query"),
+                ("acct-1", "fee.list.query"),
+            ],
+        )
         self.assertGreaterEqual(client.raw_ledger_reads.count(("asset", "acct-1")), 2)
         self.assertGreaterEqual(client.raw_ledger_reads.count(("positions", "acct-1")), 2)
 
