@@ -217,6 +217,7 @@ def build_daily_job_alert(
         "post_close_capture": "券商收盘数据捕获",
         "post_close_settlement": "盘后结算",
         "performance_daily": "每日绩效计算",
+        "performance_canonical": "权威行情复算",
     }.get(job_name, job_name)
     account_text = f"，涉及 {len(account_ids)} 个账户" if account_ids else ""
     title = f"[Relay][{severity.upper()}] {job_label}异常"

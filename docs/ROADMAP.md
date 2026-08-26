@@ -80,6 +80,7 @@
 - [x] 完成首个 OC 实费版本完整交易日的交易与收盘数据门禁：最终 15,756 笔订单、15,235 笔普通成交、99 条 ETF 划转和 15,754 条实际费用通过 23 项质量检查；所有订单、成交和划转均有实时 event 覆盖，六账户 close 资产和 150 条正持仓完成固化与复核。
 - [x] 完成首个 OC 实费版本完整交易日的绩效阶段：首次 17:45 运行准确阻断当日 `1d` 空缺和成本状态断档；修复后仅对当前交易日使用 Meridian Level1 `pre_close/last` 回退，仅对配置为可信柜台日初成本的账户按 open 快照重锚。复算得到 3 个活跃账户 `ready`、费用覆盖完整且数量残差为 0，零资产且无活动账户 `307000051389` 归为 `not_applicable`。
 - [x] 将盘后依赖链改为 `15:01 post_close_capture -> post_close_settlement -> performance_daily`：第一步只捕获券商最终数据，正式 close 成功后立即使用同一交易日计算绩效；任一上游失败或非交易日不触发下游。配置/API/任务页暴露两级 `job_success/depends_on`，cron 由仓库脚本统一安装。
+- [x] 完成 Meridian 权威日线二阶段复算验收：`performance_canonical` 实现 16:00-17:59 水位轮询、同日幂等、仅重建 Level1 provisional 账户、NAV 版本差异审计和超阈值告警。`2026-08-26` 在父任务运行期间正确等待，三类未复权日线水位于 16:32:59 到达后生成 3 户 NAV v2，Level1 与日线 NAV/PnL/收益率差异均为 0，质量为 3 ready、1 not_applicable、0 attention/blocked。
 - [x] 补齐 Meridian 恢复后的历史结算路径：从不可变 `broker_close` 重算历史 close 时使用未复权 `1d` bars，不再依赖“目标日等于系统当天”的 Level1 条件；任何正持仓缺少收盘估值时拒绝覆盖该账户已有 close。`2026-08-14` 已用恢复行情重建 6 份资产和 278 条持仓，0 缺估值、0 对账断点，后续绩效为 3 ready、1 not_applicable。
 - [x] 区分绩效质量阻断与空账户不适用状态：仅对可信空起点且资金、持仓、订单、成交和资金流水全为零的账户输出 `not_applicable`，不触发 critical；任务页同时拆分任务结果与外部通知通道状态。
 - [x] 完成 `2026-08-04` OC 兼容修复生产复测及盘后闭环：六账户查询全部唯一 completed final，最终 147 个正持仓成本完整；2,191 笔订单、2,129 笔普通成交、49 条 ETF 划转和 2,191 条费用通过 26 项检查，盘后结算与依赖绩效任务均 succeeded，三个活跃账户 ready 且与券商终端一致，空账户 not_applicable，命令组 pending/lag 和当日新增 DLQ 均为 0。

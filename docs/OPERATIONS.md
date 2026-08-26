@@ -390,6 +390,9 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 # A 股生产环境盘后流水线，15:01 先独立捕获券商数据，再结算和计算绩效。
 RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,307000051389,314000046830
 1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock $RELAY_HOME/scripts/run-post-close-pipeline.sh >> /var/log/relay/post_close_pipeline.log 2>&1
+
+# 16:00-17:59 每 10 分钟检查 Meridian 权威日线水位；同日成功后由 marker 停止重算。
+*/10 16,17 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock $RELAY_HOME/scripts/run-canonical-performance.sh >> /var/log/relay/performance_canonical.log 2>&1
 ```
 
 生产 OC 的部署计划当前在 15:30 关停。Relay 机器上另有一条 15:10 调用 `/home/dist/production_env/stop_services.sh` 的历史计划，该脚本只关闭本地行情采集进程，不包含 OC trader commander，不应再用它推断交易前置的关停时间。
@@ -438,15 +441,20 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
   --account-id 307000051389 \
   --account-id 314000046830 \
   --output outputs/jobs/performance_daily.json
+
+RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,307000051389,314000046830 \
+  scripts/run-canonical-performance.sh
 ```
 
 盘后流水线输出三份独立 JSON 报告。`post_close_capture` 在 15:01 只校验数据库、Redis、订单服务和事件流，优先向所有账户发布资金、持仓查询，再发布订单、成交和费用查询；Meridian 即使 degraded 也不会阻断。查询终态和新鲜度通过后写入 `broker_close` 资金持仓，成功账户集合原样传给下游。生产 cron 的 OC 查询等待门限为 180 秒，可通过 `RELAY_REFRESH_TIMEOUT_SECONDS` 调整；该门限覆盖 ETF 篮子账户单日数千条订单分片的完整回传，不改变查询失败和陈旧快照的阻断规则。`post_close_settlement` 才校验 Meridian，并使用 `input_snapshot_type=broker_close` 生成正式 `close`、对账输入和差异；它带 `--skip-refresh`，不会再次连接 OC。若 Meridian 故障，捕获任务仍为成功，结算报告明确失败/延后；恢复后以 `--target-date YYYYMMDD` 重跑即可，不受 OC 已关闭或次日 current positions 覆盖影响。历史目标日使用 Meridian 官方 `security_ids + start_date/end_date + frequency=1d + adjustment=none` 批量取得未复权开收盘价；若任一正持仓仍无法形成有效市值，该账户不会覆盖已有 close，并在结算账户错误中列出最多 10 个缺失证券。正式结算成功后才启动 `performance_daily`。各任务均提供默认 60 秒依赖等待和多账户最多 3 路快照并发，完整查询证据保存在 PostgreSQL raw archive 和 `/v1/query-status/{origin_message_id}`。
+
+`run-canonical-performance.sh` 只读取 Meridian 水位、Relay 账本和 PostgreSQL，不查询 OC。等待阶段会更新 `/var/log/relay/reports/performance_canonical.json` 与 `/jobs`，但不会创建完成 marker；水位到达后使用本机 `relayctl performance-rebuild -persist` 为配置账户生成日线版本，再写一条 `trigger=meridian_canonical_ready` 的 `performance_daily` 质量记录。成功后创建 `/var/log/relay/state/performance-canonical-YYYYMMDD.done`；marker 丢失时仍会从 PostgreSQL 已完成报告识别幂等。差异门限可用 `RELAY_CANONICAL_NAV_DELTA_WARNING_CNY` 和 `RELAY_CANONICAL_NAV_DELTA_WARNING_BP` 调整，默认分别为 `50` 和 `0.1`。`/v1/status.job_runs` 与 `/jobs` 同时显示 `performance_daily/performance_canonical`；等待水位不会误显示成非交易日跳过。
 
 快照恢复默认仍使用实际调用时间。仅当资金/持仓账本内容已确认来自原任务且不能再次查询柜台时，才可传入 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写。`snapshot_only` 必须和 `captured_at` 同时使用，只固化源资金/持仓，不按当前行情重估，不读取当前订单/成交，也不写 reconciliation；API 还会校验 `captured_at` 的日期必须与 `trade_date` 一致。
 
 局部账户恢复完成后，必须再对当日全部启用账户执行一次 `post_close_settlement --skip-refresh`，让最新任务报告形成完整的账户集合，避免复核页把未包含在局部报告中的已成功账户误判为 `post_close snapshot is missing`。同一稳定结算批次重跑时，本轮不再出现的旧 open 断点会自动转为 `resolved`，并记录 `resolution_source=successful_settlement_rerun`；原始断点内容和 Redis/数据库审计证据继续保留。
 
-任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前/盘后任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
+任务报告需要进入 9092 状态面板时，使用 `--persist`。该参数会调用 `POST /v1/jobs/runs` 写入 PostgreSQL `job_runs`，`/v1/status` 展示最近盘前、盘后和绩效任务摘要，`/jobs` 提供页面化任务监控。任务状态页会读取 `/v1/status.trading_day.is_trading_day`；Meridian 明确当天不是交易日时，`phase=non_trading`，计划显示为“非交易日跳过”，避免工作日休市被误判成“今日未完成”。
 
 每日任务已内置 `relay.alert.v1` 通用 JSON Webhook。任务失败、快照阻断和绩效计算阻断为 `critical`；单账户查询异常及费用数据待完善的绩效账户为 `warning`；刷新超时同时标记 `refresh_timeout` 与 `snapshot_blocked`。绩效 `not_applicable` 不发送通知。同一轮多账户异常只聚合投递一次。正常成功、非交易日正常跳过不发送，`--dry-run` 始终抑制通知。每条通知带稳定 `dedupe_key` 和 HTTP `Idempotency-Key`，网络异常、429 和 5xx 最多重试 3 次。投递结果保存到同一条 `job_runs.report.alert_delivery`，可在 `/jobs` 的“告警”列查看；任务结果与通知状态相互独立，通道关闭或投递失败不会把已成功的账表任务改判为失败。
 

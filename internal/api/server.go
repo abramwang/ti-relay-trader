@@ -4511,7 +4511,13 @@ func (s *Server) latestJobRunStatus(ctx context.Context) map[string]JobRunStatus
 	if s.jobs == nil {
 		return nil
 	}
-	names := []string{"pre_open_init", "post_close_capture", "post_close_settlement"}
+	names := []string{
+		"pre_open_init",
+		"post_close_capture",
+		"post_close_settlement",
+		"performance_daily",
+		"performance_canonical",
+	}
 	checkCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	runs, err := s.jobs.LatestJobRuns(checkCtx, names)

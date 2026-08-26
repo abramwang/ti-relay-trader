@@ -92,14 +92,15 @@ Meridian：
 | --- | --- | --- |
 | 当日日线未发布、Level1 已就绪 | bars `503`，snapshots `200` | provisional 可计算，记录双质量标记 |
 | 当日日线和 Level1 均未就绪 | bars `503`，snapshots 不完整 | 账户 blocked，不发布 NAV |
-| 当日日线水位到达 | bars `200` 且完整 | 使用 `meridian_1d_unadjusted` 重算 canonical 输入 |
+| 当日日线水位到达 | bars `200` 且完整 | 使用 `meridian_1d_pre_close_and_close` 重算 canonical 输入并保留旧版本 |
 | 历史日线缺分区 | bars `503` | blocked，绝不读取当前 Level1 |
 | 非交易日 | 交易日接口明确非交易日 | 日任务跳过，行情回退最近交易日仅用于页面查询 |
 | schema 或错误码变化 | compatibility notice | 双方 fixture 回归通过后部署 |
 
 ## 后续动作
 
-1. Relay 部署本次 503 降级修复并重跑 `2026-08-26` 绩效。
-2. Relay 增加 canonical 水位到达后的自动重算任务，复用同一交易日和不可变 `broker_close`。
-3. 将本文发给 Meridian，确认现有两个状态接口字段是否承诺稳定；如不能承诺，按精简对象补契约。
-4. 双方各保留一个固定响应 fixture，覆盖 `503 -> Level1 provisional -> daily ready` 完整状态迁移。
+1. [x] Relay 部署 503 降级修复，并使用当日 Level1 恢复 `2026-08-26` provisional 绩效。
+2. [x] Relay 实现 `performance_canonical`：16:00-17:59 每 10 分钟读取权威水位，复用同一交易日账本生成新 NAV 版本，保存版本差异并保证同日幂等。
+3. [x] 完成 `2026-08-26` 首次真实水位到达验收：16:30 父任务运行时 Relay 保持等待，16:32:59 三类水位到达后生成 3 个活跃账户的权威日线 NAV v2；3 户 NAV/PnL/收益率差异均为 0，质量结果为 3 ready、1 not_applicable、0 attention/blocked。
+4. [ ] 将本文发给 Meridian，确认现有两个状态接口字段是否承诺稳定；如不能承诺，按精简对象补契约。
+5. [x] Relay 单测固定 `503 -> Level1 provisional -> daily ready` 的关键门禁和等待/完成/幂等状态；Meridian 侧仍需保留对应契约 fixture。

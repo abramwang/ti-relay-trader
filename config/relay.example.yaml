@@ -95,6 +95,11 @@ jobs:
     enabled: true
     trigger: "job_success"
     depends_on: "post_close_settlement"
+  performance_canonical:
+    enabled: true
+    # The cron wrapper polls every 10 minutes from 16:00 through 17:59 and
+    # stops after Meridian's canonical daily watermark reaches this trade day.
+    schedule: "40 16 * * 1-5"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

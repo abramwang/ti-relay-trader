@@ -21,10 +21,13 @@ relay 每个交易日需要两个稳定流程：
 | 券商收盘捕获 | `post_close_capture` | 生产默认 15:01 `Asia/Shanghai` | 不依赖 Meridian，追平订单/成交/费用并固化 OC 最终资金持仓 |
 | 收盘后结算 | `post_close_settlement` | `post_close_capture` 成功后 | 从 `broker_close` 补行情并生成正式日终快照、对账和盈亏输入 |
 | 每日绩效计算 | `performance_daily` | `post_close_settlement` 成功后 | close 快照成功后，由本机 `relayctl` 发布非阻断成本账/NAV，再记录逐账户质量与发布状态 |
+| 权威行情复算 | `performance_canonical` | 16:00-17:59 每 10 分钟检查，预计 16:40 | Meridian 三类未复权日线水位到达当日后重算 NAV，保留前后版本并审计差异 |
 
 生产环境默认在交易日 15:01 执行，OC 由部署计划在 15:30 关停。14:56 只是策略侧停止新增交易和预结算观察起点，不直接固化日终快照；15:00 前仍可能出现尾单回报，因此资金、持仓、订单和成交的权威刷新仍在 15:01 统一发起。测试环境可按联调需要手工触发或调整 cron，但配置和日志都必须明确是 `Asia/Shanghai`。
 
 `performance_daily` 不再固定等待到 17:45，而由 15:01 启动的盘后流水线在 `post_close_settlement` 成功持久化后立即触发，并显式复用该报告的 `target_trade_date`。任务优先使用 Meridian 当日 `1d`；若当前交易日的 `1d` 返回 `503 archive_incomplete` 或尚未包含目标证券，则使用同源 Level1 realtime 的 `pre_close/last` 并留下 `meridian_daily_bars_unavailable` 和 `meridian_level1_close_fallback` 标记。该降级仅允许用于东八区当前交易日，历史日期仍严格要求权威日线。Meridian 的 Level1 归档/质量完成时间和 canonical 日线水位分别通过状态接口判断，不按固定时间猜测，详细契约见 [docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)。流水线不查询 OC：服务器本机 `relayctl performance-rebuild` 直接连接 Relay 数据库和 Meridian，仅将成本账与经济净值均非 blocked 的账户发布为 provisional；随后 Python 质量任务核对正式 NAV 是否存在，并输出 `ready/attention/blocked/not_applicable` 与 `published/preview_only`。公网 `performance.settings_write_enabled` 继续关闭，网页/API 不能借此修改绩效账。`not_applicable` 仅表示可信空起点账户当日没有资金和任何交易活动，不参与告警或收益率；真实质量缺口继续阻断且不落 NAV。单户质量问题不会拖累其他账户。盘后结算失败或非交易日时不会启动绩效任务；历史缺口保持诊断和阻断，交割单只作外部核验，不触发历史补数或自动重建。
+
+`performance_canonical` 读取 Meridian `/v1/quality/postclose-reference`，只有 schema、目标交易日、整体状态以及 `daily_bar_stock_none/daily_bar_etf_none/daily_bar_index_none` 三个 `published_watermark` 全部通过门禁后才执行。门禁未通过时任务以“等待 Meridian 日线”记录进度，不调用 OC、不覆盖快照也不重算；通过后只重建尚带 Level1 降级标记的账户，再运行同日绩效质量检查。`performance_nav_versions` 保留旧 provisional 版本并新增 `meridian_1d_pre_close_and_close` 版本，任务报告保存旧/新主键、版本、NAV、PnL、收益率和差额；差额超过 `50 CNY` 或 `0.1 bp` 中较高门限时告警。成功标记和 PostgreSQL 任务报告共同保证同日幂等，服务或 cron 重启不会重复生成版本。
 
 ## 盘前初始化
 
@@ -55,6 +58,7 @@ relay 每个交易日需要两个稳定流程：
 7. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
 8. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
 9. 为盈亏统计准备输入并输出结算报告；正式结算成功后再触发 `performance_daily`。
+10. Meridian 权威日线水位到达后运行 `performance_canonical`，生成可审计的新 NAV 版本并记录与 Level1 provisional 的差异。
 
 任务完成状态不等于所有账户都已通过。`GET /v1/reconciliations/review-report?trade_date=YYYYMMDD` 会把同日盘前、盘后 `job_runs.report_json` 与 `reconciliation_breaks` 聚合为账户级复核报告：展示日初/日终资产、持仓、订单、成交、未终态订单、开放差异和快照阻断原因，并给出 `passed`、`attention`、`blocked` 或 `pending` 结论。未传日期时，非交易日自动读取 Meridian 返回的最近交易日；`/jobs` 支持按交易日查看并导出该 JSON 报告。
 
@@ -64,12 +68,14 @@ A 股普通二级市场委托为当日有效。尾盘集合竞价期间无法主
 
 ## 配置建议
 
-当前已实现三个交易日 Python 任务入口：
+当前已实现五个交易日 Python 任务入口：
 
 ```bash
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://relay-trader.quantstage.com
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_capture --base-url http://relay-trader.quantstage.com
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily --base-url http://relay-trader.quantstage.com
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_canonical --base-url http://relay-trader.quantstage.com
 ```
 
 需要把任务状态写入 9092、`/v1/status` 和 `/jobs` 时，增加 `--persist`：
@@ -78,9 +84,10 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.pre_open_init --base-url http://relay-trader.quantstage.com --persist --trigger cron
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_capture --base-url http://relay-trader.quantstage.com --persist --trigger cron
 PYTHONPATH=src:sdk/python python3 -m relay.jobs.post_close_settlement --base-url http://relay-trader.quantstage.com --target-date YYYYMMDD --persist --trigger post_close_capture_success
+PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_canonical --base-url http://relay-trader.quantstage.com --target-date YYYYMMDD --account-id ACCOUNT_ID --persist --trigger meridian_watermark_poll
 ```
 
-两个任务都会：
+`pre_open_init/post_close_capture/post_close_settlement` 共享以下日流程和快照约束；其中账户刷新只由盘前初始化和券商收盘捕获执行，正式结算复用已固化的 `broker_close`：
 
 1. 检查 `/v1/status`。
 2. 盘前和正式结算通过 Meridian 交易日接口解析目标交易日；`post_close_capture` 直接使用东八区目标日期，Meridian 不可用不会阻断 OC 查询。若 `/v1/status` 已明确返回非交易日，可正常跳过。
@@ -108,9 +115,20 @@ jobs:
   pre_open_init:
     enabled: true
     schedule: "1 9 * * 1-5"
-  post_close_settlement:
+  post_close_capture:
     enabled: true
     schedule: "1 15 * * 1-5"
+  post_close_settlement:
+    enabled: true
+    trigger: "job_success"
+    depends_on: "post_close_capture"
+  performance_daily:
+    enabled: true
+    trigger: "job_success"
+    depends_on: "post_close_settlement"
+  performance_canonical:
+    enabled: true
+    schedule: "40 16 * * 1-5"
 ```
 
 cron 部署时建议设置：

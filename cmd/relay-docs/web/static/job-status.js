@@ -26,6 +26,7 @@
     { name: "post_close_capture", title: "券商收盘捕获", expectedTime: "15:01", purpose: "独立查询并固化券商最终资金、持仓和交易账本" },
     { name: "post_close_settlement", title: "盘后结算", expectedTime: "", purpose: "基于券商收盘快照补行情并生成正式对账输入" },
     { name: "performance_daily", title: "每日绩效计算", expectedTime: "", purpose: "盘后结算成功后计算成本账和经济净值质量" },
+    { name: "performance_canonical", title: "权威行情复算", expectedTime: "16:40", purpose: "Meridian 日线水位到达后重算绩效并审计 Level1 差异" },
   ];
   const expectedRunGraceMinutes = 5;
 
@@ -235,6 +236,9 @@
     if (!schedule.enabled) return { label: "未启用", className: "skipped" };
     const tradeDate = status && status.trading_day && status.trading_day.date;
     if (runMatchesTradeDate(run, tradeDate)) {
+      if (run.job_name === "performance_canonical" && run.report && run.report.waiting_for_meridian) {
+        return { label: "等待 Meridian 日线", className: "running" };
+      }
       const label = statusLabel(run.status, run.skipped);
       if (run.skipped) return { label: "已跳过", className: "skipped" };
       if (label === "succeeded" || label === "completed" || label === "ok") return { label: "已完成", className: "succeeded" };
@@ -370,9 +374,28 @@
   function finalResult(run) {
     if (!run) return "--";
     const report = run.report || {};
+    if (run.job_name === "performance_canonical" && report.waiting_for_meridian) {
+      const watermark = report.meridian_watermark || {};
+      const published = Array.isArray(watermark.required_datasets)
+        ? watermark.required_datasets.map((item) => Number(item.published_watermark || 0)).filter(Boolean)
+        : [];
+      const latest = published.length ? Math.min(...published) : 0;
+      return `等待 Meridian 权威日线 · 目标 ${watermark.requested_trade_date || "--"} · 当前 ${latest || "--"}`;
+    }
     if (report.skipped) return report.skip_reason || "skipped";
     const snapshot = snapshotResult(run);
     const parts = [];
+    if (run.job_name === "performance_canonical" && report.comparison_summary) {
+      const comparison = report.comparison_summary;
+      parts.push(report.canonical_completed ? "权威复算完成" : "权威复算未完成");
+      parts.push(`对比 ${Number(comparison.compared_accounts || 0)}`);
+      parts.push(`变化 ${Number(comparison.changed_accounts || 0)}`);
+      parts.push(`最大差额 ${formatNumber(comparison.max_abs_close_economic_nav_delta, 2)}`);
+      if (Array.isArray(comparison.warning_accounts) && comparison.warning_accounts.length) {
+        parts.push(`超阈值 ${comparison.warning_accounts.length}`);
+      }
+      return parts.join(" · ");
+    }
     const performance = report.performance_summary;
     if (performance && typeof performance === "object") {
       parts.push(`正常 ${Number(performance.ready || 0)}`);
@@ -464,13 +487,15 @@
       return;
     }
     els.body.innerHTML = runs.map((run, index) => {
-      const status = statusLabel(run.status, run.skipped);
+      const waitingForMeridian = run.job_name === "performance_canonical" && run.report && run.report.waiting_for_meridian;
+      const status = waitingForMeridian ? "waiting" : statusLabel(run.status, run.skipped);
+      const runStatusClass = waitingForMeridian ? "running" : statusClass(run.status, run.skipped);
       const alert = alertDeliveryView(run);
       const error = run.error_summary || accountErrorSummary(run) || (Array.isArray(run.report && run.report.errors) ? run.report.errors.join("; ") : "");
       return `
         <tr data-index="${index}">
           <td>${escapeHTML(jobTitle(run.job_name))}<br><code>${escapeHTML(run.run_id || "")}</code></td>
-          <td><span class="status-badge ${statusClass(run.status, run.skipped)}">${escapeHTML(status)}</span></td>
+          <td><span class="status-badge ${runStatusClass}">${escapeHTML(status)}</span></td>
           <td>${escapeHTML(run.target_trade_date || "--")}</td>
           <td>${escapeHTML(run.trigger || "--")}</td>
           <td>${escapeHTML(formatTime(run.started_at))}</td>

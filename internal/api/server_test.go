@@ -85,6 +85,7 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 		"post_close_capture":    {Enabled: true, Schedule: "1 15 * * 1-5"},
 		"post_close_settlement": {Enabled: true, Trigger: "job_success", DependsOn: "post_close_capture"},
 		"performance_daily":     {Enabled: true, Trigger: "job_success", DependsOn: "post_close_settlement"},
+		"performance_canonical": {Enabled: true, Schedule: "40 16 * * 1-5"},
 	}
 	cfg.Accounts = []config.AccountRouteConfig{
 		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:prod:v1:huaxin:gw-1", Enabled: true, TradingEnabled: true},
@@ -92,14 +93,23 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 	dbPinged := false
 	redisPinged := false
-	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
-		Orders: &fakeOrderSubmitter{},
-		Jobs: &fakeJobRunStore{runs: []ledger.JobRun{{
+	jobRuns := &fakeJobRunStore{runs: []ledger.JobRun{
+		{
 			RunID:           "pre-open-1",
 			JobName:         "pre_open_init",
 			TargetTradeDate: "2026-06-14",
 			Status:          "succeeded",
-		}}},
+		},
+		{
+			RunID:           "canonical-1",
+			JobName:         "performance_canonical",
+			TargetTradeDate: "2026-06-14",
+			Status:          "succeeded",
+		},
+	}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{},
+		Jobs:   jobRuns,
 		DatabasePing: func(_ context.Context) error {
 			dbPinged = true
 			return nil
@@ -156,6 +166,19 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	}
 	if envelope.Data.JobRuns["pre_open_init"].RunID != "pre-open-1" {
 		t.Fatalf("job runs = %#v", envelope.Data.JobRuns)
+	}
+	if envelope.Data.JobRuns["performance_canonical"].RunID != "canonical-1" {
+		t.Fatalf("canonical job run = %#v", envelope.Data.JobRuns)
+	}
+	wantJobNames := []string{
+		"pre_open_init",
+		"post_close_capture",
+		"post_close_settlement",
+		"performance_daily",
+		"performance_canonical",
+	}
+	if strings.Join(jobRuns.latestNames, ",") != strings.Join(wantJobNames, ",") {
+		t.Fatalf("latest job names = %#v, want %#v", jobRuns.latestNames, wantJobNames)
 	}
 	if envelope.Data.Jobs["pre_open_init"].ExpectedTime != "09:01" || envelope.Data.Jobs["post_close_capture"].ExpectedTime != "15:01" {
 		t.Fatalf("job schedules = %#v", envelope.Data.Jobs)
@@ -3387,9 +3410,10 @@ type fakeOrderSubmitter struct {
 }
 
 type fakeJobRunStore struct {
-	saved ledger.JobRun
-	runs  []ledger.JobRun
-	err   error
+	saved       ledger.JobRun
+	runs        []ledger.JobRun
+	err         error
+	latestNames []string
 }
 
 type fakeOperationsService struct {
@@ -3809,7 +3833,8 @@ func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun)
 	return run, nil
 }
 
-func (store *fakeJobRunStore) LatestJobRuns(_ context.Context, _ []string) ([]ledger.JobRun, error) {
+func (store *fakeJobRunStore) LatestJobRuns(_ context.Context, names []string) ([]ledger.JobRun, error) {
+	store.latestNames = append([]string(nil), names...)
 	if store.err != nil {
 		return nil, store.err
 	}
