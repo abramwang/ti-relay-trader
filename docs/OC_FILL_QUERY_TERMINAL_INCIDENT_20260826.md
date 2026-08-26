@@ -262,3 +262,71 @@ Relay 于 `2026-08-26 15:37:19 Asia/Shanghai` 发起部署后第一轮只读复�
 - OC 最新 heartbeat：`2026-08-26 15:25:34.953 Asia/Shanghai`
 
 当前 OC 已无持续心跳，疑似被 15:30 关停计划停止，因此本轮结果只能判定为“未消费/待验收”，不能判定修复通过或失败。本地自动等待循环已经停止，不再追加第二条命令；第一条只读命令保留在 `cmd.query`，OC 临时恢复后应先观察它是否被正常消费并产生唯一成功终态，再继续两轮稳定性和盘后恢复验收。
+
+## 11. 部署后首次生产验收失败
+
+OC 于 `2026-08-26 15:39 Asia/Shanghai` 临时恢复运行。第 10 节遗留命令在柜台登录完成前被消费并返回 `BROKER_NOT_READY`，该行为符合协议，不计入修复验收。
+
+heartbeat 随后持续显示：
+
+```text
+state=UP
+redis_ready=true
+broker_ready=true
+order_snapshot_ready=true
+pending_query_count=0
+```
+
+Relay 在确认 ready 后发布全新的只读成交查询：
+
+| 字段 | 值 |
+| --- | --- |
+| origin message ID | `msg-fills-query-1787730007090739891-180` |
+| request ID | `relay-1787730007090708437-9966` |
+| command stream ID | `1787730007065-0` |
+| reply message ID | `reply-1787730007085-20` |
+| reply stream ID | `1787730007090-0` |
+| received_at | `2026-08-26 15:40:07.128657 Asia/Shanghai` |
+
+结果仍为：
+
+```text
+state=failed
+success=false
+contradictory=false
+reply_count=1
+terminal_count=1
+status=failed
+result_type=error_result
+code=QUERY_FAILED
+message=20046:市价单不能满足成交条件撤单
+chunk.is_last=true
+```
+
+新版 OC 已增加诊断字段，原始 `payload` 为：
+
+```json
+{
+  "code": "QUERY_FAILED",
+  "message": "20046:市价单不能满足成交条件撤单",
+  "correlation_id": "msg-fills-query-1787730007090739891-180",
+  "broker_callback": "OnRspQryTrade",
+  "broker_error_id": 0,
+  "query_incomplete": true,
+  "broker_error_text": "20046:市价单不能满足成交条件撤单",
+  "partial_data_returned": true
+}
+```
+
+这里出现了本轮最关键的新证据：`broker_error_id=0`，业务码 `20046` 只存在于 `broker_error_text/message`。如果当前修复只判断数值 `ErrorID == 20046`，生产路径不会进入 `single_order_business_status` 分支，因此仍会生成 `QUERY_FAILED`。
+
+OC 下一轮建议重点修正并测试：
+
+1. 在驱动层确认原始 `pRspInfoField.ErrorID` 是否本来就是 `0`，以及 `20046` 来自 `ErrorMsg`、成交行状态还是内部 `szErr` 聚合字段。
+2. 如果原始数值错误码在上送前丢失，应先修复结构体传递，保留真实错误码和来源，不要仅在 commander 末端猜测。
+3. 如果华鑫生产接口确实返回 `ErrorID=0 + ErrorMsg=20046...`，分类器需要覆盖这一实际组合；文本识别应限定为规范化后的明确代码前缀 `20046:`，并同时检查回调来源、成交行/末帧和查询上下文，不能无条件忽略其他错误文本。
+4. `broker_error_id=0` 时不应仅凭共享 `szErr` 生成查询失败；需要确认该文本属于当前成交查询，而非对应订单或之前回调的残留状态。
+5. 新增与本次生产 payload 完全一致的回归测试：`OnRspQryTrade`、`broker_error_id=0`、`broker_error_text` 以 `20046:` 开头、`partial_data_returned=true`。预期唯一终态为 `fill_page/completed/is_last=true`，此前成交行全部保留。
+6. 保留现有真正查询失败测试，确保非 `20046` 或无法明确归类的错误仍为 `QUERY_FAILED`。
+
+由于第一条全新查询已经失败，Relay 停止后续重复查询和盘后恢复。本轮 OC 修复尚未通过生产验收。
