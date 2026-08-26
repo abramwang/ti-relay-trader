@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-calculation-status", default="")
     parser.add_argument("--expect-quality-status", default="")
     parser.add_argument("--expect-quality-detail", default="")
+    parser.add_argument("--max-details-ms", type=float, default=10_000)
     return parser.parse_args()
 
 
@@ -202,7 +203,7 @@ def main() -> int:
         raise AssertionError(f"performance chart is blank: {diagnostics}")
     if diagnostics["chartElapsedMs"] > 5_000:
         raise AssertionError(f"performance chart rendered too slowly: {diagnostics}")
-    if diagnostics["detailsElapsedMs"] > 10_000:
+    if diagnostics["detailsElapsedMs"] > args.max_details_ms:
         raise AssertionError(f"performance details loaded too slowly: {diagnostics}")
     if diagnostics["qualityItems"] != 7:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")

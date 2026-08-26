@@ -4125,8 +4125,8 @@
     const costLedger = state.performanceCostLedger || {};
     const notApplicable = performanceAccountNotApplicable(daily, economic, nav, costLedger, tradeQuality);
     const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
-    const flags = Array.from(new Set(
-      series.flatMap((item) => Array.isArray(item.quality_flags) ? item.quality_flags : [])
+    const selectedDateFlags = Array.from(new Set(
+      (Array.isArray(daily.quality_flags) ? daily.quality_flags : [])
         .concat(Array.isArray(economic.quality_flags) ? economic.quality_flags : [])
         .concat(Array.isArray(nav.quality_flags) ? nav.quality_flags : [])
     ));
@@ -4140,7 +4140,12 @@
       "close_asset_observation_unavailable",
       "performance_nav_blocked"
     ]);
-    const blockingNAVFlags = flags.filter((flag) => blockingNAVFlagNames.has(String(flag)));
+    const blockingNAVFlags = selectedDateFlags.filter((flag) => blockingNAVFlagNames.has(String(flag)));
+    const blockedRangeDates = series
+      .filter((item) => item && item.performance_status === "blocked")
+      .map((item) => compactDate(item.trade_date))
+      .filter(Boolean)
+      .sort();
     let snapshotStatus = "passed";
     let snapshotDetail = hasEconomicNAV
       ? "当日经济净值输入完整 · " + performanceValuationSourceLabel((economic.valuation || {}).price_source)
@@ -4150,6 +4155,12 @@
     } else if (nav.status === "blocked" || blockingNAVFlags.length > 0) {
       snapshotStatus = "blocked";
       snapshotDetail = blockingNAVFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") || "经济净值已阻断";
+    } else if (blockedRangeDates.length > 0) {
+      snapshotStatus = "blocked";
+      const blockedRange = blockedRangeDates.length === 1
+        ? displayDate(blockedRangeDates[0])
+        : displayDate(blockedRangeDates[0]) + " 至 " + displayDate(blockedRangeDates[blockedRangeDates.length - 1]);
+      snapshotDetail = "当日资金桥正常；区间 " + formatInt(blockedRangeDates.length) + " 个交易日未纳入正式净值（" + blockedRange + "）";
     } else if (!hasEconomicNAV && series.length === 0) {
       snapshotStatus = "blocked";
       snapshotDetail = "所选交易日没有可用经济净值或 close 资产快照";
@@ -4367,6 +4378,7 @@
     }
     const labels = rows.map((item) => displayDate(item.trade_date));
     const accountNAV = rows.map((item) => {
+      if (item.performance_status === "blocked") return null;
       const value = numericOrNull(item.cumulative_return);
       return value === null ? null : 1 + value;
     });
@@ -4375,10 +4387,12 @@
       return value === null ? null : 1 + value;
     });
     const excessReturns = rows.map((item) => {
+      if (item.performance_status === "blocked") return null;
       const value = numericOrNull(item.excess_cumulative_return);
       return value === null ? null : value * 100;
     });
     const accountDrawdowns = rows.map((item) => {
+      if (item.performance_status === "blocked") return null;
       const value = numericOrNull(item.drawdown);
       return value === null ? null : value * 100;
     });
