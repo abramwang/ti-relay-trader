@@ -383,8 +383,10 @@ Relay 在 heartbeat 持续满足 `broker_ready=true/order_snapshot_ready=true` �
 
 修复验收窗口内新增 parser error、DLQ、`FILL_ORDER_CONTEXT_MISMATCH` 和 `BAD_RECOVERED_COMMAND` 均为 `0`；24 条输出流健康、总 lag 为 `0`、pending DLQ 为 `0`，富盈13号 `pending_query_count=0`。
 
-### 12.4 独立绩效等待项
+### 12.4 独立绩效项已恢复
 
-盘后结算后已经触发绩效发布和质量任务，但 `2026-08-26` Meridian 当日日线开收盘字段在 `15:56` 尚不可用，三个有持仓绩效账户均因 `meridian_daily_bars_unavailable/missing_meridian_close` 保持 blocked，空账户为 not_applicable。本次没有发布错误 NAV。该项不影响券商收盘捕获、正式 close 和六账户盘后复核通过，也与 OC 成交查询修复无关；待 Meridian 当日日线归档后重跑绩效即可。
+盘后结算后已经触发绩效发布和质量任务，但 `2026-08-26` Meridian 当日日线开收盘字段在 `15:56` 尚不可用，首次运行正确保持 blocked 且没有发布错误 NAV。后续确认 Meridian 新契约在 canonical 日线父任务 16:30 发布分区前明确返回 `503 archive_incomplete`；Relay 原控制流在该错误分支提前退出，没有执行当日 Level1 降级。
+
+Relay 修复并发布后，于 `16:07-16:08 Asia/Shanghai` 使用已在 `15:54` 完成归档和质量检查的同日 Level1 `pre_close/last` 重算。三个有资产绩效账户均由 blocked 恢复为 `calculated + provisional`，估值来源为 `meridian_level1_pre_close_and_last`，正式质量任务结果为 3 ready/published、1 not_applicable、0 attention/blocked。任务运行 `performance_daily-20260826-1787731685460279000` 已落库；详细双方契约和后续 canonical 重算要求见 `MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md`。
 
 本 OC 事故关闭，第二轮修复已通过生产实盘验收。

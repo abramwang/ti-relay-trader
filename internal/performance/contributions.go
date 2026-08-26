@@ -729,29 +729,29 @@ func (service *Service) loadContributionInstruments(ctx context.Context, tradeDa
 		response, err = service.market.MarketBars(ctx, barValues)
 		if err != nil || response.StatusCode >= 400 {
 			flags = appendUnique(flags, "meridian_daily_bars_unavailable")
-			continue
-		}
-		for _, row := range contributionRows(response.Payload) {
-			securityID := strings.ToUpper(contributionString(row["security_id"]))
-			instrument, ok := items[securityID]
-			if !ok {
-				continue
+		} else {
+			for _, row := range contributionRows(response.Payload) {
+				securityID := strings.ToUpper(contributionString(row["security_id"]))
+				instrument, ok := items[securityID]
+				if !ok {
+					continue
+				}
+				if value, ok := contributionFloat(row["pre_close"]); ok && value > 0 {
+					instrument.PreClose = value
+					instrument.HasPreClose = true
+				}
+				if value, ok := contributionFloat(row["close"]); ok && value > 0 {
+					instrument.Close = value
+					instrument.HasClose = true
+				}
+				if instrument.HasPreClose || instrument.HasClose {
+					instrument.PriceSource = "meridian_1d_unadjusted"
+				}
+				if instrument.InstrumentType == "" {
+					instrument.InstrumentType = strings.ToLower(contributionString(row["instrument_type"]))
+				}
+				items[securityID] = instrument
 			}
-			if value, ok := contributionFloat(row["pre_close"]); ok && value > 0 {
-				instrument.PreClose = value
-				instrument.HasPreClose = true
-			}
-			if value, ok := contributionFloat(row["close"]); ok && value > 0 {
-				instrument.Close = value
-				instrument.HasClose = true
-			}
-			if instrument.HasPreClose || instrument.HasClose {
-				instrument.PriceSource = "meridian_1d_unadjusted"
-			}
-			if instrument.InstrumentType == "" {
-				instrument.InstrumentType = strings.ToLower(contributionString(row["instrument_type"]))
-			}
-			items[securityID] = instrument
 		}
 
 		if tradeDate == service.now().In(timeutil.Location()).Format("2006-01-02") {

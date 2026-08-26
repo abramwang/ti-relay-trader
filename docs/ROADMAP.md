@@ -91,6 +91,8 @@
 - [x] 按可信锚点和数据质量开放首批绩效发布：`307000051387`、`307000051388`、`314000046830` 的 `2026-08-07..17` 七个完整交易日已连续发布为 `performance_economic_nav.v2.4 provisional`，21 组成本/NAV 0 blocked；空账户 `307000051389` 保持 not_applicable。
 - [x] 用可审计历史证据恢复首批三户 `2026-07-31/2026-08-06` 的 close：7 月 31 日资金来自当日 15 点后柜台查询、持仓由交割单和 8 月 3 日日初双重核对；8 月 6 日持仓通过逐证券订单/成交/ETF transfer 到次日日初的数量桥核对，资金剔除明确属于 8 月 5 日赎回的次日返款；两日估值均使用 Meridian 未复权 `1d` bars，正式对账 0 断点。
 - [x] 实现 ETF 赎回 IOPV 两级来源：优先使用不晚于赎回时刻的历史 Level1，缺失时使用赎回前最后一个完整 1 分钟 bar 的 IOPV 并标记 `minute_iopv_fallback`；实际订单费用缺失不再抹掉待结算估值，只保留 `etf_settlement_execution_fee_pending` 并维持 provisional。
+- [x] 对齐 Meridian 最新日线 fail-closed 契约：当日 `1d` 返回 `503 archive_incomplete` 时不再提前退出，继续使用批量 Level1 realtime `pre_close/last` 形成带来源标记的 provisional 估值；历史日期保持严格日线门禁，并形成 Relay/Meridian 两阶段水位协调与验收文档。
+- [ ] 在 Meridian canonical 日线 `published_watermark` 到达目标交易日后自动重算当日绩效，对 Level1 provisional 与权威日线结果执行差异检查并保留版本审计。
 - [ ] 核对 `2026-08-06` 智算汇利混合/涌盈波动率的公募隔夜资金桥；当前日线、分钟 IOPV、交易和持仓均已闭合，但经济 NAV 仍有 `-74,811.87 / -95,070.64` 元归因残差，确认前不发布该日及跨越该缺口的连续 NAV。
 
 `2026-08-01` 首轮回算现状：

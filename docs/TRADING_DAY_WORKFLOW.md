@@ -1,6 +1,6 @@
 # relay 交易日流程
 
-更新时间：`2026-07-31`
+更新时间：`2026-08-26`
 
 ## 时间口径
 
@@ -24,7 +24,7 @@ relay 每个交易日需要两个稳定流程：
 
 生产环境默认在交易日 15:01 执行，OC 由部署计划在 15:30 关停。14:56 只是策略侧停止新增交易和预结算观察起点，不直接固化日终快照；15:00 前仍可能出现尾单回报，因此资金、持仓、订单和成交的权威刷新仍在 15:01 统一发起。测试环境可按联调需要手工触发或调整 cron，但配置和日志都必须明确是 `Asia/Shanghai`。
 
-`performance_daily` 不再固定等待到 17:45，而由 15:01 启动的盘后流水线在 `post_close_settlement` 成功持久化后立即触发，并显式复用该报告的 `target_trade_date`。任务优先使用 Meridian 当日 `1d`；若当前交易日的 `1d` 尚未生成，则使用同源 Level1 `pre_close/last` 并留下质量标记。流水线不查询 OC：服务器本机 `relayctl performance-rebuild` 直接连接 Relay 数据库和 Meridian，仅将成本账与经济净值均非 blocked 的账户发布为 provisional；随后 Python 质量任务核对正式 NAV 是否存在，并输出 `ready/attention/blocked/not_applicable` 与 `published/preview_only`。公网 `performance.settings_write_enabled` 继续关闭，网页/API 不能借此修改绩效账。`not_applicable` 仅表示可信空起点账户当日没有资金和任何交易活动，不参与告警或收益率；真实质量缺口继续阻断且不落 NAV。单户质量问题不会拖累其他账户。盘后结算失败或非交易日时不会启动绩效任务；历史缺口保持诊断和阻断，交割单只作外部核验，不触发历史补数或自动重建。
+`performance_daily` 不再固定等待到 17:45，而由 15:01 启动的盘后流水线在 `post_close_settlement` 成功持久化后立即触发，并显式复用该报告的 `target_trade_date`。任务优先使用 Meridian 当日 `1d`；若当前交易日的 `1d` 返回 `503 archive_incomplete` 或尚未包含目标证券，则使用同源 Level1 realtime 的 `pre_close/last` 并留下 `meridian_daily_bars_unavailable` 和 `meridian_level1_close_fallback` 标记。该降级仅允许用于东八区当前交易日，历史日期仍严格要求权威日线。Meridian 的 Level1 归档/质量完成时间和 canonical 日线水位分别通过状态接口判断，不按固定时间猜测，详细契约见 [docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)。流水线不查询 OC：服务器本机 `relayctl performance-rebuild` 直接连接 Relay 数据库和 Meridian，仅将成本账与经济净值均非 blocked 的账户发布为 provisional；随后 Python 质量任务核对正式 NAV 是否存在，并输出 `ready/attention/blocked/not_applicable` 与 `published/preview_only`。公网 `performance.settings_write_enabled` 继续关闭，网页/API 不能借此修改绩效账。`not_applicable` 仅表示可信空起点账户当日没有资金和任何交易活动，不参与告警或收益率；真实质量缺口继续阻断且不落 NAV。单户质量问题不会拖累其他账户。盘后结算失败或非交易日时不会启动绩效任务；历史缺口保持诊断和阻断，交割单只作外部核验，不触发历史补数或自动重建。
 
 ## 盘前初始化
 

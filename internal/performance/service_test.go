@@ -224,6 +224,45 @@ func TestLoadContributionInstrumentsFallsBackToCurrentLevel1Snapshot(t *testing.
 	}
 }
 
+func TestLoadContributionInstrumentsFallsBackToCurrentLevel1WhenDailyArchiveIsIncomplete(t *testing.T) {
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 503, Payload: map[string]any{"error": map[string]any{
+			"code": "archive_incomplete", "message": "daily partition is not published",
+		}}},
+		snapshots: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "trade_date": 20260826, "pre_close": 9.54, "last": 9.67,
+		}}}},
+	}
+	service, err := New(Options{
+		Store:  &fakePerformanceStore{},
+		Market: marketClient,
+		Now: func() time.Time {
+			return time.Date(2026, 8, 26, 15, 56, 0, 0, timeutil.Location())
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	instruments, flags := service.loadContributionInstruments(context.Background(), "2026-08-26", []string{"600000.SH"})
+	instrument := instruments["600000.SH"]
+	if !instrument.HasPreClose || !instrument.HasClose || instrument.PreClose != 9.54 || instrument.Close != 9.67 {
+		t.Fatalf("instrument = %#v", instrument)
+	}
+	if instrument.PriceSource != "meridian_level1_snapshot" {
+		t.Fatalf("price source = %q", instrument.PriceSource)
+	}
+	if !containsString(flags, "meridian_daily_bars_unavailable") || !containsString(flags, "meridian_level1_close_fallback") {
+		t.Fatalf("flags = %#v", flags)
+	}
+	if len(marketClient.queries) != 3 {
+		t.Fatalf("market queries = %#v", marketClient.queries)
+	}
+}
+
 func TestLoadContributionInstrumentsDoesNotUseLevel1ForHistoricalDate(t *testing.T) {
 	marketClient := &fakeContributionMarket{
 		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
