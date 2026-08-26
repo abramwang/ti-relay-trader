@@ -20,6 +20,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=1280)
     parser.add_argument("--output", default="/tmp/relay-performance-smoke.png")
     parser.add_argument("--account-id", default="")
+    parser.add_argument("--expect-calculation-status", default="")
+    parser.add_argument("--expect-quality-status", default="")
+    parser.add_argument("--expect-quality-detail", default="")
     return parser.parse_args()
 
 
@@ -165,6 +168,9 @@ def main() -> int:
                     qualityStatus:
                         document.querySelector("#performanceQualityStatus")
                             ?.textContent || "",
+                    qualityDetails: Array.from(
+                        document.querySelectorAll(".performance-quality-item")
+                    ).map((item) => item.textContent || ""),
                     selectedDateFrom:
                         document.querySelector("#perfDateFrom")?.value || "",
                     selectedDateTo:
@@ -208,6 +214,20 @@ def main() -> int:
         raise AssertionError(f"selected performance date is not prominent: {diagnostics}")
     if len(diagnostics["primaryMetrics"]) != 4:
         raise AssertionError(f"primary performance metrics are incomplete: {diagnostics}")
+    if (
+        args.expect_calculation_status
+        and args.expect_calculation_status not in diagnostics["calculationStatus"]
+    ):
+        raise AssertionError(f"unexpected calculation status: {diagnostics}")
+    if (
+        args.expect_quality_status
+        and args.expect_quality_status not in diagnostics["qualityStatus"]
+    ):
+        raise AssertionError(f"unexpected quality status: {diagnostics}")
+    if args.expect_quality_detail and not any(
+        args.expect_quality_detail in item for item in diagnostics["qualityDetails"]
+    ):
+        raise AssertionError(f"expected quality detail is missing: {diagnostics}")
     if console_errors or page_errors or response_errors:
         raise AssertionError(
             json.dumps(

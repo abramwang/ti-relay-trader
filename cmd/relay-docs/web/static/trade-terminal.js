@@ -4044,7 +4044,56 @@
     }[value] || value || "--";
   }
 
-  function performanceCalculationState(nav, costLedger, feeSummary, published) {
+  function performanceAccountNotApplicable(daily, economic, nav, costLedger, tradeQuality) {
+    const costSummary = costLedger && costLedger.summary || {};
+    const tradeSummary = tradeQuality && tradeQuality.summary || {};
+    const cashFlows = economic && economic.cash_flows || {};
+    const flags = new Set(
+      (Array.isArray(costLedger && costLedger.quality_flags) ? costLedger.quality_flags : [])
+        .concat(Array.isArray(economic && economic.quality_flags) ? economic.quality_flags : [])
+        .concat(Array.isArray(nav && nav.quality_flags) ? nav.quality_flags : [])
+        .map(String)
+    );
+    if (!daily || !economic || !costLedger || !tradeQuality) return false;
+    if (compactDate(daily.trade_date) !== compactDate(state.performanceSelectedDate)) return false;
+    if (nav.status !== "blocked" || costLedger.status === "blocked") return false;
+    if (!flags.has("empty_clean_start_continuation") || !flags.has("missing_positive_economic_nav")) return false;
+    const activityValues = [
+      daily.cash_available,
+      daily.cash_total,
+      daily.net_asset,
+      daily.positions_count,
+      daily.position_market_value,
+      daily.fills_count,
+      daily.buy_amount,
+      daily.sell_amount,
+      daily.turnover,
+      tradeSummary.orders,
+      tradeSummary.fills,
+      tradeSummary.turnover,
+      costSummary.open_quantity,
+      costSummary.buy_quantity,
+      costSummary.sell_quantity,
+      costSummary.close_quantity,
+      cashFlows.external_flow_count,
+      cashFlows.settlement_count,
+      cashFlows.income_expense_count,
+      cashFlows.internal_flow_count,
+      cashFlows.external_net_flow,
+      cashFlows.settlement_adjustment,
+      cashFlows.income_expense,
+      cashFlows.internal_transfer
+    ];
+    return activityValues.every((value) => {
+      const number = numericOrNull(value);
+      return number !== null && Math.abs(number) <= 0.000001;
+    });
+  }
+
+  function performanceCalculationState(nav, costLedger, feeSummary, published, notApplicable) {
+    if (notApplicable) {
+      return { status: "ready", label: "当日不适用" };
+    }
     if (!nav || numericOrNull(nav.close_economic_nav) === null) {
       return { status: "waiting", label: "暂无结果" };
     }
@@ -4073,6 +4122,8 @@
     const tradeSummary = tradeQuality.summary || {};
     const economic = state.performanceEconomicNAV || {};
     const nav = economic.nav || {};
+    const costLedger = state.performanceCostLedger || {};
+    const notApplicable = performanceAccountNotApplicable(daily, economic, nav, costLedger, tradeQuality);
     const reconciliation = state.performanceNAVReconciliation || economic.reconciliation || {};
     const flags = Array.from(new Set(
       series.flatMap((item) => Array.isArray(item.quality_flags) ? item.quality_flags : [])
@@ -4094,7 +4145,9 @@
     let snapshotDetail = hasEconomicNAV
       ? "当日经济净值输入完整 · " + performanceValuationSourceLabel((economic.valuation || {}).price_source)
       : formatInt(series.length) + " 个 close 样本，日初来源 " + (daily.open_snapshot_source || "--");
-    if (nav.status === "blocked" || blockingNAVFlags.length > 0) {
+    if (notApplicable) {
+      snapshotDetail = "可信空账户：当日零资金、零持仓、零委托成交，资金桥不适用";
+    } else if (nav.status === "blocked" || blockingNAVFlags.length > 0) {
       snapshotStatus = "blocked";
       snapshotDetail = blockingNAVFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") || "经济净值已阻断";
     } else if (!hasEconomicNAV && series.length === 0) {
@@ -4168,7 +4221,6 @@
       status: ledgerStatus
     });
 
-    const costLedger = state.performanceCostLedger || {};
     const costSummary = costLedger.summary || {};
     let costStatus = "warning";
     let costDetail = "当前交易日暂无可信持仓成本结果";
@@ -4190,7 +4242,10 @@
     const reconciliationStatus = reconciliation.status || "";
     let navStatus = "warning";
     let navDetail = "当前交易日暂无 T+1 NAV 对账记录";
-    if (reconciliationStatus === "auto_completed" || reconciliationStatus === "confirmed") {
+    if (notApplicable) {
+      navStatus = "passed";
+      navDetail = "可信空账户无经济净值，T+1 对账不适用";
+    } else if (reconciliationStatus === "auto_completed" || reconciliationStatus === "confirmed") {
       navStatus = "passed";
       navDetail = navReconciliationStatusInfo(reconciliationStatus).label + " · 残差 " + formatSigned(reconciliation.residual);
     } else if (reconciliationStatus === "blocked") {
@@ -4530,14 +4585,21 @@
     const officialSeriesItem = series.find((item) => compactDate(item.trade_date) === selectedDate) || {};
     const officialPublished = String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
       && officialSeriesItem.performance_status !== "blocked";
-    const calculationState = performanceCalculationState(nav, costLedger, securityPnL, officialPublished);
+    const notApplicable = performanceAccountNotApplicable(
+      daily,
+      economic,
+      nav,
+      costLedger,
+      state.performanceTradeQuality || {}
+    );
+    const calculationState = performanceCalculationState(nav, costLedger, securityPnL, officialPublished, notApplicable);
     const actualFee = numericOrNull(securityPnL.actual_fee) ?? numericOrNull(securityPnL.effective_fee) ?? numericOrNull(daily.fee_total);
     const turnover = numericOrNull(tradingObservation.turnover) ?? numericOrNull(daily.turnover);
     const feeRequired = Number(securityPnL.fee_required_orders) || 0;
     const feeCovered = Number(securityPnL.fee_covered_orders) || 0;
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
-      selectedDate ? displayDate(selectedDate) + (officialPublished ? " 已发布" : " 当日试算") : "等待交易日",
+      selectedDate ? displayDate(selectedDate) + (officialPublished ? " 已发布" : (notApplicable ? " 当日不适用" : " 当日试算")) : "等待交易日",
       state.performanceSeriesFallback && latest.trade_date ? "正式曲线截至 " + displayDate(latest.trade_date) : "",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       "Asia/Shanghai"
@@ -4546,9 +4608,9 @@
     els.perfFocusDate.textContent = [activeAccountLabel(), selectedDate ? displayDate(selectedDate) : ""].filter(Boolean).join(" · ") || "等待选择交易日";
     els.perfCalculationStatus.textContent = calculationState.label;
     els.perfCalculationMeta.textContent = [
-      economic.persisted || officialPublished ? "已落库" : (numericOrNull(nav.close_economic_nav) !== null ? "只读 preview" : "尚未计算"),
-      nav.status || "",
-      navFlags.length ? navFlags.length + " 项质量标记" : ""
+      notApplicable ? "只读检查" : (economic.persisted || officialPublished ? "已落库" : (numericOrNull(nav.close_economic_nav) !== null ? "只读 preview" : "尚未计算")),
+      notApplicable ? "not_applicable" : (nav.status || ""),
+      notApplicable ? "零资金、零持仓、零交易" : (navFlags.length ? navFlags.length + " 项质量标记" : "")
     ].filter(Boolean).join(" · ");
     els.perfOpenEconomicNav.textContent = formatNumber(nav.open_economic_nav);
     const openETFSettlementAsset = numericOrNull(valuation.open_etf_settlement_asset) || 0;
