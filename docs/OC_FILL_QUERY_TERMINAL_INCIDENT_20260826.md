@@ -244,3 +244,21 @@ OC 更新并重启后，Relay 将执行只读复测，不会下单或撤单。
 - 不影响其余五账户已经完成的 `2026-08-26` 收盘快照和结算。
 - 等待 OC 修复后再补查和补结算，原始 Redis 报文、查询状态和任务报告继续保留供审计。
 
+## 10. OC 修复交付与待验收状态
+
+OC 已交付并部署以下修复：
+
+- `fa43056 fix(huaxin): isolate order status from fill queries`
+- `fd0b89b test(huaxin): add repeated fill query incident retest`
+- 兼容通知：`RELAY_COMPATIBILITY_NOTICE_20260826.md`
+
+通知中的成功/失败分类、唯一终态和审计字段与 Relay 现有协议兼容，不需要 Relay schema 或解析代码改动。
+
+Relay 于 `2026-08-26 15:37:19 Asia/Shanghai` 发起部署后第一轮只读复测：
+
+- origin message ID：`msg-fills-query-1787729839067062486-179`
+- command stream ID：`1787729839043-0`
+- 截至 `15:38:36`：`state=pending`、`reply_count=0`、`terminal_count=0`
+- OC 最新 heartbeat：`2026-08-26 15:25:34.953 Asia/Shanghai`
+
+当前 OC 已无持续心跳，疑似被 15:30 关停计划停止，因此本轮结果只能判定为“未消费/待验收”，不能判定修复通过或失败。本地自动等待循环已经停止，不再追加第二条命令；第一条只读命令保留在 `cmd.query`，OC 临时恢复后应先观察它是否被正常消费并产生唯一成功终态，再继续两轮稳定性和盘后恢复验收。
