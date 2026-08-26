@@ -330,3 +330,61 @@ OC 下一轮建议重点修正并测试：
 6. 保留现有真正查询失败测试，确保非 `20046` 或无法明确归类的错误仍为 `QUERY_FAILED`。
 
 由于第一条全新查询已经失败，Relay 停止后续重复查询和盘后恢复。本轮 OC 修复尚未通过生产验收。
+
+## 12. 第二轮修复生产验收通过
+
+OC 继续交付并部署：
+
+- `b8ff57b fix(huaxin): stop order errors leaking into fills`
+- `ace670e test(huaxin): cover fill error metadata isolation`
+
+最终根因确认是订单缓存的 `TiBase_Msg.szErr` 被通用 `fillBaseMeta` 复制到有效成交对象。第二轮修复停止跨对象复制订单错误，并在 Commander 增加“携带成交身份或成交数据时优先按成交行处理”的防御规则。详细 wire 约束见更新后的 `RELAY_COMPATIBILITY_NOTICE_20260826.md`。
+
+### 12.1 连续成交查询
+
+Relay 在 heartbeat 持续满足 `broker_ready=true/order_snapshot_ready=true` 后连续执行两次只读 `fill.list.query`：
+
+| 轮次 | origin message ID | reply message ID | 状态 | 普通成交 | ETF 划转 |
+| --- | --- | --- | --- | ---: | ---: |
+| 1 | `msg-fills-query-1787730904611121141-181` | `reply-1787730904613-31` | `completed/fill_page/is_last=true` | 482 | 148 |
+| 2 | `msg-fills-query-1787730907767958023-182` | `reply-1787730907767-32` | `completed/fill_page/is_last=true` | 482 | 148 |
+
+两轮均满足：
+
+- `success=true`、`contradictory=false`；
+- `reply_count=1`、`terminal_count=1`，终态后等待两秒未出现第二终态；
+- `item_count` 与 `items[]` 长度均为 `482`；
+- `component_transfer_count` 与 `component_transfers[]` 长度均为 `148`；
+- 482 条普通成交的 `fill_id/gateway_order_id/order_stream_id` 无缺失；
+- 单轮成交身份无重复，两轮身份集合差异为 `0`。
+
+原 `300750` 订单 `external-huaxin-31400004576801-12001A180003653` 仍为 `cancelled/cancelled/is_terminal=true`，成交 `1,600/2,600`，`20046` 继续保存在订单 `status_message/cancel_reason/broker_status_text`，没有回归丢失业务原因。
+
+### 12.2 富盈13号收盘捕获
+
+`15:55:52..15:55:59 Asia/Shanghai` 重新执行单账户 `post_close_capture`：
+
+- 资金、持仓、订单、成交、费用五类查询全部取得唯一成功终态；
+- `query_terminals_ok=true`，账户错误和快照阻断均为 `0`；
+- 当日账本为 201 笔订单、482 笔普通成交、201 条完整订单费用、0 未终态订单；
+- 写入富盈13号 1 份 `broker_close` 资金和 26 条最终持仓；
+- 捕获任务 `post_close_capture-20260826-1787730952251651000` 为 `succeeded`。
+
+### 12.3 六账户正式结算
+
+随后只使用不可变 `broker_close` 重跑六账户正式结算，没有再次查询 OC：
+
+- 任务：`post_close_settlement-20260826-1787730976636043000`；
+- 6 份 close 资产、108 条 close 持仓；
+- 485 笔订单、879 笔普通成交；
+- 0 账户错误、0 真实未终态订单、0 开放 reconciliation break；
+- 两笔尾盘 queued 日单按既有规则审计为 `day_end_expired`，break 为 `info/resolved`；
+- `/v1/reconciliations/review-report?trade_date=20260826` 六账户全部 `passed`，富盈13号不再出现 `post_close snapshot is missing`。
+
+修复验收窗口内新增 parser error、DLQ、`FILL_ORDER_CONTEXT_MISMATCH` 和 `BAD_RECOVERED_COMMAND` 均为 `0`；24 条输出流健康、总 lag 为 `0`、pending DLQ 为 `0`，富盈13号 `pending_query_count=0`。
+
+### 12.4 独立绩效等待项
+
+盘后结算后已经触发绩效发布和质量任务，但 `2026-08-26` Meridian 当日日线开收盘字段在 `15:56` 尚不可用，三个有持仓绩效账户均因 `meridian_daily_bars_unavailable/missing_meridian_close` 保持 blocked，空账户为 not_applicable。本次没有发布错误 NAV。该项不影响券商收盘捕获、正式 close 和六账户盘后复核通过，也与 OC 成交查询修复无关；待 Meridian 当日日线归档后重跑绩效即可。
+
+本 OC 事故关闭，第二轮修复已通过生产实盘验收。

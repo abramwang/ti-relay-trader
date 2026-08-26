@@ -8,22 +8,35 @@
 
 ## 1. 问题根因
 
-华鑫 `OnRspQryTrade` 回调可能在成交查询期间重复携带单笔订单业务状态：
+首次修复根据当时的终态文本，判断华鑫 `OnRspQryTrade` 在成交查询期间重复携带了单笔订单业务状态：
 
 ```text
 20046:市价单不能满足成交条件撤单
 ```
 
-该状态属于具体订单，不代表 `QueryMatches` 查询失败。旧版驱动只要看到
-`pRspInfoField.ErrorID != 0` 就丢弃当前成交行，并生成查询错误；OC 随后把该错误直接发布为
-`fill.list.query / QUERY_FAILED`。因此真实成交未进入 `fill_page.items`，盘后权威成交查询被错误阻断。
+部署后复测提供了关键字段：`broker_error_id=0`、`broker_error_text=20046:...`、
+`partial_data_returned=true`。结合代码确认，生产路径的实际根因是：
+
+1. 订单查询/回报将 `20046` 正确保存在订单缓存的 `TiBase_Msg.szErr`；
+2. 成交查询通过 `order_stream_id` 读取订单缓存，以取得 `client_id` 等关联信息；
+3. 旧的通用 `fillBaseMeta` 同时复制了关联字段和 `szErr`；
+4. 有效 `TiRspQryMatch` 因而继承订单错误文本，但没有券商成交查询错误码，所以出现
+   `broker_error_id=0`；
+5. Commander 在处理成交字段前先检查 `szErr`，错误地结束了整个 `fill.list.query`。
+
+因此该问题不是 Relay 解析错误，也不是简单的 `ErrorID` 丢失，而是 OC 内部把订单业务状态当作
+跨对象关联元数据传播。
 
 ## 2. 修复后行为
 
 ### 2.1 业务状态与成交行同行
 
-当 `ErrorID=20046` 且回调携带有效 `pTradeField` 时，驱动继续解析并上送成交行，不再丢弃成交数据。
-订单的 `cancelled` 状态、部分成交数量及 `status_message/cancel_reason` 仍由订单链路保留，不受本次修复影响。
+订单缓存现在只向成交对象复制请求 ID、用户关联字段和 `client_id`，不再复制 `szErr`。因此即使对应
+订单保存了 `20046`，成交行的 `szErr` 仍保持为当前成交回调自己的状态。
+
+当华鑫实际返回 `ErrorID=20046` 且回调携带有效 `pTradeField` 时，驱动也会继续解析并上送成交行，
+不丢弃成交数据。订单的 `cancelled` 状态、部分成交数量及 `status_message/cancel_reason` 仍由订单链路
+保留，不受本次修复影响。
 
 ### 2.2 空回调重复携带 20046
 
@@ -80,6 +93,17 @@ OC 仅将明确的 `20046` 分类为 `single_order_business_status`：
 即使 `partial_data_returned=true`，该终态仍表示本次快照不完整，Relay 不得降级为成功或用于生成
 `broker_close`。
 
+### 2.4 Commander 防御规则
+
+Commander 现在只有在响应同时满足以下条件时，才把 `TiRspQryMatch.szErr` 解释为查询错误：
+
+- `szErr` 非空；
+- 没有 `order_id/fill_id/order_stream_id/symbol`；
+- 成交数量和成交价格均为零。
+
+只要响应携带完整成交身份或成交数据，就先作为成交行处理，不能仅凭其中的订单状态文本终止查询。
+华鑫驱动对非 `20046` 的真实 `ErrorID != 0` 仍生成空错误帧，因此不会削弱真实失败门禁。
+
 ## 3. Relay 兼容要求
 
 1. 现有主协议和 Stream key 不变，Relay 不需要迁移数据库 schema。
@@ -96,8 +120,23 @@ OC 仅将明确的 `20046` 分类为 `single_order_business_status`：
 
 - `fa43056 fix(huaxin): isolate order status from fill queries`
 - `fd0b89b test(huaxin): add repeated fill query incident retest`
+- `b8ff57b fix(huaxin): stop order errors leaking into fills`
+- `ace670e test(huaxin): cover fill error metadata isolation`
 
 重新编译并部署 OC 后，在仓库根目录执行：
+
+```bash
+cd /home/Titian_Cpp/oceanus/src/oc_trader_commander_huaxin/build
+cmake ..
+cmake --build . -j2
+ctest --output-on-failure
+```
+
+离线测试覆盖生产复测中的准确组合：`nUserInt=0`、`szErr` 以 `20046:` 开头、响应包含真实成交字段；
+预期不属于查询错误。测试同时确认缓存订单错误不会复制到成交对象，且空的非白名单券商错误帧仍属于
+查询失败。
+
+部署并等待 heartbeat 中 `broker_ready=true/order_snapshot_ready=true` 后执行：
 
 ```bash
 cd /home/Titian_Cpp/oceanus
@@ -128,6 +167,7 @@ python3 test/trade.py fill --timeout 180
 本次修改已通过：
 
 - `git diff --check`；
+- `ctest --output-on-failure`；
 - `python3 -m py_compile oceanus/test/trade.py`；
 - `python3 oceanus/test/trade.py --help`；
 - `cmake --build oceanus/src/oc_trader_commander_huaxin/build -j2`。
