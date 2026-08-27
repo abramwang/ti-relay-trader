@@ -193,6 +193,64 @@ pre-write backup is
 with SHA-256
 `b22df8ebb9327a9b9b7dde8d450bdcaed948352135488b53a9c7cd413f9728f4`.
 
+## Debt5 Funds And Cash-Flow Recovery
+
+The user supplied two additional broker exports for Debt5 account
+`314000046830`:
+
+- `reference/314000046830_资金.csv`: 62 trading-day rows from 2026-06-01
+  through 2026-08-26, SHA-256
+  `0016969bccbdd143c89eec0d4c2868f55bf13a8271384d7dcab1f9df2bf5e65d`.
+- `reference/314000046830_资金流水.csv`: 29,101 cash-flow rows over the same
+  date range, SHA-256
+  `49d3fe153bcd90ce1d94120027dda98e34f9c1159b26c6e8544ebb033bb00c14`.
+
+Every funds row and every adjacent pair satisfy the broker asset identity to
+CNY 0.01. `total asset - customer funds - security market value` is always
+non-negative and equals reverse-repo principal when a repo is outstanding.
+The 62 rows were saved as confirmed version-1 gold under
+`broker_historical_funds_statement_one_time_audit`.
+
+The official recovery remains bounded by the existing 2026-07-22 clean empty
+security-position inception. Relay and OC have no ledger before 2026-06-15,
+and that first day has no opening position snapshot. The earlier broker asset
+totals therefore validate external NAV only; they do not prove an opening
+security cost ledger and were not used to move the inception date.
+
+For 2026-07-22 through 2026-08-26, 26 `reconcile` observations now carry the
+confirmed broker asset basis with `recurring_import=false`. Existing OC
+`open`, `close`, and `broker_close` observations were not changed; the two
+replaced historical-recovery reconcile payloads remain nested as prior audit
+evidence. The cash-flow audit added 24 confirmed entries:
+
+| Evidence | Rows | Performance treatment |
+| --- | ---: | --- |
+| Reverse-repo maturity net interest | 14 | `income_expense/interest` |
+| Stock dividends | 6 | operational audit fact; already represented by corporate-action-adjusted Meridian pre-close |
+| Dividend tax | 3 | `income_expense/fee` |
+| Bank-to-broker withdrawal | 1 | `external_flow/withdraw` |
+
+Each repo maturity row matched its Relay fill set by source trade date and the
+broker declaration-ID suffix. Two maturities aggregate two fills under one
+order stream; all 14 matches are unique at the cash-flow level and produce
+positive net interest. The 2026-07-27 withdrawal is exactly CNY 3,100 at
+09:50:10 Asia/Shanghai and uses exact-time Modified Dietz weighting.
+
+After a full ordered rebuild, all 26 current rows use
+`performance_economic_nav.v2.7`, all are provisional, and none is blocked.
+The seven former legacy-only dates (2026-07-31, 2026-08-03 through 08-06, and
+2026-08-24 through 08-25) now have official NAVs. Maximum close-asset and
+daily-PnL differences against the broker gold are both CNY 0.00. The ending
+2026-08-26 NAV is CNY 5,349,864.51, day PnL is CNY 8,325.83, and cumulative
+NAV from the 2026-07-22 inception is 0.992681120932.
+
+The pre-write backup is
+`outputs/backups/relay-20260827-debt5-funds-repair/relay_trader_20260827T145750+0800.dump`
+with SHA-256
+`09df15930c209abeff02fa311498f9502c375e1c9d8e473728eb7b7cfa09e3dd`.
+As with the other broker exports, this is exceptional repair evidence and not
+a recurring import workflow.
+
 ## Required Daily OC Capability
 
 Relay does not require OC historical queries. For future trading days, each OC
