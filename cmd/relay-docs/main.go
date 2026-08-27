@@ -83,7 +83,13 @@ var (
 			Slug:        "readme",
 			Title:       "README",
 			Path:        "README.md",
-			Description: "项目恢复卡片、职责范围、端口约定、待办事项和工作日志。",
+			Description: "精简的线程恢复卡片、运行边界、当前阻塞、下一步和核心里程碑。",
+		},
+		{
+			Slug:        "readme-history-20260826",
+			Title:       "README 历史归档",
+			Path:        "docs/README_HISTORY_20260826.md",
+			Description: "README 精简前的完整实现清单、风险记录和逐日工作日志，仅供历史追溯。",
 		},
 		{
 			Slug:        "architecture",
