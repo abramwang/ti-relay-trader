@@ -20,6 +20,8 @@ outputs/restore-drills/
 
 # Broker delivery statements contain account transaction details and stay local.
 reference/*_20??????.csv
+reference/*_资金.csv
+reference/*_资金流水.csv
 
 # Python cache and local environments.
 __pycache__/

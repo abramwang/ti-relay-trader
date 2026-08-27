@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.6"
+	defaultFormulaVersion   = "performance_economic_nav.v2.7"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -166,6 +166,7 @@ type EconomicNAVValuationSummary struct {
 
 type EconomicNAVAssetBasisSummary struct {
 	Applied                            bool    `json:"applied"`
+	InceptionFundingAsOpenCapital      bool    `json:"inception_funding_as_open_capital"`
 	Source                             string  `json:"source,omitempty"`
 	AssetScope                         string  `json:"asset_scope,omitempty"`
 	ReportedOpenAsset                  float64 `json:"reported_open_asset"`
@@ -407,8 +408,13 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	reconcileObservation, reconcileObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "reconcile")
 	assetBasis := EconomicNAVAssetBasisSummary{}
 	if reconcileObservationErr == nil {
+		confirmedInceptionDay := false
+		if inceptionFunding, _ := reconcileObservation.RawPayload["inception_funding_as_open_capital"].(bool); inceptionFunding {
+			inception, inceptionErr := service.store.GetPerformanceInception(ctx, accountID)
+			confirmedInceptionDay = inceptionErr == nil && inception.Status == "confirmed" && inception.CleanStart && inception.InceptionDate == normalizedDate
+		}
 		var basisFlags []string
-		assetBasis, basisFlags, err = confirmedBrokerAssetBasis(reconcileObservation, contribution.Summary.ETFSettlementEstimate)
+		assetBasis, basisFlags, err = confirmedBrokerAssetBasis(reconcileObservation, contribution.Summary.ETFSettlementEstimate, confirmedInceptionDay)
 		result.QualityFlags = appendUnique(result.QualityFlags, basisFlags...)
 		if err != nil {
 			status = "blocked"
@@ -593,7 +599,12 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	if err != nil {
 		return EconomicNAVResult{}, err
 	}
-	result.QualityFlags = appendUnique(result.QualityFlags, navFlags...)
+	for _, flag := range navFlags {
+		if flag == "missing_previous_economic_nav" && assetBasis.InceptionFundingAsOpenCapital {
+			continue
+		}
+		result.QualityFlags = appendUnique(result.QualityFlags, flag)
+	}
 	previousCumulative := 1.0
 	if previousNAV.CumulativeNAV > 0 {
 		previousCumulative = previousNAV.CumulativeNAV
@@ -707,6 +718,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			},
 			"broker_asset_basis": map[string]any{
 				"applied":                                assetBasis.Applied,
+				"inception_funding_as_open_capital":      assetBasis.InceptionFundingAsOpenCapital,
 				"source":                                 assetBasis.Source,
 				"asset_scope":                            assetBasis.AssetScope,
 				"reported_open_asset":                    assetBasis.ReportedOpenAsset,
@@ -1211,7 +1223,7 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 	return roundMoney(total)
 }
 
-func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, currentETFSettlementEstimate float64) (EconomicNAVAssetBasisSummary, []string, error) {
+func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, currentETFSettlementEstimate float64, confirmedInceptionDay bool) (EconomicNAVAssetBasisSummary, []string, error) {
 	result := EconomicNAVAssetBasisSummary{}
 	raw := observation.RawPayload
 	confirmed, _ := raw["economic_nav_base_confirmed"].(bool)
@@ -1253,7 +1265,11 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 			return 0, fmt.Errorf("confirmed broker asset basis has non-finite %s", name)
 		}
-		return roundMoney(parsed), nil
+		parsed = roundMoney(parsed)
+		if parsed == 0 {
+			return 0, nil
+		}
+		return parsed, nil
 	}
 
 	reportedOpen, err := read("reported_open_total_asset")
@@ -1284,8 +1300,16 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 	if err != nil {
 		return result, nil, err
 	}
-	if reportedOpen <= 0 || reportedClose <= 0 || reportedDeposit < 0 || reportedWithdrawal < 0 || openOutstanding < 0 || closeOutstanding < 0 {
+	inceptionFunding, _ := raw["inception_funding_as_open_capital"].(bool)
+	if reportedOpen < 0 || reportedClose <= 0 || reportedDeposit < 0 || reportedWithdrawal < 0 || openOutstanding < 0 || closeOutstanding < 0 {
 		return result, nil, errors.New("confirmed broker asset basis contains invalid asset values")
+	}
+	if reportedOpen == 0 {
+		if !inceptionFunding || !confirmedInceptionDay || reportedDeposit <= 0 || reportedWithdrawal != 0 {
+			return result, nil, errors.New("zero broker opening asset requires confirmed clean inception funding")
+		}
+	} else if inceptionFunding {
+		return result, nil, errors.New("inception funding marker requires zero broker opening asset")
 	}
 	if math.Abs(observation.NetAsset-reportedClose) > 0.01 {
 		return result, nil, fmt.Errorf("reconcile net_asset %.6f does not match reported close %.6f", observation.NetAsset, reportedClose)
@@ -1299,8 +1323,13 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current estimate %.6f", settlementIncrease, currentETFSettlementEstimate)
 	}
 
+	openCapital := reportedOpen
+	if inceptionFunding {
+		openCapital = roundMoney(reportedOpen + reportedDeposit - reportedWithdrawal)
+	}
 	result = EconomicNAVAssetBasisSummary{
 		Applied:                            true,
+		InceptionFundingAsOpenCapital:      inceptionFunding,
 		Source:                             observation.Source,
 		AssetScope:                         assetScope,
 		ReportedOpenAsset:                  reportedOpen,
@@ -1310,7 +1339,7 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		ReportedWithdrawal:                 reportedWithdrawal,
 		OpenOutstandingETFSettlementAsset:  openOutstanding,
 		CloseOutstandingETFSettlementAsset: closeOutstanding,
-		OpenEconomicNAV:                    roundMoney(reportedOpen + openOutstanding),
+		OpenEconomicNAV:                    roundMoney(openCapital + openOutstanding),
 		CloseEconomicNAV:                   roundMoney(reportedClose + closeOutstanding),
 	}
 	flags := []string{
@@ -1320,6 +1349,9 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 	}
 	if openOutstanding > 0 {
 		flags = append(flags, "outstanding_etf_settlement_carried")
+	}
+	if inceptionFunding {
+		flags = append(flags, "broker_inception_funding_as_open_capital")
 	}
 	return result, flags, nil
 }

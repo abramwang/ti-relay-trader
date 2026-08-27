@@ -1475,6 +1475,50 @@ func TestCalculateEconomicNAVUsesConfirmedBrokerAssetBasis(t *testing.T) {
 	}
 }
 
+func TestCalculateEconomicNAVDoesNotRequirePreviousNAVAtConfirmedInception(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{AccountID: "acct-1", TradeDate: "2026-07-27", CashTotal: 900, NetAsset: 900},
+		inception: ledger.PerformanceInception{
+			AccountID: "acct-1", InceptionDate: "2026-07-27", Status: "confirmed", CleanStart: true,
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"close": {CashTotal: 900, NetAsset: 900},
+			"reconcile": {
+				NetAsset: 1_010,
+				Source:   "broker_historical_funds_statement_one_time_audit",
+				RawPayload: map[string]any{
+					"economic_nav_base_confirmed":            true,
+					"recurring_import":                       false,
+					"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+					"statement_sha256":                       "test-sha256",
+					"reported_open_total_asset":              0.0,
+					"reported_close_total_asset":             1_010.0,
+					"reported_daily_pnl":                     10.0,
+					"reported_deposit":                       1_000.0,
+					"reported_withdrawal":                    0.0,
+					"open_outstanding_etf_settlement_asset":  0.0,
+					"close_outstanding_etf_settlement_asset": 0.0,
+					"inception_funding_as_open_capital":      true,
+				},
+			},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260727", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+	if containsString(result.QualityFlags, "missing_previous_economic_nav") {
+		t.Fatalf("unexpected missing_previous_economic_nav in %#v", result.QualityFlags)
+	}
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_000)
+	assertClose(t, result.NAV.AccountDayPnL, 10)
+}
+
 func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 	observation := ledger.AssetPositionObservation{
 		NetAsset: 1_010,
@@ -1494,9 +1538,44 @@ func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 		},
 	}
 
-	_, _, err := confirmedBrokerAssetBasis(observation, 3)
+	_, _, err := confirmedBrokerAssetBasis(observation, 3, false)
 	if err == nil || !strings.Contains(err.Error(), "does not match current estimate") {
 		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
+	}
+}
+
+func TestConfirmedBrokerAssetBasisUsesCleanInceptionFundingAsOpenCapital(t *testing.T) {
+	observation := ledger.AssetPositionObservation{
+		NetAsset: 1_010,
+		Source:   "broker_historical_funds_statement_one_time_audit",
+		RawPayload: map[string]any{
+			"economic_nav_base_confirmed":            true,
+			"recurring_import":                       false,
+			"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+			"statement_sha256":                       "test-sha256",
+			"reported_open_total_asset":              0.0,
+			"reported_close_total_asset":             1_010.0,
+			"reported_daily_pnl":                     10.0,
+			"reported_deposit":                       1_000.0,
+			"reported_withdrawal":                    0.0,
+			"open_outstanding_etf_settlement_asset":  0.0,
+			"close_outstanding_etf_settlement_asset": 0.0,
+			"inception_funding_as_open_capital":      true,
+		},
+	}
+
+	basis, flags, err := confirmedBrokerAssetBasis(observation, 0, true)
+	if err != nil {
+		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
+	}
+	assertClose(t, basis.OpenEconomicNAV, 1_000)
+	assertClose(t, basis.CloseEconomicNAV, 1_010)
+	if !basis.InceptionFundingAsOpenCapital || !containsString(flags, "broker_inception_funding_as_open_capital") {
+		t.Fatalf("basis/flags = %#v / %#v", basis, flags)
+	}
+
+	if _, _, err := confirmedBrokerAssetBasis(observation, 0, false); err == nil {
+		t.Fatal("confirmedBrokerAssetBasis() accepted unconfirmed inception funding")
 	}
 }
 

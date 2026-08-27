@@ -67,7 +67,7 @@ go run ./cmd/relayctl performance-gold-import \
 
 ## 对比
 
-`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行当前配置的经济净值公式预览；生产默认已升级为 `performance_economic_nav.v2.6`：
+`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行当前配置的经济净值公式预览；生产默认已升级为 `performance_economic_nav.v2.7`：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
@@ -92,6 +92,8 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 ## 当前验收
 
 智算汇利混合 `307000051387` 与涌盈波动率 `307000051388` 的开户以来券商历史资金各有 23 个非零交易日，已按 `source=broker_historical_funds_statement_one_time_audit` 保存为 confirmed version 1。全部记录满足资产连续恒等式；它们确认的是券商报告资产基数，不包含 Relay 单列的公募占款/ETF 待结算资产。`2026-08-06` 由独立可信 `reconcile` 快照和待结算开闭余额进入 v2.6 公式，金标本身仍不参与计算。完整审计见 `docs/BROKER_CASH_FLOW_AUDIT_20260827.md`。
+
+两户首个非零日均为 `2026-07-27`：前一记录 7 月 24 日资产为零，当日盘前入金分别为 `51,010,941.93 / 49,964,482.45` 元。v2.7 只有在起算配置为 confirmed clean start、可信资产基数显式标记 `inception_funding_as_open_capital=true` 且资产恒等式闭合时，才把这笔盘前入金作为收益率起算资本；不得把它计入首日策略盈利。
 
 债享5号 `314000046830` 的 17 条 2026 年 7 月金标已经生产落库，来源为 `manual_user_confirmed`，全部为 current version 1。重复导入相同文件后仍为 17 个 version 1，内容哈希幂等成立。
 

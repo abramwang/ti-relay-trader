@@ -430,7 +430,7 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 
 `GET /v1/accounts/{account_id}/performance/contributions?trade_date=YYYYMMDD` 使用普通证券现金流恒等式 `close_value + sell_amount - buy_amount - open_value - effective_fee`。ETF 申赎 T0 优先使用赎回成交时刻之前最近的 Meridian Level1 IOPV；Level1 缺失时降级到赎回前最后一个完整 1 分钟 bar 的 IOPV，返回 `price_source=meridian_1m_iopv_fallback` 和 `minute_iopv_fallback`，不会使用当前赎回分钟或日收盘价冒充时点 IOPV。估值扣除配置项 `performance.etf_t0_friction_rate`；多个赎回组最多 8 路并发查询。缺少当日 open 持仓时，只在前一交易日 close 快照存在且 `open + buy - sell = close` 数量桥闭合时估算，否则返回 `pnl_status=missing`，不会把缺失持仓当作 0。接口只读，不触发 OC 查询。
 
-`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 当前使用 `performance_economic_nav.v2.6`。常规路径沿用以下公式：
+`GET /v1/accounts/{account_id}/performance/economic-nav/preview?trade_date=YYYYMMDD` 当前使用 `performance_economic_nav.v2.7`。常规路径沿用以下公式：
 
 ```text
 actual_execution_fee = unique(t0_buy_order_fee + redemption_parent_order_fee + linked_component_sell_order_fee)
@@ -446,6 +446,8 @@ daily_return = account_day_pnl / (open_economic_nav + sum(weight_i * external_fl
 ```
 
 当存在显式确认的 `asset_snapshots(snapshot_type=reconcile)` 券商资产基数时，v2.6 使用 `open_economic_nav = reported_open_total_asset + open_outstanding_etf_settlement_asset` 和 `close_economic_nav = reported_close_total_asset + close_outstanding_etf_settlement_asset + principal_receivable`。启用记录必须同时通过来源、`recurring_import=false`、文件 SHA-256、券商资产连续恒等式以及 ETF 待结算增量校验；否则继续 blocked。该分支不覆盖 OC 原始 `open/broker_close/close` 快照，也不把历史券商文件建设为日常导入。
+
+v2.7 对开户首日增加例外但受严格门禁：当 confirmed clean-start 起算日的 `reported_open_total_asset=0`、`reported_deposit>0`、`reported_withdrawal=0` 且 `inception_funding_as_open_capital=true` 时，使用 `reported_deposit + open_outstanding_etf_settlement_asset` 作为首日 `open_economic_nav`。这笔盘前起算资本不写成普通盘中 `external_flow`，因此不会被误计为收益或重复调整。
 
 其中 `open_economic_nav` 常规优先使用 `asset_snapshots(snapshot_type=open)`，缺失时使用上一 close 或手工 `performance_nav_baselines` 并打质量标记；`external_flow` 只读取已确认手工资金流水，用 Modified Dietz 盘中权重修正收益率分母；`settlement_adjustment` 不计入策略收益；`internal_transfer` 要求净额接近 0，否则标记 `internal_transfer_unbalanced`。ETF 待结算估值要求 T0 买入/赎回和实际 transfer/成分卖出数量闭合；OC 实际订单费用不完整时仍使用 IOPV + 15bp 生成 provisional 估值，只加回已经确认的费用并返回 `etf_settlement_execution_fee_pending`，不得 finalized。它不是公募最终清算事实。公募实际返款使用 confirmed `cash_ledger` 结算记录，`flow_class=settlement_adjustment`、`ledger_type=settlement`，并在 `raw_payload` 明确 `settlement_kind=etf_redemption_fund_refund`、`source_trade_date`、`estimated_receivable` 和 `confirmation_source`。分期返款通过 `settlement_group_id/prior_receipt_entry_id/receipt_stage` 形成审计链；快照后到账独立记入 `post_close_settlement_cash`。字段不完整时阻断，不把现金残差自动猜成返款，也不把返款记为外部入金。逆回购优先使用已落库 `reverse_repo_accruals`，没有时按成交账本只读试算；系统比较含/不含本金两条候选 NAV 对正式证券贡献的残差，输出 `principal_treatment=embedded/separate/ambiguous`、`principal_cash_overlap`、`principal_receivable`、`resolution_residual` 和 `alternate_residual`，歧义时阻断。超过告警阈值的剩余差额标记 `strategy_attribution_pending`；阈值内差额标记 `attribution_residual_within_tolerance`。
 

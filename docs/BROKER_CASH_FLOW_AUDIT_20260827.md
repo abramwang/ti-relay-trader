@@ -158,6 +158,41 @@ The pre-write database backup is
 with SHA-256
 `881c69a1956a1714f54f8f65437b4f5fc499f302041c549c4481e3808ef16460`.
 
+## Inception-Date Correction
+
+The first rebuild incorrectly treated Relay's first available OC snapshot as
+the performance inception. That set `307000051387` to 2026-07-29 and
+`307000051388` to 2026-07-28. The broker historical-funds files instead prove
+that both accounts were empty on 2026-07-24, received their opening capital
+before trading on 2026-07-27, and traded that day.
+
+The broker delivery statements independently contain 32 ETF buys for
+`307000051387` and 31 ETF buys for `307000051388` on 2026-07-27. They also
+contain the 31 ordinary ETF trades needed to bridge `307000051387` through
+2026-07-28 before Relay first received that account from OC. A one-time
+recovery inserted clearly sourced historical orders, fills, actual fees, and
+position/asset snapshots for those three missing account-days. All per-symbol
+quantity bridges close, and positions valued with Meridian unadjusted daily
+close prices equal the broker market-value totals to CNY 0.01.
+
+`performance_economic_nav.v2.7` recognizes an explicitly confirmed clean-start
+deposit as inception opening capital. It does not record that pre-trading
+funding as strategy PnL or as an intraday external flow. The resulting first
+days are:
+
+| Account | Opening capital | 2026-07-27 PnL | Close asset | Attribution residual |
+| --- | ---: | ---: | ---: | ---: |
+| `307000051387` | 51,010,941.93 | 57,387.16 | 51,068,329.09 | 16.90 |
+| `307000051388` | 49,964,482.45 | 54,731.88 | 50,019,214.33 | 124.70 |
+
+Both accounts now have 23 consecutive current v2.7 NAV rows from 2026-07-27
+through 2026-08-26: 46 provisional rows, zero blocked. The recovery program was
+removed after execution and is not a recurring broker-file import path. The
+pre-write backup is
+`outputs/backups/relay-20260827-inception-recovery/relay_trader_20260827T140816+0800.dump`
+with SHA-256
+`b22df8ebb9327a9b9b7dde8d450bdcaed948352135488b53a9c7cd413f9728f4`.
+
 ## Required Daily OC Capability
 
 Relay does not require OC historical queries. For future trading days, each OC
