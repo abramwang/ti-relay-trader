@@ -626,6 +626,8 @@ WITH asset AS (
         market_value,
         stock_value,
         fund_value,
+        source,
+        raw_payload,
         captured_at
     FROM asset_snapshots
     WHERE account_id = $1
@@ -656,6 +658,8 @@ SELECT
     asset.fund_value,
     positions.positions_count,
     positions.position_market_value,
+    asset.source,
+    asset.raw_payload,
     asset.captured_at,
     positions.position_captured_at
 FROM asset

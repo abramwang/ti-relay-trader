@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1414,6 +1415,88 @@ func TestCalculateEconomicNAVAddsETFReceiptPostedAfterCloseSnapshot(t *testing.T
 		if !containsString(result.QualityFlags, flag) {
 			t.Fatalf("missing %s in %#v", flag, result.QualityFlags)
 		}
+	}
+}
+
+func TestCalculateEconomicNAVUsesConfirmedBrokerAssetBasis(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-08-06",
+			CashTotal:          900,
+			NetAsset:           900,
+			OpenNetAsset:       900,
+			OpenSnapshotSource: "open",
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"open":  {CashTotal: 900, NetAsset: 900},
+			"close": {CashTotal: 900, NetAsset: 900},
+			"reconcile": {
+				NetAsset: 1_010,
+				Source:   "broker_historical_funds_statement_one_time_audit",
+				RawPayload: map[string]any{
+					"economic_nav_base_confirmed":            true,
+					"recurring_import":                       false,
+					"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+					"statement_sha256":                       "test-sha256",
+					"reported_open_total_asset":              1_000.0,
+					"reported_close_total_asset":             1_010.0,
+					"reported_daily_pnl":                     10.0,
+					"reported_deposit":                       0.0,
+					"reported_withdrawal":                    0.0,
+					"open_outstanding_etf_settlement_asset":  20.0,
+					"close_outstanding_etf_settlement_asset": 20.0,
+				},
+			},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260806", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	if !result.AssetBasis.Applied {
+		t.Fatal("AssetBasis.Applied = false, want true")
+	}
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_020)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1_030)
+	assertClose(t, result.NAV.AccountDayPnL, 10)
+	assertClose(t, result.Reconciliation.InvisibleCounterCash, 110)
+	assertClose(t, result.Reconciliation.OutstandingSettlementAssets, 20)
+	for _, flag := range []string{"broker_asset_basis_reconciled", "partial_counter_visibility_reconciled", "outstanding_etf_settlement_carried"} {
+		if !containsString(result.QualityFlags, flag) {
+			t.Fatalf("missing %s in %#v", flag, result.QualityFlags)
+		}
+	}
+}
+
+func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
+	observation := ledger.AssetPositionObservation{
+		NetAsset: 1_010,
+		Source:   "broker_historical_funds_statement_one_time_audit",
+		RawPayload: map[string]any{
+			"economic_nav_base_confirmed":            true,
+			"recurring_import":                       false,
+			"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+			"statement_sha256":                       "test-sha256",
+			"reported_open_total_asset":              1_000.0,
+			"reported_close_total_asset":             1_010.0,
+			"reported_daily_pnl":                     10.0,
+			"reported_deposit":                       0.0,
+			"reported_withdrawal":                    0.0,
+			"open_outstanding_etf_settlement_asset":  20.0,
+			"close_outstanding_etf_settlement_asset": 25.0,
+		},
+	}
+
+	_, _, err := confirmedBrokerAssetBasis(observation, 3)
+	if err == nil || !strings.Contains(err.Error(), "does not match current estimate") {
+		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
 	}
 }
 
@@ -2859,6 +2942,7 @@ type fakePerformanceStore struct {
 	daily                 ledger.DailyPerformance
 	dailyErr              error
 	observation           ledger.AssetPositionObservation
+	observations          map[string]ledger.AssetPositionObservation
 	observationErr        error
 	repoRule              ledger.FeeRule
 	repoRuleErr           error
@@ -2967,9 +3051,16 @@ func (store *fakePerformanceStore) GetDailyPerformance(_ context.Context, _, _ s
 	return store.daily, nil
 }
 
-func (store *fakePerformanceStore) GetAssetPositionObservation(_ context.Context, _, _, _ string) (ledger.AssetPositionObservation, error) {
+func (store *fakePerformanceStore) GetAssetPositionObservation(_ context.Context, _, _, snapshotType string) (ledger.AssetPositionObservation, error) {
 	if store.observationErr != nil {
 		return ledger.AssetPositionObservation{}, store.observationErr
+	}
+	if store.observations != nil {
+		observation, ok := store.observations[snapshotType]
+		if !ok {
+			return ledger.AssetPositionObservation{}, ledger.ErrAssetNotFound
+		}
+		return observation, nil
 	}
 	return store.observation, nil
 }

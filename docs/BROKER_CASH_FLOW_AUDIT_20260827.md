@@ -107,22 +107,56 @@ pre-v2.5 result; only the close economic asset timing was corrected:
 | `307000051387` | 2026-08-10 | 8,613.420000 | 0.017147% | 13,252.30 | 50,294,056.560000 |
 | `307000051388` | 2026-08-10 | 3,783.800000 | 0.007552% | 13,252.30 | 50,121,457.700000 |
 
-## Remaining 2026-08-06 Block
+## Broker Asset Basis Recovery
 
-This cash-flow export does not safely close the 2026-08-06 economic NAV. The
-current previews remain blocked with attribution residuals of
-`-74,811.869998 CNY` for `307000051387` and `-95,070.639998 CNY` for
-`307000051388`. The remaining uncertainty is not Meridian valuation or ETF
-transfer quantity. It is account cash scope and exact fees:
+The user subsequently supplied two separate broker historical-funds exports:
 
-- OC open/close assets for the current Huaxin accounts expose only Huaxin
-  fast-counter visible cash.
-- The normal-counter balance, frozen public-fund occupancy, cash substitution,
-  and counter transfer legs are absent.
-- The broker export has no usable balance-after field.
-- Aggregate fees are known, but exact per-order identities are ambiguous.
+- `reference/307000051387_资金.csv`, SHA-256
+  `3e495917c8b271f247503dbe03b9fc76861d7a044a8e427038d7693b2b98d96b`.
+- `reference/307000051388_资金.csv`, SHA-256
+  `36e6b74870b9cc715ebe4cff57946e2b499249e8909bbb9761d9c69e3cffc52d`.
 
-The blocked day was not published merely to remove a warning.
+Each file covers 23 non-zero trading days from account inception through
+2026-08-26. Every row satisfies, to CNY 0.01:
+
+```text
+close broker asset = previous close broker asset + deposit - withdrawal + broker daily PnL
+```
+
+The files also separate customer funds, security market value, and total
+assets. `total asset - customer funds - market value` matches reverse-repo
+principal on applicable days, so reverse repo is not misclassified as hidden
+cash. These files are authoritative for the broker-reported asset basis, but
+that basis still excludes public-fund occupancy and outstanding ETF settlement
+assets included by Relay economic NAV.
+
+All 46 rows were stored as version-1 confirmed gold records under source
+`broker_historical_funds_statement_one_time_audit`. They remain independent
+from the formula. Only 2026-08-06 received an explicitly enabled `reconcile`
+snapshot; the OC `open`, `broker_close`, and `close` snapshots were not changed.
+The reconcile payload records the source hash, row number, broker open/close
+assets, deposit/withdrawal, and opening/closing outstanding ETF settlement
+assets. It also has `recurring_import=false`.
+
+`performance_economic_nav.v2.6` applies that confirmed basis and carries the
+2026-08-05 ETF receivable through 2026-08-06. The resulting account-day values
+are:
+
+| Account | Open economic NAV | Close economic NAV | Day PnL | Attribution residual | Status |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `307000051387` | 50,127,559.927622 | 50,158,740.667622 | 31,180.74 | -1,554.76 | provisional |
+| `307000051388` | 49,958,781.232985 | 49,989,895.832985 | 31,114.60 | -1,621.70 | provisional |
+
+Both residuals are within the configured warning tolerance. The old blocked
+residuals are gone; fee estimates and unsettled ETF assets still correctly keep
+the result provisional. The two accounts were rebuilt in order for
+2026-08-06..2026-08-26: 30 current v2.6 rows, zero blocked. For the 28 dates
+that already existed, both close NAV and day PnL changed by exactly zero.
+
+The pre-write database backup is
+`outputs/backups/relay-20260827-broker-asset-basis/relay_trader_before_asset_basis.dump`
+with SHA-256
+`881c69a1956a1714f54f8f65437b4f5fc499f302041c549c4481e3808ef16460`.
 
 ## Required Daily OC Capability
 

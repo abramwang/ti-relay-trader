@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.5"
+	defaultFormulaVersion   = "performance_economic_nav.v2.6"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -164,6 +164,21 @@ type EconomicNAVValuationSummary struct {
 	CostSource               string  `json:"cost_source"`
 }
 
+type EconomicNAVAssetBasisSummary struct {
+	Applied                            bool    `json:"applied"`
+	Source                             string  `json:"source,omitempty"`
+	AssetScope                         string  `json:"asset_scope,omitempty"`
+	ReportedOpenAsset                  float64 `json:"reported_open_asset"`
+	ReportedCloseAsset                 float64 `json:"reported_close_asset"`
+	ReportedDailyPnL                   float64 `json:"reported_daily_pnl"`
+	ReportedDeposit                    float64 `json:"reported_deposit"`
+	ReportedWithdrawal                 float64 `json:"reported_withdrawal"`
+	OpenOutstandingETFSettlementAsset  float64 `json:"open_outstanding_etf_settlement_asset"`
+	CloseOutstandingETFSettlementAsset float64 `json:"close_outstanding_etf_settlement_asset"`
+	OpenEconomicNAV                    float64 `json:"open_economic_nav"`
+	CloseEconomicNAV                   float64 `json:"close_economic_nav"`
+}
+
 type EconomicNAVResult struct {
 	AccountID        string                          `json:"account_id"`
 	TradeDate        string                          `json:"trade_date"`
@@ -177,6 +192,7 @@ type EconomicNAVResult struct {
 	ETFSettlement    EconomicNAVETFSettlementSummary `json:"etf_settlement"`
 	ReverseRepo      EconomicNAVReverseRepoSummary   `json:"reverse_repo"`
 	Valuation        EconomicNAVValuationSummary     `json:"valuation"`
+	AssetBasis       EconomicNAVAssetBasisSummary    `json:"asset_basis"`
 	QualityFlags     []string                        `json:"quality_flags,omitempty"`
 }
 
@@ -388,6 +404,18 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 	openObservation, openObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "open")
 	closeObservation, closeObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "close")
+	reconcileObservation, reconcileObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "reconcile")
+	assetBasis := EconomicNAVAssetBasisSummary{}
+	if reconcileObservationErr == nil {
+		var basisFlags []string
+		assetBasis, basisFlags, err = confirmedBrokerAssetBasis(reconcileObservation, contribution.Summary.ETFSettlementEstimate)
+		result.QualityFlags = appendUnique(result.QualityFlags, basisFlags...)
+		if err != nil {
+			status = "blocked"
+			result.QualityFlags = appendUnique(result.QualityFlags, "broker_asset_basis_invalid")
+		}
+	}
+	result.AssetBasis = assetBasis
 	openVisibleCash := firstPositiveFloat(daily.OpenNetAsset, daily.PreviousNetAsset)
 	closeVisibleCash := firstPositiveFloat(daily.CashTotal, daily.NetAsset)
 	brokerOpenPositionValue := 0.0
@@ -462,6 +490,10 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		openEconomicNAV = roundMoney(openEconomicNAV + etfSettlement.ReleasedEstimate)
 		result.Valuation.OpenETFSettlementAsset = etfSettlement.ReleasedEstimate
 	}
+	if assetBasis.Applied {
+		openEconomicNAV = assetBasis.OpenEconomicNAV
+		result.Valuation.OpenETFSettlementAsset = assetBasis.OpenOutstandingETFSettlementAsset
+	}
 	incomeExpense := sumCashAmounts(incomeExpenseFlows)
 	internalTransfer := sumCashAmounts(internalFlows)
 	result.CashFlows = EconomicNAVCashFlowSummary{
@@ -483,9 +515,13 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	formalStrategyPnL := roundMoney(contribution.Summary.NetContribution - estimatedCashManagementPnL)
 	formalAttributedPnL := roundMoney(formalStrategyPnL + incomeExpense + etfSettlement.SettlementVariance)
 	attributionWarningThreshold := roundMoney(math.Max(service.warningToleranceCNY, math.Abs(openEconomicNAV)*service.warningToleranceBP/10000))
+	reverseRepoCloseBasis := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue)
+	if assetBasis.Applied {
+		reverseRepoCloseBasis = assetBasis.CloseEconomicNAV
+	}
 	principalFlags := resolveReverseRepoPrincipal(
 		&repoSummary,
-		roundMoney(closeVisibleCash+contribution.Summary.ClosePositionValue),
+		reverseRepoCloseBasis,
 		openEconomicNAV,
 		externalNetFlow,
 		settlementAdjustment,
@@ -503,6 +539,9 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 
 	result.Valuation.PostCloseSettlementCash = etfSettlement.PostCloseReceiptAmount
 	closeEconomicNAV := roundMoney(closeVisibleCash + etfSettlement.PostCloseReceiptAmount + contribution.Summary.ClosePositionValue + repoSummary.Receivable + contribution.Summary.ETFSettlementEstimate)
+	if assetBasis.Applied {
+		closeEconomicNAV = roundMoney(assetBasis.CloseEconomicNAV + repoSummary.Receivable)
+	}
 	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
 		result.Status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "missing_positive_economic_nav")
@@ -648,7 +687,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			"market_valuation": map[string]any{
 				"open_visible_cash":           roundMoney(openVisibleCash),
 				"open_position_value":         contribution.Summary.OpenPositionValue,
-				"open_etf_settlement_asset":   etfSettlement.ReleasedEstimate,
+				"open_etf_settlement_asset":   result.Valuation.OpenETFSettlementAsset,
 				"close_visible_cash":          roundMoney(closeVisibleCash),
 				"post_close_settlement_cash":  etfSettlement.PostCloseReceiptAmount,
 				"close_position_value":        contribution.Summary.ClosePositionValue,
@@ -666,6 +705,18 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"internal_transfer_net":          roundMoney(internalTransfer),
 				"weighted_external_flow_details": weightedFlowDetails,
 			},
+			"broker_asset_basis": map[string]any{
+				"applied":                                assetBasis.Applied,
+				"source":                                 assetBasis.Source,
+				"asset_scope":                            assetBasis.AssetScope,
+				"reported_open_asset":                    assetBasis.ReportedOpenAsset,
+				"reported_close_asset":                   assetBasis.ReportedCloseAsset,
+				"reported_daily_pnl":                     assetBasis.ReportedDailyPnL,
+				"reported_deposit":                       assetBasis.ReportedDeposit,
+				"reported_withdrawal":                    assetBasis.ReportedWithdrawal,
+				"open_outstanding_etf_settlement_asset":  assetBasis.OpenOutstandingETFSettlementAsset,
+				"close_outstanding_etf_settlement_asset": assetBasis.CloseOutstandingETFSettlementAsset,
+			},
 		},
 		QualityFlags: result.QualityFlags,
 		Source:       "relay.economic_nav.preview",
@@ -674,6 +725,15 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		nav.FinalizedAt = now
 	}
 	reconciliation := service.buildNAVReconciliation(accountID, normalizedDate, nav, daily, incomeExpense)
+	if assetBasis.Applied {
+		reconciliation.InvisibleCounterCash = roundMoney(assetBasis.ReportedCloseAsset - closeVisibleCash - contribution.Summary.ClosePositionValue - repoSummary.Receivable)
+		reconciliation.OutstandingSettlementAssets = assetBasis.CloseOutstandingETFSettlementAsset
+		reconciliation.ObservedOpenAssets = assetBasis.OpenEconomicNAV
+		if reconciliation.Details == nil {
+			reconciliation.Details = map[string]any{}
+		}
+		reconciliation.Details["broker_asset_basis"] = assetBasis
+	}
 	result.NAV = nav
 	result.Reconciliation = reconciliation
 
@@ -1149,6 +1209,119 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 		total += item.Amount
 	}
 	return roundMoney(total)
+}
+
+func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, currentETFSettlementEstimate float64) (EconomicNAVAssetBasisSummary, []string, error) {
+	result := EconomicNAVAssetBasisSummary{}
+	raw := observation.RawPayload
+	confirmed, _ := raw["economic_nav_base_confirmed"].(bool)
+	if !confirmed {
+		return result, nil, nil
+	}
+	if !strings.HasPrefix(observation.Source, "broker_historical_funds_statement_one_time_audit") {
+		return result, nil, fmt.Errorf("confirmed broker asset basis has unsupported source %q", observation.Source)
+	}
+	if recurring, _ := raw["recurring_import"].(bool); recurring {
+		return result, nil, errors.New("confirmed broker asset basis cannot be a recurring import")
+	}
+	assetScope, _ := raw["asset_scope"].(string)
+	if strings.TrimSpace(assetScope) != "broker_reported_total_asset_excluding_fund_occupancy" {
+		return result, nil, fmt.Errorf("confirmed broker asset basis has invalid asset_scope %q", assetScope)
+	}
+	if statementHash, _ := raw["statement_sha256"].(string); strings.TrimSpace(statementHash) == "" {
+		return result, nil, errors.New("confirmed broker asset basis requires statement_sha256")
+	}
+
+	read := func(name string) (float64, error) {
+		value, ok := raw[name]
+		if !ok {
+			return 0, fmt.Errorf("confirmed broker asset basis requires %s", name)
+		}
+		var parsed float64
+		switch typed := value.(type) {
+		case float64:
+			parsed = typed
+		case string:
+			var err error
+			parsed, err = strconv.ParseFloat(strings.TrimSpace(typed), 64)
+			if err != nil {
+				return 0, fmt.Errorf("confirmed broker asset basis has invalid %s", name)
+			}
+		default:
+			return 0, fmt.Errorf("confirmed broker asset basis has invalid %s", name)
+		}
+		if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return 0, fmt.Errorf("confirmed broker asset basis has non-finite %s", name)
+		}
+		return roundMoney(parsed), nil
+	}
+
+	reportedOpen, err := read("reported_open_total_asset")
+	if err != nil {
+		return result, nil, err
+	}
+	reportedClose, err := read("reported_close_total_asset")
+	if err != nil {
+		return result, nil, err
+	}
+	reportedDailyPnL, err := read("reported_daily_pnl")
+	if err != nil {
+		return result, nil, err
+	}
+	reportedDeposit, err := read("reported_deposit")
+	if err != nil {
+		return result, nil, err
+	}
+	reportedWithdrawal, err := read("reported_withdrawal")
+	if err != nil {
+		return result, nil, err
+	}
+	openOutstanding, err := read("open_outstanding_etf_settlement_asset")
+	if err != nil {
+		return result, nil, err
+	}
+	closeOutstanding, err := read("close_outstanding_etf_settlement_asset")
+	if err != nil {
+		return result, nil, err
+	}
+	if reportedOpen <= 0 || reportedClose <= 0 || reportedDeposit < 0 || reportedWithdrawal < 0 || openOutstanding < 0 || closeOutstanding < 0 {
+		return result, nil, errors.New("confirmed broker asset basis contains invalid asset values")
+	}
+	if math.Abs(observation.NetAsset-reportedClose) > 0.01 {
+		return result, nil, fmt.Errorf("reconcile net_asset %.6f does not match reported close %.6f", observation.NetAsset, reportedClose)
+	}
+	reportedIdentityPnL := roundMoney(reportedClose - reportedOpen - reportedDeposit + reportedWithdrawal)
+	if math.Abs(reportedIdentityPnL-reportedDailyPnL) > 0.01 {
+		return result, nil, fmt.Errorf("broker daily pnl identity differs by %.6f", reportedIdentityPnL-reportedDailyPnL)
+	}
+	settlementIncrease := roundMoney(closeOutstanding - openOutstanding)
+	if math.Abs(settlementIncrease-currentETFSettlementEstimate) > 0.01 {
+		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current estimate %.6f", settlementIncrease, currentETFSettlementEstimate)
+	}
+
+	result = EconomicNAVAssetBasisSummary{
+		Applied:                            true,
+		Source:                             observation.Source,
+		AssetScope:                         assetScope,
+		ReportedOpenAsset:                  reportedOpen,
+		ReportedCloseAsset:                 reportedClose,
+		ReportedDailyPnL:                   reportedDailyPnL,
+		ReportedDeposit:                    reportedDeposit,
+		ReportedWithdrawal:                 reportedWithdrawal,
+		OpenOutstandingETFSettlementAsset:  openOutstanding,
+		CloseOutstandingETFSettlementAsset: closeOutstanding,
+		OpenEconomicNAV:                    roundMoney(reportedOpen + openOutstanding),
+		CloseEconomicNAV:                   roundMoney(reportedClose + closeOutstanding),
+	}
+	flags := []string{
+		"broker_asset_basis_reconciled",
+		"broker_asset_statement_one_time_audit",
+		"partial_counter_visibility_reconciled",
+	}
+	if openOutstanding > 0 {
+		flags = append(flags, "outstanding_etf_settlement_carried")
+	}
+	return result, flags, nil
 }
 
 func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate string, closeCapturedAt time.Time) (float64, EconomicNAVETFSettlementSummary, []string) {

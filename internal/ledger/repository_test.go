@@ -732,6 +732,8 @@ func TestGetAssetPositionObservationBuildsSnapshotRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "FROM position_snapshots")
 	requireQueryContains(t, exec.query, "snapshot_type = $3")
 	requireQueryContains(t, exec.query, "sum(market_value)")
+	requireQueryContains(t, exec.query, "asset.source")
+	requireQueryContains(t, exec.query, "asset.raw_payload")
 	requireArgLen(t, exec.args, 3)
 	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" || exec.args[2] != "open" {
 		t.Fatalf("args = %#v", exec.args)

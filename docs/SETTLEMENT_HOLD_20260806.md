@@ -1,5 +1,26 @@
 # 2026-08-06 Settlement Hold And Recovery
 
+## Asset-Basis Recovery Update (2026-08-27)
+
+Two later broker historical-funds exports cover both accounts from inception
+through 2026-08-26 and provide customer funds, market value, reverse-repo asset
+gap, total assets, deposits, withdrawals, and daily PnL. All 23 non-zero rows
+per account satisfy the daily asset continuity identity. These files establish
+the missing broker asset basis that the cash-flow exports alone could not.
+
+`performance_economic_nav.v2.6` uses an explicitly confirmed one-time
+`reconcile` snapshot for 2026-08-06 and carries the 2026-08-05 ETF settlement
+asset into both the open and close economic NAV. The two previews are now
+provisional rather than blocked:
+
+- `307000051387`: PnL `31,180.74 CNY`, residual `-1,554.76 CNY`.
+- `307000051388`: PnL `31,114.60 CNY`, residual `-1,621.70 CNY`.
+
+The original OC snapshots remain unchanged. All 46 historical broker-asset
+rows are independently versioned as audit gold; there is no scheduled or
+routine broker-file import. Full evidence is in
+`docs/BROKER_CASH_FLOW_AUDIT_20260827.md`.
+
 ## Cash-Flow Audit Update (2026-08-27)
 
 The broker cash-flow audit supersedes the earlier refund-only interpretation.
@@ -19,11 +40,11 @@ post-close receipt to economic close cash without overwriting the immutable OC
 snapshot. Full evidence and production changes are recorded in
 `docs/BROKER_CASH_FLOW_AUDIT_20260827.md`.
 
-The exported files do not contain a usable balance-after column, while the
-current OC Huaxin adapter exposes only Huaxin fast-counter cash. This is a
-Huaxin interface boundary and may not apply to future broker adapters. The
-2026-08-06 NAV therefore remains blocked at
-`-74,811.869998 / -95,070.639998 CNY`; no snapshot amount was invented.
+The earlier cash-flow files do not contain a usable balance-after column, while
+the current OC Huaxin adapter exposes only Huaxin fast-counter cash. The later
+historical-funds files supplied the missing independent asset basis; no amount
+was inferred from the old residual. This remains a Huaxin interface boundary
+and may not apply to future broker adapters.
 
 ## Recovery Status (2026-08-17)
 

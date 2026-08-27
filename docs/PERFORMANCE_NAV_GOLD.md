@@ -1,6 +1,6 @@
 # 绩效净值人工金标
 
-更新时间：`2026-08-01`
+更新时间：`2026-08-27`
 
 ## 定位
 
@@ -26,7 +26,7 @@
 | `overnight_adjustment` | `observed_open_asset - carried_open_asset`，数据库生成列 |
 | `close_asset` | 人工确认的日末经济资产 |
 | `daily_pnl` | 人工确认的当日策略盈利 |
-| `asset_scope` | 资产范围；债享5号当前为 `excluding_fund_occupancy` |
+| `asset_scope` | 资产范围；可区分经济净值金标与 `excluding_fund_occupancy` 券商资产基数 |
 | `source/source_ref` | 来源类型和原始文件或文档引用 |
 | `content_hash` | 规范化业务字段 SHA-256；相同 current 内容重复导入不新增版本 |
 | `confirmed_by/confirmed_at` | 确认人和东八区审计时间 |
@@ -67,7 +67,7 @@ go run ./cmd/relayctl performance-gold-import \
 
 ## 对比
 
-`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行当前配置的经济净值公式预览；生产默认已升级为 `performance_economic_nav.v2.5`：
+`performance-gold-compare` 只读取 current confirmed 金标，并对每个交易日执行当前配置的经济净值公式预览；生产默认已升级为 `performance_economic_nav.v2.6`：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
@@ -87,7 +87,11 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 逐日通过只表示该日公式与金标一致，不等于区间曲线可以发布。批量重建还必须满足连续性门禁：不能跳过有真实收益、外部资金流或 blocked 的中间交易日，否则累计净值会漏计该日收益。
 
+券商报告资产基数若明确不含公募占款或 ETF 待结算资产，不应直接要求与经济净值相等。此类记录用于验证券商资产连续性，并与 `reconcile` 快照、待结算开闭余额共同复核；差额必须能被显式待结算资产解释，不能从金标残差倒推。
+
 ## 当前验收
+
+智算汇利混合 `307000051387` 与涌盈波动率 `307000051388` 的开户以来券商历史资金各有 23 个非零交易日，已按 `source=broker_historical_funds_statement_one_time_audit` 保存为 confirmed version 1。全部记录满足资产连续恒等式；它们确认的是券商报告资产基数，不包含 Relay 单列的公募占款/ETF 待结算资产。`2026-08-06` 由独立可信 `reconcile` 快照和待结算开闭余额进入 v2.6 公式，金标本身仍不参与计算。完整审计见 `docs/BROKER_CASH_FLOW_AUDIT_20260827.md`。
 
 债享5号 `314000046830` 的 17 条 2026 年 7 月金标已经生产落库，来源为 `manual_user_confirmed`，全部为 current version 1。重复导入相同文件后仍为 17 个 version 1，内容哈希幂等成立。
 

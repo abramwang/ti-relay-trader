@@ -794,7 +794,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 1. `performance_account_inceptions` 保存账户起算日、日初资金、初始持仓/成本来源、策略范围和确认审计；账户范围不在程序中写死。
 2. `performance_position_cost_states` 以 `account_id + trade_date + symbol + exchange + cost_bucket` 保存移动加权成本、已实现/浮动盈亏、行情估值、上一 close/券商 open 数量、公司行为因子和数量残差。
 3. 成本账按 `日初数量 + 买入 - 卖出 = 日终数量` 逐证券校验。逆回购从证券成本账中排除，ETF `P/R` 预留独立分账；数量不平时直接阻断，不用柜台成本强行抹平。
-4. `performance_economic_nav.v2.5` 以 `可见资金 + 收盘后已确认清算现金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + ETF待结算资产 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；已确认公募返款按每笔 `released_estimate` 释放来源日待结算估值，再把实际到账与本笔释放估值之差单列为 ETF 清算差额。返款发生在不可变 `broker_close` 快照之后时，独立记为 `post_close_settlement_cash`，不覆盖快照。预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
+4. `performance_economic_nav.v2.6` 以 `可见资金或已确认券商资产基数 + 收盘后已确认清算现金 + Meridian 持仓重估 + 未进入可见资金的逆回购本金 + ETF待结算资产 + 确认调整` 计算日初/日终 NAV。日初持仓使用 Meridian `pre_close`，日终使用 `close`；已确认公募返款按每笔 `released_estimate` 释放来源日待结算估值，再把实际到账与本笔释放估值之差单列为 ETF 清算差额。返款发生在不可变 `broker_close` 快照之后时，独立记为 `post_close_settlement_cash`，不覆盖快照。预估逆回购利息只作诊断，柜台 `avg_cost/market_value/unrealized_pnl` 仅用于输入对账。
 5. 日收益按 v2 NAV 和外部资金流计算，区间收益按日收益复利链接；被阻断日期不计入正式曲线。无 v2 NAV 的历史现金快照只返回 `legacy_cash_snapshot_diagnostic`，不再计算虚假收益。
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
@@ -807,6 +807,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 14. `performance_economic_nav.v2.3` 使用经确认的 `ETF 公募返款` 结算流水冲销来源日估值。结算记录保存来源交易日、原待结算估值、实际到账、确认依据和日期精度；返款不是 `external_flow`。到账日的收益归因只增加 `实际到账 - 原估值` 清算差额，整笔返款不再进入未归因残差；缺少来源日或估值依据时阻断。
 15. `performance_economic_nav.v2.4` 支持同一赎回清算组分多日到账。首笔与补充到账通过 `settlement_group_id/prior_receipt_entry_id/receipt_stage` 形成审计链，每笔单独声明 `released_estimate`；已经释放完原估值的后续返款使用零释放额，整笔计入追加清算差额，不改变 ETF 截面或底仓成本。
 16. `performance_economic_nav.v2.5` 比较返款 `effective_at` 与当日 close 快照时间。快照后到账的金额加入经济 NAV 的收盘后可结算现金，并输出 `etf_settlement_receipt_after_close_snapshot`；OC 可见资金桥完整保留为独立非收益调整，不能与返款做差。券商流水一次性验收见 `docs/BROKER_CASH_FLOW_AUDIT_20260827.md`。
+17. `performance_economic_nav.v2.6` 支持一次性可信券商资产基数 `reconcile`：文件必须从开户起形成连续资产恒等式，启用日必须显式记录日初/日终券商总资产、入出金、文件哈希和 ETF 待结算开闭余额。券商资产基数不含公募占款时，Relay 在其上叠加待结算资产；原始 OC 快照不覆盖，历史文件不建设常规导入任务。
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；其中 `307000051387/1388` 已于 `2026-08-05` 发生 ETF 申赎 T0，后续依赖独立 T0 成本池和待结算估值。债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。
 
@@ -814,7 +815,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 
 待完成项：
 
-1. 首个 OC 新版本完整交易日已完成每日绩效试算；`307000051387/1388` 已按 `performance_economic_nav.v2.5` 重建 `2026-08-07..26` 的 28 个账户日，全部 provisional 且无 blocked。可信空起点且资金、持仓、订单、成交和资金流水均为零的账户保持 `not_applicable`，不生成收益率和严重告警。后续盘后流水线只由本机 `relayctl` 发布非阻断结果，公网绩效设置写开关仍关闭。
+1. 首个 OC 新版本完整交易日已完成每日绩效试算；`307000051387/1388` 已按 `performance_economic_nav.v2.6` 重建 `2026-08-06..26` 的 30 个账户日，全部 provisional 且无 blocked。可信空起点且资金、持仓、订单、成交和资金流水均为零的账户保持 `not_applicable`，不生成收益率和严重告警。后续盘后流水线只由本机 `relayctl` 发布非阻断结果，公网绩效设置写开关仍关闭。
 2. 历史费用和旧成交缺口默认不推断回填；券商交割单不进入日常导入流程。已有稳定订单身份、可逐笔唯一闭合并经用户确认时，允许执行保留原始数据和修复前备份的一次性审计更正。缺失 OC close 资产/持仓快照仍不得由交易流水补造。
 3. 公司行为成本校正已接入；后续在首个新协议完整交易日继续验收实际发生的股票分红、送转和 ETF 份额折算。
 4. `CORE` 与 `ETF_T0:{group_id}` 独立成本池、PCF 最小申赎单位门禁、实际 transfer/成分卖出关联和 IOPV 待结算估值已完成；下一步用 T+1 资金/持仓与公募实际回款验收估值消退，并补版本化最终清算输入。

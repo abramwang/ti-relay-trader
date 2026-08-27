@@ -306,19 +306,21 @@ type DailyPerformance struct {
 }
 
 type AssetPositionObservation struct {
-	AccountID           string     `json:"account_id"`
-	TradeDate           string     `json:"trade_date"`
-	SnapshotType        string     `json:"snapshot_type"`
-	CashAvailable       float64    `json:"cash_available"`
-	CashTotal           float64    `json:"cash_total"`
-	NetAsset            float64    `json:"net_asset"`
-	MarketValue         float64    `json:"market_value"`
-	StockValue          float64    `json:"stock_value"`
-	FundValue           float64    `json:"fund_value"`
-	PositionsCount      int64      `json:"positions_count"`
-	PositionMarketValue float64    `json:"position_market_value"`
-	CapturedAt          time.Time  `json:"captured_at,omitempty"`
-	PositionCapturedAt  *time.Time `json:"position_captured_at,omitempty"`
+	AccountID           string         `json:"account_id"`
+	TradeDate           string         `json:"trade_date"`
+	SnapshotType        string         `json:"snapshot_type"`
+	CashAvailable       float64        `json:"cash_available"`
+	CashTotal           float64        `json:"cash_total"`
+	NetAsset            float64        `json:"net_asset"`
+	MarketValue         float64        `json:"market_value"`
+	StockValue          float64        `json:"stock_value"`
+	FundValue           float64        `json:"fund_value"`
+	PositionsCount      int64          `json:"positions_count"`
+	PositionMarketValue float64        `json:"position_market_value"`
+	Source              string         `json:"source,omitempty"`
+	RawPayload          map[string]any `json:"raw_payload,omitempty"`
+	CapturedAt          time.Time      `json:"captured_at,omitempty"`
+	PositionCapturedAt  *time.Time     `json:"position_captured_at,omitempty"`
 }
 
 func NewRepository(exec Executor) *Repository {
@@ -3454,6 +3456,7 @@ func scanAssetPositionObservation(row rowScanner) (AssetPositionObservation, err
 	var observation AssetPositionObservation
 	var capturedAt sql.NullTime
 	var positionCapturedAt sql.NullTime
+	var rawPayload []byte
 	err := row.Scan(
 		&observation.AccountID,
 		&observation.TradeDate,
@@ -3466,6 +3469,8 @@ func scanAssetPositionObservation(row rowScanner) (AssetPositionObservation, err
 		&observation.FundValue,
 		&observation.PositionsCount,
 		&observation.PositionMarketValue,
+		&observation.Source,
+		&rawPayload,
 		&capturedAt,
 		&positionCapturedAt,
 	)
@@ -3477,6 +3482,11 @@ func scanAssetPositionObservation(row rowScanner) (AssetPositionObservation, err
 	}
 	if positionCapturedAt.Valid {
 		observation.PositionCapturedAt = &positionCapturedAt.Time
+	}
+	if len(rawPayload) > 0 {
+		if err := json.Unmarshal(rawPayload, &observation.RawPayload); err != nil {
+			return AssetPositionObservation{}, err
+		}
 	}
 	return observation, nil
 }
