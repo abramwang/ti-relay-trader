@@ -1901,6 +1901,8 @@
         csvLine(["字段", "值"]),
         csvLine(["账户ID", accountID]),
         csvLine(["账户别名", account ? accountLabel(account) : accountID]),
+        csvLine(["所属券商", account ? accountBrokerLabel(account) : "--"]),
+        csvLine(["Broker ID", account && account.broker_id ? account.broker_id : "--"]),
         csvLine(["交易日", tradeDate]),
         csvLine(["导出时间(Asia/Shanghai)", exportedAt]),
         csvLine(["资金数据状态", assetResult.error ? "不可用: " + assetResult.error : "正常"]),
@@ -2377,7 +2379,9 @@
 
       const option = document.createElement("option");
       option.value = account.account_id;
-      option.textContent = label === account.account_id ? suffix : label + " - " + account.account_id;
+      option.textContent = label === account.account_id
+        ? suffix
+        : label + " - " + account.account_id + " / " + accountBrokerLabel(account);
       option.selected = account.account_id === state.activeAccount;
       els.orderAccount.appendChild(option);
 
@@ -2410,6 +2414,9 @@
     if (account && account.account_id) {
       parts.push(account.account_id);
     }
+    if (account && account.broker_id) {
+      parts.push(accountBrokerLabel(account));
+    }
     if (account && account.trading_enabled === false) {
       parts.push("只读");
     }
@@ -2417,6 +2424,14 @@
       parts.push("模拟");
     }
     return parts.join(" / ") || "--";
+  }
+
+  function accountBrokerLabel(account) {
+    const brokerID = String(account && account.broker_id || "").trim();
+    if (brokerID.toLowerCase() === "huaxin") {
+      return "华鑫证券";
+    }
+    return brokerID || "未标注券商";
   }
 
   function accountTradingEnabled(accountID) {

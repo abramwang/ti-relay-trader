@@ -31,7 +31,7 @@ const (
 	feePageLimit            = 5000
 	maxFeePages             = 4
 	maxCalendarSearchDays   = 20
-	defaultFormulaVersion   = "performance_economic_nav.v2.4"
+	defaultFormulaVersion   = "performance_economic_nav.v2.5"
 	defaultAutoToleranceCNY = 50.0
 	defaultAutoToleranceBP  = 0.1
 	defaultWarnToleranceCNY = 500.0
@@ -124,11 +124,12 @@ type EconomicNAVCashFlowSummary struct {
 }
 
 type EconomicNAVETFSettlementSummary struct {
-	ReceiptAmount      float64          `json:"receipt_amount"`
-	ReleasedEstimate   float64          `json:"released_estimate"`
-	SettlementVariance float64          `json:"settlement_variance"`
-	ReceiptCount       int              `json:"receipt_count"`
-	Details            []map[string]any `json:"details,omitempty"`
+	ReceiptAmount          float64          `json:"receipt_amount"`
+	PostCloseReceiptAmount float64          `json:"post_close_receipt_amount"`
+	ReleasedEstimate       float64          `json:"released_estimate"`
+	SettlementVariance     float64          `json:"settlement_variance"`
+	ReceiptCount           int              `json:"receipt_count"`
+	Details                []map[string]any `json:"details,omitempty"`
 }
 
 type EconomicNAVReverseRepoSummary struct {
@@ -154,6 +155,7 @@ type EconomicNAVValuationSummary struct {
 	OpenPositionValue        float64 `json:"open_position_value"`
 	OpenETFSettlementAsset   float64 `json:"open_etf_settlement_asset"`
 	CloseVisibleCash         float64 `json:"close_visible_cash"`
+	PostCloseSettlementCash  float64 `json:"post_close_settlement_cash"`
 	ClosePositionValue       float64 `json:"close_position_value"`
 	ETFSettlementEstimate    float64 `json:"etf_settlement_estimate"`
 	BrokerOpenPositionValue  float64 `json:"broker_open_position_value"`
@@ -450,7 +452,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	externalNetFlow := sumCashAmounts(externalFlows)
-	settlementAdjustment, etfSettlement, settlementFlags := classifyETFSettlementReceipts(settlementFlows, normalizedDate)
+	settlementAdjustment, etfSettlement, settlementFlags := classifyETFSettlementReceipts(settlementFlows, normalizedDate, daily.CapturedAt)
 	result.ETFSettlement = etfSettlement
 	result.QualityFlags = appendUnique(result.QualityFlags, settlementFlags...)
 	if containsStringValue(settlementFlags, "etf_settlement_receipt_invalid") {
@@ -499,7 +501,8 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		status = "provisional"
 	}
 
-	closeEconomicNAV := roundMoney(closeVisibleCash + contribution.Summary.ClosePositionValue + repoSummary.Receivable + contribution.Summary.ETFSettlementEstimate)
+	result.Valuation.PostCloseSettlementCash = etfSettlement.PostCloseReceiptAmount
+	closeEconomicNAV := roundMoney(closeVisibleCash + etfSettlement.PostCloseReceiptAmount + contribution.Summary.ClosePositionValue + repoSummary.Receivable + contribution.Summary.ETFSettlementEstimate)
 	if openEconomicNAV <= 0 || closeEconomicNAV <= 0 {
 		result.Status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "missing_positive_economic_nav")
@@ -604,12 +607,13 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"attribution_residual":                   attributionResidual,
 			},
 			"etf_settlement": map[string]any{
-				"pnl":                 etfSettlement.SettlementVariance,
-				"receipt_amount":      etfSettlement.ReceiptAmount,
-				"released_estimate":   etfSettlement.ReleasedEstimate,
-				"settlement_variance": etfSettlement.SettlementVariance,
-				"receipt_count":       etfSettlement.ReceiptCount,
-				"details":             etfSettlement.Details,
+				"pnl":                       etfSettlement.SettlementVariance,
+				"receipt_amount":            etfSettlement.ReceiptAmount,
+				"post_close_receipt_amount": etfSettlement.PostCloseReceiptAmount,
+				"released_estimate":         etfSettlement.ReleasedEstimate,
+				"settlement_variance":       etfSettlement.SettlementVariance,
+				"receipt_count":             etfSettlement.ReceiptCount,
+				"details":                   etfSettlement.Details,
 			},
 			"unattributed": map[string]any{
 				"pnl":   unattributedPnL,
@@ -646,6 +650,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"open_position_value":         contribution.Summary.OpenPositionValue,
 				"open_etf_settlement_asset":   etfSettlement.ReleasedEstimate,
 				"close_visible_cash":          roundMoney(closeVisibleCash),
+				"post_close_settlement_cash":  etfSettlement.PostCloseReceiptAmount,
 				"close_position_value":        contribution.Summary.ClosePositionValue,
 				"etf_settlement_estimate":     contribution.Summary.ETFSettlementEstimate,
 				"broker_open_position_value":  roundMoney(brokerOpenPositionValue),
@@ -1146,7 +1151,7 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 	return roundMoney(total)
 }
 
-func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate string) (float64, EconomicNAVETFSettlementSummary, []string) {
+func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate string, closeCapturedAt time.Time) (float64, EconomicNAVETFSettlementSummary, []string) {
 	genericAdjustment := 0.0
 	summary := EconomicNAVETFSettlementSummary{}
 	flags := make([]string, 0)
@@ -1206,6 +1211,11 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 		if !item.EffectiveAt.IsZero() {
 			detail["effective_at"] = item.EffectiveAt
 		}
+		if !closeCapturedAt.IsZero() && !item.EffectiveAt.IsZero() && item.EffectiveAt.After(closeCapturedAt) {
+			summary.PostCloseReceiptAmount += item.Amount
+			detail["after_close_snapshot"] = true
+			flags = appendUnique(flags, "etf_settlement_receipt_after_close_snapshot", "post_close_cash_added_to_economic_nav")
+		}
 		summary.Details = append(summary.Details, detail)
 		flags = appendUnique(flags, "etf_settlement_receipt_confirmed")
 		if releasedEstimate > 0.000001 {
@@ -1222,6 +1232,7 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 		}
 	}
 	summary.ReceiptAmount = roundMoney(summary.ReceiptAmount)
+	summary.PostCloseReceiptAmount = roundMoney(summary.PostCloseReceiptAmount)
 	summary.ReleasedEstimate = roundMoney(summary.ReleasedEstimate)
 	summary.SettlementVariance = roundMoney(summary.SettlementVariance)
 	return roundMoney(genericAdjustment), summary, flags

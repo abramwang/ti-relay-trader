@@ -146,6 +146,12 @@ var (
 			Description: "人工净值金标的版本化审计、事务导入、幂等规则、独立对比和重建门禁。",
 		},
 		{
+			Slug:        "broker-cash-flow-audit-20260827",
+			Title:       "券商资金流水一次性审计",
+			Path:        "docs/BROKER_CASH_FLOW_AUDIT_20260827.md",
+			Description: "两户 ETF 公募返款、柜台可见资金桥、收盘后现金和 OC 多柜台资金能力边界。",
+		},
+		{
 			Slug:        "fuying13-performance-audit-20260804",
 			Title:       "富盈13号绩效起算审计",
 			Path:        "docs/FUYING13_PERFORMANCE_AUDIT_20260804.md",
@@ -668,7 +674,7 @@ func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
       <div class="panel-header"><span>环境与账户路由</span><small>` + html.EscapeString(accountList) + `</small></div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>环境</th><th>账户</th><th>别名</th><th>Broker</th><th>Gateway</th><th>查询</th><th>交易权限</th></tr></thead>
+          <thead><tr><th>环境</th><th>账户</th><th>别名</th><th>所属券商</th><th>Gateway</th><th>查询</th><th>交易权限</th></tr></thead>
           <tbody>` + portalAccountRowsHTML(s.cfg.Accounts, envLabel, accountAliases) + `</tbody>
         </table>
       </div>
@@ -805,13 +811,23 @@ func portalAccountRowsHTML(accounts []relayconfig.AccountRouteConfig, environmen
 			html.EscapeString(environment),
 			html.EscapeString(account.AccountID),
 			html.EscapeString(alias),
-			html.EscapeString(account.BrokerID),
+			html.EscapeString(brokerDisplayLabel(account.BrokerID)),
 			html.EscapeString(account.GatewayID),
 			queryStatus,
 			tradingStatus,
 		)
 	}
 	return b.String()
+}
+
+func brokerDisplayLabel(brokerID string) string {
+	brokerID = strings.TrimSpace(brokerID)
+	switch strings.ToLower(brokerID) {
+	case "huaxin":
+		return "华鑫证券 (huaxin)"
+	default:
+		return brokerID
+	}
 }
 
 func (s *portalServer) accountAliases(ctx context.Context) map[string]string {

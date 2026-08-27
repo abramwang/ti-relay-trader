@@ -121,7 +121,7 @@ relay 的核心域对象建议如下：
 
 | 对象 | 说明 |
 | --- | --- |
-| `Account` | 资金账户，包含 account_id、broker_id、gateway_id、交易权限、启停状态 |
+| `Account` | 资金账户，包含 account_id、所属券商 broker_id、gateway_id、交易权限、启停状态；broker_id 不与别名或前置实例混用 |
 | `Gateway` | 前置服务实例，包含 env、broker_id、gateway_id、Redis stream prefix、心跳状态 |
 | `Order` | relay 标准订单，使用 gateway_order_id 作为跨系统主键 |
 | `Fill` | 成交事实，优先按 account_id + trade_date + gateway_order_id + fill_id 或同日 match_stream_id 去重 |
@@ -138,6 +138,7 @@ relay 的核心域对象建议如下：
 3. `gateway_order_id` 由 relay、调用方或 OC 生成，必须在 `account_id + trade_date` 范围内唯一。
 4. 同一个 Redis 输出流可能有多账户消息，消费端必须按 `account_id`、`origin_message_id`、`gateway_order_id` 过滤。
 5. `GET /v1/account-routes` 是生产和测试环境的只读路由诊断入口，展示每个账户的查询/交易权限、只读状态、环境和 Redis `cmd.trade/cmd.query/reply/event/hb/dlq` key。
+6. `broker_id` 是账户所属券商的稳定标签。当前生产账户均为 `huaxin`；未来新增券商使用各自标签和适配能力，不能继承华鑫“仅见极速柜台资金”的假设。
 
 ## Redis Stream 实现口径
 

@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-08-26` 盘后链路完成 Level1 provisional 到 Meridian 权威日线 canonical NAV 的自动迁移 |
+| 最近确认 | `2026-08-27` 两户券商资金流水一次性审计完成，经济净值升级至 v2.5 并重建 28 个账户日 |
 | 更新时间 | `2026-08-27` |
 
 新线程按以下顺序恢复：
@@ -30,21 +30,22 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 - 生产 API、worker、PostgreSQL、Redis、事件桥、Meridian 行情代理和订单服务均已接通；API 监听 `0.0.0.0:9092`，worker 健康端口只监听 `127.0.0.1:19092`。
 - 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
+- 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - 生产 schema 当前为 `25 broker_close_snapshots`，Python SDK 当前版本为 `relay-sdk==0.1.28`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前阻塞
 
-- `2026-08-06` 的智算汇利混合 `307000051387`、涌盈波动率 `307000051388` 仍有约 `-74,811.87 / -95,070.64 CNY` 的 ETF 公募隔夜资金桥残差。日线、分钟 IOPV、交易、持仓和 ETF transfer 已闭合，下一证据应使用券商资金流水核对公募返款、现金替代和占款释放。
-- 建议资金流水覆盖 `2026-08-04..2026-08-11`，同时包含账户、发生时间、业务类型、币种、发生额、余额、证券代码、合同号/流水号、备注等原始字段。该数据用于一次性审计修复，不建设日常手工导入流程。
+- `2026-08-06` 的智算汇利混合 `307000051387`、涌盈波动率 `307000051388` 仍有 `-74,811.87 / -95,070.64 CNY` 的归因残差。券商流水已确认 8 月 7 日、10 日的真实公募返款金额和来源日，但导出文件没有可用余额；当前华鑫账户的 OC 适配只能取得华鑫极速柜台资金，无法证明普通柜台划转、公募占款和现金替代余额。该限制属于华鑫柜台口径，不外推到未来接入的其他券商。
+- 两份券商流水只作本次事故的外部权威证据，不建设日常导入任务。未来依赖 OC 当日数据补充柜台范围、内部划转和资金明细；没有权威事件时保持 `partial_counter_visibility`，不按日推断。
 - 上述缺口使 `2026-07-30..2026-08-06` 间部分日期未纳入正式连续净值。绩效页面已经区分“所选日质量正常”和“区间存在 NAV 缺口”，blocked 日期不会被绘入正式曲线。
 - 富盈13号仍待完成 `meridian_pre_close_mark_to_market` 起算成本源和 ETF T0/底仓隔离起点确认；不得使用被 ETF 申赎污染的柜台平均成本。
 
 ### 下一步
 
-1. 取得两户 `2026-08-04..2026-08-11` 券商资金流水，先只读比对 `2026-08-06` 资金桥，再形成可审计修复方案。
-2. 修复后按日期顺序重建成本与 NAV，确认跨区间曲线、资产快照与资金桥质量门禁全部恢复。
+1. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，先解决申赎 T+1/T+2 的 `partial_counter_visibility`，不要求 OC 提供历史查询。
+2. 获得足够 OC 字段后重新验收 8 月 6 日同类日的计算恒等式；历史日仍保持 blocked，除非出现新的权威证据。
 3. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
 4. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
 
@@ -153,6 +154,7 @@ PYTHONPATH=sdk/python .venv/bin/python -m unittest discover -s sdk/python/tests 
 - [Python SDK](/home/ti-relay-trader/docs/PYTHON_SDK.md:1)
 - [绩效分析设计](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)
 - [绩效净值金标](/home/ti-relay-trader/docs/PERFORMANCE_NAV_GOLD.md:1)
+- [两户券商资金流水一次性审计](/home/ti-relay-trader/docs/BROKER_CASH_FLOW_AUDIT_20260827.md:1)
 - [Meridian 盘后水位协调](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)
 - [2026-08-06 延后结算记录](/home/ti-relay-trader/docs/SETTLEMENT_HOLD_20260806.md:1)
 - [数据库迁移](/home/ti-relay-trader/docs/MIGRATIONS.md:1)

@@ -28,6 +28,15 @@ func TestPortalAccountRowsPreferDatabaseAliases(t *testing.T) {
 	}
 }
 
+func TestBrokerDisplayLabelUsesKnownNameAndUnknownID(t *testing.T) {
+	if got := brokerDisplayLabel("huaxin"); got != "华鑫证券 (huaxin)" {
+		t.Fatalf("huaxin label = %q", got)
+	}
+	if got := brokerDisplayLabel("future-broker"); got != "future-broker" {
+		t.Fatalf("future broker label = %q", got)
+	}
+}
+
 func TestPortalAccountRowsEscapeAliases(t *testing.T) {
 	rows := portalAccountRowsHTML(
 		[]relayconfig.AccountRouteConfig{{AccountID: "account-1"}},

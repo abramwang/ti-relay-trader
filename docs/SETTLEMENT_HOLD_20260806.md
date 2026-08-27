@@ -1,5 +1,30 @@
 # 2026-08-06 Settlement Hold And Recovery
 
+## Cash-Flow Audit Update (2026-08-27)
+
+The broker cash-flow audit supersedes the earlier refund-only interpretation.
+The 2026-08-07 actual ETF cash receipt is `53,520.64 CNY` per account and was
+posted after the 15:01 close snapshot. The full `73,448.939998 CNY` next-open
+bridge cannot therefore be decomposed by subtracting that later receipt. The
+remaining bridge is an OC-visible cash-scope observation with incomplete
+fast/normal-counter visibility. The user confirmed that fast-to-normal counter
+transfers occur conditionally on T+1/T+2 after ETF subscription/redemption,
+not every day.
+
+The same audit proves that each account's `13,252.30 CNY` receipt posted after
+the 2026-08-10 close belongs to the separate 2026-08-06 redemption. The old
+entries that treated the August 10 bridge as a supplemental August 5 refund
+were voided and preserved. `performance_economic_nav.v2.5` now adds a confirmed
+post-close receipt to economic close cash without overwriting the immutable OC
+snapshot. Full evidence and production changes are recorded in
+`docs/BROKER_CASH_FLOW_AUDIT_20260827.md`.
+
+The exported files do not contain a usable balance-after column, while the
+current OC Huaxin adapter exposes only Huaxin fast-counter cash. This is a
+Huaxin interface boundary and may not apply to future broker adapters. The
+2026-08-06 NAV therefore remains blocked at
+`-74,811.869998 / -95,070.639998 CNY`; no snapshot amount was invented.
+
 ## Recovery Status (2026-08-17)
 
 The historical hold has been partially resolved for the three first-wave
@@ -13,9 +38,11 @@ The original raw archive and hold evidence remain unchanged.
   `open + ordinary fills + ETF redemption/transfer = next open`. All three
   accounts have zero quantity mismatches and zero residual quantity. Reverse
   repo instruments were correctly excluded from persistent positions.
-- The next-open cash source for `307000051387/1388` was reduced by the two
-  confirmed `73,448.939998 CNY` receipts attributed to the 2026-08-05 ETF
-  redemption. `314000046830` had no such adjustment.
+- The historical recovery initially reduced the next-open cash source by two
+  inferred `73,448.939998 CNY` receipts. The 2026-08-27 broker cash-flow audit
+  invalidated that refund-only interpretation; the recovered snapshot amounts
+  remain unchanged but now carry explicit audit metadata and partial-counter
+  visibility warnings. `314000046830` had no such adjustment.
 - Recovery inputs were first stored as `reconcile`, dry-run against Meridian,
   then promoted through the normal `broker_close -> close` API path. The
   resulting settlement contains three asset snapshots, 228 position rows,
