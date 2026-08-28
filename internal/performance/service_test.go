@@ -805,6 +805,201 @@ func TestBuildComponentSaleLinksUsesActualTransferQuantitiesOnly(t *testing.T) {
 	}
 }
 
+func TestBuildComponentSaleLinksInfersHistoricalBlankBasketByTimeAndQuantity(t *testing.T) {
+	first := time.Date(2026, 7, 22, 9, 32, 14, 0, timeutil.Location())
+	second := time.Date(2026, 7, 22, 14, 47, 10, 0, timeutil.Location())
+	orders := []trading.Order{
+		{AccountID: "acct-1", GatewayOrderID: "redeem-1", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF},
+		{AccountID: "acct-1", GatewayOrderID: "redeem-2", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF},
+	}
+	transfers := []trading.ComponentTransfer{
+		{FillID: "transfer-1", AccountID: "acct-1", GatewayOrderID: "redeem-1", Symbol: "300001", Exchange: trading.ExchangeSZ, ComponentSymbol: "300001", ComponentExchange: trading.ExchangeSZ, ComponentQty: 400, MatchedAt: first},
+		{FillID: "transfer-2", AccountID: "acct-1", GatewayOrderID: "redeem-2", Symbol: "300001", Exchange: trading.ExchangeSZ, ComponentSymbol: "300001", ComponentExchange: trading.ExchangeSZ, ComponentQty: 500, MatchedAt: second},
+	}
+	fills := []trading.Fill{
+		{FillID: "sale-1", AccountID: "acct-1", GatewayOrderID: "sell-1", Symbol: "300001", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideSell, Qty: 400, MatchedAt: first.Add(time.Second)},
+		{FillID: "sale-2", AccountID: "acct-1", GatewayOrderID: "sell-2", Symbol: "300001", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideSell, Qty: 500, MatchedAt: second.Add(time.Second)},
+	}
+
+	links := buildComponentSaleLinks(orders, fills, transfers)
+	if len(links.byFill) != 2 || !componentTransferGroupComplete(links.groups["redeem-1"]) || !componentTransferGroupComplete(links.groups["redeem-2"]) {
+		t.Fatalf("links = %#v", links)
+	}
+	if links.byFill[contributionFillKey(fills[0])][0].redemptionGatewayOrderID != "redeem-1" ||
+		links.byFill[contributionFillKey(fills[1])][0].redemptionGatewayOrderID != "redeem-2" {
+		t.Fatalf("historical links = %#v", links.byFill)
+	}
+	if !containsString(links.flags, "historical_component_sale_link_inferred") {
+		t.Fatalf("quality flags = %#v", links.flags)
+	}
+	bucket := links.bucketLink(fills)
+	if !bucket.allFillsLinked || !bucket.groupComplete || bucket.linkedQuantity != 900 {
+		t.Fatalf("bucket link = %#v", bucket)
+	}
+}
+
+func TestBuildComponentSaleLinksSplitsAggregatedHistoricalFillAcrossBaskets(t *testing.T) {
+	first := time.Date(2026, 7, 31, 9, 40, 8, 0, timeutil.Location())
+	second := time.Date(2026, 7, 31, 11, 17, 25, 0, timeutil.Location())
+	orders := []trading.Order{
+		{GatewayOrderID: "redeem-1", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF},
+		{GatewayOrderID: "redeem-2", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF},
+	}
+	transfers := []trading.ComponentTransfer{
+		{FillID: "transfer-1", GatewayOrderID: "redeem-1", Symbol: "300001", Exchange: trading.ExchangeSZ, ComponentSymbol: "300001", ComponentExchange: trading.ExchangeSZ, ComponentQty: 400, MatchedAt: first},
+		{FillID: "transfer-2", GatewayOrderID: "redeem-2", Symbol: "300001", Exchange: trading.ExchangeSZ, ComponentSymbol: "300001", ComponentExchange: trading.ExchangeSZ, ComponentQty: 400, MatchedAt: second},
+	}
+	fills := []trading.Fill{{
+		FillID: "aggregated-sale", GatewayOrderID: "sell", Symbol: "300001", Exchange: trading.ExchangeSZ,
+		TradeSide: trading.TradeSideSell, Price: 35, Qty: 800, MatchedAt: second.Add(time.Second),
+	}}
+
+	links := buildComponentSaleLinks(orders, fills, transfers)
+	if !componentTransferGroupComplete(links.groups["redeem-1"]) || !componentTransferGroupComplete(links.groups["redeem-2"]) {
+		t.Fatalf("groups = %#v", links.groups)
+	}
+	if len(links.byFill[contributionFillKey(fills[0])]) != 2 {
+		t.Fatalf("fill links = %#v", links.byFill)
+	}
+	for _, groupID := range []string{"redeem-1", "redeem-2"} {
+		linked, complete := links.linkedFills(groupID)
+		if !complete || len(linked) != 1 || linked[0].Qty != 400 || linked[0].Price != 35 {
+			t.Fatalf("linked %s = %#v / %v", groupID, linked, complete)
+		}
+	}
+}
+
+func TestBuildT0GroupsIgnoresZeroFillBuyCandidates(t *testing.T) {
+	location := timeutil.Location()
+	filledAt := time.Date(2026, 7, 22, 13, 12, 36, 0, location)
+	redeemedAt := time.Date(2026, 7, 22, 14, 47, 10, 0, location)
+	orders := []trading.Order{
+		{GatewayOrderID: "cancelled-buy", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, OrderQty: 1_000_000, AcceptedAt: filledAt.Add(-time.Minute)},
+		{GatewayOrderID: "filled-buy", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideBuy, BusinessType: trading.BusinessTypeStock, OrderQty: 1_000_000, AcceptedAt: filledAt},
+		{GatewayOrderID: "redeem", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, OrderQty: 1_000_000, AcceptedAt: redeemedAt},
+	}
+	fills := []trading.Fill{
+		{FillID: "buy-fill", GatewayOrderID: "filled-buy", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideBuy, Price: 3.65, Qty: 1_000_000, MatchedAt: filledAt},
+		{FillID: "redeem-fill", GatewayOrderID: "redeem", Symbol: "159915", Exchange: trading.ExchangeSZ, TradeSide: trading.TradeSideRedemption, BusinessType: trading.BusinessTypeETF, Qty: 1_000_000, MatchedAt: redeemedAt},
+	}
+
+	service := &Service{}
+	groups, _, _ := service.buildT0Groups(orders, fills, map[string]contributionInstrument{
+		"159915.SZ": {SecurityID: "159915.SZ", InstrumentType: "etf"},
+	}, map[string]int64{"159915.SZ": 1_000_000})
+	if len(groups) != 1 || len(groups[0].orders) != 1 || groups[0].orders[0].GatewayOrderID != "filled-buy" {
+		t.Fatalf("groups = %#v", groups)
+	}
+	if containsString(groups[0].flags, "ambiguous_t0_order_group") {
+		t.Fatalf("quality flags = %#v", groups[0].flags)
+	}
+}
+
+func TestApplyETFSettlementFinalizationReplacesEstimateAndCoversBasketOrders(t *testing.T) {
+	estimated := 1_138_290.0
+	gross := 22_500.0
+	net := 17_100.0
+	items := []SecurityContribution{{
+		SecurityID:            "159915.SZ",
+		Symbol:                "159915",
+		Exchange:              "SZ",
+		StrategyType:          StrategyETFRedemptionT0,
+		StrategyID:            "redeem-order",
+		BuyQuantity:           1_000_000,
+		RedemptionQuantity:    1_000_000,
+		RedemptionUnit:        1_000_000,
+		BuyAmount:             3_531_000,
+		LinkedComponentSales:  3_526_353,
+		ETFSettlementEstimate: &estimated,
+		GrossContribution:     &gross,
+		NetContribution:       &net,
+		PnLStatus:             "estimated",
+		Orders:                2,
+		Fills:                 3,
+	}}
+	groups := []t0RedemptionGroup{{
+		securityID: "159915.SZ",
+		orders: []trading.Order{{
+			GatewayOrderID: "buy-order",
+		}},
+		redemptions: []trading.Fill{{
+			GatewayOrderID: "redeem-order",
+		}},
+	}}
+	links := componentSaleLinks{groups: map[string]*componentTransferGroup{
+		"redeem-order": {
+			redemptionGatewayOrderID: "redeem-order",
+			linkedFills:              []trading.Fill{{GatewayOrderID: "component-order"}},
+		},
+	}}
+	finalizations := []ledger.ETFSettlementFinalization{{
+		AccountID:                  "acct-1",
+		SourceTradeDate:            "2026-07-27",
+		SecurityID:                 "159915.SZ",
+		Status:                     "confirmed",
+		SettlementComplete:         true,
+		RedemptionQuantity:         1_000_000,
+		RedemptionUnit:             1_000_000,
+		BuyGrossAmount:             3_531_000,
+		ComponentSaleGrossAmount:   3_526_353,
+		ActualCashComponent:        578.25,
+		ActualTotalFee:             2_605.52,
+		SourceCloseSettlementCarry: 565.19,
+		GrossContribution:          -4_068.75,
+		NetContribution:            -6_674.27,
+		PCFTradeDate:               "2026-07-28",
+		PCFSchemaVersion:           "etf_cash_component.v1",
+		Source:                     "broker_statement_and_meridian_pcf",
+	}}
+
+	got, covered, flags := applyETFSettlementFinalizations(items, groups, links, finalizations, 4_000_000)
+	if len(got) != 1 {
+		t.Fatalf("finalized items = %#v", got)
+	}
+	item := got[0]
+	if item.ETFSettlementStatus != "confirmed" || item.PnLStatus != "calculated" || item.EstimatedFee != 0 {
+		t.Fatalf("finalized item = %#v", item)
+	}
+	assertClose(t, *item.GrossContribution, -4_068.75)
+	assertClose(t, *item.NetContribution, -6_674.27)
+	assertClose(t, *item.ETFSettlementEstimate, 565.19)
+	for _, orderID := range []string{"buy-order", "redeem-order", "component-order"} {
+		if !covered[orderID] {
+			t.Fatalf("order %s not covered: %#v", orderID, covered)
+		}
+	}
+	if !containsString(flags, "etf_t0_final_settlement_confirmed") {
+		t.Fatalf("flags = %#v", flags)
+	}
+}
+
+func TestClassifyETFFinalSettlementReleasesSignedLiability(t *testing.T) {
+	items := []ledger.CashLedgerEntry{{
+		EntryID:    "settlement-release",
+		TradeDate:  "2026-07-23",
+		LedgerType: "settlement",
+		FlowClass:  "settlement_adjustment",
+		Amount:     -1_419.22,
+		Status:     "confirmed",
+		RawPayload: map[string]any{
+			"settlement_kind":       "etf_redemption_final_settlement",
+			"source_trade_date":     "2026-07-22",
+			"source_accrual_amount": -1_445.34,
+			"released_estimate":     -1_419.22,
+			"confirmation_source":   "broker_cash_flow_and_meridian_pcf",
+		},
+	}}
+
+	generic, summary, flags := classifyETFSettlementReceipts(items, "2026-07-23", time.Time{})
+	assertClose(t, generic, 0)
+	assertClose(t, summary.ReceiptAmount, -1_419.22)
+	assertClose(t, summary.ReleasedEstimate, -1_419.22)
+	assertClose(t, summary.SettlementVariance, 0)
+	if !containsString(flags, "etf_final_settlement_cash_released") {
+		t.Fatalf("flags = %#v", flags)
+	}
+}
+
 func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 	matchedAt := time.Date(2026, 7, 24, 10, 8, 0, 0, timeutil.Location())
 	store := &fakePerformanceStore{
@@ -1418,6 +1613,79 @@ func TestCalculateEconomicNAVAddsETFReceiptPostedAfterCloseSnapshot(t *testing.T
 	}
 }
 
+func TestCalculateEconomicNAVDoesNotDoubleCountPostCloseETFReceiptInConfirmedBrokerBasis(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-08-07",
+			CashTotal:          1_000,
+			NetAsset:           1_000,
+			OpenNetAsset:       1_000,
+			OpenSnapshotSource: "open",
+			CapturedAt:         time.Date(2026, 8, 7, 15, 1, 0, 0, timeutil.Location()),
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"close": {CashTotal: 1_000, NetAsset: 1_000},
+			"reconcile": {
+				NetAsset: 1_100,
+				Source:   "broker_historical_funds_statement_one_time_audit",
+				RawPayload: map[string]any{
+					"economic_nav_base_confirmed":            true,
+					"recurring_import":                       false,
+					"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+					"statement_sha256":                       "test-sha256",
+					"reported_open_total_asset":              1_000.0,
+					"reported_close_total_asset":             1_100.0,
+					"reported_daily_pnl":                     100.0,
+					"reported_deposit":                       0.0,
+					"reported_withdrawal":                    0.0,
+					"open_outstanding_etf_settlement_asset":  60.0,
+					"close_outstanding_etf_settlement_asset": 0.0,
+				},
+			},
+		},
+		cashByClass: map[string][]ledger.CashLedgerEntry{
+			"settlement_adjustment": {{
+				EntryID:     "etf-refund-after-close-in-broker-basis",
+				AccountID:   "acct-1",
+				TradeDate:   "2026-08-07",
+				LedgerType:  "settlement",
+				FlowClass:   "settlement_adjustment",
+				Amount:      100,
+				Status:      "confirmed",
+				EffectiveAt: time.Date(2026, 8, 7, 18, 53, 57, 0, timeutil.Location()),
+				RawPayload: map[string]any{
+					"settlement_kind":      "etf_redemption_fund_refund",
+					"source_trade_date":    "2026-08-05",
+					"estimated_receivable": 60.0,
+					"confirmation_source":  "broker_cash_flow_statement",
+				},
+			}},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260807", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_060)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1_100)
+	assertClose(t, result.NAV.AccountDayPnL, 40)
+	assertClose(t, result.ETFSettlement.PostCloseReceiptAmount, 0)
+	assertClose(t, result.Valuation.PostCloseSettlementCash, 0)
+	if !containsString(result.QualityFlags, "post_close_settlement_included_in_broker_asset_basis") {
+		t.Fatalf("missing broker-basis receipt flag in %#v", result.QualityFlags)
+	}
+	if containsString(result.QualityFlags, "post_close_cash_added_to_economic_nav") {
+		t.Fatalf("post-close receipt was added twice: %#v", result.QualityFlags)
+	}
+}
+
 func TestCalculateEconomicNAVUsesConfirmedBrokerAssetBasis(t *testing.T) {
 	store := &fakePerformanceStore{
 		daily: ledger.DailyPerformance{
@@ -1519,6 +1787,42 @@ func TestCalculateEconomicNAVDoesNotRequirePreviousNAVAtConfirmedInception(t *te
 	assertClose(t, result.NAV.AccountDayPnL, 10)
 }
 
+func TestCalculateEconomicNAVDoesNotRequirePreviousNAVAtCleanInceptionWithoutFundingMarker(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-07-27",
+			CashTotal:          1_010,
+			NetAsset:           1_010,
+			OpenNetAsset:       1_000,
+			OpenSnapshotSource: "open",
+		},
+		inception: ledger.PerformanceInception{
+			AccountID: "acct-1", InceptionDate: "2026-07-27", Status: "confirmed", CleanStart: true,
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"open":  {CashTotal: 1_000, NetAsset: 1_000},
+			"close": {CashTotal: 1_010, NetAsset: 1_010},
+		},
+	}
+	service, err := New(Options{Store: store, FormulaVersion: "performance_economic_nav.unit"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260727", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	assertClose(t, result.NAV.OpenEconomicNAV, 1_000)
+	assertClose(t, result.NAV.CloseEconomicNAV, 1_010)
+	assertClose(t, result.NAV.AccountDayPnL, 10)
+	if containsString(result.QualityFlags, "missing_previous_economic_nav") {
+		t.Fatalf("unexpected missing_previous_economic_nav in %#v", result.QualityFlags)
+	}
+}
+
 func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 	observation := ledger.AssetPositionObservation{
 		NetAsset: 1_010,
@@ -1538,9 +1842,39 @@ func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 		},
 	}
 
-	_, _, err := confirmedBrokerAssetBasis(observation, 3, false)
-	if err == nil || !strings.Contains(err.Error(), "does not match current estimate") {
+	_, _, err := confirmedBrokerAssetBasis(observation, 3, 0, false)
+	if err == nil || !strings.Contains(err.Error(), "does not match current carry") {
 		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
+	}
+}
+
+func TestConfirmedBrokerAssetBasisAcceptsSignedSettlementLiabilityRelease(t *testing.T) {
+	observation := ledger.AssetPositionObservation{
+		NetAsset: 4_318_640.10,
+		Source:   "broker_historical_funds_statement_one_time_audit",
+		RawPayload: map[string]any{
+			"economic_nav_base_confirmed":            true,
+			"recurring_import":                       false,
+			"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+			"statement_sha256":                       "test-sha256",
+			"reported_open_total_asset":              4_316_154.10,
+			"reported_close_total_asset":             4_318_640.10,
+			"reported_daily_pnl":                     2_486.00,
+			"reported_deposit":                       0.0,
+			"reported_withdrawal":                    0.0,
+			"open_outstanding_etf_settlement_asset":  949.73,
+			"close_outstanding_etf_settlement_asset": -1_419.22,
+		},
+	}
+
+	basis, flags, err := confirmedBrokerAssetBasis(observation, 0, 2_368.95, false)
+	if err != nil {
+		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
+	}
+	assertClose(t, basis.OpenEconomicNAV, 4_317_103.83)
+	assertClose(t, basis.CloseEconomicNAV, 4_317_220.88)
+	if !containsString(flags, "outstanding_etf_settlement_carried") {
+		t.Fatalf("flags = %#v", flags)
 	}
 }
 
@@ -1564,7 +1898,7 @@ func TestConfirmedBrokerAssetBasisUsesCleanInceptionFundingAsOpenCapital(t *test
 		},
 	}
 
-	basis, flags, err := confirmedBrokerAssetBasis(observation, 0, true)
+	basis, flags, err := confirmedBrokerAssetBasis(observation, 0, 0, true)
 	if err != nil {
 		t.Fatalf("confirmedBrokerAssetBasis() error = %v", err)
 	}
@@ -1574,7 +1908,7 @@ func TestConfirmedBrokerAssetBasisUsesCleanInceptionFundingAsOpenCapital(t *test
 		t.Fatalf("basis/flags = %#v / %#v", basis, flags)
 	}
 
-	if _, _, err := confirmedBrokerAssetBasis(observation, 0, false); err == nil {
+	if _, _, err := confirmedBrokerAssetBasis(observation, 0, 0, false); err == nil {
 		t.Fatal("confirmedBrokerAssetBasis() accepted unconfirmed inception funding")
 	}
 }
@@ -3017,6 +3351,7 @@ type fakePerformanceStore struct {
 	positionsByDate       map[string][]trading.Position
 	feeRules              []ledger.FeeRule
 	orderFees             []ledger.OrderFeeRecord
+	etfSettlements        []ledger.ETFSettlementFinalization
 	fillQueries           []trading.FillQuery
 	daily                 ledger.DailyPerformance
 	dailyErr              error
@@ -3111,6 +3446,10 @@ func (store *fakePerformanceStore) ListComponentTransfers(_ context.Context, _ t
 
 func (store *fakePerformanceStore) ListOrderFeeRecords(_ context.Context, _ ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error) {
 	return store.orderFees, nil
+}
+
+func (store *fakePerformanceStore) ListETFSettlementFinalizations(_ context.Context, _, _ string) ([]ledger.ETFSettlementFinalization, error) {
+	return store.etfSettlements, nil
 }
 
 func (store *fakePerformanceStore) ListPositionSnapshots(_ context.Context, query trading.PositionQuery) ([]trading.Position, error) {

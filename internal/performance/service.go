@@ -42,6 +42,7 @@ type Store interface {
 	ListOrders(ctx context.Context, query trading.OrderQuery) ([]trading.Order, error)
 	ListFills(ctx context.Context, query trading.FillQuery) ([]trading.Fill, error)
 	ListOrderFeeRecords(ctx context.Context, query ledger.OrderFeeRecordQuery) ([]ledger.OrderFeeRecord, error)
+	ListETFSettlementFinalizations(ctx context.Context, accountID, sourceTradeDate string) ([]ledger.ETFSettlementFinalization, error)
 	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	GetDailyPerformance(ctx context.Context, accountID string, tradeDate string) (ledger.DailyPerformance, error)
 	GetAssetPositionObservation(ctx context.Context, accountID string, tradeDate string, snapshotType string) (ledger.AssetPositionObservation, error)
@@ -158,6 +159,7 @@ type EconomicNAVValuationSummary struct {
 	PostCloseSettlementCash  float64 `json:"post_close_settlement_cash"`
 	ClosePositionValue       float64 `json:"close_position_value"`
 	ETFSettlementEstimate    float64 `json:"etf_settlement_estimate"`
+	ETFSettlementStatus      string  `json:"etf_settlement_status,omitempty"`
 	BrokerOpenPositionValue  float64 `json:"broker_open_position_value"`
 	BrokerClosePositionValue float64 `json:"broker_close_position_value"`
 	PriceSource              string  `json:"price_source"`
@@ -403,23 +405,38 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		}
 		result.QualityFlags = appendUnique(result.QualityFlags, flag)
 	}
+	settlementFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "settlement_adjustment")
+	if err != nil {
+		return EconomicNAVResult{}, err
+	}
+	settlementAdjustment, etfSettlement, settlementFlags := classifyETFSettlementReceipts(settlementFlows, normalizedDate, daily.CapturedAt)
+	result.ETFSettlement = etfSettlement
+	result.QualityFlags = appendUnique(result.QualityFlags, settlementFlags...)
+	if containsStringValue(settlementFlags, "etf_settlement_receipt_invalid") {
+		status = "blocked"
+	}
 	openObservation, openObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "open")
 	closeObservation, closeObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "close")
 	reconcileObservation, reconcileObservationErr := service.store.GetAssetPositionObservation(ctx, accountID, normalizedDate, "reconcile")
 	assetBasis := EconomicNAVAssetBasisSummary{}
+	confirmedInceptionDay := false
+	if inception, inceptionErr := service.store.GetPerformanceInception(ctx, accountID); inceptionErr == nil {
+		confirmedInceptionDay = inception.Status == "confirmed" && inception.CleanStart && inception.InceptionDate == normalizedDate
+	}
 	if reconcileObservationErr == nil {
-		confirmedInceptionDay := false
-		if inceptionFunding, _ := reconcileObservation.RawPayload["inception_funding_as_open_capital"].(bool); inceptionFunding {
-			inception, inceptionErr := service.store.GetPerformanceInception(ctx, accountID)
-			confirmedInceptionDay = inceptionErr == nil && inception.Status == "confirmed" && inception.CleanStart && inception.InceptionDate == normalizedDate
-		}
 		var basisFlags []string
-		assetBasis, basisFlags, err = confirmedBrokerAssetBasis(reconcileObservation, contribution.Summary.ETFSettlementEstimate, confirmedInceptionDay)
+		assetBasis, basisFlags, err = confirmedBrokerAssetBasis(reconcileObservation, contribution.Summary.ETFSettlementEstimate, etfSettlement.ReleasedEstimate, confirmedInceptionDay)
 		result.QualityFlags = appendUnique(result.QualityFlags, basisFlags...)
 		if err != nil {
 			status = "blocked"
 			result.QualityFlags = appendUnique(result.QualityFlags, "broker_asset_basis_invalid")
 		}
+	}
+	if assetBasis.Applied && math.Abs(etfSettlement.PostCloseReceiptAmount) > 0.000001 {
+		etfSettlement.PostCloseReceiptAmount = 0
+		result.ETFSettlement = etfSettlement
+		result.QualityFlags = removeStringValues(result.QualityFlags, "post_close_cash_added_to_economic_nav")
+		result.QualityFlags = appendUnique(result.QualityFlags, "post_close_settlement_included_in_broker_asset_basis")
 	}
 	result.AssetBasis = assetBasis
 	openVisibleCash := firstPositiveFloat(daily.OpenNetAsset, daily.PreviousNetAsset)
@@ -456,10 +473,17 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		PriceSource:              valuationPriceSource,
 		CostSource:               "excluded_from_nav",
 	}
+	if contribution.Summary.ETFSettlementFinalized > 0 {
+		result.Valuation.ETFSettlementStatus = "confirmed"
+	}
 	if math.Abs(contribution.Summary.ETFSettlementEstimate) > 0.000001 {
-		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_settlement_estimated", "etf_settlement_pending")
-		if status == "finalized" {
-			status = "provisional"
+		if contribution.Summary.ETFSettlementFinalized > 0 {
+			result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_settlement_finalized", "etf_settlement_carry_confirmed")
+		} else {
+			result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_settlement_estimated", "etf_settlement_pending")
+			if status == "finalized" {
+				status = "provisional"
+			}
 		}
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, "research_position_valuation", "broker_position_cost_excluded")
@@ -469,10 +493,6 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	externalFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "external_flow")
-	if err != nil {
-		return EconomicNAVResult{}, err
-	}
-	settlementFlows, err := service.listConfirmedCash(ctx, accountID, normalizedDate, "settlement_adjustment")
 	if err != nil {
 		return EconomicNAVResult{}, err
 	}
@@ -486,12 +506,6 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	}
 
 	externalNetFlow := sumCashAmounts(externalFlows)
-	settlementAdjustment, etfSettlement, settlementFlags := classifyETFSettlementReceipts(settlementFlows, normalizedDate, daily.CapturedAt)
-	result.ETFSettlement = etfSettlement
-	result.QualityFlags = appendUnique(result.QualityFlags, settlementFlags...)
-	if containsStringValue(settlementFlags, "etf_settlement_receipt_invalid") {
-		status = "blocked"
-	}
 	if etfSettlement.ReceiptCount > 0 {
 		openEconomicNAV = roundMoney(openEconomicNAV + etfSettlement.ReleasedEstimate)
 		result.Valuation.OpenETFSettlementAsset = etfSettlement.ReleasedEstimate
@@ -600,7 +614,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		return EconomicNAVResult{}, err
 	}
 	for _, flag := range navFlags {
-		if flag == "missing_previous_economic_nav" && assetBasis.InceptionFundingAsOpenCapital {
+		if flag == "missing_previous_economic_nav" && confirmedInceptionDay {
 			continue
 		}
 		result.QualityFlags = appendUnique(result.QualityFlags, flag)
@@ -1109,6 +1123,10 @@ type orderFeeDayCoverage struct {
 }
 
 func calculateOrderFeeDayCoverage(fills []trading.Fill, authoritativeFees map[string]ledger.OrderFeeRecord) orderFeeDayCoverage {
+	return calculateOrderFeeDayCoverageWithSettlement(fills, authoritativeFees, nil)
+}
+
+func calculateOrderFeeDayCoverageWithSettlement(fills []trading.Fill, authoritativeFees map[string]ledger.OrderFeeRecord, settlementCoveredOrders map[string]bool) orderFeeDayCoverage {
 	type fillGroup struct {
 		allFillFeesComplete bool
 	}
@@ -1138,13 +1156,17 @@ func calculateOrderFeeDayCoverage(fills []trading.Fill, authoritativeFees map[st
 	}
 	for key, group := range groups {
 		_, hasOrderFee := authoritativeFees[key]
-		if hasOrderFee || group.allFillFeesComplete {
+		if hasOrderFee || group.allFillFeesComplete || settlementCoveredOrders[key] {
 			coverage.coveredOrders++
 		}
 	}
 	coverage.complete = coverage.coveredOrders == coverage.requiredOrders
 	if coverage.complete {
-		coverage.source = "broker_order_or_fill"
+		if len(settlementCoveredOrders) > 0 {
+			coverage.source = "broker_order_fill_or_final_settlement"
+		} else {
+			coverage.source = "broker_order_or_fill"
+		}
 	} else {
 		coverage.source = "broker_statement_pending"
 	}
@@ -1223,7 +1245,7 @@ func sumCashAmounts(items []ledger.CashLedgerEntry) float64 {
 	return roundMoney(total)
 }
 
-func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, currentETFSettlementEstimate float64, confirmedInceptionDay bool) (EconomicNAVAssetBasisSummary, []string, error) {
+func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, currentETFSettlementCarry, releasedETFSettlement float64, confirmedInceptionDay bool) (EconomicNAVAssetBasisSummary, []string, error) {
 	result := EconomicNAVAssetBasisSummary{}
 	raw := observation.RawPayload
 	confirmed, _ := raw["economic_nav_base_confirmed"].(bool)
@@ -1301,7 +1323,7 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		return result, nil, err
 	}
 	inceptionFunding, _ := raw["inception_funding_as_open_capital"].(bool)
-	if reportedOpen < 0 || reportedClose <= 0 || reportedDeposit < 0 || reportedWithdrawal < 0 || openOutstanding < 0 || closeOutstanding < 0 {
+	if reportedOpen < 0 || reportedClose <= 0 || reportedDeposit < 0 || reportedWithdrawal < 0 {
 		return result, nil, errors.New("confirmed broker asset basis contains invalid asset values")
 	}
 	if reportedOpen == 0 {
@@ -1319,8 +1341,9 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		return result, nil, fmt.Errorf("broker daily pnl identity differs by %.6f", reportedIdentityPnL-reportedDailyPnL)
 	}
 	settlementIncrease := roundMoney(closeOutstanding - openOutstanding)
-	if math.Abs(settlementIncrease-currentETFSettlementEstimate) > 0.01 {
-		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current estimate %.6f", settlementIncrease, currentETFSettlementEstimate)
+	expectedSettlementIncrease := roundMoney(currentETFSettlementCarry - releasedETFSettlement)
+	if math.Abs(settlementIncrease-expectedSettlementIncrease) > 0.01 {
+		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current carry %.6f minus released %.6f", settlementIncrease, currentETFSettlementCarry, releasedETFSettlement)
 	}
 
 	openCapital := reportedOpen
@@ -1347,7 +1370,7 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		"broker_asset_statement_one_time_audit",
 		"partial_counter_visibility_reconciled",
 	}
-	if openOutstanding > 0 {
+	if math.Abs(openOutstanding) > 0.000001 {
 		flags = append(flags, "outstanding_etf_settlement_carried")
 	}
 	if inceptionFunding {
@@ -1362,13 +1385,18 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 	flags := make([]string, 0)
 	for _, item := range items {
 		kind := strings.ToLower(strings.TrimSpace(contributionString(item.RawPayload["settlement_kind"])))
-		if kind != "etf_redemption_fund_refund" {
+		isFinalSettlement := kind == "etf_redemption_final_settlement"
+		if kind != "etf_redemption_fund_refund" && !isFinalSettlement {
 			genericAdjustment += item.Amount
 			continue
 		}
 
 		sourceTradeDate, _, dateErr := parseTradeDate(contributionString(item.RawPayload["source_trade_date"]))
-		estimatedReceivable, estimateOK := contributionFloat(item.RawPayload["estimated_receivable"])
+		estimateField := "estimated_receivable"
+		if isFinalSettlement {
+			estimateField = "source_accrual_amount"
+		}
+		estimatedReceivable, estimateOK := contributionFloat(item.RawPayload[estimateField])
 		receiptStage := strings.ToLower(strings.TrimSpace(contributionString(item.RawPayload["receipt_stage"])))
 		if receiptStage == "" {
 			receiptStage = "initial"
@@ -1383,9 +1411,14 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 		priorReceiptEntryID := strings.TrimSpace(contributionString(item.RawPayload["prior_receipt_entry_id"]))
 		validStage := receiptStage == "initial" || receiptStage == "supplemental"
 		validSupplemental := receiptStage != "supplemental" || (releasedSpecified && settlementGroupID != "" && priorReceiptEntryID != "")
-		if dateErr != nil || sourceTradeDate >= tradeDate || !estimateOK || estimatedReceivable <= 0 ||
-			!releasedOK || releasedEstimate < 0 || releasedEstimate > estimatedReceivable ||
-			!validStage || !validSupplemental || item.Amount <= 0 {
+		validAmount := estimateOK && estimatedReceivable > 0 && releasedOK && releasedEstimate >= 0 && releasedEstimate <= estimatedReceivable && item.Amount > 0
+		if isFinalSettlement {
+			validAmount = estimateOK && math.Abs(estimatedReceivable) > 0.000001 && releasedOK &&
+				math.Abs(releasedEstimate) <= math.Abs(estimatedReceivable)+0.000001 &&
+				(releasedEstimate == 0 || math.Signbit(releasedEstimate) == math.Signbit(estimatedReceivable)) && math.Abs(item.Amount) > 0.000001
+		}
+		if dateErr != nil || sourceTradeDate >= tradeDate || !validAmount ||
+			!validStage || !validSupplemental {
 			genericAdjustment += item.Amount
 			flags = appendUnique(flags, "etf_settlement_receipt_invalid")
 			continue
@@ -1431,6 +1464,9 @@ func classifyETFSettlementReceipts(items []ledger.CashLedgerEntry, tradeDate str
 		}
 		if math.Abs(variance) > 0.000001 {
 			flags = appendUnique(flags, "etf_settlement_variance_recognized")
+		}
+		if isFinalSettlement {
+			flags = appendUnique(flags, "etf_final_settlement_cash_released")
 		}
 		if cashFlowHasDateOnlyPrecision(item) {
 			flags = appendUnique(flags, "etf_settlement_receipt_time_date_only")
@@ -2037,4 +2073,19 @@ func appendUnique(values []string, extras ...string) []string {
 		values = append(values, value)
 	}
 	return values
+}
+
+func removeStringValues(values []string, removals ...string) []string {
+	removed := make(map[string]struct{}, len(removals))
+	for _, value := range removals {
+		removed[value] = struct{}{}
+	}
+	kept := values[:0]
+	for _, value := range values {
+		if _, ok := removed[value]; ok {
+			continue
+		}
+		kept = append(kept, value)
+	}
+	return kept
 }

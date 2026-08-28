@@ -296,6 +296,35 @@ ETF 申赎成分证券划转、现金替代和 0 价记录使用独立 `Componen
 
 OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `basket_id` 或 OC 内部 token 重建、截断或改写 ID；新订单的实时事件、查询回包和 OC 重启后查询都必须保留 Relay 原始 ID。只有归档重放旧 `etfarb#...` 消息时保留一次兼容修复。
 
+### ETFSettlementFinalization
+
+该对象是 Relay 绩效内部的版本化清算输入，不属于 OC wire schema，也不要求 Meridian 增加交易字段。它只在真实券商资金和 Meridian PCF 均齐备后，把来源日 ETF T0 从 IOPV+15bp 暂估升级为终值：
+
+```json
+{
+  "account_id": "501000114077",
+  "source_trade_date": "2026-08-24",
+  "security_id": "159915.SZ",
+  "status": "confirmed",
+  "settlement_complete": true,
+  "redemption_quantity": 3000000,
+  "redemption_unit": 1000000,
+  "buy_gross_amount": 10475000.0,
+  "component_sale_gross_amount": 10425205.0,
+  "actual_cash_component": 7913.79,
+  "actual_cash_substitution": 0.0,
+  "actual_total_fee": 7722.05,
+  "source_close_settlement_carry": 7874.70,
+  "gross_contribution": -41881.21,
+  "net_contribution": -49603.26,
+  "pcf_trade_date": "2026-08-25",
+  "pcf_schema_version": "etf_cash_component.v1",
+  "source": "broker_statement_one_time_audit"
+}
+```
+
+约束：赎回数量必须是申赎单位整数倍；实际买入和成分卖出必须与 OC 账本闭合；PCF 只校验单位和现金差额，不生成虚构成分成交；`actual_cash_component` 可为负，其余现金替代和费用不得为负；confirmed 记录必须有完整确认审计。该对象按版本追加，原始 OC、Meridian 和券商证据不覆盖。日常生产事实仍来自 OC 当日数据，历史券商文件不形成常规导入接口。
+
 ### 撤单动作结果
 
 `order.cancel` 的 `reply.status=accepted` 只表示撤单请求已交给柜台接口。柜台明确拒绝时，OC v1.2 发布 `event_type=order.cancel.event/event_name=order.cancel.rejected`；响应超时则写入 `CANCEL_RESPONSE_TIMEOUT` DLQ。Relay 将这些结果独立写入 `order_cancel_attempts` 并发布 `order.cancel.rejected` SSE，不修改原订单的 `status/gateway_status/reject_code/reject_message`。成功撤单仍只以普通 `order.event.gateway_status=cancelled` 为准。

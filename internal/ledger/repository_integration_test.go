@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +47,7 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		defer cleanupCancel()
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM fills WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_fee_records WHERE account_id = $1", accountID)
+		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM performance_etf_settlement_versions WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM performance_position_cost_states WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM order_events WHERE account_id = $1", accountID)
 		_, _ = db.ExecContext(cleanupCtx, "DELETE FROM orders WHERE account_id = $1", accountID)
@@ -125,6 +127,120 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 	costStates, err = repo.ListPositionCostStates(ctx, PositionCostStateQuery{AccountID: accountID, TradeDate: "20260613"})
 	if err != nil || len(costStates) != 2 || costStates[0].CostBucket != "CORE" || costStates[1].CostBucket != "ETF_T0:basket-1" {
 		t.Fatalf("ListPositionCostStates() cost buckets/error = %#v/%v", costStates, err)
+	}
+
+	pendingSettlement, err := repo.UpsertETFSettlementFinalization(ctx, ETFSettlementFinalization{
+		AccountID:                  accountID,
+		SourceTradeDate:            "2026-06-13",
+		SecurityID:                 "588200.SH",
+		Status:                     "pending",
+		RedemptionQuantity:         1000,
+		RedemptionUnit:             500,
+		BuyGrossAmount:             1000,
+		ComponentSaleGrossAmount:   900,
+		ActualCashComponent:        10,
+		ActualTotalFee:             5,
+		SourceCloseSettlementCarry: -50,
+		GrossContribution:          -90,
+		NetContribution:            -95,
+		Source:                     "integration-test",
+		RawPayload:                 map[string]any{"stage": "pending"},
+	})
+	if err != nil {
+		t.Fatalf("UpsertETFSettlementFinalization() pending error = %v", err)
+	}
+	if pendingSettlement.Version != 1 || !pendingSettlement.IsCurrent {
+		t.Fatalf("pending ETF settlement = %#v", pendingSettlement)
+	}
+	confirmedAt := time.Now().UTC()
+	confirmedSettlement, err := repo.UpsertETFSettlementFinalization(ctx, ETFSettlementFinalization{
+		AccountID:                  accountID,
+		SourceTradeDate:            "2026-06-13",
+		SecurityID:                 "588200.SH",
+		Status:                     "confirmed",
+		SettlementComplete:         true,
+		RedemptionQuantity:         1000,
+		RedemptionUnit:             500,
+		BuyGrossAmount:             1000,
+		ComponentSaleGrossAmount:   900,
+		ActualCashComponent:        20,
+		ActualTotalFee:             5,
+		SourceCloseSettlementCarry: -50,
+		GrossContribution:          -80,
+		NetContribution:            -85,
+		PCFTradeDate:               "2026-06-16",
+		PCFSchemaVersion:           "etf_cash_component.v1",
+		Source:                     "integration-test",
+		ConfirmedBy:                "ledger-integration-test",
+		ConfirmedAt:                confirmedAt,
+		RawPayload:                 map[string]any{"stage": "confirmed"},
+	})
+	if err != nil {
+		t.Fatalf("UpsertETFSettlementFinalization() confirmed error = %v", err)
+	}
+	if confirmedSettlement.Version != 2 || !confirmedSettlement.IsCurrent || confirmedSettlement.Status != "confirmed" {
+		t.Fatalf("confirmed ETF settlement = %#v", confirmedSettlement)
+	}
+	settlements, err := repo.ListETFSettlementFinalizations(ctx, accountID, "20260613")
+	if err != nil || len(settlements) != 1 || settlements[0].Version != 2 || settlements[0].ActualCashComponent != 20 {
+		t.Fatalf("ListETFSettlementFinalizations() settlements/error = %#v/%v", settlements, err)
+	}
+	var settlementVersions, currentSettlements int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE is_current)
+		FROM performance_etf_settlement_versions
+		WHERE account_id = $1 AND source_trade_date = $2::date AND security_id = $3
+	`, accountID, "2026-06-13", "588200.SH").Scan(&settlementVersions, &currentSettlements); err != nil {
+		t.Fatalf("query ETF settlement versions: %v", err)
+	}
+	if settlementVersions != 2 || currentSettlements != 1 {
+		t.Fatalf("ETF settlement versions/current = %d/%d, want 2/1", settlementVersions, currentSettlements)
+	}
+	concurrentSettlements := []ETFSettlementFinalization{
+		{
+			AccountID: accountID, SourceTradeDate: "2026-06-13", SecurityID: "588200.SH",
+			Status: "confirmed", SettlementComplete: true, RedemptionQuantity: 1000, RedemptionUnit: 500,
+			BuyGrossAmount: 1000, ComponentSaleGrossAmount: 900, ActualCashComponent: 30,
+			ActualTotalFee: 5, SourceCloseSettlementCarry: -50, GrossContribution: -70, NetContribution: -75,
+			PCFTradeDate: "2026-06-16", PCFSchemaVersion: "etf_cash_component.v1",
+			Source: "integration-test", ConfirmedBy: "concurrent-a", ConfirmedAt: confirmedAt,
+		},
+		{
+			AccountID: accountID, SourceTradeDate: "2026-06-13", SecurityID: "588200.SH",
+			Status: "confirmed", SettlementComplete: true, RedemptionQuantity: 1000, RedemptionUnit: 500,
+			BuyGrossAmount: 1000, ComponentSaleGrossAmount: 900, ActualCashComponent: 40,
+			ActualTotalFee: 5, SourceCloseSettlementCarry: -50, GrossContribution: -60, NetContribution: -65,
+			PCFTradeDate: "2026-06-16", PCFSchemaVersion: "etf_cash_component.v1",
+			Source: "integration-test", ConfirmedBy: "concurrent-b", ConfirmedAt: confirmedAt,
+		},
+	}
+	var settlementWG sync.WaitGroup
+	settlementErrors := make(chan error, len(concurrentSettlements))
+	for _, update := range concurrentSettlements {
+		settlementWG.Add(1)
+		go func(item ETFSettlementFinalization) {
+			defer settlementWG.Done()
+			_, err := repo.UpsertETFSettlementFinalization(ctx, item)
+			settlementErrors <- err
+		}(update)
+	}
+	settlementWG.Wait()
+	close(settlementErrors)
+	for err := range settlementErrors {
+		if err != nil {
+			t.Fatalf("concurrent UpsertETFSettlementFinalization() error = %v", err)
+		}
+	}
+	var maxSettlementVersion int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE is_current), max(version)
+		FROM performance_etf_settlement_versions
+		WHERE account_id = $1 AND source_trade_date = $2::date AND security_id = $3
+	`, accountID, "2026-06-13", "588200.SH").Scan(&settlementVersions, &currentSettlements, &maxSettlementVersion); err != nil {
+		t.Fatalf("query concurrent ETF settlement versions: %v", err)
+	}
+	if settlementVersions != 4 || currentSettlements != 1 || maxSettlementVersion != 4 {
+		t.Fatalf("concurrent ETF settlement versions/current/max = %d/%d/%d, want 4/1/4", settlementVersions, currentSettlements, maxSettlementVersion)
 	}
 
 	order := trading.Order{

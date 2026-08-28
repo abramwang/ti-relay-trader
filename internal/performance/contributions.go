@@ -76,66 +76,72 @@ type ContributionSummary struct {
 	ExcludedItems          int     `json:"excluded_items"`
 	LinkedComponentSales   float64 `json:"linked_component_sales"`
 	ETFSettlementEstimate  float64 `json:"etf_settlement_estimate"`
+	ETFSettlementFinalized int     `json:"etf_settlement_finalized_items"`
 }
 
 type SecurityContribution struct {
-	SecurityID            string     `json:"security_id"`
-	Symbol                string     `json:"symbol"`
-	Exchange              string     `json:"exchange"`
-	Name                  string     `json:"name,omitempty"`
-	InstrumentType        string     `json:"instrument_type,omitempty"`
-	StrategyType          string     `json:"strategy_type"`
-	StrategyID            string     `json:"strategy_id,omitempty"`
-	OpenQuantity          int64      `json:"open_quantity"`
-	CloseQuantity         int64      `json:"close_quantity"`
-	BuyQuantity           int64      `json:"buy_quantity"`
-	SellQuantity          int64      `json:"sell_quantity"`
-	RedemptionQuantity    int64      `json:"redemption_quantity,omitempty"`
-	RedemptionUnit        int64      `json:"redemption_unit,omitempty"`
-	BuyAmount             float64    `json:"buy_amount"`
-	SellAmount            float64    `json:"sell_amount"`
-	Turnover              float64    `json:"turnover"`
-	OpenPrice             *float64   `json:"open_price,omitempty"`
-	ClosePrice            *float64   `json:"close_price,omitempty"`
-	OpenValue             float64    `json:"open_value"`
-	CloseValue            float64    `json:"close_value"`
-	MarketValue           float64    `json:"market_value"`
-	Weight                float64    `json:"weight"`
-	ActualFee             float64    `json:"actual_fee"`
-	EstimatedFee          float64    `json:"estimated_fee"`
-	EffectiveFee          float64    `json:"effective_fee"`
-	FeeSource             string     `json:"fee_source"`
-	GrossContribution     *float64   `json:"gross_contribution,omitempty"`
-	NetContribution       *float64   `json:"net_contribution,omitempty"`
-	ContributionBPS       *float64   `json:"contribution_bps,omitempty"`
-	EstimatedExitValue    *float64   `json:"estimated_exit_value,omitempty"`
-	LinkedComponentSales  float64    `json:"linked_component_sales,omitempty"`
-	ETFSettlementEstimate *float64   `json:"etf_settlement_estimate,omitempty"`
-	ReferenceIOPV         *float64   `json:"reference_iopv,omitempty"`
-	ReferenceTime         *time.Time `json:"reference_time,omitempty"`
-	PnLStatus             string     `json:"pnl_status"`
-	EstimationMethod      string     `json:"estimation_method,omitempty"`
-	PriceSource           string     `json:"price_source,omitempty"`
-	Orders                int        `json:"orders"`
-	Fills                 int        `json:"fills"`
-	QualityFlags          []string   `json:"quality_flags,omitempty"`
+	SecurityID             string     `json:"security_id"`
+	Symbol                 string     `json:"symbol"`
+	Exchange               string     `json:"exchange"`
+	Name                   string     `json:"name,omitempty"`
+	InstrumentType         string     `json:"instrument_type,omitempty"`
+	StrategyType           string     `json:"strategy_type"`
+	StrategyID             string     `json:"strategy_id,omitempty"`
+	OpenQuantity           int64      `json:"open_quantity"`
+	CloseQuantity          int64      `json:"close_quantity"`
+	BuyQuantity            int64      `json:"buy_quantity"`
+	SellQuantity           int64      `json:"sell_quantity"`
+	RedemptionQuantity     int64      `json:"redemption_quantity,omitempty"`
+	RedemptionUnit         int64      `json:"redemption_unit,omitempty"`
+	BuyAmount              float64    `json:"buy_amount"`
+	SellAmount             float64    `json:"sell_amount"`
+	Turnover               float64    `json:"turnover"`
+	OpenPrice              *float64   `json:"open_price,omitempty"`
+	ClosePrice             *float64   `json:"close_price,omitempty"`
+	OpenValue              float64    `json:"open_value"`
+	CloseValue             float64    `json:"close_value"`
+	MarketValue            float64    `json:"market_value"`
+	Weight                 float64    `json:"weight"`
+	ActualFee              float64    `json:"actual_fee"`
+	EstimatedFee           float64    `json:"estimated_fee"`
+	EffectiveFee           float64    `json:"effective_fee"`
+	FeeSource              string     `json:"fee_source"`
+	GrossContribution      *float64   `json:"gross_contribution,omitempty"`
+	NetContribution        *float64   `json:"net_contribution,omitempty"`
+	ContributionBPS        *float64   `json:"contribution_bps,omitempty"`
+	EstimatedExitValue     *float64   `json:"estimated_exit_value,omitempty"`
+	LinkedComponentSales   float64    `json:"linked_component_sales,omitempty"`
+	ETFSettlementEstimate  *float64   `json:"etf_settlement_estimate,omitempty"`
+	ETFSettlementStatus    string     `json:"etf_settlement_status,omitempty"`
+	ActualCashComponent    float64    `json:"actual_cash_component,omitempty"`
+	ActualCashSubstitution float64    `json:"actual_cash_substitution,omitempty"`
+	SettlementPCFTradeDate string     `json:"settlement_pcf_trade_date,omitempty"`
+	ReferenceIOPV          *float64   `json:"reference_iopv,omitempty"`
+	ReferenceTime          *time.Time `json:"reference_time,omitempty"`
+	PnLStatus              string     `json:"pnl_status"`
+	EstimationMethod       string     `json:"estimation_method,omitempty"`
+	PriceSource            string     `json:"price_source,omitempty"`
+	Orders                 int        `json:"orders"`
+	Fills                  int        `json:"fills"`
+	QualityFlags           []string   `json:"quality_flags,omitempty"`
 }
 
 type StrategyContribution struct {
-	StrategyType          string   `json:"strategy_type"`
-	Securities            int      `json:"securities"`
-	BuyAmount             float64  `json:"buy_amount"`
-	SellAmount            float64  `json:"sell_amount"`
-	Turnover              float64  `json:"turnover"`
-	EffectiveFee          float64  `json:"effective_fee"`
-	NetContribution       float64  `json:"net_contribution"`
-	ContributionBPS       float64  `json:"contribution_bps"`
-	EstimatedItems        int      `json:"estimated_items"`
-	MissingItems          int      `json:"missing_items"`
-	ExcludedItems         int      `json:"excluded_items"`
-	LinkedComponentSales  float64  `json:"linked_component_sales"`
-	ETFSettlementEstimate float64  `json:"etf_settlement_estimate"`
-	QualityFlags          []string `json:"quality_flags,omitempty"`
+	StrategyType           string   `json:"strategy_type"`
+	Securities             int      `json:"securities"`
+	BuyAmount              float64  `json:"buy_amount"`
+	SellAmount             float64  `json:"sell_amount"`
+	Turnover               float64  `json:"turnover"`
+	EffectiveFee           float64  `json:"effective_fee"`
+	NetContribution        float64  `json:"net_contribution"`
+	ContributionBPS        float64  `json:"contribution_bps"`
+	EstimatedItems         int      `json:"estimated_items"`
+	MissingItems           int      `json:"missing_items"`
+	ExcludedItems          int      `json:"excluded_items"`
+	LinkedComponentSales   float64  `json:"linked_component_sales"`
+	ETFSettlementEstimate  float64  `json:"etf_settlement_estimate"`
+	ETFSettlementFinalized int      `json:"etf_settlement_finalized_items"`
+	QualityFlags           []string `json:"quality_flags,omitempty"`
 }
 
 type contributionInstrument struct {
@@ -220,7 +226,7 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		return ContributionResult{}, err
 	}
 	authoritativeFees := authoritativeOrderFees(feeRecords)
-	feeCoverage := calculateOrderFeeDayCoverage(fills, authoritativeFees)
+	feeCoverageFills := append([]trading.Fill(nil), fills...)
 	consumedOrderFees := make(map[string]bool)
 	ordinaryFillCount := len(fills)
 	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
@@ -250,13 +256,6 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		TradeDate:      normalizedDate,
 		FormulaVersion: contributionFormulaVersion,
 		GeneratedAt:    service.now(),
-	}
-	result.Summary.FeeRequiredOrders = feeCoverage.requiredOrders
-	result.Summary.FeeCoveredOrders = feeCoverage.coveredOrders
-	result.Summary.FeeCoverageComplete = feeCoverage.complete
-	result.Summary.FeeCoverageSource = feeCoverage.source
-	if !feeCoverage.complete {
-		result.QualityFlags = appendUnique(result.QualityFlags, "order_fee_day_incomplete", "broker_delivery_statement_pending")
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
 	result.QualityFlags = appendUnique(result.QualityFlags, closePositionFlags...)
@@ -328,7 +327,25 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
-	for _, item := range service.calculateT0Contributions(ctx, normalizedDate, t0Groups, componentLinks, authoritativeFees, result.Summary.OpenEconomicNAV) {
+	t0Items := service.calculateT0Contributions(ctx, normalizedDate, t0Groups, componentLinks, authoritativeFees, result.Summary.OpenEconomicNAV)
+	settlementCoveredOrders := make(map[string]bool)
+	finalizations, finalizationErr := service.store.ListETFSettlementFinalizations(ctx, accountID, normalizedDate)
+	if finalizationErr != nil {
+		result.QualityFlags = appendUnique(result.QualityFlags, "etf_settlement_finalization_unavailable")
+	} else {
+		var finalizationFlags []string
+		t0Items, settlementCoveredOrders, finalizationFlags = applyETFSettlementFinalizations(t0Items, t0Groups, componentLinks, finalizations, result.Summary.OpenEconomicNAV)
+		result.QualityFlags = appendUnique(result.QualityFlags, finalizationFlags...)
+	}
+	feeCoverage := calculateOrderFeeDayCoverageWithSettlement(feeCoverageFills, authoritativeFees, settlementCoveredOrders)
+	result.Summary.FeeRequiredOrders = feeCoverage.requiredOrders
+	result.Summary.FeeCoveredOrders = feeCoverage.coveredOrders
+	result.Summary.FeeCoverageComplete = feeCoverage.complete
+	result.Summary.FeeCoverageSource = feeCoverage.source
+	if !feeCoverage.complete {
+		result.QualityFlags = appendUnique(result.QualityFlags, "order_fee_day_incomplete", "broker_delivery_statement_pending")
+	}
+	for _, item := range t0Items {
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
 	}
@@ -942,8 +959,12 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 			if orderTime.After(redemptionTime) {
 				continue
 			}
+			filledQuantity := contributionOrderFilledQuantity(fillsByOrder[order.GatewayOrderID])
+			if filledQuantity <= 0 {
+				continue
+			}
 			candidates = append(candidates, order)
-			candidateQuantity += order.OrderQty
+			candidateQuantity += filledQuantity
 		}
 		sort.SliceStable(candidates, func(i, j int) bool {
 			return contributionOrderTime(candidates[i]).After(contributionOrderTime(candidates[j]))
@@ -966,12 +987,7 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 			if selectedQty >= target {
 				break
 			}
-			orderQty := order.OrderQty
-			if orderQty <= 0 {
-				for _, fill := range fillsByOrder[order.GatewayOrderID] {
-					orderQty += fill.Qty
-				}
-			}
+			orderQty := contributionOrderFilledQuantity(fillsByOrder[order.GatewayOrderID])
 			if orderQty <= 0 || selectedQty+orderQty > target {
 				continue
 			}
@@ -1007,6 +1023,16 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 		groups = append(groups, group)
 	}
 	return groups, consumedOrders, consumedFills
+}
+
+func contributionOrderFilledQuantity(fills []trading.Fill) int64 {
+	var quantity int64
+	for _, fill := range fills {
+		if fill.Qty > 0 {
+			quantity += fill.Qty
+		}
+	}
+	return quantity
 }
 
 func (service *Service) calculateT0Contributions(
@@ -1566,6 +1592,9 @@ func finalizeContributionResult(result *ContributionResult) {
 		if item.ETFSettlementEstimate != nil {
 			result.Summary.ETFSettlementEstimate += *item.ETFSettlementEstimate
 		}
+		if item.ETFSettlementStatus == "confirmed" {
+			result.Summary.ETFSettlementFinalized++
+		}
 		if containsStringValue(item.QualityFlags, "missing_fee_rule") {
 			result.Summary.MissingFeeItems++
 		}
@@ -1583,6 +1612,9 @@ func finalizeContributionResult(result *ContributionResult) {
 		strategy.LinkedComponentSales += item.LinkedComponentSales
 		if item.ETFSettlementEstimate != nil {
 			strategy.ETFSettlementEstimate += *item.ETFSettlementEstimate
+		}
+		if item.ETFSettlementStatus == "confirmed" {
+			strategy.ETFSettlementFinalized++
 		}
 		strategy.QualityFlags = appendUnique(strategy.QualityFlags, item.QualityFlags...)
 

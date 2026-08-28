@@ -156,6 +156,7 @@ migrations/postgres/000001_init_ledger.down.sql
 | `performance_account_inceptions` | 账户级绩效起算锚点，记录起算日、初始资金、初始持仓/成本来源、策略范围、可信状态和人工确认审计 |
 | `performance_position_cost_states` | 逐账户、交易日、证券和成本池保存移动加权成本状态，包含上一 close、券商 open、日内买卖、日终数量与成本、已实现盈亏、Meridian 估值、公司行为因子/类型/原始上下文、柜台数量残差和质量标记 |
 | `performance_nav_gold_versions` | 版本化人工净值金标，独立保存承接日初、实际日初、隔夜调整、日末资产、每日盈利、确认审计和原始输入；只用于验收，不参与 NAV 公式 |
+| `performance_etf_settlement_versions` | ETF 申赎 T0 的版本化最终清算输入；保存来源交易日、证券、申赎单位、实际买入/成分卖出/现金差额/现金替代/费用、来源日待结算 carry、Meridian PCF 版本和确认审计 |
 
 ### 盘后对账
 
@@ -190,6 +191,18 @@ migrations/postgres/000001_init_ledger.down.sql
 `performance_economic_nav.v2.6` 增加受控券商资产基数恢复：只有 `asset_snapshots(snapshot_type=reconcile)` 同时带已确认标记、非周期导入标记、文件 SHA-256、券商总资产恒等式以及可闭合的 ETF 待结算跨日承接时才参与公式。该快照提供券商报告的日初/日终资产基数，Relay 再叠加公募占款口径的待结算资产；原始 OC `open/broker_close/close` 快照不覆盖。开户以来历史资金可以独立保存为 `performance_nav_gold_versions`，但金标本身仍不直接进入公式。
 
 `performance_economic_nav.v2.7` 补充干净开户首日语义：仅当 `performance_account_inceptions` 为 confirmed、`clean_start=true`、日期与可信 `reconcile` 一致，且前资产为零、当日只有正入金没有出金时，`inception_funding_as_open_capital=true` 才允许将盘前入金作为首日 `open_economic_nav`。它不生成普通 `cash_ledger external_flow`，避免首日资本被重复扣减或误记为收益。
+
+`000026_etf_settlement_finalizations` 将 ETF T0 的日内暂估与跨日最终清算物理分离。`performance_etf_settlement_versions` 以 `account_id + source_trade_date + security_id + version` 唯一，且同一业务键只能有一个 current 版本。只有 `status=confirmed`、`settlement_complete=true`、PCF 交易日/Schema 和确认人/时间完整的记录才能替换 IOPV+15bp 估算。最终贡献恒等式为：
+
+```text
+gross_contribution = component_sale_gross_amount
+                   + actual_cash_component
+                   + actual_cash_substitution
+                   - buy_gross_amount
+net_contribution   = gross_contribution - actual_total_fee
+```
+
+其中 `actual_cash_component` 允许为负，表达公募实际扣款；现金替代和费用不得为负。应用前还必须与 OC 的赎回数量、买入成交额和成分卖出成交额逐项闭合。来源日的 `source_close_settlement_carry` 通过 `cash_ledger.settlement_kind=etf_redemption_final_settlement` 在后续交易日释放，释放额允许带符号，防止负现金差额被错误当作无效流水。若券商权威资产基数已经包含收盘快照后的清算到账，则只打 `post_close_settlement_included_in_broker_asset_basis` 标记，不再把同笔现金重复加到 close NAV。
 
 `/trade#performance` 的页面指标、收益贡献和数据质量展示设计见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。该页面第一版应优先复用上述 close 快照、成交账本、订单账本、对账结果和 Meridian bars，不主动查询柜台。
 

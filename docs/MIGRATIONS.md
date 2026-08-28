@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-08-01`
+更新时间：`2026-08-28`
 
 ## 当前状态
 
@@ -53,6 +53,12 @@ migrations/postgres/000022_order_fee_records.up.sql
 migrations/postgres/000022_order_fee_records.down.sql
 migrations/postgres/000023_position_cost_corporate_actions.up.sql
 migrations/postgres/000023_position_cost_corporate_actions.down.sql
+migrations/postgres/000024_oc_position_cost_quality.up.sql
+migrations/postgres/000024_oc_position_cost_quality.down.sql
+migrations/postgres/000025_broker_close_snapshots.up.sql
+migrations/postgres/000025_broker_close_snapshots.down.sql
+migrations/postgres/000026_etf_settlement_finalizations.up.sql
+migrations/postgres/000026_etf_settlement_finalizations.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -84,7 +90,10 @@ migrations/postgres/000023_position_cost_corporate_actions.down.sql
 21. `000021_performance_nav_gold` 新增版本化人工净值金标，保存确认审计、原始输入、派生日初/隔夜调整和内容哈希幂等；金标不参与 NAV 公式。
 22. `000022_order_fee_records` 新增 OC 订单级实际费用账表，按账户和稳定 `fee_record_id` 幂等更新；完整且关联成功的费用同步回订单辅助字段，绩效仍以费用账表为权威来源。
 23. `000023_position_cost_corporate_actions` 为成本状态新增上一 close、券商 open、公司行为类型/因子/数量差及 Meridian 原始上下文审计字段。
-24. `relay_schema_migrations` 当前应记录版本 `1:init_ledger` 到 `23:position_cost_corporate_actions`。
+24. `000024_oc_position_cost_quality` 为当前和历史持仓增加 OC 总成本、成本来源及完整性字段；这些字段用于质量核对，不替代行情市值。
+25. `000025_broker_close_snapshots` 增加不可变 `broker_close` 资金/持仓快照类型，确保 15:01 OC 最终数据捕获不依赖 Meridian。
+26. `000026_etf_settlement_finalizations` 增加版本化 ETF T0 最终清算表，约束申赎单位、实际现金/费用恒等式、current 版本和确认审计。
+27. 生产 `relay_schema_migrations` 已于 `2026-08-27 16:19:14 Asia/Shanghai` 应用到 `26:etf_settlement_finalizations`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -125,6 +134,7 @@ Repository 当前覆盖：
 - `CreateNavBaseline`、`ListNavBaselines`
 - `UpsertPerformanceInception`、`GetPerformanceInception`
 - `UpsertPositionCostState`、`ListPositionCostStates`
+- `UpsertETFSettlementFinalization`、`ListETFSettlementFinalizations`
 - `UpsertPerformanceNAVGold`、`ListPerformanceNAVGold`
 - `UpsertReverseRepoAccrual`、`ListReverseRepoAccruals`
 - `ListPerformanceNAVs`、`ListNAVReconciliations`
@@ -177,6 +187,7 @@ scripts/test-postgres-integration.sh
 10. `performance_attribution_links`
 11. `performance_account_inceptions`
 12. `performance_position_cost_states`
+13. `performance_etf_settlement_versions`
 
 盘后对账：
 
@@ -214,6 +225,7 @@ scripts/test-postgres-integration.sh
 12. `raw_stream_messages` 对 `stream_role=dlq AND action=adapter.data_quality` 建部分索引，供后续质量告警和人工处置查询。
 13. `stream_dlq_reviews` 通过 `(stream_key, stream_id)` 外键关联 raw DLQ，每次确认、忽略或标记已重放均追加不可变记录；当前状态取最新 `review_id`，未审核消息视为 `pending`。
 14. `000024_oc_position_cost_quality` 为当前持仓和历史快照增加 `total_cost/avg_cost_source/cost_complete`；这些字段记录柜台成本质量，绝不能代替行情市值。
+15. `performance_etf_settlement_versions` 的 current 版本按 `account_id + source_trade_date + security_id` 唯一；confirmed 记录必须清算完整并带 Meridian PCF 与人工确认审计，金额恒等式允许现金差额为负但不允许负现金替代或负费用。
 
 ## 手动执行示例
 
@@ -237,6 +249,8 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000021_performance_nav_gold.up
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000022_order_fee_records.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000023_position_cost_corporate_actions.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000024_oc_position_cost_quality.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000025_broker_close_snapshots.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000026_etf_settlement_finalizations.up.sql
 ```
 
 使用 relayctl：

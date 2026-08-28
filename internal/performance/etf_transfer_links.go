@@ -11,6 +11,7 @@ import (
 type componentSaleLink struct {
 	redemptionGatewayOrderID string
 	basketRoot               string
+	quantity                 int64
 }
 
 type componentTransferGroup struct {
@@ -23,7 +24,7 @@ type componentTransferGroup struct {
 }
 
 type componentSaleLinks struct {
-	byFill map[string]componentSaleLink
+	byFill map[string][]componentSaleLink
 	groups map[string]*componentTransferGroup
 	flags  []string
 }
@@ -38,7 +39,7 @@ type componentSaleBucketLink struct {
 
 func buildComponentSaleLinks(orders []trading.Order, fills []trading.Fill, transfers []trading.ComponentTransfer) componentSaleLinks {
 	result := componentSaleLinks{
-		byFill: make(map[string]componentSaleLink),
+		byFill: make(map[string][]componentSaleLink),
 		groups: make(map[string]*componentTransferGroup),
 	}
 	ordersByID := make(map[string]trading.Order, len(orders))
@@ -66,9 +67,10 @@ func buildComponentSaleLinks(orders []trading.Order, fills []trading.Fill, trans
 
 		group := result.groups[transfer.GatewayOrderID]
 		if group == nil {
+			basketRoot := firstNonBlank(componentBasketRoot(transfer.BasketID), componentBasketRoot(order.BasketID))
 			group = &componentTransferGroup{
 				redemptionGatewayOrderID: transfer.GatewayOrderID,
-				basketRoot:               firstNonBlank(componentBasketRoot(transfer.BasketID), componentBasketRoot(order.BasketID), strings.TrimSpace(order.Symbol)),
+				basketRoot:               firstNonBlank(basketRoot, strings.TrimSpace(order.Symbol)),
 				expectedBySecurity:       make(map[string]int64),
 				linkedBySecurity:         make(map[string]int64),
 			}
@@ -104,32 +106,61 @@ func buildComponentSaleLinks(orders []trading.Order, fills []trading.Fill, trans
 			continue
 		}
 		basketRoot := componentBasketRoot(firstNonBlank(fill.BasketID, contributionString(fill.AdapterContext["basket_id"])))
-		if basketRoot == "" {
-			continue
-		}
 		securityID := contributionSecurityID(fill.Symbol, fill.Exchange)
 		fillTime := contributionFillTime(fill)
-		var selected *componentTransferGroup
+		eligible := make([]*componentTransferGroup, 0)
 		for _, group := range result.groups {
-			if group.basketRoot != basketRoot || group.expectedBySecurity[securityID]-group.linkedBySecurity[securityID] < fill.Qty {
+			basketMatches := basketRoot != "" && group.basketRoot == basketRoot
+			historicalMatch := basketRoot == ""
+			if (!basketMatches && !historicalMatch) || group.expectedBySecurity[securityID]-group.linkedBySecurity[securityID] <= 0 {
 				continue
 			}
 			if !fillTime.IsZero() && !group.matchedAt.IsZero() && fillTime.Before(group.matchedAt) {
 				continue
 			}
-			if selected == nil || group.matchedAt.After(selected.matchedAt) {
-				selected = group
+			eligible = append(eligible, group)
+		}
+		sort.SliceStable(eligible, func(i, j int) bool {
+			if eligible[i].matchedAt.Equal(eligible[j].matchedAt) {
+				return eligible[i].redemptionGatewayOrderID < eligible[j].redemptionGatewayOrderID
+			}
+			return eligible[i].matchedAt.After(eligible[j].matchedAt)
+		})
+		remaining := fill.Qty
+		allocations := make([]componentSaleLink, 0, len(eligible))
+		for _, group := range eligible {
+			available := group.expectedBySecurity[securityID] - group.linkedBySecurity[securityID]
+			quantity := available
+			if quantity > remaining {
+				quantity = remaining
+			}
+			if quantity <= 0 {
+				continue
+			}
+			allocations = append(allocations, componentSaleLink{
+				redemptionGatewayOrderID: group.redemptionGatewayOrderID,
+				basketRoot:               group.basketRoot,
+				quantity:                 quantity,
+			})
+			remaining -= quantity
+			if remaining == 0 {
+				break
 			}
 		}
-		if selected == nil {
+		if remaining != 0 {
 			continue
 		}
-		selected.linkedBySecurity[securityID] += fill.Qty
-		selected.linkedFills = append(selected.linkedFills, fill)
-		result.byFill[contributionFillKey(fill)] = componentSaleLink{
-			redemptionGatewayOrderID: selected.redemptionGatewayOrderID,
-			basketRoot:               selected.basketRoot,
+		if basketRoot == "" {
+			result.flags = appendUnique(result.flags, "historical_component_sale_link_inferred")
 		}
+		for _, allocation := range allocations {
+			group := result.groups[allocation.redemptionGatewayOrderID]
+			group.linkedBySecurity[securityID] += allocation.quantity
+			allocatedFill := fill
+			allocatedFill.Qty = allocation.quantity
+			group.linkedFills = append(group.linkedFills, allocatedFill)
+		}
+		result.byFill[contributionFillKey(fill)] = allocations
 	}
 
 	for _, group := range result.groups {
@@ -154,22 +185,32 @@ func componentTransferGroupComplete(group *componentTransferGroup) bool {
 }
 
 func (links componentSaleLinks) bucketLink(fills []trading.Fill) componentSaleBucketLink {
-	result := componentSaleBucketLink{allFillsLinked: len(fills) > 0}
+	result := componentSaleBucketLink{allFillsLinked: len(fills) > 0, groupComplete: len(fills) > 0}
+	seenGroups := make(map[string]bool)
 	for _, fill := range fills {
-		link, ok := links.byFill[contributionFillKey(fill)]
-		if !ok {
+		fillLinks := links.byFill[contributionFillKey(fill)]
+		if len(fillLinks) == 0 {
 			result.allFillsLinked = false
+			result.groupComplete = false
 			continue
 		}
 		result.linkedQuantity += fill.Qty
-		if result.redemptionGatewayOrderID == "" {
-			result.redemptionGatewayOrderID = link.redemptionGatewayOrderID
-			result.basketRoot = link.basketRoot
-		} else if result.redemptionGatewayOrderID != link.redemptionGatewayOrderID {
-			result.allFillsLinked = false
+		for _, link := range fillLinks {
+			seenGroups[link.redemptionGatewayOrderID] = true
+			if result.redemptionGatewayOrderID == "" {
+				result.redemptionGatewayOrderID = link.redemptionGatewayOrderID
+				result.basketRoot = link.basketRoot
+			}
 		}
 	}
-	result.groupComplete = componentTransferGroupComplete(links.groups[result.redemptionGatewayOrderID])
+	if len(seenGroups) > 1 {
+		result.redemptionGatewayOrderID = ""
+	}
+	for groupID := range seenGroups {
+		if !componentTransferGroupComplete(links.groups[groupID]) {
+			result.groupComplete = false
+		}
+	}
 	return result
 }
 
@@ -182,8 +223,7 @@ func (links componentSaleLinks) linkedFills(redemptionGatewayOrderID string) ([]
 }
 
 func (links componentSaleLinks) excludes(fill trading.Fill) bool {
-	_, ok := links.byFill[contributionFillKey(fill)]
-	return ok
+	return len(links.byFill[contributionFillKey(fill)]) > 0
 }
 
 func componentBasketRoot(value string) string {

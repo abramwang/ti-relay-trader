@@ -61,6 +61,56 @@ func TestUpsertAccountAliasBuildsAliasWrite(t *testing.T) {
 	}
 }
 
+func TestNormalizeETFSettlementFinalizationAcceptsSignedCashComponent(t *testing.T) {
+	confirmedAt := time.Date(2026, 8, 27, 16, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	item, err := normalizeETFSettlementFinalization(ETFSettlementFinalization{
+		AccountID:                  " acct-1 ",
+		SourceTradeDate:            "20260722",
+		SecurityID:                 "159915.sz",
+		Status:                     "CONFIRMED",
+		SettlementComplete:         true,
+		RedemptionQuantity:         2_000_000,
+		RedemptionUnit:             1_000_000,
+		BuyGrossAmount:             7_311_000,
+		ComponentSaleGrossAmount:   7_285_864,
+		ActualCashComponent:        -1_419.22,
+		ActualTotalFee:             5_392.29,
+		SourceCloseSettlementCarry: -1_445.34,
+		GrossContribution:          -26_555.22,
+		NetContribution:            -31_947.51,
+		PCFTradeDate:               "20260723",
+		PCFSchemaVersion:           "meridian-etf-pcf.v1",
+		Source:                     " broker_statement_and_meridian_pcf ",
+		ConfirmedBy:                "relay-agent",
+		ConfirmedAt:                confirmedAt,
+	})
+	if err != nil {
+		t.Fatalf("normalizeETFSettlementFinalization() error = %v", err)
+	}
+	if item.AccountID != "acct-1" || item.SourceTradeDate != "2026-07-22" || item.SecurityID != "159915.SZ" || item.Status != "confirmed" {
+		t.Fatalf("normalized item = %#v", item)
+	}
+}
+
+func TestNormalizeETFSettlementFinalizationRejectsBrokenIdentity(t *testing.T) {
+	_, err := normalizeETFSettlementFinalization(ETFSettlementFinalization{
+		AccountID:                "acct-1",
+		SourceTradeDate:          "20260722",
+		SecurityID:               "159915.SZ",
+		Status:                   "pending",
+		RedemptionQuantity:       1_000_000,
+		RedemptionUnit:           1_000_000,
+		BuyGrossAmount:           3_600_000,
+		ComponentSaleGrossAmount: 3_590_000,
+		GrossContribution:        -9_000,
+		NetContribution:          -9_000,
+		Source:                   "test",
+	})
+	if !errors.Is(err, ErrInvalidLedgerInput) {
+		t.Fatalf("normalizeETFSettlementFinalization() error = %v, want ErrInvalidLedgerInput", err)
+	}
+}
+
 func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

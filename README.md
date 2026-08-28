@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-08-27` 债享5号 `2026-07-22..08-26` 的 26 个账户日完成券商资金审计并连续重建为 v2.7，0 blocked |
-| 更新时间 | `2026-08-27` |
+| 最近确认 | `2026-08-28` 添利1号 `2026-07-22..08-24` 已用 OC、Meridian PCF 和一次性券商证据完成 14 个 ETF T0 清算终值，24 个账户日连续重建且归因残差为 0；`08-25` 等待实际返款 |
+| 更新时间 | `2026-08-28` |
 
 新线程按以下顺序恢复：
 
@@ -32,12 +32,13 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
-- 生产 schema 当前为 `25 broker_close_snapshots`，Python SDK 当前版本为 `relay-sdk==0.1.28`。
+- 生产 schema 当前为 `26 etf_settlement_finalizations`，Python SDK 当前版本为 `relay-sdk==0.1.28`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
 
 - 债享5号券商资金表覆盖 `2026-06-01..08-26` 共 62 个交易日，逐日资产恒等式全部闭合；正式绩效仍从有 OC 空仓干净锚点的 `2026-07-22` 起算。该日起 26 个交易日的日初、日末资产及每日盈亏均与券商记录精确到分，原 7 个 legacy 阻断日已全部恢复为 v2.7 provisional。
+- 添利1号从 `2026-07-22` 干净起点开始核对。14 个已取得真实清算证据的 `159915.SZ` 赎回日已从 IOPV+15bp 暂估升级为版本化终值，公式使用实际 ETF 买入、OC 成分卖出、真实现金差额/现金替代、实际费用及 Meridian PCF；`2026-07-22..08-24` 共 24 个 NAV 日连续可算、归因残差为 0。`2026-08-25` 的 `512700.SH` 仍缺最终 cash component，保持 pending，8 月 25/26 日不发布伪终值。
 - 债享5号资金流水一次性确认 14 笔逆回购实际净息、6 笔分红、3 笔红利税和 1 笔 `3,100 CNY` 银证转出。分红事实保留为 operational 审计记录，绩效由 Meridian 公司行为调整后的前收盘口径体现，避免重复计收益；逆回购净息和红利税进入 `income_expense`。
 - 两份开户以来的券商历史资金各形成 23 个版本化资产基数金标；`2026-08-06` 通过可信 `reconcile` 快照承接 8 月 5 日 ETF 待结算资产后，两户残差降至 `-1,554.76 / -1,621.70 CNY`，状态由 blocked 改为 provisional。OC 原始 `open/close/broker_close` 快照未覆盖。
 - 资金流水和历史资金只作本次事故的外部权威证据，不建设日常导入任务。未来仍依赖对应券商 OC 当日数据补充柜台范围、内部划转和资金明细；华鑫极速柜台可见性限制不得外推到其他券商。
@@ -49,8 +50,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 1. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，让今后同类日直接依赖 OC，不要求 OC 提供历史查询。
 2. 从后续自然交易日持续验收 OC 当日资金、逆回购净息、公司行为和外部资金流，确保历史券商文件只停留在一次性事故修复边界。
-3. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
-4. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
+3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
+4. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
+5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
 
 ## 系统边界
 
@@ -158,6 +160,7 @@ PYTHONPATH=sdk/python .venv/bin/python -m unittest discover -s sdk/python/tests 
 - [绩效分析设计](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)
 - [绩效净值金标](/home/ti-relay-trader/docs/PERFORMANCE_NAV_GOLD.md:1)
 - [两户券商资金流水一次性审计](/home/ti-relay-trader/docs/BROKER_CASH_FLOW_AUDIT_20260827.md:1)
+- [添利1号 ETF T0 最终清算审计](/home/ti-relay-trader/docs/TIANLI1_ETF_SETTLEMENT_RECONCILIATION_20260828.md:1)
 - [Meridian 盘后水位协调](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)
 - [2026-08-06 延后结算记录](/home/ti-relay-trader/docs/SETTLEMENT_HOLD_20260806.md:1)
 - [数据库迁移](/home/ti-relay-trader/docs/MIGRATIONS.md:1)
