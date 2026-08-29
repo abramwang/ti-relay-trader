@@ -17,7 +17,7 @@
 | `15:54:08` | `meridian-level1-archive=success` | 当日 Level1 可作为临时收盘估值输入 |
 | `15:54:20` | `meridian-intraday-quality=success` | 允许发布带 `meridian_level1_close_fallback` 的 provisional 绩效 |
 | `15:56` | 当日 `1d` 返回 `503 archive_incomplete` | 这是正确的未就绪响应，不应改为空 `200` |
-| `16:30-16:45` | `meridian-postclose-reference-sync` 生产日线并执行水位门禁 | 水位到达当日后重算 canonical 绩效 |
+| `16:30` 启动，`16:45` SLA | `meridian-postclose-reference-sync` 生产日线并执行水位门禁 | Relay 16:40 首查，水位到达当日后重算 canonical 绩效 |
 
 现场批量请求 8 个持仓证券的 `data_scope=realtime&market_level=level1` 返回 8/8，`trade_date=20260826`，快照时间均在 `15:00:00-15:00:10+08:00`，`last/pre_close` 完整。相同日期的 `frequency=1d` 在父任务运行前返回：
 
@@ -100,7 +100,8 @@ Meridian：
 ## 后续动作
 
 1. [x] Relay 部署 503 降级修复，并使用当日 Level1 恢复 `2026-08-26` provisional 绩效。
-2. [x] Relay 实现 `performance_canonical`：16:00-17:59 每 10 分钟读取权威水位，复用同一交易日账本生成新 NAV 版本，保存版本差异并保证同日幂等。
+2. [x] Relay 实现 `performance_canonical`：对齐 Meridian 16:30 启动和 16:45 SLA，16:40 首查、每 10 分钟重试至 18:50；复用同一交易日账本生成新 NAV 版本，保存版本差异并保证同日幂等。
 3. [x] 完成 `2026-08-26` 首次真实水位到达验收：16:30 父任务运行时 Relay 保持等待，16:32:59 三类水位到达后生成 3 个活跃账户的权威日线 NAV v2；3 户 NAV/PnL/收益率差异均为 0，质量结果为 3 ready、1 not_applicable、0 attention/blocked。
-4. [ ] 将本文发给 Meridian，确认现有两个状态接口字段是否承诺稳定；如不能承诺，按精简对象补契约。
-5. [x] Relay 单测固定 `503 -> Level1 provisional -> daily ready` 的关键门禁和等待/完成/幂等状态；Meridian 侧仍需保留对应契约 fixture。
+4. [x] 完成 `2026-08-28` 调度对齐验收：Meridian 16:30:19 启动、16:32:53 发布完整质量结果，Relay 16:40:01 首次有效检查完成复算；3 户 Level1/canonical NAV、PnL 和收益率差异均为 0。旧 16:00 起轮询已移除，SLA 后保留 125 分钟恢复窗口。
+5. [ ] 将本文发给 Meridian，确认现有两个状态接口字段是否承诺稳定；如不能承诺，按精简对象补契约。
+6. [x] Relay 单测固定 `503 -> Level1 provisional -> daily ready` 的关键门禁和等待/完成/幂等状态；Meridian 侧仍需保留对应契约 fixture。

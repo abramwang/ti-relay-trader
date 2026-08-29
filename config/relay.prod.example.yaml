@@ -87,6 +87,12 @@ jobs:
     enabled: true
     trigger: "job_success"
     depends_on: "post_close_settlement"
+  performance_canonical:
+    enabled: true
+    schedule: "40 16 * * 1-5"
+    upstream_schedule: "30 16 * * 1-5"
+    ready_deadline: "16:45"
+    retry_until: "18:50"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

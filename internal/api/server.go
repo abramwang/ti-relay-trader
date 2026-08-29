@@ -4630,13 +4630,17 @@ func jobScheduleViews(jobs map[string]config.JobConfig, timezone string) map[str
 	out := make(map[string]JobScheduleView, len(jobs))
 	for name, job := range jobs {
 		out[name] = JobScheduleView{
-			JobName:      name,
-			Enabled:      job.Enabled,
-			Schedule:     strings.TrimSpace(job.Schedule),
-			ExpectedTime: expectedTimeFromCron(job.Schedule),
-			Trigger:      strings.TrimSpace(job.Trigger),
-			DependsOn:    strings.TrimSpace(job.DependsOn),
-			Timezone:     timezone,
+			JobName:              name,
+			Enabled:              job.Enabled,
+			Schedule:             strings.TrimSpace(job.Schedule),
+			ExpectedTime:         expectedTimeFromCron(job.Schedule),
+			Trigger:              strings.TrimSpace(job.Trigger),
+			DependsOn:            strings.TrimSpace(job.DependsOn),
+			UpstreamSchedule:     strings.TrimSpace(job.UpstreamSchedule),
+			UpstreamExpectedTime: expectedTimeFromCron(job.UpstreamSchedule),
+			ReadyDeadline:        strings.TrimSpace(job.ReadyDeadline),
+			RetryUntil:           strings.TrimSpace(job.RetryUntil),
+			Timezone:             timezone,
 		}
 	}
 	return out
@@ -4710,13 +4714,17 @@ type JobRunStatusView struct {
 }
 
 type JobScheduleView struct {
-	JobName      string `json:"job_name"`
-	Enabled      bool   `json:"enabled"`
-	Schedule     string `json:"schedule,omitempty"`
-	ExpectedTime string `json:"expected_time,omitempty"`
-	Trigger      string `json:"trigger,omitempty"`
-	DependsOn    string `json:"depends_on,omitempty"`
-	Timezone     string `json:"timezone"`
+	JobName              string `json:"job_name"`
+	Enabled              bool   `json:"enabled"`
+	Schedule             string `json:"schedule,omitempty"`
+	ExpectedTime         string `json:"expected_time,omitempty"`
+	Trigger              string `json:"trigger,omitempty"`
+	DependsOn            string `json:"depends_on,omitempty"`
+	UpstreamSchedule     string `json:"upstream_schedule,omitempty"`
+	UpstreamExpectedTime string `json:"upstream_expected_time,omitempty"`
+	ReadyDeadline        string `json:"ready_deadline,omitempty"`
+	RetryUntil           string `json:"retry_until,omitempty"`
+	Timezone             string `json:"timezone"`
 }
 
 type AccountStatusSummary struct {

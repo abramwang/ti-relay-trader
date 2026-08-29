@@ -160,6 +160,10 @@
       expectedTime: configured.expected_time || known.expectedTime || "",
       trigger: configured.trigger || "",
       dependsOn: configured.depends_on || "",
+      upstreamSchedule: configured.upstream_schedule || "",
+      upstreamExpectedTime: configured.upstream_expected_time || "",
+      readyDeadline: configured.ready_deadline || "",
+      retryUntil: configured.retry_until || "",
       timezone: configured.timezone || (status && status.timezone) || "Asia/Shanghai",
       purpose: known.purpose || "",
     };
@@ -371,7 +375,7 @@
     return { label: status, className: "" };
   }
 
-  function finalResult(run) {
+  function finalResult(run, schedule = {}) {
     if (!run) return "--";
     const report = run.report || {};
     if (run.job_name === "performance_canonical" && report.waiting_for_meridian) {
@@ -380,7 +384,11 @@
         ? watermark.required_datasets.map((item) => Number(item.published_watermark || 0)).filter(Boolean)
         : [];
       const latest = published.length ? Math.min(...published) : 0;
-      return `等待 Meridian 权威日线 · 目标 ${watermark.requested_trade_date || "--"} · 当前 ${latest || "--"}`;
+      const window = [];
+      if (schedule.readyDeadline) window.push(`上游 SLA ${schedule.readyDeadline}`);
+      if (schedule.retryUntil) window.push(`Relay 重试至 ${schedule.retryUntil}`);
+      const suffix = window.length ? ` · 正常等待（${window.join("，")}）` : "";
+      return `等待 Meridian 权威日线 · 目标 ${watermark.requested_trade_date || "--"} · 当前 ${latest || "--"}${suffix}`;
     }
     if (report.skipped) return report.skip_reason || "skipped";
     const snapshot = snapshotResult(run);
@@ -460,6 +468,9 @@
       const schedule = jobSchedule(statusView, name);
       const state = dailyState(todayRun, schedule, statusView, byName);
       const status = todayRun ? statusLabel(todayRun.status, todayRun.skipped) : "";
+      const upstreamWindow = schedule.upstreamExpectedTime || schedule.readyDeadline
+        ? `Meridian ${schedule.upstreamExpectedTime || "--"} 启动${schedule.readyDeadline ? ` · SLA ${schedule.readyDeadline}` : ""}`
+        : "";
       return `
         <article class="job-card">
           <div class="job-card-top">
@@ -470,10 +481,12 @@
           <dl>
             <div><dt>计划时间</dt><dd>${escapeHTML(expectedLabel(schedule))}</dd></div>
             <div><dt>触发方式</dt><dd>${escapeHTML(schedule.trigger === "job_success" ? "上游任务成功" : (schedule.schedule || "--"))}</dd></div>
+            ${upstreamWindow ? `<div><dt>上游窗口</dt><dd>${escapeHTML(upstreamWindow)}</dd></div>` : ""}
+            ${schedule.retryUntil ? `<div><dt>重试截止</dt><dd>${escapeHTML(`${schedule.retryUntil} ${schedule.timezone || ""}`.trim())}</dd></div>` : ""}
             <div><dt>所选日期</dt><dd>${escapeHTML(currentTradeDate(statusView) || "--")}</dd></div>
             <div><dt>本次运行</dt><dd>${escapeHTML(todayRun ? compactRunSummary(todayRun) : "--")}</dd></div>
             <div class="wide"><dt>上次运行记录</dt><dd>${escapeHTML(compactRunSummary(latestRun))}</dd></div>
-            <div class="wide"><dt>运行结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun) : "--")}</dd></div>
+            <div class="wide"><dt>运行结果</dt><dd>${escapeHTML(todayRun ? finalResult(todayRun, schedule) : "--")}</dd></div>
             <div class="wide"><dt>告警通知</dt><dd>${escapeHTML(todayRun ? alertDeliveryView(todayRun).label : "--")}</dd></div>
           </dl>
         </article>`;
@@ -487,6 +500,7 @@
       return;
     }
     els.body.innerHTML = runs.map((run, index) => {
+      const schedule = jobSchedule(statusView, run.job_name);
       const waitingForMeridian = run.job_name === "performance_canonical" && run.report && run.report.waiting_for_meridian;
       const status = waitingForMeridian ? "waiting" : statusLabel(run.status, run.skipped);
       const runStatusClass = waitingForMeridian ? "running" : statusClass(run.status, run.skipped);
@@ -501,7 +515,7 @@
           <td>${escapeHTML(formatTime(run.started_at))}</td>
           <td>${escapeHTML(formatTime(run.finished_at))}</td>
           <td>${escapeHTML(formatDuration(run.duration_ms))}</td>
-          <td class="job-result-cell">${escapeHTML(finalResult(run))}</td>
+          <td class="job-result-cell">${escapeHTML(finalResult(run, schedule))}</td>
           <td><span class="status-badge ${escapeHTML(alert.className)}">${escapeHTML(alert.label)}</span></td>
           <td class="job-error-cell">${escapeHTML(error || "--")}</td>
         </tr>`;

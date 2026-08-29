@@ -97,9 +97,12 @@ jobs:
     depends_on: "post_close_settlement"
   performance_canonical:
     enabled: true
-    # The cron wrapper polls every 10 minutes from 16:00 through 17:59 and
-    # stops after Meridian's canonical daily watermark reaches this trade day.
+    # Meridian starts at 16:30 with a 16:45 readiness SLA. Relay checks from
+    # 16:40 through 18:50 and stops after the canonical watermark arrives.
     schedule: "40 16 * * 1-5"
+    upstream_schedule: "30 16 * * 1-5"
+    ready_deadline: "16:45"
+    retry_until: "18:50"
   reconcile:
     enabled: true
     schedule: "30 16 * * 1-5"

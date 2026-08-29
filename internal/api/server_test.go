@@ -85,7 +85,13 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 		"post_close_capture":    {Enabled: true, Schedule: "1 15 * * 1-5"},
 		"post_close_settlement": {Enabled: true, Trigger: "job_success", DependsOn: "post_close_capture"},
 		"performance_daily":     {Enabled: true, Trigger: "job_success", DependsOn: "post_close_settlement"},
-		"performance_canonical": {Enabled: true, Schedule: "40 16 * * 1-5"},
+		"performance_canonical": {
+			Enabled:          true,
+			Schedule:         "40 16 * * 1-5",
+			UpstreamSchedule: "30 16 * * 1-5",
+			ReadyDeadline:    "16:45",
+			RetryUntil:       "18:50",
+		},
 	}
 	cfg.Accounts = []config.AccountRouteConfig{
 		{AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", StreamPrefix: "relay:prod:v1:huaxin:gw-1", Enabled: true, TradingEnabled: true},
@@ -190,6 +196,10 @@ func TestStatusIncludesDependencyHealth(t *testing.T) {
 	performanceJob := envelope.Data.Jobs["performance_daily"]
 	if performanceJob.Trigger != "job_success" || performanceJob.DependsOn != "post_close_settlement" || performanceJob.ExpectedTime != "" {
 		t.Fatalf("performance job dependency = %#v", performanceJob)
+	}
+	canonicalJob := envelope.Data.Jobs["performance_canonical"]
+	if canonicalJob.ExpectedTime != "16:40" || canonicalJob.UpstreamExpectedTime != "16:30" || canonicalJob.ReadyDeadline != "16:45" || canonicalJob.RetryUntil != "18:50" {
+		t.Fatalf("canonical job schedule = %#v", canonicalJob)
 	}
 }
 

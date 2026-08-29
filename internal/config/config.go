@@ -122,10 +122,13 @@ type AccountRouteConfig struct {
 }
 
 type JobConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Schedule  string `yaml:"schedule"`
-	Trigger   string `yaml:"trigger"`
-	DependsOn string `yaml:"depends_on"`
+	Enabled          bool   `yaml:"enabled"`
+	Schedule         string `yaml:"schedule"`
+	Trigger          string `yaml:"trigger"`
+	DependsOn        string `yaml:"depends_on"`
+	UpstreamSchedule string `yaml:"upstream_schedule"`
+	ReadyDeadline    string `yaml:"ready_deadline"`
+	RetryUntil       string `yaml:"retry_until"`
 }
 
 func Load(path string) (*Config, error) {

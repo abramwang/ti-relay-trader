@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-08-28` 添利1号 `2026-07-22..08-24` 已用 OC、Meridian PCF 和一次性券商证据完成 14 个 ETF T0 清算终值，24 个账户日连续重建且归因残差为 0；`08-25` 等待实际返款 |
-| 更新时间 | `2026-08-28` |
+| 最近确认 | `2026-08-28` Meridian 权威日线 16:32:53 就绪，Relay 16:40 完成三户 canonical 复算且 NAV/PnL/收益率差异均为 0；轮询窗口已对齐为 16:40-18:50 |
+| 更新时间 | `2026-08-29` |
 
 新线程按以下顺序恢复：
 
@@ -32,6 +32,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
+- Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。等待记录属于上游水位门禁，不等同于任务失败。
 - 生产 schema 当前为 `26 etf_settlement_finalizations`，Python SDK 当前版本为 `relay-sdk==0.1.28`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
@@ -89,7 +90,7 @@ Redis Stream 细节见 [前置对接手册](/home/ti-relay-trader/docs/THIRD_PAR
 | 15:01 | `post_close_capture` | 不依赖 Meridian，查询 OC 最终资金、持仓、订单、成交和费用，固化不可变 `broker_close` |
 | 捕获成功后 | `post_close_settlement` | 从 `broker_close` 结合 Meridian 生成正式 `close`、对账输入和差异 |
 | 结算成功后 | `performance_daily` | 计算移动成本、经济 NAV 和质量状态，阻断账户不影响其他账户 |
-| 16:00-17:59 每 10 分钟 | `performance_canonical` | 等待 Meridian 权威日线水位，重算 provisional NAV 并保留版本差异 |
+| 16:40-18:50 每 10 分钟 | `performance_canonical` | 对齐 Meridian 16:30 启动、16:45 SLA，等待权威日线水位后重算 provisional NAV 并保留版本差异 |
 
 非交易日通过 Meridian 交易日接口跳过。账户级查询失败单独标注；只有系统依赖失败、全部账户阻断或写库失败才使整项任务失败。完整流程见 [交易日工作流](/home/ti-relay-trader/docs/TRADING_DAY_WORKFLOW.md:1)。
 

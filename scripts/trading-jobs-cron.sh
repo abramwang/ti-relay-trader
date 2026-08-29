@@ -37,8 +37,10 @@ RELAY_REFRESH_TIMEOUT_SECONDS=180
 # Broker close capture starts at 15:01. Settlement and performance follow their successful upstream jobs.
 1 15 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock \$RELAY_HOME/scripts/run-post-close-pipeline.sh >> $CRON_LOG_DIR/post_close_pipeline.log 2>&1
 
-# Poll Meridian canonical daily-bar watermarks; the script stops retrying after one successful daily rebuild.
-*/10 16,17 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
+# Meridian starts its canonical parent at 16:30 with a 16:45 readiness SLA.
+# Relay first checks at 16:40, retries every 10 minutes through 18:50, and stops after one successful rebuild.
+40,50 16 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
+*/10 17,18 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
 $MARKER_END
 EOF
   } | crontab -
