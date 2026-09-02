@@ -46,7 +46,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.32"
+SDK_VERSION = "0.1.33"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -267,6 +267,42 @@ class RelayClient:
             max_items=max_items,
         )
 
+    def iter_position_pages(
+        self,
+        account_id: str | None = None,
+        *,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        snapshot_type: str | None = None,
+        history: bool | None = None,
+        enrich: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+    ) -> Iterable[PositionPage]:
+        """Iterate complete position pages while retaining every audit envelope."""
+
+        return _iterate_page_objects(
+            lambda next_cursor: self.get_positions_page(
+                account_id,
+                symbol=symbol,
+                exchange=exchange,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                snapshot_type=snapshot_type,
+                history=history,
+                enrich=enrich,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+        )
+
     def get_positions_raw(self, account_id: str | None = None) -> list[Position]:
         """Return locally stored broker positions without names, quotes, or PnL enrichment."""
 
@@ -405,6 +441,44 @@ class RelayClient:
             max_items=max_items,
         )
 
+    def iter_order_pages(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        origin_message_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+    ) -> Iterable[OrderPage]:
+        """Iterate complete order pages while retaining every audit envelope."""
+
+        return _iterate_page_objects(
+            lambda next_cursor: self.list_orders_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                origin_message_id=origin_message_id,
+                symbol=symbol,
+                exchange=exchange,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+        )
+
     def list_fills(
         self,
         *,
@@ -498,6 +572,40 @@ class RelayClient:
             cursor=cursor,
             max_pages=max_pages,
             max_items=max_items,
+        )
+
+    def iter_fill_pages(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+    ) -> Iterable[FillPage]:
+        """Iterate complete fill pages while retaining every audit envelope."""
+
+        return _iterate_page_objects(
+            lambda next_cursor: self.list_fills_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
         )
 
     def list_order_fees(
@@ -1392,26 +1500,19 @@ class RelayClient:
 
         account_id = self._resolve_account(account_id)
         asset = self.get_asset_raw(account_id)
-        positions = tuple(
-            self.iter_positions(
-                account_id,
-                enrich=False,
-                page_size=page_size,
-                max_pages=max_pages,
+        position_pages = tuple(
+            self.iter_position_pages(
+                account_id, enrich=False, page_size=page_size, max_pages=max_pages
             )
         )
-        orders = tuple(
-            self.iter_orders(
-                account_id=account_id,
-                page_size=page_size,
-                max_pages=max_pages,
+        order_pages = tuple(
+            self.iter_order_pages(
+                account_id=account_id, page_size=page_size, max_pages=max_pages
             )
         )
-        fills = tuple(
-            self.iter_fills(
-                account_id=account_id,
-                page_size=page_size,
-                max_pages=max_pages,
+        fill_pages = tuple(
+            self.iter_fill_pages(
+                account_id=account_id, page_size=page_size, max_pages=max_pages
             )
         )
         return StreamReconciliation(
@@ -1420,9 +1521,12 @@ class RelayClient:
             last_event_id=last_event_id,
             current_event_id=trigger_event.event_id if trigger_event else "",
             asset=asset,
-            positions=positions,
-            orders=orders,
-            fills=fills,
+            positions=tuple(item for page in position_pages for item in page.items),
+            orders=tuple(item for page in order_pages for item in page.items),
+            fills=tuple(item for page in fill_pages for item in page.items),
+            position_pages=position_pages,
+            order_pages=order_pages,
+            fill_pages=fill_pages,
             trigger_event=trigger_event,
         )
 
@@ -1994,7 +2098,7 @@ def _iterate_pages(
     max_pages: int,
     max_items: int | None,
 ) -> Iterable[Any]:
-    """Build a bounded iterator that fails closed on pagination drift."""
+    """Flatten validated pages into a bounded business-object iterator."""
 
     if max_pages <= 0:
         raise ValueError("max_pages must be positive")
@@ -2005,11 +2109,40 @@ def _iterate_pages(
         if max_items == 0:
             return
 
+        item_count = 0
+        for page in _iterate_page_objects(
+            load_page,
+            cursor=cursor,
+            max_pages=max_pages,
+        ):
+            for item in page.items:
+                if max_items is not None and item_count >= max_items:
+                    return
+                yield item
+                item_count += 1
+
+            if max_items is not None and item_count >= max_items:
+                return
+
+    return generate()
+
+
+def _iterate_page_objects(
+    load_page: Callable[[str | None], Any],
+    *,
+    cursor: str | None,
+    max_pages: int,
+) -> Iterable[Any]:
+    """Iterate validated page objects and retain their public audit envelopes."""
+
+    if max_pages <= 0:
+        raise ValueError("max_pages must be positive")
+
+    def generate() -> Iterable[Any]:
         current_cursor = str(cursor or "").strip()
         seen_cursors = {current_cursor} if current_cursor else set()
         expected_query: str | None = None
         page_count = 0
-        item_count = 0
 
         while True:
             if page_count >= max_pages:
@@ -2041,14 +2174,7 @@ def _iterate_pages(
                         raw_response=page.raw,
                     )
 
-            for item in items:
-                if max_items is not None and item_count >= max_items:
-                    return
-                yield item
-                item_count += 1
-
-            if max_items is not None and item_count >= max_items:
-                return
+            yield page
 
             next_cursor = str(page.next_cursor or "").strip()
             if not next_cursor:

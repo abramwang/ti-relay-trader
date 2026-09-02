@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.33 - 2026-09-02
+
+### Added
+
+- Added public `iter_order_pages()`, `iter_fill_pages()`, and
+  `iter_position_pages()` helpers so consumers can retain every page's
+  `request_id`, `time`, normalized `query`, `count`, and `next_cursor` while
+  reading a complete ledger.
+- Added the typed page collections `order_pages`, `fill_pages`, and
+  `position_pages` to `StreamReconciliation`, preserving the complete audit
+  evidence used to rebuild current state after an SSE gap.
+
+### Compatibility
+
+- Existing `iter_orders()`, `iter_fills()`, and `iter_positions()` remain
+  business-object iterators and retain their existing signatures.
+- Page and item iterators share the same count, query-drift, repeated-cursor,
+  empty-cursor, and page-limit validation path.
+- No Relay HTTP API, Redis Stream, or OC wire schema changed in this release.
+
 ## 0.1.32 - 2026-09-02
 
 ### Added

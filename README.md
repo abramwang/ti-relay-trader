@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-02` 已发布 `relay-sdk 0.1.32` 与成本账 `v3.2`；Chronos P0/P1 回执、生产只读 9/9、真实历史批次 2 子单及在线成本 preview 均通过，写请求为 0 |
+| 最近确认 | `2026-09-02` Chronos 已独立验收 SDK P0/P1 契约；`relay-sdk 0.1.33` 进一步补齐逐页审计迭代和 SSE 对账页证据，生产验证保持只读、写请求为 0 |
 | 更新时间 | `2026-09-02` |
 
 新线程按以下顺序恢复：
@@ -33,7 +33,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。等待记录属于上游水位门禁，不等同于任务失败。
-- 生产 schema 当前为 `27 order_submission_identity`，Python SDK 当前版本为 `relay-sdk==0.1.32`。
+- 生产 schema 当前为 `27 order_submission_identity`，Python SDK 当前版本为 `relay-sdk==0.1.33`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -46,7 +46,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 两户均于 `2026-07-27` 盘前入金并开始交易；原起算日误用了 Relay 首次取得 OC 快照的日期（分别为 7 月 29 日和 28 日）。券商资金与交割单已一次性恢复两户 7 月 27 日及 `307000051387` 的 7 月 28 日账本，逐证券数量桥和 Meridian 收盘市值均闭合。
 - 两户 `2026-07-27..2026-08-26` 各 23 个交易日、共 46 个账户日已按 `performance_economic_nav.v2.7` 顺序重建，0 blocked。结果仍为 provisional，因为部分历史费用、ETF 清算资产和归因使用明确标记的估算口径。
 - `performance_position_cost.v3.2` 已实现 `meridian_pre_close_mark_to_market`：仅在人工确认起算日按盘前数量和 Meridian 未复权前收盘建立 CORE 初始成本，缺行情即阻断且不回退柜台污染成本。富盈13号仍待确认具体起算日和盘前持仓锚点，生产账户配置未修改。
-- Chronos P0/P1 接入项已关闭：统一价格契约、类型化全量分页、SSE 恢复、公开 HTTP transport 注入、schema 能力发现、批量子单异步结果和失败关闭的重试矩阵均已实现；正式回执为 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。不支持的北交所留作未来升级。
+- Chronos 已独立确认 `relay-sdk 0.1.32` 的 P0 数据与事件能力、P1 接口契约准入通过；`0.1.33` 已关闭其唯一非阻断反馈，公开返回全量分页审计和 SSE 对账页证据。真实写验收等待测试环境，不支持的北交所留作未来升级。
 
 ### 下一步
 

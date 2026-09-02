@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz"
 ```
 
 ## Quick Start
@@ -72,6 +72,16 @@ request audit data are needed:
 page = client.list_orders_page(trade_date="20260902", limit=500)
 print(page.count, page.next_cursor, page.request_id, page.time)
 
+for page in client.iter_order_pages(
+    history=True,
+    date_from="20260801",
+    date_to="20260902",
+    page_size=500,
+):
+    archive_page_audit(page.request_id, page.time, page.query, page.count, page.next_cursor)
+    for order in page.items:
+        process(order)
+
 for order in client.iter_orders(
     history=True,
     date_from="20260801",
@@ -87,6 +97,10 @@ returns an empty `next_cursor`. They raise `RelayPaginationError` on repeated
 cursors, count mismatches, normalized-query drift, or page-limit exhaustion.
 Set `max_items` only when intentionally requesting a bounded sample.
 
+Use `iter_order_pages()`, `iter_fill_pages()`, and `iter_position_pages()` when
+the consumer must retain every page's audit envelope. Both iterator families
+share the same validation and empty-cursor completion rules.
+
 ## Recoverable Event Stream
 
 `stream_events()` exposes each SSE `event_id` and supports a single resumed
@@ -99,6 +113,11 @@ def reconciled(snapshot):
     replace_fills(snapshot.fills)
     replace_asset(snapshot.asset)
     replace_positions(snapshot.positions)
+    archive_page_audits(
+        snapshot.order_pages,
+        snapshot.fill_pages,
+        snapshot.position_pages,
+    )
 
 for event in client.stream_events_resilient(
     on_reconcile_required=reconciled,
@@ -112,6 +131,9 @@ Relay replays events only within the current API process and its bounded replay
 window. Restarts, expired cursors, event-bridge reconnects, or subscriber
 overflow produce an explicit `relay.gap`; the SDK will not continue past a gap
 without completing `reconcile_current_state()` and invoking the callback.
+`StreamReconciliation` includes both the flattened four-ledger snapshot and
+all typed position/order/fill pages used to build it, including every page's
+audit envelope.
 
 Refresh methods return a command receipt. Use its `message_id` to verify that
 OC produced one completed final query reply:

@@ -62,7 +62,7 @@ class RelayP1ContractTests(unittest.TestCase):
         req, timeout = opener.requests[0]
         self.assertEqual(req.full_url, "http://relay.invalid/v1/status")
         self.assertEqual(req.get_method(), "GET")
-        self.assertEqual(req.get_header("User-agent"), "relay-sdk/0.1.32")
+        self.assertEqual(req.get_header("User-agent"), "relay-sdk/0.1.33")
         self.assertEqual(timeout, 3.5)
 
     def test_retry_matrix_fails_closed_for_writes(self):

@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.32`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.33`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.32.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.33.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -43,13 +43,13 @@ SDK 的定位：
 21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
 22. `get_command_status(origin_message_id)` 查询 OC 查询或交易命令的归档状态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
 23. `get_meridian_instruments()` 和 `get_meridian_metadata_status()` 透明读取 Meridian `metadata_instrument.v2` 价位字段及 `metadata_status.v2` 质量状态。
-24. `OrderPage`、`FillPage`、`PositionPage` 保留服务端游标、规范化查询和 envelope 审计字段；`iter_orders()`、`iter_fills()`、`iter_positions()` 提供全量读取及重复游标、查询漂移、计数和页数保护。
-25. `RelayEvent.event_id`、`Last-Event-ID`、API 进程内 2,048 事件有限回放和显式 `relay.gap`；`reconcile_current_state()` 以全分页方式读取当前资金、持仓、订单和成交。
+24. `OrderPage`、`FillPage`、`PositionPage` 保留服务端游标、规范化查询和 envelope 审计字段；`iter_orders()`、`iter_fills()`、`iter_positions()` 提供全量业务对象读取，`iter_order_pages()`、`iter_fill_pages()`、`iter_position_pages()` 提供逐页全量读取和完整审计留证，统一具备重复游标、查询漂移、计数和页数保护。
+25. `RelayEvent.event_id`、`Last-Event-ID`、API 进程内 2,048 事件有限回放和显式 `relay.gap`；`reconcile_current_state()` 以全分页方式读取当前资金、持仓、订单和成交，并保留构成快照的全部页审计集合。
 26. `get_schema()` / `require_capabilities()` 读取 `relay.trading.v1alpha1` 和机器可读能力，缺能力时失败关闭。
 27. `submit_orders()` 返回 `BatchCommandReceipt` 逐单保留调用方 ID 与 Relay 接受/重放结果；`get_batch_order_outcomes()` / `wait_batch_order_outcomes()` 结合 `origin_message_id`、订单账本和命令回报返回异步子单结果。
 28. 构造参数 `opener=` 是公开 HTTP 故障注入点；`retry_decision()` 给出按 read/query/write/cancel/stream 区分的自动重试和对账要求。
 
-Chronos 当前提出的 P0/P1 SDK 接口项均已有正式实现。`2026-09-02` 生产只读发布验收 9/9 通过，并从历史 raw command archive 完整回查真实批次的 2 个子单；低频实盘写场景仍按自然交易机会持续验收，不以测试环境结论替代生产事实。可转交的逐项回执见 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。
+Chronos 已独立确认 `relay-sdk 0.1.32` 的 P0 数据与事件能力、P1 接口契约准入通过；其非阻断反馈中的逐页审计留证已由 `0.1.33` 补齐。低频实盘写场景仍等待测试环境或自然交易机会验收，不以生产造单。双方证据边界见 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。
 
 ## 包形态
 
@@ -93,15 +93,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.32.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.33.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -336,15 +336,18 @@ client = RelayClient(
 | `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询当前持仓，默认补全名称、行情和盈亏 |
 | `get_positions_page(..., limit=500, cursor=...)` | `GET /v1/accounts/{account_id}/positions[/history]` | 返回类型化 `PositionPage`，保留服务端游标和审计字段 |
 | `iter_positions(..., page_size=500, max_pages=1000)` | 同上，多页 | 遍历至服务端返回空游标；可用 `max_items` 显式限制样本数 |
+| `iter_position_pages(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历类型化页，并保留每页审计 envelope |
 | `get_positions_raw(account_id=None)` | `GET /v1/accounts/{account_id}/positions?enrich=false` | 读取柜台原始持仓账本，不触发 Meridian 补全 |
 | `get_positions(history=True, trade_date=..., snapshot_type="close")` | `GET /v1/accounts/{account_id}/positions/history` | 查询历史持仓快照；默认 close，可传 open 读取盘前持仓 |
 | `list_orders(...)` | `GET /v1/orders` | 默认查询当日订单 |
 | `list_orders_page(..., limit=500, cursor=...)` | `GET /v1/orders` 或 `/v1/history/orders` | 返回类型化 `OrderPage` 和 envelope 审计字段 |
 | `iter_orders(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历订单，带重复游标、查询漂移和页数保护 |
+| `iter_order_pages(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历类型化页，并保留每页审计 envelope |
 | `list_orders(history=True, ...)` | `GET /v1/history/orders` | 查询历史订单 |
 | `list_fills(...)` | `GET /v1/fills` | 默认查询当日成交 |
 | `list_fills_page(..., limit=500, cursor=...)` | `GET /v1/fills` 或 `/v1/history/fills` | 返回类型化 `FillPage` 和 envelope 审计字段 |
 | `iter_fills(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历成交，带重复游标、查询漂移和页数保护 |
+| `iter_fill_pages(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历类型化页，并保留每页审计 envelope |
 | `list_fills(history=True, ...)` | `GET /v1/history/fills` | 查询历史成交 |
 | `list_transfers(...)` | `GET /v1/transfers` | 默认查询当日 ETF 成分股划转 |
 | `list_transfers(history=True, ...)` | `GET /v1/history/transfers` | 查询历史 ETF 成分股划转 |
@@ -377,7 +380,7 @@ client = RelayClient(
 | `get_meridian_etf_cash_components(security_ids=..., trade_date=...)` | `GET /v1/meridian/market/etf-cash-components` | 查询 ETF PCF 现金清单和 `unit_subscribe_redeem` 最小申赎单位 |
 | `get_meridian_etf_pcf_status()` | `GET /v1/meridian/market/etf-pcf-status` | 查询 PCF 最近同步交易日和任务状态 |
 
-旧 `list_orders()`、`list_fills()` 和 `get_positions()` 为兼容既有策略，仍只返回一个 `list` 单页，不能用于证明全量账本覆盖。全量对账必须使用 `iter_*()`，并保持 `max_items=None`。页对象的 `is_complete` 只由服务端空 `next_cursor` 决定，不根据“本页不足 page_size”猜测末页；`count`、`query`、`request_id` 和东八区 `time` 均原样保留用于审计。
+旧 `list_orders()`、`list_fills()` 和 `get_positions()` 为兼容既有策略，仍只返回一个 `list` 单页，不能用于证明全量账本覆盖。只需要业务对象时使用 `iter_orders()`、`iter_fills()`、`iter_positions()` 并保持 `max_items=None`；需要保存每页外部证据时使用对应的 `iter_*_pages()`。两组接口共用分页校验。页对象的 `is_complete` 只由服务端空 `next_cursor` 决定，不根据“本页不足 page_size”猜测末页；`count`、`query`、`request_id` 和东八区 `time` 均原样保留用于审计。
 
 ```python
 page = client.list_orders_page(
@@ -388,6 +391,15 @@ page = client.list_orders_page(
     limit=500,
 )
 print(page.count, page.next_cursor, page.request_id, page.time)
+
+for page in client.iter_order_pages(
+    account_id="<account_id>",
+    history=True,
+    date_from="20260801",
+    date_to="20260902",
+    page_size=500,
+):
+    save_audit(page.request_id, page.time, page.query, page.count, page.next_cursor)
 
 orders = list(client.iter_orders(
     account_id="<account_id>",
@@ -413,7 +425,7 @@ Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go H
 | `wait_order_terminal(...)` | `GET /v1/orders` + event stream | 等待终态 |
 | `stream_events(last_event_id=..., idle_timeout=...)` | `GET /v1/events/stream` | 单连接订阅；保留 SSE ID，可显式携带恢复游标 |
 | `stream_events_resilient(on_reconcile_required=...)` | `GET /v1/events/stream` + 当前账本 GET | 有限指数退避重连；重连或 gap 必须先完成全量对账回调 |
-| `reconcile_current_state(...)` | 资金、持仓、订单和成交 GET | 返回类型化 `StreamReconciliation` 当前账本快照，全程只读 |
+| `reconcile_current_state(...)` | 资金、持仓、订单和成交 GET | 返回类型化 `StreamReconciliation` 当前账本快照及全部分页审计集合，全程只读 |
 | `on_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 后台订单状态回调 |
 | `on_fill(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 后台成交回调 |
 | `on_cancel_rejected(...)` | `GET /v1/events/stream` | 后台撤单失败/结果不确定回调 |
@@ -441,7 +453,7 @@ SDK 模型和 9092 API schema 一一对应：
 | `Position` | 持仓、可卖数量、总成本及来源完整性、总持仓浮盈和当日持仓浮盈 |
 | `OrderPage` / `FillPage` / `PositionPage` | 类型化分页项、服务端 count/cursor/query、request_id、东八区响应时间和末页状态 |
 | `RelayEvent` | SSE `event_id`、事件类型、服务端时间、账户、来源 stream 和数据 |
-| `StreamReconciliation` | SSE 恢复时的完整当前资金、持仓、订单、成交及触发原因 |
+| `StreamReconciliation` | SSE 恢复时的完整当前资金、持仓、订单、成交、触发原因及 `position_pages/order_pages/fill_pages` 审计集合 |
 | `CommandStatus` | 查询或交易命令状态、查询预期结果类型和归档 reply 明细 |
 | `BatchCommandReceipt` | 批次回执及每个子单的 Relay 接受/重放身份 |
 | `BatchOrderOutcome` / `BatchOrderOutcomes` | 子单柜台结果、订单状态、错误码和完整性 |

@@ -89,3 +89,21 @@ sha256sum -c relay-sdk-0.1.32.tar.gz.sha256
 Chronos 下一步应把原 `coverage=single_page_unproven` 校验改为 `iter_*()` 全量覆盖，保存
 `request_id/time/query/count/next_cursor` 审计字段，并用自身故障注入 opener 验证分页中断、SSE gap
 和写入结果未知三类失败关闭路径。
+
+## Chronos 消费端回执与 0.1.33 跟进
+
+Chronos 已对 `relay-sdk==0.1.32` 完成独立验收：46 个包内单测通过，历史全量读取
+9,830 条订单、13,129 条成交和 206 条持仓，当前四账本读取 214 条订单、517 条成交、
+0 条持仓及资产，并验证 fresh/resumed/invalid cursor 三类 SSE 恢复；分页验收 58 个 GET、
+SSE 验收 10 个 GET，写请求为 0。其结论为“P0 数据与事件能力准入通过；P1 接口契约通过，
+真实写验收待测试环境”。
+
+Chronos 唯一的 Relay 非阻断反馈是逐条 `iter_*()` 完成后无法保存每一页的审计 envelope。
+`relay-sdk==0.1.33` 已增加公开 `iter_order_pages()`、`iter_fill_pages()`、
+`iter_position_pages()`，并让 `StreamReconciliation` 返回构成恢复快照的全部类型化页集合。
+现有逐条迭代器保持兼容，所有入口共用同一套失败关闭分页校验。该变更不涉及 HTTP API、
+Redis Stream 或 OC wire schema。
+
+- 安装包：`http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz`
+- SHA256：`05ee8d17698fd36daea1b85326515af44a71500a5591a5b29ff0ca851c91ecae`
+- Relay 生产只读复验：历史页 `20/27/1`，账本记录 `9830/13129/206`，全部读至空 cursor；SSE 重建页审计完整，写请求为 `0`

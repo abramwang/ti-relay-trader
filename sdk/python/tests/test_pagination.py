@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import Any, Mapping
 
-from relay_sdk import Fill, Order, Position, RelayClient, RelayConnectionError, RelayPaginationError
+from relay_sdk import Asset, Fill, Order, Position, RelayClient, RelayConnectionError, RelayPaginationError
 
 
 def order_row(index: int) -> dict[str, Any]:
@@ -105,6 +105,41 @@ class RelayPaginationTests(unittest.TestCase):
                 self.assertEqual(len(orders), total)
                 self.assertEqual(len({order.gateway_order_id for order in orders}), total)
                 self.assertEqual(len(client.calls), expected_calls)
+
+    def test_iter_order_pages_preserves_every_audit_envelope(self):
+        client = ScriptedClient(paged_responder("orders", [order_row(i) for i in range(1001)]))
+
+        pages = list(client.iter_order_pages(trade_date="20260902", page_size=500))
+
+        self.assertEqual([page.count for page in pages], [500, 500, 1])
+        self.assertEqual([page.request_id for page in pages], ["req-0", "req-500", "req-1000"])
+        self.assertEqual([page.next_cursor for page in pages], ["500", "1000", ""])
+        self.assertEqual([page.is_complete for page in pages], [False, False, True])
+        self.assertTrue(all(page.query["trade_date"] == "20260902" for page in pages))
+
+    def test_reconciliation_includes_all_page_audits(self):
+        rows_by_path = {
+            "/v1/accounts/acct-1/positions": ("positions", [position_row(i) for i in range(501)]),
+            "/v1/orders": ("orders", [order_row(i) for i in range(1001)]),
+            "/v1/fills": ("fills", [fill_row(i) for i in range(1)]),
+        }
+
+        def respond(method, path, query):
+            item_key, rows = rows_by_path[path]
+            return paged_responder(item_key, rows)(method, path, query)
+
+        class ReconciliationClient(ScriptedClient):
+            def get_asset_raw(self, account_id=None):
+                return Asset(account_id=account_id or self.account_id)
+
+        client = ReconciliationClient(respond)
+        snapshot = client.reconcile_current_state(page_size=500)
+
+        self.assertEqual((len(snapshot.positions), len(snapshot.orders), len(snapshot.fills)), (501, 1001, 1))
+        self.assertEqual((len(snapshot.position_pages), len(snapshot.order_pages), len(snapshot.fill_pages)), (2, 3, 1))
+        self.assertEqual(snapshot.position_pages[-1].next_cursor, "")
+        self.assertEqual(snapshot.order_pages[-1].request_id, "req-1000")
+        self.assertTrue(snapshot.fill_pages[-1].is_complete)
 
     def test_iter_fills_uses_history_route_and_typed_models(self):
         client = ScriptedClient(paged_responder("fills", [fill_row(i) for i in range(501)]))

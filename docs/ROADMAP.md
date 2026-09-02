@@ -429,6 +429,8 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.32.tar.gz` 和 SHA256 校验文件，增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；统一使用 `/v1/command-status/{message_id}`，不保留旧查询命名路由。生产只读发布验收 9/9 通过，真实历史批次 2 个子单完整回查且写请求为 0。
 - [x] 应用 `000027_order_submission_identity`，从 raw command archive 恢复首次下单身份并审计历史幂等键冲突；订单 upsert 后续不再被查询或事件覆盖 `origin_message_id/request_id/idempotency_key`。
 - [x] 完成 Chronos `relay-sdk 0.1.32` 逐项验收回执：P0/P1、统一价格精度和发布要求均有实现与生产只读证据，可进入 Chronos 消费端验收；低频写异常继续按自然交易机会验证。
+- [x] 接收 Chronos `relay-sdk 0.1.32` 独立验收：P0 数据与事件能力、P1 接口契约通过，R1 可接入；真实写异常等待测试环境，不向生产账户造单。
+- [x] 发布 `public/sdk/relay-sdk-0.1.33.tar.gz` 和 SHA256 校验文件；增加 `iter_order_pages()`、`iter_fill_pages()`、`iter_position_pages()` 及 `StreamReconciliation` 全部分页审计集合，关闭 Chronos 非阻断留证项且不改变 HTTP/Redis/OC 协议。
 
 ### P6.1 接口测试台
 

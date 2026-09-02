@@ -65,6 +65,15 @@ def main() -> None:
     snapshot = reconciliations[0]
     require(snapshot.account_id == args.account_id, "reconciliation account mismatch")
     require(snapshot.asset is not None and snapshot.asset.account_id == args.account_id, "asset reconciliation failed")
+    for name, pages in (
+        ("orders", snapshot.order_pages),
+        ("fills", snapshot.fill_pages),
+        ("positions", snapshot.position_pages),
+    ):
+        require(pages, f"{name} reconciliation is missing page audit evidence")
+        require(pages[-1].is_complete, f"{name} reconciliation did not reach a complete page")
+        require(pages[-1].next_cursor == "", f"{name} reconciliation did not reach an empty cursor")
+        require(all(page.request_id and page.query for page in pages), f"{name} page audit is incomplete")
 
     print(
         json.dumps(
@@ -79,6 +88,10 @@ def main() -> None:
                     "orders": len(snapshot.orders),
                     "fills": len(snapshot.fills),
                     "positions": len(snapshot.positions),
+                    "order_pages": len(snapshot.order_pages),
+                    "fill_pages": len(snapshot.fill_pages),
+                    "position_pages": len(snapshot.position_pages),
+                    "page_audit_coverage": "all_pages",
                     "reason": snapshot.reason,
                 },
                 "write_requests_sent": 0,

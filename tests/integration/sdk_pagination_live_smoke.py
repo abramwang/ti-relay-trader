@@ -41,31 +41,10 @@ def main() -> None:
         "date_to": args.date_to,
     }
 
-    first_order_page = client.list_orders_page(**common, limit=args.page_size)
-    first_fill_page = client.list_fills_page(**common, limit=args.page_size)
-    first_position_page = client.get_positions_page(
-        args.account_id,
-        history=True,
-        date_from=args.date_from,
-        date_to=args.date_to,
-        snapshot_type="close",
-        enrich=False,
-        limit=args.page_size,
-    )
-    for name, page in (
-        ("orders", first_order_page),
-        ("fills", first_fill_page),
-        ("positions", first_position_page),
-    ):
-        require(page.request_id, f"{name} page is missing request_id")
-        require(page.time.endswith("+08:00"), f"{name} page time is not Asia/Shanghai: {page.time!r}")
-        require(page.count == len(page.items), f"{name} first-page count mismatch")
-        require(page.query, f"{name} page is missing normalized query")
-
-    orders = list(client.iter_orders(**common, page_size=args.page_size, max_pages=10_000))
-    fills = list(client.iter_fills(**common, page_size=args.page_size, max_pages=10_000))
-    positions = list(
-        client.iter_positions(
+    order_pages = list(client.iter_order_pages(**common, page_size=args.page_size, max_pages=10_000))
+    fill_pages = list(client.iter_fill_pages(**common, page_size=args.page_size, max_pages=10_000))
+    position_pages = list(
+        client.iter_position_pages(
             args.account_id,
             history=True,
             date_from=args.date_from,
@@ -76,6 +55,23 @@ def main() -> None:
             max_pages=10_000,
         )
     )
+    for name, pages in (
+        ("orders", order_pages),
+        ("fills", fill_pages),
+        ("positions", position_pages),
+    ):
+        require(pages, f"{name} did not return a terminal page")
+        require(pages[-1].next_cursor == "", f"{name} did not reach an empty cursor")
+        require(pages[-1].is_complete, f"{name} terminal page is not complete")
+        for page in pages:
+            require(page.request_id, f"{name} page is missing request_id")
+            require(page.time.endswith("+08:00"), f"{name} page time is not Asia/Shanghai: {page.time!r}")
+            require(page.count == len(page.items), f"{name} page count mismatch")
+            require(page.query, f"{name} page is missing normalized query")
+
+    orders = [item for page in order_pages for item in page.items]
+    fills = [item for page in fill_pages for item in page.items]
+    positions = [item for page in position_pages for item in page.items]
 
     require(len(orders) >= args.min_orders, f"orders only returned {len(orders)}, expected >= {args.min_orders}")
     require(len(fills) >= args.min_fills, f"fills only returned {len(fills)}, expected >= {args.min_fills}")
@@ -102,7 +98,11 @@ def main() -> None:
                 "orders": len(orders),
                 "fills": len(fills),
                 "positions": len(positions),
+                "order_pages": len(order_pages),
+                "fill_pages": len(fill_pages),
+                "position_pages": len(position_pages),
                 "coverage": "complete_empty_cursor",
+                "page_audit_coverage": "all_pages",
                 "write_requests_sent": 0,
             },
             ensure_ascii=False,

@@ -782,4 +782,7 @@ class StreamReconciliation:
     positions: tuple[Position, ...] = ()
     orders: tuple[Order, ...] = ()
     fills: tuple[Fill, ...] = ()
+    position_pages: tuple[PositionPage, ...] = ()
+    order_pages: tuple[OrderPage, ...] = ()
+    fill_pages: tuple[FillPage, ...] = ()
     trigger_event: RelayEvent | None = field(default=None, repr=False)
