@@ -31,6 +31,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbol", default="600000.SH")
     parser.add_argument("--performance-date-from", default=(today - timedelta(days=30)).strftime("%Y%m%d"))
     parser.add_argument("--performance-date-to", default=today.strftime("%Y%m%d"))
+    parser.add_argument(
+        "--sdk-batch-account-id",
+        default="00030484",
+        help="account containing an archived batch used by the read-only SDK P1 check",
+    )
+    parser.add_argument("--sdk-batch-date-from", default="20260614")
+    parser.add_argument("--sdk-batch-date-to", default="20260614")
     parser.add_argument("--single-viewport", action="store_true", help="only run the 1600px browser viewport")
     parser.add_argument("--skip-browser", action="store_true", help="skip Playwright checks")
     parser.add_argument(
@@ -169,6 +176,21 @@ def build_commands(args: argparse.Namespace, base_url: str) -> list[tuple[str, l
                 base_url,
                 "--account-id",
                 args.account_id,
+            ],
+        ),
+        (
+            "sdk-p1-contract-readonly",
+            [
+                python,
+                "tests/integration/sdk_p1_contract_live_smoke.py",
+                "--base-url",
+                base_url,
+                "--account-id",
+                args.sdk_batch_account_id,
+                "--date-from",
+                args.sdk_batch_date_from,
+                "--date-to",
+                args.sdk_batch_date_to,
             ],
         ),
     ]

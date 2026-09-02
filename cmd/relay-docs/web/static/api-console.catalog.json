@@ -439,14 +439,14 @@
     ]
   },
   {
-    "id": "query-status",
-    "group": "账户",
-    "title": "查询命令终态",
+    "id": "command-status",
+    "group": "交易",
+    "title": "命令回报状态",
     "method": "GET",
-    "path": "/v1/query-status/{origin_message_id}",
+    "path": "/v1/command-status/{origin_message_id}",
     "status": "ready",
     "fields": [
-      { "name": "origin_message_id", "label": "刷新回执 message_id", "source": "path", "required": true, "defaultValue": "" }
+      { "name": "origin_message_id", "label": "命令 message_id", "source": "path", "required": true, "defaultValue": "" }
     ]
   },
   {
@@ -516,6 +516,7 @@
       { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
       { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
       { "name": "client_order_id", "label": "client_order_id", "source": "query", "defaultValue": "" },
+      { "name": "origin_message_id", "label": "origin_message_id（批量子单）", "source": "query", "defaultValue": "" },
       { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
       { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
       { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"] },
@@ -534,6 +535,7 @@
       { "name": "account_id", "label": "account_id", "source": "query", "defaultValue": "00030484" },
       { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
       { "name": "client_order_id", "label": "client_order_id", "source": "query", "defaultValue": "" },
+      { "name": "origin_message_id", "label": "origin_message_id（批量子单）", "source": "query", "defaultValue": "" },
       { "name": "symbol", "label": "symbol", "source": "query", "defaultValue": "" },
       { "name": "exchange", "label": "exchange", "source": "query", "type": "select", "defaultValue": "", "options": ["", "SH", "SZ", "BJ"] },
       { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "created", "accepted", "working", "partially_filled", "filled", "cancelled", "rejected"] },

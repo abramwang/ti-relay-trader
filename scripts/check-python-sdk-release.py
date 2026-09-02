@@ -34,6 +34,11 @@ def main() -> None:
         help="also validate SSE resume, explicit gap, and full reconciliation",
     )
     parser.add_argument(
+        "--p1-live-smoke",
+        action="store_true",
+        help="also validate schema capabilities and a real batch child read",
+    )
+    parser.add_argument(
         "--allow-degraded",
         action="store_true",
         help="allow aggregate degraded status when all core dependencies remain healthy",
@@ -98,6 +103,24 @@ def main() -> None:
                 args.account_id,
             ]
         )
+    if args.p1_live_smoke:
+        require(args.account_id, "--account-id is required with --p1-live-smoke")
+        require(args.date_from, "--date-from is required with --p1-live-smoke")
+        require(args.date_to, "--date-to is required with --p1-live-smoke")
+        run(
+            [
+                sys.executable,
+                "tests/integration/sdk_p1_contract_live_smoke.py",
+                "--base-url",
+                args.base_url,
+                "--account-id",
+                args.account_id,
+                "--date-from",
+                args.date_from,
+                "--date-to",
+                args.date_to,
+            ]
+        )
 
     print(f"relay-sdk {version} release check passed")
 
@@ -142,6 +165,7 @@ def verify_archive_contents(archive: Path, version: str) -> None:
         f"{package_root}/tests/test_client.py",
         f"{package_root}/tests/test_pagination.py",
         f"{package_root}/tests/test_streaming.py",
+        f"{package_root}/tests/test_p1_contract.py",
     }
     with tarfile.open(archive, "r:gz") as tar:
         names = set(tar.getnames())

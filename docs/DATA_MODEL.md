@@ -297,6 +297,7 @@ relay 当前保留四类订单编号，不能混用：
 2. `cum_filled_qty`、`submitted_qty`、`cancelled_qty`、`invalid_qty` 使用非递减更新。
 3. `terminal_at` 只在进入终态时写入；已终态订单收到非终态事件时不会覆盖旧终态时间。
 4. 订单事件仍会追加到 `order_events`，保留异常回报历史。
+5. 首次下单的 `origin_message_id`、`request_id` 和 `idempotency_key` 保持不可变；查询命令和状态事件的关联 ID 只留在对应 raw/event 记录中。
 
 ## 交易日与时间字段
 

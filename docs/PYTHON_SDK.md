@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.31`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.32`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,20 +35,21 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.31.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.32.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
 20. `list_transfers()` 和 `ComponentTransfer` 独立读取 ETF 申赎成分股划转，不把划转混入普通成交。
 21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
-22. `get_query_status(origin_message_id)` 查询 OC 刷新命令的归档终态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
+22. `get_command_status(origin_message_id)` 查询 OC 查询或交易命令的归档状态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
 23. `get_meridian_instruments()` 和 `get_meridian_metadata_status()` 透明读取 Meridian `metadata_instrument.v2` 价位字段及 `metadata_status.v2` 质量状态。
 24. `OrderPage`、`FillPage`、`PositionPage` 保留服务端游标、规范化查询和 envelope 审计字段；`iter_orders()`、`iter_fills()`、`iter_positions()` 提供全量读取及重复游标、查询漂移、计数和页数保护。
 25. `RelayEvent.event_id`、`Last-Event-ID`、API 进程内 2,048 事件有限回放和显式 `relay.gap`；`reconcile_current_state()` 以全分页方式读取当前资金、持仓、订单和成交。
+26. `get_schema()` / `require_capabilities()` 读取 `relay.trading.v1alpha1` 和机器可读能力，缺能力时失败关闭。
+27. `submit_orders()` 返回 `BatchCommandReceipt` 逐单保留调用方 ID 与 Relay 接受/重放结果；`get_batch_order_outcomes()` / `wait_batch_order_outcomes()` 结合 `origin_message_id`、订单账本和命令回报返回异步子单结果。
+28. 构造参数 `opener=` 是公开 HTTP 故障注入点；`retry_decision()` 给出按 read/query/write/cancel/stream 区分的自动重试和对账要求。
 
-尚未完成：
-
-1. 批量子单异步结果、公开 transport 注入和能力发现 helper。
+Chronos 当前提出的 P0/P1 SDK 接口项均已有正式实现。`2026-09-02` 生产只读发布验收 9/9 通过，并从历史 raw command archive 完整回查真实批次的 2 个子单；低频实盘写场景仍按自然交易机会持续验收，不以测试环境结论替代生产事实。
 
 ## 包形态
 
@@ -92,15 +93,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.31.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.32.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -117,6 +118,19 @@ export NO_PROXY=relay-trader.quantstage.com,meridian-data.quantstage.com,$NO_PRO
 ```
 
 SDK 默认不读取系统代理环境变量，避免内网请求被外部代理劫持；如确实需要代理，应显式传入 `trust_env=True`。
+
+策略启动时可显式验证服务端契约：
+
+```python
+catalog = client.require_capabilities(
+    "ledger.cursor_pagination.v1",
+    "events.cursor_resume.v1",
+    "orders.batch_child_outcomes.v1",
+    "orders.explicit_command_ids.v1",
+)
+```
+
+确定性测试可向构造函数传入实现 `open(request, timeout=...)` 的 urllib 兼容 `opener`。这是公开注入点，调用方不需要覆盖 `_request()` 或 `_open()`。
 
 ## 最小使用示例
 
@@ -261,7 +275,7 @@ client.refresh_orders()
 client.refresh_fills()
 ```
 
-刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。可将回执的 `message_id` 传给 `get_query_status()`，确认命令只有一个 `completed` final reply；`failed`、缺 final 或矛盾终态均不能视为成功。`refresh_fees()` 发布 `fee.list.query`，`list_order_fees()` 读取订单级费用；OC 当前只支持柜台当前交易日。盘前和盘后任务会同时检查资产/持仓账本时间戳与查询终态，任一条件不满足都会阻断对应账户快照。
+刷新类方法只负责发布查询命令，返回 `CommandReceipt`。真正的账本更新发生在 OC 将 `reply` 写回 Redis 后，由 relay 同步层合并入库。可将回执的 `message_id` 传给 `get_command_status()`，确认命令只有一个 `completed` final reply；`failed`、缺 final 或矛盾终态均不能视为成功。`refresh_fees()` 发布 `fee.list.query`，`list_order_fees()` 读取订单级费用；OC 当前只支持柜台当前交易日。盘前和盘后任务会同时检查资产/持仓账本时间戳与查询终态，任一条件不满足都会阻断对应账户快照。
 
 ### 任务报告和结算快照落库
 
@@ -338,7 +352,9 @@ client = RelayClient(
 | `refresh_positions(account_id=None)` | `POST /v1/accounts/{account_id}/positions/refresh` | 触发持仓前置查询 |
 | `refresh_orders(account_id=None)` | `POST /v1/accounts/{account_id}/orders/refresh` | 触发订单前置查询 |
 | `refresh_fills(account_id=None)` | `POST /v1/accounts/{account_id}/fills/refresh` | 触发成交前置查询 |
-| `get_query_status(origin_message_id)` | `GET /v1/query-status/{origin_message_id}` | 查询刷新命令是否具有唯一 completed final 终态 |
+| `get_command_status(origin_message_id)` | `GET /v1/command-status/{origin_message_id}` | 查询任意查询或交易命令的归档回报状态 |
+| `get_schema()` | `GET /v1/schema` | 返回 `SchemaCatalog` 版本、能力、路由和 Redis action |
+| `require_capabilities(...)` | `GET /v1/schema` | 对 schema 版本和必需能力做失败关闭校验 |
 | `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
 | `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
@@ -390,7 +406,9 @@ Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go H
 | SDK 方法 | HTTP API | 说明 |
 | --- | --- | --- |
 | `submit_order(...)` | `POST /v1/orders` | 单笔下单 |
-| `submit_orders(...)` | `POST /v1/orders/batch` | 批量下单 |
+| `submit_orders(...)` | `POST /v1/orders/batch` | 返回逐单 Relay 接受/重放状态和完整调用方 ID |
+| `get_batch_order_outcomes(...)` | `GET /v1/history/orders` + `/v1/command-status/{message_id}` | 只读解析各子单 accepted/rejected/pending/broker_not_ready/outcome_unknown |
+| `wait_batch_order_outcomes(...)` | 同上 | 等待每个子单获得明确柜台结果，不发送交易命令 |
 | `cancel_order(...)` | `POST /v1/orders/{gateway_order_id}/cancel` | 撤单 |
 | `wait_order_terminal(...)` | `GET /v1/orders` + event stream | 等待终态 |
 | `stream_events(last_event_id=..., idle_timeout=...)` | `GET /v1/events/stream` | 单连接订阅；保留 SSE ID，可显式携带恢复游标 |
@@ -424,7 +442,11 @@ SDK 模型和 9092 API schema 一一对应：
 | `OrderPage` / `FillPage` / `PositionPage` | 类型化分页项、服务端 count/cursor/query、request_id、东八区响应时间和末页状态 |
 | `RelayEvent` | SSE `event_id`、事件类型、服务端时间、账户、来源 stream 和数据 |
 | `StreamReconciliation` | SSE 恢复时的完整当前资金、持仓、订单、成交及触发原因 |
-| `QueryCommandStatus` | 查询命令终态、预期结果类型和归档 reply 明细 |
+| `CommandStatus` | 查询或交易命令状态、查询预期结果类型和归档 reply 明细 |
+| `BatchCommandReceipt` | 批次回执及每个子单的 Relay 接受/重放身份 |
+| `BatchOrderOutcome` / `BatchOrderOutcomes` | 子单柜台结果、订单状态、错误码和完整性 |
+| `SchemaCatalog` | 交易 schema 版本、机器可读能力、路由和 Redis action |
+| `RetryDecision` | 是否允许自动重试、是否必须先对账及建议动作 |
 | `OrderRequest` | 下单请求 |
 | `OrderReceipt` | 下单命令回执 |
 | `Order` | 订单状态 |
@@ -474,6 +496,7 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | `RelayPaginationError` | 全量分页出现重复 cursor、查询漂移、count 不一致或超出 `max_pages`，结果不得视为完整 |
 | `RelayStreamGapError` | 服务端报告 gap 或游标异常，但调用方没有提供全量对账回调 |
 | `RelayStreamDisconnectedError` | SSE 有限重连次数耗尽，调用方必须进入故障状态 |
+| `RelayCapabilityError` | schema 版本不匹配或缺少启动所需能力 |
 
 异常中保留：
 
@@ -483,6 +506,18 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 - `correlation_id`
 - `gateway_order_id`
 - `raw_response`
+
+`retry_decision(error, operation=...)` 的稳定矩阵：
+
+| 错误类别 | read/query | write/cancel | 必须先对账 |
+| --- | --- | --- | --- |
+| 连接失败、超时、HTTP 429/502/503/504 | 有限退避重试 | 不自动重试 | write/cancel 是 |
+| `QUERY_INTERRUPTED` | query 使用新请求重试 | 不适用 | 否 |
+| `BROKER_NOT_READY` | query 等待 ready 后重试 | 不自动重试 | 已发布交易命令时是 |
+| `COMMAND_OUTCOME_UNKNOWN` | 不自动重试 | 不自动重试 | 是 |
+| 幂等冲突、业务拒绝、订单状态冲突 | 不自动重试 | 不自动重试 | 否，修正请求或停止 |
+| 撤单拒绝/超时 | 不自动重试 | 不自动重试 | 是，核对原订单和撤单审计 |
+| SSE gap/重连耗尽 | 不自动重试 | 不适用 | 是，全量读取四类账本 |
 
 ## 当前测试
 
@@ -510,6 +545,7 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 13. 生产只读多页验收：`501000114077` 在 `20260601..20260902` 完整读取 9,830 笔订单、13,129 笔成交和 206 条 close 持仓，业务唯一键无重复，写请求为 0。
 14. SSE 正常断开、半包尾部、无心跳超时、重复/乱序/未知事件、可恢复游标、API 重启游标和不可恢复 gap；内置 watcher 覆盖超过一页的 501 笔订单。
 15. 生产只读 SSE 验收：fresh、同进程 resumed 和旧进程 `server_restart` gap 均符合契约；恢复前完整读取当日 214 笔订单、517 笔成交和 0 条持仓，写请求为 0。
+16. 能力发现、公开 opener 故障注入、错误重试矩阵，以及批量子单 accepted/rejected/replayed/outcome_unknown 的类型化结果。
 
 打包验证：
 
@@ -523,6 +559,9 @@ python3 scripts/check-python-sdk-release.py --pagination-live-smoke \
   --account-id 501000114077 --date-from 20260601 --date-to 20260902
 python3 scripts/check-python-sdk-release.py --sse-live-smoke \
   --base-url http://relay-trader.quantstage.com --account-id 501000114077
+python3 scripts/check-python-sdk-release.py --p1-live-smoke \
+  --base-url http://relay-trader.quantstage.com --account-id 501000114077 \
+  --date-from 20260801 --date-to 20260902
 ```
 
 ## 待增强项
@@ -531,8 +570,7 @@ SDK 后续需要：
 
 1. 覆盖下单 accepted 但最终 rejected 的场景。
 2. 覆盖撤单 accepted 但最终 filled 的竞态场景。
-3. 增加公开 transport 注入、能力发现和批量子单异步结果。
-4. 后续可补充 wheel 包或内部 PyPI 发布方式。
+3. 后续可补充 wheel 包或内部 PyPI 发布方式。
 
 每次 SDK 版本更新必须同步更新：
 

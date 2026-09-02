@@ -1037,7 +1037,7 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
             terminal_failure = True
             continue
         try:
-            value = client.get_query_status(message_id)
+            value = client.get_command_status(message_id)
             status = result_to_jsonable(value)
             if not isinstance(status, Mapping):
                 raise RuntimeError("query status response is invalid")

@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-02` 已发布 `relay-sdk 0.1.31`；生产只读验证 SSE fresh/resume/gap 和资金、持仓、订单、成交全量恢复，写请求为 0 |
+| 最近确认 | `2026-09-02` 已发布 `relay-sdk 0.1.32`；生产只读发布验收 9/9 通过，含真实历史批次 2 个子单完整回查，写请求为 0 |
 | 更新时间 | `2026-09-02` |
 
 新线程按以下顺序恢复：
@@ -33,7 +33,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。等待记录属于上游水位门禁，不等同于任务失败。
-- 生产 schema 当前为 `26 etf_settlement_finalizations`，Python SDK 当前版本为 `relay-sdk==0.1.31`。
+- 生产 schema 当前为 `27 order_submission_identity`，Python SDK 当前版本为 `relay-sdk==0.1.32`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -46,7 +46,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 两户均于 `2026-07-27` 盘前入金并开始交易；原起算日误用了 Relay 首次取得 OC 快照的日期（分别为 7 月 29 日和 28 日）。券商资金与交割单已一次性恢复两户 7 月 27 日及 `307000051387` 的 7 月 28 日账本，逐证券数量桥和 Meridian 收盘市值均闭合。
 - 两户 `2026-07-27..2026-08-26` 各 23 个交易日、共 46 个账户日已按 `performance_economic_nav.v2.7` 顺序重建，0 blocked。结果仍为 provisional，因为部分历史费用、ETF 清算资产和归因使用明确标记的估算口径。
 - 富盈13号仍待完成 `meridian_pre_close_mark_to_market` 起算成本源和 ETF T0/底仓隔离起点确认；不得使用被 ETF 申赎污染的柜台平均成本。
-- Chronos 的统一价格契约、账本全量分页和 SSE 恢复阻塞已关闭：SSE 同进程支持 2,048 事件回放，重启、过期、积压或事件桥重连显式报告 gap，并在恢复前全量读取资金、持仓、订单和成交。不支持的北交所留作未来升级。
+- Chronos P0/P1 接入项已关闭：统一价格契约、类型化全量分页、SSE 恢复、公开 HTTP transport 注入、schema 能力发现、批量子单异步结果和失败关闭的重试矩阵均已实现。不支持的北交所留作未来升级。
 
 ### 下一步
 
@@ -55,7 +55,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 按 Chronos 接入优先级继续补公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵。
+6. 在后续自然交易机会继续验证批量下单部分拒绝、`BROKER_NOT_READY` 和结果未知场景；不为验收向生产账户制造订单。
 
 ## 系统边界
 
@@ -75,6 +75,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 真实凭据只允许存在于未跟踪配置，例如 `config/relay.prod.yaml`，不得写入 README、日志、提交或前端响应。
 - 生产切换默认只读。只有账户 `enabled=true && trading_enabled=true` 才允许发交易命令，生产启动脚本还要求显式人工确认。
 - 订单业务唯一键为 `account_id + trade_date + gateway_order_id`；`req_id` 是客户端请求 ID，`order_id` 是柜台 ID，`order_stream_id` 是交易所/柜台委托流 ID，均保留用于关联和审计。
+- 本地订单首次提交的 `origin_message_id`、`request_id` 和 `idempotency_key` 是不可变命令身份，后续查询回报和状态事件不得覆盖；批量子单通过同一 `origin_message_id` 完整回查。
 - 成交必须关联订单并按账户、交易日、订单作用域幂等；ETF 赎回 0 价成分划转使用 `transfer.event`，不得伪装成普通成交。
 - 相同幂等键和相同 payload 返回原回执并标记 replay；相同键不同 payload 返回 `IDEMPOTENCY_CONFLICT`，终态订单不得被重复提交回退。
 - 当前订单和成交默认查询东八区当日；历史订单、成交和持仓使用独立历史接口。表格查询使用服务端 cursor 分页。

@@ -42,6 +42,25 @@ def _bool(data: Mapping[str, Any], name: str, default: bool = False) -> bool:
     return default
 
 
+def _batch_index(order: "Order", fallback: int) -> int:
+    value = order.adapter_context.get("batch_index")
+    try:
+        return int(value) if value is not None else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _order_outcome(order: "Order", *, replayed: bool = False) -> str:
+    status = order.status.strip().lower()
+    if status == "rejected":
+        return "rejected"
+    if status and status != "created":
+        return "accepted"
+    if replayed and order.is_terminal:
+        return "accepted"
+    return "pending"
+
+
 @dataclass(frozen=True)
 class Account:
     account_id: str = ""
@@ -166,12 +185,17 @@ class Order:
     status: str = ""
     gateway_status: str = ""
     is_terminal: bool = False
+    reject_code: str = ""
     reject_message: str = ""
+    origin_message_id: str = ""
+    request_id: str = ""
+    idempotency_key: str = ""
     strategy_type: str = ""
     strategy_id: str = ""
     basket_id: str = ""
     parent_order_id: str = ""
     t0_order_group_id: str = ""
+    adapter_context: Mapping[str, Any] = field(default_factory=dict)
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -196,12 +220,17 @@ class Order:
             status=_text(data, "status"),
             gateway_status=_text(data, "gateway_status"),
             is_terminal=_bool(data, "is_terminal"),
+            reject_code=_text(data, "reject_code"),
             reject_message=_text(data, "reject_message"),
+            origin_message_id=_text(data, "origin_message_id"),
+            request_id=_text(data, "request_id"),
+            idempotency_key=_text(data, "idempotency_key"),
             strategy_type=_text(data, "strategy_type"),
             strategy_id=_text(data, "strategy_id"),
             basket_id=_text(data, "basket_id"),
             parent_order_id=_text(data, "parent_order_id"),
             t0_order_group_id=_text(data, "t0_order_group_id"),
+            adapter_context=dict(data.get("adapter_context")) if isinstance(data.get("adapter_context"), Mapping) else {},
             raw=dict(data),
         )
 
@@ -507,8 +536,9 @@ class CommandReceipt:
     def from_dict(cls, data: Mapping[str, Any]) -> "CommandReceipt":
         order_data = data.get("order") if isinstance(data.get("order"), Mapping) else None
         orders_data = data.get("orders") if isinstance(data.get("orders"), list) else []
+        first_order = orders_data[0] if orders_data and isinstance(orders_data[0], Mapping) else {}
         return cls(
-            account_id=_text(data, "account_id") or _text(order_data or {}, "account_id"),
+            account_id=_text(data, "account_id") or _text(order_data or {}, "account_id") or _text(first_order, "account_id"),
             action=_text(data, "action"),
             message_id=_text(data, "message_id"),
             stream_key=_text(data, "stream_key"),
@@ -532,12 +562,113 @@ class CommandReceipt:
         return ""
 
     @property
+    def client_order_id(self) -> str:
+        if self.order:
+            return self.order.client_order_id
+        if self.orders:
+            return self.orders[0].client_order_id
+        return ""
+
+    @property
     def status(self) -> str:
         return self.order.status if self.order else ""
 
 
 @dataclass(frozen=True)
-class QueryReplyStatus:
+class BatchOrderOutcome:
+    index: int = 0
+    account_id: str = ""
+    gateway_order_id: str = ""
+    client_order_id: str = ""
+    idempotency_key: str = ""
+    acceptance: str = "accepted"
+    outcome: str = "pending"
+    order_status: str = ""
+    terminal: bool = False
+    code: str = ""
+    message: str = ""
+    order: Order | None = None
+
+
+@dataclass(frozen=True)
+class BatchCommandReceipt(CommandReceipt):
+    children: tuple[BatchOrderOutcome, ...] = ()
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "BatchCommandReceipt":
+        base = CommandReceipt.from_dict(data)
+        acceptance = "replayed" if base.replayed else "accepted"
+        children = tuple(
+            BatchOrderOutcome(
+                index=_batch_index(order, index),
+                account_id=order.account_id,
+                gateway_order_id=order.gateway_order_id,
+                client_order_id=order.client_order_id,
+                idempotency_key=order.idempotency_key,
+                acceptance=acceptance,
+                outcome=_order_outcome(order, replayed=base.replayed),
+                order_status=order.status,
+                terminal=order.is_terminal,
+                code=order.reject_code,
+                message=order.reject_message,
+                order=order,
+            )
+            for index, order in enumerate(base.orders)
+        )
+        return cls(
+            account_id=base.account_id,
+            action=base.action,
+            message_id=base.message_id,
+            stream_key=base.stream_key,
+            stream_id=base.stream_id,
+            idempotency_key=base.idempotency_key,
+            request_id=base.request_id,
+            order=base.order,
+            orders=base.orders,
+            cancel_id=base.cancel_id,
+            replayed=base.replayed,
+            published=base.published,
+            raw=base.raw,
+            children=children,
+        )
+
+
+@dataclass(frozen=True)
+class BatchOrderOutcomes:
+    account_id: str = ""
+    message_id: str = ""
+    children: tuple[BatchOrderOutcome, ...] = ()
+    complete: bool = False
+    command_status: "CommandStatus | None" = None
+
+
+@dataclass(frozen=True)
+class SchemaCatalog:
+    version: str = ""
+    capabilities: tuple[str, ...] = ()
+    http_routes: tuple[Mapping[str, Any], ...] = ()
+    redis_actions: tuple[str, ...] = ()
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "SchemaCatalog":
+        capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), list) else []
+        routes = data.get("http_routes") if isinstance(data.get("http_routes"), list) else []
+        actions = data.get("redis_actions") if isinstance(data.get("redis_actions"), list) else []
+        return cls(
+            version=_text(data, "version"),
+            capabilities=tuple(str(item) for item in capabilities),
+            http_routes=tuple(dict(item) for item in routes if isinstance(item, Mapping)),
+            redis_actions=tuple(str(item) for item in actions),
+            raw=dict(data),
+        )
+
+    def supports(self, capability: str) -> bool:
+        return str(capability).strip() in self.capabilities
+
+
+@dataclass(frozen=True)
+class CommandReplyStatus:
     message_id: str = ""
     account_id: str = ""
     action: str = ""
@@ -553,7 +684,7 @@ class QueryReplyStatus:
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "QueryReplyStatus":
+    def from_dict(cls, data: Mapping[str, Any]) -> "CommandReplyStatus":
         return cls(
             message_id=_text(data, "message_id"),
             account_id=_text(data, "account_id"),
@@ -572,7 +703,7 @@ class QueryReplyStatus:
 
 
 @dataclass(frozen=True)
-class QueryCommandStatus:
+class CommandStatus:
     origin_message_id: str = ""
     account_id: str = ""
     action: str = ""
@@ -583,11 +714,11 @@ class QueryCommandStatus:
     contradictory: bool = False
     reply_count: int = 0
     terminal_count: int = 0
-    replies: tuple[QueryReplyStatus, ...] = ()
+    replies: tuple[CommandReplyStatus, ...] = ()
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "QueryCommandStatus":
+    def from_dict(cls, data: Mapping[str, Any]) -> "CommandStatus":
         replies = data.get("replies") if isinstance(data.get("replies"), list) else []
         return cls(
             origin_message_id=_text(data, "origin_message_id"),
@@ -600,7 +731,7 @@ class QueryCommandStatus:
             contradictory=_bool(data, "contradictory"),
             reply_count=_int(data, "reply_count"),
             terminal_count=_int(data, "terminal_count"),
-            replies=tuple(QueryReplyStatus.from_dict(item) for item in replies if isinstance(item, Mapping)),
+            replies=tuple(CommandReplyStatus.from_dict(item) for item in replies if isinstance(item, Mapping)),
             raw=dict(data),
         )
 

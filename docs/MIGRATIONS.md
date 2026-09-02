@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-08-28`
+更新时间：`2026-09-02`
 
 ## 当前状态
 
@@ -59,6 +59,8 @@ migrations/postgres/000025_broker_close_snapshots.up.sql
 migrations/postgres/000025_broker_close_snapshots.down.sql
 migrations/postgres/000026_etf_settlement_finalizations.up.sql
 migrations/postgres/000026_etf_settlement_finalizations.down.sql
+migrations/postgres/000027_order_submission_identity.up.sql
+migrations/postgres/000027_order_submission_identity.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -93,7 +95,8 @@ migrations/postgres/000026_etf_settlement_finalizations.down.sql
 24. `000024_oc_position_cost_quality` 为当前和历史持仓增加 OC 总成本、成本来源及完整性字段；这些字段用于质量核对，不替代行情市值。
 25. `000025_broker_close_snapshots` 增加不可变 `broker_close` 资金/持仓快照类型，确保 15:01 OC 最终数据捕获不依赖 Meridian。
 26. `000026_etf_settlement_finalizations` 增加版本化 ETF T0 最终清算表，约束申赎单位、实际现金/费用恒等式、current 版本和确认审计。
-27. 生产 `relay_schema_migrations` 已于 `2026-08-27 16:19:14 Asia/Shanghai` 应用到 `26:etf_settlement_finalizations`。
+27. `000027_order_submission_identity` 从 `cmd.trade` raw archive 恢复订单首次提交 `origin_message_id/request_id/idempotency_key`；恢复前值写入 `adapter_context`，历史幂等键已被别单占用时只审计冲突、不破坏唯一约束。
+28. 生产 `relay_schema_migrations` 已于 `2026-09-02 21:17:30 Asia/Shanghai` 应用到 `27:order_submission_identity`。
 
 当前环境已安装 PostgreSQL client：
 
@@ -251,6 +254,7 @@ psql "$RELAY_DATABASE_URL" -f migrations/postgres/000023_position_cost_corporate
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000024_oc_position_cost_quality.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000025_broker_close_snapshots.up.sql
 psql "$RELAY_DATABASE_URL" -f migrations/postgres/000026_etf_settlement_finalizations.up.sql
+psql "$RELAY_DATABASE_URL" -f migrations/postgres/000027_order_submission_identity.up.sql
 ```
 
 使用 relayctl：

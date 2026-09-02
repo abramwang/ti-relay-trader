@@ -2,8 +2,16 @@ package trading
 
 const SchemaVersion = "relay.trading.v1alpha1"
 
+const (
+	CapabilityLedgerCursorPagination = "ledger.cursor_pagination.v1"
+	CapabilityEventCursorResume      = "events.cursor_resume.v1"
+	CapabilityBatchChildOutcomes     = "orders.batch_child_outcomes.v1"
+	CapabilityExplicitCommandIDs     = "orders.explicit_command_ids.v1"
+)
+
 type CatalogDocument struct {
 	Version                 string              `json:"version"`
+	Capabilities            []string            `json:"capabilities"`
 	Enums                   map[string][]string `json:"enums"`
 	HTTPRoutes              []HTTPRouteSpec     `json:"http_routes"`
 	RedisActions            []string            `json:"redis_actions"`
@@ -23,6 +31,12 @@ type HTTPRouteSpec struct {
 func Catalog() CatalogDocument {
 	return CatalogDocument{
 		Version: SchemaVersion,
+		Capabilities: []string{
+			CapabilityLedgerCursorPagination,
+			CapabilityEventCursorResume,
+			CapabilityBatchChildOutcomes,
+			CapabilityExplicitCommandIDs,
+		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
 			"trade_side":     {"B", "S", "P", "R"},
@@ -65,11 +79,11 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fills/refresh", Response: "RefreshQueryResult", Description: "refresh account fills from front gateway"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/fees", Request: "OrderFeeRecordQuery", Response: "[]OrderFeeRecord", Description: "query persisted OC order-level actual fees"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fees/refresh", Response: "RefreshQueryResult", Description: "refresh current broker trading-day order fees from front gateway"},
-			{Method: "GET", Path: "/v1/query-status/{origin_message_id}", Response: "QueryCommandStatus", Description: "query archived OC reply terminal state for a published query command"},
+			{Method: "GET", Path: "/v1/command-status/{origin_message_id}", Response: "CommandStatus", Description: "query archived OC reply state for any published query or trade command"},
 			{Method: "POST", Path: "/v1/orders", Request: "SubmitOrderRequest", Response: "Order", Description: "submit one order"},
-			{Method: "POST", Path: "/v1/orders/batch", Request: "BatchSubmitOrderRequest", Response: "[]Order", Description: "submit order batch"},
+			{Method: "POST", Path: "/v1/orders/batch", Request: "BatchSubmitOrderRequest", Response: "BatchSubmitOrderResult", Description: "submit order batch with per-child Relay acceptance identities"},
 			{Method: "POST", Path: "/v1/orders/{gateway_order_id}/cancel", Request: "CancelOrderRequest", Response: "Order", Description: "cancel order"},
-			{Method: "GET", Path: "/v1/orders", Request: "OrderQuery", Response: "[]Order", Description: "query today's orders by default"},
+			{Method: "GET", Path: "/v1/orders", Request: "OrderQuery", Response: "[]Order", Description: "query today's orders by default; origin_message_id selects children of one submitted batch"},
 			{Method: "GET", Path: "/v1/fills", Request: "FillQuery", Response: "[]Fill", Description: "query today's fills by default"},
 			{Method: "GET", Path: "/v1/transfers", Request: "ComponentTransferQuery", Response: "[]ComponentTransfer", Description: "query today's ETF component transfers by default"},
 			{Method: "GET", Path: "/v1/history/orders", Request: "OrderQuery", Response: "[]Order", Description: "query historical orders"},
@@ -117,6 +131,7 @@ func Catalog() CatalogDocument {
 			"Position",
 			"SubmitOrderRequest",
 			"BatchSubmitOrderRequest",
+			"BatchSubmitOrderResult",
 			"CancelOrderRequest",
 			"Order",
 			"Fill",
@@ -130,7 +145,7 @@ func Catalog() CatalogDocument {
 			"ComponentTransferQuery",
 			"PositionQuery",
 			"RefreshQueryResult",
-			"QueryCommandStatus",
+			"CommandStatus",
 			"JobRun",
 			"JobRunRequest",
 			"DailyPerformance",

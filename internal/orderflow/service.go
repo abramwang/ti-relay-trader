@@ -915,6 +915,7 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	normalized.AccountID = strings.TrimSpace(normalized.AccountID)
 	normalized.GatewayOrderID = strings.TrimSpace(normalized.GatewayOrderID)
 	normalized.ClientOrderID = strings.TrimSpace(normalized.ClientOrderID)
+	normalized.OriginMessageID = strings.TrimSpace(normalized.OriginMessageID)
 	normalized.Symbol = strings.TrimSpace(normalized.Symbol)
 	normalized.Cursor = strings.TrimSpace(normalized.Cursor)
 	normalized.TradeDate = strings.TrimSpace(normalized.TradeDate)

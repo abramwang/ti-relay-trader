@@ -330,23 +330,24 @@ type FillEvent struct {
 }
 
 type OrderQuery struct {
-	AccountID      string      `json:"account_id,omitempty"`
-	GatewayOrderID string      `json:"gateway_order_id,omitempty"`
-	ClientOrderID  string      `json:"client_order_id,omitempty"`
-	Symbol         string      `json:"symbol,omitempty"`
-	Exchange       Exchange    `json:"exchange,omitempty"`
-	Status         OrderStatus `json:"status,omitempty"`
-	TradeDate      string      `json:"trade_date,omitempty"`
-	DateFrom       string      `json:"date_from,omitempty"`
-	DateTo         string      `json:"date_to,omitempty"`
-	History        bool        `json:"history,omitempty"`
-	StrategyType   string      `json:"strategy_type,omitempty"`
-	StrategyID     string      `json:"strategy_id,omitempty"`
-	BasketID       string      `json:"basket_id,omitempty"`
-	ParentOrderID  string      `json:"parent_order_id,omitempty"`
-	T0OrderGroupID string      `json:"t0_order_group_id,omitempty"`
-	Limit          int         `json:"limit,omitempty"`
-	Cursor         string      `json:"cursor,omitempty"`
+	AccountID       string      `json:"account_id,omitempty"`
+	GatewayOrderID  string      `json:"gateway_order_id,omitempty"`
+	ClientOrderID   string      `json:"client_order_id,omitempty"`
+	OriginMessageID string      `json:"origin_message_id,omitempty"`
+	Symbol          string      `json:"symbol,omitempty"`
+	Exchange        Exchange    `json:"exchange,omitempty"`
+	Status          OrderStatus `json:"status,omitempty"`
+	TradeDate       string      `json:"trade_date,omitempty"`
+	DateFrom        string      `json:"date_from,omitempty"`
+	DateTo          string      `json:"date_to,omitempty"`
+	History         bool        `json:"history,omitempty"`
+	StrategyType    string      `json:"strategy_type,omitempty"`
+	StrategyID      string      `json:"strategy_id,omitempty"`
+	BasketID        string      `json:"basket_id,omitempty"`
+	ParentOrderID   string      `json:"parent_order_id,omitempty"`
+	T0OrderGroupID  string      `json:"t0_order_group_id,omitempty"`
+	Limit           int         `json:"limit,omitempty"`
+	Cursor          string      `json:"cursor,omitempty"`
 }
 
 type FillQuery struct {

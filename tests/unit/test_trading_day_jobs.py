@@ -88,7 +88,7 @@ class FakeClient:
     def refresh_positions(self, account_id: str):
         return self._refresh(account_id, "account.positions.query")
 
-    def get_query_status(self, origin_message_id: str):
+    def get_command_status(self, origin_message_id: str):
         status = self.query_statuses.get(origin_message_id)
         if status is not None:
             return dict(status)

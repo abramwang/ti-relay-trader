@@ -425,7 +425,8 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.30.tar.gz` 和 SHA256 校验文件；生产只读跨页验收完整读取 9,830 笔订单、13,129 笔成交和 206 条历史持仓，写请求为 0。
 - [x] Relay 服务端建立进程 epoch 单调事件游标、2,048 事件有限回放和显式 `relay.gap`；SDK 增加 `Last-Event-ID`、有限指数退避、空闲超时、重复/乱序保护及资金/持仓/订单/成交强制全量对账。
 - [x] 发布 `public/sdk/relay-sdk-0.1.31.tar.gz` 和 SHA256 校验文件；Go/API 与 SDK 覆盖连接断开、半包、无心跳、重复/乱序/未知事件、进程重启及可恢复/不可恢复游标。生产只读验收得到 `fresh/resumed/server_restart` 三类预期状态，并完整对账当日 214 笔订单、517 笔成交和 0 条持仓，写请求为 0。
-- [ ] SDK 增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；完成只读 live smoke 后发布下一兼容版本。
+- [x] 发布 `public/sdk/relay-sdk-0.1.32.tar.gz` 和 SHA256 校验文件，增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；统一使用 `/v1/command-status/{message_id}`，不保留旧查询命名路由。生产只读发布验收 9/9 通过，真实历史批次 2 个子单完整回查且写请求为 0。
+- [x] 应用 `000027_order_submission_identity`，从 raw command archive 恢复首次下单身份并审计历史幂等键冲突；订单 upsert 后续不再被查询或事件覆盖 `origin_message_id/request_id/idempotency_key`。
 
 ### P6.1 接口测试台
 

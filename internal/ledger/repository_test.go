@@ -149,6 +149,9 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 	requireQueryContains(t, exec.query, "SELECT MIN(event.produced_at)")
 	requireQueryContains(t, exec.query, "event.trade_date = EXCLUDED.trade_date")
 	requireQueryContains(t, exec.query, "trade_date = COALESCE(EXCLUDED.trade_date, orders.trade_date)")
+	requireQueryContains(t, exec.query, "origin_message_id = COALESCE(orders.origin_message_id, EXCLUDED.origin_message_id)")
+	requireQueryContains(t, exec.query, "request_id = COALESCE(orders.request_id, EXCLUDED.request_id)")
+	requireQueryContains(t, exec.query, "idempotency_key = COALESCE(orders.idempotency_key, EXCLUDED.idempotency_key)")
 	requireQueryContains(t, exec.query, "orders.adapter_context ? 'fee_record_id'")
 	requireQueryContains(t, exec.query, "reported_fee_source")
 	requireArgLen(t, exec.args, 44)
@@ -641,6 +644,28 @@ func TestListOrdersBuildsDateFilteredRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "LIMIT $6")
 	requireArgLen(t, exec.args, 6)
 	if exec.args[0] != "acct-1" || exec.args[5] != 10 {
+		t.Fatalf("args = %#v", exec.args)
+	}
+}
+
+func TestListOrdersBuildsOriginMessageFilteredRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListOrders(context.Background(), trading.OrderQuery{
+		AccountID:       "acct-1",
+		OriginMessageID: "msg-batch-1",
+		Limit:           50,
+	})
+	if err == nil {
+		t.Fatal("ListOrders() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "origin_message_id = $2")
+	requireQueryContains(t, exec.query, "LIMIT $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[1] != "msg-batch-1" || exec.args[2] != 50 {
 		t.Fatalf("args = %#v", exec.args)
 	}
 }
@@ -1299,11 +1324,11 @@ func TestUpsertPositionSnapshotBuildsHistoricalWrite(t *testing.T) {
 	assertJSONContains(t, exec.args[21], `"source":"settlement"`)
 }
 
-func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing.T) {
-	completed := summarizeQueryCommandStatus(QueryCommandStatus{
+func TestSummarizeCommandStatusRequiresSingleCompletedFinalReply(t *testing.T) {
+	completed := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-asset-1",
 		Action:          "account.asset.query",
-		Replies: []QueryReplyStatus{{
+		Replies: []CommandReplyStatus{{
 			Status:     "completed",
 			ResultType: "asset_page",
 			IsLast:     true,
@@ -1313,10 +1338,10 @@ func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing
 		t.Fatalf("completed status = %#v", completed)
 	}
 
-	completedAfterData := summarizeQueryCommandStatus(QueryCommandStatus{
+	completedAfterData := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-order-1",
 		Action:          "order.list.query",
-		Replies: []QueryReplyStatus{
+		Replies: []CommandReplyStatus{
 			{Status: "partial", ResultType: "order_page"},
 			{Status: "completed", ResultType: "order_page", IsLast: true},
 		},
@@ -1325,10 +1350,10 @@ func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing
 		t.Fatalf("completed-after-data status = %#v", completedAfterData)
 	}
 
-	contradictory := summarizeQueryCommandStatus(QueryCommandStatus{
+	contradictory := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-asset-2",
 		Action:          "account.asset.query",
-		Replies: []QueryReplyStatus{
+		Replies: []CommandReplyStatus{
 			{Status: "partial", ResultType: "asset_page"},
 			{Status: "failed", ResultType: "error_result", Code: "QUERY_EMPTY_RESULT"},
 			{Status: "completed", ResultType: "asset_page", IsLast: true},
@@ -1338,19 +1363,19 @@ func TestSummarizeQueryCommandStatusRequiresSingleCompletedFinalReply(t *testing
 		t.Fatalf("contradictory status = %#v", contradictory)
 	}
 
-	invalid := summarizeQueryCommandStatus(QueryCommandStatus{
+	invalid := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-position-1",
 		Action:          "account.positions.query",
-		Replies:         []QueryReplyStatus{{Status: "completed", ResultType: "position_page", IsLast: false}},
+		Replies:         []CommandReplyStatus{{Status: "completed", ResultType: "position_page", IsLast: false}},
 	})
 	if invalid.Success || invalid.State != "invalid" {
 		t.Fatalf("invalid final status = %#v", invalid)
 	}
 
-	failedAfterData := summarizeQueryCommandStatus(QueryCommandStatus{
+	failedAfterData := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-asset-3",
 		Action:          "account.asset.query",
-		Replies: []QueryReplyStatus{
+		Replies: []CommandReplyStatus{
 			{Status: "partial", ResultType: "asset_page"},
 			{Status: "failed", ResultType: "error_result", Code: "QUERY_EMPTY_RESULT"},
 		},

@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping
+
+
+@dataclass(frozen=True)
+class RetryDecision:
+    """Machine-readable retry guidance for one failed SDK operation."""
+
+    operation: str
+    automatic_retry: bool
+    requires_reconciliation: bool
+    retry_after_seconds: float | None
+    action: str
+    code: str = ""
 
 
 class RelayError(Exception):
@@ -36,6 +49,9 @@ class RelayError(Exception):
             parts.append(f"HTTP {self.status_code}")
         prefix = f"[{', '.join(parts)}] " if parts else ""
         return prefix + self.message
+
+    def retry_decision(self, operation: str = "read") -> RetryDecision:
+        return retry_decision(self, operation=operation)
 
 
 class RelayConnectionError(RelayError):
@@ -84,6 +100,55 @@ class RelayStreamGapError(RelayError):
 
 class RelayStreamDisconnectedError(RelayConnectionError):
     """Raised after the bounded event-stream reconnect budget is exhausted."""
+
+
+class RelayCapabilityError(RelayError):
+    """Raised when Relay does not advertise a required SDK capability."""
+
+
+def retry_decision(error: BaseException, *, operation: str = "read") -> RetryDecision:
+    """Classify whether an operation may be retried without guessing its outcome.
+
+    ``operation`` must be ``read``, ``query``, ``write``, ``cancel``, or
+    ``stream``. Write and cancel transport failures always require ledger
+    reconciliation before a caller decides what to do next.
+    """
+
+    operation = str(operation).strip().lower()
+    if operation not in {"read", "query", "write", "cancel", "stream"}:
+        raise ValueError("operation must be read, query, write, cancel, or stream")
+
+    code = str(getattr(error, "code", "") or "").strip().upper()
+    status_code = getattr(error, "status_code", None)
+    is_command = operation in {"write", "cancel"}
+
+    if isinstance(error, RelayCommandOutcomeUnknownError) or code == "COMMAND_OUTCOME_UNKNOWN":
+        return RetryDecision(operation, False, True, None, "reconcile orders and fills before any new command", code)
+    if isinstance(error, RelayCancelRejectedError):
+        return RetryDecision(operation, False, True, None, "read the original order and cancel-attempt audit", code)
+    if isinstance(error, (RelayIdempotencyError, RelayOrderStateError, RelayRejectedError)):
+        return RetryDecision(operation, False, False, None, "fix the request or stop; do not retry automatically", code)
+    if isinstance(error, RelayBrokerNotReadyError) or code == "BROKER_NOT_READY":
+        if operation == "query":
+            return RetryDecision(operation, True, False, 1.0, "retry the query with a new request after broker readiness", code)
+        return RetryDecision(operation, False, is_command, None, "wait for broker readiness; reconcile writes before resubmitting", code)
+    if isinstance(error, RelayQueryInterruptedError) or code == "QUERY_INTERRUPTED":
+        if operation == "query":
+            return RetryDecision(operation, True, False, 0.5, "retry the query with a new request", code)
+        return RetryDecision(operation, False, False, None, "retry only through a query operation", code)
+    if isinstance(error, RelayStreamGapError):
+        return RetryDecision(operation, False, True, None, "perform full ledger reconciliation and reconnect with the new cursor", code)
+    if isinstance(error, RelayStreamDisconnectedError):
+        return RetryDecision(operation, False, True, None, "enter a fault state and perform full ledger reconciliation", code)
+    if isinstance(error, (RelayConnectionError, RelayTimeoutError, TimeoutError, OSError)):
+        if operation in {"read", "query"}:
+            return RetryDecision(operation, True, False, 0.5, "retry with bounded exponential backoff", code)
+        return RetryDecision(operation, False, is_command, None, "reconcile the command outcome before retrying", code)
+    if status_code in {429, 502, 503, 504}:
+        if operation in {"read", "query"}:
+            return RetryDecision(operation, True, False, 0.5, "retry with bounded exponential backoff", code)
+        return RetryDecision(operation, False, is_command, None, "reconcile the command outcome before retrying", code)
+    return RetryDecision(operation, False, is_command, None, "inspect the error before deciding whether to retry", code)
 
 
 def error_from_payload(

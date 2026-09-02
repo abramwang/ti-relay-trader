@@ -1,8 +1,9 @@
 """Python SDK for the Relay Trader 9092 API."""
 
-from .client import CallbackSubscription, RelayClient
+from .client import CallbackSubscription, RelayClient, TRADING_SCHEMA_VERSION
 from .errors import (
     RelayBrokerNotReadyError,
+    RelayCapabilityError,
     RelayCancelRejectedError,
     RelayCommandOutcomeUnknownError,
     RelayConnectionError,
@@ -15,10 +16,15 @@ from .errors import (
     RelayStreamDisconnectedError,
     RelayStreamGapError,
     RelayTimeoutError,
+    RetryDecision,
+    retry_decision,
 )
 from .models import (
     Account,
     Asset,
+    BatchCommandReceipt,
+    BatchOrderOutcome,
+    BatchOrderOutcomes,
     CommandReceipt,
     ComponentTransfer,
     Fill,
@@ -28,15 +34,19 @@ from .models import (
     OrderFeeRecord,
     Position,
     PositionPage,
-    QueryCommandStatus,
-    QueryReplyStatus,
+    CommandReplyStatus,
+    CommandStatus,
     RelayEvent,
+    SchemaCatalog,
     StreamReconciliation,
 )
 
 __all__ = [
     "Account",
     "Asset",
+    "BatchCommandReceipt",
+    "BatchOrderOutcome",
+    "BatchOrderOutcomes",
     "CallbackSubscription",
     "CommandReceipt",
     "ComponentTransfer",
@@ -47,10 +57,11 @@ __all__ = [
     "OrderFeeRecord",
     "Position",
     "PositionPage",
-    "QueryCommandStatus",
-    "QueryReplyStatus",
+    "CommandReplyStatus",
+    "CommandStatus",
     "RelayClient",
     "RelayBrokerNotReadyError",
+    "RelayCapabilityError",
     "RelayCancelRejectedError",
     "RelayCommandOutcomeUnknownError",
     "RelayConnectionError",
@@ -64,7 +75,11 @@ __all__ = [
     "RelayStreamDisconnectedError",
     "RelayStreamGapError",
     "RelayTimeoutError",
+    "RetryDecision",
+    "SchemaCatalog",
     "StreamReconciliation",
+    "TRADING_SCHEMA_VERSION",
+    "retry_decision",
 ]
 
-__version__ = "0.1.31"
+__version__ = "0.1.32"

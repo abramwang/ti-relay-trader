@@ -188,9 +188,9 @@ ON CONFLICT (account_id, trade_date, gateway_order_id) DO UPDATE SET
             THEN EXCLUDED.reject_message
         ELSE NULL
     END,
-    origin_message_id = COALESCE(EXCLUDED.origin_message_id, orders.origin_message_id),
-    request_id = COALESCE(EXCLUDED.request_id, orders.request_id),
-    idempotency_key = COALESCE(EXCLUDED.idempotency_key, orders.idempotency_key),
+    origin_message_id = COALESCE(orders.origin_message_id, EXCLUDED.origin_message_id),
+    request_id = COALESCE(orders.request_id, EXCLUDED.request_id),
+    idempotency_key = COALESCE(orders.idempotency_key, EXCLUDED.idempotency_key),
     shareholder_id = COALESCE(EXCLUDED.shareholder_id, orders.shareholder_id),
     accepted_at = COALESCE(EXCLUDED.accepted_at, orders.accepted_at),
     inserted_at = COALESCE(EXCLUDED.inserted_at, orders.inserted_at),
@@ -1071,7 +1071,7 @@ GROUP BY stream_role, COALESCE(message_type, ''), COALESCE(action, ''), COALESCE
 ORDER BY stream_role, message_type, action, event_type
 `
 
-const queryCommandRepliesSQL = `
+const commandRepliesSQL = `
 SELECT
     COALESCE(body->>'message_id', ''),
     COALESCE(account_id, ''),

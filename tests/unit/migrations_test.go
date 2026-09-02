@@ -174,6 +174,34 @@ func TestOrderIdempotencyMigrationCleansQueryKeysAndAddsUniqueIndex(t *testing.T
 	}
 }
 
+func TestOrderSubmissionIdentityMigrationRestoresArchivedCommands(t *testing.T) {
+	upSQL := readMigration(t, "000027_order_submission_identity.up.sql")
+	for _, snippet := range []string{
+		"raw.action = 'order.batch.submit'",
+		"raw.action = 'order.submit'",
+		"jsonb_array_elements",
+		"AT TIME ZONE 'Asia/Shanghai'",
+		"relay_submission_identity_backfill",
+		"idempotency_conflict_skipped",
+		"origin_message_id = archived.submit_message_id",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("order submission identity migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000027_order_submission_identity.down.sql")
+	for _, snippet := range []string{
+		"previous_origin_message_id",
+		"previous_request_id",
+		"previous_idempotency_key",
+		"adapter_context - 'relay_submission_identity_backfill'",
+	} {
+		if !strings.Contains(downSQL, snippet) {
+			t.Fatalf("order submission identity rollback missing snippet: %s", snippet)
+		}
+	}
+}
+
 func TestFillIDOrderScopeMigrationReplacesAccountScopedIndex(t *testing.T) {
 	upSQL := readMigration(t, "000005_fill_id_order_scope.up.sql")
 	for _, snippet := range []string{

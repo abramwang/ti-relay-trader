@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.1.32 - 2026-09-02
+
+### Added
+
+- Added machine-readable `/v1/schema` capabilities and typed `SchemaCatalog`
+  compatibility checks for `relay.trading.v1alpha1`.
+- Added the public `opener=` injection point for deterministic HTTP fault
+  testing without private SDK method overrides.
+- Added `BatchCommandReceipt`, per-child Relay acceptance/replay identities,
+  and asynchronous `get_batch_order_outcomes()` / `wait_batch_order_outcomes()`
+  resolution from command replies and the complete order ledger.
+- Added `RetryDecision` and `retry_decision()` with operation-specific,
+  fail-closed guidance for reads, queries, writes, cancels, and streams.
+- Added `origin_message_id` order filtering so all children of one batch can be
+  recovered without guessing from timestamps or symbols.
+
+### Changed
+
+- Replaced the query-only `/v1/query-status/{message_id}` name and
+  `get_query_status()` helper with the generic
+  `/v1/command-status/{message_id}` and `get_command_status()` contract. The
+  old route is intentionally removed because it had no external consumers.
+- `Order` now exposes command IDs, rejection code, and adapter context needed
+  for batch result auditing while still retaining the complete raw payload.
+- Relay now preserves the first submit command identity on every order and
+  backfills historical identities from the raw command archive, so batch
+  children remain queryable after later order queries and events.
+
+### Retry Safety
+
+- Read and query transport failures may use bounded retry.
+- Write or cancel transport failures, cancel rejection/timeouts, and
+  `COMMAND_OUTCOME_UNKNOWN` require reconciliation and are not automatically
+  retried.
+- Idempotency conflicts and business rejections are never automatically
+  retried.
+
 ## 0.1.31 - 2026-09-02
 
 ### Added

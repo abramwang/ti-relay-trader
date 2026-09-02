@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.32.tar.gz"
 ```
 
 ## Quick Start
@@ -24,6 +24,13 @@ from relay_sdk import RelayClient
 client = RelayClient(
     base_url="http://relay-trader.quantstage.com",
     account_id="00030484",
+)
+
+client.require_capabilities(
+    "ledger.cursor_pagination.v1",
+    "events.cursor_resume.v1",
+    "orders.batch_child_outcomes.v1",
+    "orders.explicit_command_ids.v1",
 )
 
 asset = client.get_asset()
@@ -111,9 +118,61 @@ OC produced one completed final query reply:
 
 ```python
 receipt = client.refresh_asset()
-query = client.get_query_status(receipt.message_id)
-print(query.state, query.success, query.expected_result_type)
+status = client.get_command_status(receipt.message_id)
+print(status.state, status.success, status.expected_result_type)
 ```
+
+`/v1/command-status/{message_id}` is the single status route for query and
+trade commands. The older `/v1/query-status` name is not retained.
+
+## Batch Child Outcomes
+
+`submit_orders()` returns a `BatchCommandReceipt`. Every `children` item keeps
+the caller's three IDs and reports Relay acceptance or idempotent replay. Use
+the asynchronous resolver for broker-level child outcomes:
+
+```python
+receipt = client.submit_orders(
+    [
+        {
+            "symbol": "600000",
+            "exchange": "SH",
+            "trade_side": "B",
+            "business_type": "S",
+            "price": 9.67,
+            "qty": 100,
+            "client_order_id": "chronos-client-1",
+            "gateway_order_id": "chronos-gateway-1",
+            "idempotency_key": "chronos-order-1",
+        }
+    ],
+    idempotency_key="chronos-batch-1",
+)
+result = client.wait_batch_order_outcomes(receipt, timeout=30)
+for child in result.children:
+    print(child.gateway_order_id, child.acceptance, child.outcome, child.order_status)
+```
+
+`acceptance` is `accepted` or `replayed`. `outcome` is `pending`, `accepted`,
+`rejected`, `broker_not_ready`, or `outcome_unknown`. A successful batch HTTP
+response never fabricates broker acceptance for a child that is still only a
+Relay `created` draft.
+
+## Capabilities And Test Transport
+
+`get_schema()` returns a typed `SchemaCatalog`; `require_capabilities()` fails
+closed on a schema mismatch or missing capability. Deterministic tests may
+inject any urllib-compatible public opener without overriding `_request`:
+
+```python
+client = RelayClient(base_url="http://relay.invalid", opener=my_test_opener)
+```
+
+Use `retry_decision(error, operation=...)` with `read`, `query`, `write`,
+`cancel`, or `stream`. Only reads, interrupted queries, and broker-not-ready
+queries are automatically retryable. Write/cancel transport timeouts and
+`COMMAND_OUTCOME_UNKNOWN` require ledger reconciliation first; idempotency,
+business, and cancel rejections are never automatically retried.
 
 `Position` exposes `total_cost`, `avg_cost_source`, and `cost_complete`. A false
 `cost_complete` with an explicit source must not be treated as a trusted
@@ -150,7 +209,9 @@ Methods that publish commands or persist relay ledger records:
 | Method | Target | Notes |
 | --- | --- | --- |
 | `submit_order(...)` | Redis `cmd.trade` + draft order ledger | Single order command. Success means relay accepted the command, not final broker/exchange status. |
-| `submit_orders(...)` | Redis `cmd.trade` + draft order ledger | Batch order command. Each child order still needs its own durable idempotency identity. |
+| `submit_orders(...)` | Redis `cmd.trade` + draft order ledger | Returns `BatchCommandReceipt` with per-child Relay acceptance/replay and caller IDs. |
+| `get_batch_order_outcomes(...)` | PostgreSQL order/raw reply ledger | Reads each child outcome by batch `message_id`; never sends a trading command. |
+| `wait_batch_order_outcomes(...)` | PostgreSQL order/raw reply ledger | Polls until every child is accepted, rejected, broker-not-ready, or outcome-unknown. |
 | `cancel_order(...)` | Redis `cmd.trade` | Cancel command. Final result still comes from order callbacks, `wait_order_terminal()`, or `list_orders()`. |
 | `refresh_asset()` | Redis `cmd.query` | Ask OC to query broker asset. Ledger updates after OC reply is merged. |
 | `refresh_positions()` | Redis `cmd.query` | Ask OC to query broker positions. A completed full page clears stale current positions not returned by the broker. |

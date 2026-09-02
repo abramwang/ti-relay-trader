@@ -121,7 +121,7 @@ action 到 stream 的映射：
 3. 根据 `message_type/action/result_type/event_type` 合并标准账表。
 4. 成功处理后更新 `stream_checkpoints`。
 
-所有 query reply 还会按 `origin_message_id` 聚合为命令终态。成功必须只有一个 `completed` 终态，且 `result_type` 与 action 匹配、`chunk.is_last=true`；数据页之后出现 `failed`、缺 final 或重复终态均不会被视为成功。只读 `GET /v1/query-status/{origin_message_id}` 暴露该判定，盘前/盘后任务在写 open/close 快照前同时检查查询终态和账本新鲜度。
+所有 query reply 还会按 `origin_message_id` 聚合为命令终态。成功必须只有一个 `completed` 终态，且 `result_type` 与 action 匹配、`chunk.is_last=true`；数据页之后出现 `failed`、缺 final 或重复终态均不会被视为成功。只读 `GET /v1/command-status/{origin_message_id}` 暴露该判定，盘前/盘后任务在写 open/close 快照前同时检查查询终态和账本新鲜度。
 
 华鑫订单查询可能在具体 `order_page.items[]` 上返回单笔业务状态。Relay 会把 `status_message`、`cancel_reason` 和 item 级 `adapter_context` 合并进该订单的 `adapter_context`；rejected 订单继续写标准 `reject_code/reject_message`，cancelled 订单只保留撤单原因，不转换成业务拒单。查询已经返回数据后，OC 可能用 `items=[]`、`broker_terminal_status_ignored=true` 的空 `completed` final 页收口；该页完整保存在原始归档中，只作为成功终态，不删除或覆盖前面的订单。真正带 `query_incomplete=true` 的 `QUERY_FAILED` 即使声明 `partial_data_returned=true`，仍保持失败并阻断对应账户的日任务。
 
@@ -273,6 +273,7 @@ relay 的正式下单 API 已在写入 Redis `cmd.trade` 前先写入订单草�
 5. `stream_checkpoints` 以 `stream_key` 去重，记录最后已读 Redis Stream ID。
 6. API 下单在发布 Redis 前先查 `gateway_order_id` 和 `idempotency_key`，再使用 insert-only 原子占位；命中相同 payload 或并发唯一冲突时返回 `replayed=true`，冲突时不发布 Redis 命令。
 7. `order.list.query` 的查询幂等键只保留在 `raw_stream_messages` 作为命令追踪字段，不写入订单主表的下单幂等字段。
+8. 订单主表一旦建立首次下单 `origin_message_id/request_id/idempotency_key`，后续 query/event upsert 不得覆盖。`000027_order_submission_identity` 已从 `cmd.trade` raw archive 回填可证明的历史身份；冲突幂等键只记录审计，不强行写入。
 
 重复执行同一批 `ledger-sync` 不会重复插入原始消息。
 

@@ -93,8 +93,8 @@ type SettlementStore interface {
 	RawStreamSummary(ctx context.Context, accountID string, start time.Time, end time.Time) ([]ledger.RawStreamSummaryBucket, error)
 }
 
-type QueryStatusStore interface {
-	GetQueryCommandStatus(ctx context.Context, originMessageID string) (ledger.QueryCommandStatus, error)
+type CommandStatusStore interface {
+	GetCommandStatus(ctx context.Context, originMessageID string) (ledger.CommandStatus, error)
 }
 
 type AccountAliasStore interface {
@@ -240,7 +240,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
-	mux.HandleFunc("/v1/query-status/", server.handleQueryStatus)
+	mux.HandleFunc("/v1/command-status/", server.handleCommandStatus)
 	mux.HandleFunc("/v1/operations/status", server.handleOperationsStatus)
 	mux.HandleFunc("/v1/operations/dlq/reviews", server.handleDeadLetterReviews)
 	mux.HandleFunc("/v1/operations/dlq/review", server.handleDeadLetterReview)
@@ -260,22 +260,22 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	return httpx.RequestLogger(logger)(mux)
 }
 
-func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCommandStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 		return
 	}
-	store, ok := s.settles.(QueryStatusStore)
+	store, ok := s.settles.(CommandStatusStore)
 	if !ok || store == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "query status store is unavailable", nil)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "command status store is unavailable", nil)
 		return
 	}
-	originMessageID, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/v1/query-status/"))
+	originMessageID, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/v1/command-status/"))
 	if err != nil || strings.TrimSpace(originMessageID) == "" || strings.Contains(originMessageID, "/") {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid origin_message_id", nil)
 		return
 	}
-	result, err := store.GetQueryCommandStatus(r.Context(), originMessageID)
+	result, err := store.GetCommandStatus(r.Context(), originMessageID)
 	if err != nil {
 		s.writeOrderError(w, r, err)
 		return
@@ -4213,23 +4213,24 @@ func parseOrderQuery(values url.Values, defaultToday bool) (trading.OrderQuery, 
 		tradeDate = timeutil.Now().Format("2006-01-02")
 	}
 	return trading.OrderQuery{
-		AccountID:      values.Get("account_id"),
-		GatewayOrderID: values.Get("gateway_order_id"),
-		ClientOrderID:  values.Get("client_order_id"),
-		Symbol:         values.Get("symbol"),
-		Exchange:       trading.Exchange(values.Get("exchange")),
-		Status:         trading.OrderStatus(values.Get("status")),
-		TradeDate:      tradeDate,
-		DateFrom:       dateFrom,
-		DateTo:         dateTo,
-		History:        history,
-		StrategyType:   values.Get("strategy_type"),
-		StrategyID:     values.Get("strategy_id"),
-		BasketID:       values.Get("basket_id"),
-		ParentOrderID:  values.Get("parent_order_id"),
-		T0OrderGroupID: values.Get("t0_order_group_id"),
-		Limit:          limit,
-		Cursor:         values.Get("cursor"),
+		AccountID:       values.Get("account_id"),
+		GatewayOrderID:  values.Get("gateway_order_id"),
+		ClientOrderID:   values.Get("client_order_id"),
+		OriginMessageID: values.Get("origin_message_id"),
+		Symbol:          values.Get("symbol"),
+		Exchange:        trading.Exchange(values.Get("exchange")),
+		Status:          trading.OrderStatus(values.Get("status")),
+		TradeDate:       tradeDate,
+		DateFrom:        dateFrom,
+		DateTo:          dateTo,
+		History:         history,
+		StrategyType:    values.Get("strategy_type"),
+		StrategyID:      values.Get("strategy_id"),
+		BasketID:        values.Get("basket_id"),
+		ParentOrderID:   values.Get("parent_order_id"),
+		T0OrderGroupID:  values.Get("t0_order_group_id"),
+		Limit:           limit,
+		Cursor:          values.Get("cursor"),
 	}, nil
 }
 

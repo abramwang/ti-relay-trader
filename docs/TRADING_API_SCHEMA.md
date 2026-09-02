@@ -1,10 +1,19 @@
 # relay 统一交易接口 Schema
 
-更新时间：`2026-06-14`
+更新时间：`2026-09-02`
 
 ## 当前状态
 
 第一版 schema 已落在 Go 包 `internal/trading`，版本号为 `relay.trading.v1alpha1`。
+
+`GET /v1/schema` 同时返回机器可读 `capabilities`。当前能力为：
+
+- `ledger.cursor_pagination.v1`
+- `events.cursor_resume.v1`
+- `orders.batch_child_outcomes.v1`
+- `orders.explicit_command_ids.v1`
+
+SDK 应在启动阶段使用能力握手，不得只比较 Python 包版本。缺少必需能力时失败关闭。
 
 该 schema 定义对象、枚举、基础校验和状态机语义。当前 API 模式已将资金、持仓、单笔下单、批量下单、撤单、订单查询、成交查询和前置刷新接入测试链路；下单/批量下单/撤单写 Redis `cmd.trade`，资金/持仓/订单/成交查询读取 PostgreSQL 本地账本，刷新接口写 Redis `cmd.query`。
 
@@ -368,11 +377,11 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
-| `GET` | `/v1/query-status/{origin_message_id}` | - | `QueryCommandStatus` | 已实现，从归档 reply 判断查询是否存在唯一 completed final 终态 |
+| `GET` | `/v1/command-status/{origin_message_id}` | - | `CommandStatus` | 已实现，从归档 reply 判断查询或交易命令状态 |
 | `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
-| `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `[]Order` | 已实现，返回 `202 Accepted` |
+| `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `BatchSubmitOrderResult` | 已实现，返回 `202 Accepted`，逐单保留调用方 ID 和 Relay 接受状态 |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
-| `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 已实现，默认按 `Asia/Shanghai` 当日读取 PostgreSQL 账本 |
+| `GET` | `/v1/orders` | `OrderQuery` | `[]Order` | 已实现，默认按 `Asia/Shanghai` 当日读取 PostgreSQL 账本；`origin_message_id` 可选择同一批次的全部子单 |
 | `GET` | `/v1/fills` | `FillQuery` | `[]Fill` | 已实现，默认按 `Asia/Shanghai` 当日读取 PostgreSQL 账本 |
 | `GET` | `/v1/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，默认按 `Asia/Shanghai` 当日读取 ETF 成分股划转账本 |
 | `GET` | `/v1/history/orders` | `OrderQuery` | `[]Order` | 已实现，显式历史订单查询 |
@@ -423,7 +432,9 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 资金和持仓读取默认执行展示层补全；内部券商快照流程使用 `GET .../asset?enrich=false` 与 `GET .../positions?enrich=false` 直接读取 PostgreSQL 中的柜台原始字段，不请求证券名称、行情、成交成本或 Meridian。该参数只关闭读时补全，不改变账本内容；省略时保持原有终端和 SDK 行为。
 
-刷新回执中的 `message_id` 是查询终态关联键。`GET /v1/query-status/{origin_message_id}` 要求查询只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。盘前初始化和盘后结算同时检查本地账本新鲜度与该终态，不能用新鲜时间戳掩盖 OC 查询失败。
+回执中的 `message_id` 是命令状态关联键。`GET /v1/command-status/{origin_message_id}` 对查询命令要求只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。交易命令使用同一路由读取 `BROKER_NOT_READY`、`COMMAND_OUTCOME_UNKNOWN` 等归档回报，最终订单状态仍以订单账本为准。盘前初始化和盘后结算同时检查本地账本新鲜度与查询终态，不能用新鲜时间戳掩盖 OC 查询失败。
+
+批量下单的同步 HTTP 成功只表示 Relay 已逐单校验、建立草稿并发布一个批量命令。调用方以 `message_id` 查询命令回报，并用 `GET /v1/history/orders?account_id=...&origin_message_id=...` 取得完整子单账本。首次下单写入的 `origin_message_id/request_id/idempotency_key` 是订单命令身份，后续查询回报和状态事件只更新业务状态，不覆盖这三个字段。子单仍为 `created` 时不得推断柜台接受；订单进入 `accepted/working/partially_filled/filled/cancelled` 才视为 accepted，`rejected` 保留逐单错误，`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 保持显式非确定状态。
 
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 

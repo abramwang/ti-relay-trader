@@ -1125,7 +1125,7 @@ func TestRefreshAccountAsset(t *testing.T) {
 }
 
 func TestQueryStatusReturnsArchivedTerminalState(t *testing.T) {
-	store := &fakeSettlementStore{queryStatus: ledger.QueryCommandStatus{
+	store := &fakeSettlementStore{commandStatus: ledger.CommandStatus{
 		OriginMessageID:    "msg-asset-1",
 		AccountID:          "acct-1",
 		Action:             redisstream.ActionAccountAsset,
@@ -1139,7 +1139,7 @@ func TestQueryStatusReturnsArchivedTerminalState(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Settlements: store,
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v1/query-status/msg-asset-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/command-status/msg-asset-1", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1147,11 +1147,18 @@ func TestQueryStatusReturnsArchivedTerminalState(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if store.queryStatusMessageID != "msg-asset-1" {
-		t.Fatalf("origin_message_id = %q", store.queryStatusMessageID)
+	if store.commandStatusMessageID != "msg-asset-1" {
+		t.Fatalf("origin_message_id = %q", store.commandStatusMessageID)
 	}
 	if !strings.Contains(rec.Body.String(), `"state":"completed"`) || !strings.Contains(rec.Body.String(), `"success":true`) {
-		t.Fatalf("query status response = %s", rec.Body.String())
+		t.Fatalf("command status response = %s", rec.Body.String())
+	}
+
+	legacyReq := httptest.NewRequest(http.MethodGet, "/v1/query-status/msg-asset-1", nil)
+	legacyRec := httptest.NewRecorder()
+	handler.ServeHTTP(legacyRec, legacyReq)
+	if legacyRec.Code != http.StatusNotFound {
+		t.Fatalf("legacy query-status route = %d, want %d", legacyRec.Code, http.StatusNotFound)
 	}
 }
 
@@ -1328,6 +1335,9 @@ func TestSchemaDiscovery(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "relay.trading.v1alpha1") {
 		t.Fatalf("response missing schema version: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), trading.CapabilityBatchChildOutcomes) {
+		t.Fatalf("response missing batch outcome capability: %s", rec.Body.String())
 	}
 }
 
@@ -1989,7 +1999,7 @@ func TestListOrders(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: service,
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&status=working&strategy_type=stock_cross_section&strategy_id=strategy-a&basket_id=basket-1&limit=5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/orders?account_id=acct-1&status=working&strategy_type=stock_cross_section&strategy_id=strategy-a&basket_id=basket-1&origin_message_id=msg-batch-1&limit=5", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -2002,6 +2012,9 @@ func TestListOrders(t *testing.T) {
 	}
 	if service.orderQuery.StrategyType != "stock_cross_section" || service.orderQuery.StrategyID != "strategy-a" || service.orderQuery.BasketID != "basket-1" {
 		t.Fatalf("strategy query = %#v", service.orderQuery)
+	}
+	if service.orderQuery.OriginMessageID != "msg-batch-1" {
+		t.Fatalf("origin_message_id = %q", service.orderQuery.OriginMessageID)
 	}
 	if service.orderQuery.TradeDate != timeutil.Now().Format("2006-01-02") {
 		t.Fatalf("default trade date = %q", service.orderQuery.TradeDate)
@@ -3806,8 +3819,8 @@ type fakeSettlementStore struct {
 	performanceSeriesAccountID string
 	performanceSeriesDateFrom  string
 	performanceSeriesDateTo    string
-	queryStatus                ledger.QueryCommandStatus
-	queryStatusMessageID       string
+	commandStatus              ledger.CommandStatus
+	commandStatusMessageID     string
 	assetSnapshotResult        trading.Asset
 	assetSnapshotQueryType     string
 	positionSnapshotResults    []trading.Position
@@ -3953,12 +3966,12 @@ func (store *fakeSettlementStore) RawStreamSummary(_ context.Context, _ string, 
 	return []ledger.RawStreamSummaryBucket{{Role: "event", MessageType: "event", EventType: "order.event", Count: 1}}, nil
 }
 
-func (store *fakeSettlementStore) GetQueryCommandStatus(_ context.Context, originMessageID string) (ledger.QueryCommandStatus, error) {
-	store.queryStatusMessageID = originMessageID
+func (store *fakeSettlementStore) GetCommandStatus(_ context.Context, originMessageID string) (ledger.CommandStatus, error) {
+	store.commandStatusMessageID = originMessageID
 	if store.err != nil {
-		return ledger.QueryCommandStatus{}, store.err
+		return ledger.CommandStatus{}, store.err
 	}
-	return store.queryStatus, nil
+	return store.commandStatus, nil
 }
 
 func (store *fakeJobRunStore) UpsertJobRun(_ context.Context, run ledger.JobRun) (ledger.JobRun, error) {

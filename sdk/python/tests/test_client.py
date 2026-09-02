@@ -9,12 +9,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
 from relay_sdk import (
+    BatchCommandReceipt,
+    RelayCapabilityError,
     RelayBrokerNotReadyError,
     RelayCancelRejectedError,
     RelayClient,
     RelayCommandOutcomeUnknownError,
     RelayIdempotencyError,
     RelayQueryInterruptedError,
+    TRADING_SCHEMA_VERSION,
 )
 from relay_sdk.client import _fill_key, _order_key
 from relay_sdk.errors import error_from_payload
@@ -38,6 +41,24 @@ class RelayHandler(BaseHTTPRequestHandler):
                         "service": "relay-api",
                         "status": "ok",
                         "dependencies": {"database": {"status": "ok"}},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/schema":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "version": "relay.trading.v1alpha1",
+                        "capabilities": [
+                            "ledger.cursor_pagination.v1",
+                            "events.cursor_resume.v1",
+                            "orders.batch_child_outcomes.v1",
+                            "orders.explicit_command_ids.v1",
+                        ],
+                        "http_routes": [{"method": "GET", "path": "/v1/schema"}],
+                        "redis_actions": ["order.batch.submit"],
                     },
                 }
             )
@@ -170,7 +191,7 @@ class RelayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/jobs/runs":
             self._json({"ok": True, "data": {"runs": [{"job_name": "post_close_settlement", "target_trade_date": query.get("trade_date", [""])[0]}]}})
             return
-        if parsed.path == "/v1/query-status/msg-asset-1":
+        if parsed.path == "/v1/command-status/msg-asset-1":
             self._json(
                 {
                     "ok": True,
@@ -186,6 +207,41 @@ class RelayHandler(BaseHTTPRequestHandler):
                         "reply_count": 1,
                         "terminal_count": 1,
                         "replies": [{"status": "completed", "result_type": "asset_page", "is_last": True}],
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/command-status/msg-batch-1":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "origin_message_id": "msg-batch-1",
+                        "account_id": "acct-1",
+                        "action": "order.batch.submit",
+                        "state": "pending",
+                        "replies": [{"status": "partial", "is_last": False}],
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/command-status/msg-batch-unknown":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "origin_message_id": "msg-batch-unknown",
+                        "account_id": "acct-1",
+                        "action": "order.batch.submit",
+                        "state": "failed",
+                        "terminal": True,
+                        "replies": [
+                            {
+                                "status": "failed",
+                                "code": "COMMAND_OUTCOME_UNKNOWN",
+                                "message": "OC restarted",
+                            }
+                        ],
                     },
                 }
             )
@@ -347,6 +403,63 @@ class RelayHandler(BaseHTTPRequestHandler):
                         },
                     },
                     "request_id": "req-orders-http",
+                    "time": "2026-09-02T10:00:00+08:00",
+                }
+            )
+            return
+        if parsed.path == "/v1/history/orders" and query.get("origin_message_id"):
+            message_id = query["origin_message_id"][0]
+            if message_id == "msg-batch-unknown":
+                orders = [
+                    {
+                        "account_id": "acct-1",
+                        "gateway_order_id": "gw-unknown",
+                        "client_order_id": "client-unknown",
+                        "idempotency_key": "idem-unknown",
+                        "origin_message_id": message_id,
+                        "status": "created",
+                        "adapter_context": {"batch_index": 0},
+                    }
+                ]
+            else:
+                orders = [
+                    {
+                        "account_id": "acct-1",
+                        "gateway_order_id": "gw-batch-2",
+                        "client_order_id": "client-batch-2",
+                        "idempotency_key": "idem-batch-2",
+                        "origin_message_id": message_id,
+                        "status": "rejected",
+                        "is_terminal": True,
+                        "reject_code": "ORDER_SUBMIT_REJECTED",
+                        "reject_message": "price rejected",
+                        "adapter_context": {"batch_index": 1},
+                    },
+                    {
+                        "account_id": "acct-1",
+                        "gateway_order_id": "gw-batch-1",
+                        "client_order_id": "client-batch-1",
+                        "idempotency_key": "idem-batch-1",
+                        "origin_message_id": message_id,
+                        "status": "working",
+                        "adapter_context": {"batch_index": 0},
+                    },
+                ]
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "orders": orders,
+                        "count": len(orders),
+                        "next_cursor": "",
+                        "query": {
+                            "account_id": "acct-1",
+                            "origin_message_id": message_id,
+                            "history": True,
+                            "limit": int(query.get("limit", ["500"])[0]),
+                        },
+                    },
+                    "request_id": "req-batch-orders",
                     "time": "2026-09-02T10:00:00+08:00",
                 }
             )
@@ -520,9 +633,23 @@ class RelayHandler(BaseHTTPRequestHandler):
                 "account_id": body["account_id"],
                 "gateway_order_id": body["gateway_order_id"],
                 "client_order_id": body["client_order_id"],
+                "idempotency_key": body["idempotency_key"],
                 "status": "created",
             }
-            self._json({"ok": True, "data": {"order": order, "stream_id": "1-0", "message_id": "msg-1"}}, status=202)
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "order": order,
+                        "stream_id": "1-0",
+                        "message_id": "msg-1",
+                        "request_id": "req-order-1",
+                        "idempotency_key": body["idempotency_key"],
+                        "published": {"stream_id": "1-0"},
+                    },
+                },
+                status=202,
+            )
             return
         if parsed.path == "/v1/orders/gw-1/cancel":
             self._json(
@@ -549,7 +676,28 @@ class RelayHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "data": {"account_id": "acct-1", "action": "query", "stream_id": "4-0"}}, status=202)
             return
         if parsed.path == "/v1/orders/batch":
-            self._json({"ok": True, "data": {"orders": body["orders"], "stream_id": "5-0"}}, status=202)
+            orders = []
+            for index, item in enumerate(body["orders"]):
+                order = dict(item)
+                order["status"] = "filled" if body.get("idempotency_key") == "batch-replay" else "created"
+                order["is_terminal"] = body.get("idempotency_key") == "batch-replay"
+                order["adapter_context"] = {"batch_index": index}
+                orders.append(order)
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "orders": orders,
+                        "stream_id": "5-0",
+                        "message_id": "" if body.get("idempotency_key") == "batch-replay" else "msg-batch-1",
+                        "request_id": "req-batch-1",
+                        "idempotency_key": body["idempotency_key"],
+                        "replayed": body.get("idempotency_key") == "batch-replay",
+                        "published": {"stream_id": "5-0"},
+                    },
+                },
+                status=200 if body.get("idempotency_key") == "batch-replay" else 202,
+            )
             return
         if parsed.path == "/v1/jobs/runs":
             self._json({"ok": True, "data": {"run": {"run_id": "job-1", "job_name": body.get("job_name") or body.get("report", {}).get("job")}}}, status=202)
@@ -699,6 +847,18 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(position.total_cost, 954.0)
         self.assertEqual(position.avg_cost_source, "broker_total_position_cost")
         self.assertTrue(position.cost_complete)
+
+    def test_schema_capability_discovery(self):
+        catalog = self.client.require_capabilities(
+            "ledger.cursor_pagination.v1",
+            "events.cursor_resume.v1",
+            "orders.batch_child_outcomes.v1",
+        )
+        self.assertEqual(catalog.version, TRADING_SCHEMA_VERSION)
+        self.assertTrue(catalog.supports("orders.explicit_command_ids.v1"))
+        with self.assertRaises(RelayCapabilityError) as raised:
+            self.client.require_capabilities("future.capability.v9")
+        self.assertEqual(raised.exception.code, "CAPABILITY_MISSING")
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
         self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
@@ -718,8 +878,8 @@ class RelayClientTest(unittest.TestCase):
         self.client.get_positions_raw()
         self.assertEqual(RelayHandler.requests[-1][2]["enrich"], ["false"])
 
-    def test_query_status_returns_terminal_model(self):
-        status = self.client.get_query_status("msg-asset-1")
+    def test_command_status_returns_terminal_model(self):
+        status = self.client.get_command_status("msg-asset-1")
         self.assertEqual(status.state, "completed")
         self.assertTrue(status.success)
         self.assertEqual(status.expected_result_type, "asset_page")
@@ -885,6 +1045,10 @@ class RelayClientTest(unittest.TestCase):
             t0_order_group_id="t0-1",
         )
         self.assertTrue(receipt.gateway_order_id.startswith("sdk-gw-acct-1-"))
+        self.assertEqual(receipt.client_order_id, receipt.gateway_order_id)
+        self.assertEqual(receipt.request_id, "req-order-1")
+        self.assertEqual(receipt.idempotency_key, f"order:acct-1:{receipt.gateway_order_id}")
+        self.assertEqual(receipt.published["stream_id"], "1-0")
         self.assertEqual(receipt.status, "created")
         method, path, _query, body = RelayHandler.requests[-1]
         self.assertEqual((method, path), ("POST", "/v1/orders"))
@@ -910,6 +1074,85 @@ class RelayClientTest(unittest.TestCase):
 
         self.assertTrue(receipt.replayed)
         self.assertEqual(receipt.status, "cancelled")
+
+    def test_batch_receipt_preserves_explicit_ids_and_resolves_children(self):
+        receipt = self.client.submit_orders(
+            [
+                {
+                    "symbol": "600000",
+                    "exchange": "SH",
+                    "trade_side": "B",
+                    "business_type": "S",
+                    "price": 9.67,
+                    "qty": 100,
+                    "gateway_order_id": "gw-batch-1",
+                    "client_order_id": "client-batch-1",
+                    "idempotency_key": "idem-batch-1",
+                },
+                {
+                    "symbol": "000001",
+                    "exchange": "SZ",
+                    "trade_side": "B",
+                    "business_type": "S",
+                    "price": 11.24,
+                    "qty": 100,
+                    "gateway_order_id": "gw-batch-2",
+                    "client_order_id": "client-batch-2",
+                    "idempotency_key": "idem-batch-2",
+                },
+            ],
+            idempotency_key="batch-explicit-1",
+        )
+
+        self.assertIsInstance(receipt, BatchCommandReceipt)
+        self.assertEqual(receipt.account_id, "acct-1")
+        self.assertEqual(receipt.message_id, "msg-batch-1")
+        self.assertEqual(receipt.request_id, "req-batch-1")
+        self.assertEqual(receipt.idempotency_key, "batch-explicit-1")
+        self.assertEqual([child.acceptance for child in receipt.children], ["accepted", "accepted"])
+        self.assertEqual([child.outcome for child in receipt.children], ["pending", "pending"])
+        method, path, _query, body = RelayHandler.requests[-1]
+        self.assertEqual((method, path), ("POST", "/v1/orders/batch"))
+        self.assertEqual(body["orders"][0]["gateway_order_id"], "gw-batch-1")
+        self.assertEqual(body["orders"][0]["client_order_id"], "client-batch-1")
+        self.assertEqual(body["orders"][0]["idempotency_key"], "idem-batch-1")
+
+        outcomes = self.client.wait_batch_order_outcomes(receipt, timeout=1, poll_interval=0.01)
+        self.assertTrue(outcomes.complete)
+        self.assertEqual([child.gateway_order_id for child in outcomes.children], ["gw-batch-1", "gw-batch-2"])
+        self.assertEqual([child.outcome for child in outcomes.children], ["accepted", "rejected"])
+        self.assertEqual(outcomes.children[1].code, "ORDER_SUBMIT_REJECTED")
+
+    def test_batch_outcome_unknown_is_explicit(self):
+        outcomes = self.client.get_batch_order_outcomes("msg-batch-unknown")
+        self.assertTrue(outcomes.complete)
+        self.assertEqual(len(outcomes.children), 1)
+        self.assertEqual(outcomes.children[0].outcome, "outcome_unknown")
+        self.assertEqual(outcomes.children[0].code, "COMMAND_OUTCOME_UNKNOWN")
+
+    def test_replayed_batch_has_per_child_replay_acceptance(self):
+        receipt = self.client.submit_orders(
+            [
+                {
+                    "symbol": "600000",
+                    "exchange": "SH",
+                    "trade_side": "B",
+                    "business_type": "S",
+                    "price": 9.67,
+                    "qty": 100,
+                    "gateway_order_id": "gw-replayed-batch",
+                    "client_order_id": "client-replayed-batch",
+                    "idempotency_key": "idem-replayed-batch",
+                }
+            ],
+            idempotency_key="batch-replay",
+        )
+        self.assertTrue(receipt.replayed)
+        self.assertEqual(receipt.children[0].acceptance, "replayed")
+        self.assertEqual(receipt.children[0].outcome, "accepted")
+        outcomes = self.client.get_batch_order_outcomes(receipt)
+        self.assertTrue(outcomes.complete)
+        self.assertEqual(outcomes.children[0].acceptance, "replayed")
 
     def test_refresh_and_cancel(self):
         self.assertEqual(self.client.refresh_orders().action, "order.list.query")

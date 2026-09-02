@@ -13,6 +13,7 @@ from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import (
+    RelayCapabilityError,
     RelayConnectionError,
     RelayError,
     RelayPaginationError,
@@ -24,6 +25,9 @@ from .errors import (
 from .models import (
     Account,
     Asset,
+    BatchCommandReceipt,
+    BatchOrderOutcome,
+    BatchOrderOutcomes,
     CommandReceipt,
     ComponentTransfer,
     Fill,
@@ -33,15 +37,17 @@ from .models import (
     OrderFeeRecord,
     Position,
     PositionPage,
-    QueryCommandStatus,
+    CommandStatus,
     RelayEvent,
+    SchemaCatalog,
     StreamReconciliation,
 )
 from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.31"
+SDK_VERSION = "0.1.32"
+TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -97,13 +103,14 @@ class RelayClient:
         timeout: float = 10.0,
         api_key: str | None = None,
         trust_env: bool = False,
+        opener: Any | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("RELAY_BASE_URL") or "http://relay-trader.quantstage.com").rstrip("/")
         self.account_id = account_id or os.getenv("RELAY_ACCOUNT_ID") or ""
         self.timeout = timeout
         self.api_key = api_key or os.getenv("RELAY_API_KEY") or ""
         self.trust_env = trust_env
-        self._opener = request.build_opener() if trust_env else request.build_opener(request.ProxyHandler({}))
+        self.opener = opener or (request.build_opener() if trust_env else request.build_opener(request.ProxyHandler({})))
 
     def list_accounts(self) -> list[Account]:
         data = self._request("GET", "/v1/accounts")
@@ -113,6 +120,35 @@ class RelayClient:
         """Return relay service and dependency health from ``GET /v1/status``."""
 
         return self._request("GET", "/v1/status")
+
+    def get_schema(self) -> SchemaCatalog:
+        """Return Relay's machine-readable trading schema and capabilities."""
+
+        return SchemaCatalog.from_dict(self._request("GET", "/v1/schema"))
+
+    def require_capabilities(
+        self,
+        *capabilities: str,
+        schema_version: str = TRADING_SCHEMA_VERSION,
+    ) -> SchemaCatalog:
+        """Fail closed unless Relay advertises the required SDK contract."""
+
+        catalog = self.get_schema()
+        if schema_version and catalog.version != schema_version:
+            raise RelayCapabilityError(
+                f"relay schema {catalog.version!r} is incompatible with required {schema_version!r}",
+                code="SCHEMA_VERSION_MISMATCH",
+                raw_response=catalog.raw,
+            )
+        required = tuple(dict.fromkeys(str(item).strip() for item in capabilities if str(item).strip()))
+        missing = tuple(item for item in required if not catalog.supports(item))
+        if missing:
+            raise RelayCapabilityError(
+                f"relay is missing required capabilities: {', '.join(missing)}",
+                code="CAPABILITY_MISSING",
+                raw_response={"required": required, "available": catalog.capabilities},
+            )
+        return catalog
 
     def get_asset(self, account_id: str | None = None, *, enrich: bool | None = None) -> Asset:
         account_id = self._resolve_account(account_id)
@@ -253,20 +289,21 @@ class RelayClient:
 
         return self._refresh("fees", account_id)
 
-    def get_query_status(self, origin_message_id: str) -> QueryCommandStatus:
-        """Return the archived OC reply terminal state for a published query."""
+    def get_command_status(self, origin_message_id: str) -> CommandStatus:
+        """Return archived OC reply state for a published query or trade command."""
 
         message_id = str(origin_message_id).strip()
         if not message_id:
             raise ValueError("origin_message_id is required")
-        data = self._request("GET", f"/v1/query-status/{parse.quote(message_id, safe='')}")
-        return QueryCommandStatus.from_dict(data)
+        data = self._request("GET", f"/v1/command-status/{parse.quote(message_id, safe='')}")
+        return CommandStatus.from_dict(data)
 
     def list_orders(
         self,
         *,
         account_id: str | None = None,
         gateway_order_id: str | None = None,
+        origin_message_id: str | None = None,
         symbol: str | None = None,
         exchange: str | None = None,
         status: str | None = None,
@@ -280,6 +317,7 @@ class RelayClient:
             self.list_orders_page(
                 account_id=account_id,
                 gateway_order_id=gateway_order_id,
+                origin_message_id=origin_message_id,
                 symbol=symbol,
                 exchange=exchange,
                 status=status,
@@ -296,6 +334,7 @@ class RelayClient:
         *,
         account_id: str | None = None,
         gateway_order_id: str | None = None,
+        origin_message_id: str | None = None,
         symbol: str | None = None,
         exchange: str | None = None,
         status: str | None = None,
@@ -311,6 +350,7 @@ class RelayClient:
         query = {
             "account_id": account_id or self.account_id or None,
             "gateway_order_id": gateway_order_id,
+            "origin_message_id": origin_message_id,
             "symbol": symbol,
             "exchange": exchange,
             "status": status,
@@ -330,6 +370,7 @@ class RelayClient:
         *,
         account_id: str | None = None,
         gateway_order_id: str | None = None,
+        origin_message_id: str | None = None,
         symbol: str | None = None,
         exchange: str | None = None,
         status: str | None = None,
@@ -348,6 +389,7 @@ class RelayClient:
             lambda next_cursor: self.list_orders_page(
                 account_id=account_id,
                 gateway_order_id=gateway_order_id,
+                origin_message_id=origin_message_id,
                 symbol=symbol,
                 exchange=exchange,
                 status=status,
@@ -1151,7 +1193,7 @@ class RelayClient:
         *,
         account_id: str | None = None,
         idempotency_key: str | None = None,
-    ) -> CommandReceipt:
+    ) -> BatchCommandReceipt:
         account_id = self._resolve_account(account_id)
         normalized = []
         for index, order in enumerate(orders):
@@ -1167,7 +1209,101 @@ class RelayClient:
             "/v1/orders/batch",
             json_body={"account_id": account_id, "orders": normalized, "idempotency_key": batch_key},
         )
-        return CommandReceipt.from_dict(data)
+        return BatchCommandReceipt.from_dict(data)
+
+    def get_batch_order_outcomes(
+        self,
+        batch: BatchCommandReceipt | str,
+        *,
+        account_id: str | None = None,
+        page_size: int = 500,
+        max_pages: int = 100,
+    ) -> BatchOrderOutcomes:
+        """Resolve each child of a batch from the command reply and order ledger."""
+
+        receipt = batch if isinstance(batch, BatchCommandReceipt) else None
+        message_id = receipt.message_id if receipt else str(batch).strip()
+        account_id = self._resolve_account(account_id or (receipt.account_id if receipt else None))
+
+        if receipt is not None and receipt.replayed and not message_id:
+            children = tuple(
+                _resolved_batch_child(order, index=index, acceptance="replayed")
+                for index, order in enumerate(receipt.orders)
+            )
+            return BatchOrderOutcomes(
+                account_id=account_id,
+                children=children,
+                complete=all(child.outcome != "pending" for child in children),
+            )
+        if not message_id:
+            raise ValueError("batch message_id is required")
+
+        orders = tuple(
+            self.iter_orders(
+                account_id=account_id,
+                origin_message_id=message_id,
+                history=True,
+                page_size=page_size,
+                max_pages=max_pages,
+            )
+        )
+        command_status = self.get_command_status(message_id)
+        children = tuple(
+            sorted(
+                (
+                    _resolved_batch_child(
+                        order,
+                        index=index,
+                        acceptance="replayed" if receipt is not None and receipt.replayed else "accepted",
+                        command_status=command_status,
+                    )
+                    for index, order in enumerate(orders)
+                ),
+                key=lambda child: (child.index, child.gateway_order_id),
+            )
+        )
+        expected_ids = {order.gateway_order_id for order in receipt.orders} if receipt else set()
+        actual_ids = {child.gateway_order_id for child in children}
+        complete = bool(children) and all(child.outcome != "pending" for child in children)
+        if expected_ids and actual_ids != expected_ids:
+            complete = False
+        return BatchOrderOutcomes(
+            account_id=account_id,
+            message_id=message_id,
+            children=children,
+            complete=complete,
+            command_status=command_status,
+        )
+
+    def wait_batch_order_outcomes(
+        self,
+        batch: BatchCommandReceipt | str,
+        *,
+        account_id: str | None = None,
+        timeout: float = 30.0,
+        poll_interval: float = 0.5,
+    ) -> BatchOrderOutcomes:
+        """Wait until every child has a broker-level result or explicit unknown state."""
+
+        if timeout < 0 or poll_interval <= 0:
+            raise ValueError("timeout must be non-negative and poll_interval must be positive")
+        deadline = time.monotonic() + timeout
+        latest: BatchOrderOutcomes | None = None
+        while True:
+            latest = self.get_batch_order_outcomes(batch, account_id=account_id)
+            if latest.complete:
+                return latest
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(poll_interval)
+        raise RelayTimeoutError(
+            f"batch child outcomes did not complete within {timeout}s",
+            code="BATCH_OUTCOME_TIMEOUT",
+            raw_response={
+                "message_id": latest.message_id if latest else "",
+                "outcomes": [child.outcome for child in latest.children] if latest else [],
+            },
+        )
 
     def cancel_order(
         self,
@@ -1751,7 +1887,7 @@ class RelayClient:
         request_headers.update(headers or {})
         req = request.Request(url, data=data, headers=request_headers, method=method)
         try:
-            return self._opener.open(req, timeout=self.timeout if timeout is None else timeout)
+            return self.opener.open(req, timeout=self.timeout if timeout is None else timeout)
         except urlerror.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             try:
@@ -1786,6 +1922,69 @@ def _join_query_values(values: str | Iterable[str] | None) -> str | None:
     if isinstance(values, str) or values is None:
         return values
     return ",".join(str(item) for item in values)
+
+
+def _resolved_batch_child(
+    order: Order,
+    *,
+    index: int,
+    acceptance: str = "accepted",
+    command_status: CommandStatus | None = None,
+) -> BatchOrderOutcome:
+    batch_index = order.adapter_context.get("batch_index")
+    try:
+        batch_index = int(batch_index) if batch_index is not None else index
+    except (TypeError, ValueError):
+        batch_index = index
+
+    status = order.status.strip().lower()
+    outcome = "pending"
+    code = order.reject_code
+    message = order.reject_message
+    if status == "rejected":
+        outcome = "rejected"
+    elif status and status != "created":
+        outcome = "accepted"
+    elif command_status is not None:
+        replies = tuple(command_status.replies)
+        unknown = next(
+            (reply for reply in reversed(replies) if reply.code.strip().upper() == "COMMAND_OUTCOME_UNKNOWN"),
+            None,
+        )
+        not_ready = next(
+            (reply for reply in reversed(replies) if reply.code.strip().upper() == "BROKER_NOT_READY"),
+            None,
+        )
+        rejected = next(
+            (
+                reply
+                for reply in reversed(replies)
+                if reply.status.strip().lower() in {"failed", "rejected"}
+                and reply.code.strip().upper() not in {"BROKER_NOT_READY", "COMMAND_OUTCOME_UNKNOWN"}
+            ),
+            None,
+        )
+        if unknown is not None:
+            outcome, code, message = "outcome_unknown", unknown.code, unknown.message
+        elif not_ready is not None:
+            outcome, code, message = "broker_not_ready", not_ready.code, not_ready.message
+        elif rejected is not None:
+            outcome, code, message = "rejected", rejected.code, rejected.message
+
+    return BatchOrderOutcome(
+        index=batch_index,
+        account_id=order.account_id,
+        gateway_order_id=order.gateway_order_id,
+        client_order_id=order.client_order_id,
+        idempotency_key=order.idempotency_key,
+        acceptance=acceptance,
+        outcome=outcome,
+        order_status=order.status,
+        terminal=order.is_terminal,
+        code=code,
+        message=message,
+        order=order,
+    )
 
 
 def _iterate_pages(

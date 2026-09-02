@@ -90,7 +90,7 @@ type RawStreamMessage struct {
 	ReceivedAt     time.Time
 }
 
-type QueryReplyStatus struct {
+type CommandReplyStatus struct {
 	MessageID  string    `json:"message_id,omitempty"`
 	AccountID  string    `json:"account_id,omitempty"`
 	Action     string    `json:"action,omitempty"`
@@ -105,18 +105,18 @@ type QueryReplyStatus struct {
 	ReceivedAt time.Time `json:"received_at"`
 }
 
-type QueryCommandStatus struct {
-	OriginMessageID    string             `json:"origin_message_id"`
-	AccountID          string             `json:"account_id,omitempty"`
-	Action             string             `json:"action,omitempty"`
-	ExpectedResultType string             `json:"expected_result_type,omitempty"`
-	State              string             `json:"state"`
-	Terminal           bool               `json:"terminal"`
-	Success            bool               `json:"success"`
-	Contradictory      bool               `json:"contradictory"`
-	ReplyCount         int                `json:"reply_count"`
-	TerminalCount      int                `json:"terminal_count"`
-	Replies            []QueryReplyStatus `json:"replies"`
+type CommandStatus struct {
+	OriginMessageID    string               `json:"origin_message_id"`
+	AccountID          string               `json:"account_id,omitempty"`
+	Action             string               `json:"action,omitempty"`
+	ExpectedResultType string               `json:"expected_result_type,omitempty"`
+	State              string               `json:"state"`
+	Terminal           bool                 `json:"terminal"`
+	Success            bool                 `json:"success"`
+	Contradictory      bool                 `json:"contradictory"`
+	ReplyCount         int                  `json:"reply_count"`
+	TerminalCount      int                  `json:"terminal_count"`
+	Replies            []CommandReplyStatus `json:"replies"`
 }
 
 type StreamCheckpoint struct {
@@ -2178,31 +2178,31 @@ func (repo *Repository) RawStreamSummary(ctx context.Context, accountID string, 
 	return buckets, nil
 }
 
-func (repo *Repository) GetQueryCommandStatus(ctx context.Context, originMessageID string) (QueryCommandStatus, error) {
+func (repo *Repository) GetCommandStatus(ctx context.Context, originMessageID string) (CommandStatus, error) {
 	if repo == nil || repo.exec == nil {
-		return QueryCommandStatus{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+		return CommandStatus{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
 	}
 	originMessageID = strings.TrimSpace(originMessageID)
 	if originMessageID == "" {
-		return QueryCommandStatus{}, fmt.Errorf("%w: origin_message_id is required", ErrInvalidLedgerInput)
+		return CommandStatus{}, fmt.Errorf("%w: origin_message_id is required", ErrInvalidLedgerInput)
 	}
 	queryer, err := repo.queryer()
 	if err != nil {
-		return QueryCommandStatus{}, err
+		return CommandStatus{}, err
 	}
-	rows, err := queryer.QueryContext(ctx, queryCommandRepliesSQL, originMessageID)
+	rows, err := queryer.QueryContext(ctx, commandRepliesSQL, originMessageID)
 	if err != nil {
-		return QueryCommandStatus{}, fmt.Errorf("query command status %s: %w", originMessageID, err)
+		return CommandStatus{}, fmt.Errorf("query command status %s: %w", originMessageID, err)
 	}
 	defer rows.Close()
 
-	result := QueryCommandStatus{
+	result := CommandStatus{
 		OriginMessageID: originMessageID,
 		State:           "pending",
-		Replies:         []QueryReplyStatus{},
+		Replies:         []CommandReplyStatus{},
 	}
 	for rows.Next() {
-		var reply QueryReplyStatus
+		var reply CommandReplyStatus
 		if err := rows.Scan(
 			&reply.MessageID,
 			&reply.AccountID,
@@ -2217,7 +2217,7 @@ func (repo *Repository) GetQueryCommandStatus(ctx context.Context, originMessage
 			&reply.StreamID,
 			&reply.ReceivedAt,
 		); err != nil {
-			return QueryCommandStatus{}, fmt.Errorf("scan query command status: %w", err)
+			return CommandStatus{}, fmt.Errorf("scan command status: %w", err)
 		}
 		if result.AccountID == "" {
 			result.AccountID = reply.AccountID
@@ -2228,13 +2228,13 @@ func (repo *Repository) GetQueryCommandStatus(ctx context.Context, originMessage
 		result.Replies = append(result.Replies, reply)
 	}
 	if err := rows.Err(); err != nil {
-		return QueryCommandStatus{}, fmt.Errorf("query command status rows: %w", err)
+		return CommandStatus{}, fmt.Errorf("command status rows: %w", err)
 	}
 
-	return summarizeQueryCommandStatus(result), nil
+	return summarizeCommandStatus(result), nil
 }
 
-func summarizeQueryCommandStatus(result QueryCommandStatus) QueryCommandStatus {
+func summarizeCommandStatus(result CommandStatus) CommandStatus {
 	result.State = "pending"
 	result.Terminal = false
 	result.Success = false
@@ -2312,6 +2312,7 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	query.AccountID = strings.TrimSpace(query.AccountID)
 	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
 	query.ClientOrderID = strings.TrimSpace(query.ClientOrderID)
+	query.OriginMessageID = strings.TrimSpace(query.OriginMessageID)
 	query.Symbol = strings.TrimSpace(query.Symbol)
 	query.Cursor = strings.TrimSpace(query.Cursor)
 	query.StrategyType = strings.TrimSpace(query.StrategyType)
@@ -2777,6 +2778,9 @@ func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 	}
 	if query.ClientOrderID != "" {
 		appendFilter("client_order_id", query.ClientOrderID)
+	}
+	if query.OriginMessageID != "" {
+		appendFilter("origin_message_id", query.OriginMessageID)
 	}
 	if query.Symbol != "" {
 		appendFilter("symbol", query.Symbol)
