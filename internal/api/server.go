@@ -294,10 +294,14 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accountID := strings.TrimSpace(r.URL.Query().Get("account_id"))
-	ch, unsubscribe := s.events.Subscribe(r.Context(), events.Subscription{
+	lastEventID := strings.TrimSpace(r.Header.Get("Last-Event-ID"))
+	if lastEventID == "" {
+		lastEventID = strings.TrimSpace(r.URL.Query().Get("last_event_id"))
+	}
+	ch, resume, unsubscribe := s.events.SubscribeFrom(r.Context(), events.Subscription{
 		AccountID: accountID,
 		Buffer:    64,
-	})
+	}, lastEventID)
 	defer unsubscribe()
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -306,19 +310,51 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	_, _ = io.WriteString(w, "retry: 3000\n\n")
 	if err := writeSSEEvent(w, events.Event{
-		ID:         "connected",
 		Type:       events.TypeConnected,
 		AccountIDs: accountIDsForFilter(accountID),
 		Time:       timeutil.Now(),
 		Source:     "relay-api",
 		Data: map[string]any{
-			"account_id": accountID,
-			"request_id": httpx.RequestID(r),
+			"account_id":              accountID,
+			"request_id":              httpx.RequestID(r),
+			"requested_cursor":        resume.RequestedCursor,
+			"current_cursor":          resume.CurrentCursor,
+			"oldest_cursor":           resume.OldestCursor,
+			"resume_status":           resume.Status,
+			"replayed_events":         len(resume.Events),
+			"replay_capacity":         s.events.ReplayCapacity(),
+			"reconciliation_required": resume.ReconciliationRequired,
 		},
 	}); err != nil {
 		return
 	}
 	flusher.Flush()
+	if resume.Status == "gap" {
+		if err := writeSSEEvent(w, events.Event{
+			ID:         resume.CurrentCursor,
+			Type:       events.TypeGap,
+			AccountIDs: accountIDsForFilter(accountID),
+			Time:       timeutil.Now(),
+			Source:     "relay-api",
+			Data: map[string]any{
+				"reason":                  resume.Reason,
+				"requested_cursor":        resume.RequestedCursor,
+				"oldest_cursor":           resume.OldestCursor,
+				"current_cursor":          resume.CurrentCursor,
+				"reconciliation_required": true,
+			},
+		}); err != nil {
+			return
+		}
+		flusher.Flush()
+	} else {
+		for _, event := range resume.Events {
+			if err := writeSSEEvent(w, event); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -338,6 +374,9 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 				AccountIDs: accountIDsForFilter(accountID),
 				Time:       timeutil.InBusinessLocation(now),
 				Source:     "relay-api",
+				Data: map[string]any{
+					"current_cursor": s.events.CurrentCursor(),
+				},
 			}); err != nil {
 				return
 			}

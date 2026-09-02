@@ -607,10 +607,13 @@ class QueryCommandStatus:
 
 @dataclass(frozen=True)
 class RelayEvent:
+    event_id: str = ""
     event_type: str = ""
     account_ids: tuple[str, ...] = ()
     time: str = ""
     source: str = ""
+    stream: str = ""
+    last_stream_id: str = ""
     data: Mapping[str, Any] = field(default_factory=dict)
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -620,11 +623,32 @@ class RelayEvent:
         if not isinstance(account_ids, list):
             account_ids = []
         event_type = _text(data, "type") or _text(data, "event")
+        event_data = data.get("data") if isinstance(data.get("data"), Mapping) else {}
         return cls(
+            event_id=_text(data, "id"),
             event_type=event_type,
             account_ids=tuple(str(item) for item in account_ids),
             time=_text(data, "time"),
             source=_text(data, "source"),
-            data=data.get("data") if isinstance(data.get("data"), Mapping) else {},
+            stream=_text(data, "stream"),
+            last_stream_id=_text(data, "last_stream_id") or _text(event_data, "last_stream_id"),
+            data=event_data,
             raw=dict(data),
         )
+
+    @property
+    def id(self) -> str:
+        return self.event_id
+
+
+@dataclass(frozen=True)
+class StreamReconciliation:
+    account_id: str
+    reason: str
+    last_event_id: str = ""
+    current_event_id: str = ""
+    asset: Asset | None = None
+    positions: tuple[Position, ...] = ()
+    orders: tuple[Order, ...] = ()
+    fills: tuple[Fill, ...] = ()
+    trigger_event: RelayEvent | None = field(default=None, repr=False)

@@ -190,7 +190,7 @@ output stream 消费由 `internal/redisstream` 统一解析。所有消息先归
 
 docs/api 进程和正式 worker 复用同一套同步实现，但生产只允许独立 worker 消费 output stream，API 进程专注 HTTP、页面和 SSE。消费位点写入 `stream_checkpoints(stream_key)`，重启后从 `last_stream_id` 继续 `XREAD`；如果没有 checkpoint，则按配置起点从 `0` 追赶历史。重复消费依靠 PostgreSQL 唯一约束和 `ON CONFLICT` 保持幂等。
 
-worker 成功落账后向固定 PostgreSQL channel 发布版本化账本事件，API 通过长期 `LISTEN` 连接接收并广播为原有 SSE 事件。数据库通知只传递已脱敏的状态摘要，不承载原始柜台报文；连接中断会自动重连，并在 `/v1/status.dependencies.event_bridge` 中暴露状态。独立 worker 通过仅回环地址可访问的 `/readyz` 提供存活/就绪检查，API 将结果展示为 `dependencies.worker`。详细启停、日志和回滚口径见 [RUNTIME_PROCESSES.md](/home/ti-relay-trader/docs/RUNTIME_PROCESSES.md:1)。
+worker 成功落账后向固定 PostgreSQL channel 发布版本化账本事件，API 通过长期 `LISTEN` 连接接收并广播为 SSE。API Hub 为事件分配带进程 epoch 的单调 ID，并保留最近 2,048 个事件用于同进程 `Last-Event-ID` 回放；API 重启、回放窗口过期、慢消费者或事件桥重连均发出显式 `relay.gap`，要求客户端从 PostgreSQL 完整对账。数据库通知只传递已脱敏的状态摘要，不承载原始柜台报文，也不被当作持久事件存储；连接中断会自动重连，并在 `/v1/status.dependencies.event_bridge` 中暴露状态。独立 worker 通过仅回环地址可访问的 `/readyz` 提供存活/就绪检查，API 将结果展示为 `dependencies.worker`。详细启停、日志和回滚口径见 [RUNTIME_PROCESSES.md](/home/ti-relay-trader/docs/RUNTIME_PROCESSES.md:1)。
 
 订单和成交落账后，服务端会通过自动刷新调度器按账户合并触发 `account.asset.query` 和 `account.positions.query`，默认 2 秒 debounce、20 秒 cooldown，避免每条订单推送都查询柜台。
 

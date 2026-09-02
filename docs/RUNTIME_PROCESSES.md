@@ -32,7 +32,7 @@ worker:
 - `asset.changed`
 - `positions.changed`
 
-SDK 的订单状态、成交和撤单拒绝回调协议不变。通知只携带账户、stream 位点、变更计数和必要的撤单拒绝字段，不包含原始报文；PostgreSQL 账表仍是权威数据源。通知是实时唤醒信号，不承担账表持久化或断线重放。解码端接受旧的无 envelope 事件以支持 API/worker 独立滚动发布，未知 schema 会拒绝并记录日志。
+通知只携带账户、stream 位点、变更计数和必要的撤单拒绝字段，不包含原始报文；PostgreSQL 账表仍是权威数据源。API 进程内保留最近 2,048 个通知，支持 `Last-Event-ID` 有限回放；该缓存不跨 API 重启。API 重启、缓存过期、慢消费者和 LISTEN 重连通过 `relay.gap` 明确要求 SDK 全量读取当前资金、持仓、订单和成交。解码端接受旧的无 envelope 事件以支持 API/worker 独立滚动发布，未知 schema 会拒绝并记录日志。
 
 `GET /v1/status` 增加两个依赖：
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.31 - 2026-09-02
+
+### Added
+
+- Added process-scoped monotonic SSE cursors, a 2,048-event replay window, and
+  `Last-Event-ID` resume support.
+- Added explicit `relay.gap` events for API restarts, expired or invalid
+  cursors, slow consumers, and PostgreSQL event-bridge reconnections.
+- Added `RelayEvent.event_id`, `stream`, and `last_stream_id` fields.
+- Added `stream_events_resilient()` with bounded exponential reconnects,
+  configurable idle timeout, duplicate suppression, out-of-order detection,
+  and mandatory full current-ledger reconciliation.
+- Added `reconcile_current_state()` and typed `StreamReconciliation` snapshots
+  covering asset, positions, orders, and fills.
+
+### Changed
+
+- Built-in order and fill callbacks now query every cursor page instead of a
+  single 100-row page.
+- A reconnect never silently resumes callbacks: callers must provide a
+  reconciliation callback, while built-in watchers perform the reconciliation
+  internally.
+
+### Compatibility
+
+- `stream_events()` remains a single-connection iterator and now accepts
+  optional `last_event_id` and `idle_timeout` arguments.
+- No Redis Stream or OC wire schema changed. Replay is intentionally scoped to
+  one API process; a process restart produces an explicit gap instead of a
+  false replay guarantee.
+
 ## 0.1.30 - 2026-09-02
 
 ### Added

@@ -160,6 +160,17 @@ def build_commands(args: argparse.Namespace, base_url: str) -> list[tuple[str, l
                 "--allow-degraded",
             ],
         ),
+        (
+            "sdk-sse-recovery-readonly",
+            [
+                python,
+                "tests/integration/sdk_sse_recovery_live_smoke.py",
+                "--base-url",
+                base_url,
+                "--account-id",
+                args.account_id,
+            ],
+        ),
     ]
     if args.skip_browser:
         return commands

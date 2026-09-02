@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.30`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.31`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -25,7 +25,7 @@ SDK 的定位：
 3. 资金、持仓、订单、成交前置刷新指令。
 4. 单笔下单、批量下单、撤单。
 5. `wait_order_terminal()` 轮询等待订单终态。
-6. `stream_events()` SSE 事件迭代器。
+6. `stream_events()` 单连接 SSE 事件迭代器，以及带有限重连、退避、空闲超时和强制对账的 `stream_events_resilient()`。
 7. `on_order_status()`、`on_fill()`、`on_cancel_rejected()` 后台回调订阅，以及对应的 `watch_*` 阻塞式回调循环。
 8. dataclass 模型和 `raw` 原始响应保留。
 9. relay envelope 错误到 SDK 异常的映射。
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.30.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.31.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -44,11 +44,11 @@ SDK 的定位：
 22. `get_query_status(origin_message_id)` 查询 OC 刷新命令的归档终态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
 23. `get_meridian_instruments()` 和 `get_meridian_metadata_status()` 透明读取 Meridian `metadata_instrument.v2` 价位字段及 `metadata_status.v2` 质量状态。
 24. `OrderPage`、`FillPage`、`PositionPage` 保留服务端游标、规范化查询和 envelope 审计字段；`iter_orders()`、`iter_fills()`、`iter_positions()` 提供全量读取及重复游标、查询漂移、计数和页数保护。
+25. `RelayEvent.event_id`、`Last-Event-ID`、API 进程内 2,048 事件有限回放和显式 `relay.gap`；`reconcile_current_state()` 以全分页方式读取当前资金、持仓、订单和成交。
 
 尚未完成：
 
-1. 更完整的事件流断线重连和心跳处理。
-2. 批量子单异步结果、公开 transport 注入和能力发现 helper。
+1. 批量子单异步结果、公开 transport 注入和能力发现 helper。
 
 ## 包形态
 
@@ -92,15 +92,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.30.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.31.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -190,7 +190,7 @@ cancel_sub.stop()
 
 三个 `on_*` 方法都会在后台 daemon thread 中运行，并返回 `CallbackSubscription`，可调用 `stop()`、`close()`、`join()`，也可读取 `error` 查看后台异常。若策略希望自己控制主循环，可直接使用对应的 `watch_*` 方法。
 
-当前后端 SSE 的 `order.changed/fill.changed` 只说明账本发生变化，不直接携带完整订单/成交对象。SDK 会自动查询账本并去重触发回调。`order.cancel.rejected` 则携带 `cancel_attempt` 审计摘要；它只表示本次撤单动作失败，不会把原订单改成 `rejected`，策略也不应在 `retry_safe=false` 时自动重撤。
+当前后端 SSE 的 `order.changed/fill.changed` 只说明账本发生变化，不直接携带完整订单/成交对象。SDK 会自动按 cursor 全分页查询账本并去重触发回调，不再受单页 100 条限制。连接恢复、API 重启、回放过期、订阅积压或 PostgreSQL 事件桥重连时，内置 watcher 会先完整读取当前资金、持仓、订单和成交，再继续事件回调。`order.cancel.rejected` 携带 `cancel_attempt` 审计摘要；它只表示本次撤单动作失败，不会把原订单改成 `rejected`，策略也不应在 `retry_safe=false` 时自动重撤。
 
 ## 写入和变更类方法
 
@@ -393,7 +393,9 @@ Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go H
 | `submit_orders(...)` | `POST /v1/orders/batch` | 批量下单 |
 | `cancel_order(...)` | `POST /v1/orders/{gateway_order_id}/cancel` | 撤单 |
 | `wait_order_terminal(...)` | `GET /v1/orders` + event stream | 等待终态 |
-| `stream_events(...)` | `GET /v1/events/stream` | 订阅订单和成交事件 |
+| `stream_events(last_event_id=..., idle_timeout=...)` | `GET /v1/events/stream` | 单连接订阅；保留 SSE ID，可显式携带恢复游标 |
+| `stream_events_resilient(on_reconcile_required=...)` | `GET /v1/events/stream` + 当前账本 GET | 有限指数退避重连；重连或 gap 必须先完成全量对账回调 |
+| `reconcile_current_state(...)` | 资金、持仓、订单和成交 GET | 返回类型化 `StreamReconciliation` 当前账本快照，全程只读 |
 | `on_order_status(...)` | `GET /v1/events/stream` + `GET /v1/orders` | 后台订单状态回调 |
 | `on_fill(...)` | `GET /v1/events/stream` + `GET /v1/fills` | 后台成交回调 |
 | `on_cancel_rejected(...)` | `GET /v1/events/stream` | 后台撤单失败/结果不确定回调 |
@@ -420,6 +422,8 @@ SDK 模型和 9092 API schema 一一对应：
 | `Asset` | 资金资产 |
 | `Position` | 持仓、可卖数量、总成本及来源完整性、总持仓浮盈和当日持仓浮盈 |
 | `OrderPage` / `FillPage` / `PositionPage` | 类型化分页项、服务端 count/cursor/query、request_id、东八区响应时间和末页状态 |
+| `RelayEvent` | SSE `event_id`、事件类型、服务端时间、账户、来源 stream 和数据 |
+| `StreamReconciliation` | SSE 恢复时的完整当前资金、持仓、订单、成交及触发原因 |
 | `QueryCommandStatus` | 查询命令终态、预期结果类型和归档 reply 明细 |
 | `OrderRequest` | 下单请求 |
 | `OrderReceipt` | 下单命令回执 |
@@ -468,6 +472,8 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | `RelayIdempotencyError` | 幂等键冲突 |
 | `RelayOrderStateError` | 订单状态不满足操作条件 |
 | `RelayPaginationError` | 全量分页出现重复 cursor、查询漂移、count 不一致或超出 `max_pages`，结果不得视为完整 |
+| `RelayStreamGapError` | 服务端报告 gap 或游标异常，但调用方没有提供全量对账回调 |
+| `RelayStreamDisconnectedError` | SSE 有限重连次数耗尽，调用方必须进入故障状态 |
 
 异常中保留：
 
@@ -502,6 +508,8 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 11. `status()` 服务状态查询。
 12. 0、1、500、501、1001 条边界，空末页、历史路由、重复 cursor、查询漂移、计数不一致、`max_pages/max_items` 和中途连接失败。
 13. 生产只读多页验收：`501000114077` 在 `20260601..20260902` 完整读取 9,830 笔订单、13,129 笔成交和 206 条 close 持仓，业务唯一键无重复，写请求为 0。
+14. SSE 正常断开、半包尾部、无心跳超时、重复/乱序/未知事件、可恢复游标、API 重启游标和不可恢复 gap；内置 watcher 覆盖超过一页的 501 笔订单。
+15. 生产只读 SSE 验收：fresh、同进程 resumed 和旧进程 `server_restart` gap 均符合契约；恢复前完整读取当日 214 笔订单、517 笔成交和 0 条持仓，写请求为 0。
 
 打包验证：
 
@@ -513,17 +521,18 @@ python3 scripts/check-python-sdk-release.py --live-smoke --base-url http://127.0
 python3 scripts/check-python-sdk-release.py --pagination-live-smoke \
   --base-url http://relay-trader.quantstage.com \
   --account-id 501000114077 --date-from 20260601 --date-to 20260902
+python3 scripts/check-python-sdk-release.py --sse-live-smoke \
+  --base-url http://relay-trader.quantstage.com --account-id 501000114077
 ```
 
 ## 待增强项
 
 SDK 后续需要：
 
-1. 增加服务端稳定事件游标、显式 gap 和 SDK 断线恢复、heartbeat、空闲超时测试。
-2. 覆盖下单 accepted 但最终 rejected 的场景。
-3. 覆盖撤单 accepted 但最终 filled 的竞态场景。
-4. 增加公开 transport 注入、能力发现和批量子单异步结果。
-5. 后续可补充 wheel 包或内部 PyPI 发布方式。
+1. 覆盖下单 accepted 但最终 rejected 的场景。
+2. 覆盖撤单 accepted 但最终 filled 的竞态场景。
+3. 增加公开 transport 注入、能力发现和批量子单异步结果。
+4. 后续可补充 wheel 包或内部 PyPI 发布方式。
 
 每次 SDK 版本更新必须同步更新：
 

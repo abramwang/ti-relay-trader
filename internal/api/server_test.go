@@ -1540,6 +1540,81 @@ func TestEventsStreamPublishesSSE(t *testing.T) {
 	waitForSSELine(t, lines, "event: order.changed")
 }
 
+func TestEventsStreamReplaysFromLastEventID(t *testing.T) {
+	eventHub := events.NewHubWithReplayCapacity(8)
+	first := eventHub.Publish(events.Event{
+		Type:       events.TypeOrderChanged,
+		AccountIDs: []string{"acct-1"},
+	})
+	second := eventHub.Publish(events.Event{
+		Type:       events.TypeFillChanged,
+		AccountIDs: []string{"acct-1"},
+	})
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Events: eventHub,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/events/stream?account_id=acct-1", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("Last-Event-ID", first.ID)
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request event stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	lines := make(chan string, 32)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+		close(lines)
+	}()
+	waitForSSELine(t, lines, "event: relay.connected")
+	waitForSSELine(t, lines, "id: "+second.ID)
+	waitForSSELine(t, lines, "event: fill.changed")
+}
+
+func TestEventsStreamMakesRestartGapExplicit(t *testing.T) {
+	eventHub := events.NewHubWithReplayCapacity(8)
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Events: eventHub,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/events/stream?account_id=acct-1", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("Last-Event-ID", "evt-old-process-42")
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request event stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	lines := make(chan string, 32)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+		close(lines)
+	}()
+	waitForSSELine(t, lines, "event: relay.connected")
+	waitForSSELine(t, lines, "event: relay.gap")
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	handler := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)

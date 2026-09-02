@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.31.tar.gz"
 ```
 
 ## Quick Start
@@ -79,6 +79,32 @@ for order in client.iter_orders(
 returns an empty `next_cursor`. They raise `RelayPaginationError` on repeated
 cursors, count mismatches, normalized-query drift, or page-limit exhaustion.
 Set `max_items` only when intentionally requesting a bounded sample.
+
+## Recoverable Event Stream
+
+`stream_events()` exposes each SSE `event_id` and supports a single resumed
+connection through `last_event_id`. Long-running consumers should use
+`stream_events_resilient()` and provide a reconciliation callback:
+
+```python
+def reconciled(snapshot):
+    replace_orders(snapshot.orders)
+    replace_fills(snapshot.fills)
+    replace_asset(snapshot.asset)
+    replace_positions(snapshot.positions)
+
+for event in client.stream_events_resilient(
+    on_reconcile_required=reconciled,
+    max_reconnects=5,
+    idle_timeout=30,
+):
+    handle(event)
+```
+
+Relay replays events only within the current API process and its bounded replay
+window. Restarts, expired cursors, event-bridge reconnects, or subscriber
+overflow produce an explicit `relay.gap`; the SDK will not continue past a gap
+without completing `reconcile_current_state()` and invoking the callback.
 
 Refresh methods return a command receipt. Use its `message_id` to verify that
 OC produced one completed final query reply:

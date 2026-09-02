@@ -24,6 +24,7 @@ from relay_sdk.streaming import iter_sse_events
 
 class RelayHandler(BaseHTTPRequestHandler):
     requests = []
+    last_event_id = ""
 
     def do_GET(self):  # noqa: N802
         parsed = parse.urlparse(self.path)
@@ -428,6 +429,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/v1/events/stream":
+            RelayHandler.last_event_id = self.headers.get("Last-Event-ID", "")
             events = [
                 (
                     "order.changed",
@@ -685,6 +687,7 @@ class RelayClientTest(unittest.TestCase):
 
     def setUp(self):
         RelayHandler.requests = []
+        RelayHandler.last_event_id = ""
         self.client = RelayClient(self.base_url, account_id="acct-1")
 
     def test_queries_return_models(self):
@@ -954,20 +957,44 @@ class RelayClientTest(unittest.TestCase):
 
     def test_sse_parser(self):
         stream = BytesIO(
+            b'id: evt-test-1\n'
             b'event: order.changed\n'
             b'data: {"account_ids":["acct-1"],"time":"2026-06-14T00:00:00Z","data":{"orders":1}}\n'
             b"\n"
         )
         event = next(iter_sse_events(stream))
+        self.assertEqual(event.event_id, "evt-test-1")
+        self.assertEqual(event.id, "evt-test-1")
         self.assertEqual(event.event_type, "order.changed")
         self.assertEqual(event.account_ids, ("acct-1",))
         self.assertEqual(event.data["orders"], 1)
 
+    def test_stream_events_sends_last_event_id(self):
+        stream = self.client.stream_events(last_event_id="evt-test-42", idle_timeout=2)
+        event = next(stream)
+        stream.close()
+        self.assertEqual(event.event_type, "order.changed")
+        self.assertEqual(RelayHandler.last_event_id, "evt-test-42")
+
+    def test_reconcile_current_state_reads_complete_ledger(self):
+        snapshot = self.client.reconcile_current_state(reason="server_restart", last_event_id="evt-old-9")
+        self.assertEqual(snapshot.account_id, "acct-1")
+        self.assertEqual(snapshot.reason, "server_restart")
+        self.assertEqual(snapshot.last_event_id, "evt-old-9")
+        self.assertEqual(snapshot.asset.account_id, "acct-1")
+        self.assertEqual(len(snapshot.positions), 1)
+        self.assertEqual(len(snapshot.orders), 1)
+        self.assertEqual(len(snapshot.fills), 1)
+
     def test_order_status_callback_fetches_orders_after_event(self):
         seen = []
 
+        def callback(order, event):
+            seen.append((order, event.event_type))
+            return False
+
         subscription = self.client.on_order_status(
-            lambda order, event: seen.append((order, event.event_type)),
+            callback,
             gateway_order_id="gw-1",
         )
         subscription.join(timeout=2)
@@ -982,7 +1009,11 @@ class RelayClientTest(unittest.TestCase):
     def test_fill_callback_fetches_fills_after_event(self):
         seen = []
 
-        self.client.watch_fills(lambda fill, event: seen.append((fill, event.event_type)))
+        def callback(fill, event):
+            seen.append((fill, event.event_type))
+            return False
+
+        self.client.watch_fills(callback)
 
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0][0].fill_id, "fill-1")
@@ -991,8 +1022,12 @@ class RelayClientTest(unittest.TestCase):
     def test_fill_callback_allows_same_fill_id_on_different_orders(self):
         seen = []
 
+        def callback(fill, _event):
+            seen.append((fill.gateway_order_id, fill.fill_id, fill.qty))
+            return len(seen) < 2
+
         self.client.watch_fills(
-            lambda fill, event: seen.append((fill.gateway_order_id, fill.fill_id, fill.qty)),
+            callback,
             symbol="dup-fill",
         )
 
@@ -1001,8 +1036,12 @@ class RelayClientTest(unittest.TestCase):
     def test_cancel_rejected_callback_receives_attempt_context(self):
         seen = []
 
+        def callback(event):
+            seen.append(event.data["cancel_attempt"])
+            return False
+
         self.client.watch_cancel_rejections(
-            lambda event: seen.append(event.data["cancel_attempt"]),
+            callback,
             gateway_order_id="gw-cancel-rejected",
         )
 

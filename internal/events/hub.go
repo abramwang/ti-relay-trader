@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,12 +15,17 @@ import (
 const (
 	TypeConnected           = "relay.connected"
 	TypeHeartbeat           = "relay.heartbeat"
+	TypeGap                 = "relay.gap"
 	TypeOrderChanged        = "order.changed"
 	TypeOrderCancelRejected = "order.cancel.rejected"
 	TypeFillChanged         = "fill.changed"
 	TypeAssetChanged        = "asset.changed"
 	TypePositionsChanged    = "positions.changed"
 )
+
+const DefaultReplayCapacity = 2048
+
+var nextHubEpoch atomic.Uint64
 
 type Event struct {
 	ID           string    `json:"id"`
@@ -37,11 +43,24 @@ type Subscription struct {
 	Buffer    int
 }
 
+type Resume struct {
+	RequestedCursor        string
+	CurrentCursor          string
+	OldestCursor           string
+	Status                 string
+	Reason                 string
+	Events                 []Event
+	ReconciliationRequired bool
+}
+
 type Hub struct {
-	mu          sync.RWMutex
-	nextSubID   uint64
-	nextEventID atomic.Uint64
-	subscribers map[uint64]subscriber
+	mu             sync.RWMutex
+	epoch          string
+	nextSubID      uint64
+	nextEventID    uint64
+	replayCapacity int
+	history        []Event
+	subscribers    map[uint64]subscriber
 }
 
 type subscriber struct {
@@ -50,7 +69,20 @@ type subscriber struct {
 }
 
 func NewHub() *Hub {
-	return &Hub{subscribers: map[uint64]subscriber{}}
+	return NewHubWithReplayCapacity(DefaultReplayCapacity)
+}
+
+func NewHubWithReplayCapacity(capacity int) *Hub {
+	if capacity < 0 {
+		capacity = 0
+	}
+	epoch := fmt.Sprintf("%x-%x", time.Now().UTC().UnixNano(), nextHubEpoch.Add(1))
+	return &Hub{
+		epoch:          epoch,
+		replayCapacity: capacity,
+		history:        make([]Event, 0, capacity),
+		subscribers:    map[uint64]subscriber{},
+	}
 }
 
 func (hub *Hub) Publish(event Event) Event {
@@ -60,9 +92,6 @@ func (hub *Hub) Publish(event Event) Event {
 	if event.Type == "" {
 		event.Type = "relay.event"
 	}
-	if event.ID == "" {
-		event.ID = fmt.Sprintf("evt-%d", hub.nextEventID.Add(1))
-	}
 	if event.Time.IsZero() {
 		event.Time = timeutil.Now()
 	} else {
@@ -70,8 +99,11 @@ func (hub *Hub) Publish(event Event) Event {
 	}
 	event.AccountIDs = normalizeAccountIDs(event.AccountIDs)
 
-	hub.mu.RLock()
-	defer hub.mu.RUnlock()
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	hub.nextEventID++
+	event.ID = hub.cursorLocked(hub.nextEventID)
+	hub.appendHistoryLocked(event)
 	for _, sub := range hub.subscribers {
 		if !subscriberMatches(sub, event) {
 			continue
@@ -79,22 +111,21 @@ func (hub *Hub) Publish(event Event) Event {
 		select {
 		case sub.ch <- event:
 		default:
-			select {
-			case <-sub.ch:
-			default:
-			}
-			select {
-			case sub.ch <- event:
-			default:
-			}
+			drainEvents(sub.ch)
+			sub.ch <- slowConsumerGap(sub, event)
 		}
 	}
 	return event
 }
 
 func (hub *Hub) Subscribe(ctx context.Context, filter Subscription) (<-chan Event, func()) {
+	ch, _, unsubscribe := hub.SubscribeFrom(ctx, filter, "")
+	return ch, unsubscribe
+}
+
+func (hub *Hub) SubscribeFrom(ctx context.Context, filter Subscription, lastEventID string) (<-chan Event, Resume, func()) {
 	if hub == nil {
-		hub = NewHub()
+		return NewHub().SubscribeFrom(ctx, filter, lastEventID)
 	}
 	buffer := filter.Buffer
 	if buffer <= 0 {
@@ -107,6 +138,7 @@ func (hub *Hub) Subscribe(ctx context.Context, filter Subscription) (<-chan Even
 	}
 
 	hub.mu.Lock()
+	resume := hub.resumeLocked(sub, strings.TrimSpace(lastEventID))
 	hub.nextSubID++
 	subID := hub.nextSubID
 	hub.subscribers[subID] = sub
@@ -123,13 +155,140 @@ func (hub *Hub) Subscribe(ctx context.Context, filter Subscription) (<-chan Even
 			hub.mu.Unlock()
 		})
 	}
-	if ctx != nil {
+	if ctx != nil && ctx.Done() != nil {
 		go func() {
 			<-ctx.Done()
 			unsubscribe()
 		}()
 	}
-	return ch, unsubscribe
+	return ch, resume, unsubscribe
+}
+
+func (hub *Hub) CurrentCursor() string {
+	if hub == nil {
+		return ""
+	}
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
+	return hub.cursorLocked(hub.nextEventID)
+}
+
+func (hub *Hub) ReplayCapacity() int {
+	if hub == nil {
+		return 0
+	}
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
+	return hub.replayCapacity
+}
+
+func (hub *Hub) appendHistoryLocked(event Event) {
+	if hub.replayCapacity <= 0 {
+		return
+	}
+	if len(hub.history) == hub.replayCapacity {
+		copy(hub.history, hub.history[1:])
+		hub.history[len(hub.history)-1] = event
+		return
+	}
+	hub.history = append(hub.history, event)
+}
+
+func (hub *Hub) resumeLocked(sub subscriber, requested string) Resume {
+	resume := Resume{
+		RequestedCursor: requested,
+		CurrentCursor:   hub.cursorLocked(hub.nextEventID),
+		Status:          "fresh",
+	}
+	if len(hub.history) > 0 {
+		resume.OldestCursor = hub.history[0].ID
+	}
+	if requested == "" {
+		return resume
+	}
+	resume.ReconciliationRequired = true
+	epoch, sequence, ok := parseCursor(requested)
+	if !ok {
+		resume.Status = "gap"
+		resume.Reason = "invalid_cursor"
+		return resume
+	}
+	if epoch != hub.epoch {
+		resume.Status = "gap"
+		resume.Reason = "server_restart"
+		return resume
+	}
+	if sequence > hub.nextEventID {
+		resume.Status = "gap"
+		resume.Reason = "cursor_ahead"
+		return resume
+	}
+	earliestSequence := hub.nextEventID + 1
+	if len(hub.history) > 0 {
+		_, earliestSequence, _ = parseCursor(hub.history[0].ID)
+	}
+	if sequence+1 < earliestSequence {
+		resume.Status = "gap"
+		resume.Reason = "cursor_expired"
+		return resume
+	}
+	resume.Status = "resumed"
+	for _, event := range hub.history {
+		_, eventSequence, valid := parseCursor(event.ID)
+		if valid && eventSequence > sequence && subscriberMatches(sub, event) {
+			resume.Events = append(resume.Events, event)
+		}
+	}
+	return resume
+}
+
+func (hub *Hub) cursorLocked(sequence uint64) string {
+	return fmt.Sprintf("evt-%s-%d", hub.epoch, sequence)
+}
+
+func parseCursor(cursor string) (string, uint64, bool) {
+	cursor = strings.TrimSpace(cursor)
+	if !strings.HasPrefix(cursor, "evt-") {
+		return "", 0, false
+	}
+	separator := strings.LastIndex(cursor, "-")
+	if separator <= len("evt-") || separator == len(cursor)-1 {
+		return "", 0, false
+	}
+	sequence, err := strconv.ParseUint(cursor[separator+1:], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return cursor[len("evt-"):separator], sequence, true
+}
+
+func drainEvents(ch chan Event) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}
+
+func slowConsumerGap(sub subscriber, current Event) Event {
+	accountIDs := current.AccountIDs
+	if sub.accountID != "" {
+		accountIDs = []string{sub.accountID}
+	}
+	return Event{
+		ID:         current.ID,
+		Type:       TypeGap,
+		AccountIDs: accountIDs,
+		Time:       current.Time,
+		Source:     "relay-api",
+		Data: map[string]any{
+			"reason":                  "slow_consumer",
+			"current_cursor":          current.ID,
+			"reconciliation_required": true,
+		},
+	}
 }
 
 func subscriberMatches(sub subscriber, event Event) bool {

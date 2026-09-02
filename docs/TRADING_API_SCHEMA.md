@@ -378,7 +378,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `GET` | `/v1/history/orders` | `OrderQuery` | `[]Order` | 已实现，显式历史订单查询 |
 | `GET` | `/v1/history/fills` | `FillQuery` | `[]Fill` | 已实现，显式历史成交查询 |
 | `GET` | `/v1/history/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，显式历史 ETF 成分股划转查询 |
-| `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
+| `GET` | `/v1/events/stream` | `account_id`，可选 `Last-Event-ID` header 或 `last_event_id` query | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化、有限回放及显式 gap |
 | `GET` | `/v1/meridian/metadata/instruments` | Meridian query | `metadata_instrument.v2` | 已实现，透明返回沪深证券主数据和权威 `price_tick/price_decimals`；北交所为未来能力 |
 | `GET` | `/v1/meridian/metadata/status` | - | `metadata_status.v2` | 已实现，透明返回证券主数据和价位覆盖质量 |
 | `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
@@ -428,6 +428,10 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 
 订单、成交、ETF 划转、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
+
+`GET /v1/events/stream` 的账本事件使用 API Hub 生成的进程 epoch 单调游标，游标是 opaque string，客户端不得解析或自行构造。初次连接先收到无 SSE ID 的 `relay.connected`，其 data 包含 `resume_status=fresh`、`current_cursor`、`replay_capacity=2048` 和 `reconciliation_required=false`。恢复连接携带 `Last-Event-ID` 后，同一 API 进程且游标仍在窗口内时，服务端先返回 `resume_status=resumed`，再按原顺序发送游标之后且符合账户过滤的事件。
+
+API 进程重启、游标无效或超前、回放窗口过期、订阅者缓冲区溢出以及 PostgreSQL 事件桥断线重连都会产生 `relay.gap`，并设置 `reconciliation_required=true`。恢复连接即使能够回放也会要求客户端先读取当前完整订单、成交、资金和持仓，因为 SSE 只承担实时唤醒，不是权威账本。15 秒 heartbeat 不推进游标；SDK 默认 30 秒 idle timeout。回放只覆盖当前 API 进程最近 2,048 个事件，PostgreSQL `NOTIFY` 本身不被描述为持久事件存储。
 
 OC 无法确定单笔委托身份或发现普通成交与订单证券、交易所、方向、业务类型不一致时，会写入 `dlq` 且 `action=adapter.data_quality`。Relay 9092 进程消费并归档 DLQ，独立统计 `dead_letters/data_quality_dead_letters`，不会把问题记录落入普通订单或成交账本。
 

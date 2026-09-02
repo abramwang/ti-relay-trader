@@ -78,6 +78,14 @@ class RelayPaginationError(RelayError):
     """Raised when a paginated read cannot prove complete, stable coverage."""
 
 
+class RelayStreamGapError(RelayError):
+    """Raised when an event-stream gap requires a full ledger reconciliation."""
+
+
+class RelayStreamDisconnectedError(RelayConnectionError):
+    """Raised after the bounded event-stream reconnect budget is exhausted."""
+
+
 def error_from_payload(
     payload: Mapping[str, Any] | None,
     *,

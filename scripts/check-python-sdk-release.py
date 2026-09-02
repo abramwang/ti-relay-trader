@@ -29,6 +29,11 @@ def main() -> None:
         help="also prove complete multi-page historical ledger reads",
     )
     parser.add_argument(
+        "--sse-live-smoke",
+        action="store_true",
+        help="also validate SSE resume, explicit gap, and full reconciliation",
+    )
+    parser.add_argument(
         "--allow-degraded",
         action="store_true",
         help="allow aggregate degraded status when all core dependencies remain healthy",
@@ -81,6 +86,18 @@ def main() -> None:
                 args.date_to,
             ]
         )
+    if args.sse_live_smoke:
+        require(args.account_id, "--account-id is required with --sse-live-smoke")
+        run(
+            [
+                sys.executable,
+                "tests/integration/sdk_sse_recovery_live_smoke.py",
+                "--base-url",
+                args.base_url,
+                "--account-id",
+                args.account_id,
+            ]
+        )
 
     print(f"relay-sdk {version} release check passed")
 
@@ -124,6 +141,7 @@ def verify_archive_contents(archive: Path, version: str) -> None:
         f"{package_root}/relay_sdk/streaming.py",
         f"{package_root}/tests/test_client.py",
         f"{package_root}/tests/test_pagination.py",
+        f"{package_root}/tests/test_streaming.py",
     }
     with tarfile.open(archive, "r:gz") as tar:
         names = set(tar.getnames())

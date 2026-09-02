@@ -58,9 +58,10 @@ type PostgresListener struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	mu      sync.RWMutex
-	ready   bool
-	lastErr error
+	mu            sync.RWMutex
+	ready         bool
+	lastErr       error
+	connectedOnce bool
 }
 
 func StartPostgresListener(parent context.Context, dsn string, hub *Hub, logger *slog.Logger) *PostgresListener {
@@ -129,8 +130,20 @@ func (listener *PostgresListener) listen(ctx context.Context) error {
 	if _, err := conn.Exec(ctx, "LISTEN "+PostgresChannel); err != nil {
 		return err
 	}
+	reconnected := listener.markConnected()
 	listener.setState(true, nil)
 	listener.logger.Info("relay_postgres_event_listener_ready", "channel", PostgresChannel)
+	if reconnected {
+		listener.hub.Publish(Event{
+			Type:   TypeGap,
+			Time:   timeutil.Now(),
+			Source: "postgres-event-listener",
+			Data: map[string]any{
+				"reason":                  "event_bridge_reconnected",
+				"reconciliation_required": true,
+			},
+		})
+	}
 	for ctx.Err() == nil {
 		notification, err := conn.WaitForNotification(ctx)
 		if err != nil {
@@ -144,6 +157,14 @@ func (listener *PostgresListener) listen(ctx context.Context) error {
 		listener.hub.Publish(event)
 	}
 	return ctx.Err()
+}
+
+func (listener *PostgresListener) markConnected() bool {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	reconnected := listener.connectedOnce
+	listener.connectedOnce = true
+	return reconnected
 }
 
 func (listener *PostgresListener) setState(ready bool, err error) {

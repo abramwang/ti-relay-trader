@@ -12,7 +12,15 @@ from typing import Any, Callable, Iterable, Mapping
 from urllib import error as urlerror
 from urllib import parse, request
 
-from .errors import RelayConnectionError, RelayError, RelayPaginationError, RelayTimeoutError, error_from_payload
+from .errors import (
+    RelayConnectionError,
+    RelayError,
+    RelayPaginationError,
+    RelayStreamDisconnectedError,
+    RelayStreamGapError,
+    RelayTimeoutError,
+    error_from_payload,
+)
 from .models import (
     Account,
     Asset,
@@ -27,16 +35,18 @@ from .models import (
     PositionPage,
     QueryCommandStatus,
     RelayEvent,
+    StreamReconciliation,
 )
 from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.30"
+SDK_VERSION = "0.1.31"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 CancelRejectedCallback = Callable[[RelayEvent], object]
+StreamReconciliationCallback = Callable[[StreamReconciliation], object]
 
 
 class CallbackSubscription:
@@ -1202,11 +1212,204 @@ class RelayClient:
             raw_response=last_order.raw if last_order else None,
         )
 
-    def stream_events(self, account_id: str | None = None) -> Iterable[RelayEvent]:
+    def stream_events(
+        self,
+        account_id: str | None = None,
+        *,
+        last_event_id: str | None = None,
+        idle_timeout: float = 30.0,
+    ) -> Iterable[RelayEvent]:
+        """Read one SSE connection, optionally resuming from a server cursor."""
+
+        if idle_timeout <= 0:
+            raise ValueError("idle_timeout must be positive")
         account_id = account_id or self.account_id
         query = {"account_id": account_id} if account_id else None
-        response = self._open("GET", "/v1/events/stream", query=query)
-        return iter_sse_events(response)
+        headers = {"Last-Event-ID": last_event_id} if last_event_id else None
+        response = self._open(
+            "GET",
+            "/v1/events/stream",
+            query=query,
+            headers=headers,
+            timeout=idle_timeout,
+        )
+
+        def read_events() -> Iterable[RelayEvent]:
+            try:
+                yield from iter_sse_events(response)
+            finally:
+                response.close()
+
+        return read_events()
+
+    def reconcile_current_state(
+        self,
+        account_id: str | None = None,
+        *,
+        reason: str = "manual",
+        last_event_id: str = "",
+        trigger_event: RelayEvent | None = None,
+        page_size: int = 500,
+        max_pages: int = 1000,
+    ) -> StreamReconciliation:
+        """Read the complete current ledger after an event-stream discontinuity."""
+
+        account_id = self._resolve_account(account_id)
+        asset = self.get_asset_raw(account_id)
+        positions = tuple(
+            self.iter_positions(
+                account_id,
+                enrich=False,
+                page_size=page_size,
+                max_pages=max_pages,
+            )
+        )
+        orders = tuple(
+            self.iter_orders(
+                account_id=account_id,
+                page_size=page_size,
+                max_pages=max_pages,
+            )
+        )
+        fills = tuple(
+            self.iter_fills(
+                account_id=account_id,
+                page_size=page_size,
+                max_pages=max_pages,
+            )
+        )
+        return StreamReconciliation(
+            account_id=account_id,
+            reason=reason,
+            last_event_id=last_event_id,
+            current_event_id=trigger_event.event_id if trigger_event else "",
+            asset=asset,
+            positions=positions,
+            orders=orders,
+            fills=fills,
+            trigger_event=trigger_event,
+        )
+
+    def stream_events_resilient(
+        self,
+        account_id: str | None = None,
+        *,
+        last_event_id: str | None = None,
+        on_reconcile_required: StreamReconciliationCallback | None = None,
+        max_reconnects: int = 5,
+        backoff_initial: float = 0.5,
+        backoff_max: float = 8.0,
+        idle_timeout: float = 30.0,
+        reconciliation_page_size: int = 500,
+        reconciliation_max_pages: int = 1000,
+        stop_event: threading.Event | None = None,
+    ) -> Iterable[RelayEvent]:
+        """Read SSE with bounded reconnects and mandatory gap reconciliation."""
+
+        account_id = self._resolve_account(account_id)
+        if max_reconnects < 0:
+            raise ValueError("max_reconnects must be non-negative")
+        if backoff_initial < 0 or backoff_max < 0:
+            raise ValueError("reconnect backoff must be non-negative")
+        cursor = str(last_event_id or "").strip()
+        reconnects = 0
+        connection_number = 0
+
+        while stop_event is None or not stop_event.is_set():
+            connection_number += 1
+            reconciled_this_connection = False
+            try:
+                for event in self.stream_events(
+                    account_id=account_id,
+                    last_event_id=cursor or None,
+                    idle_timeout=idle_timeout,
+                ):
+                    if stop_event is not None and stop_event.is_set():
+                        return
+
+                    requires_reconciliation = event.event_type == "relay.gap" or _event_requires_reconciliation(event)
+                    if connection_number > 1 and event.event_type != "relay.heartbeat" and not reconciled_this_connection:
+                        requires_reconciliation = True
+                    if requires_reconciliation and not reconciled_this_connection:
+                        reason = _stream_reconciliation_reason(event, connection_number)
+                        if on_reconcile_required is None:
+                            raise RelayStreamGapError(
+                                f"event stream requires full reconciliation: {reason}",
+                                code="EVENT_STREAM_GAP",
+                                raw_response=event.raw,
+                            )
+                        snapshot = self.reconcile_current_state(
+                            account_id,
+                            reason=reason,
+                            last_event_id=cursor,
+                            trigger_event=event,
+                            page_size=reconciliation_page_size,
+                            max_pages=reconciliation_max_pages,
+                        )
+                        if on_reconcile_required(snapshot) is False:
+                            return
+                        reconciled_this_connection = True
+
+                    relation = _event_cursor_relation(cursor, event.event_id)
+                    if relation == "duplicate":
+                        continue
+                    if relation == "out_of_order":
+                        if not reconciled_this_connection:
+                            if on_reconcile_required is None:
+                                raise RelayStreamGapError(
+                                    "event stream cursor moved backwards",
+                                    code="EVENT_STREAM_OUT_OF_ORDER",
+                                    raw_response=event.raw,
+                                )
+                            snapshot = self.reconcile_current_state(
+                                account_id,
+                                reason="event_out_of_order",
+                                last_event_id=cursor,
+                                trigger_event=event,
+                                page_size=reconciliation_page_size,
+                                max_pages=reconciliation_max_pages,
+                            )
+                            if on_reconcile_required(snapshot) is False:
+                                return
+                            reconciled_this_connection = True
+                        continue
+                    if relation == "epoch_changed" and not reconciled_this_connection:
+                        if on_reconcile_required is None:
+                            raise RelayStreamGapError(
+                                "event stream cursor epoch changed without a gap signal",
+                                code="EVENT_STREAM_EPOCH_CHANGED",
+                                raw_response=event.raw,
+                            )
+                        snapshot = self.reconcile_current_state(
+                            account_id,
+                            reason="event_cursor_epoch_changed",
+                            last_event_id=cursor,
+                            trigger_event=event,
+                            page_size=reconciliation_page_size,
+                            max_pages=reconciliation_max_pages,
+                        )
+                        if on_reconcile_required(snapshot) is False:
+                            return
+                        reconciled_this_connection = True
+                    if event.event_id:
+                        cursor = event.event_id
+                    yield event
+
+                raise RelayConnectionError("relay event stream disconnected before completion")
+            except (RelayConnectionError, RelayTimeoutError, socket.timeout, TimeoutError, OSError) as exc:
+                reconnects += 1
+                if reconnects > max_reconnects:
+                    raise RelayStreamDisconnectedError(
+                        f"event stream reconnect budget exhausted after {max_reconnects} attempts",
+                        code="EVENT_STREAM_RECONNECT_EXHAUSTED",
+                        raw_response={"last_event_id": cursor, "cause": str(exc)},
+                    ) from exc
+                delay = min(backoff_max, backoff_initial * (2 ** (reconnects - 1)))
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        return
+                elif delay > 0:
+                    time.sleep(delay)
 
     def on_order_status(
         self,
@@ -1311,15 +1514,12 @@ class RelayClient:
 
         seen: dict[str, tuple[Any, ...]] = {}
 
-        def emit(event: RelayEvent) -> bool:
-            orders = self.list_orders(
-                account_id=account_id,
-                gateway_order_id=gateway_order_id,
-                symbol=symbol,
-                exchange=exchange,
-                limit=limit,
-            )
+        page_size = _callback_page_size(limit, 500)
+
+        def emit_orders(orders: Iterable[Order], event: RelayEvent, *, filter_locally: bool = False) -> bool:
             for order in orders:
+                if filter_locally and not _order_matches(order, gateway_order_id, symbol, exchange):
+                    continue
                 key = _order_key(order)
                 state = _order_state(order)
                 if dedupe and seen.get(key) == state:
@@ -1329,10 +1529,30 @@ class RelayClient:
                     return False
             return True
 
+        def emit(event: RelayEvent) -> bool:
+            return emit_orders(
+                self.iter_orders(
+                    account_id=account_id,
+                    gateway_order_id=gateway_order_id,
+                    symbol=symbol,
+                    exchange=exchange,
+                    page_size=page_size,
+                ),
+                event,
+            )
+
+        def reconcile(snapshot: StreamReconciliation) -> object:
+            event = snapshot.trigger_event or _snapshot_event("order.reconciliation")
+            return emit_orders(snapshot.orders, event, filter_locally=True)
+
         if include_snapshot and not emit(_snapshot_event("order.snapshot")):
             return
 
-        for event in self.stream_events(account_id=account_id):
+        for event in self.stream_events_resilient(
+            account_id=account_id,
+            on_reconcile_required=reconcile,
+            stop_event=stop_event,
+        ):
             if stop_event is not None and stop_event.is_set():
                 return
             if event.event_type != "order.changed":
@@ -1360,15 +1580,12 @@ class RelayClient:
 
         seen: set[str] = set()
 
-        def emit(event: RelayEvent) -> bool:
-            fills = self.list_fills(
-                account_id=account_id,
-                gateway_order_id=gateway_order_id,
-                symbol=symbol,
-                exchange=exchange,
-                limit=limit,
-            )
+        page_size = _callback_page_size(limit, 500)
+
+        def emit_fills(fills: Iterable[Fill], event: RelayEvent, *, filter_locally: bool = False) -> bool:
             for fill in fills:
+                if filter_locally and not _fill_matches(fill, gateway_order_id, symbol, exchange):
+                    continue
                 key = _fill_key(fill)
                 if dedupe and key in seen:
                     continue
@@ -1377,10 +1594,30 @@ class RelayClient:
                     return False
             return True
 
+        def emit(event: RelayEvent) -> bool:
+            return emit_fills(
+                self.iter_fills(
+                    account_id=account_id,
+                    gateway_order_id=gateway_order_id,
+                    symbol=symbol,
+                    exchange=exchange,
+                    page_size=page_size,
+                ),
+                event,
+            )
+
+        def reconcile(snapshot: StreamReconciliation) -> object:
+            event = snapshot.trigger_event or _snapshot_event("fill.reconciliation")
+            return emit_fills(snapshot.fills, event, filter_locally=True)
+
         if include_snapshot and not emit(_snapshot_event("fill.snapshot")):
             return
 
-        for event in self.stream_events(account_id=account_id):
+        for event in self.stream_events_resilient(
+            account_id=account_id,
+            on_reconcile_required=reconcile,
+            stop_event=stop_event,
+        ):
             if stop_event is not None and stop_event.is_set():
                 return
             if event.event_type != "fill.changed":
@@ -1398,7 +1635,11 @@ class RelayClient:
     ) -> None:
         """Block and invoke ``callback(event)`` for failed cancel outcomes."""
 
-        for event in self.stream_events(account_id=account_id):
+        for event in self.stream_events_resilient(
+            account_id=account_id,
+            on_reconcile_required=lambda _snapshot: True,
+            stop_event=stop_event,
+        ):
             if stop_event is not None and stop_event.is_set():
                 return
             if event.event_type != "order.cancel.rejected":
@@ -1493,21 +1734,24 @@ class RelayClient:
         *,
         query: Mapping[str, Any] | None = None,
         json_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
     ):
         url = self._url(path, query)
-        headers = {
+        request_headers = {
             "Accept": "application/json",
             "User-Agent": f"relay-sdk/{SDK_VERSION}",
         }
         data = None
         if json_body is not None:
             data = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
-            headers["Content-Type"] = "application/json"
+            request_headers["Content-Type"] = "application/json"
         if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        req = request.Request(url, data=data, headers=headers, method=method)
+            request_headers["Authorization"] = f"Bearer {self.api_key}"
+        request_headers.update(headers or {})
+        req = request.Request(url, data=data, headers=request_headers, method=method)
         try:
-            return self._opener.open(req, timeout=self.timeout)
+            return self._opener.open(req, timeout=self.timeout if timeout is None else timeout)
         except urlerror.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             try:
@@ -1628,6 +1872,90 @@ def _pagination_query_signature(query: Mapping[str, Any]) -> str | None:
         return None
     fixed_query = {key: value for key, value in query.items() if key != "cursor"}
     return json.dumps(fixed_query, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _callback_page_size(limit: int | None, maximum: int) -> int:
+    if limit is None or limit <= 0:
+        return maximum
+    return min(limit, maximum)
+
+
+def _order_matches(
+    order: Order,
+    gateway_order_id: str | None,
+    symbol: str | None,
+    exchange: str | None,
+) -> bool:
+    if gateway_order_id and order.gateway_order_id != gateway_order_id:
+        return False
+    if symbol and symbol not in {order.symbol, f"{order.symbol}.{order.exchange}"}:
+        return False
+    if exchange and order.exchange.upper() != exchange.upper():
+        return False
+    return True
+
+
+def _fill_matches(
+    fill: Fill,
+    gateway_order_id: str | None,
+    symbol: str | None,
+    exchange: str | None,
+) -> bool:
+    if gateway_order_id and fill.gateway_order_id != gateway_order_id:
+        return False
+    if symbol and symbol not in {fill.symbol, f"{fill.symbol}.{fill.exchange}"}:
+        return False
+    if exchange and fill.exchange.upper() != exchange.upper():
+        return False
+    return True
+
+
+def _event_requires_reconciliation(event: RelayEvent) -> bool:
+    value = event.data.get("reconciliation_required")
+    return value is True or str(value).lower() in {"1", "true", "yes"}
+
+
+def _stream_reconciliation_reason(event: RelayEvent, connection_number: int) -> str:
+    reason = str(event.data.get("reason") or "").strip()
+    if reason:
+        return reason
+    resume_status = str(event.data.get("resume_status") or "").strip()
+    if resume_status:
+        return f"stream_{resume_status}"
+    if connection_number > 1:
+        return "stream_reconnected"
+    return "stream_gap"
+
+
+def _event_cursor_relation(previous: str, current: str) -> str:
+    previous = str(previous or "").strip()
+    current = str(current or "").strip()
+    if not previous or not current:
+        return "forward"
+    if previous == current:
+        return "duplicate"
+    previous_parts = _parse_event_cursor(previous)
+    current_parts = _parse_event_cursor(current)
+    if previous_parts is None or current_parts is None:
+        return "forward"
+    if previous_parts[0] != current_parts[0]:
+        return "epoch_changed"
+    if current_parts[1] < previous_parts[1]:
+        return "out_of_order"
+    return "forward"
+
+
+def _parse_event_cursor(cursor: str) -> tuple[str, int] | None:
+    if not cursor.startswith("evt-") or "-" not in cursor[len("evt-") :]:
+        return None
+    epoch, sequence_text = cursor[len("evt-") :].rsplit("-", 1)
+    try:
+        sequence = int(sequence_text)
+    except ValueError:
+        return None
+    if not epoch or sequence < 0:
+        return None
+    return epoch, sequence
 
 
 def _snapshot_event(event_type: str) -> RelayEvent:

@@ -12,6 +12,8 @@ from .errors import (
     RelayPaginationError,
     RelayQueryInterruptedError,
     RelayRejectedError,
+    RelayStreamDisconnectedError,
+    RelayStreamGapError,
     RelayTimeoutError,
 )
 from .models import (
@@ -29,6 +31,7 @@ from .models import (
     QueryCommandStatus,
     QueryReplyStatus,
     RelayEvent,
+    StreamReconciliation,
 )
 
 __all__ = [
@@ -58,7 +61,10 @@ __all__ = [
     "RelayPaginationError",
     "RelayQueryInterruptedError",
     "RelayRejectedError",
+    "RelayStreamDisconnectedError",
+    "RelayStreamGapError",
     "RelayTimeoutError",
+    "StreamReconciliation",
 ]
 
-__version__ = "0.1.30"
+__version__ = "0.1.31"
