@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.29`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.30`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.29.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.30.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -43,11 +43,12 @@ SDK 的定位：
 21. `get_meridian_etf_components()`、`get_meridian_etf_cash_components()` 和 `get_meridian_etf_pcf_status()`，透明读取 Meridian ETF PCF 数据；字段和日期约束完全沿用 Meridian。
 22. `get_query_status(origin_message_id)` 查询 OC 刷新命令的归档终态；`Position` 增加 `total_cost`、`avg_cost_source` 和 `cost_complete` 成本质量字段。
 23. `get_meridian_instruments()` 和 `get_meridian_metadata_status()` 透明读取 Meridian `metadata_instrument.v2` 价位字段及 `metadata_status.v2` 质量状态。
+24. `OrderPage`、`FillPage`、`PositionPage` 保留服务端游标、规范化查询和 envelope 审计字段；`iter_orders()`、`iter_fills()`、`iter_positions()` 提供全量读取及重复游标、查询漂移、计数和页数保护。
 
 尚未完成：
 
 1. 更完整的事件流断线重连和心跳处理。
-2. 历史版本索引。
+2. 批量子单异步结果、公开 transport 注入和能力发现 helper。
 
 ## 包形态
 
@@ -67,6 +68,7 @@ from relay_sdk import RelayClient
 
 ```text
 sdk/python/
+├── CHANGELOG.md
 ├── pyproject.toml
 ├── README.md
 └── relay_sdk/
@@ -90,15 +92,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.29.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.29.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.29.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.29.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.30.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -318,11 +320,17 @@ client = RelayClient(
 | `get_asset(account_id=None)` | `GET /v1/accounts/{account_id}/asset` | 查询资金资产，默认包含本地持仓汇总补全 |
 | `get_asset_raw(account_id=None)` | `GET /v1/accounts/{account_id}/asset?enrich=false` | 读取柜台原始资金账本，不触发持仓、行情或 Meridian 补全 |
 | `get_positions(account_id=None)` | `GET /v1/accounts/{account_id}/positions` | 查询当前持仓，默认补全名称、行情和盈亏 |
+| `get_positions_page(..., limit=500, cursor=...)` | `GET /v1/accounts/{account_id}/positions[/history]` | 返回类型化 `PositionPage`，保留服务端游标和审计字段 |
+| `iter_positions(..., page_size=500, max_pages=1000)` | 同上，多页 | 遍历至服务端返回空游标；可用 `max_items` 显式限制样本数 |
 | `get_positions_raw(account_id=None)` | `GET /v1/accounts/{account_id}/positions?enrich=false` | 读取柜台原始持仓账本，不触发 Meridian 补全 |
 | `get_positions(history=True, trade_date=..., snapshot_type="close")` | `GET /v1/accounts/{account_id}/positions/history` | 查询历史持仓快照；默认 close，可传 open 读取盘前持仓 |
 | `list_orders(...)` | `GET /v1/orders` | 默认查询当日订单 |
+| `list_orders_page(..., limit=500, cursor=...)` | `GET /v1/orders` 或 `/v1/history/orders` | 返回类型化 `OrderPage` 和 envelope 审计字段 |
+| `iter_orders(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历订单，带重复游标、查询漂移和页数保护 |
 | `list_orders(history=True, ...)` | `GET /v1/history/orders` | 查询历史订单 |
 | `list_fills(...)` | `GET /v1/fills` | 默认查询当日成交 |
+| `list_fills_page(..., limit=500, cursor=...)` | `GET /v1/fills` 或 `/v1/history/fills` | 返回类型化 `FillPage` 和 envelope 审计字段 |
+| `iter_fills(..., page_size=500, max_pages=1000)` | 同上，多页 | 全量遍历成交，带重复游标、查询漂移和页数保护 |
 | `list_fills(history=True, ...)` | `GET /v1/history/fills` | 查询历史成交 |
 | `list_transfers(...)` | `GET /v1/transfers` | 默认查询当日 ETF 成分股划转 |
 | `list_transfers(history=True, ...)` | `GET /v1/history/transfers` | 查询历史 ETF 成分股划转 |
@@ -352,6 +360,28 @@ client = RelayClient(
 | `get_meridian_etf_components(security_id=..., trade_date=...)` | `GET /v1/meridian/market/etf-components` | 查询 ETF PCF 成分清单；数量和现金替代字段保持 Meridian 原始类型 |
 | `get_meridian_etf_cash_components(security_ids=..., trade_date=...)` | `GET /v1/meridian/market/etf-cash-components` | 查询 ETF PCF 现金清单和 `unit_subscribe_redeem` 最小申赎单位 |
 | `get_meridian_etf_pcf_status()` | `GET /v1/meridian/market/etf-pcf-status` | 查询 PCF 最近同步交易日和任务状态 |
+
+旧 `list_orders()`、`list_fills()` 和 `get_positions()` 为兼容既有策略，仍只返回一个 `list` 单页，不能用于证明全量账本覆盖。全量对账必须使用 `iter_*()`，并保持 `max_items=None`。页对象的 `is_complete` 只由服务端空 `next_cursor` 决定，不根据“本页不足 page_size”猜测末页；`count`、`query`、`request_id` 和东八区 `time` 均原样保留用于审计。
+
+```python
+page = client.list_orders_page(
+    account_id="<account_id>",
+    history=True,
+    date_from="20260801",
+    date_to="20260902",
+    limit=500,
+)
+print(page.count, page.next_cursor, page.request_id, page.time)
+
+orders = list(client.iter_orders(
+    account_id="<account_id>",
+    history=True,
+    date_from="20260801",
+    date_to="20260902",
+    page_size=500,
+    max_pages=1000,
+))
+```
 
 Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go HTTP 薄客户端读取交易页和账表所需数据，因此运行时不安装 Meridian Python SDK；策略研究若需要 Meridian `0.1.28` 的市场回放、全市场任务、游标消费、行业分类或 DataFrame 能力，应直接使用 Meridian SDK，并把这类行情处理放在 Prism/回测侧。`metadata_instrument.v2` 当前覆盖沪深股票、ETF 和可转债，北交所未纳入 Relay 当前实盘能力。两类 Python 客户端都应禁用内网请求的环境代理或正确设置 `NO_PROXY`。
 
@@ -389,6 +419,7 @@ SDK 模型和 9092 API schema 一一对应：
 | `Account` | 账户配置和状态 |
 | `Asset` | 资金资产 |
 | `Position` | 持仓、可卖数量、总成本及来源完整性、总持仓浮盈和当日持仓浮盈 |
+| `OrderPage` / `FillPage` / `PositionPage` | 类型化分页项、服务端 count/cursor/query、request_id、东八区响应时间和末页状态 |
 | `QueryCommandStatus` | 查询命令终态、预期结果类型和归档 reply 明细 |
 | `OrderRequest` | 下单请求 |
 | `OrderReceipt` | 下单命令回执 |
@@ -436,6 +467,7 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | `RelayRejectedError` | relay 或前置服务拒绝命令 |
 | `RelayIdempotencyError` | 幂等键冲突 |
 | `RelayOrderStateError` | 订单状态不满足操作条件 |
+| `RelayPaginationError` | 全量分页出现重复 cursor、查询漂移、count 不一致或超出 `max_pages`，结果不得视为完整 |
 
 异常中保留：
 
@@ -468,6 +500,8 @@ PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests -v
 9. `watch_fills()` 收到事件后查询成交并按 `account_id + trade_date + gateway_order_id + fill_id` 唯一键去重触发回调。
 10. `CommandReceipt.replayed` 模型解析。
 11. `status()` 服务状态查询。
+12. 0、1、500、501、1001 条边界，空末页、历史路由、重复 cursor、查询漂移、计数不一致、`max_pages/max_items` 和中途连接失败。
+13. 生产只读多页验收：`501000114077` 在 `20260601..20260902` 完整读取 9,830 笔订单、13,129 笔成交和 206 条 close 持仓，业务唯一键无重复，写请求为 0。
 
 打包验证：
 
@@ -476,16 +510,20 @@ cd /home/ti-relay-trader
 python3 scripts/build-python-sdk.py
 python3 scripts/check-python-sdk-release.py
 python3 scripts/check-python-sdk-release.py --live-smoke --base-url http://127.0.0.1:9092 --account-id 00030484
+python3 scripts/check-python-sdk-release.py --pagination-live-smoke \
+  --base-url http://relay-trader.quantstage.com \
+  --account-id 501000114077 --date-from 20260601 --date-to 20260902
 ```
 
 ## 待增强项
 
 SDK 后续需要：
 
-1. 增加事件流断线重连、heartbeat 和超时测试。
+1. 增加服务端稳定事件游标、显式 gap 和 SDK 断线恢复、heartbeat、空闲超时测试。
 2. 覆盖下单 accepted 但最终 rejected 的场景。
 3. 覆盖撤单 accepted 但最终 filled 的竞态场景。
-4. 后续可补充 wheel 包或内部 PyPI 发布方式。
+4. 增加公开 transport 注入、能力发现和批量子单异步结果。
+5. 后续可补充 wheel 包或内部 PyPI 发布方式。
 
 每次 SDK 版本更新必须同步更新：
 
@@ -493,7 +531,7 @@ SDK 后续需要：
 - `sdk/python/relay_sdk/__init__.py`
 - `docs/PYTHON_SDK.md` 的版本记录和安装命令
 - 9092 文档门户首页或 `/docs/python-sdk`
-- `/v1/version` 中的 SDK 版本
+- `sdk/python/CHANGELOG.md` 变更与升级说明
 - `public/sdk/relay-sdk-<version>.tar.gz` 安装包
 
 ## 与 9092 API 的关系

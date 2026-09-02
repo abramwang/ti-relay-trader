@@ -61,6 +61,7 @@ class RelayIdempotencyError(RelayRejectedError):
 class RelayOrderStateError(RelayRejectedError):
     """Raised when an order state does not allow the requested operation."""
 
+
 class RelayCancelRejectedError(RelayRejectedError):
     """Raised when the broker explicitly rejects a cancel action."""
 
@@ -71,6 +72,10 @@ class RelayCommandOutcomeUnknownError(RelayError):
 
 class RelayQueryInterruptedError(RelayError):
     """Raised when an OC restart interrupts a query command."""
+
+
+class RelayPaginationError(RelayError):
+    """Raised when a paginated read cannot prove complete, stable coverage."""
 
 
 def error_from_payload(

@@ -9,6 +9,7 @@ from .errors import (
     RelayError,
     RelayIdempotencyError,
     RelayOrderStateError,
+    RelayPaginationError,
     RelayQueryInterruptedError,
     RelayRejectedError,
     RelayTimeoutError,
@@ -19,12 +20,15 @@ from .models import (
     CommandReceipt,
     ComponentTransfer,
     Fill,
-    Position,
-    RelayEvent,
+    FillPage,
     Order,
+    OrderPage,
     OrderFeeRecord,
+    Position,
+    PositionPage,
     QueryCommandStatus,
     QueryReplyStatus,
+    RelayEvent,
 )
 
 __all__ = [
@@ -34,9 +38,12 @@ __all__ = [
     "CommandReceipt",
     "ComponentTransfer",
     "Fill",
+    "FillPage",
     "Order",
+    "OrderPage",
     "OrderFeeRecord",
     "Position",
+    "PositionPage",
     "QueryCommandStatus",
     "QueryReplyStatus",
     "RelayClient",
@@ -48,9 +55,10 @@ __all__ = [
     "RelayEvent",
     "RelayIdempotencyError",
     "RelayOrderStateError",
+    "RelayPaginationError",
     "RelayQueryInterruptedError",
     "RelayRejectedError",
     "RelayTimeoutError",
 ]
 
-__version__ = "0.1.29"
+__version__ = "0.1.30"

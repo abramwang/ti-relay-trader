@@ -12,16 +12,19 @@ from typing import Any, Callable, Iterable, Mapping
 from urllib import error as urlerror
 from urllib import parse, request
 
-from .errors import RelayConnectionError, RelayError, RelayTimeoutError, error_from_payload
+from .errors import RelayConnectionError, RelayError, RelayPaginationError, RelayTimeoutError, error_from_payload
 from .models import (
     Account,
     Asset,
     CommandReceipt,
     ComponentTransfer,
     Fill,
+    FillPage,
     Order,
+    OrderPage,
     OrderFeeRecord,
     Position,
+    PositionPage,
     QueryCommandStatus,
     RelayEvent,
 )
@@ -29,7 +32,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.29"
+SDK_VERSION = "0.1.30"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -128,11 +131,41 @@ class RelayClient:
         history: bool | None = None,
         enrich: bool | None = None,
     ) -> list[Position]:
+        page = self.get_positions_page(
+            account_id,
+            symbol=symbol,
+            exchange=exchange,
+            trade_date=trade_date,
+            date_from=date_from,
+            date_to=date_to,
+            snapshot_type=snapshot_type,
+            history=history,
+            enrich=enrich,
+        )
+        return list(page.items)
+
+    def get_positions_page(
+        self,
+        account_id: str | None = None,
+        *,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        snapshot_type: str | None = None,
+        history: bool | None = None,
+        enrich: bool | None = None,
+        limit: int | None = 500,
+        cursor: str | None = None,
+    ) -> PositionPage:
+        """Return one typed current or historical position page."""
+
         account_id = self._resolve_account(account_id)
         path = f"/v1/accounts/{parse.quote(account_id)}/positions"
         if history:
             path += "/history"
-        data = self._request(
+        envelope = self._request_envelope(
             "GET",
             path,
             query={
@@ -144,9 +177,49 @@ class RelayClient:
                 "snapshot_type": snapshot_type,
                 "history": history,
                 "enrich": enrich,
+                "limit": limit,
+                "cursor": cursor,
             },
         )
-        return [Position.from_dict(item) for item in data.get("positions", [])]
+        return PositionPage.from_envelope(envelope)
+
+    def iter_positions(
+        self,
+        account_id: str | None = None,
+        *,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        snapshot_type: str | None = None,
+        history: bool | None = None,
+        enrich: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+        max_items: int | None = None,
+    ) -> Iterable[Position]:
+        """Iterate positions until the server returns an empty cursor."""
+
+        return _iterate_pages(
+            lambda next_cursor: self.get_positions_page(
+                account_id,
+                symbol=symbol,
+                exchange=exchange,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                snapshot_type=snapshot_type,
+                history=history,
+                enrich=enrich,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+            max_items=max_items,
+        )
 
     def get_positions_raw(self, account_id: str | None = None) -> list[Position]:
         """Return locally stored broker positions without names, quotes, or PnL enrichment."""
@@ -193,6 +266,38 @@ class RelayClient:
         history: bool | None = None,
         limit: int | None = 100,
     ) -> list[Order]:
+        return list(
+            self.list_orders_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=limit,
+            ).items
+        )
+
+    def list_orders_page(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        limit: int | None = 100,
+        cursor: str | None = None,
+    ) -> OrderPage:
+        """Return one typed current or historical order page."""
+
         query = {
             "account_id": account_id or self.account_id or None,
             "gateway_order_id": gateway_order_id,
@@ -204,10 +309,49 @@ class RelayClient:
             "date_to": date_to,
             "history": history,
             "limit": limit,
+            "cursor": cursor,
         }
         path = "/v1/history/orders" if history else "/v1/orders"
-        data = self._request("GET", path, query=query)
-        return [Order.from_dict(item) for item in data.get("orders", [])]
+        envelope = self._request_envelope("GET", path, query=query)
+        return OrderPage.from_envelope(envelope)
+
+    def iter_orders(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+        max_items: int | None = None,
+    ) -> Iterable[Order]:
+        """Iterate orders with cursor-loop, query-drift, and bound checks."""
+
+        return _iterate_pages(
+            lambda next_cursor: self.list_orders_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+            max_items=max_items,
+        )
 
     def list_fills(
         self,
@@ -222,6 +366,36 @@ class RelayClient:
         history: bool | None = None,
         limit: int | None = 100,
     ) -> list[Fill]:
+        return list(
+            self.list_fills_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=limit,
+            ).items
+        )
+
+    def list_fills_page(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        limit: int | None = 100,
+        cursor: str | None = None,
+    ) -> FillPage:
+        """Return one typed current or historical fill page."""
+
         query = {
             "account_id": account_id or self.account_id or None,
             "gateway_order_id": gateway_order_id,
@@ -232,10 +406,47 @@ class RelayClient:
             "date_to": date_to,
             "history": history,
             "limit": limit,
+            "cursor": cursor,
         }
         path = "/v1/history/fills" if history else "/v1/fills"
-        data = self._request("GET", path, query=query)
-        return [Fill.from_dict(item) for item in data.get("fills", [])]
+        envelope = self._request_envelope("GET", path, query=query)
+        return FillPage.from_envelope(envelope)
+
+    def iter_fills(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        symbol: str | None = None,
+        exchange: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        history: bool | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+        max_items: int | None = None,
+    ) -> Iterable[Fill]:
+        """Iterate fills with cursor-loop, query-drift, and bound checks."""
+
+        return _iterate_pages(
+            lambda next_cursor: self.list_fills_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                symbol=symbol,
+                exchange=exchange,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                history=history,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+            max_items=max_items,
+        )
 
     def list_order_fees(
         self,
@@ -1244,14 +1455,25 @@ class RelayClient:
         query: Mapping[str, Any] | None = None,
         json_body: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
+        payload = self._request_envelope(method, path, query=query, json_body=json_body)
+        if "data" in payload:
+            data = payload.get("data")
+            return data if isinstance(data, Mapping) else {"value": data}
+        return payload
+
+    def _request_envelope(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, Any] | None = None,
+        json_body: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
         response = self._open(method, path, query=query, json_body=json_body)
         body = response.read().decode("utf-8")
         payload = json.loads(body) if body else {}
         if isinstance(payload, Mapping) and payload.get("ok") is False:
             raise error_from_payload(payload, status_code=response.status)
-        if isinstance(payload, Mapping) and "data" in payload:
-            data = payload.get("data")
-            return data if isinstance(data, Mapping) else {"value": data}
         return payload if isinstance(payload, Mapping) else {"value": payload}
 
     def _request_text(
@@ -1320,6 +1542,92 @@ def _join_query_values(values: str | Iterable[str] | None) -> str | None:
     if isinstance(values, str) or values is None:
         return values
     return ",".join(str(item) for item in values)
+
+
+def _iterate_pages(
+    load_page: Callable[[str | None], Any],
+    *,
+    cursor: str | None,
+    max_pages: int,
+    max_items: int | None,
+) -> Iterable[Any]:
+    """Build a bounded iterator that fails closed on pagination drift."""
+
+    if max_pages <= 0:
+        raise ValueError("max_pages must be positive")
+    if max_items is not None and max_items < 0:
+        raise ValueError("max_items must be non-negative")
+
+    def generate() -> Iterable[Any]:
+        if max_items == 0:
+            return
+
+        current_cursor = str(cursor or "").strip()
+        seen_cursors = {current_cursor} if current_cursor else set()
+        expected_query: str | None = None
+        page_count = 0
+        item_count = 0
+
+        while True:
+            if page_count >= max_pages:
+                raise RelayPaginationError(
+                    f"pagination exceeded max_pages={max_pages} before reaching an empty cursor",
+                    code="PAGINATION_LIMIT_EXCEEDED",
+                )
+
+            page = load_page(current_cursor or None)
+            page_count += 1
+            items = tuple(page.items)
+            if page.count != len(items):
+                raise RelayPaginationError(
+                    f"page count mismatch: server={page.count}, decoded={len(items)}",
+                    code="PAGINATION_COUNT_MISMATCH",
+                    request_id=page.request_id or None,
+                    raw_response=page.raw,
+                )
+
+            query_signature = _pagination_query_signature(page.query)
+            if query_signature is not None:
+                if expected_query is None:
+                    expected_query = query_signature
+                elif query_signature != expected_query:
+                    raise RelayPaginationError(
+                        "server normalized query changed while pagination was in progress",
+                        code="PAGINATION_QUERY_DRIFT",
+                        request_id=page.request_id or None,
+                        raw_response=page.raw,
+                    )
+
+            for item in items:
+                if max_items is not None and item_count >= max_items:
+                    return
+                yield item
+                item_count += 1
+
+            if max_items is not None and item_count >= max_items:
+                return
+
+            next_cursor = str(page.next_cursor or "").strip()
+            if not next_cursor:
+                return
+            if next_cursor in seen_cursors:
+                raise RelayPaginationError(
+                    f"server repeated pagination cursor {next_cursor!r}",
+                    code="PAGINATION_CURSOR_LOOP",
+                    request_id=page.request_id or None,
+                    raw_response=page.raw,
+                )
+            seen_cursors.add(next_cursor)
+            current_cursor = next_cursor
+
+    return generate()
+
+
+def _pagination_query_signature(query: Mapping[str, Any]) -> str | None:
+    if not query:
+        return None
+    fixed_query = {key: value for key, value in query.items() if key != "cursor"}
+    return json.dumps(fixed_query, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _snapshot_event(event_type: str) -> RelayEvent:

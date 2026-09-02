@@ -392,6 +392,102 @@ class ComponentTransfer:
 
 
 @dataclass(frozen=True)
+class OrderPage:
+    items: tuple[Order, ...] = ()
+    count: int = 0
+    next_cursor: str = ""
+    query: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = ""
+    time: str = ""
+    is_complete: bool = True
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_envelope(cls, envelope: Mapping[str, Any]) -> "OrderPage":
+        data = envelope.get("data") if isinstance(envelope.get("data"), Mapping) else {}
+        rows = data.get("orders") if isinstance(data.get("orders"), list) else []
+        next_cursor = _text(data, "next_cursor").strip()
+        return cls(
+            items=tuple(Order.from_dict(item) for item in rows if isinstance(item, Mapping)),
+            count=_int(data, "count", len(rows)),
+            next_cursor=next_cursor,
+            query=dict(data.get("query")) if isinstance(data.get("query"), Mapping) else {},
+            request_id=_text(envelope, "request_id"),
+            time=_text(envelope, "time"),
+            is_complete=not bool(next_cursor),
+            raw=dict(envelope),
+        )
+
+    @property
+    def orders(self) -> tuple[Order, ...]:
+        return self.items
+
+
+@dataclass(frozen=True)
+class FillPage:
+    items: tuple[Fill, ...] = ()
+    count: int = 0
+    next_cursor: str = ""
+    query: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = ""
+    time: str = ""
+    is_complete: bool = True
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_envelope(cls, envelope: Mapping[str, Any]) -> "FillPage":
+        data = envelope.get("data") if isinstance(envelope.get("data"), Mapping) else {}
+        rows = data.get("fills") if isinstance(data.get("fills"), list) else []
+        next_cursor = _text(data, "next_cursor").strip()
+        return cls(
+            items=tuple(Fill.from_dict(item) for item in rows if isinstance(item, Mapping)),
+            count=_int(data, "count", len(rows)),
+            next_cursor=next_cursor,
+            query=dict(data.get("query")) if isinstance(data.get("query"), Mapping) else {},
+            request_id=_text(envelope, "request_id"),
+            time=_text(envelope, "time"),
+            is_complete=not bool(next_cursor),
+            raw=dict(envelope),
+        )
+
+    @property
+    def fills(self) -> tuple[Fill, ...]:
+        return self.items
+
+
+@dataclass(frozen=True)
+class PositionPage:
+    items: tuple[Position, ...] = ()
+    count: int = 0
+    next_cursor: str = ""
+    query: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = ""
+    time: str = ""
+    is_complete: bool = True
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_envelope(cls, envelope: Mapping[str, Any]) -> "PositionPage":
+        data = envelope.get("data") if isinstance(envelope.get("data"), Mapping) else {}
+        rows = data.get("positions") if isinstance(data.get("positions"), list) else []
+        next_cursor = _text(data, "next_cursor").strip()
+        return cls(
+            items=tuple(Position.from_dict(item) for item in rows if isinstance(item, Mapping)),
+            count=_int(data, "count", len(rows)),
+            next_cursor=next_cursor,
+            query=dict(data.get("query")) if isinstance(data.get("query"), Mapping) else {},
+            request_id=_text(envelope, "request_id"),
+            time=_text(envelope, "time"),
+            is_complete=not bool(next_cursor),
+            raw=dict(envelope),
+        )
+
+    @property
+    def positions(self) -> tuple[Position, ...]:
+        return self.items
+
+
+@dataclass(frozen=True)
 class CommandReceipt:
     account_id: str = ""
     action: str = ""

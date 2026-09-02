@@ -24,12 +24,19 @@ def main() -> None:
     parser.add_argument("--build", action="store_true", help="rebuild tar.gz before checking")
     parser.add_argument("--live-smoke", action="store_true", help="also run read-only live smoke against 9092")
     parser.add_argument(
+        "--pagination-live-smoke",
+        action="store_true",
+        help="also prove complete multi-page historical ledger reads",
+    )
+    parser.add_argument(
         "--allow-degraded",
         action="store_true",
         help="allow aggregate degraded status when all core dependencies remain healthy",
     )
     parser.add_argument("--base-url", default="http://relay-trader.quantstage.com", help="relay base URL for live smoke")
     parser.add_argument("--account-id", default="", help="account id for live smoke")
+    parser.add_argument("--date-from", default="", help="history start date for pagination live smoke")
+    parser.add_argument("--date-to", default="", help="history end date for pagination live smoke")
     args = parser.parse_args()
 
     version = read_project_version()
@@ -56,6 +63,24 @@ def main() -> None:
         if args.allow_degraded:
             cmd.append("--allow-degraded")
         run(cmd)
+    if args.pagination_live_smoke:
+        require(args.account_id, "--account-id is required with --pagination-live-smoke")
+        require(args.date_from, "--date-from is required with --pagination-live-smoke")
+        require(args.date_to, "--date-to is required with --pagination-live-smoke")
+        run(
+            [
+                sys.executable,
+                "tests/integration/sdk_pagination_live_smoke.py",
+                "--base-url",
+                args.base_url,
+                "--account-id",
+                args.account_id,
+                "--date-from",
+                args.date_from,
+                "--date-to",
+                args.date_to,
+            ]
+        )
 
     print(f"relay-sdk {version} release check passed")
 
@@ -91,12 +116,14 @@ def verify_archive_contents(archive: Path, version: str) -> None:
     required = {
         f"{package_root}/pyproject.toml",
         f"{package_root}/README.md",
+        f"{package_root}/CHANGELOG.md",
         f"{package_root}/relay_sdk/__init__.py",
         f"{package_root}/relay_sdk/client.py",
         f"{package_root}/relay_sdk/models.py",
         f"{package_root}/relay_sdk/errors.py",
         f"{package_root}/relay_sdk/streaming.py",
         f"{package_root}/tests/test_client.py",
+        f"{package_root}/tests/test_pagination.py",
     }
     with tarfile.open(archive, "r:gz") as tar:
         names = set(tar.getnames())

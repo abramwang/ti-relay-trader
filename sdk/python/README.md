@@ -10,10 +10,10 @@ Editable install from this repository:
 python -m pip install -e sdk/python
 ```
 
-Future internal package install:
+Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.29.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.30.tar.gz"
 ```
 
 ## Quick Start
@@ -54,6 +54,31 @@ receipt = client.submit_order(
 
 print(receipt.gateway_order_id, receipt.status)
 ```
+
+## Complete Ledger Pagination
+
+The legacy `list_orders()`, `list_fills()`, and `get_positions()` methods keep
+their single-page list behavior. Use the typed page methods when cursor and
+request audit data are needed:
+
+```python
+page = client.list_orders_page(trade_date="20260902", limit=500)
+print(page.count, page.next_cursor, page.request_id, page.time)
+
+for order in client.iter_orders(
+    history=True,
+    date_from="20260801",
+    date_to="20260902",
+    page_size=500,
+    max_pages=1000,
+):
+    process(order)
+```
+
+`iter_orders()`, `iter_fills()`, and `iter_positions()` stop only when Relay
+returns an empty `next_cursor`. They raise `RelayPaginationError` on repeated
+cursors, count mismatches, normalized-query drift, or page-limit exhaustion.
+Set `max_items` only when intentionally requesting a bounded sample.
 
 Refresh methods return a command receipt. Use its `message_id` to verify that
 OC produced one completed final query reply:

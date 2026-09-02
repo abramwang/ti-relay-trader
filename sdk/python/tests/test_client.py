@@ -336,8 +336,17 @@ class RelayHandler(BaseHTTPRequestHandler):
                                 "is_terminal": True,
                                 "cum_filled_qty": 100,
                             }
-                        ]
+                        ],
+                        "count": 1,
+                        "next_cursor": "",
+                        "query": {
+                            "account_id": "acct-1",
+                            "gateway_order_id": query.get("gateway_order_id", [""])[0],
+                            "limit": int(query.get("limit", ["100"])[0]),
+                        },
                     },
+                    "request_id": "req-orders-http",
+                    "time": "2026-09-02T10:00:00+08:00",
                 }
             )
             return
@@ -690,6 +699,15 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
         self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
+
+    def test_order_page_preserves_real_http_envelope(self):
+        page = self.client.list_orders_page(gateway_order_id="gw-1", limit=1)
+        self.assertEqual(page.count, 1)
+        self.assertEqual(page.items[0].gateway_order_id, "gw-1")
+        self.assertTrue(page.is_complete)
+        self.assertEqual(page.request_id, "req-orders-http")
+        self.assertEqual(page.time, "2026-09-02T10:00:00+08:00")
+        self.assertEqual(page.query["limit"], 1)
 
     def test_raw_asset_and_position_queries_disable_enrichment(self):
         self.client.get_asset_raw()

@@ -46,6 +46,7 @@ def iter_source_files(sdk_dir: Path):
     include_roots = [
         sdk_dir / "pyproject.toml",
         sdk_dir / "README.md",
+        sdk_dir / "CHANGELOG.md",
     ]
     for path in include_roots:
         if path.exists():

@@ -421,7 +421,8 @@
 - [x] 形成 Meridian P0 协调需求：instruments 增加可转债覆盖和权威 `price_tick/price_decimals`，Relay 不自建代码前缀规则。
 - [x] 验收 Meridian SDK `0.1.28` / `metadata_instrument.v2`：沪深股票、ETF、可转债活动证券 `7187/7187` 价位覆盖 ready；北交所按实际账户权限留作未来升级。
 - [x] 发布 `public/sdk/relay-sdk-0.1.29.tar.gz` 和 SHA256 校验文件，新增 Meridian instruments v2 与 metadata status 只读 helper；交易终端使用 `price_tick/price_decimals`。
-- [ ] SDK 增加 `OrderPage/FillPage/PositionPage`、`list_*_page()` 和具备页数、条数、重复 cursor 保护的 `iter_*()`；保留 envelope 审计字段并覆盖 500/501/1000+ 条边界。
+- [x] SDK 增加 `OrderPage/FillPage/PositionPage`、`list_*_page()` 和具备页数、条数、重复 cursor 保护的 `iter_*()`；保留 envelope 审计字段并覆盖 0/1/500/501/1000+、空末页、历史路由、查询漂移和中途断连。
+- [x] 发布 `public/sdk/relay-sdk-0.1.30.tar.gz` 和 SHA256 校验文件；生产只读跨页验收完整读取 9,830 笔订单、13,129 笔成交和 206 条历史持仓，写请求为 0。
 - [ ] Relay 服务端建立稳定事件游标、恢复或显式 gap 协议；SDK 再增加 `Last-Event-ID`、有限重连、退避、空闲超时和强制全量对账信号。
 - [ ] SDK 增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；完成只读 live smoke 后发布下一兼容版本。
 
