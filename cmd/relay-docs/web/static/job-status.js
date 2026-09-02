@@ -634,7 +634,7 @@
       const params = new URLSearchParams();
       if (filter) params.set("job_name", filter);
       if (els.tradeDate.value) params.set("trade_date", els.tradeDate.value);
-      params.set("limit", "20");
+      params.set("limit", "100");
       const reviewParams = new URLSearchParams();
       if (els.tradeDate.value) reviewParams.set("trade_date", els.tradeDate.value);
       const [jobs, review] = await Promise.all([
