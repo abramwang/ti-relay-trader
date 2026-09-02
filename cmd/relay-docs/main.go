@@ -1088,7 +1088,7 @@ func (s *portalServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		Summary:    "Daily jobs and background process monitor",
 		Head:       template.HTML(`<link rel="stylesheet" href="/assets/job-status.css?v=20260727-0005">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260829-2045"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/job-status.js?v=20260902-2359"></script>`),
 		ProjectDir: s.root,
 	})
 }

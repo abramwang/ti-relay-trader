@@ -7,11 +7,13 @@ import math
 import os
 import subprocess
 from dataclasses import replace
+from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib import request
 
 from .common import (
+    BUSINESS_TZ,
     TIMEZONE_NAME,
     JobOptions,
     TradingDayInfo,
@@ -49,6 +51,7 @@ REQUIRED_DAILY_DATASETS = (
 )
 DEFAULT_DELTA_WARNING_CNY = 50.0
 DEFAULT_DELTA_WARNING_BP = 0.1
+WATERMARK_POLL_TRIGGER = "meridian_watermark_poll"
 
 
 def run_canonical_performance(
@@ -60,6 +63,7 @@ def run_canonical_performance(
     relayctl_builder: Callable[[], Path] | None = None,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     quality_runner: Callable[..., dict[str, Any]] = run_daily_performance,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     relay_client = client or RelayClient(options.base_url, timeout=options.timeout, trust_env=False)
     requested_date = options.target_date or today_trade_date()
@@ -122,6 +126,9 @@ def run_canonical_performance(
         report["completed_run_id"] = str(completed_run.get("run_id") or "")
         return finish_report(report)
 
+    if options.trigger == WATERMARK_POLL_TRIGGER:
+        report["run_id"] = canonical_poll_run_id(target_trade_date)
+
     loader = watermark_loader or load_meridian_watermark
     watermark_value, watermark_report = capture_call(
         "load_meridian_canonical_watermark",
@@ -140,6 +147,29 @@ def run_canonical_performance(
     watermark = evaluate_canonical_watermark(watermark_value, target_trade_date)
     report["meridian_watermark"] = watermark
     if not watermark["ready"]:
+        if options.trigger == WATERMARK_POLL_TRIGGER:
+            checked_at = current_time or datetime.now(BUSINESS_TZ)
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=BUSINESS_TZ)
+            checked_at = checked_at.astimezone(BUSINESS_TZ)
+            deadline = canonical_watermark_deadline(
+                target_trade_date,
+                options.watermark_retry_until,
+            )
+            report["watermark_poll"] = {
+                "checked_at": checked_at.isoformat(),
+                "retry_until": options.watermark_retry_until,
+                "deadline_at": deadline.isoformat(),
+                "deadline_exceeded": checked_at >= deadline,
+            }
+            if checked_at >= deadline:
+                report["ok"] = False
+                report["blocked_by_meridian"] = True
+                report["errors"].append(
+                    "Meridian canonical daily watermark did not reach the target trade date "
+                    f"before {options.watermark_retry_until} Asia/Shanghai"
+                )
+                return finish_report(report)
         report["skipped"] = True
         report["waiting_for_meridian"] = True
         report["skip_reason"] = "Meridian canonical daily watermark has not reached the target trade date"
@@ -295,6 +325,20 @@ def run_canonical_performance(
             "canonical daily bars changed NAV beyond the configured comparison tolerance"
         )
     return finish_report(report)
+
+
+def canonical_poll_run_id(target_trade_date: str) -> str:
+    return f"{JOB_NAME}-{normalize_trade_date(target_trade_date)}-watermark-poll"
+
+
+def canonical_watermark_deadline(target_trade_date: str, retry_until: str) -> datetime:
+    try:
+        hour_text, minute_text = retry_until.strip().split(":", 1)
+        deadline_time = time(hour=int(hour_text), minute=int(minute_text))
+        trade_date = datetime.strptime(normalize_trade_date(target_trade_date), "%Y%m%d").date()
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid canonical watermark retry deadline: {retry_until!r}") from exc
+    return datetime.combine(trade_date, deadline_time, tzinfo=BUSINESS_TZ)
 
 
 def load_meridian_watermark(base_url: str, timeout: float) -> Mapping[str, Any]:

@@ -236,6 +236,22 @@
     return normalizeDate(run.target_trade_date) === normalizeDate(tradeDate);
   }
 
+  function collapseWatermarkPollRuns(runs) {
+    const seen = new Set();
+    let collapsedCount = 0;
+    const visibleRuns = runs.filter((run) => {
+      if (run.job_name !== "performance_canonical" || run.trigger !== "meridian_watermark_poll") return true;
+      const key = `${run.job_name}:${normalizeDate(run.target_trade_date)}:${run.trigger}`;
+      if (seen.has(key)) {
+        collapsedCount += 1;
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    return { runs: visibleRuns, collapsedCount };
+  }
+
   function dailyState(run, schedule, status, runsByName) {
     if (!schedule.enabled) return { label: "未启用", className: "skipped" };
     const tradeDate = status && status.trading_day && status.trading_day.date;
@@ -378,6 +394,10 @@
   function finalResult(run, schedule = {}) {
     if (!run) return "--";
     const report = run.report || {};
+    if (run.job_name === "performance_canonical" && report.blocked_by_meridian) {
+      const poll = report.watermark_poll || {};
+      return `Meridian 权威日线未就绪 · 已超过 ${poll.retry_until || schedule.retryUntil || "重试截止时间"}`;
+    }
     if (run.job_name === "performance_canonical" && report.waiting_for_meridian) {
       const watermark = report.meridian_watermark || {};
       const published = Array.isArray(watermark.required_datasets)
@@ -493,8 +513,10 @@
     }).join("");
   }
 
-  function renderTable(statusView, runs) {
-    els.count.textContent = `${runs.length} 条`;
+  function renderTable(statusView, runs, collapsedCount = 0) {
+    els.count.textContent = collapsedCount > 0
+      ? `${runs.length} 条 · 已合并 ${collapsedCount} 次重复水位轮询`
+      : `${runs.length} 条`;
     if (!runs.length) {
       els.body.innerHTML = '<tr><td colspan="10">暂无任务运行记录</td></tr>';
       return;
@@ -619,14 +641,16 @@
         getJSON(`/v1/jobs/runs?${params.toString()}`),
         getJSON(`/v1/reconciliations/review-report?${reviewParams.toString()}`),
       ]);
-      const runs = Array.isArray(jobs.runs) ? jobs.runs : [];
+      const rawRuns = Array.isArray(jobs.runs) ? jobs.runs : [];
+      const collapsed = collapseWatermarkPollRuns(rawRuns);
+      const runs = collapsed.runs;
       const scopedStatus = {
         ...status,
         trading_day: { ...(status.trading_day || {}), date: els.tradeDate.value || (status.trading_day || {}).date, is_trading_day: true },
       };
       renderOverview(status);
       renderCards(scopedStatus, runs);
-      renderTable(status, runs);
+      renderTable(status, runs, collapsed.collapsedCount);
       renderReview(review);
     } catch (error) {
       renderError(error);

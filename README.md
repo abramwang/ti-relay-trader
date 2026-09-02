@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-02` Chronos 已独立验收 `relay-sdk 0.1.33`：P0/P1、逐页审计及 SSE 对账页证据全部通过；Relay 同步修正 `trade_quality.v7` 的内部审计原因误判，生产验证保持只读 |
-| 更新时间 | `2026-09-02` |
+| 最近确认 | `2026-09-03` 已修正 `performance_canonical` 水位轮询状态：同一交易日复用单一任务记录，重试截止后转为明确的 Meridian 上游阻塞；任务页合并旧的重复轮询记录 |
+| 更新时间 | `2026-09-03` |
 
 新线程按以下顺序恢复：
 
@@ -32,7 +32,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
-- Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。等待记录属于上游水位门禁，不等同于任务失败。
+- Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
 - 生产 schema 当前为 `27 order_submission_identity`，Python SDK 当前版本为 `relay-sdk==0.1.33`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
@@ -47,6 +47,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 两户 `2026-07-27..2026-08-26` 各 23 个交易日、共 46 个账户日已按 `performance_economic_nav.v2.7` 顺序重建，0 blocked。结果仍为 provisional，因为部分历史费用、ETF 清算资产和归因使用明确标记的估算口径。
 - `performance_position_cost.v3.2` 已实现 `meridian_pre_close_mark_to_market`：仅在人工确认起算日按盘前数量和 Meridian 未复权前收盘建立 CORE 初始成本，缺行情即阻断且不回退柜台污染成本。富盈13号仍待确认具体起算日和盘前持仓锚点，生产账户配置未修改。
 - Chronos 已独立确认 `relay-sdk 0.1.33` 的 P0 数据与事件能力、P1 接口契约、全量分页审计和 SSE 对账页证据均通过，Relay SDK 消费端验收正式关闭。报告中的 4 条旧终态拒单正残量已追到 OC 原始归档：终态和零成交可信，但无标准拒绝文本；`trade_quality.v7` 不再把内部迁移审计 `reason` 误作柜台原因，原始账本保持不变且残量不可执行。真实写验收等待测试环境，不支持的北交所留作未来升级。
+- `2026-09-02` 的 14 条 `meridian_watermark_poll` 是 `16:40..18:50` 对同一权威绩效复算的重复水位检查，并非 14 个独立任务；根因是 Meridian 当日父任务受 3 只新股行业映射缺口阻断。现已补写单一终态记录 `performance_canonical-20260902-watermark-poll`，旧记录保留审计但在页面折叠。
 
 ### 下一步
 
@@ -93,7 +94,7 @@ Redis Stream 细节见 [前置对接手册](/home/ti-relay-trader/docs/THIRD_PAR
 | 15:01 | `post_close_capture` | 不依赖 Meridian，查询 OC 最终资金、持仓、订单、成交和费用，固化不可变 `broker_close` |
 | 捕获成功后 | `post_close_settlement` | 从 `broker_close` 结合 Meridian 生成正式 `close`、对账输入和差异 |
 | 结算成功后 | `performance_daily` | 计算移动成本、经济 NAV 和质量状态，阻断账户不影响其他账户 |
-| 16:40-18:50 每 10 分钟 | `performance_canonical` | 对齐 Meridian 16:30 启动、16:45 SLA，等待权威日线水位后重算 provisional NAV 并保留版本差异 |
+| 16:40-18:50 每 10 分钟 | `performance_canonical` | 对齐 Meridian 16:30 启动、16:45 SLA；同一交易日轮询复用一条任务记录，18:50 仍未就绪则明确标记上游阻塞 |
 
 非交易日通过 Meridian 交易日接口跳过。账户级查询失败单独标注；只有系统依赖失败、全部账户阻断或写库失败才使整项任务失败。完整流程见 [交易日工作流](/home/ti-relay-trader/docs/TRADING_DAY_WORKFLOW.md:1)。
 

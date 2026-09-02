@@ -50,6 +50,7 @@ set +e
   --timeout "${RELAY_PERFORMANCE_HTTP_TIMEOUT_SECONDS:-30}" \
   --persist \
   --trigger meridian_watermark_poll \
+  --watermark-retry-until "${RELAY_CANONICAL_WATERMARK_RETRY_UNTIL:-18:50}" \
   --output "$report"
 status=$?
 set -e

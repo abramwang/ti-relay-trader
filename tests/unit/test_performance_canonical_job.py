@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from datetime import datetime
 from types import SimpleNamespace
 import unittest
 
@@ -138,6 +139,46 @@ class CanonicalPerformanceJobTest(unittest.TestCase):
         self.assertTrue(report["waiting_for_meridian"])
         self.assertFalse(report["canonical_completed"])
         self.assertEqual(command_calls, [])
+
+    def test_cron_poll_reuses_daily_run_id_before_deadline(self) -> None:
+        report = run_canonical_performance(
+            JobOptions(
+                job_name="performance_canonical",
+                target_date="20260826",
+                trigger="meridian_watermark_poll",
+                watermark_retry_until="18:50",
+            ),
+            client=FakeClient(),
+            trading_day=trading_day(),
+            watermark_loader=lambda _base, _timeout: watermark(target=20260825),
+            current_time=datetime.fromisoformat("2026-08-26T17:10:00+08:00"),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertTrue(report["waiting_for_meridian"])
+        self.assertEqual(report["run_id"], "performance_canonical-20260826-watermark-poll")
+        self.assertFalse(report["watermark_poll"]["deadline_exceeded"])
+
+    def test_cron_poll_becomes_blocked_at_retry_deadline(self) -> None:
+        report = run_canonical_performance(
+            JobOptions(
+                job_name="performance_canonical",
+                target_date="20260826",
+                trigger="meridian_watermark_poll",
+                watermark_retry_until="18:50",
+            ),
+            client=FakeClient(),
+            trading_day=trading_day(),
+            watermark_loader=lambda _base, _timeout: watermark(target=20260825),
+            current_time=datetime.fromisoformat("2026-08-26T18:50:00+08:00"),
+        )
+
+        self.assertFalse(report["ok"])
+        self.assertTrue(report["blocked_by_meridian"])
+        self.assertFalse(report.get("waiting_for_meridian", False))
+        self.assertFalse(report["skipped"])
+        self.assertTrue(report["watermark_poll"]["deadline_exceeded"])
+        self.assertIn("before 18:50", report["errors"][0])
 
     def test_rebuilds_and_compares_level1_nav_after_watermark_is_ready(self) -> None:
         client = FakeClient()

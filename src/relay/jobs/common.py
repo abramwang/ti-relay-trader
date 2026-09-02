@@ -90,6 +90,7 @@ class JobOptions:
     skip_refresh: bool = False
     persist: bool = False
     trigger: str = "manual"
+    watermark_retry_until: str = "18:50"
     allow_non_trading_day: bool = False
     skip_trading_day_check: bool = False
     output: str = ""
@@ -158,6 +159,11 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument("--skip-refresh", action="store_true", help="skip refresh commands and only query local ledger")
     parser.add_argument("--persist", action="store_true", help="persist the final report through relay POST /v1/jobs/runs")
     parser.add_argument("--trigger", default="manual", help="job trigger label persisted with --persist, for example cron or manual")
+    parser.add_argument(
+        "--watermark-retry-until",
+        default=os.getenv("RELAY_CANONICAL_WATERMARK_RETRY_UNTIL", "18:50"),
+        help="Asia/Shanghai HH:MM deadline for canonical Meridian watermark polling",
+    )
     parser.add_argument("--allow-non-trading-day", action="store_true", help="run account flow even when target date is not a trading day")
     parser.add_argument("--skip-trading-day-check", action="store_true", help="do not call Meridian trading-day endpoint")
     parser.add_argument("--output", default="", help="optional JSON report path")
@@ -184,6 +190,7 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         skip_refresh=args.skip_refresh,
         persist=args.persist,
         trigger=args.trigger,
+        watermark_retry_until=args.watermark_retry_until.strip(),
         allow_non_trading_day=args.allow_non_trading_day,
         skip_trading_day_check=args.skip_trading_day_check,
         output=args.output,
