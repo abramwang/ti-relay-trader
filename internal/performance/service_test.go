@@ -3237,14 +3237,30 @@ func TestTradeQualityRejectedOrderRequiresReasonEvidence(t *testing.T) {
 		TerminalAt:     terminalAt,
 	}
 
+	order.AdapterStatusCode = -10
+	order.AdapterStatusName = "fail"
+	order.AdapterContext = map[string]any{
+		"relay_idempotency_cleanup": map[string]any{
+			"reason": "query_key_is_not_order_idempotency",
+		},
+	}
 	anomaly := tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if !containsString(anomaly.Flags, "rejected_order_missing_reason") {
-		t.Fatalf("missing rejection reason not flagged: %#v", anomaly.Flags)
+		t.Fatalf("Relay audit reason treated as broker evidence: %#v", anomaly.Flags)
+	}
+
+	order.AdapterContext = map[string]any{
+		"broker": map[string]any{"error_text": "VIP:找不到持仓"},
+	}
+	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
+	if len(anomaly.Flags) != 0 || anomaly.BrokerMessage != "VIP:找不到持仓" {
+		t.Fatalf("nested broker reason not recognized: %#v", anomaly)
 	}
 
 	order.RejectCode = trading.ErrorCode("BROKER_REJECTED")
 	order.RejectMessage = "VIP:找不到持仓"
 	order.InvalidQty = order.OrderQty
+	order.AdapterContext = nil
 	anomaly = tradeQualityOrderAnomaly(order, order.TradeDate, qualityFillGroup{}, false)
 	if len(anomaly.Flags) != 0 {
 		t.Fatalf("evidenced rejection treated as data anomaly: %#v", anomaly.Flags)

@@ -1,5 +1,7 @@
 # Chronos Relay Python SDK 验收回执
 
+最新消费端状态：Chronos 已独立验收 `relay-sdk==0.1.33`，P0 数据与事件能力、P1 接口契约均通过，R1 可正式接入；此前唯一的逐页审计非阻断项已关闭。真实写验收仍等待测试环境。
+
 - 日期：`2026-09-02`
 - Relay SDK：`relay-sdk==0.1.32`
 - SHA256：`d9177418dda1ec2239903c9c7d9f511814b321c093fac70b380b8f95483e867e`
@@ -107,3 +109,7 @@ Redis Stream 或 OC wire schema。
 - 安装包：`http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz`
 - SHA256：`05ee8d17698fd36daea1b85326515af44a71500a5591a5b29ff0ca851c91ecae`
 - Relay 生产只读复验：历史页 `20/27/1`，账本记录 `9830/13129/206`，全部读至空 cursor；SSE 重建页审计完整，写请求为 `0`
+
+Chronos 随后使用同一 `0.1.33` 包和 SHA256 独立复验：48 个 SDK 单测通过，历史账本页数和记录数、当前四账本页数和记录数均与 Relay 证据一致，逐页 envelope、空 cursor 结束语义及 SSE resumed 对账页集合全部通过；独立分页/对账 56 个 GET、SSE 8 个 GET，写请求为 0。至此可以关闭 Relay SDK 消费端验收项。
+
+消费端报告另记录 4 条旧 `rejected` 订单保留正 `leaves_qty`。Relay 对公开账本和 PostgreSQL 原始归档复核后确认：它们发生于 `2026-07-09..2026-07-14`，均为外部订单、终态明确、零成交，但当时 OC 仅返回 `adapter_status=fail/-10`，没有标准拒绝码或拒绝文本。`trade_quality.v7` 已修复原因识别，禁止把 `relay_idempotency_cleanup.reason` 等内部迁移审计内容误计为柜台拒绝原因；这 4 条会如实保留为历史数据质量证据，正残量不会被视为可执行数量，也不修改原始账本。

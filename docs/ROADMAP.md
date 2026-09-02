@@ -431,6 +431,8 @@
 - [x] 完成 Chronos `relay-sdk 0.1.32` 逐项验收回执：P0/P1、统一价格精度和发布要求均有实现与生产只读证据，可进入 Chronos 消费端验收；低频写异常继续按自然交易机会验证。
 - [x] 接收 Chronos `relay-sdk 0.1.32` 独立验收：P0 数据与事件能力、P1 接口契约通过，R1 可接入；真实写异常等待测试环境，不向生产账户造单。
 - [x] 发布 `public/sdk/relay-sdk-0.1.33.tar.gz` 和 SHA256 校验文件；增加 `iter_order_pages()`、`iter_fill_pages()`、`iter_position_pages()` 及 `StreamReconciliation` 全部分页审计集合，关闭 Chronos 非阻断留证项且不改变 HTTP/Redis/OC 协议。
+- [x] Chronos 独立复验 `relay-sdk 0.1.33`：48 个单测、历史 `20/27/1` 页、当前四账本与 SSE resumed 全分页审计均通过，P0/P1 消费端验收正式关闭，写请求为 0。
+- [x] 将交易质量升级为 `trade_quality.v7`：内部 `relay_*` 迁移/幂等审计原因不再冒充柜台拒绝原因；确认 4 条旧终态拒单正残量来自 OC 历史字段且无标准原因文本，保留原始证据并禁止按可执行数量解释。
 
 ### P6.1 接口测试台
 

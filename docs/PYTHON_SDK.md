@@ -49,7 +49,7 @@ SDK 的定位：
 27. `submit_orders()` 返回 `BatchCommandReceipt` 逐单保留调用方 ID 与 Relay 接受/重放结果；`get_batch_order_outcomes()` / `wait_batch_order_outcomes()` 结合 `origin_message_id`、订单账本和命令回报返回异步子单结果。
 28. 构造参数 `opener=` 是公开 HTTP 故障注入点；`retry_decision()` 给出按 read/query/write/cancel/stream 区分的自动重试和对账要求。
 
-Chronos 已独立确认 `relay-sdk 0.1.32` 的 P0 数据与事件能力、P1 接口契约准入通过；其非阻断反馈中的逐页审计留证已由 `0.1.33` 补齐。低频实盘写场景仍等待测试环境或自然交易机会验收，不以生产造单。双方证据边界见 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。
+Chronos 已独立确认 `relay-sdk 0.1.33` 的 P0 数据与事件能力、P1 接口契约准入通过；逐页审计与 SSE 对账页留证均完成独立复验，Relay SDK 消费端验收项已经关闭。低频实盘写场景仍等待测试环境或自然交易机会验收，不以生产造单。双方证据边界见 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。
 
 ## 包形态
 

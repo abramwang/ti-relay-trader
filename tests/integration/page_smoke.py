@@ -120,7 +120,12 @@ def build_checks(sdk_version: str) -> list[Check]:
             "chronos-sdk-acceptance",
             "/docs/chronos-relay-sdk-acceptance-20260902",
             "text",
-            ("Chronos Relay Python SDK 验收回执", "relay-sdk==0.1.32", "写请求数为 0"),
+            (
+                "Chronos Relay Python SDK 验收回执",
+                "relay-sdk==0.1.33",
+                "消费端验收项",
+                "写请求为 0",
+            ),
         ),
         Check("release-checklist", "/docs/release-checklist", "text", ("发布检查清单", "生产只读全量验收", "回滚")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),

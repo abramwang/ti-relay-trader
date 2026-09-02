@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v6"
+	tradeQualityFormulaVersion = "trade_quality.v7"
 	maxTradeQualityPages       = 120
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
@@ -656,14 +656,32 @@ func findAdapterMessage(value any, depth int) string {
 	}
 	switch typed := value.(type) {
 	case map[string]any:
-		for _, key := range []string{"reject_message", "error_message", "err_msg", "errmsg", "status_message", "reason", "message", "msg"} {
+		for _, key := range []string{
+			"relay_error_message",
+			"reject_message",
+			"error_text",
+			"error_message",
+			"err_msg",
+			"errmsg",
+			"status_message",
+			"broker_status_text",
+			"cancel_reason",
+			"reason",
+			"message",
+			"msg",
+		} {
 			if item, ok := typed[key]; ok {
 				if text := strings.TrimSpace(fmt.Sprint(item)); text != "" && text != "<nil>" {
 					return text
 				}
 			}
 		}
-		for _, item := range typed {
+		for key, item := range typed {
+			// Relay-owned audit metadata may contain fields such as "reason",
+			// but those values are not broker rejection evidence.
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), "relay_") {
+				continue
+			}
 			if text := findAdapterMessage(item, depth+1); text != "" {
 				return text
 			}
