@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-08-28` Meridian 权威日线 16:32:53 就绪，Relay 16:40 完成三户 canonical 复算且 NAV/PnL/收益率差异均为 0；轮询窗口已对齐为 16:40-18:50 |
-| 更新时间 | `2026-08-29` |
+| 最近确认 | `2026-09-02` 完成 Chronos 对 `relay-sdk 0.1.28` 的生产级接入差异评审；Meridian 当前 instruments 缺可转债覆盖和权威最小价位字段，已形成 P0 协调需求 |
+| 更新时间 | `2026-09-02` |
 
 新线程按以下顺序恢复：
 
@@ -46,6 +46,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 两户均于 `2026-07-27` 盘前入金并开始交易；原起算日误用了 Relay 首次取得 OC 快照的日期（分别为 7 月 29 日和 28 日）。券商资金与交割单已一次性恢复两户 7 月 27 日及 `307000051387` 的 7 月 28 日账本，逐证券数量桥和 Meridian 收盘市值均闭合。
 - 两户 `2026-07-27..2026-08-26` 各 23 个交易日、共 46 个账户日已按 `performance_economic_nav.v2.7` 顺序重建，0 blocked。结果仍为 provisional，因为部分历史费用、ETF 清算资产和归因使用明确标记的估算口径。
 - 富盈13号仍待完成 `meridian_pre_close_mark_to_market` 起算成本源和 ETF T0/底仓隔离起点确认；不得使用被 ETF 申赎污染的柜台平均成本。
+- Chronos 的 SDK P0 需求已完成现状审计：账本分页主要缺 SDK 暴露，SSE 恢复需要 Relay 服务端与 SDK 联合改造；统一价格契约还依赖 Meridian instruments 增加可转债和 `price_tick/price_decimals`，协调稿见 [Meridian 证券价位元数据需求](/home/ti-relay-trader/docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md:1)。
 
 ### 下一步
 
@@ -54,6 +55,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
+6. 按 Chronos 接入优先级补齐 SDK 类型化全量分页和可恢复 SSE；价格合法性测试等待 Meridian 权威价位元数据契约上线。
 
 ## 系统边界
 

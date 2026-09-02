@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-08-29`
+更新时间：`2026-09-02`
 
 ## 状态口径
 
@@ -417,6 +417,11 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.19.tar.gz` 和 SHA256 校验文件，新增 `ComponentTransfer` 与当日/历史 ETF 划转查询。
 - [x] 发布 `public/sdk/relay-sdk-0.1.20.tar.gz` 和 SHA256 校验文件，新增 Meridian ETF PCF components/cash-components/status 只读 helper。
 - [x] 增加 SDK 版本发布检查清单。
+- [x] 完成 Chronos 基于 `relay-sdk 0.1.28` 的接入需求评审，确认类型化分页、SSE 恢复、批量子单结果、transport 注入、能力发现和价格契约差异。
+- [x] 形成 Meridian P0 协调需求：instruments 增加可转债覆盖和权威 `price_tick/price_decimals`，Relay 不自建代码前缀规则。
+- [ ] SDK 增加 `OrderPage/FillPage/PositionPage`、`list_*_page()` 和具备页数、条数、重复 cursor 保护的 `iter_*()`；保留 envelope 审计字段并覆盖 500/501/1000+ 条边界。
+- [ ] Relay 服务端建立稳定事件游标、恢复或显式 gap 协议；SDK 再增加 `Last-Event-ID`、有限重连、退避、空闲超时和强制全量对账信号。
+- [ ] SDK 增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；完成只读 live smoke 后发布下一兼容版本。
 
 ### P6.1 接口测试台
 
