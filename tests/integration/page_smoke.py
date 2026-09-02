@@ -134,7 +134,7 @@ def build_checks(sdk_version: str) -> list[Check]:
         Check("operations-status-css", "/assets/operations-status.css", "text", (".operations-status", ".dlq-workspace")),
         Check("operations-status-js", "/assets/operations-status.js", "text", ("/v1/operations/status", "loadDeadLetters")),
         Check("echarts", "/assets/echarts.min.js", "bytes", min_bytes=100_000),
-        Check("api-console-catalog", "/assets/api-console.catalog.json", "json", expected_json=("status", "account-routes", "meridian-bars", "performance-contributions", "operations-status", "daily-review-report", "job-run-record")),
+        Check("api-console-catalog", "/assets/api-console.catalog.json", "json", expected_json=("status", "account-routes", "meridian-bars", "meridian-metadata-status", "performance-contributions", "operations-status", "daily-review-report", "job-run-record")),
         Check("healthz", "/healthz", "json", expected_json=("status", "ok")),
         Check("v1-status", "/v1/status", "json", expected_json=("ok", "dependencies")),
         Check("operations-api", "/v1/operations/status", "json", expected_json=("gateways", "streams", "dead_letters")),

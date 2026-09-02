@@ -165,9 +165,9 @@ var (
 		},
 		{
 			Slug:        "meridian-instrument-price-tick-requirements-20260902",
-			Title:       "Meridian 证券价位元数据需求",
+			Title:       "Meridian 证券价位契约验收",
 			Path:        "docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md",
-			Description: "Chronos 统一价格契约所需的可转债覆盖、最小价位字段、质量状态和验收口径。",
+			Description: "沪深股票、ETF、可转债的权威最小价位、质量状态、Relay 接入与验收结果。",
 		},
 		{
 			Slug:        "python-dataframe-policy",

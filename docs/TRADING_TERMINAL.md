@@ -57,6 +57,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 | 成交刷新指令 | `POST /v1/accounts/{account_id}/fills/refresh` |
 | 实时事件流 | `GET /v1/events/stream?account_id=...` |
 | Meridian 证券主数据代理 | `GET /v1/meridian/metadata/instruments` |
+| Meridian 主数据质量代理 | `GET /v1/meridian/metadata/status` |
 | Meridian 快照代理 | `GET /v1/meridian/market/snapshots` |
 | Meridian bars 代理 | `GET /v1/meridian/market/bars` |
 | Meridian 实时分钟 Bar SSE | `GET /v1/meridian/stream/market/bars`，当前作为可联调能力，终端仍使用 HTTP bars 初始加载和定时刷新 |
@@ -66,7 +67,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 行情和证券主数据相关字段约束全部以 Meridian 为准。relay 只做同源薄代理和交易页输入转换，不重新定义行情数据字段；响应保持 Meridian `data/meta/error` 结构，页面直接使用 `security_id`、`name`、`instrument_type`、`market_level`、`trade_date`、`last`、`pre_close`、`bids`、`asks` 等字段。
 
-价格精度同样只依据 Meridian `instrument_type`：股票 `stock` 显示和输入保留 2 位小数，ETF `etf` 显示和输入保留 3 位小数。该规则覆盖行情头、涨跌额、五档盘口、下单价格框、持仓成本/现价、委托价格和成交价格；账本记录缺少 `instrument_type` 时，页面会先尝试用当前快照或已缓存证券主数据匹配，仍无法识别时默认按股票 2 位显示。
+价格精度只依据 Meridian `metadata_instrument.v2`：`price_decimals` 控制显示位数，`price_tick` 控制下单价格输入步长；当前沪深股票为 2 位，ETF/可转债为 3 位。证券主数据与行情快照合并刷新时保留价位字段；缺失规则时价格框使用 `step=any`，2 位仅作为中性展示回退，不代表可报价格校验。当前实盘不支持北交所，未来开通权限后再补独立契约验收。
 
 ## 刷新策略
 
@@ -154,7 +155,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 2. 实时推送使用 9092 内部事件 hub 和 SSE；生产由持久化位点 worker 成功落账后发送 PostgreSQL 通知，API 事件桥接收后驱动同一个 SSE 出口。
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。
-5. 代码补全当前使用 Meridian `/v1/metadata/instruments`，按 `exchange/instrument_type/status/limit/cursor` 取证券主数据并在前端过滤输入前缀。持仓、委托和成交表格中的“证券名称”列使用同一个 Meridian metadata 薄代理，并按当前可见表格代码通过 `security_ids` 批量补齐 `name/instrument_type`；这些字段只作为页面展示和价格精度辅助，不写入 relay 自定义证券主数据。若需要更多名称、拼音、行业等补全能力，应在 Meridian 增加/完善接口，而不是在 relay 内自建标准。
+5. 代码补全当前使用 Meridian `/v1/metadata/instruments`，按 `exchange/instrument_type/status/limit/cursor` 取沪深股票、ETF、可转债主数据并在前端过滤输入前缀。持仓、委托和成交表格按当前可见代码通过 `security_ids` 批量补齐 `name/instrument_type/price_tick/price_decimals`；这些字段只用于页面，不写入 Relay 自建证券主数据。
 6. 页面同时服务测试和生产账户，但环境由服务端统一选择；生产交易权限受账户级 `trading_enabled`、启动脚本风险确认和 API 写权限共同控制，当前生产全部只读。
 
 ## 后续工作

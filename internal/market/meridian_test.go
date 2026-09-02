@@ -113,6 +113,70 @@ func TestMetadataAdjustFactorsPassesThrough(t *testing.T) {
 	}
 }
 
+func TestMetadataPriceTickContractPassesThrough(t *testing.T) {
+	var instrumentsQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case instrumentsPath:
+			instrumentsQuery = r.URL.Query()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"security_id": "600000.SH", "instrument_type": "stock", "price_tick": 0.01, "price_decimals": 2, "price_tick_source": "rqdatac.Instrument.tick_size", "price_tick_as_of_date": 20260902},
+					{"security_id": "510300.SH", "instrument_type": "etf", "price_tick": 0.001, "price_decimals": 3, "price_tick_source": "rqdatac.Instrument.tick_size", "price_tick_as_of_date": 20260902},
+					{"security_id": "110075.SH", "instrument_type": "convertible_bond", "price_tick": 0.001, "price_decimals": 3, "price_tick_source": "rqdatac.Instrument.tick_size", "price_tick_as_of_date": 20260902},
+				},
+				"meta": map[string]any{"schema_version": "metadata_instrument.v2"},
+			})
+		case metadataStatusPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"status": "ok",
+					"price_tick_quality": map[string]any{
+						"status":        "ready",
+						"active_total":  7187,
+						"covered_count": 7187,
+						"missing_count": 0,
+					},
+				},
+				"meta": map[string]any{"schema_version": "metadata_status.v2"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	instruments, err := client.MetadataInstruments(context.Background(), url.Values{
+		"security_ids": {"600000.SH,510300.SH,110075.SH"},
+	})
+	if err != nil || instruments.StatusCode != http.StatusOK {
+		t.Fatalf("MetadataInstruments: status=%d err=%v", instruments.StatusCode, err)
+	}
+	if instrumentsQuery.Get("security_ids") != "600000.SH,510300.SH,110075.SH" {
+		t.Fatalf("instrument query = %s", instrumentsQuery.Encode())
+	}
+	if instruments.Payload["meta"].(map[string]any)["schema_version"] != "metadata_instrument.v2" {
+		t.Fatalf("instrument metadata = %#v", instruments.Payload)
+	}
+	rows := instruments.Payload["data"].([]any)
+	if len(rows) != 3 || rows[2].(map[string]any)["instrument_type"] != "convertible_bond" || rows[2].(map[string]any)["price_tick"] != 0.001 {
+		t.Fatalf("instrument rows = %#v", rows)
+	}
+
+	status, err := client.MetadataStatus(context.Background())
+	if err != nil || status.StatusCode != http.StatusOK {
+		t.Fatalf("MetadataStatus: status=%d err=%v", status.StatusCode, err)
+	}
+	quality := status.Payload["data"].(map[string]any)["price_tick_quality"].(map[string]any)
+	if quality["status"] != "ready" || quality["missing_count"] != float64(0) {
+		t.Fatalf("price tick quality = %#v", quality)
+	}
+}
+
 func TestMarketETFPCFPassesThrough(t *testing.T) {
 	var componentsQuery url.Values
 	var cashQuery url.Values

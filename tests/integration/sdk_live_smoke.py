@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,29 @@ def main() -> None:
     orders = client.list_orders(account_id=account_id, limit=5)
     fills = client.list_fills(account_id=account_id, limit=5)
     trade_quality = client.get_trade_quality(account_id=account_id)
+    instruments = client.get_meridian_instruments(
+        security_ids=["600000.SH", "510300.SH", "110075.SH"],
+    )
+    require((instruments.get("meta") or {}).get("schema_version") == "metadata_instrument.v2", "unexpected Meridian instrument schema")
+    instrument_rows = instruments.get("data") or []
+    instrument_by_id = {str(row.get("security_id")): row for row in instrument_rows if isinstance(row, dict)}
+    expected_ticks = {
+        "600000.SH": ("stock", Decimal("0.01"), 2),
+        "510300.SH": ("etf", Decimal("0.001"), 3),
+        "110075.SH": ("convertible_bond", Decimal("0.001"), 3),
+    }
+    for security_id, (instrument_type, price_tick, price_decimals) in expected_ticks.items():
+        row = instrument_by_id.get(security_id) or {}
+        require(row.get("instrument_type") == instrument_type, f"{security_id} instrument_type mismatch")
+        require(Decimal(str(row.get("price_tick"))) == price_tick, f"{security_id} price_tick mismatch")
+        require(row.get("price_decimals") == price_decimals, f"{security_id} price_decimals mismatch")
+        require(bool(row.get("price_tick_source")), f"{security_id} price_tick_source is missing")
+
+    metadata_status = client.get_meridian_metadata_status()
+    require((metadata_status.get("meta") or {}).get("schema_version") == "metadata_status.v2", "unexpected Meridian metadata status schema")
+    price_tick_quality = ((metadata_status.get("data") or {}).get("price_tick_quality") or {})
+    require(price_tick_quality.get("status") == "ready", "Meridian price tick quality is not ready")
+    require(price_tick_quality.get("missing_count") == 0, "Meridian price tick metadata has missing instruments")
 
     event_summary: dict[str, Any] = {"skipped": True}
     if not args.skip_events:
@@ -76,6 +100,8 @@ def main() -> None:
         "fills_sample": len(fills),
         "trade_quality_orders": int((trade_quality.get("summary") or {}).get("orders", 0)),
         "trade_quality_anomalies": int((trade_quality.get("summary") or {}).get("anomaly_items", 0)),
+        "meridian_instruments_schema": (instruments.get("meta") or {}).get("schema_version"),
+        "meridian_price_tick_coverage": f"{price_tick_quality.get('covered_count', 0)}/{price_tick_quality.get('active_total', 0)}",
         "event": event_summary,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

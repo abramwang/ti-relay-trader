@@ -163,7 +163,7 @@
 - [x] 对齐 OC v1.1 数据质量协议：稳定外部订单 ID 作为不透明值使用，普通成交与 ETF 划转分表，`adapter.data_quality` DLQ 纳入消费统计，新增划转 API、终端页签和归档重放。
 - [x] 对齐 OC v1.2 增量协议：撤单动作结果独立审计且不污染订单状态，batch `failed_orders[]` 逐单回写，`COMMAND_OUTCOME_UNKNOWN` 保持结果未知，运维页展示 broker/snapshot/交易/撤单真实就绪字段，未知事件 raw 归档后继续推进消费。
 - [ ] 联合验证 OC v1.2：真实撤单拒绝的标准账户语义和查询 PEL 恢复已通过；继续等待撤单超时、长 ID 跨 OC 重启、batch 部分失败和 `COMMAND_OUTCOME_UNKNOWN` 的低频实盘样本。
-- [x] 审计 Meridian SDK 至 `0.1.17` 并同步 Relay 所需增量：ETF PCF/现金清单/状态薄代理、实时分钟 Bar SSE、交易日显式字段；ETF T0 使用 `unit_subscribe_redeem` 做最小申赎单位质量校验，分钟线分块、replay/task/cursor 和行业分类保留在 Prism/回测边界。Relay Go HTTP 链路不依赖 Python SDK。
+- [x] 审计 Meridian SDK 至 `0.1.28` 并同步 Relay 所需增量：ETF PCF、实时分钟 Bar SSE、交易日字段以及 `metadata_instrument.v2` 权威价位契约；Relay Go HTTP 链路不依赖 Meridian Python SDK。
 - [x] `/trade#performance` 新增 ECharts 主图：账户 close 净值归一化序列、上证指数基准、超额收益，以及账户/基准回撤双层联动展示。
 - [x] 建立正式数据质量区：按资产快照与资金桥、Meridian 基准行情、收益归因输入、订单成交账本、经济净值与 T+1 对账、盘前初始化与盘后结算六项检查展示通过/提示/阻断。
 - [x] KPI 同步覆盖上日收盘、日初资产、隔夜调整、日终资产、日内/区间盈亏、费用、经济净值与质量标记；分钟 K 线仅保留在交易测试页。
@@ -419,6 +419,8 @@
 - [x] 增加 SDK 版本发布检查清单。
 - [x] 完成 Chronos 基于 `relay-sdk 0.1.28` 的接入需求评审，确认类型化分页、SSE 恢复、批量子单结果、transport 注入、能力发现和价格契约差异。
 - [x] 形成 Meridian P0 协调需求：instruments 增加可转债覆盖和权威 `price_tick/price_decimals`，Relay 不自建代码前缀规则。
+- [x] 验收 Meridian SDK `0.1.28` / `metadata_instrument.v2`：沪深股票、ETF、可转债活动证券 `7187/7187` 价位覆盖 ready；北交所按实际账户权限留作未来升级。
+- [x] 发布 `public/sdk/relay-sdk-0.1.29.tar.gz` 和 SHA256 校验文件，新增 Meridian instruments v2 与 metadata status 只读 helper；交易终端使用 `price_tick/price_decimals`。
 - [ ] SDK 增加 `OrderPage/FillPage/PositionPage`、`list_*_page()` 和具备页数、条数、重复 cursor 保护的 `iter_*()`；保留 envelope 审计字段并覆盖 500/501/1000+ 条边界。
 - [ ] Relay 服务端建立稳定事件游标、恢复或显式 gap 协议；SDK 再增加 `Last-Event-ID`、有限重连、退避、空闲超时和强制全量对账信号。
 - [ ] SDK 增加公开 transport 注入、`relay.trading.v1alpha1` 能力发现、批量子单异步结果和错误重试矩阵；完成只读 live smoke 后发布下一兼容版本。

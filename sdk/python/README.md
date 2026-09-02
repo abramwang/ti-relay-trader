@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Future internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.28.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.29.tar.gz"
 ```
 
 ## Quick Start
@@ -174,6 +174,8 @@ P8 helper methods are available for strategy and research tooling:
 - `block_nav_reconciliation(trade_date=..., operator=...)`
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
+- `get_meridian_instruments(security_ids=..., instrument_type=...)`
+- `get_meridian_metadata_status()`
 - `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)`
 - `get_meridian_etf_components(security_id=..., trade_date=...)`
 - `get_meridian_etf_cash_components(security_id=..., trade_date=...)`
@@ -181,7 +183,10 @@ P8 helper methods are available for strategy and research tooling:
 
 Meridian bars parameters follow Meridian's API. The relay SDK exposes common
 `trade_date` minute-bar arguments and forwards extra query parameters when
-needed. ETF PCF methods preserve Meridian's `etf_component.v1`,
+needed. Instruments and metadata status preserve Meridian
+`metadata_instrument.v2` and `metadata_status.v2`, including authoritative
+`price_tick`, `price_decimals`, source, and rule date. The current production
+scope is SH/SZ; BJ is a future capability. ETF PCF methods preserve Meridian's `etf_component.v1`,
 `etf_cash_component.v1`, and `etf_pcf_status.v1` payloads; in particular,
 `unit_subscribe_redeem` remains the authoritative minimum creation/redemption
 unit.

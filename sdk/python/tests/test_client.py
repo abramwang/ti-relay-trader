@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import unittest
+from decimal import Decimal
 from io import BytesIO
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
@@ -202,6 +203,61 @@ class RelayHandler(BaseHTTPRequestHandler):
                             }
                         ],
                         "meta": {"schema_version": "market_bar.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/metadata/instruments":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": "600000.SH",
+                                "instrument_type": "stock",
+                                "price_tick": 0.01,
+                                "price_decimals": 2,
+                                "price_tick_source": "rqdatac.Instrument.tick_size",
+                                "price_tick_as_of_date": 20260902,
+                            },
+                            {
+                                "security_id": "510300.SH",
+                                "instrument_type": "etf",
+                                "price_tick": 0.001,
+                                "price_decimals": 3,
+                                "price_tick_source": "rqdatac.Instrument.tick_size",
+                                "price_tick_as_of_date": 20260902,
+                            },
+                            {
+                                "security_id": "110075.SH",
+                                "instrument_type": "convertible_bond",
+                                "price_tick": 0.001,
+                                "price_decimals": 3,
+                                "price_tick_source": "rqdatac.Instrument.tick_size",
+                                "price_tick_as_of_date": 20260902,
+                            },
+                        ],
+                        "meta": {"schema_version": "metadata_instrument.v2"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/metadata/status":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": {
+                            "status": "ok",
+                            "price_tick_quality": {
+                                "status": "ready",
+                                "active_total": 7187,
+                                "covered_count": 7187,
+                                "missing_count": 0,
+                            },
+                        },
+                        "meta": {"schema_version": "metadata_status.v2"},
                     },
                 }
             )
@@ -737,6 +793,16 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(breaks[0]["run_id"], "run-1")
         bars = self.client.get_meridian_bars(security_id="600000.SH", trade_date="20260612")
         self.assertEqual(bars["data"][0]["close"], 9.46)
+        instruments = self.client.get_meridian_instruments(
+            security_ids=["600000.SH", "510300.SH", "110075.SH"],
+        )
+        self.assertEqual(instruments["meta"]["schema_version"], "metadata_instrument.v2")
+        ticks = {row["security_id"]: Decimal(str(row["price_tick"])) for row in instruments["data"]}
+        self.assertEqual(ticks["600000.SH"], Decimal("0.01"))
+        self.assertEqual(ticks["510300.SH"], Decimal("0.001"))
+        self.assertEqual(ticks["110075.SH"], Decimal("0.001"))
+        metadata_status = self.client.get_meridian_metadata_status()
+        self.assertEqual(metadata_status["data"]["price_tick_quality"]["status"], "ready")
         factors = self.client.get_meridian_adjust_factors(security_id="600000.SH", start_date="20260601", end_date="20260612")
         self.assertEqual(factors["data"][0]["adj_factor"], 1.2345)
         components = self.client.get_meridian_etf_components(
@@ -750,15 +816,18 @@ class RelayClientTest(unittest.TestCase):
         pcf_status = self.client.get_meridian_etf_pcf_status()
         self.assertEqual(pcf_status["data"]["state"]["status"], "success")
 
-        requests = RelayHandler.requests[-5:]
+        requests = RelayHandler.requests[-7:]
         self.assertEqual(requests[0][1], "/v1/meridian/market/bars")
         self.assertEqual(requests[0][2]["trade_date"], ["20260612"])
-        self.assertEqual(requests[1][1], "/v1/meridian/metadata/adjust-factors")
-        self.assertEqual(requests[1][2]["start_date"], ["20260601"])
-        self.assertEqual(requests[2][1], "/v1/meridian/market/etf-components")
-        self.assertEqual(requests[2][2]["security_id_pattern"], ["588*.SH"])
-        self.assertEqual(requests[3][2]["security_ids"], ["588200.SH"])
-        self.assertEqual(requests[4][1], "/v1/meridian/market/etf-pcf-status")
+        self.assertEqual(requests[1][1], "/v1/meridian/metadata/instruments")
+        self.assertEqual(requests[1][2]["security_ids"], ["600000.SH,510300.SH,110075.SH"])
+        self.assertEqual(requests[2][1], "/v1/meridian/metadata/status")
+        self.assertEqual(requests[3][1], "/v1/meridian/metadata/adjust-factors")
+        self.assertEqual(requests[3][2]["start_date"], ["20260601"])
+        self.assertEqual(requests[4][1], "/v1/meridian/market/etf-components")
+        self.assertEqual(requests[4][2]["security_id_pattern"], ["588*.SH"])
+        self.assertEqual(requests[5][2]["security_ids"], ["588200.SH"])
+        self.assertEqual(requests[6][1], "/v1/meridian/market/etf-pcf-status")
 
     def test_record_settlement_snapshot(self):
         result = self.client.record_settlement_snapshot(

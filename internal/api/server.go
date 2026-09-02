@@ -229,6 +229,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
 	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)
 	mux.HandleFunc("/v1/meridian/metadata/instruments", server.handleMeridianMetadataInstruments)
+	mux.HandleFunc("/v1/meridian/metadata/status", server.handleMeridianMetadataStatus)
 	mux.HandleFunc("/v1/meridian/metadata/adjust-factors", server.handleMeridianMetadataAdjustFactors)
 	mux.HandleFunc("/v1/meridian/market/bars", server.handleMeridianMarketBars)
 	mux.HandleFunc("/v1/meridian/market/snapshots", server.handleMeridianMarketSnapshots)
@@ -401,6 +402,24 @@ func (s *Server) handleMeridianMetadataInstruments(w http.ResponseWriter, r *htt
 		return
 	}
 	s.writeMeridianResponse(w, r, response, "meridian metadata request failed")
+}
+
+func (s *Server) handleMeridianMetadataStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.MetadataStatus(r.Context())
+	if err != nil {
+		s.logger.Warn("meridian_metadata_status_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian metadata status request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian metadata status request failed")
 }
 
 func (s *Server) handleMeridianMetadataAdjustFactors(w http.ResponseWriter, r *http.Request) {

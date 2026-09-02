@@ -379,6 +379,8 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `GET` | `/v1/history/fills` | `FillQuery` | `[]Fill` | 已实现，显式历史成交查询 |
 | `GET` | `/v1/history/transfers` | `ComponentTransferQuery` | `[]ComponentTransfer` | 已实现，显式历史 ETF 成分股划转查询 |
 | `GET` | `/v1/events/stream` | - | `SSE Event` | 已实现，支持订单、成交、资金和持仓变化 |
+| `GET` | `/v1/meridian/metadata/instruments` | Meridian query | `metadata_instrument.v2` | 已实现，透明返回沪深证券主数据和权威 `price_tick/price_decimals`；北交所为未来能力 |
+| `GET` | `/v1/meridian/metadata/status` | - | `metadata_status.v2` | 已实现，透明返回证券主数据和价位覆盖质量 |
 | `GET` | `/v1/meridian/market/bars` | Meridian query | `market_bar.v1` | 已实现，同源薄代理，保留 Meridian 原始字段 |
 | `GET` | `/v1/meridian/stream/market/bars` | Meridian query | Meridian SSE | 已实现，同源 SSE 薄代理，默认 `frequency=1m`、`data_scope=realtime` |
 | `GET` | `/v1/meridian/market/etf-components` | Meridian query | Meridian payload | 已实现，ETF PCF 成分清单薄代理 |

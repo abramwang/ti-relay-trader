@@ -198,6 +198,22 @@ def main() -> int:
             arg=focused_security_id,
             timeout=15_000,
         )
+        price_rule = page.evaluate(
+            """async (securityID) => {
+                const response = await fetch('/v1/meridian/metadata/instruments?security_id=' + encodeURIComponent(securityID));
+                const payload = await response.json();
+                return payload?.data?.data?.[0] || null;
+            }""",
+            focused_security_id,
+        )
+        if not price_rule or not price_rule.get("price_tick_source"):
+            raise AssertionError(f"authoritative price rule is unavailable for {focused_security_id}: {price_rule}")
+        expected_step = str(price_rule["price_tick"])
+        page.wait_for_function(
+            """(step) => document.querySelector('#priceInput')?.getAttribute('step') === step""",
+            arg=expected_step,
+            timeout=15_000,
+        )
 
         symbol, exchange = args.symbol.split(".", 1)
         page.locator("#symbolInput").fill(symbol)

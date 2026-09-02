@@ -2817,6 +2817,61 @@ func TestMeridianAdjustFactorsProxy(t *testing.T) {
 	}
 }
 
+func TestMeridianPriceTickMetadataProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/metadata/instruments":
+			if r.URL.Query().Get("security_ids") != "600000.SH,510300.SH,110075.SH" {
+				t.Fatalf("security_ids = %q", r.URL.Query().Get("security_ids"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"security_id": "600000.SH", "instrument_type": "stock", "price_tick": 0.01, "price_decimals": 2},
+					{"security_id": "510300.SH", "instrument_type": "etf", "price_tick": 0.001, "price_decimals": 3},
+					{"security_id": "110075.SH", "instrument_type": "convertible_bond", "price_tick": 0.001, "price_decimals": 3},
+				},
+				"meta": map[string]any{"schema_version": "metadata_instrument.v2"},
+			})
+		case "/v1/metadata/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"status":             "ok",
+					"price_tick_quality": map[string]any{"status": "ready", "covered_count": 7187, "missing_count": 0},
+				},
+				"meta": map[string]any{"schema_version": "metadata_status.v2"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	cfg.Market.TimeoutSeconds = 1
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+
+	instrumentsReq := httptest.NewRequest(http.MethodGet, "/v1/meridian/metadata/instruments?security_ids=600000.SH,510300.SH,110075.SH", nil)
+	instrumentsRec := httptest.NewRecorder()
+	handler.ServeHTTP(instrumentsRec, instrumentsReq)
+	if instrumentsRec.Code != http.StatusOK {
+		t.Fatalf("instrument status = %d: %s", instrumentsRec.Code, instrumentsRec.Body.String())
+	}
+	if !strings.Contains(instrumentsRec.Body.String(), `"schema_version":"metadata_instrument.v2"`) || !strings.Contains(instrumentsRec.Body.String(), `"instrument_type":"convertible_bond"`) || !strings.Contains(instrumentsRec.Body.String(), `"price_tick":0.001`) {
+		t.Fatalf("instrument response did not preserve v2 contract: %s", instrumentsRec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/v1/meridian/metadata/status", nil)
+	statusRec := httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("metadata status = %d: %s", statusRec.Code, statusRec.Body.String())
+	}
+	if !strings.Contains(statusRec.Body.String(), `"schema_version":"metadata_status.v2"`) || !strings.Contains(statusRec.Body.String(), `"status":"ready"`) || !strings.Contains(statusRec.Body.String(), `"missing_count":0`) {
+		t.Fatalf("metadata status response did not preserve v2 contract: %s", statusRec.Body.String())
+	}
+}
+
 func TestPerformanceSeriesQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		performanceSeries: []ledger.DailyPerformance{

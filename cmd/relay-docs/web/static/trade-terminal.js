@@ -594,12 +594,50 @@
     return setTerminalDefaultDate(nextDate, source, { applyToInputs: true });
   }
 
-  function priceDigitsForInstrument(instrumentType) {
-    return String(instrumentType || "").toLowerCase() === "etf" ? 3 : 2;
+  function priceDigitsForItem(item) {
+    const candidates = priceMetadataCandidates(item);
+    for (const candidate of candidates) {
+      const rawDecimals = candidate && candidate.price_decimals;
+      if (rawDecimals === null || rawDecimals === undefined || rawDecimals === "") {
+        continue;
+      }
+      const decimals = Number(rawDecimals);
+      if (Number.isInteger(decimals) && decimals >= 0 && decimals <= 8) {
+        return decimals;
+      }
+    }
+    return 2;
   }
 
-  function priceDigitsForItem(item) {
-    return priceDigitsForInstrument(instrumentTypeForItem(item));
+  function priceTickForItem(item) {
+    const candidates = priceMetadataCandidates(item);
+    for (const candidate of candidates) {
+      const tick = Number(candidate && candidate.price_tick);
+      if (Number.isFinite(tick) && tick > 0) {
+        return tick;
+      }
+    }
+    return null;
+  }
+
+  function priceMetadataCandidates(item) {
+    const securityID = itemSecurityID(item);
+    const instrument = instrumentForSecurityID(securityID);
+    const snapshot = securityID && state.marketSnapshot && state.marketSnapshot.security_id === securityID
+      ? state.marketSnapshot
+      : null;
+    return [item, instrument, snapshot].filter(Boolean);
+  }
+
+  function hasAuthoritativePriceMetadata(item) {
+    const rawTick = item && item.price_tick;
+    const rawDecimals = item && item.price_decimals;
+    if (rawTick === null || rawTick === undefined || rawTick === "" || rawDecimals === null || rawDecimals === undefined || rawDecimals === "") {
+      return false;
+    }
+    const tick = Number(rawTick);
+    const decimals = Number(rawDecimals);
+    return Number.isFinite(tick) && tick > 0 && Number.isInteger(decimals) && decimals >= 0 && decimals <= 8;
   }
 
   function instrumentTypeForItem(item) {
@@ -634,11 +672,12 @@
       return null;
     }
     const parsed = splitSecurityID(securityID);
-    const normalized = Object.assign({}, instrument, {
+    const existing = state.instrumentBySecurityID.get(securityID) || {};
+    const normalized = Object.assign({}, existing, instrument, {
       security_id: securityID,
-      symbol: instrument.symbol || parsed.symbol,
-      exchange: normalizeExchangeCode(instrument.exchange || parsed.exchange, parsed.symbol),
-      name: instrument.name || ""
+      symbol: instrument.symbol || existing.symbol || parsed.symbol,
+      exchange: normalizeExchangeCode(instrument.exchange || existing.exchange || parsed.exchange, parsed.symbol),
+      name: instrument.name || existing.name || ""
     });
     state.instrumentBySecurityID.set(securityID, normalized);
     state.instrumentMisses.delete(securityID);
@@ -688,8 +727,9 @@
   }
 
   function applyPriceInputPrecision(item) {
-    const digits = priceDigitsForItem(item || state.marketSnapshot);
-    els.priceInput.step = digits === 3 ? "0.001" : "0.01";
+    const candidate = item || state.marketSnapshot;
+    const tick = priceTickForItem(candidate);
+    els.priceInput.step = tick === null ? "any" : String(tick);
   }
 
   function formatInt(value) {
@@ -1259,7 +1299,8 @@
         continue;
       }
       seen.add(securityID);
-      if (!instrumentForSecurityID(securityID) && instrumentMissExpired(securityID)) {
+      const instrument = instrumentForSecurityID(securityID);
+      if ((!instrument || !hasAuthoritativePriceMetadata(instrument)) && instrumentMissExpired(securityID)) {
         ids.push(securityID);
       }
     }
@@ -2149,9 +2190,13 @@
       limit: "1"
     });
     try {
+      const metadataPromise = ensureInstrumentsForItems([{ security_id: securityID }]).catch((err) => {
+        pushLog("warn", "证券价位元数据刷新失败", err.message);
+      });
       const data = await request("/v1/meridian/market/snapshots?" + params.toString(), {
         signal: options.signal
       });
+      await metadataPromise;
       if (seq !== state.quoteSeq) {
         return;
       }
@@ -2216,7 +2261,7 @@
       return state.instrumentCache.get(cacheKey);
     }
     const pages = [];
-    for (const instrumentType of ["stock", "etf"]) {
+    for (const instrumentType of ["stock", "etf", "convertible_bond"]) {
       let cursor = "";
       for (let page = 0; page < 3; page += 1) {
         const params = new URLSearchParams({
@@ -2262,6 +2307,10 @@
       exchange: parsed.exchange,
       name: instrument.name || "",
       instrument_type: instrument.instrument_type || "",
+      price_tick: instrument.price_tick,
+      price_decimals: instrument.price_decimals,
+      price_tick_source: instrument.price_tick_source || "",
+      price_tick_as_of_date: instrument.price_tick_as_of_date,
       status: instrument.status || "",
       trade_date: "",
       last: ""

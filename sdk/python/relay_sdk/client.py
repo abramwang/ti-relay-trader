@@ -29,7 +29,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.28"
+SDK_VERSION = "0.1.29"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
@@ -745,6 +745,41 @@ class RelayClient:
         }
         query.update(extra_query)
         return self._request("GET", "/v1/meridian/market/bars", query=query)
+
+    def get_meridian_instruments(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        instrument_type: str | None = None,
+        exchange: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Return Meridian ``metadata_instrument.v2`` records through relay.
+
+        The response preserves Meridian's authoritative ``price_tick`` fields.
+        Relay's current production scope is SH/SZ; BJ is a future capability.
+        """
+
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "instrument_type": instrument_type,
+            "exchange": exchange,
+            "status": status,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/metadata/instruments", query=query)
+
+    def get_meridian_metadata_status(self) -> Mapping[str, Any]:
+        """Return Meridian ``metadata_status.v2`` price tick quality status."""
+
+        return self._request("GET", "/v1/meridian/metadata/status")
 
     def get_meridian_adjust_factors(
         self,

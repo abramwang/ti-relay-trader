@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，独立 `relay-api` + `relay-worker`，PostgreSQL `relay_trader` |
 | 安全状态 | 6 个账户只读接入，全部 `trading_enabled=false`、`auto_refresh=false` |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-02` 完成 Chronos 对 `relay-sdk 0.1.28` 的生产级接入差异评审；Meridian 当前 instruments 缺可转债覆盖和权威最小价位字段，已形成 P0 协调需求 |
+| 最近确认 | `2026-09-02` Meridian `metadata_instrument.v2` 价位契约通过生产验收；Relay 已接入质量状态并发布 `relay-sdk 0.1.29`，北交所留作未来升级 |
 | 更新时间 | `2026-09-02` |
 
 新线程按以下顺序恢复：
@@ -33,7 +33,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。等待记录属于上游水位门禁，不等同于任务失败。
-- 生产 schema 当前为 `26 etf_settlement_finalizations`，Python SDK 当前版本为 `relay-sdk==0.1.28`。
+- 生产 schema 当前为 `26 etf_settlement_finalizations`，Python SDK 当前版本为 `relay-sdk==0.1.29`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -46,7 +46,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 两户均于 `2026-07-27` 盘前入金并开始交易；原起算日误用了 Relay 首次取得 OC 快照的日期（分别为 7 月 29 日和 28 日）。券商资金与交割单已一次性恢复两户 7 月 27 日及 `307000051387` 的 7 月 28 日账本，逐证券数量桥和 Meridian 收盘市值均闭合。
 - 两户 `2026-07-27..2026-08-26` 各 23 个交易日、共 46 个账户日已按 `performance_economic_nav.v2.7` 顺序重建，0 blocked。结果仍为 provisional，因为部分历史费用、ETF 清算资产和归因使用明确标记的估算口径。
 - 富盈13号仍待完成 `meridian_pre_close_mark_to_market` 起算成本源和 ETF T0/底仓隔离起点确认；不得使用被 ETF 申赎污染的柜台平均成本。
-- Chronos 的 SDK P0 需求已完成现状审计：账本分页主要缺 SDK 暴露，SSE 恢复需要 Relay 服务端与 SDK 联合改造；统一价格契约还依赖 Meridian instruments 增加可转债和 `price_tick/price_decimals`，协调稿见 [Meridian 证券价位元数据需求](/home/ti-relay-trader/docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md:1)。
+- Chronos 的统一价格契约阻塞已关闭：Meridian `metadata_instrument.v2` 覆盖沪深股票、ETF、可转债，价位质量为 `7187/7187 ready`；Relay 透明代理 `price_tick/price_decimals` 和质量状态，不支持的北交所留作未来升级。账本类型化分页和可恢复 SSE 仍待推进。
 
 ### 下一步
 
@@ -55,7 +55,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 推进富盈13号可信起算成本，并继续按自然交易日抽查 OC 当日订单、成交、费用、资金和持仓质量。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 按 Chronos 接入优先级补齐 SDK 类型化全量分页和可恢复 SSE；价格合法性测试等待 Meridian 权威价位元数据契约上线。
+6. 按 Chronos 接入优先级补齐 SDK 类型化全量分页和可恢复 SSE；价格规则统一读取 Meridian v2 并在质量非 ready 时失败关闭。
 
 ## 系统边界
 
@@ -78,7 +78,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 成交必须关联订单并按账户、交易日、订单作用域幂等；ETF 赎回 0 价成分划转使用 `transfer.event`，不得伪装成普通成交。
 - 相同幂等键和相同 payload 返回原回执并标记 replay；相同键不同 payload 返回 `IDEMPOTENCY_CONFLICT`，终态订单不得被重复提交回退。
 - 当前订单和成交默认查询东八区当日；历史订单、成交和持仓使用独立历史接口。表格查询使用服务端 cursor 分页。
-- 股票价格精度为 2 位，ETF 为 3 位，证券名称、类型、交易日和行情字段全部按 Meridian 返回解释。
+- 价格展示位数和可报步长分别读取 Meridian `price_decimals`、`price_tick`；当前沪深股票为 2 位、ETF/可转债为 3 位。北交所未纳入当前实盘能力。
 - 绩效正式净值使用资金、Meridian 重估持仓、确认资金流和可审计调整，不依赖 ETF 申赎后受污染的柜台平均成本。
 - 原始 Redis 消息、DLQ、券商回包和修复证据永久保留；修复采用版本化或审计记录，不覆盖原始事实。
 
@@ -164,6 +164,7 @@ PYTHONPATH=sdk/python .venv/bin/python -m unittest discover -s sdk/python/tests 
 - [绩效净值金标](/home/ti-relay-trader/docs/PERFORMANCE_NAV_GOLD.md:1)
 - [两户券商资金流水一次性审计](/home/ti-relay-trader/docs/BROKER_CASH_FLOW_AUDIT_20260827.md:1)
 - [添利1号 ETF T0 最终清算审计](/home/ti-relay-trader/docs/TIANLI1_ETF_SETTLEMENT_RECONCILIATION_20260828.md:1)
+- [Meridian 证券价位契约验收](/home/ti-relay-trader/docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md:1)
 - [Meridian 盘后水位协调](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)
 - [2026-08-06 延后结算记录](/home/ti-relay-trader/docs/SETTLEMENT_HOLD_20260806.md:1)
 - [数据库迁移](/home/ti-relay-trader/docs/MIGRATIONS.md:1)
