@@ -49,7 +49,7 @@ SDK 的定位：
 27. `submit_orders()` 返回 `BatchCommandReceipt` 逐单保留调用方 ID 与 Relay 接受/重放结果；`get_batch_order_outcomes()` / `wait_batch_order_outcomes()` 结合 `origin_message_id`、订单账本和命令回报返回异步子单结果。
 28. 构造参数 `opener=` 是公开 HTTP 故障注入点；`retry_decision()` 给出按 read/query/write/cancel/stream 区分的自动重试和对账要求。
 
-Chronos 当前提出的 P0/P1 SDK 接口项均已有正式实现。`2026-09-02` 生产只读发布验收 9/9 通过，并从历史 raw command archive 完整回查真实批次的 2 个子单；低频实盘写场景仍按自然交易机会持续验收，不以测试环境结论替代生产事实。
+Chronos 当前提出的 P0/P1 SDK 接口项均已有正式实现。`2026-09-02` 生产只读发布验收 9/9 通过，并从历史 raw command archive 完整回查真实批次的 2 个子单；低频实盘写场景仍按自然交易机会持续验收，不以测试环境结论替代生产事实。可转交的逐项回执见 `docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md`。
 
 ## 包形态
 
@@ -518,6 +518,8 @@ SDK 将 HTTP 错误和 relay 标准错误统一封装为异常：
 | 幂等冲突、业务拒绝、订单状态冲突 | 不自动重试 | 不自动重试 | 否，修正请求或停止 |
 | 撤单拒绝/超时 | 不自动重试 | 不自动重试 | 是，核对原订单和撤单审计 |
 | SSE gap/重连耗尽 | 不自动重试 | 不适用 | 是，全量读取四类账本 |
+
+价格继续使用最多 6 位小数的 JSON number。需要确定性风控、费用或幂等比较的调用方，必须先用 `Decimal(str(value))` 和 half-up 规则归一为整数微元，再按 Meridian `metadata_instrument.v2.price_tick/price_decimals` 校验最小价位；仅在调用 SDK 时转回 float，并验证再次归一后的整数完全一致。发布测试覆盖股票、ETF、可转债和 `11.19999999` 传输噪声。Relay 不维护独立证券代码前缀价位规则。
 
 ## 当前测试
 

@@ -14,7 +14,10 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
-const positionCostFormulaVersion = "performance_position_cost.v3.1"
+const (
+	positionCostFormulaVersion             = "performance_position_cost.v3.2"
+	meridianPreCloseMarkToMarketCostSource = "meridian_pre_close_mark_to_market"
+)
 
 type CostLedgerOptions struct {
 	Persist bool `json:"persist"`
@@ -128,20 +131,28 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	for _, position := range openPositions {
 		openBySecurity[contributionSecurityID(position.Symbol, position.Exchange)] = position
 	}
+	markInceptionAtPreClose := normalizedDate == inception.InceptionDate &&
+		strings.EqualFold(strings.TrimSpace(inception.CostSource), meridianPreCloseMarkToMarketCostSource)
 	reanchoredFromBrokerOpen := false
 	if normalizedDate == inception.InceptionDate {
 		result.OpeningSource = inception.OpeningPositionSource
+		if markInceptionAtPreClose {
+			result.OpeningSource = meridianPreCloseMarkToMarketCostSource
+			result.QualityFlags = appendUnique(result.QualityFlags, "inception_cost_marked_to_meridian_pre_close")
+		}
 		for _, position := range openPositions {
 			key := contributionSecurityID(position.Symbol, position.Exchange)
 			state := newCostWorkingState(accountID, normalizedDate, position.Symbol, string(position.Exchange), result.OpeningSource)
 			state.quantity = position.Quantity
-			state.cost = trustedBrokerPositionCost(position)
 			state.item.OpenQuantity = position.Quantity
 			state.item.BrokerOpenQuantity = position.Quantity
-			state.item.OpenTotalCost = state.cost
-			if position.Quantity > 0 && state.cost <= 0 {
-				state.flags = appendUnique(state.flags, "missing_trusted_open_cost")
-				state.item.Status = "blocked"
+			if !markInceptionAtPreClose {
+				state.cost = trustedBrokerPositionCost(position)
+				state.item.OpenTotalCost = state.cost
+				if position.Quantity > 0 && state.cost <= 0 {
+					state.flags = appendUnique(state.flags, "missing_trusted_open_cost")
+					state.item.Status = "blocked"
+				}
 			}
 			working[key] = state
 		}
@@ -303,6 +314,9 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 
 	instruments, marketFlags := service.loadContributionInstruments(ctx, normalizedDate, securityIDs)
 	result.QualityFlags = appendUnique(result.QualityFlags, marketFlags...)
+	if markInceptionAtPreClose {
+		applyMeridianPreCloseInceptionCosts(working, openBySecurity, instruments)
+	}
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
@@ -567,6 +581,29 @@ func trustedBrokerPositionCost(position trading.Position) float64 {
 		return roundMoney(position.AvgCost * float64(position.Quantity))
 	}
 	return 0
+}
+
+func applyMeridianPreCloseInceptionCosts(
+	working map[string]*costWorkingState,
+	openPositions map[string]trading.Position,
+	instruments map[string]contributionInstrument,
+) {
+	for securityID, position := range openPositions {
+		state := working[securityID]
+		if state == nil || position.Quantity <= 0 {
+			continue
+		}
+		instrument := instruments[securityID]
+		if !instrument.HasPreClose || instrument.PreClose <= 0 {
+			state.item.Status = "blocked"
+			state.flags = appendUnique(state.flags, "missing_meridian_pre_close_inception_cost")
+			continue
+		}
+		state.cost = roundMoney(float64(position.Quantity) * instrument.PreClose)
+		state.item.OpenTotalCost = state.cost
+		state.item.OpeningSource = meridianPreCloseMarkToMarketCostSource
+		state.flags = appendUnique(state.flags, "meridian_pre_close_inception_cost")
+	}
 }
 
 func (service *Service) previousCostStateGap(

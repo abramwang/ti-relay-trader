@@ -2203,6 +2203,110 @@ func TestCalculateCostLedgerRollsTrustedOpeningCostWithMovingAverage(t *testing.
 	}
 }
 
+func TestCalculateCostLedgerMarksInceptionCostAtMeridianPreClose(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-24",
+			Status:                "confirmed",
+			OpeningPositionSource: "broker_open_snapshot",
+			CostSource:            "meridian_pre_close_mark_to_market",
+		},
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID:     "acct-1",
+				Symbol:        "510300",
+				Exchange:      trading.ExchangeSH,
+				Quantity:      1000,
+				AvgCost:       0.25,
+				TotalCost:     250,
+				CostComplete:  true,
+				AvgCostSource: "broker_total_position_cost",
+			}},
+			"close": {{
+				AccountID: "acct-1",
+				Symbol:    "510300",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  1000,
+			}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "510300.SH", "instrument_type": "etf",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "510300.SH", "pre_close": 4.0, "close": 4.1,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260724", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.2" || len(result.Positions) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.OpeningSource != "meridian_pre_close_mark_to_market" ||
+		!containsString(result.QualityFlags, "inception_cost_marked_to_meridian_pre_close") {
+		t.Fatalf("opening source/flags = %q / %#v", result.OpeningSource, result.QualityFlags)
+	}
+	item := result.Positions[0]
+	assertClose(t, item.OpenTotalCost, 4000)
+	assertClose(t, item.CloseTotalCost, 4000)
+	assertClose(t, item.AverageCost, 4)
+	assertClose(t, item.CloseMarketValue, 4100)
+	assertClose(t, item.UnrealizedPnL, 100)
+	if item.OpeningSource != "meridian_pre_close_mark_to_market" ||
+		!containsString(item.QualityFlags, "meridian_pre_close_inception_cost") {
+		t.Fatalf("position source/flags = %q / %#v", item.OpeningSource, item.QualityFlags)
+	}
+}
+
+func TestCalculateCostLedgerBlocksMarkedInceptionWithoutMeridianPreClose(t *testing.T) {
+	store := &fakePerformanceStore{
+		inception: ledger.PerformanceInception{
+			AccountID:             "acct-1",
+			InceptionDate:         "2026-07-24",
+			Status:                "confirmed",
+			OpeningPositionSource: "broker_open_snapshot",
+			CostSource:            "meridian_pre_close_mark_to_market",
+		},
+		positions: map[string][]trading.Position{
+			"open":  {{AccountID: "acct-1", Symbol: "510300", Exchange: trading.ExchangeSH, Quantity: 1000, TotalCost: 250, CostComplete: true}},
+			"close": {{AccountID: "acct-1", Symbol: "510300", Exchange: trading.ExchangeSH, Quantity: 1000}},
+		},
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "510300.SH", "instrument_type": "etf",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "510300.SH", "close": 4.1,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateCostLedger(context.Background(), "acct-1", "20260724", CostLedgerOptions{})
+	if err != nil {
+		t.Fatalf("CalculateCostLedger() error = %v", err)
+	}
+	if result.Status != "blocked" || len(result.Positions) != 1 ||
+		!containsString(result.Positions[0].QualityFlags, "missing_meridian_pre_close_inception_cost") {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Positions[0].OpenTotalCost != 0 {
+		t.Fatalf("broker cost must not be used as fallback: %#v", result.Positions[0])
+	}
+}
+
 func TestCalculateCostLedgerUsesPreviousCloseWhenOpenSnapshotIsMissing(t *testing.T) {
 	store := &fakePerformanceStore{
 		inception: ledger.PerformanceInception{
@@ -2720,7 +2824,7 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 	if err != nil {
 		t.Fatalf("CalculateCostLedger() error = %v", err)
 	}
-	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.1" {
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.2" {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(result.Positions) != 2 || result.Summary.T0CostBuckets != 1 || result.Summary.T0BlockedBuckets != 0 {

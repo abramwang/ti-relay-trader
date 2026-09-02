@@ -303,6 +303,13 @@ scope is SH/SZ; BJ is a future capability. ETF PCF methods preserve Meridian's `
 `unit_subscribe_redeem` remains the authoritative minimum creation/redemption
 unit.
 
+Prices remain JSON numbers with at most six decimal places. Consumers that
+need deterministic risk or idempotency comparisons should convert incoming
+values with `Decimal(str(value))`, round half-up to integer micro-units, and
+validate divisibility by Meridian's authoritative `price_tick`. Convert back
+to float only at the SDK boundary and verify the micro-unit round trip. The SDK
+release tests cover stock, ETF, convertible-bond, and transport-noise prices.
+
 ## Callbacks
 
 ```python

@@ -27,6 +27,9 @@
 - Relay now preserves the first submit command identity on every order and
   backfills historical identities from the raw command archive, so batch
   children remain queryable after later order queries and events.
+- Documented and tested the JSON-number price round trip used by Chronos:
+  `Decimal(str(value))`, half-up integer micro-units, and Meridian's
+  authoritative minimum price tick.
 
 ### Retry Safety
 

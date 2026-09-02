@@ -822,7 +822,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 6. 贡献聚合显式区分缺失盈亏与真实零值，并输出 `NAV 日盈亏 - 证券贡献 - 资金管理贡献 - 已知收支` 残差。费用规则缺失时只能 provisional。
 7. 新增起算配置、成本试算/重建 API 和 `relayctl performance-rebuild`；绩效页质量区增加“持仓成本连续性”。
 8. `307000051387` 的 `2026-07-29` 百万元盘中出金已按 confirmed `external_flow` 纳入 v2：精确时刻未知时使用日期精度和 `0.5` 权重，重算日盈亏 `+71,089.76` 元、收益率 `+0.141192%`、归因残差 `-458.48` 元，当日由 blocked 降为 provisional；`2026-07-30` 的 18 个数量差异继续独立阻断。
-9. `performance_position_cost.v3.1` 接入 Meridian `adjust-factors`。券商 open 数量与上一 close 数量之比匹配 `ex_factor` 时，保持持仓总成本并调整单位成本；因子存在但数量不变时按价格除权留痕；因子与券商数量无法闭合时标记 `corporate_action_mismatch` 并阻断。原始因子上下文独立保存，不覆盖 OC 持仓。
+9. `performance_position_cost.v3.2` 接入 Meridian `adjust-factors`。券商 open 数量与上一 close 数量之比匹配 `ex_factor` 时，保持持仓总成本并调整单位成本；因子存在但数量不变时按价格除权留痕；因子与券商数量无法闭合时标记 `corporate_action_mismatch` 并阻断。原始因子上下文独立保存，不覆盖 OC 持仓。
 10. 成本账复用贡献模块的 T0 订单组识别，将底仓保存在 `CORE`，完整 ETF 买入/赎回组保存在 `ETF_T0:{group_id}`。T0 买入成本不进入底仓，赎回只释放该组成本、不使用无意义的赎回价格生成已实现收益；退出 IOPV 和 15bp 摩擦继续由贡献模块计算。显式组可 calculated，历史推断组为 estimated，候选过多或 PCF 数量不闭合时 blocked。
 11. 当日 Meridian `1d` 尚未生成时，仅对当前交易日从 Meridian Level1 realtime snapshot 读取同源字段 `pre_close/last` 完成日初/日终估值，并标记 `meridian_level1_close_fallback`；历史交易日仍要求权威 `1d`，不把实时快照扩展为新的历史行情标准。
 12. 成本状态必须连续到实际上一交易日。若存在日期断档，默认标记 `previous_cost_state_gap` 并阻断；只有账户起算配置明确声明 `cost_source=broker_open_snapshot` 且当日 open 成本完整时，才允许以当前券商日初持仓重锚，并保存 `previous_cost_state_gap_reanchored` 审计标记。
@@ -833,6 +833,7 @@ Phase 2 主图和正式数据质量区已完成；后续精度提升进入 Phase
 17. `performance_economic_nav.v2.6` 支持一次性可信券商资产基数 `reconcile`：文件必须从开户起形成连续资产恒等式，启用日必须显式记录日初/日终券商总资产、入出金、文件哈希和 ETF 待结算开闭余额。券商资产基数不含公募占款时，Relay 在其上叠加待结算资产；原始 OC 快照不覆盖，历史文件不建设常规导入任务。
 18. v2.7 对干净开户首日增加严格门禁：confirmed clean-start 起算日期、零前资产、正盘前入金、零出金和可信文件哈希必须同时满足，才将盘前入金作为首日收益率分母。`307000051387/1388` 已据此把起算日从错误的 OC 首次可见日修正为共同的 `2026-07-27`。
 19. `000026_etf_settlement_finalizations` 将 ETF T0 的 IOPV 暂估与 T+N 终值分离：confirmed 终值经 OC 交易数量/金额、实际券商资金、费用和 Meridian PCF 四方闭合后替换来源日贡献；来源日 carry 在到账日带符号释放。权威券商日终资产已经包含盘后到账时，不再重复增加 `post_close_settlement_cash`。
+20. 对 ETF T0 与底仓混合、且柜台成本已经被申赎污染的账户，可在人工确认的起算日配置 `cost_source=meridian_pre_close_mark_to_market`。Relay 使用券商盘前数量乘 Meridian 当日未复权 `pre_close` 建立 CORE 初始成本，后续继续按成交、费用和公司行为滚动；缺少任一正持仓的前收盘价时阻断，不使用柜台平均成本兜底。该能力不自动选择账户或起算日。
 
 首批可信范围为 `307000051387`、`307000051388`、`307000051389` 和债享5号 `314000046830`。前三户从新账户首个可信快照起算；其中 `307000051387/1388` 已于 `2026-08-05` 发生 ETF 申赎 T0，后续依赖独立 T0 成本池和待结算估值。债享5号仅运行股票截面策略，以已确认柜台日初持仓成本为锚点。
 

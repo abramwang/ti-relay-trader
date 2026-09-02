@@ -4103,6 +4103,7 @@
     return {
       broker_open_snapshot_cost_reanchor: "可信柜台日初成本重锚",
       broker_open_snapshot: "可信柜台日初成本",
+      meridian_pre_close_mark_to_market: "Meridian 前收盘盯市起算",
       relay_previous_close_cost: "Relay 上一日移动成本",
       relay_moving_average: "Relay 移动加权成本"
     }[value] || value || "--";

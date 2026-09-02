@@ -164,6 +164,12 @@ var (
 			Description: "面向策略开发的 9092 API Python 客户端封装设计。",
 		},
 		{
+			Slug:        "chronos-relay-sdk-acceptance-20260902",
+			Title:       "Chronos SDK 验收回执",
+			Path:        "docs/CHRONOS_RELAY_SDK_ACCEPTANCE_20260902.md",
+			Description: "Chronos P0/P1、价格精度和发布要求的 Relay 侧逐项验收结论。",
+		},
+		{
 			Slug:        "meridian-instrument-price-tick-requirements-20260902",
 			Title:       "Meridian 证券价位契约验收",
 			Path:        "docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md",

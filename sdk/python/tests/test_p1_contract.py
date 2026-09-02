@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
 from relay_sdk import (
@@ -31,6 +32,26 @@ class RecordingOpener:
 
 
 class RelayP1ContractTests(unittest.TestCase):
+    def test_json_price_round_trip_uses_decimal_micro_units(self):
+        cases = (
+            ("stock", 11.2, "0.01", 11_200_000),
+            ("stock_transport_noise", 11.19999999, "0.01", 11_200_000),
+            ("etf", 4.818, "0.001", 4_818_000),
+            ("convertible_bond", 123.456, "0.001", 123_456_000),
+        )
+        for name, price, tick, expected_micros in cases:
+            with self.subTest(name=name):
+                decoded = json.loads(json.dumps({"price": price}))["price"]
+                micros = int(
+                    Decimal(str(decoded)).quantize(
+                        Decimal("0.000001"), rounding=ROUND_HALF_UP
+                    )
+                    * 1_000_000
+                )
+                tick_micros = int(Decimal(tick) * 1_000_000)
+                self.assertEqual(micros, expected_micros)
+                self.assertEqual(micros % tick_micros, 0)
+
     def test_public_opener_injection_controls_http_transport(self):
         opener = RecordingOpener()
         client = RelayClient("http://relay.invalid", timeout=3.5, opener=opener)

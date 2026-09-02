@@ -116,6 +116,12 @@ def build_checks(sdk_version: str) -> list[Check]:
             ("README 历史归档", "本文件是 README 精简前的完整快照"),
         ),
         Check("python-dataframe-policy", "/docs/python-dataframe-policy", "text", ("Relay Python DataFrame 版本策略", "pandas==2.3.3", "dependencies=[]")),
+        Check(
+            "chronos-sdk-acceptance",
+            "/docs/chronos-relay-sdk-acceptance-20260902",
+            "text",
+            ("Chronos Relay Python SDK 验收回执", "relay-sdk==0.1.32", "写请求数为 0"),
+        ),
         Check("release-checklist", "/docs/release-checklist", "text", ("发布检查清单", "生产只读全量验收", "回滚")),
         Check("tests-index", "/tests", "text", ("测试目录索引", "tests/integration")),
         Check("api-console", "/api-console", "text", ("接口测试台", "api-console-v2", "已保存集合", "响应断言", "api-console.js")),
