@@ -254,6 +254,7 @@
 - [x] API catalog 增加一致性检查，覆盖条目结构、Go handler、源码 schema 和在线 `/v1/schema`。
 - [x] API Console 支持命名请求集合、本地保存、JSON 导入导出和响应断言集合；Base URL 不入集合且加载后不自动发送。
 - [x] `/trade` 增加批量下单手动测试视图；生产环境保持 `trading_enabled=false`，写入测试只在券商测试环境执行。
+- [x] 验收 OC `f4a683a/5eaea72` 测试订单回报修复：两个批量子单均完成 accepted/working/cancelled 多事件验证，标准交易日稳定为 `20260906`，异常 `20450624` 仅保留在 adapter 审计字段，原批量 `origin_message_id` 全程可恢复，查询后订单身份不变且 command groups `pending=0,lag=0`；OC 重启恢复留待协调窗口复核，详见 `docs/OC_TEST_ORDER_REPORT_VALIDATION_20260906.md`。
 - [x] Playwright 覆盖环境/账户切换、生产只读护栏、日期、分页、排序、K 线、订单详情、绩效页、jobs 页和运维页，并在网络层禁止写请求。
 - [x] 增加统一生产只读发布验收脚本，以及配置、备份、观察和版本回滚检查清单。
 - [x] 将 API/worker 拆为独立常驻进程，使用本机 worker 健康端口和 PostgreSQL 事件桥保持 SSE；补齐独立日志、自启动、重启和上一版本回滚入口。
