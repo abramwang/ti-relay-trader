@@ -499,6 +499,10 @@
     return terminalDefaultDate();
   }
 
+  function defaultOrderLedgerDate() {
+    return state.environment === "test" ? currentBusinessDate() : defaultLedgerDate();
+  }
+
   function isCurrentBusinessDate(value) {
     const date = compactDate(value);
     return date !== "" && date === currentBusinessDate();
@@ -559,8 +563,9 @@
     if (!options.applyToInputs) {
       return result;
     }
+    const orderDate = compactDate(options.orderDate) || nextDate;
     result.ledgerChanged = [
-      applyDefaultDateInput(els.ordersTradeDate, nextDate, previousDefault),
+      applyDefaultDateInput(els.ordersTradeDate, orderDate, previousDefault),
       applyDefaultDateInput(els.assetTradeDate, nextDate, previousDefault)
     ].some(Boolean);
     result.chartChanged = [
@@ -1136,7 +1141,10 @@
       const tradingDay = data.trading_day || {};
       const statusTradeDate = compactDate(tradingDay.previous_or_current_trading_date || tradingDay.trade_date);
       if (statusTradeDate) {
-        setTerminalDefaultDate(statusTradeDate, "meridian-trading-day", { applyToInputs: true });
+        const orderDate = state.environment === "test"
+          ? compactDate(tradingDay.date) || currentBusinessDate()
+          : statusTradeDate;
+        setTerminalDefaultDate(statusTradeDate, "meridian-trading-day", { applyToInputs: true, orderDate });
       }
       setStatus(els.apiStatus, apiOK, "API: " + (apiOK ? "connected" : data.status || "degraded"));
       setStatus(els.redisStatus, dependencyOK(dependencies.redis), dependencyLabel("Redis", dependencies.redis));
@@ -1613,7 +1621,7 @@
   function ensureLedgerQueryDefaults() {
     const day = defaultLedgerDate();
     if (!els.ordersTradeDate.value) {
-      els.ordersTradeDate.value = day;
+      els.ordersTradeDate.value = defaultOrderLedgerDate();
     }
     if (!els.assetTradeDate.value) {
       els.assetTradeDate.value = day;

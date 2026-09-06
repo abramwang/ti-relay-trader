@@ -58,6 +58,7 @@ def main() -> int:
                             "redis": {"status": "ok"},
                         },
                         "trading_day": {
+                            "date": "2026-08-02",
                             "trade_date": "20260731",
                             "previous_or_current_trading_date": "20260731",
                         },
@@ -161,7 +162,8 @@ def main() -> int:
         page.wait_for_function(
             """() => document.querySelector('#batchGuard')?.dataset.status === 'ready' &&
                 document.querySelector('#batchAccount')?.value &&
-                document.querySelector('#validateBatchButton')?.disabled === false""",
+                document.querySelector('#validateBatchButton')?.disabled === false &&
+                document.querySelector('#ordersTradeDate')?.value === '20260802'""",
             timeout=30_000,
         )
 

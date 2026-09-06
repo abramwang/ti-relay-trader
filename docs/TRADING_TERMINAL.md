@@ -151,7 +151,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 当前边界
 
-1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。交易终端启动时也会先采用 `/v1/status.trading_day.previous_or_current_trading_date` 设置默认日期；该日期的资金持仓使用最新柜台账本，手工选择更早日期才读取 close 历史快照。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
+1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。生产环境的交易终端采用 `/v1/status.trading_day.previous_or_current_trading_date` 作为订单、成交和资金持仓默认日期；测试环境的订单/成交监控默认使用东八区自然日，以便在周末或节假日验证券商测试柜台，行情、绩效及资金持仓仍以最近交易日为默认口径。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
 2. 实时推送使用 9092 内部事件 hub 和 SSE；生产由持久化位点 worker 成功落账后发送 PostgreSQL 通知，API 事件桥接收后驱动同一个 SSE 出口。
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。
