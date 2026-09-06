@@ -92,6 +92,7 @@ def main() -> int:
                     **order,
                     "account_id": payload["account_id"],
                     "status": "created",
+                    "trade_date": "2026-08-02",
                 }
                 for order in payload["orders"]
             ]
@@ -115,9 +116,46 @@ def main() -> int:
                 ),
             )
 
+        def mock_batch_order_reports(route: Route) -> None:
+            orders = [
+                {
+                    **order,
+                    "account_id": request["account_id"],
+                    "status": "working",
+                    "gateway_status": "working",
+                    "trade_date": "2026-08-02",
+                }
+                for request in submitted
+                for order in request["orders"]
+            ]
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=envelope({"orders": orders, "count": len(orders)}),
+            )
+
+        def mock_batch_command_status(route: Route) -> None:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=envelope(
+                    {
+                        "origin_message_id": "msg-batch-browser-test",
+                        "action": "order.batch.submit",
+                        "state": "accepted",
+                        "terminal": True,
+                        "success": True,
+                        "reply_count": 1,
+                        "terminal_count": 1,
+                    }
+                ),
+            )
+
         page.route("**/v1/status", mock_status)
         page.route("**/v1/accounts", mock_accounts)
         page.route("**/v1/orders/batch", capture_batch)
+        page.route("**/v1/history/orders?*", mock_batch_order_reports)
+        page.route("**/v1/command-status/*", mock_batch_command_status)
 
         page.goto(args.base_url.rstrip("/") + "/trade#batch", wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_function(
@@ -153,6 +191,9 @@ def main() -> int:
         page.wait_for_function(
             """() => (document.querySelector('#batchMessageID')?.textContent || '') === 'msg-batch-browser-test' &&
                 (document.querySelector('#batchResultStatus')?.textContent || '').includes('已发布 2 笔') &&
+                (document.querySelector('#batchPublishStatus')?.textContent || '') === 'accepted' &&
+                Array.from(document.querySelectorAll('.batch-row-status strong')).every((node) => node.textContent === '已报待成') &&
+                (document.querySelector('#ordersTradeDate')?.value || '') === '20260802' &&
                 document.querySelector('#submitBatchButton')?.disabled === true""",
             timeout=10_000,
         )
@@ -165,6 +206,7 @@ def main() -> int:
                 buyAmount: document.querySelector('#batchBuyAmount')?.textContent || '',
                 sellAmount: document.querySelector('#batchSellAmount')?.textContent || '',
                 result: document.querySelector('#batchResultStatus')?.textContent || '',
+                reportDate: document.querySelector('#ordersTradeDate')?.value || '',
                 horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
             })"""
         )
@@ -185,6 +227,8 @@ def main() -> int:
         raise AssertionError(f"batch identities are incomplete: {request}")
     if diagnostics["environment"] != "测试环境" or diagnostics["horizontalOverflow"]:
         raise AssertionError(f"batch terminal diagnostics failed: {diagnostics}")
+    if diagnostics["reportDate"] != "20260802":
+        raise AssertionError(f"batch report date was not adopted: {diagnostics}")
     if console_errors or page_errors:
         raise AssertionError(
             json.dumps(

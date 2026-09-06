@@ -318,7 +318,7 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			}
 			result.Accounts++
 		}
-		updatedAt := envelope.ProducedAt
+		updatedAt := positionQueryUpdatedAt(envelope)
 		for i, position := range positions {
 			result.noteAccount(position.AccountID)
 			if err := writer.UpsertPosition(ctx, position, "query", raws[i], updatedAt); err != nil {
@@ -1166,6 +1166,18 @@ func positionQueryStaleCutoff(envelope EntryEnvelope) time.Time {
 	return time.Time{}
 }
 
+func positionQueryUpdatedAt(envelope EntryEnvelope) time.Time {
+	updatedAt := envelope.ProducedAt
+	cutoff := positionQueryStaleCutoff(envelope)
+	if cutoff.IsZero() {
+		return updatedAt
+	}
+	if updatedAt.IsZero() || updatedAt.Before(cutoff) {
+		return cutoff.Add(time.Nanosecond)
+	}
+	return updatedAt
+}
+
 func timestampFromIdentifier(value string) time.Time {
 	digits := strings.Builder{}
 	for _, char := range value {
@@ -1874,6 +1886,8 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	rejectCode, rejectMessage := orderPayloadRejectInfo(envelope, payload, status, gatewayStatus)
 	adapterContext := withOrderPayloadContext(orderDebugContext(envelope, rejectCode, rejectMessage), payload)
+	tradeDate, tradeDateContext := guardedOrderTradeDate(payload, envelope)
+	adapterContext = mergeContextMaps(adapterContext, tradeDateContext)
 	return trading.Order{
 		AccountID:         payload.AccountID,
 		ClientOrderID:     payload.ClientOrderID,
@@ -1906,7 +1920,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		RequestID:         envelope.RequestID,
 		IdempotencyKey:    orderIdempotencyKey(envelope),
 		ShareholderID:     payload.ShareholderID,
-		TradeDate:         payload.TradeDate,
+		TradeDate:         tradeDate,
 		StrategyType:      payload.StrategyType,
 		StrategyID:        payload.StrategyID,
 		BasketID:          payload.BasketID,
@@ -1919,6 +1933,48 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		TerminalAt:        parseTime(payload.TerminalAt),
 		AdapterContext:    adapterContext,
 	}
+}
+
+func guardedOrderTradeDate(payload orderPayload, envelope EntryEnvelope) (string, map[string]any) {
+	reported := strings.TrimSpace(payload.TradeDate)
+	if reported == "" {
+		return reported, nil
+	}
+	reportedDay, err := parseCompactTradeDate(reported)
+	if err != nil {
+		return reported, nil
+	}
+	reference := firstNonZeroTime(
+		parseTime(payload.CreatedAt),
+		parseTime(payload.InsertedAt),
+		parseTime(payload.AcceptedAt),
+		parseTime(firstNonEmpty(payload.LastUpdatedAt, payload.UpdateTime)),
+		parseTime(payload.TerminalAt),
+		envelope.ProducedAt,
+	)
+	if reference.IsZero() {
+		return reported, nil
+	}
+	referenceDay, _ := time.ParseInLocation("2006-01-02", reference.In(timeutil.Location()).Format("2006-01-02"), timeutil.Location())
+	if math.Abs(reportedDay.Sub(referenceDay).Hours()) <= 7*24 {
+		return reported, nil
+	}
+	return referenceDay.Format("2006-01-02"), map[string]any{
+		"relay_reported_trade_date":     reported,
+		"relay_trade_date_normalized":   true,
+		"relay_trade_date_source":       "order_timestamp_guard",
+		"relay_trade_date_reference_at": reference.In(timeutil.Location()).Format(time.RFC3339Nano),
+	}
+}
+
+func parseCompactTradeDate(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	for _, layout := range []string{"2006-01-02", "20060102"} {
+		if parsed, err := time.ParseInLocation(layout, value, timeutil.Location()); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid trade date %q", value)
 }
 
 func (payload fillPayload) validate() error {

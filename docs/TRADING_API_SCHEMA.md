@@ -432,7 +432,7 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 资金和持仓读取默认执行展示层补全；内部券商快照流程使用 `GET .../asset?enrich=false` 与 `GET .../positions?enrich=false` 直接读取 PostgreSQL 中的柜台原始字段，不请求证券名称、行情、成交成本或 Meridian。该参数只关闭读时补全，不改变账本内容；省略时保持原有终端和 SDK 行为。
 
-回执中的 `message_id` 是命令状态关联键。`GET /v1/command-status/{origin_message_id}` 对查询命令要求只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。交易命令使用同一路由读取 `BROKER_NOT_READY`、`COMMAND_OUTCOME_UNKNOWN` 等归档回报，最终订单状态仍以订单账本为准。盘前初始化和盘后结算同时检查本地账本新鲜度与查询终态，不能用新鲜时间戳掩盖 OC 查询失败。
+回执中的 `message_id` 是命令状态关联键。`GET /v1/command-status/{origin_message_id}` 对查询命令要求只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；对 `order.submit/order.batch.submit/order.cancel`，一个 `status=accepted` 且 `result_type=order_action_receipt` 的 reply 表示命令接收已完成，返回 `state=accepted, terminal=true, success=true`，但不代表订单已成交或撤单成功。`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。交易命令使用同一路由读取 `BROKER_NOT_READY`、`COMMAND_OUTCOME_UNKNOWN` 等归档回报，最终订单状态仍以订单账本为准。盘前初始化和盘后结算同时检查本地账本新鲜度与查询终态，不能用新鲜时间戳掩盖 OC 查询失败。
 
 批量下单的同步 HTTP 成功只表示 Relay 已逐单校验、建立草稿并发布一个批量命令。调用方以 `message_id` 查询命令回报，并用 `GET /v1/history/orders?account_id=...&origin_message_id=...` 取得完整子单账本。首次下单写入的 `origin_message_id/request_id/idempotency_key` 是订单命令身份，后续查询回报和状态事件只更新业务状态，不覆盖这三个字段。子单仍为 `created` 时不得推断柜台接受；订单进入 `accepted/working/partially_filled/filled/cancelled` 才视为 accepted，`rejected` 保留逐单错误，`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 保持显式非确定状态。
 

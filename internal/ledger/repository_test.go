@@ -1237,6 +1237,7 @@ func TestUpsertPositionBuildsCurrentPositionWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO positions")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, symbol, exchange)")
+	requireQueryContains(t, exec.query, "WHERE positions.updated_at <= EXCLUDED.updated_at")
 	requireArgLen(t, exec.args, 21)
 	if exec.args[0] != "acct-1" || exec.args[1] != "600000" || exec.args[3] != trading.ExchangeSH {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[3])
@@ -1382,6 +1383,23 @@ func TestSummarizeCommandStatusRequiresSingleCompletedFinalReply(t *testing.T) {
 	})
 	if failedAfterData.Success || failedAfterData.State != "failed" || !failedAfterData.Contradictory {
 		t.Fatalf("failed-after-data status = %#v", failedAfterData)
+	}
+}
+
+func TestSummarizeCommandStatusAcceptsTradeActionReceipt(t *testing.T) {
+	accepted := summarizeCommandStatus(CommandStatus{
+		OriginMessageID: "msg-batch-1",
+		Action:          "order.batch.submit",
+		Replies: []CommandReplyStatus{{
+			Status:     "accepted",
+			ResultType: "order_action_receipt",
+		}},
+	})
+	if !accepted.Success || !accepted.Terminal || accepted.State != "accepted" || accepted.TerminalCount != 1 {
+		t.Fatalf("accepted trade status = %#v", accepted)
+	}
+	if accepted.ExpectedResultType != "order_action_receipt" {
+		t.Fatalf("expected result type = %q", accepted.ExpectedResultType)
 	}
 }
 

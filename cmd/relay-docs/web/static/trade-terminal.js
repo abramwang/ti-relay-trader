@@ -524,7 +524,7 @@
     if (!value) {
       return true;
     }
-    return value === previousDefault || value === currentBusinessDate();
+    return value === previousDefault || (!state.initialized && value === currentBusinessDate());
   }
 
   function applyDefaultDateInput(input, nextDate, previousDefault) {
@@ -6174,8 +6174,55 @@
     els.batchMessageID.textContent = result.message_id || "--";
     els.batchStreamID.textContent = result.stream_id || (result.published && result.published.stream_id) || "--";
     els.batchRequestID.textContent = result.request_id || "--";
-    els.batchPublishStatus.textContent = isError ? "失败" : result.replayed ? "replayed" : "published";
+    const commandState = result.command_status && result.command_status.state;
+    els.batchPublishStatus.textContent = isError ? "失败" : result.replayed ? "replayed" : commandState || "published";
     els.batchResultJSON.textContent = JSON.stringify(result, null, 2);
+  }
+
+  async function followBatchOrderReports(result) {
+    const messageID = result && result.message_id;
+    const accountID = result && (result.account_id || (result.orders && result.orders[0] && result.orders[0].account_id)) ||
+      (els.batchAccount && els.batchAccount.value) || state.activeAccount;
+    const expectedIDs = new Set((result && result.orders || []).map((order) => order.gateway_order_id).filter(Boolean));
+    if (!messageID || !accountID) {
+      return;
+    }
+    let lastError = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!state.batchResult || state.batchResult.message_id !== messageID) {
+        return;
+      }
+      try {
+        const params = new URLSearchParams({
+          account_id: accountID,
+          origin_message_id: messageID,
+          limit: "500"
+        });
+        const [ordersResult, commandStatus] = await Promise.all([
+          request("/v1/history/orders?" + params.toString()),
+          request("/v1/command-status/" + encodeURIComponent(messageID))
+        ]);
+        const reports = Array.isArray(ordersResult.orders) ? ordersResult.orders : [];
+        state.batchResult = Object.assign({}, state.batchResult, {
+          orders: reports.length > 0 ? reports : state.batchResult.orders,
+          command_status: commandStatus
+        });
+        renderBatchEditor();
+        const reportedIDs = new Set(reports.filter((order) => order.status && order.status !== "created").map((order) => order.gateway_order_id));
+        if (expectedIDs.size > 0 && Array.from(expectedIDs).every((id) => reportedIDs.has(id))) {
+          pushLog("info", "批量订单回报已更新", messageID);
+          return;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    if (lastError) {
+      pushLog("warn", "批量订单回报查询失败", lastError.message);
+    } else {
+      pushLog("warn", "批量订单回报等待超时", messageID);
+    }
   }
 
   function renderBatchEditor() {
@@ -6357,6 +6404,7 @@
     updateBatchGuard();
     try {
       const result = await request("/v1/orders/batch", { method: "POST", body: payload });
+      const submittedTradeDate = compactDate((result.orders && result.orders[0] && result.orders[0].trade_date) || currentBusinessDate());
       state.batchResult = result;
       state.batchValidatedSignature = "";
       els.batchValidationTitle.textContent = "批次已提交";
@@ -6365,7 +6413,13 @@
       pushLog("info", "批量下单已提交", result.message_id || result.idempotency_key || "");
       showToast("批量下单已提交 " + state.batchRows.length + " 笔");
       renderBatchEditor();
-      refreshNow().catch((err) => pushLog("warn", "批量下单后账本刷新失败", err.message));
+      refreshNow().then(async () => {
+        if (submittedTradeDate) {
+          els.ordersTradeDate.value = submittedTradeDate;
+          await queryOrdersForDate();
+        }
+      }).catch((err) => pushLog("warn", "批量下单后账本刷新失败", err.message));
+      followBatchOrderReports(result).catch((err) => pushLog("warn", "批量订单回报查询失败", err.message));
     } catch (err) {
       state.batchResult = {
         error: err.message,

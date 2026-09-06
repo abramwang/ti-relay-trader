@@ -1192,6 +1192,7 @@ ON CONFLICT (account_id, symbol, exchange) DO UPDATE SET
     source = EXCLUDED.source,
     raw_payload = EXCLUDED.raw_payload,
     updated_at = EXCLUDED.updated_at
+WHERE positions.updated_at <= EXCLUDED.updated_at
 `
 
 const deleteStalePositionsSQL = `

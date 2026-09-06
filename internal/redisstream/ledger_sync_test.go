@@ -99,6 +99,32 @@ func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryKeepsCurrentPositionPageAcrossClockSkew(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-clock-skew", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-position-clock-skew",
+			"origin_message_id":"msg-positions-query-1788693488497586709-2",
+			"action":"account.positions.query",
+			"result_type":"position_page",
+			"status":"partial",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"produced_at":"2026-09-06T11:18:08.471Z",
+			"payload":{"items":[{"account_id":"00030484","symbol":"600000","exchange":"SH","quantity":100,"sellable_qty":100,"avg_cost":9.54}]}
+		}`,
+	})
+
+	if result.Positions != 1 || len(writer.positions) != 1 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.positions)
+	}
+	cutoff := time.Unix(0, 1788693488497586709).UTC()
+	if !writer.positions[0].updatedAt.Equal(cutoff.Add(time.Nanosecond)) {
+		t.Fatalf("updated_at = %s, want after cutoff %s", writer.positions[0].updatedAt, cutoff)
+	}
+}
+
 func TestProcessLedgerEntryClearsStalePositionsOnCompletedReply(t *testing.T) {
 	writer := &fakeLedgerWriter{stalePositionsDeleted: 7}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-20", map[string]any{
@@ -780,6 +806,50 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 	if len(writer.orderEvents) != 1 || writer.orderEvents[0].stream.ID != "2-0" {
 		t.Fatalf("order events = %#v", writer.orderEvents)
+	}
+}
+
+func TestProcessLedgerEntryGuardsOrderTradeDateAgainstTimestamp(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:event", "2-date-guard", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-date-guard",
+			"event_type":"order.event",
+			"produced_at":"2026-09-06T12:16:59.732Z",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-date-guard",
+				"account_id":"00030484",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":100,
+				"leaves_qty":100,
+				"limit_price":9.24,
+				"trade_date":"20450624",
+				"created_at":"2026-09-06T20:16:59+08:00",
+				"status":"working",
+				"gateway_status":"working"
+			},
+			"adapter_context":{"trade_date":"20450624"}
+		}`,
+	})
+
+	if result.Orders != 1 || len(writer.orders) != 1 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.orders)
+	}
+	order := writer.orders[0]
+	if order.TradeDate != "2026-09-06" {
+		t.Fatalf("trade_date = %q", order.TradeDate)
+	}
+	if order.AdapterContext["relay_reported_trade_date"] != "20450624" || order.AdapterContext["relay_trade_date_normalized"] != true {
+		t.Fatalf("trade date context = %#v", order.AdapterContext)
+	}
+	if order.AdapterContext["trade_date"] != "20450624" {
+		t.Fatalf("raw adapter trade_date was not preserved: %#v", order.AdapterContext)
 	}
 }
 
@@ -1631,8 +1701,9 @@ type recordedAsset struct {
 }
 
 type recordedPosition struct {
-	position trading.Position
-	source   string
+	position  trading.Position
+	source    string
+	updatedAt time.Time
 }
 
 type recordedStalePositionClear struct {
@@ -1700,8 +1771,8 @@ func (writer *fakeLedgerWriter) UpsertAssetSnapshot(_ context.Context, asset tra
 	return nil
 }
 
-func (writer *fakeLedgerWriter) UpsertPosition(_ context.Context, position trading.Position, source string, _ any, _ time.Time) error {
-	writer.positions = append(writer.positions, recordedPosition{position: position, source: source})
+func (writer *fakeLedgerWriter) UpsertPosition(_ context.Context, position trading.Position, source string, _ any, updatedAt time.Time) error {
+	writer.positions = append(writer.positions, recordedPosition{position: position, source: source, updatedAt: updatedAt})
 	return nil
 }
 

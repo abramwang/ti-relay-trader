@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`config/relay.local.yaml`，API 内嵌账本同步，PostgreSQL `relay_trader_test` |
 | 安全状态 | 测试账户 `00030484` 查询/交易路由开启；生产六账户及生产数据库不在当前运行态，运维管理写操作关闭 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-06` 已确认测试 OC 在线且券商就绪；资金、持仓、订单、成交四类查询均成功终结并落账，完整只读 SDK 冒烟通过，Stream lag/pending/DLQ 均为 0 |
+| 最近确认 | `2026-09-06` 测试 OC 查询链路正常；批量下单回报可见性已修复并实测为 `working`，交易命令状态为 `accepted`，异常模拟柜台日期保留原文并归一化落账 |
 | 更新时间 | `2026-09-06` |
 
 新线程按以下顺序恢复：
@@ -28,7 +28,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-06` 当前运行态已持久切换到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，账户 `00030484` 的查询和交易路由开启；API 使用内嵌账本同步，因此独立 `relay-worker` 按配置停用。测试 OC 状态为 `UP`，`redis_ready/broker_ready/order_snapshot_ready=true`；资金、持仓、订单、成交查询均成功终结，账本无解析错误或 DLQ，完整只读 SDK 冒烟通过。账户当前为全现金空仓，持仓查询中的零余额回包在终结后不会保留为当前持仓。
+- `2026-09-06` 当前运行态已持久切换到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，账户 `00030484` 的查询和交易路由开启；API 使用内嵌账本同步，因此独立 `relay-worker` 按配置停用。测试 OC 状态为 `UP`，`redis_ready/broker_ready/order_snapshot_ready=true`；资金、持仓、订单、成交查询均成功终结，账本无解析错误或 DLQ，完整只读 SDK 冒烟通过。分段持仓回包已容忍 OC/Relay 毫秒级时钟偏差，旧回包不能覆盖新持仓，当前 10 条持仓稳定保留。
+- `2026-09-06` 测试批量单已验证 `HTTP 202 -> accepted reply -> order.event -> PostgreSQL -> Web`。OC 后续状态事件曾把同一订单交易日从 `20260906` 改为 `20450624` 并丢失命令关联，Relay 已按订单时间防止异常日期拆单、保留原值审计，并让批量页按 `message_id` 自动刷新回报；OC 侧反馈见 [测试批量订单回报反馈](/home/ti-relay-trader/docs/OC_TEST_BATCH_ORDER_FEEDBACK_20260906.md:1)。
 - 生产 API、worker、PostgreSQL、Redis、事件桥、Meridian 行情代理和订单服务均已接通；API 监听 `0.0.0.0:9092`，worker 健康端口只监听 `127.0.0.1:19092`。
 - 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。

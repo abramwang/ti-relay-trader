@@ -14,7 +14,7 @@ docs/api 模式可通过 `worker.embedded_ledger_sync=true` 启动内嵌同步�
 
 同日新增自动资金持仓刷新：当同步循环处理到 `order.event` 或 `fill.event` 后，会按账户调度 `account.asset.query` 和 `account.positions.query`。调度器默认 2 秒合并、20 秒冷却，只向前置写入查询命令，后续仍由 `asset_page/position_page` reply 合并到 PostgreSQL。
 
-当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`。`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 不代表可安全推断的业务拒单，Relay 只归档并提示重试或先查询对账，不修改订单终态。
+当前 reply 合并范围已覆盖资金、持仓、订单和成交查询结果：`asset_page` 写入 `asset_snapshots`，`position_page` 写入 `positions`，`order_page` upsert `orders`，`fill_page` 幂等写入 `fills`。`position_page` 视为账户全量持仓批次：`partial` reply 逐条 upsert，收到同一查询批次的 `completed` reply 后，Relay 会根据 `origin_message_id/correlation_id` 中的查询发起时间清理该账户本批次未更新的旧 `positions` 行，避免已卖空或柜台不再返回的旧持仓继续显示为当前持仓。写入时间不得早于该查询的发起时间，数据库也拒绝用旧回包覆盖更新持仓，因此 OC 与 Relay 的毫秒级时钟偏差或迟到重放不会误删、回退本批次数据。下单类 `rejected/failed` reply 会更新对应草稿订单为 `rejected`，并把前置/柜台错误抽取到 `reject_code`、`reject_message` 和 `adapter_context.relay_error_message`。`BROKER_NOT_READY` 和 `COMMAND_OUTCOME_UNKNOWN` 不代表可安全推断的业务拒单，Relay 只归档并提示重试或先查询对账，不修改订单终态。
 
 OC 2026-08-03 起在 `position_page.items[]` 提供 `total_cost/avg_cost_source/cost_complete`。Relay 原样持久化这些成本质量字段，但不再信任华鑫旧 `market_value`，因为该字段承载的是 `TotalPosCost`；标准持仓市值由 Meridian 行情重估。若 `avg_cost_source` 已明确为 `unavailable`，绩效成本账必须阻断，不能回退使用旧均价。
 

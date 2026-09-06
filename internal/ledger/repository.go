@@ -2241,16 +2241,28 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 	result.Contradictory = false
 	result.TerminalCount = 0
 	result.ReplyCount = len(result.Replies)
-	result.ExpectedResultType = expectedQueryResultType(result.Action)
+	result.ExpectedResultType = expectedCommandResultType(result.Action)
 	var completedValid int
 	var completedInvalid int
+	var acceptedValid int
+	var acceptedInvalid int
 	var failed int
 	var dataPages int
+	tradeAction := result.ExpectedResultType == "order_action_receipt"
 	for _, reply := range result.Replies {
 		if reply.ResultType == result.ExpectedResultType && reply.ResultType != "" {
 			dataPages++
 		}
 		switch strings.ToLower(strings.TrimSpace(reply.Status)) {
+		case "accepted":
+			if tradeAction {
+				result.TerminalCount++
+				if reply.ResultType == result.ExpectedResultType {
+					acceptedValid++
+				} else {
+					acceptedInvalid++
+				}
+			}
 		case "completed":
 			result.TerminalCount++
 			if reply.IsLast && (result.ExpectedResultType == "" || reply.ResultType == result.ExpectedResultType) {
@@ -2264,7 +2276,7 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 		}
 	}
 	result.Terminal = result.TerminalCount > 0
-	result.Contradictory = failed > 0 && dataPages > 0
+	result.Contradictory = failed > 0 && (dataPages > 0 || acceptedValid > 0)
 	switch {
 	case result.TerminalCount > 1:
 		result.State = "invalid"
@@ -2273,14 +2285,19 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 		result.State = "failed"
 	case completedInvalid == 1:
 		result.State = "invalid"
+	case acceptedInvalid == 1:
+		result.State = "invalid"
 	case completedValid == 1:
 		result.State = "completed"
+		result.Success = true
+	case acceptedValid == 1:
+		result.State = "accepted"
 		result.Success = true
 	}
 	return result
 }
 
-func expectedQueryResultType(action string) string {
+func expectedCommandResultType(action string) string {
 	switch strings.TrimSpace(action) {
 	case "account.asset.query":
 		return "asset_page"
@@ -2292,6 +2309,8 @@ func expectedQueryResultType(action string) string {
 		return "fill_page"
 	case "fee.list.query":
 		return "fee_page"
+	case "order.submit", "order.batch.submit", "order.cancel":
+		return "order_action_receipt"
 	default:
 		return ""
 	}
