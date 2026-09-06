@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 测试环境，`config/relay.local.yaml`，API 内嵌账本同步，PostgreSQL `relay_trader_test` |
-| 安全状态 | 测试账户 `00030484` 查询/交易路由开启；生产六账户及生产数据库不在当前运行态，运维管理写操作关闭 |
+| 当前环境 | 生产环境，`config/relay.prod.yaml`，独立 API/worker，PostgreSQL `relay_trader` |
+| 安全状态 | 六个生产账户查询路由开启、`trading_enabled=0`，当前保持只读；测试账户和测试数据库不在当前运行态，运维管理写操作关闭 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-06` OC `f4a683a/5eaea72` 订单回报修复通过测试：批量子单的标准交易日、原命令关联和三类订单 ID 全生命周期稳定，异常柜台日期只保留为 raw 审计字段；仅 OC 重启恢复项待协调窗口复核 |
+| 最近确认 | `2026-09-06` 已切回生产只读：API/worker、Redis、PostgreSQL、事件桥和 Meridian 均正常，六账户及别名加载完成；OC `f4a683a/5eaea72` 测试验收通过，仅 OC 重启恢复项待协调窗口复核 |
 | 更新时间 | `2026-09-06` |
 
 新线程按以下顺序恢复：
@@ -28,7 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-06` 当前运行态已持久切换到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，账户 `00030484` 的查询和交易路由开启；API 使用内嵌账本同步，因此独立 `relay-worker` 按配置停用。测试 OC 状态为 `UP`，`redis_ready/broker_ready/order_snapshot_ready=true`；资金、持仓、订单、成交查询均成功终结，账本无解析错误或 DLQ，完整只读 SDK 冒烟通过。分段持仓回包已容忍 OC/Relay 毫秒级时钟偏差，旧回包不能覆盖新持仓，当前 10 条持仓稳定保留。
+- `2026-09-06` 当前运行态已持久切回生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 正常，Redis、PostgreSQL、事件桥、Meridian 和订单服务均为 `ok`。六个生产账户及数据库别名加载完成，全部 `trading_enabled=false`，当前生产环境保持只读。
 - `2026-09-06` 测试批量单已验证 `HTTP 202 -> accepted reply -> order.event -> PostgreSQL -> Web`。OC 后续状态事件曾把同一订单交易日从 `20260906` 改为 `20450624` 并丢失命令关联，Relay 已按订单时间防止异常日期拆单、保留原值审计，并让批量页按 `message_id` 自动刷新回报；OC 侧反馈见 [测试批量订单回报反馈](/home/ti-relay-trader/docs/OC_TEST_BATCH_ORDER_FEEDBACK_20260906.md:1)。
 - `2026-09-06` OC `f4a683a/5eaea72` 已完成在线复测：两个批量子单均收到 accepted/working/cancelled 多阶段事件，所有事件保持 `trade_date=20260906`、原批量 `origin_message_id` 及稳定的订单 ID；`20450624` 只出现在 adapter 审计字段，主动订单查询后身份不变，command groups 为 `pending=0,lag=0`。详见 [OC 测试订单回报验收](/home/ti-relay-trader/docs/OC_TEST_ORDER_REPORT_VALIDATION_20260906.md:1)。
 - 交易终端日期按环境分流：测试环境订单/成交监控默认东八区自然日，允许周末和节假日查看测试柜台订单；生产环境仍默认 Meridian 最近交易日。K 线、绩效和资金持仓在两个环境中均继续使用最近交易日口径。
@@ -60,7 +60,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 当前测试 OC 和资金快照已就绪；下一步可在测试账户执行 Chronos P1 的批量部分拒绝、`BROKER_NOT_READY` 和结果未知等真实写验收。切回生产前仍保持生产账户只读，不为验收向生产账户制造订单。
+6. 下一次测试写验收前需显式切换回测试环境；生产环境继续保持六账户只读，不为验收向生产账户制造订单。
 
 ## 系统边界
 
