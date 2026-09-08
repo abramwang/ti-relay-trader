@@ -146,6 +146,8 @@ Python SDK 和策略程序不承载测试/生产环境选择。SDK 只连接 rel
 
 交易终端顶部账户区域的“别名”按钮会调用 `PATCH /v1/accounts/{account_id}/alias`，把用户修改写入 PostgreSQL `accounts.account_name`。`GET /v1/accounts` 读取账户列表时会优先使用落库别名，若落库值为空则回退到配置文件里的 `accounts[].alias`。首页接入账户表格和 `/operations` gateway/账户筛选器使用相同优先级，运维页仍在别名下保留 `account_id` 便于精确排错。别名修改只允许写入当前服务配置中存在的账户，不会改变 broker/gateway/stream prefix、账户权限或下单开关。
 
+账户停止接入但仍需保留历史账本时，必须保留该账户的完整 `accounts[]` 路由，仅设置 `enabled: false` 和 `trading_enabled: false` 后重启 API/worker。停用账户仍由 `/v1/accounts` 返回，历史订单、成交、资金、持仓和绩效继续从 PostgreSQL 读取；盘前初始化、收盘捕获、默认结算、Gateway 监控和主动刷新不再选择该账户，刷新及交易命令会被服务端拒绝。worker 仍可归档 OC 停止前已经进入 output stream 的尾部事件。不得通过删除数据库账户、历史记录或 Redis Stream 达到停用目的。完成后应确认 `/v1/status.accounts` 的 `configured` 数不变、`enabled` 减一，且 `/v1/account-routes` 中该账户为 `enabled=false/query_enabled=false/trading_enabled=false`。
+
 测试和生产现在使用独立 PostgreSQL 数据库：测试为 `relay_trader_test`，生产为 `relay_trader`。未跟踪配置必须分别声明匹配的 `database.expected_name`，服务在连接前解析 DSN 并拒绝串库。可执行以下命令核验两套配置的实际数据库身份和 migration 版本，输出不包含 DSN：
 
 ```bash

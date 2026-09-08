@@ -11,10 +11,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | 生产环境，`config/relay.prod.yaml`，独立 API/worker，PostgreSQL `relay_trader` |
-| 安全状态 | 六个生产账户查询路由开启、`trading_enabled=0`，当前保持只读；测试账户和测试数据库不在当前运行态，运维管理写操作关闭 |
+| 安全状态 | 六个生产账户保留、五个启用且 `trading_enabled=0`；`501000114077` 已停用查询/交易路由但历史账本完整保留，当前生产环境只读 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-06` 已切回生产只读：API/worker、Redis、PostgreSQL、事件桥和 Meridian 均正常，六账户及别名加载完成；OC `f4a683a/5eaea72` 测试验收通过，仅 OC 重启恢复项待协调窗口复核 |
-| 更新时间 | `2026-09-06` |
+| 最近确认 | `2026-09-08` 生产账户 `501000114077` 已按“路由停用、账本保留”处理；每日任务只选择其余五户，主动刷新被拒绝，历史订单仍可查询，API/worker 及依赖正常 |
+| 更新时间 | `2026-09-08` |
 
 新线程按以下顺序恢复：
 
@@ -28,12 +28,12 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-06` 当前运行态已持久切回生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 正常，Redis、PostgreSQL、事件桥、Meridian 和订单服务均为 `ok`。六个生产账户及数据库别名加载完成，全部 `trading_enabled=false`，当前生产环境保持只读。
+- `2026-09-08` 当前运行态为生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 正常，Redis、PostgreSQL、事件桥、Meridian 和订单服务均为 `ok`。六个生产账户及数据库别名保留，其中 `501000114077` 为 `enabled=false/trading_enabled=false`，其余五户启用查询但均关闭交易；每日任务默认账户集合已验证不包含停用户，历史账本读取不受影响。
 - `2026-09-06` 测试批量单已验证 `HTTP 202 -> accepted reply -> order.event -> PostgreSQL -> Web`。OC 后续状态事件曾把同一订单交易日从 `20260906` 改为 `20450624` 并丢失命令关联，Relay 已按订单时间防止异常日期拆单、保留原值审计，并让批量页按 `message_id` 自动刷新回报；OC 侧反馈见 [测试批量订单回报反馈](/home/ti-relay-trader/docs/OC_TEST_BATCH_ORDER_FEEDBACK_20260906.md:1)。
 - `2026-09-06` OC `f4a683a/5eaea72` 已完成在线复测：两个批量子单均收到 accepted/working/cancelled 多阶段事件，所有事件保持 `trade_date=20260906`、原批量 `origin_message_id` 及稳定的订单 ID；`20450624` 只出现在 adapter 审计字段，主动订单查询后身份不变，command groups 为 `pending=0,lag=0`。详见 [OC 测试订单回报验收](/home/ti-relay-trader/docs/OC_TEST_ORDER_REPORT_VALIDATION_20260906.md:1)。
 - 交易终端日期按环境分流：测试环境订单/成交监控默认东八区自然日，允许周末和节假日查看测试柜台订单；生产环境仍默认 Meridian 最近交易日。K 线、绩效和资金持仓在两个环境中均继续使用最近交易日口径。
 - 生产 API、worker、PostgreSQL、Redis、事件桥、Meridian 行情代理和订单服务均已接通；API 监听 `0.0.0.0:9092`，worker 健康端口只监听 `127.0.0.1:19092`。
-- 生产账户为 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
+- 生产配置保留账户 `501000114077`、`314000046830`、`314000045768`、`307000051388`、`307000051389`、`307000051387`；其中 `501000114077` 自 `2026-09-08` 起停止 OC 接入并停用路由，其历史信息不删除。别名由 PostgreSQL 管理，账户 ID 始终作为路由和账本主键。
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
