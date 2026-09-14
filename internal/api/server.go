@@ -1802,7 +1802,11 @@ func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request, gatew
 		return
 	}
 
-	httpx.WriteOK(w, r, http.StatusAccepted, result)
+	status := http.StatusAccepted
+	if result.Replayed {
+		status = http.StatusOK
+	}
+	httpx.WriteOK(w, r, status, result)
 }
 
 func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {

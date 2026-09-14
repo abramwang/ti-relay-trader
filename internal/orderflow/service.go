@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,7 @@ type LedgerWriter interface {
 	ListPositions(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
+	GetArchivedCommand(ctx context.Context, accountID string, action string, idempotencyKey string) (ledger.RawStreamMessage, error)
 }
 
 type CommandPublisher interface {
@@ -71,6 +73,7 @@ type Service struct {
 	publisher CommandPublisher
 	ids       IDGenerator
 	clock     Clock
+	cancelMu  sync.Mutex
 }
 
 type Options struct {
@@ -99,6 +102,8 @@ type RefreshOptions struct {
 }
 
 type SubmitOrderResult struct {
+	AccountID      string                           `json:"account_id"`
+	Action         string                           `json:"action"`
 	Order          trading.Order                    `json:"order"`
 	MessageID      string                           `json:"message_id"`
 	StreamKey      string                           `json:"stream_key"`
@@ -110,6 +115,8 @@ type SubmitOrderResult struct {
 }
 
 type CancelOrderResult struct {
+	AccountID      string                           `json:"account_id"`
+	Action         string                           `json:"action"`
 	Order          trading.Order                    `json:"order"`
 	CancelID       string                           `json:"cancel_id"`
 	MessageID      string                           `json:"message_id"`
@@ -118,9 +125,12 @@ type CancelOrderResult struct {
 	IdempotencyKey string                           `json:"idempotency_key"`
 	RequestID      string                           `json:"request_id,omitempty"`
 	Published      redisstream.CommandPublishResult `json:"published"`
+	Replayed       bool                             `json:"replayed,omitempty"`
 }
 
 type BatchSubmitOrderResult struct {
+	AccountID      string                           `json:"account_id"`
+	Action         string                           `json:"action"`
 	Orders         []trading.Order                  `json:"orders"`
 	MessageID      string                           `json:"message_id"`
 	StreamKey      string                           `json:"stream_key"`
@@ -232,12 +242,7 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	if existing, replayed, err := service.preflightSubmitOrder(ctx, normalized); err != nil {
 		return SubmitOrderResult{}, err
 	} else if replayed {
-		return SubmitOrderResult{
-			Order:          existing,
-			IdempotencyKey: normalized.IdempotencyKey,
-			RequestID:      requestID,
-			Replayed:       true,
-		}, nil
+		return service.replayedSubmitResult(ctx, existing, normalized.IdempotencyKey, requestID)
 	}
 
 	messageID := service.ids.NewID("msg-order-submit")
@@ -272,12 +277,7 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 				return SubmitOrderResult{}, preflightErr
 			}
 			if replayed {
-				return SubmitOrderResult{
-					Order:          existing,
-					IdempotencyKey: normalized.IdempotencyKey,
-					RequestID:      requestID,
-					Replayed:       true,
-				}, nil
+				return service.replayedSubmitResult(ctx, existing, normalized.IdempotencyKey, requestID)
 			}
 		}
 		return SubmitOrderResult{}, err
@@ -305,6 +305,8 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 	}
 
 	return SubmitOrderResult{
+		AccountID:      normalized.AccountID,
+		Action:         redisstream.ActionOrderSubmit,
 		Order:          order,
 		MessageID:      messageID,
 		StreamKey:      published.StreamKey,
@@ -393,12 +395,7 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 	}
 	if len(replayedOrders) > 0 {
 		if len(orders) == 0 {
-			return BatchSubmitOrderResult{
-				Orders:         replayedOrders,
-				IdempotencyKey: normalized.IdempotencyKey,
-				RequestID:      requestID,
-				Replayed:       true,
-			}, nil
+			return service.replayedBatchSubmitResult(ctx, normalized.AccountID, replayedOrders, normalized.IdempotencyKey, requestID)
 		}
 		return BatchSubmitOrderResult{}, fmt.Errorf("%w: batch contains both replayed and new gateway_order_id values", ErrDuplicateGatewayOrder)
 	}
@@ -450,6 +447,8 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 	}
 
 	return BatchSubmitOrderResult{
+		AccountID:      normalized.AccountID,
+		Action:         redisstream.ActionOrderBatchSubmit,
 		Orders:         orders,
 		MessageID:      messageID,
 		StreamKey:      published.StreamKey,
@@ -472,23 +471,58 @@ func (service *Service) CancelOrder(ctx context.Context, req trading.CancelOrder
 		return CancelOrderResult{}, ErrMissingPublisher
 	}
 
-	order, err := service.ledger.GetOrder(ctx, req.AccountID, req.GatewayOrderID)
-	if err != nil {
-		return CancelOrderResult{}, err
-	}
-	if order.IsTerminal || order.Status.Terminal() {
-		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s status=%s", ErrOrderTerminalNotCancelable, req.AccountID, req.GatewayOrderID, order.Status)
-	}
-	if order.OrderQty > 0 && order.LeavesQty <= 0 {
-		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s", ErrOrderWithoutLeavesNotCancelable, req.AccountID, req.GatewayOrderID)
-	}
-
 	normalized := req
 	if strings.TrimSpace(normalized.CancelID) == "" {
 		normalized.CancelID = service.ids.NewID("cancel")
 	}
 	if strings.TrimSpace(normalized.IdempotencyKey) == "" {
 		normalized.IdempotencyKey = "cancel:" + normalized.AccountID + ":" + normalized.GatewayOrderID + ":" + normalized.CancelID
+	}
+
+	service.cancelMu.Lock()
+	defer service.cancelMu.Unlock()
+
+	archived, err := service.ledger.GetArchivedCommand(ctx, normalized.AccountID, redisstream.ActionOrderCancel, normalized.IdempotencyKey)
+	if err == nil {
+		previous, decodeErr := archivedCancelRequest(archived)
+		if decodeErr != nil {
+			return CancelOrderResult{}, decodeErr
+		}
+		if !sameCancelOrder(previous, normalized) {
+			return CancelOrderResult{}, fmt.Errorf("%w: cancel idempotency_key=%s is already used by %s/%s", ErrIdempotencyConflict, normalized.IdempotencyKey, previous.GatewayOrderID, previous.CancelID)
+		}
+		order, getErr := service.ledger.GetOrder(ctx, normalized.AccountID, normalized.GatewayOrderID)
+		if getErr != nil {
+			return CancelOrderResult{}, getErr
+		}
+		metadata := metadataFromArchivedCommand(archived, normalized.IdempotencyKey, strings.TrimSpace(opts.RequestID))
+		return CancelOrderResult{
+			AccountID:      normalized.AccountID,
+			Action:         redisstream.ActionOrderCancel,
+			Order:          order,
+			CancelID:       previous.CancelID,
+			MessageID:      metadata.MessageID,
+			StreamKey:      metadata.StreamKey,
+			StreamID:       metadata.StreamID,
+			IdempotencyKey: metadata.IdempotencyKey,
+			RequestID:      metadata.RequestID,
+			Published:      metadata.Published,
+			Replayed:       true,
+		}, nil
+	}
+	if !errors.Is(err, ledger.ErrArchivedCommandNotFound) {
+		return CancelOrderResult{}, err
+	}
+
+	order, err := service.ledger.GetOrder(ctx, normalized.AccountID, normalized.GatewayOrderID)
+	if err != nil {
+		return CancelOrderResult{}, err
+	}
+	if order.IsTerminal || order.Status.Terminal() {
+		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s status=%s", ErrOrderTerminalNotCancelable, normalized.AccountID, normalized.GatewayOrderID, order.Status)
+	}
+	if order.OrderQty > 0 && order.LeavesQty <= 0 {
+		return CancelOrderResult{}, fmt.Errorf("%w: %s/%s", ErrOrderWithoutLeavesNotCancelable, normalized.AccountID, normalized.GatewayOrderID)
 	}
 
 	now := service.clock.Now().UTC()
@@ -519,6 +553,8 @@ func (service *Service) CancelOrder(ctx context.Context, req trading.CancelOrder
 	}
 
 	return CancelOrderResult{
+		AccountID:      normalized.AccountID,
+		Action:         redisstream.ActionOrderCancel,
 		Order:          order,
 		CancelID:       normalized.CancelID,
 		MessageID:      messageID,
@@ -908,6 +944,144 @@ func (service *Service) archiveCommand(ctx context.Context, published redisstrea
 		BodyText:       string(body),
 		ReceivedAt:     service.clock.Now().UTC(),
 	})
+}
+
+type commandReceiptMetadata struct {
+	MessageID      string
+	StreamKey      string
+	StreamID       string
+	IdempotencyKey string
+	RequestID      string
+	Published      redisstream.CommandPublishResult
+}
+
+func (service *Service) replayedSubmitResult(ctx context.Context, order trading.Order, idempotencyKey string, fallbackRequestID string) (SubmitOrderResult, error) {
+	originalRequestID := strings.TrimSpace(order.RequestID)
+	if originalRequestID == "" {
+		originalRequestID = fallbackRequestID
+	}
+	metadata, err := service.replayedCommandMetadata(ctx, order.AccountID, redisstream.ActionOrderSubmit, idempotencyKey, originalRequestID)
+	if err != nil {
+		return SubmitOrderResult{}, err
+	}
+	if metadata.MessageID == "" {
+		metadata.MessageID = order.OriginMessageID
+	}
+	return SubmitOrderResult{
+		AccountID:      order.AccountID,
+		Action:         redisstream.ActionOrderSubmit,
+		Order:          order,
+		MessageID:      metadata.MessageID,
+		StreamKey:      metadata.StreamKey,
+		StreamID:       metadata.StreamID,
+		IdempotencyKey: metadata.IdempotencyKey,
+		RequestID:      metadata.RequestID,
+		Published:      metadata.Published,
+		Replayed:       true,
+	}, nil
+}
+
+func (service *Service) replayedBatchSubmitResult(ctx context.Context, accountID string, orders []trading.Order, idempotencyKey string, fallbackRequestID string) (BatchSubmitOrderResult, error) {
+	originalRequestID := fallbackRequestID
+	if len(orders) > 0 && strings.TrimSpace(orders[0].RequestID) != "" {
+		originalRequestID = orders[0].RequestID
+	}
+	metadata, err := service.replayedCommandMetadata(ctx, accountID, redisstream.ActionOrderBatchSubmit, idempotencyKey, originalRequestID)
+	if err != nil {
+		return BatchSubmitOrderResult{}, err
+	}
+	if len(orders) > 0 {
+		if metadata.MessageID == "" {
+			metadata.MessageID = orders[0].OriginMessageID
+		}
+	}
+	return BatchSubmitOrderResult{
+		AccountID:      accountID,
+		Action:         redisstream.ActionOrderBatchSubmit,
+		Orders:         orders,
+		MessageID:      metadata.MessageID,
+		StreamKey:      metadata.StreamKey,
+		StreamID:       metadata.StreamID,
+		IdempotencyKey: metadata.IdempotencyKey,
+		RequestID:      metadata.RequestID,
+		Published:      metadata.Published,
+		Replayed:       true,
+	}, nil
+}
+
+func (service *Service) replayedCommandMetadata(ctx context.Context, accountID string, action string, idempotencyKey string, fallbackRequestID string) (commandReceiptMetadata, error) {
+	archived, err := service.ledger.GetArchivedCommand(ctx, accountID, action, idempotencyKey)
+	if errors.Is(err, ledger.ErrArchivedCommandNotFound) {
+		return commandReceiptMetadata{IdempotencyKey: idempotencyKey, RequestID: fallbackRequestID}, nil
+	}
+	if err != nil {
+		return commandReceiptMetadata{}, err
+	}
+	return metadataFromArchivedCommand(archived, idempotencyKey, fallbackRequestID), nil
+}
+
+func metadataFromArchivedCommand(raw ledger.RawStreamMessage, idempotencyKey string, fallbackRequestID string) commandReceiptMetadata {
+	requestID := strings.TrimSpace(raw.RequestID)
+	if requestID == "" {
+		requestID = strings.TrimSpace(fallbackRequestID)
+	}
+	archivedKey := strings.TrimSpace(raw.IdempotencyKey)
+	if archivedKey == "" {
+		archivedKey = strings.TrimSpace(idempotencyKey)
+	}
+	bodyBytes := len([]byte(raw.BodyText))
+	if bodyBytes == 0 {
+		if body, err := json.Marshal(raw.Body); err == nil && string(body) != "null" {
+			bodyBytes = len(body)
+		}
+	}
+	return commandReceiptMetadata{
+		MessageID:      strings.TrimSpace(raw.OriginMessageID),
+		StreamKey:      strings.TrimSpace(raw.StreamRef.Key),
+		StreamID:       strings.TrimSpace(raw.StreamRef.ID),
+		IdempotencyKey: archivedKey,
+		RequestID:      requestID,
+		Published: redisstream.CommandPublishResult{
+			StreamKey: strings.TrimSpace(raw.StreamRef.Key),
+			StreamID:  strings.TrimSpace(raw.StreamRef.ID),
+			BodyBytes: bodyBytes,
+		},
+	}
+}
+
+func archivedCancelRequest(raw ledger.RawStreamMessage) (trading.CancelOrderRequest, error) {
+	body := []byte(strings.TrimSpace(raw.BodyText))
+	if len(body) == 0 && raw.Body != nil {
+		var err error
+		body, err = json.Marshal(raw.Body)
+		if err != nil {
+			return trading.CancelOrderRequest{}, fmt.Errorf("marshal archived cancel command: %w", err)
+		}
+	}
+	var envelope struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if len(body) == 0 {
+		return trading.CancelOrderRequest{}, fmt.Errorf("archived cancel command %s/%s has an invalid envelope", raw.StreamRef.Key, raw.StreamRef.ID)
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return trading.CancelOrderRequest{}, fmt.Errorf("decode archived cancel envelope %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
+	}
+	if len(envelope.Payload) == 0 {
+		return trading.CancelOrderRequest{}, fmt.Errorf("archived cancel command %s/%s has no payload", raw.StreamRef.Key, raw.StreamRef.ID)
+	}
+	var request trading.CancelOrderRequest
+	if err := json.Unmarshal(envelope.Payload, &request); err != nil {
+		return trading.CancelOrderRequest{}, fmt.Errorf("decode archived cancel command %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
+	}
+	return request, nil
+}
+
+func sameCancelOrder(left trading.CancelOrderRequest, right trading.CancelOrderRequest) bool {
+	return strings.TrimSpace(left.AccountID) == strings.TrimSpace(right.AccountID) &&
+		strings.TrimSpace(left.GatewayOrderID) == strings.TrimSpace(right.GatewayOrderID) &&
+		strings.TrimSpace(left.CancelID) == strings.TrimSpace(right.CancelID) &&
+		strings.TrimSpace(left.IdempotencyKey) == strings.TrimSpace(right.IdempotencyKey)
 }
 
 func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {

@@ -1297,6 +1297,38 @@ ON CONFLICT (stream_key, stream_id) DO UPDATE SET
     received_at = EXCLUDED.received_at
 `
 
+const archivedCommandSQL = `
+SELECT
+    stream_key,
+    stream_id,
+    COALESCE(origin_message_id, ''),
+    COALESCE(request_id, ''),
+    COALESCE(correlation_id, ''),
+    COALESCE(idempotency_key, ''),
+    direction,
+    stream_role,
+    COALESCE(message_type, ''),
+    COALESCE(action, ''),
+    COALESCE(event_type, ''),
+    COALESCE(status, ''),
+    COALESCE(code, ''),
+    COALESCE(account_id, ''),
+    COALESCE(gateway_order_id, ''),
+    COALESCE(body, '{}'::jsonb),
+    COALESCE(body_text, ''),
+    COALESCE(parse_error, ''),
+    received_at
+FROM raw_stream_messages
+WHERE direction = 'in'
+  AND stream_role = 'cmd.trade'
+  AND message_type = 'command'
+  AND account_id = $1
+  AND action = $2
+  AND idempotency_key = $3
+ORDER BY received_at, raw_message_pk
+LIMIT 1
+`
+
 const streamCheckpointSelectColumns = `
 SELECT
     stream_key,

@@ -10,6 +10,7 @@ from urllib import parse
 
 from relay_sdk import (
     BatchCommandReceipt,
+    CommandReceipt,
     RelayCapabilityError,
     RelayBrokerNotReadyError,
     RelayCancelRejectedError,
@@ -246,6 +247,22 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/command-status/msg-batch-replay":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "origin_message_id": "msg-batch-replay",
+                        "account_id": "acct-1",
+                        "action": "order.batch.submit",
+                        "state": "accepted",
+                        "terminal": True,
+                        "success": True,
+                        "replies": [{"status": "accepted", "result_type": "order_action_receipt"}],
+                    },
+                }
+            )
+            return
         if parsed.path == "/v1/meridian/market/bars":
             self._json(
                 {
@@ -418,6 +435,19 @@ class RelayHandler(BaseHTTPRequestHandler):
                         "idempotency_key": "idem-unknown",
                         "origin_message_id": message_id,
                         "status": "created",
+                        "adapter_context": {"batch_index": 0},
+                    }
+                ]
+            elif message_id == "msg-batch-replay":
+                orders = [
+                    {
+                        "account_id": "acct-1",
+                        "gateway_order_id": "gw-replayed-batch",
+                        "client_order_id": "client-replayed-batch",
+                        "idempotency_key": "idem-replayed-batch",
+                        "origin_message_id": message_id,
+                        "status": "filled",
+                        "is_terminal": True,
                         "adapter_context": {"batch_index": 0},
                     }
                 ]
@@ -616,6 +646,8 @@ class RelayHandler(BaseHTTPRequestHandler):
                     {
                         "ok": True,
                         "data": {
+                            "account_id": body["account_id"],
+                            "action": "order.submit",
                             "order": {
                                 "account_id": body["account_id"],
                                 "gateway_order_id": "gw-replay",
@@ -624,6 +656,10 @@ class RelayHandler(BaseHTTPRequestHandler):
                                 "is_terminal": True,
                             },
                             "idempotency_key": body["idempotency_key"],
+                            "message_id": "msg-replay-1",
+                            "stream_key": "relay:test:v1:huaxin:gw-1:cmd.trade",
+                            "stream_id": "1-0",
+                            "request_id": "req-replay-1",
                             "replayed": True,
                         },
                     }
@@ -640,6 +676,10 @@ class RelayHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "data": {
+                        "account_id": body["account_id"],
+                        "action": "" if body.get("idempotency_key") == "missing-action" else (
+                            "order.cancel" if body.get("idempotency_key") == "wrong-action" else "order.submit"
+                        ),
                         "order": order,
                         "stream_id": "1-0",
                         "message_id": "msg-1",
@@ -656,8 +696,11 @@ class RelayHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "data": {
+                        "account_id": body["account_id"],
+                        "action": "order.cancel",
                         "order": {"account_id": body["account_id"], "gateway_order_id": "gw-1", "status": "working"},
                         "cancel_id": body["cancel_id"],
+                        "idempotency_key": body["idempotency_key"],
                     },
                 },
                 status=202,
@@ -687,9 +730,11 @@ class RelayHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "data": {
+                        "account_id": body["account_id"],
+                        "action": "order.batch.submit",
                         "orders": orders,
                         "stream_id": "5-0",
-                        "message_id": "" if body.get("idempotency_key") == "batch-replay" else "msg-batch-1",
+                        "message_id": "msg-batch-replay" if body.get("idempotency_key") == "batch-replay" else "msg-batch-1",
                         "request_id": "req-batch-1",
                         "idempotency_key": body["idempotency_key"],
                         "replayed": body.get("idempotency_key") == "batch-replay",
@@ -1045,6 +1090,7 @@ class RelayClientTest(unittest.TestCase):
             t0_order_group_id="t0-1",
         )
         self.assertTrue(receipt.gateway_order_id.startswith("sdk-gw-acct-1-"))
+        self.assertEqual(receipt.action, "order.submit")
         self.assertEqual(receipt.client_order_id, receipt.gateway_order_id)
         self.assertEqual(receipt.request_id, "req-order-1")
         self.assertEqual(receipt.idempotency_key, f"order:acct-1:{receipt.gateway_order_id}")
@@ -1060,6 +1106,19 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(body["basket_id"], "basket-1")
         self.assertEqual(body["t0_order_group_id"], "t0-1")
 
+    def test_command_receipt_decodes_write_action(self):
+        receipt = CommandReceipt.from_dict(
+            {
+                "account_id": "acct-1",
+                "action": "order.cancel",
+                "message_id": "msg-1",
+                "cancel_id": "cancel-1",
+            }
+        )
+        self.assertEqual(receipt.action, "order.cancel")
+        self.assertEqual(receipt.account_id, "acct-1")
+        self.assertEqual(receipt.cancel_id, "cancel-1")
+
     def test_submit_order_replay_marker(self):
         receipt = self.client.submit_order(
             symbol="600000",
@@ -1073,6 +1132,9 @@ class RelayClientTest(unittest.TestCase):
         )
 
         self.assertTrue(receipt.replayed)
+        self.assertEqual(receipt.action, "order.submit")
+        self.assertEqual(receipt.message_id, "msg-replay-1")
+        self.assertEqual(receipt.stream_id, "1-0")
         self.assertEqual(receipt.status, "cancelled")
 
     def test_batch_receipt_preserves_explicit_ids_and_resolves_children(self):
@@ -1105,6 +1167,7 @@ class RelayClientTest(unittest.TestCase):
         )
 
         self.assertIsInstance(receipt, BatchCommandReceipt)
+        self.assertEqual(receipt.action, "order.batch.submit")
         self.assertEqual(receipt.account_id, "acct-1")
         self.assertEqual(receipt.message_id, "msg-batch-1")
         self.assertEqual(receipt.request_id, "req-batch-1")
@@ -1148,6 +1211,8 @@ class RelayClientTest(unittest.TestCase):
             idempotency_key="batch-replay",
         )
         self.assertTrue(receipt.replayed)
+        self.assertEqual(receipt.action, "order.batch.submit")
+        self.assertEqual(receipt.message_id, "msg-batch-replay")
         self.assertEqual(receipt.children[0].acceptance, "replayed")
         self.assertEqual(receipt.children[0].outcome, "accepted")
         outcomes = self.client.get_batch_order_outcomes(receipt)
@@ -1158,7 +1223,24 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(self.client.refresh_orders().action, "order.list.query")
         self.assertEqual(self.client.refresh_fills().action, "fill.list.query")
         self.assertEqual(self.client.refresh_fees().action, "fee.list.query")
-        self.assertEqual(self.client.cancel_order("gw-1").gateway_order_id, "gw-1")
+        cancel = self.client.cancel_order("gw-1")
+        self.assertEqual(cancel.gateway_order_id, "gw-1")
+        self.assertEqual(cancel.action, "order.cancel")
+
+    def test_write_receipt_missing_or_wrong_action_is_outcome_unknown(self):
+        for idempotency_key in ("missing-action", "wrong-action"):
+            with self.subTest(idempotency_key=idempotency_key):
+                with self.assertRaises(RelayCommandOutcomeUnknownError) as raised:
+                    self.client.submit_order(
+                        symbol="600000",
+                        exchange="SH",
+                        side="B",
+                        price=9.67,
+                        qty=100,
+                        idempotency_key=idempotency_key,
+                    )
+                self.assertEqual(raised.exception.code, "WRITE_RECEIPT_ACTION_MISMATCH")
+                self.assertTrue(raised.exception.retry_decision("write").requires_reconciliation)
 
     def test_list_order_fees(self):
         fees = self.client.list_order_fees(

@@ -1659,6 +1659,8 @@ func waitForSSELine(t *testing.T, lines <-chan string, want string) {
 func TestSubmitOrderAccepted(t *testing.T) {
 	submitter := &fakeOrderSubmitter{
 		result: orderflow.SubmitOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderSubmit,
 			Order: trading.Order{
 				AccountID:      "acct-1",
 				GatewayOrderID: "gw-1",
@@ -1705,11 +1707,16 @@ func TestSubmitOrderAccepted(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "msg-1") {
 		t.Fatalf("response missing result: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.submit"`) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
 }
 
 func TestSubmitOrderReplayReturnsOK(t *testing.T) {
 	submitter := &fakeOrderSubmitter{
 		result: orderflow.SubmitOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderSubmit,
 			Order: trading.Order{
 				AccountID:      "acct-1",
 				GatewayOrderID: "gateway-1",
@@ -1742,6 +1749,9 @@ func TestSubmitOrderReplayReturnsOK(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"replayed":true`) {
 		t.Fatalf("response missing replayed marker: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.submit"`) {
+		t.Fatalf("replay response missing action: %s", rec.Body.String())
 	}
 }
 
@@ -1869,6 +1879,8 @@ func TestSubmitOrderBadJSON(t *testing.T) {
 func TestBatchSubmitOrdersAccepted(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		batchResult: orderflow.BatchSubmitOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderBatchSubmit,
 			Orders: []trading.Order{
 				{AccountID: "acct-1", GatewayOrderID: "gw-b1", Status: trading.OrderStatusCreated},
 				{AccountID: "acct-1", GatewayOrderID: "gw-b2", Status: trading.OrderStatusCreated},
@@ -1909,11 +1921,52 @@ func TestBatchSubmitOrdersAccepted(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "msg-batch-1") {
 		t.Fatalf("response missing result: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.batch.submit"`) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
+func TestBatchSubmitOrdersReplayReturnsOKWithAction(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		batchResult: orderflow.BatchSubmitOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderBatchSubmit,
+			Orders: []trading.Order{{
+				AccountID:      "acct-1",
+				ClientOrderID:  "client-b1",
+				GatewayOrderID: "gw-b1",
+				Status:         trading.OrderStatusWorking,
+			}},
+			MessageID:      "msg-batch-1",
+			StreamKey:      "relay:test:v1:huaxin:gw-1:cmd.trade",
+			StreamID:       "3-0",
+			IdempotencyKey: "idem-batch-1",
+			Replayed:       true,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/batch", strings.NewReader(`{
+		"account_id":"acct-1",
+		"orders":[{"client_order_id":"client-b1","gateway_order_id":"gw-b1","symbol":"600000","exchange":"SH","trade_side":"B","business_type":"S","price":9.67,"qty":100,"idempotency_key":"idem-child-1"}],
+		"idempotency_key":"idem-batch-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.batch.submit"`) || !strings.Contains(rec.Body.String(), `"replayed":true`) {
+		t.Fatalf("batch replay response is incomplete: %s", rec.Body.String())
+	}
 }
 
 func TestCancelOrderAccepted(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		cancelResult: orderflow.CancelOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderCancel,
 			Order: trading.Order{
 				AccountID:      "acct-1",
 				GatewayOrderID: "gateway-1",
@@ -1951,6 +2004,46 @@ func TestCancelOrderAccepted(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "msg-cancel-1") {
 		t.Fatalf("response missing result: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.cancel"`) {
+		t.Fatalf("response missing action: %s", rec.Body.String())
+	}
+}
+
+func TestCancelOrderReplayReturnsOK(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		cancelResult: orderflow.CancelOrderResult{
+			AccountID: "acct-1",
+			Action:    redisstream.ActionOrderCancel,
+			Order: trading.Order{
+				AccountID:      "acct-1",
+				GatewayOrderID: "gateway-1",
+				Status:         trading.OrderStatusCancelled,
+			},
+			CancelID:       "cancel-1",
+			MessageID:      "msg-cancel-1",
+			StreamKey:      "relay:test:v1:huaxin:gw-1:cmd.trade",
+			StreamID:       "2-0",
+			IdempotencyKey: "idem-cancel-1",
+			Replayed:       true,
+		},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders/gateway-1/cancel", strings.NewReader(`{
+		"account_id":"acct-1",
+		"gateway_order_id":"gateway-1",
+		"cancel_id":"cancel-1",
+		"idempotency_key":"idem-cancel-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"action":"order.cancel"`) || !strings.Contains(rec.Body.String(), `"replayed":true`) {
+		t.Fatalf("cancel replay response is incomplete: %s", rec.Body.String())
 	}
 }
 
@@ -4069,7 +4162,7 @@ func (submitter *fakeOrderSubmitter) CancelOrder(_ context.Context, req trading.
 	if submitter.cancelErr != nil {
 		return orderflow.CancelOrderResult{}, submitter.cancelErr
 	}
-	if submitter.cancelResult.MessageID == "" {
+	if submitter.cancelResult.MessageID == "" && !submitter.cancelResult.Replayed {
 		return orderflow.CancelOrderResult{}, errors.New("missing fake cancel result")
 	}
 	return submitter.cancelResult, nil

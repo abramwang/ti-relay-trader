@@ -1668,6 +1668,24 @@ func TestRawStreamSummaryBuildsWindowRead(t *testing.T) {
 	requireArgLen(t, exec.args, 3)
 }
 
+func TestGetArchivedCommandBuildsIdempotencyRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetArchivedCommand(context.Background(), " acct-1 ", " order.cancel ", " idem-1 ")
+	if err == nil {
+		t.Fatal("GetArchivedCommand() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM raw_stream_messages")
+	requireQueryContains(t, exec.query, "stream_role = 'cmd.trade'")
+	requireQueryContains(t, exec.query, "idempotency_key = $3")
+	requireArgLen(t, exec.args, 3)
+	if exec.args[0] != "acct-1" || exec.args[1] != "order.cancel" || exec.args[2] != "idem-1" {
+		t.Fatalf("archived command args = %#v", exec.args)
+	}
+}
+
 func TestJobRunJSONOmitZeroTimesAndFormatBusinessTime(t *testing.T) {
 	body, err := json.Marshal(JobRun{
 		RunID:           "run-1",

@@ -19,6 +19,7 @@ import (
 var ErrInvalidLedgerInput = errors.New("invalid ledger input")
 var ErrOrderNotFound = errors.New("order not found")
 var ErrOrderConflict = errors.New("order uniqueness conflict")
+var ErrArchivedCommandNotFound = errors.New("archived command not found")
 var ErrAssetNotFound = errors.New("asset snapshot not found")
 var ErrStreamCheckpointNotFound = errors.New("stream checkpoint not found")
 var ErrDeadLetterNotFound = errors.New("dead letter not found")
@@ -1580,6 +1581,63 @@ func (repo *Repository) ArchiveRawStreamMessage(ctx context.Context, message Raw
 		return fmt.Errorf("archive raw stream message %s/%s: %w", message.StreamRef.Key, message.StreamRef.ID, err)
 	}
 	return nil
+}
+
+func (repo *Repository) GetArchivedCommand(ctx context.Context, accountID string, action string, idempotencyKey string) (RawStreamMessage, error) {
+	if repo == nil || repo.exec == nil {
+		return RawStreamMessage{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	accountID = strings.TrimSpace(accountID)
+	action = strings.TrimSpace(action)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if accountID == "" || action == "" || idempotencyKey == "" {
+		return RawStreamMessage{}, fmt.Errorf("%w: account_id, action, and idempotency_key are required", ErrInvalidLedgerInput)
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return RawStreamMessage{}, err
+	}
+	rows, err := queryer.QueryContext(ctx, archivedCommandSQL, accountID, action, idempotencyKey)
+	if err != nil {
+		return RawStreamMessage{}, fmt.Errorf("query archived command %s/%s: %w", accountID, action, err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return RawStreamMessage{}, fmt.Errorf("query archived command rows: %w", err)
+		}
+		return RawStreamMessage{}, ErrArchivedCommandNotFound
+	}
+
+	var message RawStreamMessage
+	var body []byte
+	if err := rows.Scan(
+		&message.StreamRef.Key,
+		&message.StreamRef.ID,
+		&message.SourceRef.OriginMessageID,
+		&message.SourceRef.RequestID,
+		&message.SourceRef.CorrelationID,
+		&message.SourceRef.IdempotencyKey,
+		&message.Direction,
+		&message.Role,
+		&message.MessageType,
+		&message.Action,
+		&message.EventType,
+		&message.Status,
+		&message.Code,
+		&message.AccountID,
+		&message.GatewayOrderID,
+		&body,
+		&message.BodyText,
+		&message.ParseError,
+		&message.ReceivedAt,
+	); err != nil {
+		return RawStreamMessage{}, fmt.Errorf("scan archived command: %w", err)
+	}
+	if len(body) > 0 {
+		message.Body = json.RawMessage(append([]byte(nil), body...))
+	}
+	return message, nil
 }
 
 func (repo *Repository) GetStreamCheckpoint(ctx context.Context, streamKey string) (StreamCheckpoint, error) {

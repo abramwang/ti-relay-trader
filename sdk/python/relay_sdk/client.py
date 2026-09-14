@@ -8,12 +8,13 @@ import socket
 import threading
 import time
 import uuid
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, TypeVar
 from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import (
     RelayCapabilityError,
+    RelayCommandOutcomeUnknownError,
     RelayConnectionError,
     RelayError,
     RelayPaginationError,
@@ -46,13 +47,14 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.33"
+SDK_VERSION = "0.1.34"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
 FillCallback = Callable[[Fill, RelayEvent], object]
 CancelRejectedCallback = Callable[[RelayEvent], object]
 StreamReconciliationCallback = Callable[[StreamReconciliation], object]
+ReceiptT = TypeVar("ReceiptT", bound=CommandReceipt)
 
 
 class CallbackSubscription:
@@ -1293,7 +1295,7 @@ class RelayClient:
             "t0_order_group_id": t0_order_group_id,
         }
         data = self._request("POST", "/v1/orders", json_body=payload)
-        return CommandReceipt.from_dict(data)
+        return _require_write_receipt_action(CommandReceipt.from_dict(data), "order.submit")
 
     def submit_orders(
         self,
@@ -1317,7 +1319,7 @@ class RelayClient:
             "/v1/orders/batch",
             json_body={"account_id": account_id, "orders": normalized, "idempotency_key": batch_key},
         )
-        return BatchCommandReceipt.from_dict(data)
+        return _require_write_receipt_action(BatchCommandReceipt.from_dict(data), "order.batch.submit")
 
     def get_batch_order_outcomes(
         self,
@@ -1431,7 +1433,7 @@ class RelayClient:
             "idempotency_key": idempotency_key,
         }
         data = self._request("POST", f"/v1/orders/{parse.quote(gateway_order_id)}/cancel", json_body=payload)
-        return CommandReceipt.from_dict(data)
+        return _require_write_receipt_action(CommandReceipt.from_dict(data), "order.cancel")
 
     def wait_order_terminal(
         self,
@@ -2020,6 +2022,19 @@ class RelayClient:
     @staticmethod
     def _new_id(prefix: str, account_id: str) -> str:
         return f"sdk-{prefix}-{account_id}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+
+
+def _require_write_receipt_action(receipt: ReceiptT, expected_action: str) -> ReceiptT:
+    if receipt.action == expected_action:
+        return receipt
+    actual = receipt.action or "<missing>"
+    raise RelayCommandOutcomeUnknownError(
+        f"relay write receipt action {actual!r} does not match {expected_action!r}; reconcile the ledger before retrying",
+        code="WRITE_RECEIPT_ACTION_MISMATCH",
+        request_id=receipt.request_id or None,
+        gateway_order_id=receipt.gateway_order_id or None,
+        raw_response=receipt.raw,
+    )
 
 
 def _join_query_values(values: str | Iterable[str] | None) -> str | None:

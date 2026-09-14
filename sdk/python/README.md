@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.33.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.34.tar.gz"
 ```
 
 ## Quick Start
@@ -170,6 +170,7 @@ receipt = client.submit_orders(
     ],
     idempotency_key="chronos-batch-1",
 )
+assert receipt.action == "order.batch.submit"
 result = client.wait_batch_order_outcomes(receipt, timeout=30)
 for child in result.children:
     print(child.gateway_order_id, child.acceptance, child.outcome, child.order_status)
@@ -248,6 +249,13 @@ Daily-job review reads are available through `list_job_runs()` and
 `get_daily_review_report()`. The latter returns account-level open/close
 snapshots, authoritative settlement order/fill counts, open reconciliation
 breaks, and a `passed`/`attention`/`blocked` conclusion.
+
+Successful write receipts carry a stable action identity:
+`order.submit`, `order.batch.submit`, or `order.cancel`. New publication and
+an identical idempotent replay return the same action and original command
+metadata. If Relay omits or changes that action, the SDK raises
+`RelayCommandOutcomeUnknownError` with `WRITE_RECEIPT_ACTION_MISMATCH`; first
+reconcile orders and fills because the side effect may already have happened.
 
 Example settlement write:
 

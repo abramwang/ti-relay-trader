@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.34 - 2026-09-14
+
+### Fixed
+
+- `submit_order()`, `submit_orders()`, and `cancel_order()` now require the
+  successful typed receipt action to be `order.submit`,
+  `order.batch.submit`, and `order.cancel`, respectively.
+- Missing or mismatched write receipt actions raise
+  `RelayCommandOutcomeUnknownError` with
+  `WRITE_RECEIPT_ACTION_MISMATCH`; callers must reconcile the ledger and must
+  not automatically repeat the command.
+- Idempotent write replays retain the original command message, stream,
+  request, account, and caller order identities. Replayed cancels no longer
+  publish a second Redis command, including after the order becomes terminal.
+
+### Compatibility
+
+- Request paths, request payloads, Redis Streams, OC wire schema, and order
+  state transitions are unchanged.
+
 ## 0.1.33 - 2026-09-02
 
 ### Added

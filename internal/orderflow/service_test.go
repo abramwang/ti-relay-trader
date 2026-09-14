@@ -2,6 +2,7 @@ package orderflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -46,6 +47,9 @@ func TestSubmitOrderWritesDraftPublishesCommandAndArchives(t *testing.T) {
 
 	if result.Order.GatewayOrderID != "gw-1" {
 		t.Fatalf("gateway_order_id = %q", result.Order.GatewayOrderID)
+	}
+	if result.AccountID != "acct-1" || result.Action != redisstream.ActionOrderSubmit {
+		t.Fatalf("receipt identity = %#v", result)
 	}
 	if result.MessageID != "msg-1" || result.RequestID != "req-http-1" {
 		t.Fatalf("ids = %s/%s", result.MessageID, result.RequestID)
@@ -177,7 +181,8 @@ func TestSubmitOrderReplaysIdenticalExistingOrderWithoutPublishing(t *testing.T)
 	existing.Status = trading.OrderStatusCancelled
 	existing.GatewayStatus = trading.GatewayStatusCancelled
 	existing.IsTerminal = true
-	ledgerWriter := &fakeLedger{order: existing}
+	archived := archivedCommand(t, redisstream.ActionOrderSubmit, existing.AccountID, existing.GatewayOrderID, existing.IdempotencyKey, "msg-original", "req-original", "4-0", validSubmitRequest())
+	ledgerWriter := &fakeLedger{order: existing, archived: []ledger.RawStreamMessage{archived}}
 	publisher := &fakePublisher{}
 	service, err := New(Options{
 		Config:    testConfig(true, true),
@@ -201,6 +206,9 @@ func TestSubmitOrderReplaysIdenticalExistingOrderWithoutPublishing(t *testing.T)
 
 	if !result.Replayed || result.Order.Status != trading.OrderStatusCancelled {
 		t.Fatalf("replay result = %#v", result)
+	}
+	if result.Action != redisstream.ActionOrderSubmit || result.MessageID != "msg-original" || result.RequestID != "req-original" || result.StreamID != "4-0" {
+		t.Fatalf("replay receipt identity = %#v", result)
 	}
 	if len(ledgerWriter.orders) != 0 || len(publisher.commands) != 0 || len(ledgerWriter.raw) != 0 {
 		t.Fatalf("replay should not write or publish: orders=%d commands=%d raw=%d", len(ledgerWriter.orders), len(publisher.commands), len(ledgerWriter.raw))
@@ -360,6 +368,9 @@ func TestBatchSubmitOrdersWritesDraftsPublishesCommandAndArchives(t *testing.T) 
 	if result.MessageID != "msg-batch-1" || result.IdempotencyKey != "batch:acct-1:batch-1" {
 		t.Fatalf("batch result = %#v", result)
 	}
+	if result.AccountID != "acct-1" || result.Action != redisstream.ActionOrderBatchSubmit {
+		t.Fatalf("batch receipt identity = %#v", result)
+	}
 	if len(result.Orders) != 2 || len(ledgerWriter.orders) != 2 {
 		t.Fatalf("orders result=%#v ledger=%#v", result.Orders, ledgerWriter.orders)
 	}
@@ -375,6 +386,71 @@ func TestBatchSubmitOrdersWritesDraftsPublishesCommandAndArchives(t *testing.T) 
 	}
 	if len(ledgerWriter.raw) != 1 || ledgerWriter.raw[0].Action != redisstream.ActionOrderBatchSubmit {
 		t.Fatalf("raw archive = %#v", ledgerWriter.raw)
+	}
+}
+
+func TestBatchSubmitOrdersReplaysWithOriginalReceiptIdentity(t *testing.T) {
+	existing := validDraftOrder()
+	existing.TradeDate = "2026-06-13"
+	existing.OriginMessageID = "msg-batch-original"
+	existing.RequestID = "req-batch-original"
+	existing.AdapterContext["batch_index"] = 0
+	request := trading.BatchSubmitOrderRequest{
+		AccountID:      "acct-1",
+		IdempotencyKey: "batch-idem-1",
+		Orders: []trading.SubmitOrderRequest{{
+			AccountID:      existing.AccountID,
+			ClientOrderID:  existing.ClientOrderID,
+			GatewayOrderID: existing.GatewayOrderID,
+			Symbol:         existing.Symbol,
+			Exchange:       existing.Exchange,
+			TradeSide:      existing.TradeSide,
+			BusinessType:   existing.BusinessType,
+			OffsetType:     existing.OffsetType,
+			Price:          existing.LimitPrice,
+			Qty:            existing.OrderQty,
+			IdempotencyKey: existing.IdempotencyKey,
+			TradeDate:      existing.TradeDate,
+		}},
+	}
+	ledgerWriter := &fakeLedger{
+		order: existing,
+		archived: []ledger.RawStreamMessage{archivedCommand(
+			t,
+			redisstream.ActionOrderBatchSubmit,
+			request.AccountID,
+			"",
+			request.IdempotencyKey,
+			existing.OriginMessageID,
+			existing.RequestID,
+			"7-0",
+			request,
+		)},
+	}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 1, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.BatchSubmitOrders(context.Background(), request, BatchSubmitOptions{RequestID: "req-replay"})
+	if err != nil {
+		t.Fatalf("BatchSubmitOrders() replay error = %v", err)
+	}
+	if !result.Replayed || result.Action != redisstream.ActionOrderBatchSubmit || result.MessageID != existing.OriginMessageID || result.RequestID != existing.RequestID || result.StreamID != "7-0" {
+		t.Fatalf("batch replay result = %#v", result)
+	}
+	if len(result.Orders) != 1 || result.Orders[0].GatewayOrderID != existing.GatewayOrderID {
+		t.Fatalf("batch replay children = %#v", result.Orders)
+	}
+	if len(publisher.commands) != 0 || len(ledgerWriter.raw) != 0 {
+		t.Fatalf("batch replay published or archived again: commands=%d raw=%d", len(publisher.commands), len(ledgerWriter.raw))
 	}
 }
 
@@ -418,6 +494,9 @@ func TestCancelOrderPublishesCommandAndArchives(t *testing.T) {
 	if result.CancelID != "cancel-1" || result.MessageID != "msg-cancel-1" {
 		t.Fatalf("cancel ids = %#v", result)
 	}
+	if result.AccountID != "acct-1" || result.Action != redisstream.ActionOrderCancel {
+		t.Fatalf("cancel receipt identity = %#v", result)
+	}
 	if result.StreamKey != "relay:prod:v1:huaxin:gw-1:cmd.trade" {
 		t.Fatalf("stream = %s", result.StreamKey)
 	}
@@ -434,6 +513,76 @@ func TestCancelOrderPublishesCommandAndArchives(t *testing.T) {
 	raw := ledgerWriter.raw[0]
 	if raw.Action != redisstream.ActionOrderCancel || raw.GatewayOrderID != "gateway-1" {
 		t.Fatalf("raw = %#v", raw)
+	}
+}
+
+func TestCancelOrderReplaysArchivedCommandWithoutPublishingAfterTerminalState(t *testing.T) {
+	request := trading.CancelOrderRequest{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		CancelID:       "cancel-1",
+		IdempotencyKey: "idem-cancel-1",
+	}
+	archived := archivedCommand(t, redisstream.ActionOrderCancel, request.AccountID, request.GatewayOrderID, request.IdempotencyKey, "msg-cancel-original", "req-cancel-original", "8-0", request)
+	ledgerWriter := &fakeLedger{
+		order: trading.Order{
+			AccountID:      "acct-1",
+			GatewayOrderID: "gateway-1",
+			OrderQty:       100,
+			Status:         trading.OrderStatusCancelled,
+			IsTerminal:     true,
+		},
+		archived: []ledger.RawStreamMessage{archived},
+	}
+	publisher := &fakePublisher{}
+	service, err := New(Options{
+		Config:    testConfig(true, true),
+		Ledger:    ledgerWriter,
+		Publisher: publisher,
+		IDs:       sequenceIDs{"unused"},
+		Clock:     fixedClock{t: time.Date(2026, 6, 13, 10, 1, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CancelOrder(context.Background(), request, CancelOptions{RequestID: "req-replay"})
+	if err != nil {
+		t.Fatalf("CancelOrder() replay error = %v", err)
+	}
+	if !result.Replayed || result.Action != redisstream.ActionOrderCancel || result.MessageID != "msg-cancel-original" || result.RequestID != "req-cancel-original" || result.StreamID != "8-0" {
+		t.Fatalf("cancel replay result = %#v", result)
+	}
+	if len(publisher.commands) != 0 || len(ledgerWriter.raw) != 0 {
+		t.Fatalf("cancel replay published or archived again: commands=%d raw=%d", len(publisher.commands), len(ledgerWriter.raw))
+	}
+}
+
+func TestCancelOrderRejectsArchivedIdempotencyConflict(t *testing.T) {
+	previous := trading.CancelOrderRequest{
+		AccountID:      "acct-1",
+		GatewayOrderID: "gateway-1",
+		CancelID:       "cancel-original",
+		IdempotencyKey: "idem-cancel-1",
+	}
+	ledgerWriter := &fakeLedger{
+		order:    trading.Order{AccountID: "acct-1", GatewayOrderID: "gateway-1", OrderQty: 100, LeavesQty: 100, Status: trading.OrderStatusWorking},
+		archived: []ledger.RawStreamMessage{archivedCommand(t, redisstream.ActionOrderCancel, previous.AccountID, previous.GatewayOrderID, previous.IdempotencyKey, "msg-1", "req-1", "9-0", previous)},
+	}
+	publisher := &fakePublisher{}
+	service, err := New(Options{Config: testConfig(true, true), Ledger: ledgerWriter, Publisher: publisher})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	conflict := previous
+	conflict.CancelID = "cancel-conflict"
+	_, err = service.CancelOrder(context.Background(), conflict, CancelOptions{})
+	if !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("CancelOrder() error = %v, want ErrIdempotencyConflict", err)
+	}
+	if len(publisher.commands) != 0 {
+		t.Fatalf("conflicting cancel published commands: %#v", publisher.commands)
 	}
 }
 
@@ -902,6 +1051,7 @@ type fakeLedger struct {
 	lastPositionQuery         trading.PositionQuery
 	lastPositionSnapshotQuery trading.PositionQuery
 	raw                       []ledger.RawStreamMessage
+	archived                  []ledger.RawStreamMessage
 	createOrderErr            error
 	orderOnCreateError        trading.Order
 }
@@ -986,6 +1136,36 @@ func (writer *fakeLedger) ListPositionSnapshots(_ context.Context, query trading
 func (writer *fakeLedger) ArchiveRawStreamMessage(_ context.Context, message ledger.RawStreamMessage) error {
 	writer.raw = append(writer.raw, message)
 	return nil
+}
+
+func (writer *fakeLedger) GetArchivedCommand(_ context.Context, accountID string, action string, idempotencyKey string) (ledger.RawStreamMessage, error) {
+	for _, message := range writer.archived {
+		if message.AccountID == accountID && message.Action == action && message.IdempotencyKey == idempotencyKey {
+			return message, nil
+		}
+	}
+	return ledger.RawStreamMessage{}, ledger.ErrArchivedCommandNotFound
+}
+
+func archivedCommand(t *testing.T, action string, accountID string, gatewayOrderID string, idempotencyKey string, messageID string, requestID string, streamID string, payload any) ledger.RawStreamMessage {
+	t.Helper()
+	envelope := redisstream.NewCommandEnvelope(action, messageID, requestID, requestID, idempotencyKey, payload, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal archived command: %v", err)
+	}
+	return ledger.RawStreamMessage{
+		StreamRef:      ledger.StreamRef{Key: "relay:prod:v1:huaxin:gw-1:cmd.trade", ID: streamID},
+		SourceRef:      ledger.SourceRef{OriginMessageID: messageID, RequestID: requestID, CorrelationID: requestID, IdempotencyKey: idempotencyKey},
+		Direction:      "in",
+		Role:           redisstream.SuffixCmdTrade,
+		MessageType:    "command",
+		Action:         action,
+		AccountID:      accountID,
+		GatewayOrderID: gatewayOrderID,
+		Body:           json.RawMessage(body),
+		BodyText:       string(body),
+	}
 }
 
 type fakePublisher struct {
