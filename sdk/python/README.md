@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.34.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.35.tar.gz"
 ```
 
 ## Quick Start

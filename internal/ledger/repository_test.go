@@ -1057,11 +1057,12 @@ func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
 	capturedAt := time.Date(2026, 6, 13, 10, 30, 0, 0, time.UTC)
 
 	err := repo.UpsertAssetSnapshot(context.Background(), trading.Asset{
-		AccountID:     "acct-1",
-		CashAvailable: 900000,
-		CashTotal:     1000000,
-		NetAsset:      1200000,
-		MarketValue:   200000,
+		AccountID:             "acct-1",
+		CashAvailable:         900000,
+		CashTotal:             1000000,
+		NetAsset:              1200000,
+		MarketValue:           200000,
+		ReverseRepoReceivable: 300000,
 	}, "intraday", "query", map[string]any{"source": "front"}, capturedAt)
 	if err != nil {
 		t.Fatalf("UpsertAssetSnapshot() error = %v", err)
@@ -1069,11 +1070,14 @@ func TestUpsertAssetSnapshotBuildsSnapshotWrite(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO asset_snapshots")
 	requireQueryContains(t, exec.query, "ON CONFLICT (trade_date, account_id, snapshot_type)")
-	requireArgLen(t, exec.args, 17)
+	requireArgLen(t, exec.args, 18)
 	if exec.args[0] != "2026-06-13" || exec.args[1] != "acct-1" || exec.args[2] != "intraday" {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[2])
 	}
-	assertJSONContains(t, exec.args[15], `"source":"front"`)
+	if exec.args[9] != float64(300000) {
+		t.Fatalf("reverse repo receivable arg = %#v", exec.args[9])
+	}
+	assertJSONContains(t, exec.args[16], `"source":"front"`)
 }
 
 func TestUpsertAssetSnapshotForDateBuildsBackfillSnapshotWrite(t *testing.T) {
@@ -1082,25 +1086,26 @@ func TestUpsertAssetSnapshotForDateBuildsBackfillSnapshotWrite(t *testing.T) {
 	capturedAt := time.Date(2026, 6, 14, 16, 30, 0, 0, time.UTC)
 
 	err := repo.UpsertAssetSnapshotForDate(context.Background(), trading.Asset{
-		AccountID:     "acct-1",
-		CashAvailable: 900000,
-		CashTotal:     1000000,
-		NetAsset:      1200000,
-		MarketValue:   200000,
+		AccountID:             "acct-1",
+		CashAvailable:         900000,
+		CashTotal:             1000000,
+		NetAsset:              1200000,
+		MarketValue:           200000,
+		ReverseRepoReceivable: 300000,
 	}, "20260612", "close", "post_close_settlement", map[string]any{"run_id": "settlement-1"}, capturedAt)
 	if err != nil {
 		t.Fatalf("UpsertAssetSnapshotForDate() error = %v", err)
 	}
 
 	requireQueryContains(t, exec.query, "INSERT INTO asset_snapshots")
-	requireArgLen(t, exec.args, 17)
+	requireArgLen(t, exec.args, 18)
 	if exec.args[0] != "2026-06-12" || exec.args[1] != "acct-1" || exec.args[2] != "close" {
 		t.Fatalf("identity args = %#v %#v %#v", exec.args[0], exec.args[1], exec.args[2])
 	}
-	if exec.args[14] != "post_close_settlement" {
-		t.Fatalf("source arg = %#v", exec.args[14])
+	if exec.args[15] != "post_close_settlement" {
+		t.Fatalf("source arg = %#v", exec.args[15])
 	}
-	assertJSONContains(t, exec.args[15], `"run_id":"settlement-1"`)
+	assertJSONContains(t, exec.args[16], `"run_id":"settlement-1"`)
 }
 
 func TestListPositionsBuildsFilteredRead(t *testing.T) {

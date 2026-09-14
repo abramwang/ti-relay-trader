@@ -126,19 +126,20 @@ type Account struct {
 }
 
 type Asset struct {
-	AccountID      string    `json:"account_id"`
-	CashAvailable  float64   `json:"cash_available"`
-	CashTotal      float64   `json:"cash_total"`
-	NetAsset       float64   `json:"net_asset"`
-	MarketValue    float64   `json:"market_value"`
-	StockValue     float64   `json:"stock_value,omitempty"`
-	FundValue      float64   `json:"fund_value,omitempty"`
-	Commission     float64   `json:"commission,omitempty"`
-	DayProfit      float64   `json:"day_profit,omitempty"`
-	PositionProfit float64   `json:"position_profit,omitempty"`
-	CloseProfit    float64   `json:"close_profit,omitempty"`
-	Credit         float64   `json:"credit,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	AccountID             string    `json:"account_id"`
+	CashAvailable         float64   `json:"cash_available"`
+	CashTotal             float64   `json:"cash_total"`
+	NetAsset              float64   `json:"net_asset"`
+	MarketValue           float64   `json:"market_value"`
+	StockValue            float64   `json:"stock_value,omitempty"`
+	FundValue             float64   `json:"fund_value,omitempty"`
+	ReverseRepoReceivable float64   `json:"reverse_repo_receivable"`
+	Commission            float64   `json:"commission,omitempty"`
+	DayProfit             float64   `json:"day_profit,omitempty"`
+	PositionProfit        float64   `json:"position_profit,omitempty"`
+	CloseProfit           float64   `json:"close_profit,omitempty"`
+	Credit                float64   `json:"credit,omitempty"`
+	UpdatedAt             time.Time `json:"updated_at,omitempty"`
 }
 
 type Position struct {

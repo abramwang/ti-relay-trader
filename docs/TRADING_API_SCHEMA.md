@@ -1,6 +1,6 @@
 # relay 统一交易接口 Schema
 
-更新时间：`2026-09-02`
+更新时间：`2026-09-14`
 
 ## 当前状态
 
@@ -112,11 +112,14 @@ rejected
   "market_value": 0.0,
   "stock_value": 0.0,
   "fund_value": 0.0,
+  "reverse_repo_receivable": 0.0,
   "day_profit": 0.0,
   "position_profit": 0.0,
   "close_profit": 0.0
 }
 ```
+
+OC 的原始 `asset_page` 可能只包含柜台可见资金。Relay 默认读模型和派生 `open/close` 快照会补足普通持仓市值；标准 `broker_close -> close` 结算还会按当日 `204001.SH` 普通成交账本计算逆回购本金应收，并使用 `net_asset = cash_total + market_value + reverse_repo_receivable`。逆回购预估利息不提前进入资产，待实际回款后再通过资金账确认；`broker_close` 继续保留 OC 原始口径。
 
 ### Position
 
@@ -518,7 +521,7 @@ ETF PCF 三个接口同样是透明代理，不转换字符串数值，也不在
 
 `POST /v1/jobs/runs` 用于 Python 日流程任务将 JSON 报告写入 `job_runs`，`/v1/status` 只展示最近盘前/盘后任务摘要，不返回完整 `report_json`。
 
-`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source`，以及可选的 `input_snapshot_type`、`captured_at`、`snapshot_only`、`dry_run`；其中 `snapshot_type` 支持 `intraday/open/broker_close/close/reconcile`。`broker_close` 表示 OC 最终查询完成后的原始券商资金/持仓，只固化数据，不做 Meridian 行情补全、不读取订单成交、不写 reconciliation；正式 `close` 使用 `input_snapshot_type=broker_close` 从这份不可变输入生成，因此可以在 Meridian 恢复后按原交易日补跑且不再连接 OC。`open` 使用 OC 盘前现金与持仓数量，并按 Meridian 上一交易日未复权 `1d close` 估值；`close` 按当日 Level1 last 或历史未复权 `1d close` 估值。两类派生资产均按 `net_asset = cash_total + sum(position.market_value)` 汇总，现金总额缺失时才以 `cash_available` 兜底；任一正持仓缺失估值时拒绝写入，不能降级为现金-only 总资产。派生快照的 `raw_payload` 同时保留 `broker_asset/broker_position`、估值后字段以及 `valuation.source/trade_date`。`captured_at` 必须是带时区的 RFC3339 时间且日期与 `trade_date` 一致，仅用于已经确认源账本时间的故障恢复；响应也会返回最终使用的 `captured_at`。`snapshot_only=true` 必须同时提供 `captured_at`，只固化源资金/持仓，不按当前行情重估、不读取当前订单成交、不写 reconciliation。`pre_open_init` 使用 `snapshot_type=open` 写入日初快照；`post_close_capture` 使用 `snapshot_type=broker_close` 写入券商收盘输入；`post_close_settlement` 使用 `snapshot_type=close,input_snapshot_type=broker_close` 写入正式 close 和 `reconciliation_runs`。多账户请求最多并行处理 3 个账户并保持响应账户顺序。该接口本身不向前置发送查询命令。
+`POST /v1/settlements/snapshots` 用于盘前初始化和收盘后结算任务内部调用。请求体包含 `trade_date`、`account_ids`、`run_id`、`snapshot_type`、`source`，以及可选的 `input_snapshot_type`、`captured_at`、`snapshot_only`、`dry_run`；其中 `snapshot_type` 支持 `intraday/open/broker_close/close/reconcile`。`broker_close` 表示 OC 最终查询完成后的原始券商资金/持仓，只固化数据，不做 Meridian 行情补全、不读取订单成交、不写 reconciliation；正式 `close` 使用 `input_snapshot_type=broker_close` 从这份不可变输入生成，因此可以在 Meridian 恢复后按原交易日补跑且不再连接 OC。`open` 使用 OC 盘前现金与持仓数量，并按 Meridian 上一交易日未复权 `1d close` 估值；`close` 按当日 Level1 last 或历史未复权 `1d close` 估值。日初派生资产按 `net_asset = cash_total + sum(position.market_value)` 汇总；标准日终派生资产按 `net_asset = cash_total + sum(position.market_value) + reverse_repo_receivable` 汇总，其中逆回购应收只含已成交本金，不含预估利息。现金总额缺失时才以 `cash_available` 兜底；任一正持仓缺失估值时拒绝写入，不能降级为现金-only 总资产。派生快照的 `raw_payload` 同时保留 `broker_asset/broker_position`、估值后字段、`valuation.source/trade_date` 和逆回购来源。`captured_at` 必须是带时区的 RFC3339 时间且日期与 `trade_date` 一致，仅用于已经确认源账本时间的故障恢复；响应也会返回最终使用的 `captured_at`。`snapshot_only=true` 必须同时提供 `captured_at`，只固化源资金/持仓，不按当前行情重估、不读取当前订单成交、不写 reconciliation。`pre_open_init` 使用 `snapshot_type=open` 写入日初快照；`post_close_capture` 使用 `snapshot_type=broker_close` 写入券商收盘输入；`post_close_settlement` 使用 `snapshot_type=close,input_snapshot_type=broker_close` 写入正式 close 和 `reconciliation_runs`。多账户请求最多并行处理 3 个账户并保持响应账户顺序。该接口本身不向前置发送查询命令。
 
 ## 后续工作
 

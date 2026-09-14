@@ -825,7 +825,7 @@ button {
 
 .terminal-shell.view-asset .asset-detail-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
   background: #fbfcff;
 }

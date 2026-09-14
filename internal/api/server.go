@@ -1869,6 +1869,7 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 	}
 	if enrich {
 		result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
+		result.Asset = s.enrichAssetWithReverseRepo(r.Context(), result.Asset, timeutil.Now().Format("2006-01-02"))
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
@@ -1905,8 +1906,56 @@ func applyPositionTotalsToAsset(asset trading.Asset, totals assetPositionTotals)
 	if cashTotal == 0 {
 		cashTotal = asset.CashAvailable
 	}
-	asset.NetAsset = cashTotal + totals.marketValue
+	asset.NetAsset = cashTotal + totals.marketValue + asset.ReverseRepoReceivable
 	return asset
+}
+
+func (s *Server) enrichAssetWithReverseRepo(ctx context.Context, asset trading.Asset, tradeDate string) trading.Asset {
+	if s.orders == nil || strings.TrimSpace(asset.AccountID) == "" {
+		return asset
+	}
+	fills, err := s.listReverseRepoFills(ctx, asset.AccountID, tradeDate)
+	if err != nil {
+		s.logger.Warn("asset_reverse_repo_unavailable", "account_id", asset.AccountID, "trade_date", tradeDate, "error", err)
+		return asset
+	}
+	return applyReverseRepoReceivableToAsset(asset, relayperformance.ReverseRepoPrincipalFromFills(fills))
+}
+
+func applyReverseRepoReceivableToAsset(asset trading.Asset, principal float64) trading.Asset {
+	asset.ReverseRepoReceivable = principal
+	cashTotal := asset.CashTotal
+	if cashTotal == 0 {
+		cashTotal = asset.CashAvailable
+	}
+	asset.NetAsset = cashTotal + asset.MarketValue + principal
+	return asset
+}
+
+func (s *Server) listReverseRepoFills(ctx context.Context, accountID string, tradeDate string) ([]trading.Fill, error) {
+	query := trading.FillQuery{
+		AccountID: accountID,
+		TradeDate: tradeDate,
+		Symbol:    "204001",
+		Exchange:  trading.ExchangeSH,
+		History:   true,
+		Limit:     settlementPageLimit,
+	}
+	fills := make([]trading.Fill, 0)
+	for {
+		result, err := s.orders.ListFills(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		fills = append(fills, result.Fills...)
+		if result.NextCursor == "" {
+			return fills, nil
+		}
+		if len(fills) >= settlementMaxRows {
+			return nil, fmt.Errorf("reverse repo fill query exceeded %d rows", settlementMaxRows)
+		}
+		query.Cursor = result.NextCursor
+	}
 }
 
 func (s *Server) collectCurrentPositions(ctx context.Context, accountID string) ([]trading.Position, error) {
@@ -3928,6 +3977,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	}
 	ordersResult := orderflow.ListOrdersResult{}
 	fillsResult := orderflow.ListFillsResult{}
+	reverseRepoSource := "not_applied"
 	if !snapshotOnly {
 		ordersResult, err = s.listAllSettlementOrders(ctx, accountID, tradeDate)
 		if err != nil {
@@ -3936,6 +3986,10 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		fillsResult, err = s.listAllSettlementFills(ctx, accountID, tradeDate)
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
+		}
+		if snapshotType == "close" && inputSnapshotType == "broker_close" && err == nil {
+			assetResult.Asset = applyReverseRepoReceivableToAsset(assetResult.Asset, relayperformance.ReverseRepoPrincipalFromFills(fillsResult.Fills))
+			reverseRepoSource = "ordinary_fill_ledger"
 		}
 	}
 	out.PositionsCount = len(positionResult.Positions)
@@ -3966,6 +4020,10 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		"valuation": map[string]any{
 			"source":     valuationSource,
 			"trade_date": valuationTradeDate,
+		},
+		"reverse_repo": map[string]any{
+			"principal_receivable": assetResult.Asset.ReverseRepoReceivable,
+			"source":               reverseRepoSource,
 		},
 	}
 	rawSummary := []ledger.RawStreamSummaryBucket{}
@@ -4128,10 +4186,11 @@ func relayLedgerSummaryPayload(accountID string, tradeDate string, asset trading
 	payload["account_id"] = accountID
 	payload["trade_date"] = tradeDate
 	payload["asset"] = map[string]any{
-		"account_id":     asset.AccountID,
-		"net_asset":      asset.NetAsset,
-		"cash_available": asset.CashAvailable,
-		"market_value":   asset.MarketValue,
+		"account_id":              asset.AccountID,
+		"net_asset":               asset.NetAsset,
+		"cash_available":          asset.CashAvailable,
+		"market_value":            asset.MarketValue,
+		"reverse_repo_receivable": asset.ReverseRepoReceivable,
 	}
 	payload["counts"] = map[string]any{
 		"positions":              len(positions),
@@ -4169,12 +4228,13 @@ func pnlInputSummaryPayload(asset trading.Asset, positions []trading.Position, f
 	}
 	return map[string]any{
 		"asset": map[string]any{
-			"net_asset":       asset.NetAsset,
-			"cash_available":  asset.CashAvailable,
-			"market_value":    asset.MarketValue,
-			"day_profit":      asset.DayProfit,
-			"position_profit": asset.PositionProfit,
-			"close_profit":    asset.CloseProfit,
+			"net_asset":               asset.NetAsset,
+			"cash_available":          asset.CashAvailable,
+			"market_value":            asset.MarketValue,
+			"reverse_repo_receivable": asset.ReverseRepoReceivable,
+			"day_profit":              asset.DayProfit,
+			"position_profit":         asset.PositionProfit,
+			"close_profit":            asset.CloseProfit,
 		},
 		"positions": map[string]any{
 			"count":              len(positions),

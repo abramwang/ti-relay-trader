@@ -68,7 +68,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "data": {"accounts": [{"account_id": "acct-1", "enabled": True}]}})
             return
         if parsed.path == "/v1/accounts/acct-1/asset":
-            self._json({"ok": True, "data": {"asset": {"account_id": "acct-1", "net_asset": 123.45}}})
+            self._json({"ok": True, "data": {"asset": {"account_id": "acct-1", "net_asset": 123.45, "reverse_repo_receivable": 100.0}}})
             return
         if parsed.path == "/v1/accounts/acct-1/positions":
             self._json({"ok": True, "data": {"positions": [{"account_id": "acct-1", "symbol": "600000", "quantity": 100, "avg_cost": 9.54, "total_cost": 954.0, "avg_cost_source": "broker_total_position_cost", "cost_complete": True}]}})
@@ -886,7 +886,9 @@ class RelayClientTest(unittest.TestCase):
     def test_queries_return_models(self):
         self.assertEqual(self.client.status()["status"], "ok")
         self.assertEqual(self.client.list_accounts()[0].account_id, "acct-1")
-        self.assertEqual(self.client.get_asset().net_asset, 123.45)
+        asset = self.client.get_asset()
+        self.assertEqual(asset.net_asset, 123.45)
+        self.assertEqual(asset.reverse_repo_receivable, 100.0)
         position = self.client.get_positions()[0]
         self.assertEqual(position.symbol, "600000")
         self.assertEqual(position.total_cost, 954.0)

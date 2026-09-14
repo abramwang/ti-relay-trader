@@ -1935,6 +1935,18 @@ func reverseRepoGroups(fills []trading.Fill) []repoFillGroup {
 	return groups
 }
 
+// ReverseRepoPrincipalFromFills returns the unsettled principal represented by
+// ordinary reverse-repo fills, excluding Relay summary duplicates.
+func ReverseRepoPrincipalFromFills(fills []trading.Fill) float64 {
+	principal := 0.0
+	for _, group := range reverseRepoGroups(fills) {
+		for _, fill := range group.fills {
+			principal += float64(fill.Qty) * reverseRepoCashMultiple
+		}
+	}
+	return roundMoney(principal)
+}
+
 func calculateRepoGroup(
 	accountID string,
 	tradeDate string,

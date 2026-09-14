@@ -183,6 +183,7 @@
     cashTotal: byID("cashTotal"),
     stockValue: byID("stockValue"),
     fundValue: byID("fundValue"),
+    reverseRepoReceivable: byID("reverseRepoReceivable"),
     positionProfit: byID("positionProfit"),
     closeProfit: byID("closeProfit"),
     commission: byID("commission"),
@@ -1684,9 +1685,10 @@
       : (positionMarketValue !== null ? positionMarketValue : performance.market_value);
     const cashTotal = finiteNumber(performance.cash_total);
     const rawNetAsset = finiteNumber(performance.net_asset);
+    const reverseRepoReceivable = finiteNumber(performance.reverse_repo_receivable) || 0;
     const effectiveNetAsset = positionMarketValue !== null && positionMarketValue > 0 &&
       cashTotal !== null && (rawNetAsset === null || rawNetAsset <= cashTotal)
-      ? cashTotal + positionMarketValue
+      ? cashTotal + positionMarketValue + reverseRepoReceivable
       : performance.net_asset;
     const stockValue = finiteNumber(performance.stock_value);
     const fundValue = finiteNumber(performance.fund_value);
@@ -1698,6 +1700,7 @@
       market_value: marketValue,
       stock_value: stockValue !== null && stockValue > 0 ? stockValue : (fundValue ? 0 : marketValue),
       fund_value: fundValue !== null && fundValue > 0 ? fundValue : 0,
+      reverse_repo_receivable: reverseRepoReceivable,
       day_profit: performance.daily_pnl,
       position_profit: performance.position_profit || performance.unrealized_pnl,
       close_profit: performance.close_profit || performance.settled_profit,
@@ -1859,6 +1862,7 @@
     const assetMarketValue = finiteNumber(asset.market_value);
     const effectiveMarketValue = hasMarketValue ? marketValue : assetMarketValue;
     const cashTotal = finiteNumber(asset.cash_total);
+    const reverseRepoReceivable = finiteNumber(asset.reverse_repo_receivable) || 0;
     const commission = accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
       ? metricCommission(asset)
       : finiteNumber(asset.commission);
@@ -1870,13 +1874,14 @@
       : finiteNumber(asset.day_unrealized_pnl);
     return {
       netAsset: cashTotal !== null && effectiveMarketValue !== null
-        ? cashTotal + effectiveMarketValue
+        ? cashTotal + effectiveMarketValue + reverseRepoReceivable
         : finiteNumber(asset.net_asset),
       cashAvailable: finiteNumber(asset.cash_available),
       cashTotal,
       marketValue: effectiveMarketValue,
       stockValue: finiteNumber(asset.stock_value),
       fundValue: finiteNumber(asset.fund_value),
+      reverseRepoReceivable,
       positionProfit: hasPositionProfit ? positionProfit : finiteNumber(asset.position_profit),
       closeProfit,
       commission,
@@ -1961,6 +1966,7 @@
         csvLine(["证券市值", csvNumber(metrics.marketValue)]),
         csvLine(["股票市值", csvNumber(metrics.stockValue)]),
         csvLine(["基金市值", csvNumber(metrics.fundValue)]),
+        csvLine(["逆回购应收", csvNumber(metrics.reverseRepoReceivable)]),
         csvLine(["持仓盈亏", csvNumber(metrics.positionProfit)]),
         csvLine(["平仓盈亏", csvNumber(metrics.closeProfit)]),
         csvLine(["手续费", csvNumber(metrics.commission)]),
@@ -2558,6 +2564,7 @@
     els.cashTotal.textContent = formatNumber(asset.cash_total);
     els.stockValue.textContent = formatNumber(stockValue);
     els.fundValue.textContent = formatNumber(fundValue);
+    els.reverseRepoReceivable.textContent = formatNumber(asset.reverse_repo_receivable);
     els.positionProfit.textContent = formatSigned(positionProfit);
     els.positionProfit.className = Number(positionProfit) < 0 ? "down" : "up";
     els.closeProfit.textContent = formatSigned(closeProfit);
@@ -3008,13 +3015,14 @@
       }
     }
     const cashTotal = finiteNumber(state.asset && state.asset.cash_total);
+    const reverseRepoReceivable = finiteNumber(state.asset && state.asset.reverse_repo_receivable) || 0;
     return {
       marketValue,
       positionProfit,
       dayPositionProfit,
       stockValue: unclassifiedValue > 0 ? null : stockValue,
       fundValue: unclassifiedValue > 0 ? null : fundValue,
-      netAsset: cashTotal !== null ? cashTotal + marketValue : (state.asset && state.asset.net_asset)
+      netAsset: cashTotal !== null ? cashTotal + marketValue + reverseRepoReceivable : (state.asset && state.asset.net_asset)
     };
   }
 

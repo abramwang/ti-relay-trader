@@ -93,6 +93,7 @@ class Asset:
     market_value: float = 0.0
     stock_value: float = 0.0
     fund_value: float = 0.0
+    reverse_repo_receivable: float = 0.0
     day_profit: float = 0.0
     position_profit: float = 0.0
     close_profit: float = 0.0
@@ -108,6 +109,7 @@ class Asset:
             market_value=_float(data, "market_value"),
             stock_value=_float(data, "stock_value"),
             fund_value=_float(data, "fund_value"),
+            reverse_repo_receivable=_float(data, "reverse_repo_receivable"),
             day_profit=_float(data, "day_profit"),
             position_profit=_float(data, "position_profit"),
             close_profit=_float(data, "close_profit"),

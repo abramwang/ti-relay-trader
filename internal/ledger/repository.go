@@ -274,6 +274,7 @@ type DailyPerformance struct {
 	MarketValue            float64   `json:"market_value"`
 	StockValue             float64   `json:"stock_value"`
 	FundValue              float64   `json:"fund_value"`
+	ReverseRepoReceivable  float64   `json:"reverse_repo_receivable"`
 	DayProfit              float64   `json:"day_profit"`
 	PositionProfit         float64   `json:"position_profit"`
 	CloseProfit            float64   `json:"close_profit"`
@@ -307,21 +308,22 @@ type DailyPerformance struct {
 }
 
 type AssetPositionObservation struct {
-	AccountID           string         `json:"account_id"`
-	TradeDate           string         `json:"trade_date"`
-	SnapshotType        string         `json:"snapshot_type"`
-	CashAvailable       float64        `json:"cash_available"`
-	CashTotal           float64        `json:"cash_total"`
-	NetAsset            float64        `json:"net_asset"`
-	MarketValue         float64        `json:"market_value"`
-	StockValue          float64        `json:"stock_value"`
-	FundValue           float64        `json:"fund_value"`
-	PositionsCount      int64          `json:"positions_count"`
-	PositionMarketValue float64        `json:"position_market_value"`
-	Source              string         `json:"source,omitempty"`
-	RawPayload          map[string]any `json:"raw_payload,omitempty"`
-	CapturedAt          time.Time      `json:"captured_at,omitempty"`
-	PositionCapturedAt  *time.Time     `json:"position_captured_at,omitempty"`
+	AccountID             string         `json:"account_id"`
+	TradeDate             string         `json:"trade_date"`
+	SnapshotType          string         `json:"snapshot_type"`
+	CashAvailable         float64        `json:"cash_available"`
+	CashTotal             float64        `json:"cash_total"`
+	NetAsset              float64        `json:"net_asset"`
+	MarketValue           float64        `json:"market_value"`
+	StockValue            float64        `json:"stock_value"`
+	FundValue             float64        `json:"fund_value"`
+	ReverseRepoReceivable float64        `json:"reverse_repo_receivable"`
+	PositionsCount        int64          `json:"positions_count"`
+	PositionMarketValue   float64        `json:"position_market_value"`
+	Source                string         `json:"source,omitempty"`
+	RawPayload            map[string]any `json:"raw_payload,omitempty"`
+	CapturedAt            time.Time      `json:"captured_at,omitempty"`
+	PositionCapturedAt    *time.Time     `json:"position_captured_at,omitempty"`
 }
 
 func NewRepository(exec Executor) *Repository {
@@ -1138,6 +1140,7 @@ func (repo *Repository) UpsertAssetSnapshotForDate(ctx context.Context, asset tr
 		normalized.MarketValue,
 		normalized.StockValue,
 		normalized.FundValue,
+		normalized.ReverseRepoReceivable,
 		normalized.Commission,
 		normalized.DayProfit,
 		normalized.PositionProfit,
@@ -3484,6 +3487,7 @@ func scanAsset(row rowScanner) (trading.Asset, error) {
 		&asset.MarketValue,
 		&asset.StockValue,
 		&asset.FundValue,
+		&asset.ReverseRepoReceivable,
 		&asset.Commission,
 		&asset.DayProfit,
 		&asset.PositionProfit,
@@ -3520,6 +3524,7 @@ func scanDailyPerformance(row rowScanner) (DailyPerformance, error) {
 		&performance.MarketValue,
 		&performance.StockValue,
 		&performance.FundValue,
+		&performance.ReverseRepoReceivable,
 		&performance.DayProfit,
 		&performance.PositionProfit,
 		&performance.CloseProfit,
@@ -3563,6 +3568,7 @@ func scanAssetPositionObservation(row rowScanner) (AssetPositionObservation, err
 		&observation.MarketValue,
 		&observation.StockValue,
 		&observation.FundValue,
+		&observation.ReverseRepoReceivable,
 		&observation.PositionsCount,
 		&observation.PositionMarketValue,
 		&observation.Source,

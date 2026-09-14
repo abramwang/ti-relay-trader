@@ -579,6 +579,7 @@ SELECT
     market_value,
     stock_value,
     fund_value,
+    reverse_repo_receivable,
     commission,
     day_profit,
     position_profit,
@@ -600,6 +601,7 @@ SELECT
     market_value,
     stock_value,
     fund_value,
+    reverse_repo_receivable,
     commission,
     day_profit,
     position_profit,
@@ -626,6 +628,7 @@ WITH asset AS (
         market_value,
         stock_value,
         fund_value,
+        reverse_repo_receivable,
         source,
         raw_payload,
         captured_at
@@ -656,6 +659,7 @@ SELECT
     asset.market_value,
     asset.stock_value,
     asset.fund_value,
+    asset.reverse_repo_receivable,
     positions.positions_count,
     positions.position_market_value,
     asset.source,
@@ -677,6 +681,7 @@ WITH asset AS (
         market_value,
         stock_value,
         fund_value,
+        reverse_repo_receivable,
         day_profit,
         position_profit,
         close_profit,
@@ -756,6 +761,7 @@ SELECT
     asset.market_value,
     asset.stock_value,
     asset.fund_value,
+    asset.reverse_repo_receivable,
     asset.day_profit,
     asset.position_profit,
     asset.close_profit,
@@ -790,6 +796,7 @@ WITH asset_ranked AS (
         market_value,
         stock_value,
         fund_value,
+        reverse_repo_receivable,
         day_profit,
         position_profit,
         close_profit,
@@ -812,6 +819,7 @@ asset AS (
         market_value,
         stock_value,
         fund_value,
+        reverse_repo_receivable,
         day_profit,
         position_profit,
         close_profit,
@@ -903,6 +911,7 @@ SELECT
     asset.market_value,
     asset.stock_value,
     asset.fund_value,
+    asset.reverse_repo_receivable,
     asset.day_profit,
     asset.position_profit,
     asset.close_profit,
@@ -939,6 +948,7 @@ INSERT INTO asset_snapshots (
     market_value,
     stock_value,
     fund_value,
+    reverse_repo_receivable,
     commission,
     day_profit,
     position_profit,
@@ -949,7 +959,7 @@ INSERT INTO asset_snapshots (
     captured_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17
+    $11, $12, $13, $14, $15, $16, $17, $18
 )
 ON CONFLICT (trade_date, account_id, snapshot_type) DO UPDATE SET
     cash_available = EXCLUDED.cash_available,
@@ -958,6 +968,7 @@ ON CONFLICT (trade_date, account_id, snapshot_type) DO UPDATE SET
     market_value = EXCLUDED.market_value,
     stock_value = EXCLUDED.stock_value,
     fund_value = EXCLUDED.fund_value,
+    reverse_repo_receivable = EXCLUDED.reverse_repo_receivable,
     commission = EXCLUDED.commission,
     day_profit = EXCLUDED.day_profit,
     position_profit = EXCLUDED.position_profit,

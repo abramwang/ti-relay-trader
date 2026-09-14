@@ -731,6 +731,32 @@ func TestAccountAssetCanSkipEnrichment(t *testing.T) {
 	}
 }
 
+func TestAccountAssetIncludesReverseRepoPrincipalReceivable(t *testing.T) {
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID: "acct-1", CashAvailable: 1000, CashTotal: 1000, NetAsset: 1000,
+		}},
+		positionsResult: orderflow.ListPositionsResult{Positions: []trading.Position{}},
+		listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{
+			{FillID: "fill-1", AccountID: "acct-1", GatewayOrderID: "repo-1", Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Price: 1.5, Qty: 10},
+			{FillID: "relay-summary:repo-1", AccountID: "acct-1", GatewayOrderID: "repo-1", Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Price: 1.5, Qty: 10},
+		}},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if service.fillQuery.Symbol != "204001" || service.fillQuery.Exchange != trading.ExchangeSH || service.fillQuery.TradeDate == "" {
+		t.Fatalf("reverse repo fill query = %#v", service.fillQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"reverse_repo_receivable":1000`) || !strings.Contains(rec.Body.String(), `"net_asset":2000`) {
+		t.Fatalf("response missing reverse repo asset: %s", rec.Body.String())
+	}
+}
+
 func TestAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		positionsResult: orderflow.ListPositionsResult{
@@ -2685,6 +2711,46 @@ func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testi
 	}
 	if store.reconciliation.RunID != "post_close_settlement-20260615" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
+func TestCloseSnapshotIncludesReverseRepoPrincipalReceivable(t *testing.T) {
+	capturedAt := time.Date(2026, 9, 14, 15, 1, 7, 0, timeutil.Location())
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}},
+		listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{{
+			FillID: "fill-repo", AccountID: "acct-1", GatewayOrderID: "repo-1",
+			Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Price: 1.5, Qty: 10,
+		}}, Count: 1},
+	}
+	store := &fakeSettlementStore{
+		assetSnapshotResult:     trading.Asset{AccountID: "acct-1", CashTotal: 1000, NetAsset: 1000, UpdatedAt: capturedAt},
+		positionSnapshotResults: []trading.Position{},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post-close-repo-20260914",
+		"trade_date":"20260914",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"input_snapshot_type":"broker_close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 1 {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	asset := store.assetSnapshots[0].asset
+	if asset.ReverseRepoReceivable != 1000 || asset.NetAsset != 2000 {
+		t.Fatalf("close reverse repo asset = %#v", asset)
 	}
 }
 
