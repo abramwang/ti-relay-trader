@@ -2348,9 +2348,28 @@ func TestSettlementSnapshotPostWritesCloseSnapshots(t *testing.T) {
 }
 
 func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/metadata/trading-day":
+			if r.URL.Query().Get("date") != "20260614" {
+				t.Fatalf("previous trading-day query = %s", r.URL.RawQuery)
+			}
+			_, _ = io.WriteString(w, `{"data":{"date":20260614,"is_trading_day":false,"previous_or_current_trading_date":20260612}}`)
+		case "/v1/market/bars":
+			query := r.URL.Query()
+			if query.Get("security_ids") != "600000.SH" || query.Get("start_date") != "20260612" || query.Get("end_date") != "20260612" || query.Get("adjustment") != "none" {
+				t.Fatalf("open valuation bars query = %s", query.Encode())
+			}
+			_, _ = io.WriteString(w, `{"data":[{"security_id":"600000.SH","trade_date":20260612,"open":9.7,"close":9.8}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer meridian.Close()
+
 	service := &fakeOrderSubmitter{
 		assetResult: orderflow.GetAssetResult{
-			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, CashAvailable: 1100000, MarketValue: 200000},
+			Asset: trading.Asset{AccountID: "acct-1", NetAsset: 1100000, CashAvailable: 1100000, CashTotal: 1100000},
 		},
 		positionsResult: orderflow.ListPositionsResult{
 			Positions: []trading.Position{{AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100}},
@@ -2360,7 +2379,9 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
 	}
 	store := &fakeSettlementStore{}
-	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders:      service,
 		Settlements: store,
 	})
@@ -2385,6 +2406,12 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].snapshotType != "open" || store.positionSnapshots[0].position.SnapshotType != "open" {
 		t.Fatalf("open position snapshots = %#v", store.positionSnapshots)
 	}
+	if store.positionSnapshots[0].position.LastPrice != 9.8 || math.Abs(store.positionSnapshots[0].position.MarketValue-980) > 0.000001 {
+		t.Fatalf("open position valuation = %#v", store.positionSnapshots[0].position)
+	}
+	if math.Abs(store.assetSnapshots[0].asset.MarketValue-980) > 0.000001 || math.Abs(store.assetSnapshots[0].asset.NetAsset-1100980) > 0.000001 {
+		t.Fatalf("open asset valuation = %#v", store.assetSnapshots[0].asset)
+	}
 	wantCapturedAt := time.Date(2026, 6, 15, 9, 1, 4, 757510000, timeutil.Location())
 	if !store.assetSnapshots[0].capturedAt.Equal(wantCapturedAt) || !store.positionSnapshots[0].capturedAt.Equal(wantCapturedAt) {
 		t.Fatalf("snapshot captured_at asset=%s position=%s, want %s", store.assetSnapshots[0].capturedAt, store.positionSnapshots[0].capturedAt, wantCapturedAt)
@@ -2394,6 +2421,57 @@ func TestSettlementSnapshotPostWritesOpenAssetAndPositions(t *testing.T) {
 	}
 	if store.reconciliation.RunID != "pre_open_init-20260615" || store.reconciliation.Source != "pre_open_init" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
+func TestOpenSnapshotDoesNotWriteCashOnlyAssetWhenPreviousCloseIsMissing(t *testing.T) {
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/metadata/trading-day":
+			_, _ = io.WriteString(w, `{"data":{"date":20260614,"is_trading_day":false,"previous_or_current_trading_date":20260612}}`)
+		case "/v1/market/bars":
+			_, _ = io.WriteString(w, `{"data":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer meridian.Close()
+
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID: "acct-1", CashAvailable: 1100000, CashTotal: 1100000, NetAsset: 1100000,
+		}},
+		positionsResult: orderflow.ListPositionsResult{Positions: []trading.Position{{
+			AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100,
+		}}, Count: 1},
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}},
+		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}},
+	}
+	store := &fakeSettlementStore{}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"pre_open_init-20260615-missing-bars",
+		"trade_date":"20260615",
+		"account_ids":["acct-1"],
+		"snapshot_type":"open",
+		"source":"pre_open_init"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 0 || len(store.positionSnapshots) != 0 {
+		t.Fatalf("missing previous close must not write open snapshots: assets=%#v positions=%#v", store.assetSnapshots, store.positionSnapshots)
+	}
+	if !strings.Contains(rec.Body.String(), `open market valuation missing for 1 positions: 600000.SH`) {
+		t.Fatalf("response missing open valuation error: %s", rec.Body.String())
 	}
 }
 
@@ -2564,7 +2642,7 @@ func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testi
 		listFillsResult:  orderflow.ListFillsResult{Fills: []trading.Fill{}, Count: 0},
 	}
 	store := &fakeSettlementStore{
-		assetSnapshotResult: trading.Asset{AccountID: "acct-1", NetAsset: 1300000, UpdatedAt: capturedAt},
+		assetSnapshotResult: trading.Asset{AccountID: "acct-1", CashTotal: 1300000, NetAsset: 1300000, UpdatedAt: capturedAt},
 		positionSnapshotResults: []trading.Position{{
 			AccountID: "acct-1", TradeDate: "2026-06-15", SnapshotType: "broker_close",
 			Symbol: "600000", Exchange: trading.ExchangeSH, Quantity: 100, UpdatedAt: capturedAt,
@@ -2599,11 +2677,25 @@ func TestCloseSnapshotCanPromoteBrokerCloseWithoutReadingCurrentAccount(t *testi
 	if len(store.assetSnapshots) != 1 || store.assetSnapshots[0].snapshotType != "close" || !store.assetSnapshots[0].capturedAt.Equal(capturedAt) {
 		t.Fatalf("promoted asset snapshots = %#v, response = %s", store.assetSnapshots, rec.Body.String())
 	}
+	if math.Abs(store.assetSnapshots[0].asset.MarketValue-980) > 0.000001 || math.Abs(store.assetSnapshots[0].asset.NetAsset-1300980) > 0.000001 {
+		t.Fatalf("promoted asset valuation = %#v", store.assetSnapshots[0].asset)
+	}
 	if len(store.positionSnapshots) != 1 || store.positionSnapshots[0].position.LastPrice != 9.8 || math.Abs(store.positionSnapshots[0].position.MarketValue-980) > 0.000001 {
 		t.Fatalf("promoted position snapshots = %#v", store.positionSnapshots)
 	}
 	if store.reconciliation.RunID != "post_close_settlement-20260615" {
 		t.Fatalf("reconciliation = %#v", store.reconciliation)
+	}
+}
+
+func TestApplyPositionTotalsToAssetIncludesMarketValueWithoutCash(t *testing.T) {
+	asset := applyPositionTotalsToAsset(trading.Asset{AccountID: "acct-1"}, assetPositionTotals{
+		marketValue: 250000,
+		fundValue:   250000,
+	})
+
+	if asset.NetAsset != 250000 || asset.MarketValue != 250000 || asset.FundValue != 250000 {
+		t.Fatalf("asset = %#v", asset)
 	}
 }
 

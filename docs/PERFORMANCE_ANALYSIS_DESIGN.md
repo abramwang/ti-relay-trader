@@ -645,7 +645,7 @@ reconciliation_residual =
 
 1. `GET /v1/accounts/{account_id}/performance/economic-nav/reconcile?trade_date=YYYYMMDD&observed_trade_date=YYYYMMDD` 只读预览。`observed_trade_date` 为空时通过 Meridian 交易日历取 T 日后的下一个交易日；若没有已落库 current NAV，preview 会临时试算 `economic-nav/preview` 作为对账基准并打 `economic_nav_preview_source` 标记。
 2. `POST /v1/accounts/{account_id}/performance/economic-nav/reconcile` 受 `performance.settings_write_enabled` 保护，要求已存在 current `performance_nav_versions`，然后按 `performance_nav_pk` 幂等 upsert 对账记录。
-3. 第一版 `observed_open_assets = open.cash_total + sum(open_positions.market_value)`；盘前 `external_flow` 和 `income_expense` 只纳入 09:30 及以前的已确认手工流水，09:30 后发生的流水会被排除并打质量标记。
+3. `asset_snapshots(open).net_asset` 已统一为 OC 盘前现金加 Meridian 上一交易日未复权收盘价估值的持仓市值；对账仍独立按 `observed_open_assets = open.cash_total + sum(open_positions.market_value)` 复核资产恒等式，避免盲目信任聚合字段。盘前 `external_flow` 和 `income_expense` 只纳入 09:30 及以前的已确认手工流水，09:30 后发生的流水会被排除并打质量标记。
 4. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/confirm` 受写开关保护，要求传入 `trade_date/operator`，将同一 current NAV 对应的对账记录改为 `confirmed` 并写入 `reviewed_by/reviewed_at`，同时把 current `performance_nav_versions.status` 就地推进为 `finalized`。如果 residual 超过 warning threshold 或记录已 blocked，需要 `force=true`。
 5. `POST /v1/accounts/{account_id}/performance/nav-reconciliations/block` 受写开关保护，写入阻断复核信息，并把 current NAV 标记为 `blocked`，避免进入正式累计净值。
 6. `/trade#performance` 读取当前交易日 NAV 对账记录，按 `confirmed/auto_completed/review_required/blocked` 展示状态告警、账面/观测 NAV、残差、自动/警告阈值、资金/持仓观测值和复核信息。确认/阻断按钮读取 `/v1/performance/settings` 的服务端写开关；超警告阈值或已阻断记录需要显式勾选强制确认，阻断要求填写说明，两类动作均二次确认。生产写开关关闭时完整保留只读监控，但所有复核输入和按钮禁用。

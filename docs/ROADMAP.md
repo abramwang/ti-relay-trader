@@ -499,6 +499,7 @@
 - [x] 新增 `/jobs` 后台任务状态监控页，展示任务状态、交易日、开始/完成时间、耗时、错误摘要和 report JSON。
 - [x] 拉取柜台资金、持仓、订单、成交查询结果。
 - [x] 盘前初始化写入 `asset_snapshots(open)` 日初资产快照，作为日内绩效基线；open 快照只写资产，不覆盖日终持仓快照。
+- [x] 修正 open/close 资产聚合：盘前持仓按 Meridian 上一交易日未复权收盘价估值，盘后持仓按当日收盘估值，并统一写入 `market_value/stock_value/fund_value/net_asset`；缺任一正持仓估值即阻断，`broker_close` 和派生快照 raw payload 保留 OC 原值。
 - [x] 写入日终 `asset_snapshots(close)`、`position_snapshots` 和 `reconciliation_runs` 对账批次。
 - [x] 对比 Redis 原始消息窗口摘要和内部账表摘要。
 - [x] 记录 `reconciliation_inputs` 和 `reconciliation_breaks` 差异。

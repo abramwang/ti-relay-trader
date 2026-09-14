@@ -1892,6 +1892,10 @@ func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset tradin
 	if totals.marketValue <= 0 {
 		return asset
 	}
+	return applyPositionTotalsToAsset(asset, totals)
+}
+
+func applyPositionTotalsToAsset(asset trading.Asset, totals assetPositionTotals) trading.Asset {
 	asset.MarketValue = totals.marketValue
 	asset.StockValue = totals.stockValue
 	asset.FundValue = totals.fundValue
@@ -1901,9 +1905,7 @@ func (s *Server) enrichAssetWithPositionTotals(ctx context.Context, asset tradin
 	if cashTotal == 0 {
 		cashTotal = asset.CashAvailable
 	}
-	if cashTotal != 0 {
-		asset.NetAsset = cashTotal + totals.marketValue
-	}
+	asset.NetAsset = cashTotal + totals.marketValue
 	return asset
 }
 
@@ -1954,6 +1956,51 @@ func summarizePositionAssetTotals(positions []trading.Position) assetPositionTot
 		}
 	}
 	return totals
+}
+
+func (s *Server) previousTradingDate(ctx context.Context, tradeDate string) (string, error) {
+	if s.market == nil {
+		return "", errMarketClientUnavailable
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", tradeDate, timeutil.Location())
+	if err != nil {
+		return "", fmt.Errorf("parse settlement trade date: %w", err)
+	}
+	status, err := s.market.TradingDayStatus(ctx, parsed.AddDate(0, 0, -1).Format("20060102"))
+	if err != nil {
+		return "", fmt.Errorf("resolve previous trading date: %w", err)
+	}
+	previous, err := normalizeAPIDate(status.PreviousOrCurrentTradingDate)
+	if err != nil {
+		return "", fmt.Errorf("normalize previous trading date: %w", err)
+	}
+	if previous >= tradeDate {
+		return "", fmt.Errorf("previous trading date %s is not before %s", previous, tradeDate)
+	}
+	return previous, nil
+}
+
+func clearPositionValuations(positions []trading.Position) {
+	for i := range positions {
+		positions[i].LastPrice = 0
+		positions[i].MarketValue = 0
+		positions[i].UnrealizedPnL = 0
+		positions[i].DayUnrealizedPnL = 0
+	}
+}
+
+func applyPositionCloseValuations(positions []trading.Position, quotes map[string]positionMarketQuote) {
+	for i := range positions {
+		quote := quotes[securityID(positions[i].Symbol, string(positions[i].Exchange))]
+		if !quote.hasLast || quote.last <= 0 || positions[i].Quantity <= 0 {
+			continue
+		}
+		positions[i].LastPrice = quote.last
+		positions[i].MarketValue = quote.last * float64(positions[i].Quantity)
+		if positions[i].AvgCost > 0 {
+			positions[i].UnrealizedPnL = positions[i].MarketValue - positions[i].AvgCost*float64(positions[i].Quantity)
+		}
+	}
 }
 
 func isFundLikePosition(position trading.Position) bool {
@@ -3813,6 +3860,8 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	out := SettlementSnapshotAccountResult{AccountID: accountID, Breaks: []ledger.ReconciliationBreak{}}
 	assetResult := orderflow.GetAssetResult{}
 	positionResult := orderflow.ListPositionsResult{}
+	valuationSource := "broker_raw"
+	valuationTradeDate := tradeDate
 	accountCapturedAt := capturedAt
 	var err error
 	if inputSnapshotType != "" {
@@ -3839,19 +3888,43 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 		}
 	}
+	brokerAsset := assetResult.Asset
+	brokerPositions := append([]trading.Position(nil), positionResult.Positions...)
 	if len(positionResult.Positions) > 0 && !snapshotOnly {
 		enrichmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		s.enrichPositionsForPnL(enrichmentCtx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
-		cancel()
-		if snapshotType == "close" && inputSnapshotType == "broker_close" {
-			if missing := missingPositionValuations(positionResult.Positions); len(missing) > 0 {
-				preview := missing
-				if len(preview) > 10 {
-					preview = preview[:10]
-				}
-				out.Errors = append(out.Errors, fmt.Sprintf("close market valuation missing for %d positions: %s", len(missing), strings.Join(preview, ",")))
+		clearPositionValuations(positionResult.Positions)
+		if snapshotType == "open" {
+			previous, previousErr := s.previousTradingDate(enrichmentCtx, tradeDate)
+			if previousErr != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("open valuation date: %v", previousErr))
+			} else {
+				valuationSource = "meridian_1d_previous_close"
+				valuationTradeDate = previous
+				quotes := s.historicalPositionMarketQuotes(enrichmentCtx, positionSecurityIDs(positionResult.Positions), previous)
+				applyPositionCloseValuations(positionResult.Positions, quotes)
 			}
+		} else {
+			valuationSource = "meridian_level1_last"
+			if tradeDate != timeutil.Now().Format("2006-01-02") {
+				valuationSource = "meridian_1d_close"
+			}
+			s.enrichPositionsForPnL(enrichmentCtx, positionResult.Positions, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate})
 		}
+		cancel()
+		missing := missingPositionValuations(positionResult.Positions)
+		strictValuation := snapshotType == "open" || (snapshotType == "close" && inputSnapshotType == "broker_close")
+		if strictValuation && len(missing) > 0 {
+			preview := missing
+			if len(preview) > 10 {
+				preview = preview[:10]
+			}
+			out.Errors = append(out.Errors, fmt.Sprintf("%s market valuation missing for %d positions: %s", snapshotType, len(missing), strings.Join(preview, ",")))
+		}
+		if len(missing) == 0 {
+			assetResult.Asset = applyPositionTotalsToAsset(assetResult.Asset, summarizePositionAssetTotals(positionResult.Positions))
+		}
+	} else if !snapshotOnly && (snapshotType == "open" || snapshotType == "close") {
+		assetResult.Asset = applyPositionTotalsToAsset(assetResult.Asset, assetPositionTotals{})
 	}
 	ordersResult := orderflow.ListOrdersResult{}
 	fillsResult := orderflow.ListFillsResult{}
@@ -3890,6 +3963,10 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		"snapshot_type":       snapshotType,
 		"input_snapshot_type": inputSnapshotType,
 		"source":              source,
+		"valuation": map[string]any{
+			"source":     valuationSource,
+			"trade_date": valuationTradeDate,
+		},
 	}
 	rawSummary := []ledger.RawStreamSummaryBucket{}
 	if s.settles != nil && !snapshotOnly {
@@ -3946,17 +4023,21 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	if len(out.Errors) == 0 && !dryRun {
 		assetRaw := cloneMap(rawBase)
 		assetRaw["asset"] = assetResult.Asset
+		assetRaw["broker_asset"] = brokerAsset
 		if err := s.settles.UpsertAssetSnapshotForDate(ctx, assetResult.Asset, tradeDate, snapshotType, source, assetRaw, accountCapturedAt); err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("asset snapshot: %v", err))
 			out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "asset_snapshot_missing", "critical", "asset", accountID, map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, assetRaw, fmt.Sprintf("asset %s snapshot was not written", snapshotType)))
 		} else {
 			out.AssetSnapshotWritten = true
 		}
-		for _, position := range positionResult.Positions {
+		for index, position := range positionResult.Positions {
 			position.TradeDate = tradeDate
 			position.SnapshotType = snapshotType
 			positionRaw := cloneMap(rawBase)
 			positionRaw["position"] = position
+			if index < len(brokerPositions) {
+				positionRaw["broker_position"] = brokerPositions[index]
+			}
 			if err := s.settles.UpsertPositionSnapshotWithType(ctx, position, snapshotType, source, positionRaw, accountCapturedAt); err != nil {
 				out.Errors = append(out.Errors, fmt.Sprintf("position snapshot %s/%s.%s: %v", snapshotType, position.Symbol, position.Exchange, err))
 				out.breaks = append(out.breaks, reconciliationBreak(runID, accountID, "position_snapshot_missing", "critical", "position", fmt.Sprintf("%s.%s", position.Symbol, position.Exchange), map[string]any{"error": err.Error(), "snapshot_type": snapshotType}, positionRaw, fmt.Sprintf("position %s snapshot was not written", snapshotType)))

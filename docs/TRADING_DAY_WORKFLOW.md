@@ -38,7 +38,7 @@ relay 每个交易日需要两个稳定流程：
 3. 检查 `stream_checkpoints`，追赶前一晚遗留的 `reply/event/hb/dlq`，避免开盘后先处理历史积压。
 4. 加载账户路由，确认 `enabled`、`trading_enabled`、`broker_id`、`gateway_id`、`stream_prefix` 与当日运行计划一致。
 5. 对每个启用账户执行资金、持仓、订单、成交查询刷新，将柜台当前状态合并到 PostgreSQL 账本。
-6. 写入 `asset_snapshots(open)` 日初资产快照，作为当日绩效的 open-to-close 分母，并用于识别逆回购回款、隔夜清算、占款释放和资金划转等隔夜调整。
+6. 写入 `asset_snapshots(open)` 日初资产快照：现金沿用 OC 盘前查询，正持仓按 Meridian 上一交易日未复权日线收盘价估值，汇总为 `net_asset = cash_total + market_value`，作为当日绩效的 open-to-close 分母，并用于识别逆回购回款、隔夜清算、占款释放和资金划转等隔夜调整。任一正持仓缺少前收盘估值时，该账户 open 快照失败关闭，不得把现金余额误写为总资产。
 7. 校验前一交易日仍未终态的订单；如仍有 working 状态，标记为盘前异常，交由人工确认或前置补充查询。
 8. 建立当日风险基线：可用资金、可卖持仓、昨仓、冻结资金、冻结持仓、标的价格精度和涨跌停参考数据。
 9. 写入任务运行记录，记录交易日、账户数、依赖状态、刷新命令回执、日初资产快照、异常摘要和完成时间。
@@ -54,7 +54,7 @@ relay 每个交易日需要两个稳定流程：
 3. `post_close_capture` 对每个启用账户重新查询资金、持仓、订单、成交和费用，确保本地账本与柜台终态对齐；这一阶段只依赖 OC、Redis、Relay 和 PostgreSQL，不依赖 Meridian。
 4. 将订单状态更新到终态；仍未终态的订单写入异常列表，供人工复核。
 5. 先写入 `asset_snapshots(broker_close)` 和 `position_snapshots(broker_close)`，记录实际券商捕获时间；行情故障时到此即可安全结束并等待补跑。
-6. `post_close_settlement` 从 `broker_close` 读取资金持仓，补充 Meridian 行情后写入正式 `close`；不再查询 OC，也不读取可能已被次日覆盖的 current positions。
+6. `post_close_settlement` 从 `broker_close` 读取资金持仓，补充 Meridian 行情后写入正式 `close`，并将持仓市值聚合回资产快照；不再查询 OC，也不读取可能已被次日覆盖的 current positions。`broker_close` 始终保留 OC 原始资金/持仓字段，派生快照的 `raw_payload` 同时保存原始值、估值值、估值来源和估值交易日。
 7. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
 8. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
 9. 为盈亏统计准备输入并输出结算报告；正式结算成功后再触发 `performance_daily`。
