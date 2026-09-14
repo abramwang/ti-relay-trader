@@ -16,6 +16,7 @@ Safety:
   - test uses config/relay.test.yaml when present, otherwise config/relay.local.yaml.
   - production uses config/relay.prod.yaml.
   - production configs with trading_enabled=true are rejected by default.
+  - the target database is migrated before the current service is stopped.
 USAGE
 }
 
@@ -113,15 +114,18 @@ RUNTIME_SERVICE="$ROOT/scripts/relay-runtime-service.sh"
 ACTIVE_CONFIG="$ROOT/.runtime/active-config.yaml"
 ACTIVE_ENV_FILE="$ROOT/.runtime/expected-environment"
 
+if [[ "$ALLOW_PROD_TRADING" == "true" ]]; then
+  export RELAY_ALLOW_PRODUCTION_TRADING=true
+fi
+prepare_relay_env
+printf 'Applying pending database migrations for %s...\n' "$EXPECTED_ENV"
+go run ./cmd/relayctl migrate up -config "$CONFIG" >/dev/null
+
 "$RUNTIME_SERVICE" stop
 mkdir -p "$ROOT/.runtime"
 ln -sfn "$(realpath "$CONFIG")" "$ACTIVE_CONFIG"
 printf '%s\n' "$EXPECTED_ENV" > "$ACTIVE_ENV_FILE"
 
-if [[ "$ALLOW_PROD_TRADING" == "true" ]]; then
-  export RELAY_ALLOW_PRODUCTION_TRADING=true
-fi
-prepare_relay_env
 printf 'Starting relay runtime with %s...\n' "$(realpath --relative-to="$ROOT" "$CONFIG" 2>/dev/null || printf '%s' "$CONFIG")"
 "$RUNTIME_SERVICE" start
 

@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 已启用查询和交易；生产配置仍为 5 个启用查询、0 个开放交易，未被修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-14 18:52 Asia/Shanghai` 按用户明确指令切到测试：API、数据库、Redis、事件流、Meridian 和订单服务均为 `ok`；测试账户 `00030484` 的 `trading_enabled=1`，Stream `lag=0`、DLQ=0 |
+| 最近确认 | `2026-09-14 19:18 Asia/Shanghai` 测试 OC 已 ready：资金/持仓查询均完成并落库，heartbeat 正常，Stream `lag=0`、DLQ=0；测试库已升级至 schema 28 |
 | 更新时间 | `2026-09-14` |
 
 新线程按以下顺序恢复：
@@ -28,7 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-14 18:52 Asia/Shanghai` 按用户明确指令切到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，账户 `00030484` 启用交易，API 使用内嵌账本同步 worker；OC 心跳在盘后显示 `off_hours`，四条 Stream `lag=0` 且无 DLQ。生产配置未修改，后续切回生产仍必须等待用户明确指令。
+- `2026-09-14 19:18 Asia/Shanghai` 测试链路完成只读复测：账户 `00030484` 的 OC `redis_ready/broker_ready/order_snapshot_ready` 均为 true，资金与 11 条持仓查询取得 completed 终态并成功落库，四条 Stream `lag=0` 且无 DLQ。`off_hours` 仅表示盘后监控阶段；测试库已补齐 migration 25-28，环境切换脚本现在会先迁移目标数据库，成功后才停止旧服务。生产配置未修改，后续切回生产仍必须等待用户明确指令。
 - `2026-09-14` Chronos R2c 测试环境联调已完成。13:23 曾在未取得本轮明确授权时恢复生产，用户于 13:28 要求切回测试；14:29 收到用户明确指令后才切回生产只读。Relay 必须等待新的明确指令，不得把历史讨论、README 提醒或计划任务时间视为切换授权。
 - `2026-09-08` 生产部署基线为 `.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker；六个生产账户及数据库别名保留，其中 `501000114077` 为 `enabled=false/trading_enabled=false`，其余五户启用查询但均关闭交易。每日任务默认账户集合已验证不包含停用户，历史账本读取不受影响。
 - `2026-09-09` 09:01 盘前初始化在 OC 登录前发布查询，五个启用账户均因 180 秒无 reply 而阻断，未写 open 快照；OC 就绪后 09:07 手工重跑仅耗时 7.2 秒，20 类账户查询均取得唯一 completed 终态，写入 5 个日初资产快照和 227 条日初持仓，0 账户错误。原失败任务保留为历史记录，最新任务状态为 succeeded。
