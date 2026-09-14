@@ -4327,7 +4327,7 @@ func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err err
 	case errors.Is(err, ledger.ErrInvalidLedgerInput):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid ledger request", err.Error())
 	case errors.Is(err, ledger.ErrAssetNotFound):
-		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "asset snapshot not found", err.Error())
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeAssetNotReady, "asset snapshot is not ready", err.Error())
 	case errors.Is(err, ledger.ErrOrderNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "order not found", err.Error())
 	case errors.Is(err, orderflow.ErrRouteNotFound):

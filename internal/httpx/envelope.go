@@ -12,6 +12,7 @@ type ErrorCode string
 
 const (
 	CodeBadRequest          ErrorCode = "BAD_REQUEST"
+	CodeAssetNotReady       ErrorCode = "ASSET_NOT_READY"
 	CodeConflict            ErrorCode = "CONFLICT"
 	CodeIdempotencyConflict ErrorCode = "IDEMPOTENCY_CONFLICT"
 	CodeForbidden           ErrorCode = "FORBIDDEN"

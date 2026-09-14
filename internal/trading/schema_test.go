@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+func TestCatalogAdvertisesAssetReadinessErrors(t *testing.T) {
+	catalog := Catalog()
+	for _, capability := range catalog.Capabilities {
+		if capability == CapabilityAssetReadinessErrors {
+			return
+		}
+	}
+	t.Fatalf("catalog capabilities missing %q: %#v", CapabilityAssetReadinessErrors, catalog.Capabilities)
+}
+
 func TestSubmitOrderValidate(t *testing.T) {
 	req := SubmitOrderRequest{
 		AccountID:    "00030484",

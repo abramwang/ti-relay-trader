@@ -117,6 +117,22 @@ func TestStreamOperationsIndexesCoverRuntimeFilters(t *testing.T) {
 	}
 }
 
+func TestReverseRepoAssetMigrationAddsRequiredColumn(t *testing.T) {
+	upSQL := readMigration(t, "000028_reverse_repo_asset_receivable.up.sql")
+	for _, snippet := range []string{
+		"ALTER TABLE asset_snapshots",
+		"ADD COLUMN reverse_repo_receivable NUMERIC(20, 6) NOT NULL DEFAULT 0",
+	} {
+		if !strings.Contains(upSQL, snippet) {
+			t.Fatalf("reverse repo asset migration missing snippet: %s", snippet)
+		}
+	}
+	downSQL := readMigration(t, "000028_reverse_repo_asset_receivable.down.sql")
+	if !strings.Contains(downSQL, "DROP COLUMN reverse_repo_receivable") {
+		t.Fatal("reverse repo asset migration rollback missing column drop")
+	}
+}
+
 func TestOCV12MigrationAddsCancelAttemptAudit(t *testing.T) {
 	upSQL := readMigration(t, "000017_oc_v1_2_cancel_attempts.up.sql")
 	for _, snippet := range []string{

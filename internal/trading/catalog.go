@@ -7,6 +7,7 @@ const (
 	CapabilityEventCursorResume      = "events.cursor_resume.v1"
 	CapabilityBatchChildOutcomes     = "orders.batch_child_outcomes.v1"
 	CapabilityExplicitCommandIDs     = "orders.explicit_command_ids.v1"
+	CapabilityAssetReadinessErrors   = "assets.readiness_errors.v1"
 )
 
 type CatalogDocument struct {
@@ -36,6 +37,7 @@ func Catalog() CatalogDocument {
 			CapabilityEventCursorResume,
 			CapabilityBatchChildOutcomes,
 			CapabilityExplicitCommandIDs,
+			CapabilityAssetReadinessErrors,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},

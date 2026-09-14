@@ -52,6 +52,26 @@ class RelayP1ContractTests(unittest.TestCase):
                 self.assertEqual(micros, expected_micros)
                 self.assertEqual(micros % tick_micros, 0)
 
+    def test_json_asset_amounts_round_trip_to_decimal_micro_units(self):
+        amounts = {
+            "cash_available": 45275336.221,
+            "cash_total": 45275336.221,
+            "net_asset": 49524656.721,
+            "market_value": 4249320.5,
+        }
+        decoded = json.loads(json.dumps(amounts))
+
+        for field, amount in decoded.items():
+            with self.subTest(field=field):
+                micros = int(
+                    Decimal(str(amount)).quantize(
+                        Decimal("0.000001"), rounding=ROUND_HALF_UP
+                    )
+                    * 1_000_000
+                )
+                expected = int(Decimal(str(amounts[field])) * 1_000_000)
+                self.assertEqual(micros, expected)
+
     def test_public_opener_injection_controls_http_transport(self):
         opener = RecordingOpener()
         client = RelayClient("http://relay.invalid", timeout=3.5, opener=opener)

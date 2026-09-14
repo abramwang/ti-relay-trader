@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -610,6 +611,51 @@ func TestAccountAsset(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"cash_available":900000`) {
 		t.Fatalf("response missing asset: %s", rec.Body.String())
+	}
+}
+
+func TestAccountAssetMissingSnapshotIsNotReady(t *testing.T) {
+	service := &fakeOrderSubmitter{assetErr: fmt.Errorf("read test asset: %w", ledger.ErrAssetNotFound)}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset?enrich=false", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"ASSET_NOT_READY"`) {
+		t.Fatalf("response missing ASSET_NOT_READY: %s", rec.Body.String())
+	}
+}
+
+func TestAccountAssetUnknownAccountIsNotFound(t *testing.T) {
+	service := &fakeOrderSubmitter{assetErr: fmt.Errorf("route acct-missing: %w", orderflow.ErrRouteNotFound)}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-missing/asset?enrich=false", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"NOT_FOUND"`) {
+		t.Fatalf("response missing NOT_FOUND: %s", rec.Body.String())
+	}
+}
+
+func TestAccountAssetDatabaseFailureIsInternal(t *testing.T) {
+	service := &fakeOrderSubmitter{assetErr: errors.New("database query failed")}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset?enrich=false", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"INTERNAL"`) || strings.Contains(rec.Body.String(), "database query failed") {
+		t.Fatalf("response must expose only the stable INTERNAL error: %s", rec.Body.String())
 	}
 }
 
