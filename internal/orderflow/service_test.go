@@ -181,7 +181,14 @@ func TestSubmitOrderReplaysIdenticalExistingOrderWithoutPublishing(t *testing.T)
 	existing.Status = trading.OrderStatusCancelled
 	existing.GatewayStatus = trading.GatewayStatusCancelled
 	existing.IsTerminal = true
-	archived := archivedCommand(t, redisstream.ActionOrderSubmit, existing.AccountID, existing.GatewayOrderID, existing.IdempotencyKey, "msg-original", "req-original", "4-0", validSubmitRequest())
+	existing.OffsetType = ""
+	existing.OriginMessageID = "msg-original"
+	existing.RequestID = "req-original"
+	originalRequest := validSubmitRequest()
+	originalRequest.ClientOrderID = existing.ClientOrderID
+	originalRequest.GatewayOrderID = existing.GatewayOrderID
+	originalRequest.IdempotencyKey = existing.IdempotencyKey
+	archived := archivedCommand(t, redisstream.ActionOrderSubmit, existing.AccountID, existing.GatewayOrderID, existing.IdempotencyKey, existing.OriginMessageID, existing.RequestID, "4-0", originalRequest)
 	ledgerWriter := &fakeLedger{order: existing, archived: []ledger.RawStreamMessage{archived}}
 	publisher := &fakePublisher{}
 	service, err := New(Options{
@@ -392,6 +399,7 @@ func TestBatchSubmitOrdersWritesDraftsPublishesCommandAndArchives(t *testing.T) 
 func TestBatchSubmitOrdersReplaysWithOriginalReceiptIdentity(t *testing.T) {
 	existing := validDraftOrder()
 	existing.TradeDate = "2026-06-13"
+	existing.OffsetType = ""
 	existing.OriginMessageID = "msg-batch-original"
 	existing.RequestID = "req-batch-original"
 	existing.AdapterContext["batch_index"] = 0
@@ -406,7 +414,7 @@ func TestBatchSubmitOrdersReplaysWithOriginalReceiptIdentity(t *testing.T) {
 			Exchange:       existing.Exchange,
 			TradeSide:      existing.TradeSide,
 			BusinessType:   existing.BusinessType,
-			OffsetType:     existing.OffsetType,
+			OffsetType:     trading.OffsetTypeClose,
 			Price:          existing.LimitPrice,
 			Qty:            existing.OrderQty,
 			IdempotencyKey: existing.IdempotencyKey,
@@ -1141,6 +1149,15 @@ func (writer *fakeLedger) ArchiveRawStreamMessage(_ context.Context, message led
 func (writer *fakeLedger) GetArchivedCommand(_ context.Context, accountID string, action string, idempotencyKey string) (ledger.RawStreamMessage, error) {
 	for _, message := range writer.archived {
 		if message.AccountID == accountID && message.Action == action && message.IdempotencyKey == idempotencyKey {
+			return message, nil
+		}
+	}
+	return ledger.RawStreamMessage{}, ledger.ErrArchivedCommandNotFound
+}
+
+func (writer *fakeLedger) GetArchivedCommandByMessageID(_ context.Context, messageID string) (ledger.RawStreamMessage, error) {
+	for _, message := range writer.archived {
+		if message.OriginMessageID == messageID {
 			return message, nil
 		}
 	}

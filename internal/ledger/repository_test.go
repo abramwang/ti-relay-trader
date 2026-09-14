@@ -142,6 +142,7 @@ func TestUpsertOrderBuildsLedgerUpsert(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO orders")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, trade_date, gateway_order_id)")
+	requireQueryContains(t, exec.query, "offset_type = COALESCE(EXCLUDED.offset_type, orders.offset_type)")
 	requireQueryContains(t, exec.query, "created_at = COALESCE(EXCLUDED.created_at, orders.created_at)")
 	requireQueryContains(t, exec.query, "WHEN EXCLUDED.adapter_context ? 'relay_reply_status' OR EXCLUDED.is_terminal = TRUE")
 	requireQueryContains(t, exec.query, "WHEN EXCLUDED.adapter_context ? 'relay_reply_status' THEN EXCLUDED.status")
@@ -1683,6 +1684,23 @@ func TestGetArchivedCommandBuildsIdempotencyRead(t *testing.T) {
 	requireArgLen(t, exec.args, 3)
 	if exec.args[0] != "acct-1" || exec.args[1] != "order.cancel" || exec.args[2] != "idem-1" {
 		t.Fatalf("archived command args = %#v", exec.args)
+	}
+}
+
+func TestGetArchivedCommandByMessageIDBuildsIdentityRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.GetArchivedCommandByMessageID(context.Background(), " msg-1 ")
+	if err == nil {
+		t.Fatal("GetArchivedCommandByMessageID() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM raw_stream_messages")
+	requireQueryContains(t, exec.query, "origin_message_id = $1")
+	requireArgLen(t, exec.args, 1)
+	if exec.args[0] != "msg-1" {
+		t.Fatalf("message id arg = %#v", exec.args)
 	}
 }
 

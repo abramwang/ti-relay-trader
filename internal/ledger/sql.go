@@ -113,7 +113,7 @@ ON CONFLICT (account_id, trade_date, gateway_order_id) DO UPDATE SET
     exchange = EXCLUDED.exchange,
     trade_side = EXCLUDED.trade_side,
     business_type = EXCLUDED.business_type,
-    offset_type = EXCLUDED.offset_type,
+    offset_type = COALESCE(EXCLUDED.offset_type, orders.offset_type),
     limit_price = EXCLUDED.limit_price,
     order_qty = EXCLUDED.order_qty,
     submitted_qty = CASE
@@ -1325,6 +1325,36 @@ WHERE direction = 'in'
   AND account_id = $1
   AND action = $2
   AND idempotency_key = $3
+ORDER BY received_at, raw_message_pk
+LIMIT 1
+`
+
+const archivedCommandByMessageIDSQL = `
+SELECT
+    stream_key,
+    stream_id,
+    COALESCE(origin_message_id, ''),
+    COALESCE(request_id, ''),
+    COALESCE(correlation_id, ''),
+    COALESCE(idempotency_key, ''),
+    direction,
+    stream_role,
+    COALESCE(message_type, ''),
+    COALESCE(action, ''),
+    COALESCE(event_type, ''),
+    COALESCE(status, ''),
+    COALESCE(code, ''),
+    COALESCE(account_id, ''),
+    COALESCE(gateway_order_id, ''),
+    COALESCE(body, '{}'::jsonb),
+    COALESCE(body_text, ''),
+    COALESCE(parse_error, ''),
+    received_at
+FROM raw_stream_messages
+WHERE direction = 'in'
+  AND stream_role = 'cmd.trade'
+  AND message_type = 'command'
+  AND origin_message_id = $1
 ORDER BY received_at, raw_message_pk
 LIMIT 1
 `

@@ -1593,13 +1593,28 @@ func (repo *Repository) GetArchivedCommand(ctx context.Context, accountID string
 	if accountID == "" || action == "" || idempotencyKey == "" {
 		return RawStreamMessage{}, fmt.Errorf("%w: account_id, action, and idempotency_key are required", ErrInvalidLedgerInput)
 	}
+	return repo.queryArchivedCommand(ctx, archivedCommandSQL, accountID, action, idempotencyKey)
+}
+
+func (repo *Repository) GetArchivedCommandByMessageID(ctx context.Context, messageID string) (RawStreamMessage, error) {
+	if repo == nil || repo.exec == nil {
+		return RawStreamMessage{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return RawStreamMessage{}, fmt.Errorf("%w: message_id is required", ErrInvalidLedgerInput)
+	}
+	return repo.queryArchivedCommand(ctx, archivedCommandByMessageIDSQL, messageID)
+}
+
+func (repo *Repository) queryArchivedCommand(ctx context.Context, query string, args ...any) (RawStreamMessage, error) {
 	queryer, err := repo.queryer()
 	if err != nil {
 		return RawStreamMessage{}, err
 	}
-	rows, err := queryer.QueryContext(ctx, archivedCommandSQL, accountID, action, idempotencyKey)
+	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
-		return RawStreamMessage{}, fmt.Errorf("query archived command %s/%s: %w", accountID, action, err)
+		return RawStreamMessage{}, fmt.Errorf("query archived command: %w", err)
 	}
 	defer rows.Close()
 	if !rows.Next() {

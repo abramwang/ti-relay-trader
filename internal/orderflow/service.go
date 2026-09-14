@@ -53,6 +53,7 @@ type LedgerWriter interface {
 	ListPositionSnapshots(ctx context.Context, query trading.PositionQuery) ([]trading.Position, error)
 	ArchiveRawStreamMessage(ctx context.Context, message ledger.RawStreamMessage) error
 	GetArchivedCommand(ctx context.Context, accountID string, action string, idempotencyKey string) (ledger.RawStreamMessage, error)
+	GetArchivedCommandByMessageID(ctx context.Context, messageID string) (ledger.RawStreamMessage, error)
 }
 
 type CommandPublisher interface {
@@ -738,7 +739,11 @@ func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.Su
 		if existing.IdempotencyKey != req.IdempotencyKey {
 			return trading.Order{}, false, fmt.Errorf("%w: %s/%s already uses idempotency_key=%s", ErrDuplicateGatewayOrder, req.AccountID, req.GatewayOrderID, existing.IdempotencyKey)
 		}
-		if !sameSubmitOrder(existing, req) {
+		same, compareErr := service.sameOriginalSubmitOrder(ctx, existing, req)
+		if compareErr != nil {
+			return trading.Order{}, false, compareErr
+		}
+		if !same {
 			return trading.Order{}, false, fmt.Errorf("%w: %s/%s payload differs from original request", ErrIdempotencyConflict, req.AccountID, req.GatewayOrderID)
 		}
 		return existing, true, nil
@@ -749,7 +754,11 @@ func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.Su
 
 	existing, err = service.ledger.GetOrderByIdempotencyKey(ctx, req.AccountID, req.IdempotencyKey)
 	if err == nil {
-		if existing.GatewayOrderID != req.GatewayOrderID || !sameSubmitOrder(existing, req) {
+		same, compareErr := service.sameOriginalSubmitOrder(ctx, existing, req)
+		if compareErr != nil {
+			return trading.Order{}, false, compareErr
+		}
+		if existing.GatewayOrderID != req.GatewayOrderID || !same {
 			return trading.Order{}, false, fmt.Errorf("%w: idempotency_key=%s already used by gateway_order_id=%s", ErrIdempotencyConflict, req.IdempotencyKey, existing.GatewayOrderID)
 		}
 		return existing, true, nil
@@ -758,6 +767,27 @@ func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.Su
 		return trading.Order{}, false, err
 	}
 	return trading.Order{}, false, nil
+}
+
+func (service *Service) sameOriginalSubmitOrder(ctx context.Context, order trading.Order, requested trading.SubmitOrderRequest) (bool, error) {
+	var archived ledger.RawStreamMessage
+	var err error
+	if strings.TrimSpace(order.OriginMessageID) != "" {
+		archived, err = service.ledger.GetArchivedCommandByMessageID(ctx, order.OriginMessageID)
+	} else {
+		archived, err = service.ledger.GetArchivedCommand(ctx, order.AccountID, redisstream.ActionOrderSubmit, order.IdempotencyKey)
+	}
+	if errors.Is(err, ledger.ErrArchivedCommandNotFound) {
+		return sameSubmitOrder(order, requested), nil
+	}
+	if err != nil {
+		return false, err
+	}
+	original, err := archivedSubmitOrderRequest(archived, requested.GatewayOrderID)
+	if err != nil {
+		return false, err
+	}
+	return sameSubmitOrderRequests(original, requested), nil
 }
 
 func (service *Service) GetAsset(ctx context.Context, accountID string) (GetAssetResult, error) {
@@ -1049,29 +1079,69 @@ func metadataFromArchivedCommand(raw ledger.RawStreamMessage, idempotencyKey str
 	}
 }
 
-func archivedCancelRequest(raw ledger.RawStreamMessage) (trading.CancelOrderRequest, error) {
+func archivedSubmitOrderRequest(raw ledger.RawStreamMessage, gatewayOrderID string) (trading.SubmitOrderRequest, error) {
+	payload, err := archivedCommandPayload(raw)
+	if err != nil {
+		return trading.SubmitOrderRequest{}, err
+	}
+	switch strings.TrimSpace(raw.Action) {
+	case redisstream.ActionOrderSubmit:
+		var request trading.SubmitOrderRequest
+		if err := json.Unmarshal(payload, &request); err != nil {
+			return trading.SubmitOrderRequest{}, fmt.Errorf("decode archived submit command %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
+		}
+		return request, nil
+	case redisstream.ActionOrderBatchSubmit:
+		var request trading.BatchSubmitOrderRequest
+		if err := json.Unmarshal(payload, &request); err != nil {
+			return trading.SubmitOrderRequest{}, fmt.Errorf("decode archived batch command %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
+		}
+		for _, order := range request.Orders {
+			if strings.TrimSpace(order.GatewayOrderID) != strings.TrimSpace(gatewayOrderID) {
+				continue
+			}
+			if strings.TrimSpace(order.AccountID) == "" {
+				order.AccountID = request.AccountID
+			}
+			return order, nil
+		}
+		return trading.SubmitOrderRequest{}, fmt.Errorf("archived batch command %s/%s has no child gateway_order_id=%s", raw.StreamRef.Key, raw.StreamRef.ID, gatewayOrderID)
+	default:
+		return trading.SubmitOrderRequest{}, fmt.Errorf("archived command %s/%s has unexpected action=%s", raw.StreamRef.Key, raw.StreamRef.ID, raw.Action)
+	}
+}
+
+func archivedCommandPayload(raw ledger.RawStreamMessage) (json.RawMessage, error) {
 	body := []byte(strings.TrimSpace(raw.BodyText))
 	if len(body) == 0 && raw.Body != nil {
 		var err error
 		body, err = json.Marshal(raw.Body)
 		if err != nil {
-			return trading.CancelOrderRequest{}, fmt.Errorf("marshal archived cancel command: %w", err)
+			return nil, fmt.Errorf("marshal archived command: %w", err)
 		}
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("archived command %s/%s has an invalid envelope", raw.StreamRef.Key, raw.StreamRef.ID)
 	}
 	var envelope struct {
 		Payload json.RawMessage `json:"payload"`
 	}
-	if len(body) == 0 {
-		return trading.CancelOrderRequest{}, fmt.Errorf("archived cancel command %s/%s has an invalid envelope", raw.StreamRef.Key, raw.StreamRef.ID)
-	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return trading.CancelOrderRequest{}, fmt.Errorf("decode archived cancel envelope %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
+		return nil, fmt.Errorf("decode archived command envelope %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
 	}
 	if len(envelope.Payload) == 0 {
-		return trading.CancelOrderRequest{}, fmt.Errorf("archived cancel command %s/%s has no payload", raw.StreamRef.Key, raw.StreamRef.ID)
+		return nil, fmt.Errorf("archived command %s/%s has no payload", raw.StreamRef.Key, raw.StreamRef.ID)
+	}
+	return envelope.Payload, nil
+}
+
+func archivedCancelRequest(raw ledger.RawStreamMessage) (trading.CancelOrderRequest, error) {
+	payload, err := archivedCommandPayload(raw)
+	if err != nil {
+		return trading.CancelOrderRequest{}, err
 	}
 	var request trading.CancelOrderRequest
-	if err := json.Unmarshal(envelope.Payload, &request); err != nil {
+	if err := json.Unmarshal(payload, &request); err != nil {
 		return trading.CancelOrderRequest{}, fmt.Errorf("decode archived cancel command %s/%s: %w", raw.StreamRef.Key, raw.StreamRef.ID, err)
 	}
 	return request, nil
@@ -1082,6 +1152,26 @@ func sameCancelOrder(left trading.CancelOrderRequest, right trading.CancelOrderR
 		strings.TrimSpace(left.GatewayOrderID) == strings.TrimSpace(right.GatewayOrderID) &&
 		strings.TrimSpace(left.CancelID) == strings.TrimSpace(right.CancelID) &&
 		strings.TrimSpace(left.IdempotencyKey) == strings.TrimSpace(right.IdempotencyKey)
+}
+
+func sameSubmitOrderRequests(left trading.SubmitOrderRequest, right trading.SubmitOrderRequest) bool {
+	return strings.TrimSpace(left.AccountID) == strings.TrimSpace(right.AccountID) &&
+		strings.TrimSpace(left.ClientOrderID) == strings.TrimSpace(right.ClientOrderID) &&
+		strings.TrimSpace(left.GatewayOrderID) == strings.TrimSpace(right.GatewayOrderID) &&
+		strings.TrimSpace(left.Symbol) == strings.TrimSpace(right.Symbol) &&
+		left.Exchange == right.Exchange &&
+		left.TradeSide == right.TradeSide &&
+		left.BusinessType == right.BusinessType &&
+		left.OffsetType == right.OffsetType &&
+		left.Price == right.Price &&
+		left.Qty == right.Qty &&
+		sameOptionalTradeDate(left.TradeDate, right.TradeDate) &&
+		strings.TrimSpace(left.IdempotencyKey) == strings.TrimSpace(right.IdempotencyKey) &&
+		strings.TrimSpace(left.StrategyType) == strings.TrimSpace(right.StrategyType) &&
+		strings.TrimSpace(left.StrategyID) == strings.TrimSpace(right.StrategyID) &&
+		strings.TrimSpace(left.BasketID) == strings.TrimSpace(right.BasketID) &&
+		strings.TrimSpace(left.ParentOrderID) == strings.TrimSpace(right.ParentOrderID) &&
+		strings.TrimSpace(left.T0OrderGroupID) == strings.TrimSpace(right.T0OrderGroupID)
 }
 
 func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
