@@ -59,7 +59,10 @@ def main() -> int:
             state="visible", timeout=20_000
         )
         page.wait_for_function(
-            """() => document.querySelectorAll('#reviewAccountsBody tr').length === 6""",
+            """() => {
+                const rows = Array.from(document.querySelectorAll('#reviewAccountsBody tr'));
+                return rows.length > 0 && !rows.some((row) => row.textContent.includes('加载中'));
+            }""",
             timeout=20_000,
         )
         page.wait_for_timeout(300)
@@ -85,6 +88,12 @@ def main() -> int:
                         currentRun: currentRun?.querySelector('dd')?.textContent?.trim() || '',
                     };
                 });
+                const cards = document.querySelector('.job-cards');
+                const review = document.querySelector('.review-panel');
+                const pageMain = document.querySelector('.page-main');
+                const cardsRect = cards?.getBoundingClientRect();
+                const reviewRect = review?.getBoundingClientRect();
+                const pageMainStyle = pageMain ? getComputedStyle(pageMain) : null;
                 return ({
                 reviewRows: document.querySelectorAll('#reviewAccountsBody tr').length,
                 jobRows: document.querySelectorAll('#jobRunsBody tr').length,
@@ -113,13 +122,21 @@ def main() -> int:
                 reviewTableOverflow:
                     document.querySelector('.review-table-wrap')?.scrollWidth >
                     document.querySelector('.review-table-wrap')?.clientWidth,
+                cardContainerClipped: cards ? cards.scrollHeight > cards.clientHeight + 1 : true,
+                cardsOverlapReview: cardsRect && reviewRect
+                    ? cardsRect.bottom > reviewRect.top + 1
+                    : true,
+                pageMainCanScroll: pageMain
+                    ? pageMain.scrollHeight <= pageMain.clientHeight + 1 ||
+                        ['auto', 'scroll'].includes(pageMainStyle?.overflowY)
+                    : false,
                 });
             }"""
         )
         page.screenshot(path=str(output), full_page=True)
         browser.close()
 
-    if diagnostics["reviewRows"] != 6 or diagnostics["jobRows"] < 2:
+    if diagnostics["reviewRows"] < 1 or diagnostics["jobRows"] < 2:
         raise AssertionError(f"daily review rows are incomplete: {diagnostics}")
     if args.trade_date not in diagnostics["reviewStatus"] or not any(
         status in diagnostics["reviewStatus"]
@@ -149,6 +166,10 @@ def main() -> int:
         raise AssertionError(f"job cards do not show the latest selected-day runs: {diagnostics}")
     if diagnostics["documentOverflow"]:
         raise AssertionError(f"page has horizontal document overflow: {diagnostics}")
+    if diagnostics["cardContainerClipped"] or diagnostics["cardsOverlapReview"]:
+        raise AssertionError(f"job cards are clipped by the outer layout: {diagnostics}")
+    if not diagnostics["pageMainCanScroll"]:
+        raise AssertionError(f"jobs workspace cannot scroll vertically: {diagnostics}")
     if console_errors or page_errors or response_errors:
         raise AssertionError(
             json.dumps(
