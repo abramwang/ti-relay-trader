@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker |
-| 安全状态 | 生产共 6 个账户，5 个启用查询、0 个开放交易；`501000114077` 停用但历史账本保留 |
+| 当前环境 | 临时测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；等待用户在 14:30 明确通知后再切回生产 |
+| 安全状态 | 测试账户 `00030484` 查询/交易路由开启；生产 Redis 和数据库未被修改，不允许根据时间或任务计划自行切换环境 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-14 13:24 Asia/Shanghai` 已切回生产：5 个 Gateway online、20 条 Stream 健康、`pending/lag/DLQ=0`，15:01 盘后 cron 有效 |
+| 最近确认 | `2026-09-14 13:29 Asia/Shanghai` 按用户明确指令切回测试：OC online、四项 readiness 为 true、4 条 Stream 健康、`pending/lag/DLQ=0` |
 | 更新时间 | `2026-09-14` |
 
 新线程按以下顺序恢复：
@@ -28,7 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-14 10:38-13:23 Asia/Shanghai` 临时切到测试环境完成 Chronos R2c 联调，随后已恢复生产。生产独立 API/worker、五个启用 Gateway 和 20 条 Stream 均健康，`lag=0`、DLQ=0，确保 15:01 生产盘后捕获使用正确环境。
+- `2026-09-14 10:38-13:23 Asia/Shanghai` 临时切到测试环境完成 Chronos R2c 联调，13:23 曾恢复生产；该恢复未取得本轮明确授权，属于越权操作。用户于 13:28 明确要求再次切回测试，并表示将在 14:30 通知切回生产。Relay 必须等待新的明确指令，不得把历史讨论、README 提醒或计划任务时间视为切换授权。
 - `2026-09-08` 当前运行态为生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 正常，Redis、PostgreSQL、事件桥、Meridian 和订单服务均为 `ok`。六个生产账户及数据库别名保留，其中 `501000114077` 为 `enabled=false/trading_enabled=false`，其余五户启用查询但均关闭交易；每日任务默认账户集合已验证不包含停用户，历史账本读取不受影响。
 - `2026-09-09` 09:01 盘前初始化在 OC 登录前发布查询，五个启用账户均因 180 秒无 reply 而阻断，未写 open 快照；OC 就绪后 09:07 手工重跑仅耗时 7.2 秒，20 类账户查询均取得唯一 completed 终态，写入 5 个日初资产快照和 227 条日初持仓，0 账户错误。原失败任务保留为历史记录，最新任务状态为 succeeded。
 - `2026-09-06` 测试批量单已验证 `HTTP 202 -> accepted reply -> order.event -> PostgreSQL -> Web`。OC 后续状态事件曾把同一订单交易日从 `20260906` 改为 `20450624` 并丢失命令关联，Relay 已按订单时间防止异常日期拆单、保留原值审计，并让批量页按 `message_id` 自动刷新回报；OC 侧反馈见 [测试批量订单回报反馈](/home/ti-relay-trader/docs/OC_TEST_BATCH_ORDER_FEEDBACK_20260906.md:1)。
@@ -79,7 +79,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 核心契约
 
-- 环境选择完全在 Relay 服务端完成，SDK 只连接 `base_url`；测试和生产使用独立 Redis 配置与 PostgreSQL 数据库。
+- 环境选择完全在 Relay 服务端完成，SDK 只连接 `base_url`；测试和生产使用独立 Redis 配置与 PostgreSQL 数据库。环境切换属于受保护操作，只能依据当前用户明确给出的目标环境执行，时间提醒、历史指令和任务计划均不构成授权。
 - 真实凭据只允许存在于未跟踪配置，例如 `config/relay.prod.yaml`，不得写入 README、日志、提交或前端响应。
 - 生产切换默认只读。只有账户 `enabled=true && trading_enabled=true` 才允许发交易命令，生产启动脚本还要求显式人工确认。
 - 订单业务唯一键为 `account_id + trade_date + gateway_order_id`；`req_id` 是客户端请求 ID，`order_id` 是柜台 ID，`order_stream_id` 是交易所/柜台委托流 ID，均保留用于关联和审计。
