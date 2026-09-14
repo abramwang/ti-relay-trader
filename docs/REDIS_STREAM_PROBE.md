@@ -129,5 +129,6 @@ prefix 来源优先级：
 3. 用 `ledger-sync` 将 `reply/event` 小批量归档到 `raw_stream_messages`。
 4. 实现查询命令 client，只联调 `account.asset.query`、`account.positions.query`、`order.list.query`、`fill.list.query`。
 5. 查询链路通过后，再在明确测试账户和风险边界后联调 `order.submit`、`order.batch.submit`、`order.cancel`。
+6. 交易时段测试环境按 Meridian 实时 Level1 快照盘口选择报单价格；记录快照时间、买卖盘和证券主数据 `price_tick`，不得沿用固定旧价格。提交前同时确认 OC 心跳的 `broker_ready`、`order_snapshot_ready`、`accepting_trade_commands` 和 `accepting_cancel_commands`。
 
 账本同步说明见 [docs/REDIS_LEDGER_SYNC.md](/home/ti-relay-trader/docs/REDIS_LEDGER_SYNC.md:1)。

@@ -434,6 +434,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.33.tar.gz` 和 SHA256 校验文件；增加 `iter_order_pages()`、`iter_fill_pages()`、`iter_position_pages()` 及 `StreamReconciliation` 全部分页审计集合，关闭 Chronos 非阻断留证项且不改变 HTTP/Redis/OC 协议。
 - [x] Chronos 独立复验 `relay-sdk 0.1.33`：48 个单测、历史 `20/27/1` 页、当前四账本与 SSE resumed 全分页审计均通过，P0/P1 消费端验收正式关闭，写请求为 0。
 - [x] 将交易质量升级为 `trade_quality.v7`：内部 `relay_*` 迁移/幂等审计原因不再冒充柜台拒绝原因；确认 4 条旧终态拒单正残量来自 OC 历史字段且无标准原因文本，保留原始证据并禁止按可执行数量解释。
+- [x] 发布 `public/sdk/relay-sdk-0.1.34.tar.gz` 和 SHA256 校验文件；按 Chronos R2c 要求为单笔、批量和撤单写回执补齐稳定 `action`，SDK 对缺失/错误动作按结果未知失败关闭。测试环境已使用 Meridian 实时 Level1 盘口完成首次发布、幂等重放、working 订单首次撤单及撤单重放，Redis 无重复副作用。
 
 ### P6.1 接口测试台
 
