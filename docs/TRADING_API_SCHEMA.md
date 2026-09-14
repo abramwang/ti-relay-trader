@@ -119,7 +119,7 @@ rejected
 }
 ```
 
-OC 的原始 `asset_page` 可能只包含柜台可见资金。Relay 默认读模型和派生 `open/close` 快照会补足普通持仓市值；标准 `broker_close -> close` 结算还会按当日 `204001.SH` 普通成交账本计算逆回购本金应收，并使用 `net_asset = cash_total + market_value + reverse_repo_receivable`。逆回购预估利息不提前进入资产，待实际回款后再通过资金账确认；`broker_close` 继续保留 OC 原始口径。
+OC 的原始 `asset_page` 可能只包含柜台可见资金。Relay 默认读模型和派生 `open/close` 快照会补足普通持仓市值；标准 `broker_close -> close` 结算还会按当日 `204001.SH` 普通成交账本计算逆回购本金应收，并使用 `net_asset = cash_total + market_value + reverse_repo_receivable`。应收只统计成交时间不晚于资金快照捕获时间的成交：更晚的成交发生时，旧快照现金尚未扣除对应本金，不能重复叠加。逆回购预估利息不提前进入资产，待实际回款后再通过资金账确认；`broker_close` 继续保留 OC 原始口径。
 
 ### Position
 

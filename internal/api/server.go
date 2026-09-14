@@ -1919,7 +1919,7 @@ func (s *Server) enrichAssetWithReverseRepo(ctx context.Context, asset trading.A
 		s.logger.Warn("asset_reverse_repo_unavailable", "account_id", asset.AccountID, "trade_date", tradeDate, "error", err)
 		return asset
 	}
-	return applyReverseRepoReceivableToAsset(asset, relayperformance.ReverseRepoPrincipalFromFills(fills))
+	return applyReverseRepoReceivableToAsset(asset, relayperformance.ReverseRepoPrincipalFromFillsAsOf(fills, asset.UpdatedAt))
 }
 
 func applyReverseRepoReceivableToAsset(asset trading.Asset, principal float64) trading.Asset {
@@ -3988,7 +3988,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			out.Errors = append(out.Errors, fmt.Sprintf("fills: %v", err))
 		}
 		if snapshotType == "close" && inputSnapshotType == "broker_close" && err == nil {
-			assetResult.Asset = applyReverseRepoReceivableToAsset(assetResult.Asset, relayperformance.ReverseRepoPrincipalFromFills(fillsResult.Fills))
+			assetResult.Asset = applyReverseRepoReceivableToAsset(assetResult.Asset, relayperformance.ReverseRepoPrincipalFromFillsAsOf(fillsResult.Fills, accountCapturedAt))
 			reverseRepoSource = "ordinary_fill_ledger"
 		}
 	}

@@ -54,7 +54,7 @@ relay 每个交易日需要两个稳定流程：
 3. `post_close_capture` 对每个启用账户重新查询资金、持仓、订单、成交和费用，确保本地账本与柜台终态对齐；这一阶段只依赖 OC、Redis、Relay 和 PostgreSQL，不依赖 Meridian。
 4. 将订单状态更新到终态；仍未终态的订单写入异常列表，供人工复核。
 5. 先写入 `asset_snapshots(broker_close)` 和 `position_snapshots(broker_close)`，记录实际券商捕获时间；行情故障时到此即可安全结束并等待补跑。
-6. `post_close_settlement` 从 `broker_close` 读取资金持仓，补充 Meridian 行情后写入正式 `close`，并将持仓市值与当日逆回购本金应收聚合回资产快照；不再查询 OC，也不读取可能已被次日覆盖的 current positions。逆回购利息不使用预估值提前入账。`broker_close` 始终保留 OC 原始资金/持仓字段，派生快照的 `raw_payload` 同时保存原始值、估值值、估值来源和估值交易日。
+6. `post_close_settlement` 从 `broker_close` 读取资金持仓，补充 Meridian 行情后写入正式 `close`，并将持仓市值与当日逆回购本金应收聚合回资产快照；不再查询 OC，也不读取可能已被次日覆盖的 current positions。逆回购只补成交时间不晚于 `broker_close.captured_at` 的本金，晚于资金快照的成交不能叠加到尚未扣款的旧现金；利息不使用预估值提前入账。`broker_close` 始终保留 OC 原始资金/持仓字段，派生快照的 `raw_payload` 同时保存原始值、估值值、估值来源和估值交易日。
 7. 生成对账输入：柜台查询摘要、Redis 原始消息窗口摘要、relay 标准账本摘要和 PnL 输入摘要。
 8. 运行盘后对账，记录 `reconciliation_runs`、`reconciliation_inputs` 和 `reconciliation_breaks`；差异可通过 `/v1/reconciliations/breaks` 查询。
 9. 为盈亏统计准备输入并输出结算报告；正式结算成功后再触发 `performance_daily`。

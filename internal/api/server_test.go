@@ -2721,6 +2721,7 @@ func TestCloseSnapshotIncludesReverseRepoPrincipalReceivable(t *testing.T) {
 		listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{{
 			FillID: "fill-repo", AccountID: "acct-1", GatewayOrderID: "repo-1",
 			Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Price: 1.5, Qty: 10,
+			MatchedAt: capturedAt.Add(-time.Minute),
 		}}, Count: 1},
 	}
 	store := &fakeSettlementStore{
@@ -2751,6 +2752,47 @@ func TestCloseSnapshotIncludesReverseRepoPrincipalReceivable(t *testing.T) {
 	asset := store.assetSnapshots[0].asset
 	if asset.ReverseRepoReceivable != 1000 || asset.NetAsset != 2000 {
 		t.Fatalf("close reverse repo asset = %#v", asset)
+	}
+}
+
+func TestCloseSnapshotDoesNotAddReverseRepoFillAfterBrokerCapture(t *testing.T) {
+	capturedAt := time.Date(2026, 9, 14, 15, 1, 7, 0, timeutil.Location())
+	service := &fakeOrderSubmitter{
+		listOrdersResult: orderflow.ListOrdersResult{Orders: []trading.Order{}},
+		listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{{
+			FillID: "fill-repo-late", AccountID: "acct-1", GatewayOrderID: "repo-late",
+			Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell, Price: 1.5, Qty: 10,
+			MatchedAt: capturedAt.Add(time.Minute),
+		}}, Count: 1},
+	}
+	store := &fakeSettlementStore{
+		assetSnapshotResult:     trading.Asset{AccountID: "acct-1", CashTotal: 1000, NetAsset: 1000, UpdatedAt: capturedAt},
+		positionSnapshotResults: []trading.Position{},
+	}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: service, Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/settlements/snapshots", strings.NewReader(`{
+		"run_id":"post-close-repo-late-20260914",
+		"trade_date":"20260914",
+		"account_ids":["acct-1"],
+		"snapshot_type":"close",
+		"input_snapshot_type":"broker_close",
+		"source":"post_close_settlement"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(store.assetSnapshots) != 1 {
+		t.Fatalf("asset snapshots = %#v", store.assetSnapshots)
+	}
+	asset := store.assetSnapshots[0].asset
+	if asset.ReverseRepoReceivable != 0 || asset.NetAsset != 1000 {
+		t.Fatalf("late reverse repo must not be added to older broker cash: %#v", asset)
 	}
 }
 

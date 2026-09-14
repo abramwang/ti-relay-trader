@@ -1947,6 +1947,21 @@ func ReverseRepoPrincipalFromFills(fills []trading.Fill) float64 {
 	return roundMoney(principal)
 }
 
+// ReverseRepoPrincipalFromFillsAsOf excludes fills that occurred after the
+// asset snapshot. Their principal was still present in that older cash value.
+func ReverseRepoPrincipalFromFillsAsOf(fills []trading.Fill, capturedAt time.Time) float64 {
+	if capturedAt.IsZero() {
+		return ReverseRepoPrincipalFromFills(fills)
+	}
+	eligible := make([]trading.Fill, 0, len(fills))
+	for _, fill := range fills {
+		if fill.MatchedAt.IsZero() || !fill.MatchedAt.After(capturedAt) {
+			eligible = append(eligible, fill)
+		}
+	}
+	return ReverseRepoPrincipalFromFills(eligible)
+}
+
 func calculateRepoGroup(
 	accountID string,
 	tradeDate string,

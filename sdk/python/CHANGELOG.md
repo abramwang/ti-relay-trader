@@ -2,7 +2,7 @@
 
 ## 0.1.35 - 2026-09-14
 
-- Add `Asset.reverse_repo_receivable`; enriched current assets and standard close snapshots now include reverse-repo principal once in `net_asset`.
+- Add `Asset.reverse_repo_receivable`; enriched current assets and standard close snapshots now include reverse-repo principal once in `net_asset`, bounded by the asset snapshot capture time.
 
 ## 0.1.34 - 2026-09-14
 
