@@ -3927,6 +3927,9 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			out.Errors = append(out.Errors, fmt.Sprintf("%s positions: %v", inputSnapshotType, err))
 		}
 		positionResult.Count = len(positionResult.Positions)
+		if !snapshotOnly && len(positionResult.Positions) == 0 && assetResult.Asset.MarketValue > 0 {
+			out.Errors = append(out.Errors, fmt.Sprintf("%s positions are missing for reported market value %.6f", inputSnapshotType, assetResult.Asset.MarketValue))
+		}
 	} else {
 		assetResult, err = s.orders.GetAsset(ctx, accountID)
 		if err != nil {
@@ -3961,7 +3964,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		}
 		cancel()
 		missing := missingPositionValuations(positionResult.Positions)
-		strictValuation := snapshotType == "open" || (snapshotType == "close" && inputSnapshotType == "broker_close")
+		strictValuation := snapshotType == "open" || (snapshotType == "close" && inputSnapshotType != "")
 		if strictValuation && len(missing) > 0 {
 			preview := missing
 			if len(preview) > 10 {
