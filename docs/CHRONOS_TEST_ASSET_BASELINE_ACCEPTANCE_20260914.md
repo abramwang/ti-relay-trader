@@ -50,3 +50,11 @@ net_asset      = 49,524,656.721000
 ## Chronos 复测入口
 
 Chronos 可以按原需求中的顺序重新执行 GET-only 准入和 Direct 两子单闭环。测试 OC 当前 `redis_ready=true`、`broker_ready=true`、`order_snapshot_ready=true`、`accepting_trade_commands=true`；盘后显示的 `off_hours` 只是 Relay 监控阶段，不代表 OC 未 ready。
+
+## 消费端验收结果
+
+Chronos 已于 `2026-09-14 19:32 Asia/Shanghai` 完成独立验收，报告位于 `/home/ti-chronos-strategy/docs/RELAY-TEST-ASSET-BASELINE-CONSUMER-ACCEPTANCE-20260914.md`。只读准入、Direct 两子单批量提交、Chronos 持久化幂等重放、逐单状态查询、Go 授权撤单、SSE 和全量账本对账全部通过。
+
+Relay 随后独立回查本地权威账本：当日订单 12 条、活动订单 0、成交 0；本轮 `600000.SH` 与 `510300.SH` 两个 100 股子单均为 `cancelled/is_terminal=true/cum_filled_qty=0/leaves_qty=0`，共同关联 `origin_message_id=msg-order-batch-submit-1789385582191995005-1`。OC 命令 pending 为 0、Stream lag 为 0、DLQ 为 0。
+
+本验收关闭测试资产基线阻断及 Direct 被动限价闭环，不代表 TWAP、故障注入、生产账户准入或任何生产交易权限已经开放。
