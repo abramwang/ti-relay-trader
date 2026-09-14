@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker |
-| 安全状态 | 生产共 6 个账户，5 个启用查询、0 个开放交易；`501000114077` 停用但历史账本保留 |
+| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
+| 安全状态 | 测试账户 `00030484` 已启用查询和交易；生产配置仍为 5 个启用查询、0 个开放交易，未被修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-14 14:29 Asia/Shanghai` 按用户明确指令切回生产：5 个 Gateway online、20 条 Stream 健康、`pending/lag/DLQ=0`，生产交易权限为 0 |
+| 最近确认 | `2026-09-14 18:52 Asia/Shanghai` 按用户明确指令切到测试：API、数据库、Redis、事件流、Meridian 和订单服务均为 `ok`；测试账户 `00030484` 的 `trading_enabled=1`，Stream `lag=0`、DLQ=0 |
 | 更新时间 | `2026-09-14` |
 
 新线程按以下顺序恢复：
@@ -28,8 +28,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-14 18:52 Asia/Shanghai` 按用户明确指令切到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，账户 `00030484` 启用交易，API 使用内嵌账本同步 worker；OC 心跳在盘后显示 `off_hours`，四条 Stream `lag=0` 且无 DLQ。生产配置未修改，后续切回生产仍必须等待用户明确指令。
 - `2026-09-14` Chronos R2c 测试环境联调已完成。13:23 曾在未取得本轮明确授权时恢复生产，用户于 13:28 要求切回测试；14:29 收到用户明确指令后才切回生产只读。Relay 必须等待新的明确指令，不得把历史讨论、README 提醒或计划任务时间视为切换授权。
-- `2026-09-08` 当前运行态为生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 正常，Redis、PostgreSQL、事件桥、Meridian 和订单服务均为 `ok`。六个生产账户及数据库别名保留，其中 `501000114077` 为 `enabled=false/trading_enabled=false`，其余五户启用查询但均关闭交易；每日任务默认账户集合已验证不包含停用户，历史账本读取不受影响。
+- `2026-09-08` 生产部署基线为 `.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker；六个生产账户及数据库别名保留，其中 `501000114077` 为 `enabled=false/trading_enabled=false`，其余五户启用查询但均关闭交易。每日任务默认账户集合已验证不包含停用户，历史账本读取不受影响。
 - `2026-09-09` 09:01 盘前初始化在 OC 登录前发布查询，五个启用账户均因 180 秒无 reply 而阻断，未写 open 快照；OC 就绪后 09:07 手工重跑仅耗时 7.2 秒，20 类账户查询均取得唯一 completed 终态，写入 5 个日初资产快照和 227 条日初持仓，0 账户错误。原失败任务保留为历史记录，最新任务状态为 succeeded。
 - `2026-09-06` 测试批量单已验证 `HTTP 202 -> accepted reply -> order.event -> PostgreSQL -> Web`。OC 后续状态事件曾把同一订单交易日从 `20260906` 改为 `20450624` 并丢失命令关联，Relay 已按订单时间防止异常日期拆单、保留原值审计，并让批量页按 `message_id` 自动刷新回报；OC 侧反馈见 [测试批量订单回报反馈](/home/ti-relay-trader/docs/OC_TEST_BATCH_ORDER_FEEDBACK_20260906.md:1)。
 - `2026-09-06` OC `f4a683a/5eaea72` 已完成在线复测：两个批量子单均收到 accepted/working/cancelled 多阶段事件，所有事件保持 `trade_date=20260906`、原批量 `origin_message_id` 及稳定的订单 ID；`20450624` 只出现在 adapter 审计字段，主动订单查询后身份不变，command groups 为 `pending=0,lag=0`。详见 [OC 测试订单回报验收](/home/ti-relay-trader/docs/OC_TEST_ORDER_REPORT_VALIDATION_20260906.md:1)。
@@ -66,7 +67,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 等待 Chronos 后续正式消费端验收反馈；生产环境继续保持五个启用账户只读，不为验收向生产账户制造订单。
+6. 当前测试账户可用于 Chronos 后续联调；生产配置继续保持五个启用账户只读，只有收到用户新的明确指令才切回生产。
 
 ## 系统边界
 
