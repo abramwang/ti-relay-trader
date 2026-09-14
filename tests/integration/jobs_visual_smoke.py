@@ -94,6 +94,18 @@ def main() -> int:
                 const cardsRect = cards?.getBoundingClientRect();
                 const reviewRect = review?.getBoundingClientRect();
                 const pageMainStyle = pageMain ? getComputedStyle(pageMain) : null;
+                const report = document.querySelector('#jobReport');
+                const contentGrid = document.querySelector('.jobs-content-grid');
+                const originalReport = report?.textContent || '';
+                if (report) report.textContent = `${'long-report-value-'.repeat(24)}\n`.repeat(1200);
+                const reportStyle = report ? getComputedStyle(report) : null;
+                const longReportLayout = report && contentGrid ? {
+                    gridHeight: contentGrid.getBoundingClientRect().height,
+                    clientHeight: report.clientHeight,
+                    scrollHeight: report.scrollHeight,
+                    overflowY: reportStyle?.overflowY || '',
+                } : null;
+                if (report) report.textContent = originalReport;
                 return ({
                 reviewRows: document.querySelectorAll('#reviewAccountsBody tr').length,
                 jobRows: document.querySelectorAll('#jobRunsBody tr').length,
@@ -130,6 +142,7 @@ def main() -> int:
                     ? pageMain.scrollHeight <= pageMain.clientHeight + 1 ||
                         ['auto', 'scroll'].includes(pageMainStyle?.overflowY)
                     : false,
+                longReportLayout,
                 });
             }"""
         )
@@ -170,6 +183,11 @@ def main() -> int:
         raise AssertionError(f"job cards are clipped by the outer layout: {diagnostics}")
     if not diagnostics["pageMainCanScroll"]:
         raise AssertionError(f"jobs workspace cannot scroll vertically: {diagnostics}")
+    report_layout = diagnostics["longReportLayout"] or {}
+    if (report_layout.get("gridHeight", 0) > 521 or
+            report_layout.get("scrollHeight", 0) <= report_layout.get("clientHeight", 0) or
+            report_layout.get("overflowY") not in {"auto", "scroll"}):
+        raise AssertionError(f"long job report is not internally scrollable: {diagnostics}")
     if console_errors or page_errors or response_errors:
         raise AssertionError(
             json.dumps(

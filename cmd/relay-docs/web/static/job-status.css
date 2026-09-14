@@ -470,7 +470,9 @@
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 4px;
   flex: 0 0 auto;
+  height: clamp(360px, 48vh, 520px);
   min-height: 360px;
+  max-height: 520px;
 }
 
 .review-panel {
@@ -594,18 +596,24 @@
 .report-panel {
   display: grid;
   grid-template-rows: 40px minmax(0, 1fr);
+  height: 100%;
 }
 
 .job-report {
+  width: 100%;
   min-height: 0;
   max-height: none;
   height: 100%;
   margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 0;
   border-radius: 0;
   background: var(--code);
   color: #b9c3d4;
   font-size: 10.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1360px) {
