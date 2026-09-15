@@ -1340,6 +1340,16 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[1] {
+	case "readiness":
+		if len(parts) != 2 {
+			httpx.WriteNotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+			return
+		}
+		s.handleAccountReadiness(w, r, accountID)
 	case "alias":
 		if len(parts) != 2 {
 			httpx.WriteNotFound(w, r)
@@ -1621,6 +1631,57 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpx.WriteNotFound(w, r)
 	}
+}
+
+func (s *Server) handleAccountReadiness(w http.ResponseWriter, r *http.Request, accountID string) {
+	account, ok := s.cfg.AccountRoute(accountID)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", nil)
+		return
+	}
+	if s.ops == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "runtime observability is unavailable", nil)
+		return
+	}
+	force, _ := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get("force")))
+	snapshot, err := s.ops.Snapshot(r.Context(), force)
+	if err != nil {
+		s.logger.Warn("account_readiness_snapshot_failed", "account_id", accountID, "error", err)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "account readiness query failed", nil)
+		return
+	}
+	view := AccountReadinessView{
+		AccountID:             account.AccountID,
+		BrokerID:              account.BrokerID,
+		GatewayID:             account.GatewayID,
+		Environment:           string(s.cfg.Service.Environment),
+		OrderEntryReady:       false,
+		BrokerSessionState:    "blocked",
+		OrderEntryBlockReason: "ACCOUNT_DISABLED",
+		ObservedAt:            snapshot.GeneratedAt,
+	}
+	for _, gateway := range snapshot.Gateways {
+		if gateway.AccountID != accountID {
+			continue
+		}
+		view.CounterMode = gateway.CounterMode
+		view.OrderEntryReady = gateway.OrderEntryReady
+		view.BrokerSessionState = gateway.BrokerSessionState
+		view.OrderEntryBlockReason = gateway.OrderEntryBlockReason
+		view.ObservedAt = gateway.OrderEntryObservedAt
+		view.NextTransitionAt = gateway.OrderEntryNextChangeAt
+		view.OrderEntryTimezone = gateway.OrderEntryTimezone
+		view.ReadinessSource = gateway.OrderEntrySource
+		view.GatewayState = gateway.State
+		view.GatewayStateText = gateway.StateText
+		view.RedisReady = gateway.RedisReady
+		view.BrokerReady = gateway.BrokerReady
+		view.OrderSnapshotReady = gateway.OrderSnapshotReady
+		view.AcceptingTradeCommands = gateway.AcceptingTradeCommands
+		view.LastHeartbeatAt = gateway.LastHeartbeatAt
+		break
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"readiness": view})
 }
 
 func (s *Server) handleAccountAlias(w http.ResponseWriter, r *http.Request, accountID string) {
@@ -4956,6 +5017,28 @@ type AccountView struct {
 	Enabled        bool   `json:"enabled"`
 	TradingEnabled bool   `json:"trading_enabled"`
 	Simulated      bool   `json:"simulated"`
+}
+
+type AccountReadinessView struct {
+	AccountID              string     `json:"account_id"`
+	BrokerID               string     `json:"broker_id"`
+	GatewayID              string     `json:"gateway_id"`
+	Environment            string     `json:"environment"`
+	CounterMode            string     `json:"counter_mode,omitempty"`
+	OrderEntryReady        bool       `json:"order_entry_ready"`
+	BrokerSessionState     string     `json:"broker_session_state"`
+	OrderEntryBlockReason  string     `json:"order_entry_block_reason,omitempty"`
+	ObservedAt             time.Time  `json:"observed_at"`
+	NextTransitionAt       *time.Time `json:"next_transition_at,omitempty"`
+	OrderEntryTimezone     string     `json:"order_entry_timezone,omitempty"`
+	ReadinessSource        string     `json:"order_entry_readiness_source,omitempty"`
+	GatewayState           string     `json:"gateway_state,omitempty"`
+	GatewayStateText       string     `json:"gateway_state_text,omitempty"`
+	RedisReady             *bool      `json:"redis_ready,omitempty"`
+	BrokerReady            *bool      `json:"broker_ready,omitempty"`
+	OrderSnapshotReady     *bool      `json:"order_snapshot_ready,omitempty"`
+	AcceptingTradeCommands *bool      `json:"accepting_trade_commands,omitempty"`
+	LastHeartbeatAt        *time.Time `json:"last_heartbeat_at,omitempty"`
 }
 
 type AccountRouteView struct {

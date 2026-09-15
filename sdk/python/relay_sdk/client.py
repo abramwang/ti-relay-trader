@@ -13,6 +13,7 @@ from urllib import error as urlerror
 from urllib import parse, request
 
 from .errors import (
+    RelayBrokerNotReadyError,
     RelayCapabilityError,
     RelayCommandOutcomeUnknownError,
     RelayConnectionError,
@@ -25,6 +26,7 @@ from .errors import (
 )
 from .models import (
     Account,
+    AccountReadiness,
     Asset,
     BatchCommandReceipt,
     BatchOrderOutcome,
@@ -47,7 +49,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.35"
+SDK_VERSION = "0.1.36"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -122,6 +124,40 @@ class RelayClient:
         """Return relay service and dependency health from ``GET /v1/status``."""
 
         return self._request("GET", "/v1/status")
+
+    def get_account_readiness(
+        self,
+        account_id: str | None = None,
+        *,
+        force: bool = False,
+    ) -> AccountReadiness:
+        """Return account-level OC and order-entry readiness."""
+
+        account_id = self._resolve_account(account_id)
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{parse.quote(account_id)}/readiness",
+            query={"force": force},
+        )
+        return AccountReadiness.from_dict(data.get("readiness", data))
+
+    def verify_ready(
+        self,
+        account_id: str | None = None,
+        *,
+        force: bool = True,
+    ) -> AccountReadiness:
+        """Fail closed unless the account can currently accept new orders."""
+
+        readiness = self.get_account_readiness(account_id, force=force)
+        if readiness.order_entry_ready:
+            return readiness
+        reason = readiness.order_entry_block_reason or "ORDER_ENTRY_NOT_READY"
+        raise RelayBrokerNotReadyError(
+            f"account {readiness.account_id} is not ready for order entry: {reason}",
+            code=reason,
+            raw_response=readiness.raw,
+        )
 
     def get_schema(self) -> SchemaCatalog:
         """Return Relay's machine-readable trading schema and capabilities."""

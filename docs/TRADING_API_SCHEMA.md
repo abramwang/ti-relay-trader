@@ -351,6 +351,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `GET` | `/v1/status` | - | `StatusView` | 已实现，包含依赖健康、账户摘要、交易阶段、Meridian 交易日状态和最近日流程任务状态 |
 | `GET` | `/v1/schema` | - | `CatalogDocument` | 已有骨架 |
 | `GET` | `/v1/accounts` | - | `[]Account` | 已实现，配置账户列表并合并 PostgreSQL 账户别名 |
+| `GET` | `/v1/accounts/{account_id}/readiness` | `force` query | `AccountReadiness` | 已实现，账户级 OC 心跳、柜台会话和下单准入状态 |
 | `GET` | `/v1/account-routes` | - | `[]AccountRoute` | 已实现，展示账户路由、查询/交易权限、环境和 Redis stream key |
 | `PATCH` | `/v1/accounts/{account_id}/alias` | `{alias}` | `Account` | 已实现，写入 PostgreSQL `accounts.account_name` |
 | `GET` | `/v1/accounts/{account_id}/asset` | - | `Asset` | 已实现，读取 PostgreSQL 最新快照 |
@@ -436,6 +437,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 资金和持仓读取默认执行展示层补全；内部券商快照流程使用 `GET .../asset?enrich=false` 与 `GET .../positions?enrich=false` 直接读取 PostgreSQL 中的柜台原始字段，不请求证券名称、行情、成交成本或 Meridian。该参数只关闭读时补全，不改变账本内容；省略时保持原有终端和 SDK 行为。
 
 资产读取通过 `/v1/schema` 能力 `assets.readiness_errors.v1` 声明可分类的失败语义：账户路由不存在返回 `404 NOT_FOUND`；账户已配置但当前环境尚未形成任何资产快照返回 `503 ASSET_NOT_READY`，调用方可在确认 OC ready 后执行 `POST .../asset/refresh` 并有限重试；PostgreSQL 查询或 schema 故障返回 `500 INTERNAL`，不得按资产尚未就绪自动重试。测试与生产使用独立数据库，资产读取不会跨环境回退。
+
+`GET /v1/accounts/{account_id}/readiness?force=true` 通过能力 `accounts.order_entry_readiness.v1` 暴露 `order_entry_ready`、`broker_session_state`、`order_entry_block_reason`、`observed_at` 和 `next_transition_at`，同时保留 OC 的 `broker_ready/order_snapshot_ready/accepting_trade_commands`。当前华鑫 7x24 时段只配置在测试账户：每日 `01:15-01:25`、`01:30-03:30`、`03:40-05:40`、`07:15-07:25`、`07:30-09:30`、`09:40-11:40`、`13:15-13:25`、`13:30-15:30`、`15:40-17:40`、`19:15-19:25`、`19:30-21:30`、`21:40-23:40` 为可报单窗口，起点包含、终点不包含；休市和结算阶段返回 `OUTSIDE_TEST_COUNTER_WINDOW`。该测试配置忽略 Meridian 交易日历，生产环境禁止配置并继续使用正常 A 股交易时段逻辑。准入为 false 时 SDK `verify_ready()` 失败关闭；同步 `accepted` 仍只表示命令已接收，最终订单结果继续以账本和 SSE 为准。
 
 回执中的 `message_id` 是命令状态关联键。`GET /v1/command-status/{origin_message_id}` 对查询命令要求只有一个终态，成功终态必须同时满足 `status=completed`、与 action 匹配的 `result_type` 和 `chunk.is_last=true`；对 `order.submit/order.batch.submit/order.cancel`，一个 `status=accepted` 且 `result_type=order_action_receipt` 的 reply 表示命令接收已完成，返回 `state=accepted, terminal=true, success=true`，但不代表订单已成交或撤单成功。`failed/rejected` 返回 `state=failed`，缺少 final、结果类型不匹配或多个终态返回 `pending/invalid`。交易命令使用同一路由读取 `BROKER_NOT_READY`、`COMMAND_OUTCOME_UNKNOWN` 等归档回报，最终订单状态仍以订单账本为准。盘前初始化和盘后结算同时检查本地账本新鲜度与查询终态，不能用新鲜时间戳掩盖 OC 查询失败。
 

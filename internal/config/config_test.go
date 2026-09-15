@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDecodeAppliesDefaults(t *testing.T) {
@@ -322,5 +323,52 @@ auto_refresh:
 	}
 	if cfg.AutoRefresh.CooldownSeconds != 30 {
 		t.Fatalf("cooldown = %d", cfg.AutoRefresh.CooldownSeconds)
+	}
+}
+
+func TestOrderEntryScheduleUsesInclusiveStartsAndExclusiveEnds(t *testing.T) {
+	schedule := OrderEntryScheduleConfig{
+		CounterMode: "huaxin_7x24_test",
+		Timezone:    "Asia/Shanghai",
+		Windows: []OrderEntryWindowConfig{
+			{Start: "13:15", End: "13:25"},
+			{Start: "13:30", End: "15:30"},
+			{Start: "15:40", End: "17:40"},
+		},
+	}
+	location, _ := time.LoadLocation("Asia/Shanghai")
+
+	ready, next, err := schedule.ActiveAt(time.Date(2026, 9, 15, 13, 14, 44, 0, location))
+	if err != nil || ready || next.Format(time.RFC3339) != "2026-09-15T13:15:00+08:00" {
+		t.Fatalf("before window = ready %v next %s err %v", ready, next.Format(time.RFC3339), err)
+	}
+	ready, next, err = schedule.ActiveAt(time.Date(2026, 9, 15, 13, 15, 0, 0, location))
+	if err != nil || !ready || next.Format(time.RFC3339) != "2026-09-15T13:25:00+08:00" {
+		t.Fatalf("window start = ready %v next %s err %v", ready, next.Format(time.RFC3339), err)
+	}
+	ready, next, err = schedule.ActiveAt(time.Date(2026, 9, 15, 13, 25, 0, 0, location))
+	if err != nil || ready || next.Format(time.RFC3339) != "2026-09-15T13:30:00+08:00" {
+		t.Fatalf("pause start = ready %v next %s err %v", ready, next.Format(time.RFC3339), err)
+	}
+}
+
+func TestDecodeRejectsOrderEntryScheduleInProduction(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+service:
+  environment: "production"
+redis:
+  env: "prod"
+accounts:
+  - account_id: "acct-1"
+    broker_id: "huaxin"
+    gateway_id: "gw-1"
+    stream_prefix: "relay:prod:v1:huaxin:gw-1"
+    order_entry_schedule:
+      counter_mode: "huaxin_7x24_test"
+      windows:
+        - {start: "13:15", end: "13:25"}
+`))
+	if err == nil || !strings.Contains(err.Error(), "only supported in the test environment") {
+		t.Fatalf("production schedule error = %v", err)
 	}
 }

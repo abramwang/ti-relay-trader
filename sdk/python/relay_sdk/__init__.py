@@ -21,6 +21,7 @@ from .errors import (
 )
 from .models import (
     Account,
+    AccountReadiness,
     Asset,
     BatchCommandReceipt,
     BatchOrderOutcome,
@@ -43,6 +44,7 @@ from .models import (
 
 __all__ = [
     "Account",
+    "AccountReadiness",
     "Asset",
     "BatchCommandReceipt",
     "BatchOrderOutcome",
@@ -82,4 +84,4 @@ __all__ = [
     "retry_decision",
 ]
 
-__version__ = "0.1.35"
+__version__ = "0.1.36"

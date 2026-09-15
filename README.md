@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 已启用查询、下单和撤单；生产配置仍为 5 个启用查询、0 个开放交易，未被本次切换修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-15 09:37 Asia/Shanghai` 按用户明确指令切到测试：API 及全部依赖健康，测试 OC 为 `UP`，账户 `00030484` 可查询/下单/撤单，4 条 Stream `lag=0`、DLQ pending=0 |
+| 最近确认 | `2026-09-15 13:41 Asia/Shanghai` 测试 OC 为 `UP`；账户 `00030484` 的 7x24 柜台时段准入为 ready，下一次切换 `15:30`，4 条 Stream `lag=0`、DLQ pending=0 |
 | 更新时间 | `2026-09-15` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-15 13:41 Asia/Shanghai` 已按华鑫 7x24 测试柜台的集合竞价、休市和交易分段增加账户级 `order_entry_ready`；只在测试配置生效，生产仍使用正常 A 股时段。`GET /v1/accounts/00030484/readiness?force=true` 实测为 ready、下一次切换 `15:30`；Python SDK `0.1.36` 增加类型化读取和失败关闭 `verify_ready()`，详见 [Chronos 测试柜台准入说明](/home/ti-relay-trader/docs/CHRONOS_TEST_ORDER_ENTRY_READINESS_20260915.md:1)。
 - `2026-09-15 09:37 Asia/Shanghai` 按用户明确指令切到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker；测试 OC 的 Redis、柜台和订单快照均 ready，账户 `00030484` 可接收交易及撤单命令，4 条 Stream `lag=0`、pending DLQ=0。生产配置未修改，切回生产仍需用户明确指令。
 - `2026-09-14 21:01 Asia/Shanghai` 按用户明确指令切回生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 均健康；6 个账户配置中 5 个启用查询、0 个开放交易，20 条生产 Stream `lag=0`、pending DLQ=0。盘后 `off_hours` 为正常监控状态。
 - `2026-09-14 19:18 Asia/Shanghai` 测试链路完成只读复测：账户 `00030484` 的 OC `redis_ready/broker_ready/order_snapshot_ready` 均为 true，资金及 10 条持仓查询取得 completed 终态并成功落库，四条 Stream `lag=0` 且无 DLQ。`off_hours` 仅表示盘后监控阶段；测试库已补齐 migration 25-28，环境切换脚本现在会先迁移目标数据库，成功后才停止旧服务。生产配置未修改，后续切回生产仍必须等待用户明确指令。
@@ -42,7 +43,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- 生产 schema 当前为 `28 reverse_repo_asset_receivable`，Python SDK 当前版本为 `relay-sdk==0.1.35`。
+- 生产 schema 当前为 `28 reverse_repo_asset_receivable`，Python SDK 当前版本为 `relay-sdk==0.1.36`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞

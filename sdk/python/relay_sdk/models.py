@@ -85,6 +85,55 @@ class Account:
 
 
 @dataclass(frozen=True)
+class AccountReadiness:
+    account_id: str = ""
+    broker_id: str = ""
+    gateway_id: str = ""
+    environment: str = ""
+    counter_mode: str = ""
+    order_entry_ready: bool = False
+    broker_session_state: str = ""
+    order_entry_block_reason: str = ""
+    observed_at: str = ""
+    next_transition_at: str = ""
+    order_entry_timezone: str = ""
+    order_entry_readiness_source: str = ""
+    gateway_state: str = ""
+    gateway_state_text: str = ""
+    redis_ready: bool = False
+    broker_ready: bool = False
+    order_snapshot_ready: bool = False
+    accepting_trade_commands: bool = False
+    last_heartbeat_at: str = ""
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "AccountReadiness":
+        return cls(
+            account_id=_text(data, "account_id"),
+            broker_id=_text(data, "broker_id"),
+            gateway_id=_text(data, "gateway_id"),
+            environment=_text(data, "environment"),
+            counter_mode=_text(data, "counter_mode"),
+            order_entry_ready=_bool(data, "order_entry_ready"),
+            broker_session_state=_text(data, "broker_session_state"),
+            order_entry_block_reason=_text(data, "order_entry_block_reason"),
+            observed_at=_text(data, "observed_at"),
+            next_transition_at=_text(data, "next_transition_at"),
+            order_entry_timezone=_text(data, "order_entry_timezone"),
+            order_entry_readiness_source=_text(data, "order_entry_readiness_source"),
+            gateway_state=_text(data, "gateway_state"),
+            gateway_state_text=_text(data, "gateway_state_text"),
+            redis_ready=_bool(data, "redis_ready"),
+            broker_ready=_bool(data, "broker_ready"),
+            order_snapshot_ready=_bool(data, "order_snapshot_ready"),
+            accepting_trade_commands=_bool(data, "accepting_trade_commands"),
+            last_heartbeat_at=_text(data, "last_heartbeat_at"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
 class Asset:
     account_id: str = ""
     cash_available: float = 0.0

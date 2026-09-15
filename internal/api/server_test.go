@@ -360,6 +360,54 @@ func TestOperationsStatusAndDeadLetterQueries(t *testing.T) {
 	}
 }
 
+func TestAccountReadinessReturnsTypedGatewayState(t *testing.T) {
+	ready := true
+	next := time.Date(2026, 9, 15, 13, 25, 0, 0, timeutil.Location())
+	observed := time.Date(2026, 9, 15, 13, 15, 0, 0, timeutil.Location())
+	operations := &fakeOperationsService{snapshot: redisstream.RuntimeSnapshot{
+		GeneratedAt: observed,
+		Environment: "test",
+		Gateways: []redisstream.GatewayRuntimeStatus{{
+			AccountID:              "acct-1",
+			BrokerID:               "huaxin",
+			GatewayID:              "acct-1",
+			State:                  "UP",
+			StateText:              "running",
+			RedisReady:             &ready,
+			BrokerReady:            &ready,
+			OrderSnapshotReady:     &ready,
+			AcceptingTradeCommands: &ready,
+			CounterMode:            "huaxin_7x24_test",
+			OrderEntryReady:        true,
+			BrokerSessionState:     "ready",
+			OrderEntryObservedAt:   observed,
+			OrderEntryNextChangeAt: &next,
+			OrderEntryTimezone:     "Asia/Shanghai",
+			OrderEntrySource:       "oc_heartbeat+configured_test_schedule",
+		}},
+	}}
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{{
+		AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "acct-1", Enabled: true, TradingEnabled: true,
+	}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Operations: operations,
+	})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/readiness?force=true", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("readiness status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"order_entry_ready":true`) ||
+		!strings.Contains(recorder.Body.String(), `"counter_mode":"huaxin_7x24_test"`) ||
+		!strings.Contains(recorder.Body.String(), `"next_transition_at":"2026-09-15T13:25:00+08:00"`) {
+		t.Fatalf("readiness body = %s", recorder.Body.String())
+	}
+	if !operations.force {
+		t.Fatal("readiness did not pass force=true")
+	}
+}
+
 func TestDeadLetterReviewWriteGuardAndAudit(t *testing.T) {
 	requestBody := `{"stream_key":"relay:prod:v1:huaxin:a1:dlq","stream_id":"1-0","status":"acknowledged","operator":"relay-admin","note":"checked"}`
 	operations := &fakeOperationsService{}

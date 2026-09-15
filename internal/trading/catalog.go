@@ -8,6 +8,7 @@ const (
 	CapabilityBatchChildOutcomes     = "orders.batch_child_outcomes.v1"
 	CapabilityExplicitCommandIDs     = "orders.explicit_command_ids.v1"
 	CapabilityAssetReadinessErrors   = "assets.readiness_errors.v1"
+	CapabilityAccountOrderReadiness  = "accounts.order_entry_readiness.v1"
 )
 
 type CatalogDocument struct {
@@ -38,6 +39,7 @@ func Catalog() CatalogDocument {
 			CapabilityBatchChildOutcomes,
 			CapabilityExplicitCommandIDs,
 			CapabilityAssetReadinessErrors,
+			CapabilityAccountOrderReadiness,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
@@ -53,6 +55,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/healthz", Response: "StatusView", Description: "service health check"},
 			{Method: "GET", Path: "/v1/status", Response: "StatusView", Description: "service status"},
 			{Method: "GET", Path: "/v1/accounts", Response: "[]Account", Description: "configured accounts"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/readiness", Response: "AccountReadiness", Description: "account-level OC heartbeat and configured order-entry readiness"},
 			{Method: "GET", Path: "/v1/account-routes", Response: "[]AccountRoute", Description: "configured account routing, permissions, and Redis stream keys"},
 			{Method: "PATCH", Path: "/v1/accounts/{account_id}/alias", Request: "AccountAliasRequest", Response: "Account", Description: "persist account display alias"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/asset", Response: "Asset", Description: "account asset"},

@@ -118,6 +118,8 @@ accounts:
 8. 完成只读验证后，再把需要交易的生产账户 `trading_enabled` 改为 `true` 并重启服务。切换脚本默认拒绝带生产下单权限的配置；确需开放时必须在服务器本机执行 `scripts/switch-relay-env.sh production --allow-production-trading` 并输入确认短语。
 9. 首次生产写入只发小额/最小单位测试单，确认订单、成交、撤单、资金持仓刷新和账本落盘全链路正常。
 
+华鑫 7x24 柜台的 `order_entry_schedule` 只允许出现在测试环境账户配置中。Relay 将集合竞价和两段交易时间列为可报单窗口，排除 5 分钟、10 分钟休市以及结算阶段；生产配置出现该字段会拒绝启动，生产继续使用正常 A 股交易时段。完整示例见 `config/relay.example.yaml`。
+
 ### OC v1.2 Redis ACL
 
 OC v1.2 为保证 Relay `gateway_order_id` 跨 OC 重启稳定，会在 Redis 保存交易幂等和订单身份 token 映射。OC 使用的 Redis 账号除 Stream 命令外，必须允许 `GET` 和 `SET ... NX EX`，并授权以下 key pattern：
@@ -133,6 +135,7 @@ Relay 不生成、不解析 OC 内部 `oc#...` token，也不访问上述映射�
 1. 未知 `service.environment`。
 2. `trading_enabled=true` 但账户 `enabled=false`。
 3. 生产环境中 `trading_enabled=true` 且 `simulated=true`。
+4. 生产环境配置测试柜台 `order_entry_schedule`。
 4. 账户 `stream_prefix` 与 `redis.env`、`broker_id`、`gateway_id` 不一致。
 5. `database.dsn` 的实际库名与 `database.expected_name` 不一致；校验错误不会回显数据库凭据。
 
@@ -330,7 +333,7 @@ scripts/restore-postgres-drill.sh outputs/backups/relay_trader_*.dump 2026-07-31
 
 独立页面 `/operations` 和接口 `GET /v1/operations/status` 统一展示：
 
-1. 每个 broker/gateway/account 的最新 OC 心跳、组件状态、pending trade/query 和最近 `BROKER_NOT_READY`。
+1. 每个 broker/gateway/account 的最新 OC 心跳、组件状态、账户级下单准入、下一次时段切换、pending trade/query 和最近 `BROKER_NOT_READY`。
 2. `reply/event/hb/dlq` 的 Redis 最新 ID、PostgreSQL checkpoint、最近消费时间、累计处理/错误数和 lag。
 3. DLQ 的待处理、已确认、已忽略、已重放数量及原始报文。
 4. `/v1/status.runtime` 的紧凑摘要，供首页、探针和外部监控读取。
@@ -349,6 +352,8 @@ operations:
 lag 不是 Redis stream ID 的数值差。Relay 在 checkpoint 与最新 ID 不同时，通过有上限的 Redis 服务端遍历计算 checkpoint 之后的实际条数；达到 critical 上限后返回下界并标记 `lag_capped=true`，避免异常积压拖慢状态页。`hb` 用于读取最新 gateway 状态，不作为业务账本消费 lag。
 
 告警窗口由 Meridian 交易日和 `08:55-15:30 Asia/Shanghai` 共同决定，与生产 OC 当前 15:30 关停计划一致。非交易日、盘前和关停后 gateway/stream 显示 `off_hours`，历史心跳、checkpoint 错误和 DLQ 证据仍保留可查。
+
+测试环境若账户配置了 7x24 `order_entry_schedule`，运维窗口改由该时间表驱动且不受 Meridian 交易日限制；这项覆盖只对测试生效。`GET /v1/accounts/{account_id}/readiness?force=true` 用于策略写入前的强制准入检查。
 
 DLQ 读取始终可用。审核动作使用以下接口，并写入不可变 `stream_dlq_reviews` 审计记录：
 

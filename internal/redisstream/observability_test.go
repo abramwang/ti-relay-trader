@@ -50,6 +50,45 @@ func TestMonitoringWindowUsesTradingCalendarAndSession(t *testing.T) {
 	}
 }
 
+func TestMonitoringWindowUsesConfiguredTestCounterSchedule(t *testing.T) {
+	location := timeutil.Location()
+	schedule := &config.OrderEntryScheduleConfig{
+		CounterMode: "huaxin_7x24_test",
+		Timezone:    "Asia/Shanghai",
+		Windows: []config.OrderEntryWindowConfig{
+			{Start: "13:15", End: "13:25"},
+			{Start: "13:30", End: "15:30"},
+		},
+	}
+	service := &RuntimeObservability{
+		cfg: config.Config{
+			Service: config.ServiceConfig{Environment: config.EnvironmentTest},
+			Accounts: []config.AccountRouteConfig{{
+				AccountID: "a1", Enabled: true, OrderEntrySchedule: schedule,
+			}},
+		},
+		calendar: fakeTradingCalendar{status: market.TradingDayStatus{
+			IsTradingDay:      false,
+			IsTradingDayKnown: true,
+		}},
+	}
+
+	active, reason, _ := service.monitoringWindow(
+		context.Background(),
+		time.Date(2026, 9, 20, 13, 14, 44, 0, location),
+	)
+	if active || reason != "test_counter_off_hours" {
+		t.Fatalf("test counter before window = %v %q", active, reason)
+	}
+	active, reason, _ = service.monitoringWindow(
+		context.Background(),
+		time.Date(2026, 9, 20, 13, 15, 0, 0, location),
+	)
+	if !active || reason != "test_counter_session" {
+		t.Fatalf("test counter window = %v %q", active, reason)
+	}
+}
+
 func TestStreamStatusUsesRealLagThresholdsAndSuppressesOffHours(t *testing.T) {
 	ctx := context.Background()
 	service := &RuntimeObservability{cfg: config.Config{
@@ -197,6 +236,78 @@ func TestGatewayStatusUsesOCV12ReadinessFlags(t *testing.T) {
 	if status.Status != "degraded" || status.OrderSnapshotReady == nil || *status.OrderSnapshotReady ||
 		status.AcceptingCancelCommands == nil || *status.AcceptingCancelCommands {
 		t.Fatalf("gateway v1.2 readiness status = %+v", status)
+	}
+}
+
+func TestGatewayStatusCombinesHeartbeatWithTestCounterSchedule(t *testing.T) {
+	location := timeutil.Location()
+	now := time.Date(2026, 9, 15, 13, 14, 44, 0, location)
+	payload, err := json.Marshal(map[string]any{
+		"component_id":              "oc.huaxin.a1",
+		"component_role":            "broker_trader_gateway",
+		"state":                     "UP",
+		"state_text":                "running",
+		"redis_ready":               true,
+		"broker_ready":              true,
+		"order_snapshot_ready":      true,
+		"accepting_trade_commands":  true,
+		"accepting_cancel_commands": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"protocol":     Protocol,
+		"message_type": "heartbeat",
+		"message_id":   "hb-test-counter",
+		"produced_at":  now.Add(-time.Second).Format(time.RFC3339Nano),
+		"payload":      json.RawMessage(payload),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := redis.NewXMessageSliceCmd(context.Background())
+	latest.SetVal([]redis.XMessage{{
+		ID:     "1789449283000-0",
+		Values: map[string]any{"body": string(body)},
+	}})
+	schedule := &config.OrderEntryScheduleConfig{
+		CounterMode: "huaxin_7x24_test",
+		Timezone:    "Asia/Shanghai",
+		Windows: []config.OrderEntryWindowConfig{
+			{Start: "13:15", End: "13:25"},
+			{Start: "13:30", End: "15:30"},
+		},
+	}
+	service := &RuntimeObservability{cfg: config.Config{
+		Operations: config.OperationsConfig{HeartbeatStaleSeconds: 30},
+	}}
+	command := heartbeatProbeCommand{
+		account: config.AccountRouteConfig{
+			AccountID:          "a1",
+			BrokerID:           "huaxin",
+			GatewayID:          "a1",
+			Enabled:            true,
+			TradingEnabled:     true,
+			OrderEntrySchedule: schedule,
+		},
+		stream: "relay:prod:v1:huaxin:a1:hb",
+		latest: latest,
+	}
+
+	status := service.gatewayStatus(now, false, command, ledger.GatewayIssue{})
+	if status.OrderEntryReady || status.BrokerSessionState != "blocked" ||
+		status.OrderEntryBlockReason != "OUTSIDE_TEST_COUNTER_WINDOW" ||
+		status.OrderEntryNextChangeAt == nil ||
+		status.OrderEntryNextChangeAt.Format(time.RFC3339) != "2026-09-15T13:15:00+08:00" {
+		t.Fatalf("before test window status = %+v", status)
+	}
+
+	now = time.Date(2026, 9, 15, 13, 15, 0, 0, location)
+	status = service.gatewayStatus(now, true, command, ledger.GatewayIssue{})
+	if !status.OrderEntryReady || status.BrokerSessionState != "ready" ||
+		status.OrderEntryBlockReason != "" || status.CounterMode != "huaxin_7x24_test" {
+		t.Fatalf("inside test window status = %+v", status)
 	}
 }
 

@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.35.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.36.tar.gz"
 ```
 
 ## Quick Start
@@ -31,7 +31,10 @@ client.require_capabilities(
     "events.cursor_resume.v1",
     "orders.batch_child_outcomes.v1",
     "orders.explicit_command_ids.v1",
+    "accounts.order_entry_readiness.v1",
 )
+
+readiness = client.verify_ready()
 
 asset = client.get_asset()
 status = client.status()
@@ -190,6 +193,13 @@ inject any urllib-compatible public opener without overriding `_request`:
 ```python
 client = RelayClient(base_url="http://relay.invalid", opener=my_test_opener)
 ```
+
+`get_account_readiness()` returns the typed account-level heartbeat and order
+entry state. `verify_ready()` forces a fresh observation and raises
+`RelayBrokerNotReadyError` before any write when Relay permissions, OC
+readiness, or a configured test-counter window is closed. The Huaxin 7x24
+schedule is test-only; production continues to use normal A-share session
+rules.
 
 Use `retry_decision(error, operation=...)` with `read`, `query`, `write`,
 `cancel`, or `stream`. Only reads, interrupted queries, and broker-not-ready

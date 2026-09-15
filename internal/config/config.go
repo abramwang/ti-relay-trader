@@ -111,14 +111,26 @@ type AutoRefreshConfig struct {
 }
 
 type AccountRouteConfig struct {
-	AccountID      string `yaml:"account_id"`
-	Alias          string `yaml:"alias"`
-	BrokerID       string `yaml:"broker_id"`
-	GatewayID      string `yaml:"gateway_id"`
-	StreamPrefix   string `yaml:"stream_prefix"`
-	Enabled        bool   `yaml:"enabled"`
-	TradingEnabled bool   `yaml:"trading_enabled"`
-	Simulated      bool   `yaml:"simulated"`
+	AccountID          string                    `yaml:"account_id"`
+	Alias              string                    `yaml:"alias"`
+	BrokerID           string                    `yaml:"broker_id"`
+	GatewayID          string                    `yaml:"gateway_id"`
+	StreamPrefix       string                    `yaml:"stream_prefix"`
+	Enabled            bool                      `yaml:"enabled"`
+	TradingEnabled     bool                      `yaml:"trading_enabled"`
+	Simulated          bool                      `yaml:"simulated"`
+	OrderEntrySchedule *OrderEntryScheduleConfig `yaml:"order_entry_schedule"`
+}
+
+type OrderEntryScheduleConfig struct {
+	CounterMode string                   `yaml:"counter_mode"`
+	Timezone    string                   `yaml:"timezone"`
+	Windows     []OrderEntryWindowConfig `yaml:"windows"`
+}
+
+type OrderEntryWindowConfig struct {
+	Start string `yaml:"start"`
+	End   string `yaml:"end"`
 }
 
 type JobConfig struct {
@@ -274,6 +286,12 @@ func (cfg *Config) ApplyDefaults() {
 	if cfg.Jobs == nil {
 		cfg.Jobs = map[string]JobConfig{}
 	}
+	for index := range cfg.Accounts {
+		schedule := cfg.Accounts[index].OrderEntrySchedule
+		if schedule != nil && strings.TrimSpace(schedule.Timezone) == "" {
+			schedule.Timezone = cfg.Service.Timezone
+		}
+	}
 }
 
 func (cfg Config) Validate() error {
@@ -395,12 +413,88 @@ func (cfg Config) Validate() error {
 		if cfg.Service.Environment == EnvironmentProduction && account.TradingEnabled && account.Simulated {
 			return fmt.Errorf("accounts[%d].simulated must be false when production trading is enabled", i)
 		}
+		if account.OrderEntrySchedule != nil {
+			if cfg.Service.Environment != EnvironmentTest {
+				return fmt.Errorf("accounts[%d].order_entry_schedule is only supported in the test environment", i)
+			}
+			if err := validateOrderEntrySchedule(*account.OrderEntrySchedule); err != nil {
+				return fmt.Errorf("accounts[%d].order_entry_schedule: %w", i, err)
+			}
+		}
 		if expected := streamPrefixForAccount(cfg.Redis.Env, account); expected != "" && account.StreamPrefix != expected {
 			return fmt.Errorf("accounts[%d].stream_prefix %q does not match expected %q", i, account.StreamPrefix, expected)
 		}
 	}
 
 	return nil
+}
+
+func validateOrderEntrySchedule(schedule OrderEntryScheduleConfig) error {
+	if strings.TrimSpace(schedule.CounterMode) == "" {
+		return errors.New("counter_mode is required")
+	}
+	if _, err := time.LoadLocation(strings.TrimSpace(schedule.Timezone)); err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", schedule.Timezone, err)
+	}
+	if len(schedule.Windows) == 0 {
+		return errors.New("at least one window is required")
+	}
+	previousEnd := -1
+	for index, window := range schedule.Windows {
+		start, err := clockMinute(window.Start)
+		if err != nil {
+			return fmt.Errorf("windows[%d].start: %w", index, err)
+		}
+		end, err := clockMinute(window.End)
+		if err != nil {
+			return fmt.Errorf("windows[%d].end: %w", index, err)
+		}
+		if start >= end {
+			return fmt.Errorf("windows[%d] start must be before end", index)
+		}
+		if start < previousEnd {
+			return fmt.Errorf("windows[%d] overlaps or is out of order", index)
+		}
+		previousEnd = end
+	}
+	return nil
+}
+
+func clockMinute(value string) (int, error) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
+	if err != nil {
+		return 0, errors.New("must use HH:MM")
+	}
+	return parsed.Hour()*60 + parsed.Minute(), nil
+}
+
+// ActiveAt evaluates a configured daily test-counter order-entry schedule.
+// Window starts are inclusive and ends are exclusive.
+func (schedule OrderEntryScheduleConfig) ActiveAt(now time.Time) (bool, time.Time, error) {
+	if err := validateOrderEntrySchedule(schedule); err != nil {
+		return false, time.Time{}, err
+	}
+	location, _ := time.LoadLocation(strings.TrimSpace(schedule.Timezone))
+	localNow := now.In(location)
+	dayStart := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, location)
+	var next time.Time
+	for _, window := range schedule.Windows {
+		startMinute, _ := clockMinute(window.Start)
+		endMinute, _ := clockMinute(window.End)
+		start := dayStart.Add(time.Duration(startMinute) * time.Minute)
+		end := dayStart.Add(time.Duration(endMinute) * time.Minute)
+		if !localNow.Before(start) && localNow.Before(end) {
+			return true, end, nil
+		}
+		if localNow.Before(start) && (next.IsZero() || start.Before(next)) {
+			next = start
+		}
+	}
+	if next.IsZero() {
+		firstStart, _ := clockMinute(schedule.Windows[0].Start)
+		next = dayStart.Add(24*time.Hour + time.Duration(firstStart)*time.Minute)
+	}
+	return false, next, nil
 }
 
 func (cfg Config) EmbeddedLedgerSyncEnabled() bool {

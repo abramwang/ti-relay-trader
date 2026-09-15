@@ -184,7 +184,13 @@
             ${statusBadge(gateway.status)}
             ${gateway.state_text ? `<br><span>${escapeHTML(gateway.state_text)}</span>` : ""}
             ${gateway.accepting_trade_commands !== undefined
-              ? `<br><span>交易 ${gateway.accepting_trade_commands ? "可用" : "暂停"} · 撤单 ${gateway.accepting_cancel_commands ? "可用" : "暂停"}</span>`
+              ? `<br><span>OC交易命令 ${gateway.accepting_trade_commands ? "接收" : "暂停"} · 撤单 ${gateway.accepting_cancel_commands ? "接收" : "暂停"}</span>`
+              : ""}
+            ${gateway.broker_session_state
+              ? `<br><span>下单准入 ${gateway.order_entry_ready ? "就绪" : "关闭"} · ${escapeHTML(gateway.broker_session_state)}${gateway.order_entry_block_reason ? ` · ${escapeHTML(gateway.order_entry_block_reason)}` : ""}</span>`
+              : ""}
+            ${gateway.next_transition_at
+              ? `<br><span>下次切换 ${formatTime(gateway.next_transition_at, true)}</span>`
               : ""}
           </td>
           <td>${formatTime(gateway.last_heartbeat_at, true)}</td>

@@ -57,6 +57,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "events.cursor_resume.v1",
                             "orders.batch_child_outcomes.v1",
                             "orders.explicit_command_ids.v1",
+                            "accounts.order_entry_readiness.v1",
                         ],
                         "http_routes": [{"method": "GET", "path": "/v1/schema"}],
                         "redis_actions": ["order.batch.submit"],
@@ -66,6 +67,31 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/v1/accounts":
             self._json({"ok": True, "data": {"accounts": [{"account_id": "acct-1", "enabled": True}]}})
+            return
+        if parsed.path == "/v1/accounts/acct-1/readiness":
+            ready = query.get("force", ["false"])[0] == "true"
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "readiness": {
+                            "account_id": "acct-1",
+                            "environment": "test",
+                            "counter_mode": "huaxin_7x24_test",
+                            "order_entry_ready": ready,
+                            "broker_session_state": "ready" if ready else "blocked",
+                            "order_entry_block_reason": "" if ready else "OUTSIDE_TEST_COUNTER_WINDOW",
+                            "observed_at": "2026-09-15T13:15:00+08:00",
+                            "next_transition_at": "2026-09-15T13:25:00+08:00",
+                            "order_entry_timezone": "Asia/Shanghai",
+                            "order_entry_readiness_source": "oc_heartbeat+configured_test_schedule",
+                            "broker_ready": True,
+                            "order_snapshot_ready": True,
+                            "accepting_trade_commands": True,
+                        }
+                    },
+                }
+            )
             return
         if parsed.path == "/v1/accounts/acct-1/asset":
             self._json({"ok": True, "data": {"asset": {"account_id": "acct-1", "net_asset": 123.45, "reverse_repo_receivable": 100.0}}})
@@ -903,12 +929,27 @@ class RelayClientTest(unittest.TestCase):
         )
         self.assertEqual(catalog.version, TRADING_SCHEMA_VERSION)
         self.assertTrue(catalog.supports("orders.explicit_command_ids.v1"))
+        self.assertTrue(catalog.supports("accounts.order_entry_readiness.v1"))
         with self.assertRaises(RelayCapabilityError) as raised:
             self.client.require_capabilities("future.capability.v9")
         self.assertEqual(raised.exception.code, "CAPABILITY_MISSING")
         self.assertEqual(self.client.list_orders(gateway_order_id="gw-1")[0].status, "filled")
         self.assertEqual(self.client.list_fills()[0].fill_id, "fill-1")
         self.assertEqual(self.client.list_transfers()[0].component_qty, 300)
+
+    def test_account_readiness_and_fail_closed_verification(self):
+        readiness = self.client.get_account_readiness(force=False)
+        self.assertFalse(readiness.order_entry_ready)
+        self.assertEqual(readiness.order_entry_block_reason, "OUTSIDE_TEST_COUNTER_WINDOW")
+        self.assertEqual(readiness.counter_mode, "huaxin_7x24_test")
+
+        with self.assertRaises(RelayBrokerNotReadyError) as raised:
+            self.client.verify_ready(force=False)
+        self.assertEqual(raised.exception.code, "OUTSIDE_TEST_COUNTER_WINDOW")
+
+        verified = self.client.verify_ready(force=True)
+        self.assertTrue(verified.order_entry_ready)
+        self.assertEqual(verified.broker_session_state, "ready")
 
     def test_order_page_preserves_real_http_envelope(self):
         page = self.client.list_orders_page(gateway_order_id="gw-1", limit=1)

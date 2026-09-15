@@ -5,6 +5,18 @@
   { "id": "accounts", "group": "账户", "title": "账户列表", "method": "GET", "path": "/v1/accounts", "status": "ready", "fields": [] },
   { "id": "account-routes", "group": "账户", "title": "账户路由与权限", "method": "GET", "path": "/v1/account-routes", "status": "ready", "fields": [] },
   {
+    "id": "account-readiness",
+    "group": "账户",
+    "title": "账户下单准入状态",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/readiness",
+    "status": "ready",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "force", "label": "force（跳过 5 秒缓存）", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] }
+    ]
+  },
+  {
     "id": "account-alias",
     "group": "账户",
     "title": "账户别名更新",

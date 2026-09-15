@@ -10,12 +10,19 @@ import (
 
 func TestCatalogAdvertisesAssetReadinessErrors(t *testing.T) {
 	catalog := Catalog()
+	foundAssetReadiness := false
+	foundOrderReadiness := false
 	for _, capability := range catalog.Capabilities {
 		if capability == CapabilityAssetReadinessErrors {
-			return
+			foundAssetReadiness = true
+		}
+		if capability == CapabilityAccountOrderReadiness {
+			foundOrderReadiness = true
 		}
 	}
-	t.Fatalf("catalog capabilities missing %q: %#v", CapabilityAssetReadinessErrors, catalog.Capabilities)
+	if !foundAssetReadiness || !foundOrderReadiness {
+		t.Fatalf("catalog readiness capabilities missing: %#v", catalog.Capabilities)
+	}
 }
 
 func TestSubmitOrderValidate(t *testing.T) {

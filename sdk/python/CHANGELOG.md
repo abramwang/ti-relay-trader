@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.36 - 2026-09-15
+
+- Add typed account order-entry readiness with `get_account_readiness()` and
+  fail-closed `verify_ready()` helpers.
+- Expose configured test-counter windows separately from OC heartbeat health;
+  production trading-session behavior is unchanged.
+
 ## 0.1.35 - 2026-09-14
 
 - Add `Asset.reverse_repo_receivable`; enriched current assets and standard close snapshots now include reverse-repo principal once in `net_asset`, bounded by the asset snapshot capture time.

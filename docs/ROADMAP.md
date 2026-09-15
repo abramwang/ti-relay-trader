@@ -437,6 +437,7 @@
 - [x] 将交易质量升级为 `trade_quality.v7`：内部 `relay_*` 迁移/幂等审计原因不再冒充柜台拒绝原因；确认 4 条旧终态拒单正残量来自 OC 历史字段且无标准原因文本，保留原始证据并禁止按可执行数量解释。
 - [x] 发布 `public/sdk/relay-sdk-0.1.34.tar.gz` 和 SHA256 校验文件；按 Chronos R2c 要求为单笔、批量和撤单写回执补齐稳定 `action`，SDK 对缺失/错误动作按结果未知失败关闭。测试环境已使用 Meridian 实时 Level1 盘口完成首次发布、幂等重放、working 订单首次撤单及撤单重放，Redis 无重复副作用。
 - [x] 发布 `public/sdk/relay-sdk-0.1.35.tar.gz` 和 SHA256 校验文件，资产模型增加逆回购本金应收字段并保持净资产只计一次。
+- [x] 发布 `public/sdk/relay-sdk-0.1.36.tar.gz` 和 SHA256 校验文件；增加账户级 `order_entry_ready`、柜台会话状态、阻断原因和下一时段切换，并由 `verify_ready()` 在写调用前失败关闭。华鑫 7x24 时间表仅用于当前 OC 测试环境，生产维持正常 A 股时段。
 - [x] 解除 Chronos 测试资产基线阻断：测试库补齐 migration 25-28，环境切换前先迁移目标数据库；原始/默认资产和当前持仓只读准入通过，并以 `assets.readiness_errors.v1` 区分账户不存在、资产未就绪和内部数据库故障。
 - [x] 接收 Chronos 对测试资产基线与 Direct 两子单的独立验收：批量提交、持久化幂等重放、逐单 working、Go 授权撤单、双 cancelled 零成交终态及 SSE/全量对账均通过；TWAP、R3 故障注入和生产准入继续保持未验收边界。
 

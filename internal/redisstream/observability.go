@@ -97,6 +97,14 @@ type GatewayRuntimeStatus struct {
 	LastIssueCode           string     `json:"last_issue_code,omitempty"`
 	LastIssueMessage        string     `json:"last_issue_message,omitempty"`
 	LastIssueAt             *time.Time `json:"last_issue_at,omitempty"`
+	CounterMode             string     `json:"counter_mode,omitempty"`
+	OrderEntryReady         bool       `json:"order_entry_ready"`
+	BrokerSessionState      string     `json:"broker_session_state"`
+	OrderEntryBlockReason   string     `json:"order_entry_block_reason,omitempty"`
+	OrderEntryObservedAt    time.Time  `json:"observed_at"`
+	OrderEntryNextChangeAt  *time.Time `json:"next_transition_at,omitempty"`
+	OrderEntryTimezone      string     `json:"order_entry_timezone,omitempty"`
+	OrderEntrySource        string     `json:"order_entry_readiness_source"`
 }
 
 type StreamRuntimeStatus struct {
@@ -377,13 +385,37 @@ func (service *RuntimeObservability) queueRedisProbes(
 }
 
 func (service *RuntimeObservability) monitoringWindow(ctx context.Context, now time.Time) (bool, string, market.TradingDayStatus) {
-	if service.calendar == nil {
-		return false, "calendar_unavailable", market.TradingDayStatus{}
+	var status market.TradingDayStatus
+	var calendarErr error
+	if service.calendar != nil {
+		checkCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		defer cancel()
+		status, calendarErr = service.calendar.TradingDayStatus(checkCtx, now.Format("2006-01-02"))
+	} else {
+		calendarErr = errors.New("calendar unavailable")
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-	defer cancel()
-	status, err := service.calendar.TradingDayStatus(checkCtx, now.Format("2006-01-02"))
-	if err != nil || !status.IsTradingDayKnown {
+
+	if service.cfg.Service.Environment == config.EnvironmentTest {
+		hasTestSchedule := false
+		for _, account := range service.cfg.Accounts {
+			if !account.Enabled || account.OrderEntrySchedule == nil {
+				continue
+			}
+			hasTestSchedule = true
+			active, _, err := account.OrderEntrySchedule.ActiveAt(now)
+			if err != nil {
+				return false, "test_counter_schedule_invalid", status
+			}
+			if active {
+				return true, "test_counter_session", status
+			}
+		}
+		if hasTestSchedule {
+			return false, "test_counter_off_hours", status
+		}
+	}
+
+	if calendarErr != nil || !status.IsTradingDayKnown {
 		return false, "calendar_unavailable", status
 	}
 	if !status.IsTradingDay {
@@ -529,33 +561,106 @@ func (service *RuntimeObservability) gatewayStatus(
 	}
 	if !monitoringActive {
 		status.Status = "off_hours"
-		return status
+	} else {
+		state := strings.ToUpper(strings.TrimSpace(status.State))
+		stateText := strings.ToLower(strings.TrimSpace(status.StateText))
+		switch {
+		case status.BrokerNotReady || boolIsFalse(status.BrokerReady) || stateText == "broker_not_ready":
+			status.Status = "broker_not_ready"
+		case strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT"):
+			status.Status = "reconnecting"
+		case status.LastHeartbeatAt == nil:
+			status.Status = "missing"
+		case status.HeartbeatAgeSecs > int64(service.cfg.Operations.HeartbeatStaleSeconds):
+			status.Status = "stale"
+		case state == "UP" &&
+			!boolIsFalse(status.RedisReady) &&
+			!boolIsFalse(status.OrderSnapshotReady) &&
+			!boolIsFalse(status.AcceptingTradeCommands) &&
+			!boolIsFalse(status.AcceptingCancelCommands):
+			status.Status = "online"
+		default:
+			status.Status = "degraded"
+		}
+	}
+	service.applyOrderEntryReadiness(&status, command.account, now)
+	return status
+}
+
+func (service *RuntimeObservability) applyOrderEntryReadiness(
+	status *GatewayRuntimeStatus,
+	account config.AccountRouteConfig,
+	now time.Time,
+) {
+	status.OrderEntryObservedAt = now
+	status.OrderEntrySource = "oc_heartbeat"
+	status.BrokerSessionState = "blocked"
+	if account.OrderEntrySchedule != nil {
+		status.CounterMode = strings.TrimSpace(account.OrderEntrySchedule.CounterMode)
+		status.OrderEntryTimezone = strings.TrimSpace(account.OrderEntrySchedule.Timezone)
+		status.OrderEntrySource = "oc_heartbeat+configured_test_schedule"
+	}
+	if !account.TradingEnabled {
+		status.OrderEntryBlockReason = "RELAY_TRADING_DISABLED"
+		return
+	}
+	if status.LastHeartbeatAt == nil {
+		status.BrokerSessionState = "disconnected"
+		status.OrderEntryBlockReason = "HEARTBEAT_MISSING"
+		return
+	}
+	if status.HeartbeatAgeSecs > int64(service.cfg.Operations.HeartbeatStaleSeconds) {
+		status.BrokerSessionState = "disconnected"
+		status.OrderEntryBlockReason = "HEARTBEAT_STALE"
+		return
 	}
 	state := strings.ToUpper(strings.TrimSpace(status.State))
 	stateText := strings.ToLower(strings.TrimSpace(status.StateText))
-	switch {
-	case status.BrokerNotReady || boolIsFalse(status.BrokerReady) || stateText == "broker_not_ready":
-		status.Status = "broker_not_ready"
-	case strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT"):
-		status.Status = "reconnecting"
-	case status.LastHeartbeatAt == nil:
-		status.Status = "missing"
-	case status.HeartbeatAgeSecs > int64(service.cfg.Operations.HeartbeatStaleSeconds):
-		status.Status = "stale"
-	case state == "UP" &&
-		!boolIsFalse(status.RedisReady) &&
-		!boolIsFalse(status.OrderSnapshotReady) &&
-		!boolIsFalse(status.AcceptingTradeCommands) &&
-		!boolIsFalse(status.AcceptingCancelCommands):
-		status.Status = "online"
-	default:
-		status.Status = "degraded"
+	if status.BrokerNotReady || stateText == "broker_not_ready" ||
+		boolIsFalse(status.RedisReady) || boolIsFalse(status.BrokerReady) ||
+		strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT") {
+		status.BrokerSessionState = "disconnected"
+		status.OrderEntryBlockReason = "BROKER_DISCONNECTED"
+		return
 	}
-	return status
+	if state != "UP" || !boolIsTrue(status.RedisReady) || !boolIsTrue(status.BrokerReady) {
+		status.BrokerSessionState = "starting"
+		status.OrderEntryBlockReason = "OC_STARTING"
+		return
+	}
+	if !boolIsTrue(status.OrderSnapshotReady) {
+		status.BrokerSessionState = "starting"
+		status.OrderEntryBlockReason = "ORDER_SNAPSHOT_NOT_READY"
+		return
+	}
+	if !boolIsTrue(status.AcceptingTradeCommands) {
+		status.OrderEntryBlockReason = "OC_TRADE_COMMANDS_PAUSED"
+		return
+	}
+	if account.OrderEntrySchedule != nil {
+		active, next, err := account.OrderEntrySchedule.ActiveAt(now)
+		if !next.IsZero() {
+			status.OrderEntryNextChangeAt = &next
+		}
+		if err != nil {
+			status.OrderEntryBlockReason = "ORDER_ENTRY_SCHEDULE_INVALID"
+			return
+		}
+		if !active {
+			status.OrderEntryBlockReason = "OUTSIDE_TEST_COUNTER_WINDOW"
+			return
+		}
+	}
+	status.OrderEntryReady = true
+	status.BrokerSessionState = "ready"
 }
 
 func boolIsFalse(value *bool) bool {
 	return value != nil && !*value
+}
+
+func boolIsTrue(value *bool) bool {
+	return value != nil && *value
 }
 
 func maxInt64(left, right int64) int64 {

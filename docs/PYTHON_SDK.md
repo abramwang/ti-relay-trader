@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.35`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.36`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.35.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.36.tar.gz` 和 `.sha256` 下载入口。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
 19. `submit_order()` 支持 `trade_date`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 可选策略归因字段；`Order` 和 `Fill` dataclass 会解析同名字段。
@@ -94,15 +94,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.35.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.36.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.35.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.35.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.35.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.36.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.36.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.36.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -128,7 +128,12 @@ catalog = client.require_capabilities(
     "events.cursor_resume.v1",
     "orders.batch_child_outcomes.v1",
     "orders.explicit_command_ids.v1",
+    "accounts.order_entry_readiness.v1",
 )
+
+# 每次写入前强制刷新账户级准入状态；未就绪时抛出
+# RelayBrokerNotReadyError，不发送交易命令。
+readiness = client.verify_ready()
 ```
 
 确定性测试可向构造函数传入实现 `open(request, timeout=...)` 的 urllib 兼容 `opener`。这是公开注入点，调用方不需要覆盖 `_request()` 或 `_open()`。
@@ -359,6 +364,8 @@ client = RelayClient(
 | `get_command_status(origin_message_id)` | `GET /v1/command-status/{origin_message_id}` | 查询任意查询或交易命令的归档回报状态 |
 | `get_schema()` | `GET /v1/schema` | 返回 `SchemaCatalog` 版本、能力、路由和 Redis action |
 | `require_capabilities(...)` | `GET /v1/schema` | 对 schema 版本和必需能力做失败关闭校验 |
+| `get_account_readiness(account_id=None, force=False)` | `GET /v1/accounts/{account_id}/readiness` | 返回类型化 OC 心跳、柜台会话和订单准入状态 |
+| `verify_ready(account_id=None, force=True)` | 同上 | 强制读取最新状态；`order_entry_ready=false` 时失败关闭且不发送交易命令 |
 | `get_performance_daily(trade_date=...)` | `GET /v1/accounts/{account_id}/performance/daily` | 查询日终权益、日初资产、隔夜调整和日内 PnL |
 | `get_performance_series(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series` | 查询账户绩效序列，可选 Meridian bars 基准对照，包含 open-to-close 日内字段 |
 | `get_performance_series_csv(date_from=..., date_to=..., benchmark_security_id=...)` | `GET /v1/accounts/{account_id}/performance/series.csv` | 下载绩效 CSV 文本，可包含日初/日内字段、基准收益和超额收益字段 |
