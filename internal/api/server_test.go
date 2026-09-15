@@ -3257,6 +3257,37 @@ func TestDailyReviewReportAggregatesAccountBlockingAndBreaks(t *testing.T) {
 	}
 }
 
+func TestDailyReviewSnapshotUsesPersistedValuedAsset(t *testing.T) {
+	updatedAt := time.Date(2026, 9, 15, 9, 1, 2, 0, timeutil.Location())
+	store := &fakeSettlementStore{assetSnapshotResult: trading.Asset{
+		AccountID:     "acct-1",
+		CashAvailable: 900000,
+		CashTotal:     900000,
+		MarketValue:   125000,
+		StockValue:    125000,
+		NetAsset:      1025000,
+		UpdatedAt:     updatedAt,
+	}}
+	server := &Server{settles: store}
+	snapshot := &DailyReviewSnapshot{
+		Persisted: true,
+		Asset: map[string]any{
+			"cash_available": 900000.0,
+			"market_value":   0.0,
+			"net_asset":      900000.0,
+		},
+	}
+
+	result := server.hydrateDailyReviewSnapshotAsset(context.Background(), "acct-1", "2026-09-15", "open", snapshot)
+
+	if result.Asset["market_value"] != 125000.0 || result.Asset["net_asset"] != 1025000.0 {
+		t.Fatalf("valued open asset = %#v", result.Asset)
+	}
+	if result.AssetUpdatedAt != "2026-09-15T09:01:02+08:00" || store.assetSnapshotQueryType != "open" {
+		t.Fatalf("snapshot metadata = %q / %q", result.AssetUpdatedAt, store.assetSnapshotQueryType)
+	}
+}
+
 func TestDailyPerformanceQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		performance: ledger.DailyPerformance{

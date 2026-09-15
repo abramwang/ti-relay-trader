@@ -12,6 +12,7 @@ import (
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/timeutil"
+	"ti-relay-trader/internal/trading"
 )
 
 const dailyReviewBreakLimit = 1000
@@ -201,6 +202,8 @@ func (s *Server) buildDailyReviewReport(ctx context.Context, requested string) (
 		}
 		account.Open = dailyReviewSnapshot(latest["pre_open_init"], "open_snapshot", accountID)
 		account.Close = dailyReviewSnapshot(latest["post_close_settlement"], "settlement_snapshot", accountID)
+		account.Open = s.hydrateDailyReviewSnapshotAsset(ctx, accountID, tradeDate, "open", account.Open)
+		account.Close = s.hydrateDailyReviewSnapshotAsset(ctx, accountID, tradeDate, "close", account.Close)
 		for _, item := range breaks {
 			if item.AccountID != accountID {
 				continue
@@ -333,10 +336,14 @@ func dailyReviewSnapshot(run *ledger.JobRun, wrapperKey string, accountID string
 		return nil
 	}
 	observed := reviewMap(flow["snapshot"])
+	asset := reviewMap(settled["asset"])
+	if asset == nil {
+		asset = reviewMap(observed["asset"])
+	}
 	snapshot := &DailyReviewSnapshot{
 		Persisted:                boolFromReviewAny(settled["asset_snapshot_written"]),
 		Blocked:                  boolFromReviewAny(flow["snapshot_blocked"]),
-		Asset:                    reviewMap(observed["asset"]),
+		Asset:                    asset,
 		AssetUpdatedAt:           stringFromAny(observed["asset_updated_at"]),
 		PositionsLatestUpdatedAt: stringFromAny(observed["positions_latest_updated_at"]),
 		PositionSnapshots:        intFromReviewAny(settled["position_snapshots_written"]),
@@ -355,6 +362,34 @@ func dailyReviewSnapshot(run *ledger.JobRun, wrapperKey string, accountID string
 	}
 	snapshot.Errors = uniqueStrings(snapshot.Errors)
 	return snapshot
+}
+
+func (s *Server) hydrateDailyReviewSnapshotAsset(ctx context.Context, accountID string, tradeDate string, snapshotType string, snapshot *DailyReviewSnapshot) *DailyReviewSnapshot {
+	if snapshot == nil || !snapshot.Persisted || s.settles == nil {
+		return snapshot
+	}
+	asset, err := s.settles.GetAssetSnapshot(ctx, accountID, tradeDate, snapshotType)
+	if err != nil || strings.TrimSpace(asset.AccountID) == "" {
+		return snapshot
+	}
+	snapshot.Asset = dailyReviewAssetMap(asset)
+	if !asset.UpdatedAt.IsZero() {
+		snapshot.AssetUpdatedAt = timeutil.FormatRFC3339Nano(asset.UpdatedAt)
+	}
+	return snapshot
+}
+
+func dailyReviewAssetMap(asset trading.Asset) map[string]any {
+	return map[string]any{
+		"account_id":              asset.AccountID,
+		"cash_available":          asset.CashAvailable,
+		"cash_total":              asset.CashTotal,
+		"market_value":            asset.MarketValue,
+		"stock_value":             asset.StockValue,
+		"fund_value":              asset.FundValue,
+		"reverse_repo_receivable": asset.ReverseRepoReceivable,
+		"net_asset":               asset.NetAsset,
+	}
 }
 
 func snapshotIssues(source string, snapshot *DailyReviewSnapshot) []DailyReviewIssue {

@@ -4056,6 +4056,10 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 			reverseRepoSource = "ordinary_fill_ledger"
 		}
 	}
+	if strings.TrimSpace(assetResult.Asset.AccountID) != "" {
+		asset := assetResult.Asset
+		out.Asset = &asset
+	}
 	out.PositionsCount = len(positionResult.Positions)
 	out.OrdersCount = len(ordersResult.Orders)
 	out.FillsCount = len(fillsResult.Fills)
@@ -5151,6 +5155,7 @@ type SettlementSnapshotResult struct {
 
 type SettlementSnapshotAccountResult struct {
 	AccountID                string                       `json:"account_id"`
+	Asset                    *trading.Asset               `json:"asset,omitempty"`
 	AssetSnapshotWritten     bool                         `json:"asset_snapshot_written"`
 	PositionsCount           int                          `json:"positions_count"`
 	PositionSnapshotsWritten int                          `json:"position_snapshots_written"`
