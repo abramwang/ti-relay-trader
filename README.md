@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
-| 安全状态 | 测试账户 `00030484` 已启用查询、下单和撤单；生产配置仍为 5 个启用查询、0 个开放交易，未被本次切换修改 |
+| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker |
+| 安全状态 | 生产共配置 6 个账户，其中 5 个启用查询、0 个开放交易；`501000114077` 保留历史账本但路由停用 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-15` Chronos 本轮平安银行成交时间应取 `fill.matched_at=13:53:00+08:00`；`09:46:44` 来自华鑫 7x24 测试柜台订单状态时钟，不是成交时间。Relay 页面成交列已统一按 `matched_at` 展示 |
+| 最近确认 | `2026-09-15 14:31 Asia/Shanghai` 按用户明确指令切回生产；API/worker 健康，Redis、PostgreSQL、事件流均为 `ok`，生产 `trading_enabled=0` |
 | 更新时间 | `2026-09-15` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-15 14:31 Asia/Shanghai` 按用户明确指令从测试环境切回生产：目标库 migration 成功，独立 API/worker 启动健康；6 个账户保留、5 个启用查询、0 个开放交易，`501000114077` 继续停用且历史账本不删除。
 - `2026-09-15 13:41 Asia/Shanghai` 已按华鑫 7x24 测试柜台的集合竞价、休市和交易分段增加账户级 `order_entry_ready`；只在测试配置生效，生产仍使用正常 A 股时段。`GET /v1/accounts/00030484/readiness?force=true` 实测为 ready、下一次切换 `15:30`；Python SDK `0.1.36` 增加类型化读取和失败关闭 `verify_ready()`，详见 [Chronos 测试柜台准入说明](/home/ti-relay-trader/docs/CHRONOS_TEST_ORDER_ENTRY_READINESS_20260915.md:1)。
 - `2026-09-15 09:37 Asia/Shanghai` 按用户明确指令切到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker；测试 OC 的 Redis、柜台和订单快照均 ready，账户 `00030484` 可接收交易及撤单命令，4 条 Stream `lag=0`、pending DLQ=0。生产配置未修改，切回生产仍需用户明确指令。
 - `2026-09-14 21:01 Asia/Shanghai` 按用户明确指令切回生产环境：`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker 均健康；6 个账户配置中 5 个启用查询、0 个开放交易，20 条生产 Stream `lag=0`、pending DLQ=0。盘后 `off_hours` 为正常监控状态。
@@ -75,7 +76,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 4. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
 5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 当前处于测试环境，账户 `00030484` 已开放查询和交易用于联调；生产配置继续保持五个启用账户只读、全部下单关闭，切回生产必须收到用户明确指令。
+6. 当前处于生产环境，五个启用账户只读、全部下单关闭；任何切换到测试或开放生产交易都必须收到用户新的明确指令。
 
 ## 系统边界
 
