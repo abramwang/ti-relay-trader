@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 已启用查询、下单和撤单；生产配置仍为 5 个启用查询、0 个开放交易，未被本次切换修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-15 13:41 Asia/Shanghai` 测试 OC 为 `UP`；账户 `00030484` 的 7x24 柜台时段准入为 ready，下一次切换 `15:30`，4 条 Stream `lag=0`、DLQ pending=0 |
+| 最近确认 | `2026-09-15` Chronos 本轮平安银行成交时间应取 `fill.matched_at=13:53:00+08:00`；`09:46:44` 来自华鑫 7x24 测试柜台订单状态时钟，不是成交时间。Relay 页面成交列已统一按 `matched_at` 展示 |
 | 更新时间 | `2026-09-15` |
 
 新线程按以下顺序恢复：
@@ -48,6 +48,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 当前进展与阻塞
 
+- Chronos 本轮验收把测试订单的 `accepted_at/last_updated_at=09:46:44` 与逐笔成交时间混淆；权威成交字段为 `Fill.matched_at=13:53:00+08:00`。Chronos 底层投影已读取该字段，仍需修正验收取证、页面或持久化消费口径；测试柜台状态时钟差异不外推到生产，详见 [Chronos 成交时间字段语义纠正](/home/ti-relay-trader/docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md:1)。
 - 首页已移除主栏 `200/126/280px` 固定 Grid 行约束：5 个快捷入口自动排布，账户路由表按实际账户行数撑开，左右两栏共同决定 dashboard 高度。Playwright 已在 `1600x900` 与 `1366x768` 验证入口、6 行账户路由和右侧运行边界无裁切、无重叠。
 - `/jobs` 已移除任务计划区的固定高度约束：任务卡按内容自适应，账户复核、历史记录和报告区随内容顺序布局，超出视口时由页面主区域统一滚动；任务报告工作区限制为随视口变化的 `360-520px`，完整 JSON 在模块内部滚动。Playwright 已验证 5 张任务卡无裁切、无区域重叠，78KB 长报告不会撑高外层页面。
 - Chronos 在 `2026-09-14 19:11` 遇到的测试资产 HTTP 500 已定位为测试 PostgreSQL 缺 migration 28，并非 OC 未 ready。测试库已升级、目标库迁移已纳入环境切换前置门禁；`GET /asset?enrich=false` 和默认资产均恢复 200。资产错误现区分 `404 NOT_FOUND`、`503 ASSET_NOT_READY` 和 `500 INTERNAL`，复测证据见 [Chronos 测试资产基线验收](/home/ti-relay-trader/docs/CHRONOS_TEST_ASSET_BASELINE_ACCEPTANCE_20260914.md:1)。
@@ -96,6 +97,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 订单业务唯一键为 `account_id + trade_date + gateway_order_id`；`req_id` 是客户端请求 ID，`order_id` 是柜台 ID，`order_stream_id` 是交易所/柜台委托流 ID，均保留用于关联和审计。
 - 本地订单首次提交的 `origin_message_id`、`request_id` 和 `idempotency_key` 是不可变命令身份，后续查询回报和状态事件不得覆盖；批量子单通过同一 `origin_message_id` 完整回查。
 - 成交必须关联订单并按账户、交易日、订单作用域幂等；ETF 赎回 0 价成分划转使用 `transfer.event`，不得伪装成普通成交。
+- 逐笔成交时间唯一消费口径为 `fill.matched_at`；订单 `accepted_at/last_updated_at/terminal_at` 只描述订单生命周期，不能用于成交展示、成交回调、TCA 或逐笔成交事实。
 - 相同幂等键和相同 payload 返回原回执并标记 replay；相同键不同 payload 返回 `IDEMPOTENCY_CONFLICT`，终态订单不得被重复提交回退。
 - 测试环境订单和成交默认查询东八区自然日，生产环境默认查询 Meridian 最近交易日；历史订单、成交和持仓使用独立历史接口。表格查询使用服务端 cursor 分页。
 - 价格展示位数和可报步长分别读取 Meridian `price_decimals`、`price_tick`；当前沪深股票为 2 位、ETF/可转债为 3 位。北交所未纳入当前实盘能力。

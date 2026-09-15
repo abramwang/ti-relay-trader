@@ -118,11 +118,13 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 分钟 K 线买卖点来自 relay 本地账本，不新增行情字段定义：
 
-1. 成交优先，使用 `fills.price` 和 `fills.matched_at/match_timestamp`。
+1. 成交优先，使用 `fills.price` 和 `fills.matched_at`；`match_timestamp` 只作原始审计，不作为页面成交时间回退值。
 2. 同一订单已有成交时，不重复绘制该订单的委托点。
 3. 未成交订单使用 `orders.limit_price` 和 `created_at/inserted_at/accepted_at/last_updated_at`。
 4. 买点用红色上三角，卖点用绿色下三角；tooltip 展示成交/委托、ID、状态、价格和数量。
 5. 打开交易测试页、切换证券代码、手动刷新 K 线或收到 `order.changed/fill.changed` SSE 事件时，会刷新当前图表标的的标注。
+
+`当日成交` 表、订单详情中的逐笔执行记录和 K 线成交点统一显示 `fill.matched_at`。订单详情轨迹中的受理、状态刷新和终态时间来自订单生命周期字段；测试环境会明确标记为“测试柜台状态时钟”，避免把华鑫 7x24 回放行情时钟误认为逐笔成交时间。生产页面保持正常正式柜台语义。
 
 ## 订单 ID 口径
 

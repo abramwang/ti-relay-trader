@@ -7,6 +7,28 @@ import (
 	relayconfig "ti-relay-trader/internal/config"
 )
 
+func TestTradeTerminalUsesMatchedAtForFillTimes(t *testing.T) {
+	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
+	if err != nil {
+		t.Fatalf("read trade terminal script: %v", err)
+	}
+	text := string(script)
+	for _, required := range []string{
+		`<th>成交时间</th>`,
+		`formatTime(fill.matched_at)`,
+		`minuteLabel(fill.matched_at)`,
+		`测试柜台状态时钟`,
+		`hour12: false, timeZone: "Asia/Shanghai"`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("trade terminal is missing fill-time contract %q", required)
+		}
+	}
+	if strings.Contains(text, `minuteLabel(fill.matched_at || fill.match_timestamp)`) {
+		t.Fatal("trade terminal still falls back from matched_at to match_timestamp")
+	}
+}
+
 func TestPortalAccountRowsPreferDatabaseAliases(t *testing.T) {
 	rows := portalAccountRowsHTML(
 		[]relayconfig.AccountRouteConfig{{

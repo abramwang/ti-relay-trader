@@ -286,7 +286,8 @@ OC 2026-08-03 版本为持仓增加 `total_cost`、`avg_cost_source` 和 `cost_c
   "qty": 100,
   "fee": 0.0,
   "trade_date": "2026-07-24",
-  "match_timestamp": 1777103459957,
+  "match_timestamp": 1784860259957,
+  "matched_at": "2026-07-24T10:30:59.957+08:00",
   "strategy_type": "stock_cross_section",
   "strategy_id": "alpha-basket-v1",
   "basket_id": "basket-20260724-001"
@@ -299,6 +300,10 @@ OC 2026-08-03 版本为持仓增加 `total_cost`、`avg_cost_source` 和 `cost_c
 2. `order_stream_id + order_id + symbol + exchange + match_timestamp + qty + price`
 
 `fill_id` 对应的柜台成交流号或 `adapter_context.match_stream_id` 只要求在订单作用域内稳定，不要求在账户当日或全历史范围内唯一。策略端如果自行做成交回调去重，也应把 `gateway_order_id` 纳入 key。
+
+逐笔成交的业务时间统一使用 `matched_at`。它是带时区的 RFC3339 时间，也是成交回调、成交展示、TCA 和策略持久化的唯一首选时间字段。`match_timestamp` 保留为 OC 原始毫秒时间戳和幂等证据；订单的 `accepted_at`、`last_updated_at`、`terminal_at` 只描述订单生命周期，不能替代成交时间。一笔订单存在多笔成交时，每笔成交必须保留自己的 `matched_at`。
+
+华鑫 7x24 测试柜台可能同时出现真实报单/成交时刻和回放行情对应的订单状态时钟；这是测试柜台语义，不外推到生产正式柜台，也不改变上述消费规则。
 
 如果前置只推送订单累计成交量，而没有同步推送完整 `fill.event` 或 `fill_page`，relay 会在新订单事件入账时补一条汇总成交，保证订单账本和成交账本的数量口径向前一致。该补齐记录的 `fill_id` 形如 `relay-summary:<gateway_order_id>`，并在 `adapter_context` 中标记 `relay_synthesized=true`、`relay_synthesis_source=order.event/order_page`、`relay_synthesis_reason=order_filled_without_complete_fill_ledger`。这类记录不是柜台逐笔成交，策略端如果需要严格逐笔成交，可以按该标记过滤。
 

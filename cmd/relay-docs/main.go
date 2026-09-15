@@ -170,6 +170,12 @@ var (
 			Description: "Chronos P0/P1、价格精度和发布要求的 Relay 侧逐项验收结论。",
 		},
 		{
+			Slug:        "chronos-fill-time-semantics-20260915",
+			Title:       "Chronos 成交时间语义",
+			Path:        "docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md",
+			Description: "明确逐笔成交使用 fill.matched_at，并区分测试柜台订单状态时钟。",
+		},
+		{
 			Slug:        "meridian-instrument-price-tick-requirements-20260902",
 			Title:       "Meridian 证券价位契约验收",
 			Path:        "docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md",

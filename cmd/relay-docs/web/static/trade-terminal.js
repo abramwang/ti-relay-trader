@@ -757,7 +757,7 @@
     if (Number.isNaN(date.getTime())) {
       return String(value);
     }
-    return date.toLocaleTimeString("zh-CN", { hour12: false });
+    return date.toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
   }
 
   function formatShortDateTime(value) {
@@ -769,7 +769,7 @@
       return String(value);
     }
     const compact = businessDateCompact(date);
-    const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+    const time = date.toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
     if (compact === currentBusinessDate()) {
       return time;
     }
@@ -3264,6 +3264,7 @@
         <thead>
           <tr>
             <th class="sortable" data-sort-table="fills" data-sort-key="fill_id">成交编号</th>
+            <th class="sortable" data-sort-table="fills" data-sort-key="matched_at">成交时间</th>
             <th class="sortable" data-sort-table="fills" data-sort-key="req_id">ReqID</th>
             <th class="sortable" data-sort-table="fills" data-sort-key="counter">柜台/交易所</th>
             <th class="sortable" data-sort-table="fills" data-sort-key="symbol">代码</th>
@@ -3271,7 +3272,6 @@
             <th class="sortable" data-sort-table="fills" data-sort-key="side">方向</th>
             <th class="num sortable" data-sort-table="fills" data-sort-key="price">成交价格</th>
             <th class="num sortable" data-sort-table="fills" data-sort-key="quantity">成交数量</th>
-            <th class="sortable" data-sort-table="fills" data-sort-key="matched_at">成交时间</th>
           </tr>
         </thead>
         <tbody>
@@ -3280,6 +3280,7 @@
             return `
               <tr>
                 <td>${escapeHTML(fill.fill_id)}</td>
+                <td>${formatTime(fill.matched_at)}</td>
                 <td><span class="row-title"><strong>${escapeHTML(order.client_order_id || "--")}</strong><span>${escapeHTML(fill.gateway_order_id)}</span></span></td>
                 <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
                 <td>${escapeHTML(symbolText(fill))}</td>
@@ -3287,7 +3288,6 @@
                 <td>${sideBadge(fill, order)}</td>
                 <td class="num">${formatPrice(fill.price, fill)}</td>
                 <td class="num">${formatInt(fill.qty)}</td>
-                <td>${formatTime(fill.matched_at)}</td>
               </tr>`;
           }).join("")}
         </tbody>
@@ -3466,12 +3466,13 @@
     }
     els.detailSub.textContent = "ReqID: " + (order.client_order_id || "--") + " · OID: " + order.gateway_order_id;
     const debugText = orderDebugText(order);
+    const orderClockLabel = state.environment === "test" ? "（测试柜台状态时钟）" : "";
     const events = [
       ["下单指令生成", order.created_at || order.inserted_at],
-      ["柜台受理", order.accepted_at],
-      ["状态刷新 " + statusText(order.status), order.last_updated_at],
+      ["柜台受理" + orderClockLabel, order.accepted_at],
+      ["状态刷新 " + statusText(order.status) + orderClockLabel, order.last_updated_at],
       debugText ? ["柜台/前置信息：" + debugText, order.last_updated_at || order.terminal_at] : null,
-      order.terminal_at ? ["终态确认", order.terminal_at] : null
+      order.terminal_at ? ["终态确认" + orderClockLabel, order.terminal_at] : null
     ].filter(Boolean);
     els.timeline.innerHTML = events.map((item) => `
       <div class="timeline-item">
@@ -3487,7 +3488,7 @@
     }
     els.executionList.innerHTML = `
       <table>
-        <thead><tr><th>成交编号</th><th>方向</th><th>订单 ID</th><th class="num">价格</th><th class="num">数量</th></tr></thead>
+        <thead><tr><th>成交编号</th><th>方向</th><th>订单 ID</th><th class="num">价格</th><th class="num">数量</th><th>成交时间</th></tr></thead>
         <tbody>${fills.map((fill) => `
           <tr>
             <td>${escapeHTML(fill.fill_id)}</td>
@@ -3495,6 +3496,7 @@
             <td><span class="row-title"><strong>${escapeHTML(fill.order_id || order.order_id || "--")}</strong><span>${escapeHTML(fill.order_stream_id || order.order_stream_id || "--")}</span></span></td>
             <td class="num">${formatPrice(fill.price, fill)}</td>
             <td class="num">${formatInt(fill.qty)}</td>
+            <td>${formatTime(fill.matched_at)}</td>
           </tr>
         `).join("")}</tbody>
       </table>`;
@@ -5625,7 +5627,7 @@
       if (id) {
         fillOrderIDs.add(id);
       }
-      appendMarker(fill, minuteLabel(fill.matched_at || fill.match_timestamp), Number(fill.price), {
+      appendMarker(fill, minuteLabel(fill.matched_at), Number(fill.price), {
         kind: sideText(fill) + "成交",
         id: fill.fill_id || id,
         qty: fill.qty,

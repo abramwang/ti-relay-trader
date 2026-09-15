@@ -440,6 +440,7 @@
 - [x] 发布 `public/sdk/relay-sdk-0.1.36.tar.gz` 和 SHA256 校验文件；增加账户级 `order_entry_ready`、柜台会话状态、阻断原因和下一时段切换，并由 `verify_ready()` 在写调用前失败关闭。华鑫 7x24 时间表仅用于当前 OC 测试环境，生产维持正常 A 股时段。
 - [x] 解除 Chronos 测试资产基线阻断：测试库补齐 migration 25-28，环境切换前先迁移目标数据库；原始/默认资产和当前持仓只读准入通过，并以 `assets.readiness_errors.v1` 区分账户不存在、资产未就绪和内部数据库故障。
 - [x] 接收 Chronos 对测试资产基线与 Direct 两子单的独立验收：批量提交、持久化幂等重放、逐单 working、Go 授权撤单、双 cancelled 零成交终态及 SSE/全量对账均通过；TWAP、R3 故障注入和生产准入继续保持未验收边界。
+- [x] 明确 Chronos 成交时间契约：逐笔成交只使用 `Fill.matched_at`，不得从订单状态时间推导；华鑫 7x24 测试柜台的模拟状态时钟不外推到生产。Relay 成交表、订单详情和 K 线成交标记统一该口径。
 
 ### P6.1 接口测试台
 
