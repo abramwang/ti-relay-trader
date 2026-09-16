@@ -18,7 +18,7 @@ docs/api 模式可通过 `worker.embedded_ledger_sync=true` 启动内嵌同步�
 
 OC 2026-08-03 起在 `position_page.items[]` 提供 `total_cost/avg_cost_source/cost_complete`。Relay 原样持久化这些成本质量字段，但不再信任华鑫旧 `market_value`，因为该字段承载的是 `TotalPosCost`；标准持仓市值由 Meridian 行情重估。若 `avg_cost_source` 已明确为 `unavailable`，绩效成本账必须阻断，不能回退使用旧均价。
 
-OC 增量兼容已经落地：`order.cancel.event` 的 accepted/rejected 结果和 `CANCEL_RESPONSE_TIMEOUT` 按原命令身份幂等写入独立的 `order_cancel_attempts` 审计表，绝不覆盖原订单状态或下单拒绝原因；`order.batch.submit.payload.failed_orders[]` 按 `index/gateway_order_id` 逐笔回写失败子单；未知事件继续保留 raw 并推进 checkpoint。心跳读取 `redis_ready/broker_ready/order_snapshot_ready/accepting_trade_commands/accepting_cancel_commands`，运维状态不再把“Redis 心跳存活”等同于“柜台全部就绪”。
+OC 增量兼容已经落地：`order.cancel.event` 的 accepted/rejected 结果和 `CANCEL_RESPONSE_TIMEOUT` 按原命令身份幂等写入独立的 `order_cancel_attempts` 审计表，后到柜台事件覆盖 reply 的暂态动作语义，但绝不覆盖原订单状态或下单拒绝原因；`order.batch.submit.payload.failed_orders[]` 按 `index/gateway_order_id` 逐笔回写失败子单；未知事件继续保留 raw 并推进 checkpoint。心跳读取 `redis_ready/broker_ready/order_snapshot_ready/accepting_trade_commands/accepting_cancel_commands`，运维状态不再把“Redis 心跳存活”等同于“柜台全部就绪”。
 
 首批同步范围：
 

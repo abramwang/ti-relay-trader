@@ -257,7 +257,7 @@ func TestUpsertOrderCancelAttemptKeepsCancelOutcomeSeparate(t *testing.T) {
 
 	requireQueryContains(t, exec.query, "INSERT INTO order_cancel_attempts")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, attempt_id) DO UPDATE")
-	requireQueryContains(t, exec.query, "reconciliation_required = order_cancel_attempts.reconciliation_required")
+	requireQueryContains(t, exec.query, "reconciliation_required = EXCLUDED.reconciliation_required")
 	requireArgLen(t, exec.args, 20)
 	if exec.args[0] != "msg-cancel-1" || exec.args[1] != "acct-1" || exec.args[3] != "gw-1" {
 		t.Fatalf("cancel attempt identity args = %#v", exec.args[:4])

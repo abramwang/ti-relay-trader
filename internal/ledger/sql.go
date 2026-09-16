@@ -298,7 +298,7 @@ ON CONFLICT (account_id, attempt_id) DO UPDATE SET
     message = COALESCE(EXCLUDED.message, order_cancel_attempts.message),
     retry_safe = COALESCE(EXCLUDED.retry_safe, order_cancel_attempts.retry_safe),
     order_state_changed = COALESCE(EXCLUDED.order_state_changed, order_cancel_attempts.order_state_changed),
-    reconciliation_required = order_cancel_attempts.reconciliation_required OR EXCLUDED.reconciliation_required,
+    reconciliation_required = EXCLUDED.reconciliation_required,
     occurred_at = EXCLUDED.occurred_at,
     stream_key = COALESCE(EXCLUDED.stream_key, order_cancel_attempts.stream_key),
     stream_id = COALESCE(EXCLUDED.stream_id, order_cancel_attempts.stream_id),
