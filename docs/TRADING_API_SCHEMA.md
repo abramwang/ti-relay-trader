@@ -348,9 +348,10 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 
 `GET /v1/order-cancel-attempts` 提供上述证据的账户级持久化分页读取，支持日期、原订单
 `gateway_order_id`、状态和 cursor 过滤。`ORDER_NOT_FOUND` 不推导原订单终态。可选
-`counter_session_id` 用于证明订单所属柜台订单命名空间代际；它是不透明值，不能按自然日生成。
-华鑫 7x24 TEST 柜台每日四次结算时只接受 OC 报告的真实切换，Relay 不根据时钟推导。字段缺失时
-Relay 保持失败关闭；生产正常 A 股准入和状态机不使用 TEST 结算时间表。
+`counter_session_id` 用于证明订单所属 OC 进程会话；它是不透明值，不能按自然日生成。TEST 中
+一次 OC 进程生命周期对应一个会话：进程内短线重连保持 ID，人工重启后生成新 ID。OC 不需要
+识别华鑫 7x24 的四个时段，Relay 也不根据时钟推导会话切换。字段缺失时 Relay 保持失败关闭；
+生产正常 A 股准入和状态机不使用 TEST 时间表。
 
 `COMMAND_OUTCOME_UNKNOWN` 表示 OC 重启时交易命令结果不可安全推断，Relay 不把草稿订单改成拒绝，必须先查询对账。`QUERY_INTERRUPTED` 可使用新 `message_id` 重试查询。批量下单 reply 的 `failed_orders[]` 按 `index/gateway_order_id` 逐笔回写对应失败子单，不把整个 batch 合并成一个虚拟订单。
 
