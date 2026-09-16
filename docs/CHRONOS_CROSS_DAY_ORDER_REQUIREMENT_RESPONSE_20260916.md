@@ -37,7 +37,8 @@ pages = list(client.iter_cancel_attempt_pages(
 
 ## 安全边界
 
-`ORDER_NOT_FOUND` 仍只表示撤单失败，不修改原订单。`counter_session_id` 缺失时无法证明跨日
-命名空间变化，因此不会开放人工 resolution。OC 字段要求见
+`ORDER_NOT_FOUND` 仍只表示撤单失败，不修改原订单。`counter_session_id` 缺失时无法证明跨结算
+周期的命名空间变化，因此不会开放人工 resolution。华鑫 7x24 TEST 柜台每日四次结算，Relay
+不会把该身份按自然日生成，也不会根据配置时间表猜测变化；只接受 OC 提供的权威不透明 ID。
+该门禁仅适用于 `environment=test + counter_mode=huaxin_7x24_test`，生产正常 A 股逻辑不变。OC 字段要求见
 `docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md`。
-

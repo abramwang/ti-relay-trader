@@ -55,7 +55,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 当前进展与阻塞
 
-- Chronos 跨日订单 R1/R4 已完成；R2/R3 等待 OC 按 [柜台会话身份契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1) 提供稳定 `counter_session_id`。Relay 已具备字段兼容但不猜测缺失身份，详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
+- Chronos 跨日订单 R1/R4 已完成；R2/R3 等待 OC 按 [柜台会话身份契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1) 提供稳定 `counter_session_id`。该身份按柜台订单命名空间代际而非自然日定义：华鑫 7x24 TEST 每日四次结算可能在同日产生多次切换，但 Relay 不按时钟猜测；TEST 门禁与生产正常 A 股逻辑严格隔离。详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
 - Chronos 本轮验收把测试订单的 `accepted_at/last_updated_at=09:46:44` 与逐笔成交时间混淆；权威成交字段为 `Fill.matched_at=13:53:00+08:00`。Chronos 底层投影已读取该字段，仍需修正验收取证、页面或持久化消费口径；测试柜台状态时钟差异不外推到生产，详见 [Chronos 成交时间字段语义纠正](/home/ti-relay-trader/docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md:1)。
 - 首页已移除主栏 `200/126/280px` 固定 Grid 行约束：5 个快捷入口自动排布，账户路由表按实际账户行数撑开，左右两栏共同决定 dashboard 高度。Playwright 已在 `1600x900` 与 `1366x768` 验证入口、6 行账户路由和右侧运行边界无裁切、无重叠。
 - `/jobs` 已移除任务计划区的固定高度约束：任务卡按内容自适应，账户复核、历史记录和报告区随内容顺序布局，超出视口时由页面主区域统一滚动；任务报告工作区限制为随视口变化的 `360-520px`，完整 JSON 在模块内部滚动。Playwright 已验证 5 张任务卡无裁切、无区域重叠，78KB 长报告不会撑高外层页面。

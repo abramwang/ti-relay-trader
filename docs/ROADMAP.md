@@ -442,7 +442,7 @@
 - [x] 接收 Chronos 对测试资产基线与 Direct 两子单的独立验收：批量提交、持久化幂等重放、逐单 working、Go 授权撤单、双 cancelled 零成交终态及 SSE/全量对账均通过；TWAP、R3 故障注入和生产准入继续保持未验收边界。
 - [x] 明确 Chronos 成交时间契约：逐笔成交只使用 `Fill.matched_at`，不得从订单状态时间推导；华鑫 7x24 测试柜台的模拟状态时钟不外推到生产。Relay 成交表、订单详情和 K 线成交标记统一该口径。
 - [x] 按 Chronos 跨日订单 R1/R4 增加撤单尝试持久化分页 API、SDK page/item 迭代器及 `filled` 数量闭合投影；`ORDER_NOT_FOUND` 保持拒撤证据，不改变原订单。
-- [ ] 等待 OC 提供稳定 `counter_session_id` 并完成 TEST 跨日/重启验收；在此之前不开放遗留订单人工 `orphaned` resolution，生产永不按 `ORDER_NOT_FOUND` 自动终态化。
+- [ ] 等待 OC 提供稳定 `counter_session_id` 并完成 TEST 跨结算周期/重启验收；华鑫 7x24 每日四次结算不能简化为自然日，Relay 不按时钟猜测命名空间变化。在此之前不开放遗留订单人工 `orphaned` resolution，生产永不按 `ORDER_NOT_FOUND` 自动终态化。
 
 ### P6.1 接口测试台
 

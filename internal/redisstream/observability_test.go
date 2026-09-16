@@ -132,7 +132,7 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"component_id":              "oc.huaxin.a1",
 		"component_role":            "broker_trader_gateway",
-		"counter_session_id":        "session-20260915-a",
+		"counter_session_id":        "session-20260730-a",
 		"state":                     "UP",
 		"state_text":                "running",
 		"redis_ready":               true,
@@ -166,10 +166,12 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	}}
 	command := heartbeatProbeCommand{
 		account: config.AccountRouteConfig{
-			AccountID: "a1",
-			Alias:     "测试账户",
-			BrokerID:  "huaxin",
-			GatewayID: "a1",
+			AccountID:      "a1",
+			Alias:          "生产账户",
+			BrokerID:       "huaxin",
+			GatewayID:      "a1",
+			Enabled:        true,
+			TradingEnabled: true,
 		},
 		stream: "relay:prod:v1:huaxin:a1:hb",
 		latest: latest,
@@ -178,7 +180,9 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	status := service.gatewayStatus(now, true, command, ledger.GatewayIssue{})
 	if status.Status != "online" || status.PendingTrades != 1 || status.HeartbeatAgeSecs != 5 ||
 		status.BrokerReady == nil || !*status.BrokerReady ||
-		status.AcceptingCancelCommands == nil || !*status.AcceptingCancelCommands {
+		status.AcceptingCancelCommands == nil || !*status.AcceptingCancelCommands ||
+		!status.OrderEntryReady || status.BrokerSessionState != "ready" ||
+		status.CounterSessionID != "session-20260730-a" || status.CounterMode != "" {
 		t.Fatalf("gateway status = %+v", status)
 	}
 
