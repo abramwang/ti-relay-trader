@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 启用查询和交易，OC 柜台及订单快照均 ready；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-16 10:26 Asia/Shanghai` 测试 OC 验收通过：五类主动查询均取得唯一 completed 终态，4 条 Stream `lag=0`、DLQ=0，`order_entry_ready=true` |
+| 最近确认 | `2026-09-16 10:52 Asia/Shanghai` Chronos 跨日订单 R1/R4 已发布到 TEST：SDK 分页重建 20/20 条 `ORDER_NOT_FOUND` 撤单尝试，原 20 单仍为非终态 working；OC 尚未提供 `counter_session_id` |
 | 更新时间 | `2026-09-16` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-16 10:52 Asia/Shanghai` 已发布撤单尝试分页账本和 `relay-sdk 0.1.37`：`iter_cancel_attempts(page_size=7)` 在线完整读取 20 条唯一 attempt/Gateway ID，均为 `ORDER_NOT_FOUND` 且 `reconciliation_required=true`；对应前一日 20 笔订单仍为 `working/is_terminal=false`。Relay 已兼容 readiness/订单/撤单尝试的可选 `counter_session_id`，当前 OC heartbeat 未提供该字段，因此 TEST 遗留订单人工 resolution 保持失败关闭，生产更不会据此自动终态化。
 - `2026-09-16 10:26 Asia/Shanghai` 测试 OC 恢复并完成无交易写入的主动验收：账户 `00030484` 的资金、持仓、订单、成交、费用查询均取得唯一 completed 终态；资金更新时间为 `10:26:21`，持仓返回 15 条，今日订单/成交/费用均为空结果；4 条 Stream 全部健康、总 lag 为 0、pending DLQ 为 0，`order_entry_ready=true`。测试配置沿用 OC 约定的 `relay:prod:v1:huaxin:00030484` 键名前缀，但 Redis 与 PostgreSQL 均为测试环境独立实例。
 - `2026-09-16 09:58 Asia/Shanghai` 按用户明确指令从生产切到测试环境：测试库 migration 成功，API 内嵌账本同步 worker 启动；Redis、数据库、行情和事件流均正常，但测试 OC 柜台会话为 `disconnected`、订单快照未 ready，账户 `00030484` 当前 `order_entry_ready=false`，Relay 以 `BROKER_DISCONNECTED` 失败关闭并拒绝交易命令。生产配置未修改。
 - `2026-09-15 22:39 Asia/Shanghai` 按用户明确指令从测试切回生产环境：生产库 migration 成功，独立 API/worker 启动健康；6 个账户保留、5 个启用查询、0 个开放交易，`501000114077` 继续停用且历史账本不删除。
@@ -49,11 +50,12 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- 生产 schema 当前为 `28 reverse_repo_asset_receivable`，Python SDK 当前版本为 `relay-sdk==0.1.36`。
+- 生产 schema 当前为 `28 reverse_repo_asset_receivable`，Python SDK 当前版本为 `relay-sdk==0.1.37`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
 
+- Chronos 跨日订单 R1/R4 已完成；R2/R3 等待 OC 按 [柜台会话身份契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1) 提供稳定 `counter_session_id`。Relay 已具备字段兼容但不猜测缺失身份，详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
 - Chronos 本轮验收把测试订单的 `accepted_at/last_updated_at=09:46:44` 与逐笔成交时间混淆；权威成交字段为 `Fill.matched_at=13:53:00+08:00`。Chronos 底层投影已读取该字段，仍需修正验收取证、页面或持久化消费口径；测试柜台状态时钟差异不外推到生产，详见 [Chronos 成交时间字段语义纠正](/home/ti-relay-trader/docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md:1)。
 - 首页已移除主栏 `200/126/280px` 固定 Grid 行约束：5 个快捷入口自动排布，账户路由表按实际账户行数撑开，左右两栏共同决定 dashboard 高度。Playwright 已在 `1600x900` 与 `1366x768` 验证入口、6 行账户路由和右侧运行边界无裁切、无重叠。
 - `/jobs` 已移除任务计划区的固定高度约束：任务卡按内容自适应，账户复核、历史记录和报告区随内容顺序布局，超出视口时由页面主区域统一滚动；任务报告工作区限制为随视口变化的 `360-520px`，完整 JSON 在模块内部滚动。Playwright 已验证 5 张任务卡无裁切、无区域重叠，78KB 长报告不会撑高外层页面。

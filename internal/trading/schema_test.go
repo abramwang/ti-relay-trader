@@ -189,12 +189,25 @@ func TestNormalizeOrderExecutionStateInfersPartialFromQuantities(t *testing.T) {
 	}
 }
 
-func TestNormalizeOrderExecutionStateAlignsGatewayWithExplicitFilled(t *testing.T) {
+func TestNormalizeOrderExecutionStateDefersExplicitFilledUntilQuantitiesClose(t *testing.T) {
 	status, gatewayStatus, terminal := NormalizeOrderExecutionState(
 		OrderStatusFilled,
 		GatewayStatusAccepted,
 		100,
 		0,
+		0,
+	)
+	if status != OrderStatusWorking || gatewayStatus != GatewayStatusWorking || terminal {
+		t.Fatalf("state = %s/%s terminal=%v, want working/working false", status, gatewayStatus, terminal)
+	}
+}
+
+func TestNormalizeOrderExecutionStateClosesExplicitFilledWithCompleteQuantities(t *testing.T) {
+	status, gatewayStatus, terminal := NormalizeOrderExecutionState(
+		OrderStatusFilled,
+		GatewayStatusFilled,
+		100,
+		100,
 		0,
 	)
 	if status != OrderStatusFilled || gatewayStatus != GatewayStatusFilled || !terminal {

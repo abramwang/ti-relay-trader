@@ -79,6 +79,7 @@ type GatewayRuntimeStatus struct {
 	Alias                   string     `json:"alias,omitempty"`
 	BrokerID                string     `json:"broker_id"`
 	GatewayID               string     `json:"gateway_id"`
+	CounterSessionID        string     `json:"counter_session_id,omitempty"`
 	Status                  string     `json:"status"`
 	State                   string     `json:"state,omitempty"`
 	StateText               string     `json:"state_text,omitempty"`
@@ -131,6 +132,7 @@ type StreamRuntimeStatus struct {
 type heartbeatPayload struct {
 	ComponentID             string `json:"component_id"`
 	ComponentRole           string `json:"component_role"`
+	CounterSessionID        string `json:"counter_session_id"`
 	State                   string `json:"state"`
 	StateText               string `json:"state_text"`
 	RedisReady              *bool  `json:"redis_ready"`
@@ -535,6 +537,7 @@ func (service *RuntimeObservability) gatewayStatus(
 				_ = json.Unmarshal(envelope.Payload, &payload)
 				status.ComponentID = payload.ComponentID
 				status.ComponentRole = payload.ComponentRole
+				status.CounterSessionID = strings.TrimSpace(payload.CounterSessionID)
 				status.State = payload.State
 				status.StateText = payload.StateText
 				status.RedisReady = payload.RedisReady

@@ -58,6 +58,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "orders.batch_child_outcomes.v1",
                             "orders.explicit_command_ids.v1",
                             "accounts.order_entry_readiness.v1",
+                            "cancel_attempts.cursor_pagination.v1",
                         ],
                         "http_routes": [{"method": "GET", "path": "/v1/schema"}],
                         "redis_actions": ["order.batch.submit"],
@@ -78,6 +79,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "account_id": "acct-1",
                             "environment": "test",
                             "counter_mode": "huaxin_7x24_test",
+                            "counter_session_id": "huaxin-test-session-20260915-a",
                             "order_entry_ready": ready,
                             "broker_session_state": "ready" if ready else "blocked",
                             "order_entry_block_reason": "" if ready else "OUTSIDE_TEST_COUNTER_WINDOW",
@@ -447,6 +449,50 @@ class RelayHandler(BaseHTTPRequestHandler):
                     },
                     "request_id": "req-orders-http",
                     "time": "2026-09-02T10:00:00+08:00",
+                }
+            )
+            return
+        if parsed.path == "/v1/order-cancel-attempts":
+            cursor = query.get("cursor", [""])[0]
+            suffix = "2" if cursor else "1"
+            next_cursor = "1" if not cursor else ""
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "cancel_attempts": [
+                            {
+                                "attempt_id": f"cancel-{suffix}",
+                                "account_id": "acct-1",
+                                "trade_date": "2026-09-16",
+                                "gateway_order_id": query.get("gateway_order_id", [f"gw-{suffix}"])[0],
+                                "origin_message_id": f"msg-{suffix}",
+                                "request_id": f"req-{suffix}",
+                                "correlation_id": f"corr-{suffix}",
+                                "status": query.get("status", ["rejected"])[0],
+                                "code": "ORDER_NOT_FOUND",
+                                "message": "gateway_order_id not found",
+                                "retry_safe": False,
+                                "order_state_changed": False,
+                                "reconciliation_required": True,
+                                "occurred_at": f"2026-09-16T13:1{suffix}:00+08:00",
+                                "stream_key": "relay:test:v1:huaxin:00030484:reply",
+                                "stream_id": f"1{suffix}-0",
+                            }
+                        ],
+                        "count": 1,
+                        "next_cursor": next_cursor,
+                        "query": {
+                            "account_id": "acct-1",
+                            "gateway_order_id": query.get("gateway_order_id", [""])[0],
+                            "status": query.get("status", [""])[0],
+                            "trade_date": query.get("trade_date", [""])[0],
+                            "limit": int(query.get("limit", ["100"])[0]),
+                            "cursor": cursor,
+                        },
+                    },
+                    "request_id": f"req-cancel-page-{suffix}",
+                    "time": "2026-09-16T13:20:00+08:00",
                 }
             )
             return
@@ -930,6 +976,7 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(catalog.version, TRADING_SCHEMA_VERSION)
         self.assertTrue(catalog.supports("orders.explicit_command_ids.v1"))
         self.assertTrue(catalog.supports("accounts.order_entry_readiness.v1"))
+        self.assertTrue(catalog.supports("cancel_attempts.cursor_pagination.v1"))
         with self.assertRaises(RelayCapabilityError) as raised:
             self.client.require_capabilities("future.capability.v9")
         self.assertEqual(raised.exception.code, "CAPABILITY_MISSING")
@@ -942,6 +989,7 @@ class RelayClientTest(unittest.TestCase):
         self.assertFalse(readiness.order_entry_ready)
         self.assertEqual(readiness.order_entry_block_reason, "OUTSIDE_TEST_COUNTER_WINDOW")
         self.assertEqual(readiness.counter_mode, "huaxin_7x24_test")
+        self.assertEqual(readiness.counter_session_id, "huaxin-test-session-20260915-a")
 
         with self.assertRaises(RelayBrokerNotReadyError) as raised:
             self.client.verify_ready(force=False)
@@ -959,6 +1007,43 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(page.request_id, "req-orders-http")
         self.assertEqual(page.time, "2026-09-02T10:00:00+08:00")
         self.assertEqual(page.query["limit"], 1)
+
+    def test_cancel_attempt_pages_preserve_rejection_evidence(self):
+        page = self.client.list_cancel_attempts_page(
+            gateway_order_id="gw-cross-day",
+            status="rejected",
+            trade_date="20260916",
+            limit=1,
+        )
+        self.assertEqual(page.count, 1)
+        self.assertEqual(page.next_cursor, "1")
+        self.assertEqual(page.items[0].code, "ORDER_NOT_FOUND")
+        self.assertFalse(page.items[0].retry_safe)
+        self.assertFalse(page.items[0].order_state_changed)
+        self.assertTrue(page.items[0].reconciliation_required)
+        self.assertEqual(page.request_id, "req-cancel-page-1")
+        _, path, query, _ = RelayHandler.requests[-1]
+        self.assertEqual(path, "/v1/order-cancel-attempts")
+        self.assertEqual(query["account_id"], ["acct-1"])
+        self.assertEqual(query["trade_date"], ["20260916"])
+
+    def test_cancel_attempt_iterators_cover_all_pages(self):
+        attempts = list(
+            self.client.iter_cancel_attempts(
+                status="rejected",
+                trade_date="20260916",
+                page_size=1,
+            )
+        )
+        self.assertEqual([item.attempt_id for item in attempts], ["cancel-1", "cancel-2"])
+        pages = list(
+            self.client.iter_cancel_attempt_pages(
+                status="rejected",
+                trade_date="20260916",
+                page_size=1,
+            )
+        )
+        self.assertEqual([page.request_id for page in pages], ["req-cancel-page-1", "req-cancel-page-2"])
 
     def test_raw_asset_and_position_queries_disable_enrichment(self):
         self.client.get_asset_raw()

@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.36.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.37.tar.gz"
 ```
 
 ## Quick Start
@@ -32,6 +32,7 @@ client.require_capabilities(
     "orders.batch_child_outcomes.v1",
     "orders.explicit_command_ids.v1",
     "accounts.order_entry_readiness.v1",
+    "cancel_attempts.cursor_pagination.v1",
 )
 
 readiness = client.verify_ready()
@@ -103,6 +104,19 @@ Set `max_items` only when intentionally requesting a bounded sample.
 Use `iter_order_pages()`, `iter_fill_pages()`, and `iter_position_pages()` when
 the consumer must retain every page's audit envelope. Both iterator families
 share the same validation and empty-cursor completion rules.
+
+Persisted cancel outcomes use the same audited pagination contract:
+
+```python
+for attempt in client.iter_cancel_attempts(
+    trade_date="20260916",
+    status="rejected",
+    page_size=500,
+):
+    print(attempt.gateway_order_id, attempt.code, attempt.occurred_at)
+```
+
+An `ORDER_NOT_FOUND` attempt never means the original order was cancelled.
 
 ## Recoverable Event Stream
 

@@ -9,6 +9,7 @@ const (
 	CapabilityExplicitCommandIDs     = "orders.explicit_command_ids.v1"
 	CapabilityAssetReadinessErrors   = "assets.readiness_errors.v1"
 	CapabilityAccountOrderReadiness  = "accounts.order_entry_readiness.v1"
+	CapabilityCancelAttemptLedger    = "cancel_attempts.cursor_pagination.v1"
 )
 
 type CatalogDocument struct {
@@ -40,6 +41,7 @@ func Catalog() CatalogDocument {
 			CapabilityExplicitCommandIDs,
 			CapabilityAssetReadinessErrors,
 			CapabilityAccountOrderReadiness,
+			CapabilityCancelAttemptLedger,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
@@ -85,6 +87,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/accounts/{account_id}/fees", Request: "OrderFeeRecordQuery", Response: "[]OrderFeeRecord", Description: "query persisted OC order-level actual fees"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/fees/refresh", Response: "RefreshQueryResult", Description: "refresh current broker trading-day order fees from front gateway"},
 			{Method: "GET", Path: "/v1/command-status/{origin_message_id}", Response: "CommandStatus", Description: "query archived OC reply state for any published query or trade command"},
+			{Method: "GET", Path: "/v1/order-cancel-attempts", Request: "OrderCancelAttemptQuery", Response: "OrderCancelAttemptPage", Description: "query persisted cancel acceptance and rejection evidence with cursor pagination"},
 			{Method: "POST", Path: "/v1/orders", Request: "SubmitOrderRequest", Response: "Order", Description: "submit one order"},
 			{Method: "POST", Path: "/v1/orders/batch", Request: "BatchSubmitOrderRequest", Response: "BatchSubmitOrderResult", Description: "submit order batch with per-child Relay acceptance identities"},
 			{Method: "POST", Path: "/v1/orders/{gateway_order_id}/cancel", Request: "CancelOrderRequest", Response: "Order", Description: "cancel order"},
@@ -151,6 +154,9 @@ func Catalog() CatalogDocument {
 			"PositionQuery",
 			"RefreshQueryResult",
 			"CommandStatus",
+			"OrderCancelAttempt",
+			"OrderCancelAttemptQuery",
+			"OrderCancelAttemptPage",
 			"JobRun",
 			"JobRunRequest",
 			"DailyPerformance",

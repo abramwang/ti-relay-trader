@@ -31,6 +31,8 @@ from .models import (
     Fill,
     FillPage,
     Order,
+    OrderCancelAttempt,
+    OrderCancelAttemptPage,
     OrderPage,
     OrderFeeRecord,
     Position,
@@ -55,6 +57,8 @@ __all__ = [
     "Fill",
     "FillPage",
     "Order",
+    "OrderCancelAttempt",
+    "OrderCancelAttemptPage",
     "OrderPage",
     "OrderFeeRecord",
     "Position",
@@ -84,4 +88,4 @@ __all__ = [
     "retry_decision",
 ]
 
-__version__ = "0.1.36"
+__version__ = "0.1.37"

@@ -36,6 +36,8 @@ from .models import (
     Fill,
     FillPage,
     Order,
+    OrderCancelAttempt,
+    OrderCancelAttemptPage,
     OrderPage,
     OrderFeeRecord,
     Position,
@@ -49,7 +51,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.36"
+SDK_VERSION = "0.1.37"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -510,6 +512,120 @@ class RelayClient:
                 date_from=date_from,
                 date_to=date_to,
                 history=history,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+        )
+
+    def list_cancel_attempts(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int | None = 100,
+    ) -> list[OrderCancelAttempt]:
+        """Return one page of persisted cancel-attempt evidence."""
+
+        return list(
+            self.list_cancel_attempts_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+            ).items
+        )
+
+    def list_cancel_attempts_page(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int | None = 100,
+        cursor: str | None = None,
+    ) -> OrderCancelAttemptPage:
+        """Return one typed, auditable cancel-attempt page."""
+
+        query = {
+            "account_id": account_id or self.account_id or None,
+            "gateway_order_id": gateway_order_id,
+            "status": status,
+            "trade_date": trade_date,
+            "date_from": date_from,
+            "date_to": date_to,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        envelope = self._request_envelope("GET", "/v1/order-cancel-attempts", query=query)
+        return OrderCancelAttemptPage.from_envelope(envelope)
+
+    def iter_cancel_attempts(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+        max_items: int | None = None,
+    ) -> Iterable[OrderCancelAttempt]:
+        """Iterate persisted cancel attempts with the standard pagination checks."""
+
+        return _iterate_pages(
+            lambda next_cursor: self.list_cancel_attempts_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
+                limit=page_size,
+                cursor=next_cursor,
+            ),
+            cursor=cursor,
+            max_pages=max_pages,
+            max_items=max_items,
+        )
+
+    def iter_cancel_attempt_pages(
+        self,
+        *,
+        account_id: str | None = None,
+        gateway_order_id: str | None = None,
+        status: str | None = None,
+        trade_date: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        page_size: int = 500,
+        cursor: str | None = None,
+        max_pages: int = 1000,
+    ) -> Iterable[OrderCancelAttemptPage]:
+        """Iterate cancel-attempt pages while retaining each audit envelope."""
+
+        return _iterate_page_objects(
+            lambda next_cursor: self.list_cancel_attempts_page(
+                account_id=account_id,
+                gateway_order_id=gateway_order_id,
+                status=status,
+                trade_date=trade_date,
+                date_from=date_from,
+                date_to=date_to,
                 limit=page_size,
                 cursor=next_cursor,
             ),

@@ -42,6 +42,12 @@ def _bool(data: Mapping[str, Any], name: str, default: bool = False) -> bool:
     return default
 
 
+def _optional_bool(data: Mapping[str, Any], name: str) -> bool | None:
+    if name not in data or data.get(name) is None:
+        return None
+    return _bool(data, name)
+
+
 def _batch_index(order: "Order", fallback: int) -> int:
     value = order.adapter_context.get("batch_index")
     try:
@@ -91,6 +97,7 @@ class AccountReadiness:
     gateway_id: str = ""
     environment: str = ""
     counter_mode: str = ""
+    counter_session_id: str = ""
     order_entry_ready: bool = False
     broker_session_state: str = ""
     order_entry_block_reason: str = ""
@@ -115,6 +122,7 @@ class AccountReadiness:
             gateway_id=_text(data, "gateway_id"),
             environment=_text(data, "environment"),
             counter_mode=_text(data, "counter_mode"),
+            counter_session_id=_text(data, "counter_session_id"),
             order_entry_ready=_bool(data, "order_entry_ready"),
             broker_session_state=_text(data, "broker_session_state"),
             order_entry_block_reason=_text(data, "order_entry_block_reason"),
@@ -222,6 +230,7 @@ class Order:
     gateway_order_id: str = ""
     order_id: int = 0
     order_stream_id: str = ""
+    counter_session_id: str = ""
     trade_date: str = ""
     symbol: str = ""
     name: str = ""
@@ -257,6 +266,7 @@ class Order:
             gateway_order_id=_text(data, "gateway_order_id"),
             order_id=_int(data, "order_id"),
             order_stream_id=_text(data, "order_stream_id"),
+            counter_session_id=_text(data, "counter_session_id"),
             trade_date=_text(data, "trade_date"),
             symbol=_text(data, "symbol"),
             name=_text(data, "name"),
@@ -337,6 +347,57 @@ class Fill:
             basket_id=_text(data, "basket_id"),
             parent_order_id=_text(data, "parent_order_id"),
             t0_order_group_id=_text(data, "t0_order_group_id"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class OrderCancelAttempt:
+    attempt_id: str = ""
+    account_id: str = ""
+    trade_date: str = ""
+    gateway_order_id: str = ""
+    order_id: int = 0
+    order_stream_id: str = ""
+    counter_session_id: str = ""
+    origin_message_id: str = ""
+    request_id: str = ""
+    correlation_id: str = ""
+    status: str = ""
+    code: str = ""
+    message: str = ""
+    retry_safe: bool | None = None
+    order_state_changed: bool | None = None
+    reconciliation_required: bool = False
+    occurred_at: str = ""
+    stream_key: str = ""
+    stream_id: str = ""
+    adapter_context: Mapping[str, Any] = field(default_factory=dict)
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "OrderCancelAttempt":
+        return cls(
+            attempt_id=_text(data, "attempt_id"),
+            account_id=_text(data, "account_id"),
+            trade_date=_text(data, "trade_date"),
+            gateway_order_id=_text(data, "gateway_order_id"),
+            order_id=_int(data, "order_id"),
+            order_stream_id=_text(data, "order_stream_id"),
+            counter_session_id=_text(data, "counter_session_id"),
+            origin_message_id=_text(data, "origin_message_id"),
+            request_id=_text(data, "request_id"),
+            correlation_id=_text(data, "correlation_id"),
+            status=_text(data, "status"),
+            code=_text(data, "code"),
+            message=_text(data, "message"),
+            retry_safe=_optional_bool(data, "retry_safe"),
+            order_state_changed=_optional_bool(data, "order_state_changed"),
+            reconciliation_required=_bool(data, "reconciliation_required"),
+            occurred_at=_text(data, "occurred_at"),
+            stream_key=_text(data, "stream_key"),
+            stream_id=_text(data, "stream_id"),
+            adapter_context=dict(data.get("adapter_context")) if isinstance(data.get("adapter_context"), Mapping) else {},
             raw=dict(data),
         )
 
@@ -500,6 +561,38 @@ class OrderPage:
 
     @property
     def orders(self) -> tuple[Order, ...]:
+        return self.items
+
+
+@dataclass(frozen=True)
+class OrderCancelAttemptPage:
+    items: tuple[OrderCancelAttempt, ...] = ()
+    count: int = 0
+    next_cursor: str = ""
+    query: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = ""
+    time: str = ""
+    is_complete: bool = True
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_envelope(cls, envelope: Mapping[str, Any]) -> "OrderCancelAttemptPage":
+        data = envelope.get("data") if isinstance(envelope.get("data"), Mapping) else {}
+        rows = data.get("cancel_attempts") if isinstance(data.get("cancel_attempts"), list) else []
+        next_cursor = _text(data, "next_cursor").strip()
+        return cls(
+            items=tuple(OrderCancelAttempt.from_dict(item) for item in rows if isinstance(item, Mapping)),
+            count=_int(data, "count", len(rows)),
+            next_cursor=next_cursor,
+            query=dict(data.get("query")) if isinstance(data.get("query"), Mapping) else {},
+            request_id=_text(envelope, "request_id"),
+            time=_text(envelope, "time"),
+            is_complete=not bool(next_cursor),
+            raw=dict(envelope),
+        )
+
+    @property
+    def cancel_attempts(self) -> tuple[OrderCancelAttempt, ...]:
         return self.items
 
 

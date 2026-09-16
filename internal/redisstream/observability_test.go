@@ -132,6 +132,7 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"component_id":              "oc.huaxin.a1",
 		"component_role":            "broker_trader_gateway",
+		"counter_session_id":        "session-20260915-a",
 		"state":                     "UP",
 		"state_text":                "running",
 		"redis_ready":               true,
@@ -245,6 +246,7 @@ func TestGatewayStatusCombinesHeartbeatWithTestCounterSchedule(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"component_id":              "oc.huaxin.a1",
 		"component_role":            "broker_trader_gateway",
+		"counter_session_id":        "session-20260915-a",
 		"state":                     "UP",
 		"state_text":                "running",
 		"redis_ready":               true,
@@ -306,7 +308,8 @@ func TestGatewayStatusCombinesHeartbeatWithTestCounterSchedule(t *testing.T) {
 	now = time.Date(2026, 9, 15, 13, 15, 0, 0, location)
 	status = service.gatewayStatus(now, true, command, ledger.GatewayIssue{})
 	if !status.OrderEntryReady || status.BrokerSessionState != "ready" ||
-		status.OrderEntryBlockReason != "" || status.CounterMode != "huaxin_7x24_test" {
+		status.OrderEntryBlockReason != "" || status.CounterMode != "huaxin_7x24_test" ||
+		status.CounterSessionID != "session-20260915-a" {
 		t.Fatalf("inside test window status = %+v", status)
 	}
 }

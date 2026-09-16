@@ -764,6 +764,7 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
 			"payload":{
 				"gateway_order_id":"gw-1",
+				"counter_session_id":"session-20260613-a",
 				"account_id":"00030484",
 				"symbol":"600000",
 				"exchange":"SH",
@@ -800,12 +801,90 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	if order.IdempotencyKey != "submit-idem-1" {
 		t.Fatalf("order idempotency_key = %q", order.IdempotencyKey)
 	}
+	if order.CounterSessionID != "session-20260613-a" || order.AdapterContext["counter_session_id"] != "session-20260613-a" {
+		t.Fatalf("order counter session = %#v", order)
+	}
 	wantUpdatedAt := time.Date(2026, 6, 13, 10, 0, 0, 123000000, time.UTC)
 	if !order.LastUpdatedAt.Equal(wantUpdatedAt) {
 		t.Fatalf("last_updated_at = %s, want %s", order.LastUpdatedAt, wantUpdatedAt)
 	}
 	if len(writer.orderEvents) != 1 || writer.orderEvents[0].stream.ID != "2-0" {
 		t.Fatalf("order events = %#v", writer.orderEvents)
+	}
+}
+
+func TestProcessLedgerEntryDoesNotExposeFilledUntilQuantitiesClose(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	incomplete := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:event", "2-filled-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-filled-incomplete",
+			"event_type":"order.event",
+			"produced_at":"2026-09-16T05:20:00Z",
+			"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-filled-atomic",
+				"account_id":"00030484",
+				"symbol":"000001",
+				"exchange":"SZ",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":100,
+				"cum_filled_qty":60,
+				"leaves_qty":40,
+				"status":"filled",
+				"gateway_status":"filled",
+				"is_terminal":true
+			}
+		}`,
+	})
+
+	if incomplete.Orders != 1 || incomplete.OrderEvents != 1 || len(writer.orderUpdates) != 1 {
+		t.Fatalf("incomplete result/writes = %#v/%#v", incomplete, writer.orderUpdates)
+	}
+	first := writer.orderUpdates[0].Order
+	if first.Status != trading.OrderStatusPartiallyFilled || first.GatewayStatus != trading.GatewayStatusWorking || first.IsTerminal {
+		t.Fatalf("incomplete filled projection = %#v", first)
+	}
+	if first.CumFilledQty != 60 || first.LeavesQty != 40 {
+		t.Fatalf("incomplete quantities = %d/%d", first.CumFilledQty, first.LeavesQty)
+	}
+
+	complete := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:event", "2-filled-2", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-filled-complete",
+			"event_type":"order.event",
+			"produced_at":"2026-09-16T05:20:01Z",
+			"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-filled-atomic",
+				"account_id":"00030484",
+				"symbol":"000001",
+				"exchange":"SZ",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":100,
+				"cum_filled_qty":100,
+				"leaves_qty":0,
+				"status":"filled",
+				"gateway_status":"filled",
+				"is_terminal":true
+			}
+		}`,
+	})
+
+	if complete.Orders != 1 || len(writer.orderUpdates) != 2 {
+		t.Fatalf("complete result/writes = %#v/%#v", complete, writer.orderUpdates)
+	}
+	second := writer.orderUpdates[1].Order
+	if second.Status != trading.OrderStatusFilled || second.GatewayStatus != trading.GatewayStatusFilled || !second.IsTerminal {
+		t.Fatalf("complete filled projection = %#v", second)
+	}
+	if second.CumFilledQty != second.OrderQty || second.LeavesQty != 0 {
+		t.Fatalf("complete quantities = qty %d cum %d leaves %d", second.OrderQty, second.CumFilledQty, second.LeavesQty)
 	}
 }
 
@@ -1217,6 +1296,7 @@ func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *tes
 				"account_id":"50100011407701",
 				"order_id":123,
 				"order_stream_id":"12001A180000123",
+				"counter_session_id":"session-20260730-a",
 				"cancel_status":"rejected",
 				"code":"BROKER_CANCEL_REJECTED",
 				"message":"当前状态禁止此项操作",
@@ -1236,7 +1316,8 @@ func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *tes
 	}
 	attempt := writer.cancelAttempts[0]
 	if attempt.AccountID != "501000114077" || attempt.Code != "BROKER_CANCEL_REJECTED" || attempt.TradeDate != "2026-07-30" ||
-		attempt.RetrySafe == nil || *attempt.RetrySafe || attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
+		attempt.RetrySafe == nil || *attempt.RetrySafe || attempt.OrderStateChanged == nil || *attempt.OrderStateChanged ||
+		attempt.CounterSessionID != "session-20260730-a" {
 		t.Fatalf("cancel attempt = %#v", attempt)
 	}
 }

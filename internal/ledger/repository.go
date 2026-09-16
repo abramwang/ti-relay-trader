@@ -57,20 +57,32 @@ type OrderCancelAttempt struct {
 	GatewayOrderID         string         `json:"gateway_order_id"`
 	OrderID                int64          `json:"order_id,omitempty"`
 	OrderStreamID          string         `json:"order_stream_id,omitempty"`
+	CounterSessionID       string         `json:"counter_session_id,omitempty"`
 	OriginMessageID        string         `json:"origin_message_id,omitempty"`
 	RequestID              string         `json:"request_id,omitempty"`
 	CorrelationID          string         `json:"correlation_id,omitempty"`
 	Status                 string         `json:"status"`
 	Code                   string         `json:"code,omitempty"`
 	Message                string         `json:"message,omitempty"`
-	RetrySafe              *bool          `json:"retry_safe,omitempty"`
-	OrderStateChanged      *bool          `json:"order_state_changed,omitempty"`
-	ReconciliationRequired bool           `json:"reconciliation_required,omitempty"`
+	RetrySafe              *bool          `json:"retry_safe"`
+	OrderStateChanged      *bool          `json:"order_state_changed"`
+	ReconciliationRequired bool           `json:"reconciliation_required"`
 	OccurredAt             time.Time      `json:"occurred_at,omitempty"`
 	StreamKey              string         `json:"stream_key,omitempty"`
 	StreamID               string         `json:"stream_id,omitempty"`
 	RawPayload             any            `json:"raw_payload,omitempty"`
 	AdapterContext         map[string]any `json:"adapter_context,omitempty"`
+}
+
+type OrderCancelAttemptQuery struct {
+	AccountID      string `json:"account_id,omitempty"`
+	TradeDate      string `json:"trade_date,omitempty"`
+	DateFrom       string `json:"date_from,omitempty"`
+	DateTo         string `json:"date_to,omitempty"`
+	GatewayOrderID string `json:"gateway_order_id,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
+	Cursor         string `json:"cursor,omitempty"`
 }
 
 type RawStreamMessage struct {
@@ -595,6 +607,39 @@ func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt Or
 		return fmt.Errorf("upsert cancel attempt %s/%s: %w", attempt.AccountID, attempt.AttemptID, err)
 	}
 	return nil
+}
+
+func (repo *Repository) ListOrderCancelAttempts(ctx context.Context, query OrderCancelAttemptQuery) ([]OrderCancelAttempt, error) {
+	if repo == nil || repo.exec == nil {
+		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+	}
+	normalized, err := normalizeOrderCancelAttemptQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	queryText, args := buildListOrderCancelAttemptsSQL(normalized)
+	rows, err := queryer.QueryContext(ctx, queryText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list order cancel attempts: %w", err)
+	}
+	defer rows.Close()
+
+	attempts := make([]OrderCancelAttempt, 0, normalized.Limit)
+	for rows.Next() {
+		attempt, err := scanOrderCancelAttempt(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan order cancel attempt: %w", err)
+		}
+		attempts = append(attempts, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list order cancel attempts rows: %w", err)
+	}
+	return attempts, nil
 }
 
 func (repo *Repository) AppendOrderEvent(ctx context.Context, event trading.OrderEvent, stream StreamRef, source SourceRef) error {
@@ -2438,6 +2483,43 @@ func normalizeOrderQuery(query trading.OrderQuery) (trading.OrderQuery, error) {
 	return query, nil
 }
 
+func normalizeOrderCancelAttemptQuery(query OrderCancelAttemptQuery) (OrderCancelAttemptQuery, error) {
+	query.AccountID = strings.TrimSpace(query.AccountID)
+	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
+	query.Status = strings.ToLower(strings.TrimSpace(query.Status))
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	var err error
+	query.TradeDate, query.DateFrom, query.DateTo, err = normalizeQueryDates(query.TradeDate, query.DateFrom, query.DateTo)
+	if err != nil {
+		return query, err
+	}
+	if query.AccountID == "" {
+		return query, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	if query.Status != "" && !validOrderCancelAttemptStatus(query.Status) {
+		return query, fmt.Errorf("%w: invalid cancel attempt status %q", ErrInvalidLedgerInput, query.Status)
+	}
+	if _, err := queryCursorOffset(query.Cursor); err != nil {
+		return query, err
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 500 {
+		query.Limit = 500
+	}
+	return query, nil
+}
+
+func validOrderCancelAttemptStatus(status string) bool {
+	switch status {
+	case "accepted", "rejected", "timeout", "outcome_unknown", "not_ready", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeFillQuery(query trading.FillQuery) (trading.FillQuery, error) {
 	query.AccountID = strings.TrimSpace(query.AccountID)
 	query.GatewayOrderID = strings.TrimSpace(query.GatewayOrderID)
@@ -2858,6 +2940,38 @@ func normalizePosition(position trading.Position) (trading.Position, error) {
 	return position, nil
 }
 
+func buildListOrderCancelAttemptsSQL(query OrderCancelAttemptQuery) (string, []any) {
+	var where []string
+	var args []any
+	appendFilter := func(column string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	appendFilter("account_id", query.AccountID)
+	if query.GatewayOrderID != "" {
+		appendFilter("gateway_order_id", query.GatewayOrderID)
+	}
+	if query.Status != "" {
+		appendFilter("status", query.Status)
+	}
+	if query.DateFrom != "" {
+		args = append(args, query.DateFrom)
+		where = append(where, fmt.Sprintf("trade_date >= $%d::date", len(args)))
+	}
+	if query.DateTo != "" {
+		args = append(args, query.DateTo)
+		where = append(where, fmt.Sprintf("trade_date <= $%d::date", len(args)))
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(orderCancelAttemptSelectColumns)
+	builder.WriteString("WHERE ")
+	builder.WriteString(strings.Join(where, " AND "))
+	builder.WriteString("\nORDER BY occurred_at DESC, cancel_attempt_pk DESC")
+	appendLimitOffset(&builder, &args, query.Limit, query.Cursor)
+	return builder.String(), args
+}
+
 func buildListOrdersSQL(query trading.OrderQuery) (string, []any) {
 	var where []string
 	var args []any
@@ -3214,6 +3328,82 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+func scanOrderCancelAttempt(row rowScanner) (OrderCancelAttempt, error) {
+	var attempt OrderCancelAttempt
+	var orderID sql.NullInt64
+	var orderStreamID sql.NullString
+	var originMessageID sql.NullString
+	var requestID sql.NullString
+	var correlationID sql.NullString
+	var code sql.NullString
+	var message sql.NullString
+	var retrySafe sql.NullBool
+	var orderStateChanged sql.NullBool
+	var streamKey sql.NullString
+	var streamID sql.NullString
+	var rawPayload []byte
+	var adapterContext []byte
+
+	err := row.Scan(
+		&attempt.AttemptID,
+		&attempt.AccountID,
+		&attempt.TradeDate,
+		&attempt.GatewayOrderID,
+		&orderID,
+		&orderStreamID,
+		&originMessageID,
+		&requestID,
+		&correlationID,
+		&attempt.Status,
+		&code,
+		&message,
+		&retrySafe,
+		&orderStateChanged,
+		&attempt.ReconciliationRequired,
+		&attempt.OccurredAt,
+		&streamKey,
+		&streamID,
+		&rawPayload,
+		&adapterContext,
+	)
+	if err != nil {
+		return OrderCancelAttempt{}, err
+	}
+	attempt.OrderID = orderID.Int64
+	attempt.OrderStreamID = orderStreamID.String
+	attempt.OriginMessageID = originMessageID.String
+	attempt.RequestID = requestID.String
+	attempt.CorrelationID = correlationID.String
+	attempt.Code = code.String
+	attempt.Message = message.String
+	attempt.ReconciliationRequired = attempt.ReconciliationRequired || attempt.Status != string(trading.ReplyStatusAccepted)
+	if retrySafe.Valid {
+		value := retrySafe.Bool
+		attempt.RetrySafe = &value
+	}
+	if orderStateChanged.Valid {
+		value := orderStateChanged.Bool
+		attempt.OrderStateChanged = &value
+	}
+	attempt.StreamKey = streamKey.String
+	attempt.StreamID = streamID.String
+	if len(rawPayload) > 0 {
+		var payload any
+		if err := json.Unmarshal(rawPayload, &payload); err != nil {
+			return OrderCancelAttempt{}, err
+		}
+		attempt.RawPayload = payload
+	}
+	attempt.AdapterContext = map[string]any{}
+	if len(adapterContext) > 0 {
+		if err := json.Unmarshal(adapterContext, &attempt.AdapterContext); err != nil {
+			return OrderCancelAttempt{}, err
+		}
+	}
+	attempt.CounterSessionID = mapStringValue(attempt.AdapterContext, "counter_session_id")
+	return attempt, nil
+}
+
 func scanOrder(row rowScanner) (trading.Order, error) {
 	var order trading.Order
 	var clientOrderID sql.NullString
@@ -3319,6 +3509,18 @@ func scanOrder(row rowScanner) (trading.Order, error) {
 		if err := json.Unmarshal(adapterContext, &order.AdapterContext); err != nil {
 			return trading.Order{}, err
 		}
+	}
+	order.CounterSessionID = mapStringValue(order.AdapterContext, "counter_session_id")
+	order.Status, order.GatewayStatus, order.IsTerminal = trading.NormalizeOrderExecutionState(
+		order.Status,
+		order.GatewayStatus,
+		order.OrderQty,
+		order.CumFilledQty,
+		order.LeavesQty,
+	)
+	if order.Status == trading.OrderStatusFilled {
+		order.CumFilledQty = order.OrderQty
+		order.LeavesQty = 0
 	}
 	return order, nil
 }
@@ -3896,8 +4098,10 @@ func normalizeOrder(order trading.Order) (trading.Order, error) {
 		order.CumFilledQty,
 		order.LeavesQty,
 	)
-	if inferredTerminal || order.Status.Terminal() || order.GatewayStatus.Terminal() {
-		order.IsTerminal = true
+	order.IsTerminal = inferredTerminal || order.Status.Terminal() || order.GatewayStatus.Terminal()
+	if order.Status == trading.OrderStatusFilled {
+		order.CumFilledQty = order.OrderQty
+		order.LeavesQty = 0
 	}
 	if order.LeavesQty == 0 && order.CumFilledQty == 0 && order.CancelledQty == 0 && order.InvalidQty == 0 && !order.IsTerminal {
 		order.LeavesQty = order.OrderQty
@@ -3974,9 +4178,11 @@ func normalizeOrderEvent(event trading.OrderEvent) (trading.OrderEvent, error) {
 	)
 	event.Order.Status = event.Status
 	event.Order.GatewayStatus = event.GatewayStatus
-	if inferredTerminal || event.Status.Terminal() || event.GatewayStatus.Terminal() || event.Order.IsTerminal {
-		event.IsTerminal = true
-		event.Order.IsTerminal = true
+	event.IsTerminal = inferredTerminal || event.Status.Terminal() || event.GatewayStatus.Terminal()
+	event.Order.IsTerminal = event.IsTerminal
+	if event.Status == trading.OrderStatusFilled {
+		event.Order.CumFilledQty = event.Order.OrderQty
+		event.Order.LeavesQty = 0
 	}
 	return event, nil
 }
@@ -4202,4 +4408,12 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func mapStringValue(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
 }

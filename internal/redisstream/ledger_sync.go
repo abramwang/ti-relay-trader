@@ -680,6 +680,7 @@ type cancelAttemptPayload struct {
 	GatewayOrderID         string `json:"gateway_order_id"`
 	OrderID                int64  `json:"order_id"`
 	OrderStreamID          string `json:"order_stream_id"`
+	CounterSessionID       string `json:"counter_session_id"`
 	CancelStatus           string `json:"cancel_status"`
 	Code                   string `json:"code"`
 	Message                string `json:"message"`
@@ -736,6 +737,7 @@ func processCancelAttemptEnvelope(
 		GatewayOrderID:         gatewayOrderID,
 		OrderID:                payload.OrderID,
 		OrderStreamID:          payload.OrderStreamID,
+		CounterSessionID:       firstNonEmpty(payload.CounterSessionID, stringFromMap(envelope.AdapterContext, "counter_session_id")),
 		OriginMessageID:        envelope.OriginMessageID,
 		RequestID:              envelope.RequestID,
 		CorrelationID:          firstNonEmpty(envelope.CorrelationID, envelope.RequestCorrelationID),
@@ -744,12 +746,12 @@ func processCancelAttemptEnvelope(
 		Message:                firstNonEmpty(payload.Message, envelope.Message),
 		RetrySafe:              payload.RetrySafe,
 		OrderStateChanged:      payload.OrderStateChanged,
-		ReconciliationRequired: payload.ReconciliationRequired || status == "timeout" || status == "outcome_unknown",
+		ReconciliationRequired: payload.ReconciliationRequired || status != string(trading.ReplyStatusAccepted),
 		OccurredAt:             occurredAt,
 		StreamKey:              envelope.Stream,
 		StreamID:               envelope.StreamID,
 		RawPayload:             payload,
-		AdapterContext:         envelope.AdapterContext,
+		AdapterContext:         mergeContextMaps(envelope.AdapterContext, stringContext("counter_session_id", firstNonEmpty(payload.CounterSessionID, stringFromMap(envelope.AdapterContext, "counter_session_id")))),
 	}
 	if err := writer.UpsertOrderCancelAttempt(ctx, attempt); err != nil {
 		result.LedgerErrors++
@@ -1588,6 +1590,7 @@ type orderPayload struct {
 	GatewayOrderID    string         `json:"gateway_order_id"`
 	OrderID           int64          `json:"order_id"`
 	OrderStreamID     string         `json:"order_stream_id"`
+	CounterSessionID  string         `json:"counter_session_id"`
 	Symbol            string         `json:"symbol"`
 	Name              string         `json:"name"`
 	Exchange          string         `json:"exchange"`
@@ -1882,10 +1885,18 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		payload.CumFilledQty,
 		payload.LeavesQty,
 	)
-	isTerminal := payload.IsTerminal || inferredTerminal || status.Terminal() || gatewayStatus.Terminal()
+	cumFilledQty := payload.CumFilledQty
+	leavesQty := payload.LeavesQty
+	if status == trading.OrderStatusFilled {
+		cumFilledQty = orderQty
+		leavesQty = 0
+	}
+	isTerminal := inferredTerminal || status.Terminal() || gatewayStatus.Terminal()
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	rejectCode, rejectMessage := orderPayloadRejectInfo(envelope, payload, status, gatewayStatus)
 	adapterContext := withOrderPayloadContext(orderDebugContext(envelope, rejectCode, rejectMessage), payload)
+	counterSessionID := firstNonEmpty(payload.CounterSessionID, stringFromMap(payload.AdapterContext, "counter_session_id"), stringFromMap(envelope.AdapterContext, "counter_session_id"))
+	adapterContext = mergeContextMaps(adapterContext, stringContext("counter_session_id", counterSessionID))
 	tradeDate, tradeDateContext := guardedOrderTradeDate(payload, envelope)
 	adapterContext = mergeContextMaps(adapterContext, tradeDateContext)
 	return trading.Order{
@@ -1894,6 +1905,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		GatewayOrderID:    payload.GatewayOrderID,
 		OrderID:           payload.OrderID,
 		OrderStreamID:     payload.OrderStreamID,
+		CounterSessionID:  counterSessionID,
 		Symbol:            payload.Symbol,
 		Name:              payload.Name,
 		Exchange:          trading.Exchange(payload.Exchange),
@@ -1903,8 +1915,8 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		LimitPrice:        limitPrice,
 		OrderQty:          orderQty,
 		SubmittedQty:      payload.SubmittedQty,
-		CumFilledQty:      payload.CumFilledQty,
-		LeavesQty:         payload.LeavesQty,
+		CumFilledQty:      cumFilledQty,
+		LeavesQty:         leavesQty,
 		CancelledQty:      payload.CancelledQty,
 		InvalidQty:        payload.InvalidQty,
 		AvgFillPrice:      payload.AvgFillPrice,
@@ -2333,6 +2345,14 @@ func mergeContextMaps(base map[string]any, extra map[string]any) map[string]any 
 		out[key] = value
 	}
 	return out
+}
+
+func stringContext(key, value string) map[string]any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return map[string]any{key: value}
 }
 
 func structToMap(value any) map[string]any {

@@ -537,6 +537,24 @@
     ]
   },
   {
+    "id": "order-cancel-attempts",
+    "group": "查询",
+    "title": "撤单尝试账本",
+    "method": "GET",
+    "path": "/v1/order-cancel-attempts",
+    "status": "needs-config",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "query", "required": true, "defaultValue": "00030484" },
+      { "name": "gateway_order_id", "label": "gateway_order_id", "source": "query", "defaultValue": "" },
+      { "name": "status", "label": "status", "source": "query", "type": "select", "defaultValue": "", "options": ["", "accepted", "rejected", "timeout", "outcome_unknown", "not_ready", "failed"] },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "" },
+      { "name": "date_from", "label": "date_from", "source": "query", "defaultValue": "" },
+      { "name": "date_to", "label": "date_to", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "20" },
+      { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" }
+    ]
+  },
+  {
     "id": "orders-history",
     "group": "查询",
     "title": "历史订单",

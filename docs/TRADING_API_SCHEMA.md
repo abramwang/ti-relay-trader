@@ -346,6 +346,10 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 
 `order.cancel` 的 `reply.status=accepted` 只表示撤单请求已交给柜台接口。柜台明确拒绝时，OC v1.2 发布 `event_type=order.cancel.event/event_name=order.cancel.rejected`；响应超时则写入 `CANCEL_RESPONSE_TIMEOUT` DLQ。Relay 将这些结果独立写入 `order_cancel_attempts` 并发布 `order.cancel.rejected` SSE，不修改原订单的 `status/gateway_status/reject_code/reject_message`。成功撤单仍只以普通 `order.event.gateway_status=cancelled` 为准。
 
+`GET /v1/order-cancel-attempts` 提供上述证据的账户级持久化分页读取，支持日期、原订单
+`gateway_order_id`、状态和 cursor 过滤。`ORDER_NOT_FOUND` 不推导原订单终态。可选
+`counter_session_id` 用于证明订单所属柜台会话；字段缺失时 Relay 保持失败关闭。
+
 `COMMAND_OUTCOME_UNKNOWN` 表示 OC 重启时交易命令结果不可安全推断，Relay 不把草稿订单改成拒绝，必须先查询对账。`QUERY_INTERRUPTED` 可使用新 `message_id` 重试查询。批量下单 reply 的 `failed_orders[]` 按 `index/gateway_order_id` 逐笔回写对应失败子单，不把整个 batch 合并成一个虚拟订单。
 
 ## API 路由规划
@@ -387,6 +391,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/fills/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/command-status/{origin_message_id}` | - | `CommandStatus` | 已实现，从归档 reply 判断查询或交易命令状态 |
+| `GET` | `/v1/order-cancel-attempts` | `OrderCancelAttemptQuery` | `OrderCancelAttemptPage` | 已实现，持久化撤单尝试证据与 cursor 分页 |
 | `POST` | `/v1/orders` | `SubmitOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/orders/batch` | `BatchSubmitOrderRequest` | `BatchSubmitOrderResult` | 已实现，返回 `202 Accepted`，逐单保留调用方 ID 和 Relay 接受状态 |
 | `POST` | `/v1/orders/{gateway_order_id}/cancel` | `CancelOrderRequest` | `Order` | 已实现，返回 `202 Accepted` |

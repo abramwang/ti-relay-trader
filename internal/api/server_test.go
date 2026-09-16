@@ -1282,6 +1282,49 @@ func TestQueryStatusReturnsArchivedTerminalState(t *testing.T) {
 	}
 }
 
+func TestListOrderCancelAttemptsReturnsAuditablePage(t *testing.T) {
+	retrySafe := false
+	stateChanged := false
+	store := &fakeSettlementStore{cancelAttempts: []ledger.OrderCancelAttempt{
+		{
+			AttemptID:              "cancel-1",
+			AccountID:              "acct-1",
+			TradeDate:              "2026-09-16",
+			GatewayOrderID:         "gw-cross-day",
+			OriginMessageID:        "msg-cancel-1",
+			Status:                 "rejected",
+			Code:                   "ORDER_NOT_FOUND",
+			Message:                "gateway_order_id not found",
+			RetrySafe:              &retrySafe,
+			OrderStateChanged:      &stateChanged,
+			ReconciliationRequired: true,
+			OccurredAt:             time.Date(2026, 9, 16, 13, 20, 0, 0, timeutil.Location()),
+		},
+		{AttemptID: "cancel-lookahead", AccountID: "acct-1"},
+	}}
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{{
+		AccountID: "acct-1", BrokerID: "huaxin", GatewayID: "gw-1", Enabled: true,
+	}}
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Settlements: store,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/order-cancel-attempts?account_id=acct-1&trade_date=20260916&gateway_order_id=gw-cross-day&status=rejected&limit=1", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if store.cancelAttemptQuery.AccountID != "acct-1" || store.cancelAttemptQuery.TradeDate != "20260916" || store.cancelAttemptQuery.Limit != 2 {
+		t.Fatalf("cancel attempt query = %#v", store.cancelAttemptQuery)
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"ORDER_NOT_FOUND"`) || !strings.Contains(rec.Body.String(), `"next_cursor":"1"`) {
+		t.Fatalf("cancel attempt response = %s", rec.Body.String())
+	}
+}
+
 func TestRefreshAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		refreshPositionsResult: orderflow.RefreshQueryResult{
@@ -4326,6 +4369,8 @@ type fakeSettlementStore struct {
 	performanceSeriesDateTo    string
 	commandStatus              ledger.CommandStatus
 	commandStatusMessageID     string
+	cancelAttempts             []ledger.OrderCancelAttempt
+	cancelAttemptQuery         ledger.OrderCancelAttemptQuery
 	assetSnapshotResult        trading.Asset
 	assetSnapshotQueryType     string
 	positionSnapshotResults    []trading.Position
@@ -4333,6 +4378,14 @@ type fakeSettlementStore struct {
 	prunedSnapshotType         string
 	prunedPositions            []trading.Position
 	err                        error
+}
+
+func (store *fakeSettlementStore) ListOrderCancelAttempts(_ context.Context, query ledger.OrderCancelAttemptQuery) ([]ledger.OrderCancelAttempt, error) {
+	store.cancelAttemptQuery = query
+	if store.err != nil {
+		return nil, store.err
+	}
+	return append([]ledger.OrderCancelAttempt(nil), store.cancelAttempts...), nil
 }
 
 func (store *fakeSettlementStore) GetAssetSnapshot(_ context.Context, _ string, _ string, snapshotType string) (trading.Asset, error) {

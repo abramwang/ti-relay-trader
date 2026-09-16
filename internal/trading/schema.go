@@ -205,6 +205,7 @@ type Order struct {
 	GatewayOrderID    string         `json:"gateway_order_id"`
 	OrderID           int64          `json:"order_id,omitempty"`
 	OrderStreamID     string         `json:"order_stream_id,omitempty"`
+	CounterSessionID  string         `json:"counter_session_id,omitempty"`
 	TradeDate         string         `json:"trade_date,omitempty"`
 	Symbol            string         `json:"symbol"`
 	Name              string         `json:"name,omitempty"`

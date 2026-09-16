@@ -97,6 +97,10 @@ type CommandStatusStore interface {
 	GetCommandStatus(ctx context.Context, originMessageID string) (ledger.CommandStatus, error)
 }
 
+type OrderCancelAttemptStore interface {
+	ListOrderCancelAttempts(ctx context.Context, query ledger.OrderCancelAttemptQuery) ([]ledger.OrderCancelAttempt, error)
+}
+
 type AccountAliasStore interface {
 	AccountAliases(ctx context.Context, accountIDs []string) (map[string]string, error)
 	UpsertAccountAlias(ctx context.Context, accountID string, brokerID string, alias string) error
@@ -241,6 +245,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
 	mux.HandleFunc("/v1/command-status/", server.handleCommandStatus)
+	mux.HandleFunc("/v1/order-cancel-attempts", server.handleOrderCancelAttempts)
 	mux.HandleFunc("/v1/operations/status", server.handleOperationsStatus)
 	mux.HandleFunc("/v1/operations/dlq/reviews", server.handleDeadLetterReviews)
 	mux.HandleFunc("/v1/operations/dlq/review", server.handleDeadLetterReview)
@@ -281,6 +286,63 @@ func (s *Server) handleCommandStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
+}
+
+func (s *Server) handleOrderCancelAttempts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	store, ok := s.settles.(OrderCancelAttemptStore)
+	if !ok || store == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "cancel attempt store is unavailable", nil)
+		return
+	}
+	query, err := parseOrderCancelAttemptQuery(r.URL.Query())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cancel attempt query", err.Error())
+		return
+	}
+	if _, ok := s.cfg.AccountRoute(query.AccountID); !ok {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "account route not found", nil)
+		return
+	}
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	query.Limit = limit
+	query.Cursor = strings.TrimSpace(query.Cursor)
+	offset, err := strconv.Atoi(firstNonEmpty(query.Cursor, "0"))
+	if err != nil || offset < 0 {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid cancel attempt query", "cursor must be a non-negative offset")
+		return
+	}
+	fetchQuery := query
+	if limit < 500 {
+		fetchQuery.Limit = limit + 1
+	}
+	attempts, err := store.ListOrderCancelAttempts(r.Context(), fetchQuery)
+	if err != nil {
+		s.writeOrderError(w, r, err)
+		return
+	}
+	nextCursor := ""
+	if len(attempts) > limit {
+		attempts = attempts[:limit]
+		nextCursor = strconv.Itoa(offset + limit)
+	} else if limit == 500 && len(attempts) == limit {
+		nextCursor = strconv.Itoa(offset + limit)
+	}
+	httpx.WriteOK(w, r, http.StatusOK, OrderCancelAttemptPage{
+		CancelAttempts: attempts,
+		Query:          query,
+		Count:          len(attempts),
+		NextCursor:     nextCursor,
+	})
 }
 
 func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
@@ -1665,6 +1727,7 @@ func (s *Server) handleAccountReadiness(w http.ResponseWriter, r *http.Request, 
 			continue
 		}
 		view.CounterMode = gateway.CounterMode
+		view.CounterSessionID = gateway.CounterSessionID
 		view.OrderEntryReady = gateway.OrderEntryReady
 		view.BrokerSessionState = gateway.BrokerSessionState
 		view.OrderEntryBlockReason = gateway.OrderEntryBlockReason
@@ -4447,6 +4510,28 @@ func parseOrderQuery(values url.Values, defaultToday bool) (trading.OrderQuery, 
 	}, nil
 }
 
+func parseOrderCancelAttemptQuery(values url.Values) (ledger.OrderCancelAttemptQuery, error) {
+	limit, err := parseLimit(values.Get("limit"))
+	if err != nil {
+		return ledger.OrderCancelAttemptQuery{}, err
+	}
+	accountID := strings.TrimSpace(values.Get("account_id"))
+	if accountID == "" {
+		return ledger.OrderCancelAttemptQuery{}, fmt.Errorf("account_id is required")
+	}
+	tradeDate, dateFrom, dateTo := parseDateQuery(values)
+	return ledger.OrderCancelAttemptQuery{
+		AccountID:      accountID,
+		TradeDate:      tradeDate,
+		DateFrom:       dateFrom,
+		DateTo:         dateTo,
+		GatewayOrderID: values.Get("gateway_order_id"),
+		Status:         values.Get("status"),
+		Limit:          limit,
+		Cursor:         values.Get("cursor"),
+	}, nil
+}
+
 func parseFillQuery(values url.Values, defaultToday bool) (trading.FillQuery, error) {
 	limit, err := parseLimit(values.Get("limit"))
 	if err != nil {
@@ -5029,6 +5114,7 @@ type AccountReadinessView struct {
 	GatewayID              string     `json:"gateway_id"`
 	Environment            string     `json:"environment"`
 	CounterMode            string     `json:"counter_mode,omitempty"`
+	CounterSessionID       string     `json:"counter_session_id,omitempty"`
 	OrderEntryReady        bool       `json:"order_entry_ready"`
 	BrokerSessionState     string     `json:"broker_session_state"`
 	OrderEntryBlockReason  string     `json:"order_entry_block_reason,omitempty"`
@@ -5043,6 +5129,13 @@ type AccountReadinessView struct {
 	OrderSnapshotReady     *bool      `json:"order_snapshot_ready,omitempty"`
 	AcceptingTradeCommands *bool      `json:"accepting_trade_commands,omitempty"`
 	LastHeartbeatAt        *time.Time `json:"last_heartbeat_at,omitempty"`
+}
+
+type OrderCancelAttemptPage struct {
+	CancelAttempts []ledger.OrderCancelAttempt    `json:"cancel_attempts"`
+	Query          ledger.OrderCancelAttemptQuery `json:"query"`
+	Count          int                            `json:"count"`
+	NextCursor     string                         `json:"next_cursor,omitempty"`
 }
 
 type AccountRouteView struct {

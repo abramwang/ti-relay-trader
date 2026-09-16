@@ -115,13 +115,21 @@ func (status GatewayStatus) Terminal() bool {
 // quantities. Some counters keep a non-terminal broker status while the fill
 // quantities already show a completed order.
 func NormalizeOrderExecutionState(status OrderStatus, gatewayStatus GatewayStatus, orderQty, cumFilledQty, leavesQty int64) (OrderStatus, GatewayStatus, bool) {
+	filledReported := status == OrderStatusFilled || gatewayStatus == GatewayStatusFilled
+	quantityComplete := orderQty > 0 && cumFilledQty >= orderQty && leavesQty == 0
+	if filledReported && !quantityComplete {
+		if cumFilledQty > 0 {
+			return OrderStatusPartiallyFilled, GatewayStatusWorking, false
+		}
+		return OrderStatusWorking, GatewayStatusWorking, false
+	}
 	if status.Terminal() {
 		return status, gatewayStatusForOrderStatus(status, gatewayStatus), true
 	}
 	if gatewayStatus.Terminal() {
 		return orderStatusForGatewayStatus(gatewayStatus), gatewayStatus, true
 	}
-	if orderQty > 0 && cumFilledQty >= orderQty && leavesQty == 0 {
+	if quantityComplete {
 		return OrderStatusFilled, GatewayStatusFilled, true
 	}
 	if cumFilledQty > 0 && leavesQty > 0 {

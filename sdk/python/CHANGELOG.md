@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.37 - 2026-09-16
+
+- Add typed, cursor-paginated cancel-attempt ledger access through
+  `list_cancel_attempts_page()`, `iter_cancel_attempt_pages()`, and
+  `iter_cancel_attempts()`.
+- Preserve rejection codes, retry guidance, reconciliation flags, command
+  identities, and authoritative occurrence time for offline reconstruction.
+- Relay now withholds a `filled` projection until its quantities are closed;
+  consumers no longer observe `filled` with nonzero leaves or incomplete
+  cumulative quantity.
+
+### Safety
+
+- `ORDER_NOT_FOUND` remains rejection evidence and does not change the order's
+  state. Cross-day TEST resolution remains fail-closed until OC exposes a
+  stable counter-session identity.
+
 ## 0.1.36 - 2026-09-15
 
 - Add typed account order-entry readiness with `get_account_readiness()` and

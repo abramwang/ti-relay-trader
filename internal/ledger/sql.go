@@ -307,6 +307,31 @@ ON CONFLICT (account_id, attempt_id) DO UPDATE SET
     updated_at = now()
 `
 
+const orderCancelAttemptSelectColumns = `
+SELECT
+    attempt_id,
+    account_id,
+    trade_date::text,
+    gateway_order_id,
+    order_id,
+    order_stream_id,
+    origin_message_id,
+    request_id,
+    correlation_id,
+    status,
+    code,
+    message,
+    retry_safe,
+    order_state_changed,
+    reconciliation_required,
+    occurred_at,
+    stream_key,
+    stream_id,
+    raw_payload,
+    adapter_context
+FROM order_cancel_attempts
+`
+
 const updateOrderStatusSQL = `
 UPDATE orders SET
     order_id = COALESCE($3, order_id),

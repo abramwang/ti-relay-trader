@@ -372,6 +372,7 @@ func TestUpdateOrderStatusAllowsTerminalCumFilledCorrection(t *testing.T) {
 		Order: trading.Order{
 			AccountID:      "acct-1",
 			GatewayOrderID: "gateway-1",
+			OrderQty:       60,
 			CumFilledQty:   60,
 			LeavesQty:      0,
 		},
@@ -401,6 +402,8 @@ func TestAppendOrderEventIsIdempotentByEventOrStream(t *testing.T) {
 		Order: trading.Order{
 			AccountID:       "acct-1",
 			GatewayOrderID:  "gateway-1",
+			OrderQty:        1,
+			CumFilledQty:    1,
 			OriginMessageID: "msg-1",
 			RequestID:       "req-1",
 		},
@@ -622,6 +625,36 @@ func TestListOrdersBuildsFilteredRead(t *testing.T) {
 	requireArgLen(t, exec.args, 5)
 	if exec.args[4] != 25 {
 		t.Fatalf("limit arg = %#v", exec.args[4])
+	}
+}
+
+func TestListOrderCancelAttemptsBuildsFilteredCursorRead(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListOrderCancelAttempts(context.Background(), OrderCancelAttemptQuery{
+		AccountID:      "acct-1",
+		DateFrom:       "20260915",
+		DateTo:         "20260916",
+		GatewayOrderID: "gw-cross-day",
+		Status:         "REJECTED",
+		Limit:          20,
+		Cursor:         "40",
+	})
+	if err == nil {
+		t.Fatal("ListOrderCancelAttempts() expected query error")
+	}
+
+	requireQueryContains(t, exec.query, "FROM order_cancel_attempts")
+	requireQueryContains(t, exec.query, "account_id = $1")
+	requireQueryContains(t, exec.query, "gateway_order_id = $2")
+	requireQueryContains(t, exec.query, "status = $3")
+	requireQueryContains(t, exec.query, "trade_date >= $4::date")
+	requireQueryContains(t, exec.query, "trade_date <= $5::date")
+	requireQueryContains(t, exec.query, "LIMIT $6 OFFSET $7")
+	requireArgLen(t, exec.args, 7)
+	if exec.args[2] != "rejected" || exec.args[5] != 20 || exec.args[6] != 40 {
+		t.Fatalf("cancel attempt args = %#v", exec.args)
 	}
 }
 
