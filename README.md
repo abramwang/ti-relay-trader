@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 启用查询和交易，OC 柜台及订单快照均 ready；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-16 10:52 Asia/Shanghai` Chronos 跨日订单 R1/R4 已发布到 TEST：SDK 分页重建 20/20 条 `ORDER_NOT_FOUND` 撤单尝试，原 20 单仍为非终态 working；OC 尚未提供 `counter_session_id` |
+| 最近确认 | `2026-09-16` OC 对接文档已合并三项 P0：稳定 `counter_session_id`、结构化撤单结果语义和 `filled` 终态原子一致；当前 TEST 保持失败关闭，等待 OC 升级后验收 |
 | 更新时间 | `2026-09-16` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-16` 已把 OC 后续任务合并到 [测试柜台跨结算周期订单可靠性契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1)：除四周期订单命名空间 `counter_session_id` 外，新增撤单结果六个结构化语义字段及 `filled` 数量/残量/终态原子一致约束。该文档可直接交付 OC；历史字段允许留空，新版本订单必须满足，生产逻辑不采用 TEST 四周期推断。
 - `2026-09-16 10:52 Asia/Shanghai` 已发布撤单尝试分页账本和 `relay-sdk 0.1.37`：`iter_cancel_attempts(page_size=7)` 在线完整读取 20 条唯一 attempt/Gateway ID，均为 `ORDER_NOT_FOUND` 且 `reconciliation_required=true`；对应前一日 20 笔订单仍为 `working/is_terminal=false`。Relay 已兼容 readiness/订单/撤单尝试的可选 `counter_session_id`，当前 OC heartbeat 未提供该字段，因此 TEST 遗留订单人工 resolution 保持失败关闭，生产更不会据此自动终态化。
 - `2026-09-16 10:26 Asia/Shanghai` 测试 OC 恢复并完成无交易写入的主动验收：账户 `00030484` 的资金、持仓、订单、成交、费用查询均取得唯一 completed 终态；资金更新时间为 `10:26:21`，持仓返回 15 条，今日订单/成交/费用均为空结果；4 条 Stream 全部健康、总 lag 为 0、pending DLQ 为 0，`order_entry_ready=true`。测试配置沿用 OC 约定的 `relay:prod:v1:huaxin:00030484` 键名前缀，但 Redis 与 PostgreSQL 均为测试环境独立实例。
 - `2026-09-16 09:58 Asia/Shanghai` 按用户明确指令从生产切到测试环境：测试库 migration 成功，API 内嵌账本同步 worker 启动；Redis、数据库、行情和事件流均正常，但测试 OC 柜台会话为 `disconnected`、订单快照未 ready，账户 `00030484` 当前 `order_entry_ready=false`，Relay 以 `BROKER_DISCONNECTED` 失败关闭并拒绝交易命令。生产配置未修改。
