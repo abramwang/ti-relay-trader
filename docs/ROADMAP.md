@@ -443,7 +443,8 @@
 - [x] 明确 Chronos 成交时间契约：逐笔成交只使用 `Fill.matched_at`，不得从订单状态时间推导；华鑫 7x24 测试柜台的模拟状态时钟不外推到生产。Relay 成交表、订单详情和 K 线成交标记统一该口径。
 - [x] 按 Chronos 跨日订单 R1/R4 增加撤单尝试持久化分页 API、SDK page/item 迭代器及 `filled` 数量闭合投影；`ORDER_NOT_FOUND` 保持拒撤证据，不改变原订单。
 - [x] 完成 TEST 进程会话边界验收：连续两次人工重启得到不同 `counter_session_id`，同一进程内 heartbeat 与订单事件保持一致；跨会话 `ORDER_NOT_FOUND` 携带完整撤单语义，当前会话最小订单完成 `working -> cancelled` 闭环。OC 不实现 7x24 四时段判断，Relay 不按时钟猜测会话变化。
-- [ ] 在上述证据上实现 TEST-only 人工 `orphaned` resolution，要求原订单和拒撤会话 ID 均非空且不同、完整分页证据、操作员、原因和幂等处置 ID；生产永不按 `ORDER_NOT_FOUND` 自动终态化。真实 `filled` 原子字段仍等待测试柜台产生可成交样本验收。
+- [x] 使用 Meridian 实时 Level1 作为非严格同步的报价参考完成 7 笔 TEST 主动成交矩阵：3 笔成交、4 笔撤单、0 笔活动残留；3 笔成交均满足 `cum_filled_qty=order_qty`、`leaves_qty=0`、`is_terminal=true`，且订单数量与普通成交数量逐笔闭合。migration 29 同时让成交按订单主键继承 Relay 自有策略归属字段。
+- [ ] 在上述证据上实现 TEST-only 人工 `orphaned` resolution，要求原订单和拒撤会话 ID 均非空且不同、完整分页证据、操作员、原因和幂等处置 ID；生产永不按 `ORDER_NOT_FOUND` 自动终态化。
 
 ### P6.1 接口测试台
 

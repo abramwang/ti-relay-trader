@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 启用查询和交易，OC 柜台及订单快照均 ready；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-16 13:37 Asia/Shanghai` OC 进程会话边界及当前会话下单/撤单已通过；Relay 已兼容 `order.cancel.accepted` 事件，真实 filled 样本仍待柜台允许成交 |
+| 最近确认 | `2026-09-16 13:58 Asia/Shanghai` TEST 主动成交矩阵取得 3 笔真实成交并通过订单/成交数量闭合；schema 29 已回填并在线验证成交策略归属 |
 | 更新时间 | `2026-09-16` |
 
 新线程按以下顺序恢复：
@@ -28,7 +28,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
-- `2026-09-16 13:44 Asia/Shanghai` TEST 连续人工重启的会话 ID 从 `hxproc-a5463f8735b83449` 换为 `hxproc-8c52fcb4c88e9250`；第二个会话的最小测试单多次完成 `created -> working -> cancelled`，订单事件、撤单尝试和 heartbeat 会话 ID 一致。OC 新增的 `order.cancel.accepted` 已按同一 `origin_message_id` 幂等合并，柜台 event 正确把 reply 的暂态 `reconciliation_required=true` 更新为 `false`，不再新增 unsupported 错误；四条 Stream `lag=0`、无 DLQ。主动成交测试被柜台以“当前状态禁止此项操作”拒绝，因此 `filled` 原子字段仍等待真实成交样本。
+- `2026-09-16 13:58 Asia/Shanghai` Meridian 实时 Level1 与测试柜台撮合盘口并非完全同步，仅作为报价参考；7 笔 TEST 主动成交矩阵最终为 3 笔成交、4 笔撤单、0 笔活动残留。3 笔成交均满足 `cum_filled_qty=order_qty=100`、`leaves_qty=0`、`is_terminal=true`，订单与普通成交数量逐笔闭合。schema 29 已在 TEST 应用并把 3 笔既有成交全部回填为 `strategy_id=active-fill-matrix`；后续写入也按同账户、同交易日、同 `gateway_order_id` 继承订单策略归属。四条业务 Stream `lag=0`，DLQ 不存在。
+- `2026-09-16 13:44 Asia/Shanghai` TEST 连续人工重启的会话 ID 从 `hxproc-a5463f8735b83449` 换为 `hxproc-8c52fcb4c88e9250`；第二个会话的最小测试单多次完成 `created -> working -> cancelled`，订单事件、撤单尝试和 heartbeat 会话 ID 一致。OC 新增的 `order.cancel.accepted` 已按同一 `origin_message_id` 幂等合并，柜台 event 正确把 reply 的暂态 `reconciliation_required=true` 更新为 `false`，不再新增 unsupported 错误；四条 Stream `lag=0`、无 DLQ。
 - `2026-09-16 13:18 Asia/Shanghai` OC 新版在线验收：`counter_session_id=hxcs-0da546ea12434a71` 在 `disconnected -> ready` 期间保持稳定；对上一会话遗留订单撤单返回 `ORDER_NOT_FOUND`，完整携带 `retry_safe=false`、`order_state_changed=false`、`reconciliation_required=true`、东八区 `occurred_at` 和当前会话 ID，原订单仍为 working。TEST 会话现收敛为“一次 OC 进程生命周期一个 ID”，进程内短线重连不变、人工重启换新，OC 不实现四时段判断。13:18 的 100 股最小测试单到达柜台后被以“当前状态禁止此项操作”终态拒绝，订单身份和会话字段正确，但实际下单/撤单仍需目标交易区间人工重启 OC 后复验。
 - `2026-09-16` 已把 OC 后续任务合并到 [测试柜台进程会话与订单可靠性契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1)：`counter_session_id` 采用一次 OC 进程生命周期一个 ID 的最小实现，并约束撤单结果六个结构化语义字段及 `filled` 数量/残量/终态原子一致；历史字段允许留空，新版本订单必须满足。
 - `2026-09-16 10:52 Asia/Shanghai` 已发布撤单尝试分页账本和 `relay-sdk 0.1.37`：`iter_cancel_attempts(page_size=7)` 在线完整读取 20 条唯一 attempt/Gateway ID，均为 `ORDER_NOT_FOUND` 且 `reconciliation_required=true`；对应前一日 20 笔订单仍为 `working/is_terminal=false`。Relay 已兼容 readiness/订单/撤单尝试的可选 `counter_session_id`，当前 OC heartbeat 未提供该字段，因此 TEST 遗留订单人工 resolution 保持失败关闭，生产更不会据此自动终态化。
@@ -53,7 +54,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- 生产 schema 当前为 `28 reverse_repo_asset_receivable`，Python SDK 当前版本为 `relay-sdk==0.1.37`。
+- TEST schema 当前为 `29 fill_order_context_inheritance`；生产仍为 `28 reverse_repo_asset_receivable`，待下一次明确切换或部署时按启动门禁升级。Python SDK 当前版本为 `relay-sdk==0.1.37`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞

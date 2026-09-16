@@ -432,6 +432,20 @@ LIMIT 1
 `
 
 const insertFillSQL = `
+WITH order_context AS (
+    SELECT
+        business_type,
+        strategy_type,
+        strategy_id,
+        basket_id,
+        parent_order_id,
+        t0_order_group_id
+    FROM orders
+    WHERE account_id = $1
+        AND trade_date = $14::date
+        AND gateway_order_id = $3
+    LIMIT 1
+)
 INSERT INTO fills (
     account_id,
     fill_id,
@@ -462,9 +476,16 @@ INSERT INTO fills (
     raw_payload,
     adapter_context
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22, $23, $24, $25, $26, $27, $28
+    $1, $2, $3, $4, $5,
+    COALESCE($6::text, (SELECT business_type::text FROM order_context)),
+    $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17,
+    COALESCE($18::text, (SELECT strategy_type FROM order_context)),
+    COALESCE($19::text, (SELECT strategy_id FROM order_context)),
+    COALESCE($20::text, (SELECT basket_id FROM order_context)),
+    COALESCE($21::text, (SELECT parent_order_id FROM order_context)),
+    COALESCE($22::text, (SELECT t0_order_group_id FROM order_context)),
+    $23, $24, $25, $26, $27, $28
 )
 ON CONFLICT DO NOTHING
 `

@@ -459,6 +459,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 
 `GET /v1/orders` 和 `GET /v1/fills` 不传 `trade_date/date_from/date_to/history` 时，默认按 `Asia/Shanghai` 当日过滤。历史订单和成交应使用 `/v1/history/orders`、`/v1/history/fills`，或在原查询接口显式传 `history=true`、`trade_date=YYYYMMDD`、`date_from=YYYYMMDD`、`date_to=YYYYMMDD`。订单查询优先使用 `orders.trade_date` 过滤，缺失时按东八区订单时间兜底；成交查询优先使用 `fills.trade_date`，缺失时按成交时间兜底。订单和成交查询都支持 `strategy_type`、`strategy_id`、`basket_id`、`parent_order_id`、`t0_order_group_id` 过滤。历史持仓使用 `/v1/accounts/{account_id}/positions/history`，数据来源为 `position_snapshots`；默认读取 `snapshot_type=close` 的日终持仓，可传 `snapshot_type=open` 读取盘前初始化固化的日初持仓。
 
+成交入账时会按同一 `account_id + trade_date + gateway_order_id` 从订单账本继承缺失的 `business_type`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id` 和 `t0_order_group_id`。OC 不需要重复维护这些由 Relay 下单请求持久化的归属字段；原始成交报文保持不变，继承只作用于结构化成交账本。
+
 订单、成交、ETF 划转、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 
 `GET /v1/events/stream` 的账本事件使用 API Hub 生成的进程 epoch 单调游标，游标是 opaque string，客户端不得解析或自行构造。初次连接先收到无 SSE ID 的 `relay.connected`，其 data 包含 `resume_status=fresh`、`current_cursor`、`replay_capacity=2048` 和 `reconciliation_required=false`。恢复连接携带 `Last-Event-ID` 后，同一 API 进程且游标仍在窗口内时，服务端先返回 `resume_status=resumed`，再按原顺序发送游标之后且符合账户过滤的事件。

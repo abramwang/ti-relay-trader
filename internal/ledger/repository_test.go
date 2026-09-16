@@ -534,6 +534,8 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 		t.Fatalf("query count = %d, want insert + summary cleanup", len(exec.queries))
 	}
 	requireQueryContains(t, exec.queries[0], "INSERT INTO fills")
+	requireQueryContains(t, exec.queries[0], "WITH order_context AS")
+	requireQueryContains(t, exec.queries[0], "COALESCE($19::text, (SELECT strategy_id FROM order_context))")
 	requireQueryContains(t, exec.queries[0], "ON CONFLICT DO NOTHING")
 	requireArgLen(t, exec.argsList[0], 28)
 	if exec.argsList[0][0] != "acct-1" || exec.argsList[0][2] != "gateway-1" {

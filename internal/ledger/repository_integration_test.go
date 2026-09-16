@@ -259,6 +259,11 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		GatewayStatus:  trading.GatewayStatusAccepted,
 		RequestID:      requestID,
 		IdempotencyKey: "idempotency-" + suffix,
+		StrategyType:   "integration_test",
+		StrategyID:     "strategy-" + suffix,
+		BasketID:       "basket-" + suffix,
+		ParentOrderID:  "parent-" + suffix,
+		T0OrderGroupID: "t0-" + suffix,
 		AdapterContext: map[string]any{"scope": "integration"},
 	}
 	if err := repo.CreateOrder(ctx, order); err != nil {
@@ -352,6 +357,25 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 		RequestID: requestID,
 	}); err != nil {
 		t.Fatalf("InsertFill() error = %v", err)
+	}
+	var fillBusinessType, fillStrategyType, fillStrategyID, fillBasketID, fillParentOrderID, fillT0OrderGroupID string
+	if err := db.QueryRowContext(ctx, `
+		SELECT business_type, strategy_type, strategy_id, basket_id, parent_order_id, t0_order_group_id
+		FROM fills
+		WHERE account_id = $1 AND trade_date = $2::date AND gateway_order_id = $3
+	`, accountID, "2026-06-13", gatewayOrderID).Scan(
+		&fillBusinessType,
+		&fillStrategyType,
+		&fillStrategyID,
+		&fillBasketID,
+		&fillParentOrderID,
+		&fillT0OrderGroupID,
+	); err != nil {
+		t.Fatalf("query inherited fill order context: %v", err)
+	}
+	if fillBusinessType != "S" || fillStrategyType != "integration_test" || fillStrategyID != order.StrategyID ||
+		fillBasketID != order.BasketID || fillParentOrderID != order.ParentOrderID || fillT0OrderGroupID != order.T0OrderGroupID {
+		t.Fatalf("inherited fill order context = %q/%q/%q/%q/%q/%q", fillBusinessType, fillStrategyType, fillStrategyID, fillBasketID, fillParentOrderID, fillT0OrderGroupID)
 	}
 
 	feeAsOf := time.Now().UTC()
