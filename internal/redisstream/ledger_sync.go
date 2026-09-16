@@ -660,13 +660,19 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		result.Transfers++
 		return result
 	case "order.cancel.event":
-		if envelope.EventName != "order.cancel.rejected" {
+		status := ""
+		switch envelope.EventName {
+		case "order.cancel.accepted":
+			status = string(trading.ReplyStatusAccepted)
+		case "order.cancel.rejected":
+			status = string(trading.ReplyStatusRejected)
+		default:
 			result.Unsupported++
 			result.Skipped++
 			result.SkipReasons = append(result.SkipReasons, "unsupported order.cancel.event event_name "+envelope.EventName)
 			return result
 		}
-		return processCancelAttemptEnvelope(ctx, writer, envelope, "rejected", result)
+		return processCancelAttemptEnvelope(ctx, writer, envelope, status, result)
 	default:
 		result.Unsupported++
 		result.Skipped++

@@ -344,7 +344,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 
 ### 撤单动作结果
 
-`order.cancel` 的 `reply.status=accepted` 只表示撤单请求已交给柜台接口。柜台明确拒绝时，OC v1.2 发布 `event_type=order.cancel.event/event_name=order.cancel.rejected`；响应超时则写入 `CANCEL_RESPONSE_TIMEOUT` DLQ。Relay 将这些结果独立写入 `order_cancel_attempts` 并发布 `order.cancel.rejected` SSE，不修改原订单的 `status/gateway_status/reject_code/reject_message`。成功撤单仍只以普通 `order.event.gateway_status=cancelled` 为准。
+`order.cancel` 的 `reply.status=accepted` 只表示撤单请求已交给柜台接口。OC 可以继续发布 `event_type=order.cancel.event`，其中 `event_name` 支持 `order.cancel.accepted` 和 `order.cancel.rejected`；响应超时则写入 `CANCEL_RESPONSE_TIMEOUT` DLQ。Relay 按原命令 `origin_message_id` 将 reply/event 幂等写入同一条 `order_cancel_attempts`，accepted 只补充动作证据，rejected 另外发布 `order.cancel.rejected` SSE；两者都不直接修改原订单的 `status/gateway_status/reject_code/reject_message`。成功撤单仍只以普通 `order.event.gateway_status=cancelled` 为准。
 
 `GET /v1/order-cancel-attempts` 提供上述证据的账户级持久化分页读取，支持日期、原订单
 `gateway_order_id`、状态和 cursor 过滤。`ORDER_NOT_FOUND` 不推导原订单终态。可选

@@ -1322,6 +1322,53 @@ func TestProcessLedgerEntryRecordsCancelRejectedEventWithoutChangingOrder(t *tes
 	}
 }
 
+func TestProcessLedgerEntryRecordsCancelAcceptedEventWithoutChangingOrder(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:event", "3-2", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-cancel-accepted",
+			"event_type":"order.cancel.event",
+			"event_name":"order.cancel.accepted",
+			"action":"order.cancel",
+			"origin_message_id":"msg-cancel-accepted",
+			"request_id":"req-cancel-accepted",
+			"gateway_order_id":"gw-cancel-accepted",
+			"produced_at":"2026-09-16T05:35:27.806Z",
+			"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+			"payload":{
+				"gateway_order_id":"gw-cancel-accepted",
+				"account_id":"00030484",
+				"order_id":1680001,
+				"order_stream_id":"110018000000266",
+				"counter_session_id":"hxproc-session-a",
+				"cancel_status":"accepted",
+				"code":"OK",
+				"message":"VIP:正确",
+				"order_state_changed":false,
+				"retry_safe":false,
+				"reconciliation_required":false,
+				"occurred_at":"2026-09-16T13:35:27.806+08:00"
+			}
+		}`,
+	})
+
+	if result.CancelAttempts != 1 || result.CancelFailures != 0 || result.Unsupported != 0 || result.Skipped != 0 ||
+		len(result.SkipReasons) != 0 || result.Orders != 0 || result.OrderEvents != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 || len(writer.cancelAttempts) != 1 {
+		t.Fatalf("writer = %#v", writer)
+	}
+	attempt := writer.cancelAttempts[0]
+	if attempt.AttemptID != "msg-cancel-accepted" || attempt.AccountID != "00030484" || attempt.Status != "accepted" ||
+		attempt.Code != "OK" || attempt.CounterSessionID != "hxproc-session-a" || attempt.ReconciliationRequired ||
+		attempt.RetrySafe == nil || *attempt.RetrySafe || attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
+		t.Fatalf("cancel attempt = %#v", attempt)
+	}
+}
+
 func TestProcessLedgerEntryMapsBatchFailedOrdersByIndex(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:sim:00030484:reply", "4-1", map[string]any{

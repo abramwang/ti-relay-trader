@@ -7,7 +7,7 @@
 | 项目 | 状态 | Relay 处理 |
 | --- | --- | --- |
 | R1 撤单尝试分页账本 | 已实现 | `GET /v1/order-cancel-attempts`；SDK 提供 page/item 迭代器 |
-| R2 柜台会话身份 | OC/Relay 已接入，待重启边界复验 | `counter_session_id` 已进入 readiness、Order、OrderCancelAttempt |
+| R2 柜台会话身份 | 已验收 | 连续人工重启换新 ID，进程内 heartbeat、Order、OrderCancelAttempt 保持一致 |
 | R3 TEST 遗留状态处置 | 失败关闭 | 等待 R2 真实证据后实现；不伪造 cancelled/rejected |
 | R4 filled 原子投影 | 已实现 | 入库及 GET 投影均要求数量闭合，否则降为 working/partially_filled |
 

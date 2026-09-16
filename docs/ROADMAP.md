@@ -442,7 +442,8 @@
 - [x] 接收 Chronos 对测试资产基线与 Direct 两子单的独立验收：批量提交、持久化幂等重放、逐单 working、Go 授权撤单、双 cancelled 零成交终态及 SSE/全量对账均通过；TWAP、R3 故障注入和生产准入继续保持未验收边界。
 - [x] 明确 Chronos 成交时间契约：逐笔成交只使用 `Fill.matched_at`，不得从订单状态时间推导；华鑫 7x24 测试柜台的模拟状态时钟不外推到生产。Relay 成交表、订单详情和 K 线成交标记统一该口径。
 - [x] 按 Chronos 跨日订单 R1/R4 增加撤单尝试持久化分页 API、SDK page/item 迭代器及 `filled` 数量闭合投影；`ORDER_NOT_FOUND` 保持拒撤证据，不改变原订单。
-- [ ] 完成 TEST 进程会话边界验收：OC 已提供 `counter_session_id`，同一进程从断开恢复到 ready 时 ID 稳定，跨会话 `ORDER_NOT_FOUND` 已携带完整撤单语义；待下一次人工重启确认新 ID，并验证当前会话正常下单/撤单。OC 不实现 7x24 四时段判断，Relay 不按时钟猜测会话变化。在验收完成前不开放遗留订单人工 `orphaned` resolution，生产永不按 `ORDER_NOT_FOUND` 自动终态化。
+- [x] 完成 TEST 进程会话边界验收：连续两次人工重启得到不同 `counter_session_id`，同一进程内 heartbeat 与订单事件保持一致；跨会话 `ORDER_NOT_FOUND` 携带完整撤单语义，当前会话最小订单完成 `working -> cancelled` 闭环。OC 不实现 7x24 四时段判断，Relay 不按时钟猜测会话变化。
+- [ ] 在上述证据上实现 TEST-only 人工 `orphaned` resolution，要求原订单和拒撤会话 ID 均非空且不同、完整分页证据、操作员、原因和幂等处置 ID；生产永不按 `ORDER_NOT_FOUND` 自动终态化。真实 `filled` 原子字段仍等待测试柜台产生可成交样本验收。
 
 ### P6.1 接口测试台
 

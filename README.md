@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 启用查询和交易，OC 柜台及订单快照均 ready；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-16 13:18 Asia/Shanghai` OC 新版已在线：进程会话 ID 在断开恢复期间稳定，跨会话拒撤结构化语义通过；当前会话实际交易仍待目标时段人工重启 OC 后复验 |
+| 最近确认 | `2026-09-16 13:37 Asia/Shanghai` OC 进程会话边界及当前会话下单/撤单已通过；Relay 已兼容 `order.cancel.accepted` 事件，真实 filled 样本仍待柜台允许成交 |
 | 更新时间 | `2026-09-16` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-16 13:37 Asia/Shanghai` TEST 连续人工重启的会话 ID 从 `hxproc-a5463f8735b83449` 换为 `hxproc-8c52fcb4c88e9250`；第二个会话的一笔 100 股测试单完整经历 `created -> working -> cancelled`，订单事件、撤单尝试和 heartbeat 会话 ID 一致，四条 Stream `lag=0`、无 DLQ。OC 同时发布 `order.cancel.accepted`，Relay 已按同一 `origin_message_id` 幂等兼容该事件，不再把它计为 unsupported。主动成交测试被柜台以“当前状态禁止此项操作”拒绝，因此 `filled` 原子字段仍等待真实成交样本。
 - `2026-09-16 13:18 Asia/Shanghai` OC 新版在线验收：`counter_session_id=hxcs-0da546ea12434a71` 在 `disconnected -> ready` 期间保持稳定；对上一会话遗留订单撤单返回 `ORDER_NOT_FOUND`，完整携带 `retry_safe=false`、`order_state_changed=false`、`reconciliation_required=true`、东八区 `occurred_at` 和当前会话 ID，原订单仍为 working。TEST 会话现收敛为“一次 OC 进程生命周期一个 ID”，进程内短线重连不变、人工重启换新，OC 不实现四时段判断。13:18 的 100 股最小测试单到达柜台后被以“当前状态禁止此项操作”终态拒绝，订单身份和会话字段正确，但实际下单/撤单仍需目标交易区间人工重启 OC 后复验。
 - `2026-09-16` 已把 OC 后续任务合并到 [测试柜台进程会话与订单可靠性契约](/home/ti-relay-trader/docs/OC_COUNTER_SESSION_ID_REQUIREMENT_20260916.md:1)：`counter_session_id` 采用一次 OC 进程生命周期一个 ID 的最小实现，并约束撤单结果六个结构化语义字段及 `filled` 数量/残量/终态原子一致；历史字段允许留空，新版本订单必须满足。
 - `2026-09-16 10:52 Asia/Shanghai` 已发布撤单尝试分页账本和 `relay-sdk 0.1.37`：`iter_cancel_attempts(page_size=7)` 在线完整读取 20 条唯一 attempt/Gateway ID，均为 `ORDER_NOT_FOUND` 且 `reconciliation_required=true`；对应前一日 20 笔订单仍为 `working/is_terminal=false`。Relay 已兼容 readiness/订单/撤单尝试的可选 `counter_session_id`，当前 OC heartbeat 未提供该字段，因此 TEST 遗留订单人工 resolution 保持失败关闭，生产更不会据此自动终态化。
@@ -57,7 +58,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 当前进展与阻塞
 
-- Chronos 跨日订单 R1/R4 已完成；R2 已取得 OC 在线字段证据，等待下一次人工重启验证会话 ID 换新后再进入 R3。TEST 定义为一次 OC 进程生命周期一个 `counter_session_id`，进程内短线重连不变；OC 不识别 7x24 四时段，Relay 时间表只控制准入且不推导会话变化。生产正常 A 股逻辑严格隔离。详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
+- Chronos 跨日订单 R1/R2/R4 已完成；R3 TEST-only 人工遗留订单处置待实现。TEST 定义为一次 OC 进程生命周期一个 `counter_session_id`，进程内短线重连不变；OC 不识别 7x24 四时段，Relay 时间表只控制准入且不推导会话变化。生产正常 A 股逻辑严格隔离。详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
 - Chronos 本轮验收把测试订单的 `accepted_at/last_updated_at=09:46:44` 与逐笔成交时间混淆；权威成交字段为 `Fill.matched_at=13:53:00+08:00`。Chronos 底层投影已读取该字段，仍需修正验收取证、页面或持久化消费口径；测试柜台状态时钟差异不外推到生产，详见 [Chronos 成交时间字段语义纠正](/home/ti-relay-trader/docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md:1)。
 - 首页已移除主栏 `200/126/280px` 固定 Grid 行约束：5 个快捷入口自动排布，账户路由表按实际账户行数撑开，左右两栏共同决定 dashboard 高度。Playwright 已在 `1600x900` 与 `1366x768` 验证入口、6 行账户路由和右侧运行边界无裁切、无重叠。
 - `/jobs` 已移除任务计划区的固定高度约束：任务卡按内容自适应，账户复核、历史记录和报告区随内容顺序布局，超出视口时由页面主区域统一滚动；任务报告工作区限制为随视口变化的 `360-520px`，完整 JSON 在模块内部滚动。Playwright 已验证 5 张任务卡无裁切、无区域重叠，78KB 长报告不会撑高外层页面。
