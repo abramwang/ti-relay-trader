@@ -275,6 +275,29 @@ func TestRepositoryWritesToPostgres(t *testing.T) {
 	if err := repo.CreateOrder(ctx, conflictingOrder); !errors.Is(err, ErrOrderConflict) {
 		t.Fatalf("CreateOrder() duplicate idempotency error = %v, want ErrOrderConflict", err)
 	}
+	stateRejectOrder := order
+	stateRejectOrder.ClientOrderID = "client-state-reject-" + suffix
+	stateRejectOrder.GatewayOrderID = "gateway-state-reject-" + suffix
+	stateRejectOrder.OrderStreamID = "order-stream-state-reject-" + suffix
+	stateRejectOrder.IdempotencyKey = "idempotency-state-reject-" + suffix
+	stateRejectOrder.Status = trading.OrderStatusRejected
+	stateRejectOrder.GatewayStatus = trading.GatewayStatusRejected
+	stateRejectOrder.IsTerminal = true
+	stateRejectOrder.RejectCode = trading.ErrorBrokerRejected
+	stateRejectOrder.RejectMessage = "当前状态禁止此项操作"
+	stateRejectOrder.TerminalAt = time.Now().UTC()
+	stateRejectOrder.AdapterContext = map[string]any{"counter_session_id": "hxproc-integration"}
+	if err := repo.CreateOrder(ctx, stateRejectOrder); err != nil {
+		t.Fatalf("CreateOrder() state reject error = %v", err)
+	}
+	issues, err := repo.LatestGatewayIssues(ctx, time.Now().Add(-time.Minute), true)
+	if err != nil {
+		t.Fatalf("LatestGatewayIssues() error = %v", err)
+	}
+	issue, ok := issues[accountID]
+	if !ok || issue.Code != "TEST_COUNTER_STATE_REJECTED" || issue.Message != "当前状态禁止此项操作" || issue.CounterSessionID != "hxproc-integration" {
+		t.Fatalf("test counter gateway issue = %#v", issue)
+	}
 
 	lateGatewayOrderID := gatewayOrderID + "-late"
 	lateFeeRecord := OrderFeeRecord{

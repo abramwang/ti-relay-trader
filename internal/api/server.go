@@ -1742,6 +1742,10 @@ func (s *Server) handleAccountReadiness(w http.ResponseWriter, r *http.Request, 
 		view.OrderSnapshotReady = gateway.OrderSnapshotReady
 		view.AcceptingTradeCommands = gateway.AcceptingTradeCommands
 		view.LastHeartbeatAt = gateway.LastHeartbeatAt
+		view.OrderEntryCooldown = gateway.OrderEntryCooldown
+		view.LastIssueCode = gateway.LastIssueCode
+		view.LastIssueMessage = gateway.LastIssueMessage
+		view.LastIssueAt = gateway.LastIssueAt
 		break
 	}
 	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"readiness": view})
@@ -5129,6 +5133,10 @@ type AccountReadinessView struct {
 	OrderSnapshotReady     *bool      `json:"order_snapshot_ready,omitempty"`
 	AcceptingTradeCommands *bool      `json:"accepting_trade_commands,omitempty"`
 	LastHeartbeatAt        *time.Time `json:"last_heartbeat_at,omitempty"`
+	OrderEntryCooldown     bool       `json:"order_entry_cooldown,omitempty"`
+	LastIssueCode          string     `json:"last_issue_code,omitempty"`
+	LastIssueMessage       string     `json:"last_issue_message,omitempty"`
+	LastIssueAt            *time.Time `json:"last_issue_at,omitempty"`
 }
 
 type OrderCancelAttemptPage struct {

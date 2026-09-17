@@ -444,6 +444,8 @@
 - [x] 按 Chronos 跨日订单 R1/R4 增加撤单尝试持久化分页 API、SDK page/item 迭代器及 `filled` 数量闭合投影；`ORDER_NOT_FOUND` 保持拒撤证据，不改变原订单。
 - [x] 完成 TEST 进程会话边界验收：连续两次人工重启得到不同 `counter_session_id`，同一进程内 heartbeat 与订单事件保持一致；跨会话 `ORDER_NOT_FOUND` 携带完整撤单语义，当前会话最小订单完成 `working -> cancelled` 闭环。OC 不实现 7x24 四时段判断，Relay 不按时钟猜测会话变化。
 - [x] 使用 Meridian 实时 Level1 作为非严格同步的报价参考完成 7 笔 TEST 主动成交矩阵：3 笔成交、4 笔撤单、0 笔活动残留；3 笔成交均满足 `cum_filled_qty=order_qty`、`leaves_qty=0`、`is_terminal=true`，且订单数量与普通成交数量逐笔闭合。migration 29 同时让成交按订单主键继承 Relay 自有策略归属字段。
+- [x] 排查 Chronos `2026-09-17` TEST readiness mismatch，并发布 SDK `0.1.38`：对当前 OC 进程会话内精确的 `BROKER_REJECTED / 当前状态禁止此项操作` 启用五分钟 TEST-only 准入冷却，暴露结构化问题证据；生产、旧会话和其他业务拒单不受影响。
+- [ ] 等待 OC 让 heartbeat `accepting_trade_commands` 反映真实柜台业务状态，并由 Chronos 复测普通证券、涨停证券、冷却失败关闭及恢复；Relay 冷却是有界防护，不替代 OC 权威状态。
 - [ ] 在上述证据上实现 TEST-only 人工 `orphaned` resolution，要求原订单和拒撤会话 ID 均非空且不同、完整分页证据、操作员、原因和幂等处置 ID；生产永不按 `ORDER_NOT_FOUND` 自动终态化。
 
 ### P6.1 接口测试台

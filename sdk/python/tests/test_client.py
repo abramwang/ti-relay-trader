@@ -90,6 +90,10 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "broker_ready": True,
                             "order_snapshot_ready": True,
                             "accepting_trade_commands": True,
+                            "order_entry_cooldown": False,
+                            "last_issue_code": "TEST_COUNTER_STATE_REJECTED",
+                            "last_issue_message": "当前状态禁止此项操作",
+                            "last_issue_at": "2026-09-15T13:10:00+08:00",
                         }
                     },
                 }
@@ -990,6 +994,9 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(readiness.order_entry_block_reason, "OUTSIDE_TEST_COUNTER_WINDOW")
         self.assertEqual(readiness.counter_mode, "huaxin_7x24_test")
         self.assertEqual(readiness.counter_session_id, "huaxin-test-session-20260915-a")
+        self.assertFalse(readiness.order_entry_cooldown)
+        self.assertEqual(readiness.last_issue_code, "TEST_COUNTER_STATE_REJECTED")
+        self.assertEqual(readiness.last_issue_message, "当前状态禁止此项操作")
 
         with self.assertRaises(RelayBrokerNotReadyError) as raised:
             self.client.verify_ready(force=False)

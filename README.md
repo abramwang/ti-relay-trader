@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 测试账户 `00030484` 启用查询和交易，OC 柜台、订单快照和报单准入均 ready；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-17 15:20 Asia/Shanghai` 已按明确指令切到测试；账户 `00030484` 使用新 OC 会话且报单准入 ready |
+| 最近确认 | `2026-09-17 15:58 Asia/Shanghai` 已修复 TEST 准入与柜台全局状态拒单不一致；发布 SDK 0.1.38 和五分钟会话级冷却 |
 | 更新时间 | `2026-09-17` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-17 15:58 Asia/Shanghai` 已确认 Chronos 报告的 TEST readiness mismatch：OC heartbeat 在 `hxproc-0eb87c8f23897e76` 会话声明可报单，但 `300498.SZ/000981.SZ` 同批两单均被柜台以 `BROKER_REJECTED / 当前状态禁止此项操作` 终态拒绝；订单身份、零成交和终态账本均正确，`broker_trade_date=20450806` 仅保留为 outlier 审计值。Relay 现仅在 TEST 7x24 当前进程会话内对此精确全局拒单执行五分钟 `TEST_COUNTER_STATE_REJECTED_COOLDOWN`，生产与其他业务拒单不受影响；readiness 已在线读到问题证据且冷却到期后正常恢复。SDK `0.1.38` 已生成并通过 54 项单测和发布校验，OC 权威 heartbeat 要求见 [文档](/home/ti-relay-trader/docs/OC_TEST_ORDER_ENTRY_READINESS_REQUIREMENT_20260917.md:1)。
 - `2026-09-17 15:20 Asia/Shanghai` 按用户明确指令从生产切到测试环境：TEST schema 29、API 内嵌 worker 及全部依赖为 `ok`；账户 `00030484` 的 Redis、券商登录、订单快照和报单准入均 ready，当前 `counter_session_id=hxproc-0eb87c8f23897e76`，下一次柜台时段切换为 `15:30`。Stream `pending=0,lag=0`，空 DLQ Stream 未创建属于正常状态；切换时旧行情连接产生的一条 `context canceled` 不属于当前运行故障。
 - `2026-09-17 14:42 Asia/Shanghai` 按用户明确指令从测试切回生产：独立 API/worker、数据库、Redis、行情和事件桥正常，6 个账户保留、5 个启用查询、0 个开放交易。五个启用账户的 OC heartbeat、券商登录和订单快照均 ready，并已提供不同的 `hxproc-*` 进程会话 ID；Stream `pending=0,lag=0`、无待处理 DLQ。总体暂显示 `degraded` 仅因为无事件账户 `307000051389` 尚未创建 `event` Stream，其他 Stream 与 heartbeat 正常，未作为协议或数据故障处理。
 - `2026-09-17 10:00 Asia/Shanghai` 按用户明确指令从生产切到测试环境：TEST schema 29 和 API 内嵌 worker 正常，数据库、Redis、行情、事件桥和订单服务均为 `ok`，Stream `pending=0,lag=0`。测试 OC 最后 heartbeat 为 `2026-09-16 22:22:05 Asia/Shanghai`，当前 `HEARTBEAT_STALE`、`order_entry_ready=false`，因此总体显示 `degraded`；这是 OC 尚未启动造成的失败关闭，不是 Relay 切换或协议错误。
@@ -60,7 +61,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- TEST 与生产 schema 均为 `29 fill_order_context_inheritance`，Python SDK 当前版本为 `relay-sdk==0.1.37`。
+- TEST 与生产 schema 均为 `29 fill_order_context_inheritance`，Python SDK 当前版本为 `relay-sdk==0.1.38`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞

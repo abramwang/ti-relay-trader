@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.37.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.38.tar.gz"
 ```
 
 ## Quick Start
@@ -214,6 +214,14 @@ entry state. `verify_ready()` forces a fresh observation and raises
 readiness, or a configured test-counter window is closed. The Huaxin 7x24
 schedule is test-only; production continues to use normal A-share session
 rules.
+
+For the Huaxin TEST 7x24 counter, the exact global rejection
+`BROKER_REJECTED / 当前状态禁止此项操作` opens a five-minute, process-session-scoped
+readiness circuit. During the cooldown, `order_entry_ready` is false with
+`order_entry_block_reason=TEST_COUNTER_STATE_REJECTED_COOLDOWN`.
+`AccountReadiness` also exposes `order_entry_cooldown`, `last_issue_code`,
+`last_issue_message`, and `last_issue_at`. Other business rejections and all
+production accounts are excluded from this circuit.
 
 Use `retry_decision(error, operation=...)` with `read`, `query`, `write`,
 `cancel`, or `stream`. Only reads, interrupted queries, and broker-not-ready

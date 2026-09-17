@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.38 - 2026-09-17
+
+- Expose TEST counter rejection-circuit evidence through typed readiness fields:
+  `order_entry_cooldown`, `last_issue_code`, `last_issue_message`, and
+  `last_issue_at`.
+- `verify_ready(force=True)` now fails closed during Relay's five-minute
+  `TEST_COUNTER_STATE_REJECTED_COOLDOWN` after the Huaxin 7x24 counter reports
+  the global state rejection `BROKER_REJECTED / 当前状态禁止此项操作`.
+
+### Safety
+
+- The rejection circuit is limited to the configured TEST 7x24 counter and the
+  exact global-state rejection. It does not alter production readiness or
+  classify ordinary order-specific business rejections as account outages.
+
 ## 0.1.37 - 2026-09-16
 
 - Add typed, cursor-paginated cancel-attempt ledger access through

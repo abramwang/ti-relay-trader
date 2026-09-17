@@ -197,6 +197,92 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	}
 }
 
+func TestGatewayStatusTemporarilyBlocksTestCounterAfterGlobalStateReject(t *testing.T) {
+	location := timeutil.Location()
+	now := time.Date(2026, 9, 17, 15, 42, 0, 0, location)
+	payload, err := json.Marshal(map[string]any{
+		"component_id":              "oc.huaxin.a1",
+		"component_role":            "broker_trader_gateway",
+		"counter_session_id":        "hxproc-current",
+		"state":                     "UP",
+		"state_text":                "running",
+		"redis_ready":               true,
+		"broker_ready":              true,
+		"order_snapshot_ready":      true,
+		"accepting_trade_commands":  true,
+		"accepting_cancel_commands": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"protocol":     Protocol,
+		"message_type": "heartbeat",
+		"message_id":   "hb-test-counter-state-reject",
+		"produced_at":  now.Add(-5 * time.Second).Format(time.RFC3339Nano),
+		"payload":      json.RawMessage(payload),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := redis.NewXMessageSliceCmd(context.Background())
+	latest.SetVal([]redis.XMessage{{
+		ID:     "1789630915000-0",
+		Values: map[string]any{"body": string(body)},
+	}})
+	schedule := &config.OrderEntryScheduleConfig{
+		CounterMode: "huaxin_7x24_test",
+		Timezone:    "Asia/Shanghai",
+		Windows: []config.OrderEntryWindowConfig{
+			{Start: "15:40", End: "17:40"},
+		},
+	}
+	service := &RuntimeObservability{cfg: config.Config{
+		Service:    config.ServiceConfig{Environment: config.EnvironmentTest},
+		Operations: config.OperationsConfig{HeartbeatStaleSeconds: 600},
+	}}
+	command := heartbeatProbeCommand{
+		account: config.AccountRouteConfig{
+			AccountID: "a1", BrokerID: "huaxin", GatewayID: "a1", Enabled: true, TradingEnabled: true,
+			OrderEntrySchedule: schedule,
+		},
+		stream: "relay:prod:v1:huaxin:a1:hb",
+		latest: latest,
+	}
+	issue := ledger.GatewayIssue{
+		AccountID:        "a1",
+		Code:             testCounterStateRejectCode,
+		Message:          "当前状态禁止此项操作",
+		CounterSessionID: "hxproc-current",
+		ReceivedAt:       time.Date(2026, 9, 17, 15, 41, 46, 0, location),
+	}
+
+	status := service.gatewayStatus(now, true, command, issue)
+	if status.OrderEntryReady || !status.OrderEntryCooldown || status.Status != "degraded" ||
+		status.OrderEntryBlockReason != "TEST_COUNTER_STATE_REJECTED_COOLDOWN" ||
+		status.OrderEntrySource != "oc_heartbeat+configured_test_schedule+relay_rejection_circuit" ||
+		status.OrderEntryNextChangeAt == nil ||
+		status.OrderEntryNextChangeAt.Format(time.RFC3339) != "2026-09-17T15:46:46+08:00" {
+		t.Fatalf("test counter rejection cooldown status = %+v", status)
+	}
+
+	status = service.gatewayStatus(now, true, command, ledger.GatewayIssue{
+		AccountID:        "a1",
+		Code:             testCounterStateRejectCode,
+		Message:          "当前状态禁止此项操作",
+		CounterSessionID: "hxproc-previous",
+		ReceivedAt:       issue.ReceivedAt,
+	})
+	if !status.OrderEntryReady || status.OrderEntryCooldown {
+		t.Fatalf("previous process issue blocked current session = %+v", status)
+	}
+
+	status = service.gatewayStatus(issue.ReceivedAt.Add(testCounterStateRejectCooldown+time.Second), true, command, issue)
+	if !status.OrderEntryReady || status.OrderEntryCooldown {
+		t.Fatalf("expired rejection cooldown status = %+v", status)
+	}
+}
+
 func TestGatewayStatusUsesOCV12ReadinessFlags(t *testing.T) {
 	location := timeutil.Location()
 	now := time.Date(2026, 7, 30, 9, 1, 10, 0, location)

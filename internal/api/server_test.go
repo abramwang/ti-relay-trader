@@ -364,6 +364,7 @@ func TestAccountReadinessReturnsTypedGatewayState(t *testing.T) {
 	ready := true
 	next := time.Date(2026, 9, 15, 13, 25, 0, 0, timeutil.Location())
 	observed := time.Date(2026, 9, 15, 13, 15, 0, 0, timeutil.Location())
+	lastIssueAt := time.Date(2026, 9, 15, 13, 10, 0, 0, timeutil.Location())
 	operations := &fakeOperationsService{snapshot: redisstream.RuntimeSnapshot{
 		GeneratedAt: observed,
 		Environment: "test",
@@ -384,6 +385,9 @@ func TestAccountReadinessReturnsTypedGatewayState(t *testing.T) {
 			OrderEntryNextChangeAt: &next,
 			OrderEntryTimezone:     "Asia/Shanghai",
 			OrderEntrySource:       "oc_heartbeat+configured_test_schedule",
+			LastIssueCode:          "TEST_COUNTER_STATE_REJECTED",
+			LastIssueMessage:       "当前状态禁止此项操作",
+			LastIssueAt:            &lastIssueAt,
 		}},
 	}}
 	cfg := config.Default()
@@ -400,7 +404,9 @@ func TestAccountReadinessReturnsTypedGatewayState(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"order_entry_ready":true`) ||
 		!strings.Contains(recorder.Body.String(), `"counter_mode":"huaxin_7x24_test"`) ||
-		!strings.Contains(recorder.Body.String(), `"next_transition_at":"2026-09-15T13:25:00+08:00"`) {
+		!strings.Contains(recorder.Body.String(), `"next_transition_at":"2026-09-15T13:25:00+08:00"`) ||
+		!strings.Contains(recorder.Body.String(), `"last_issue_code":"TEST_COUNTER_STATE_REJECTED"`) ||
+		!strings.Contains(recorder.Body.String(), `"last_issue_message":"当前状态禁止此项操作"`) {
 		t.Fatalf("readiness body = %s", recorder.Body.String())
 	}
 	if !operations.force {
