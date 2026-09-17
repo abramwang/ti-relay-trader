@@ -10,11 +10,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker |
-| 安全状态 | 6 个生产账户保留、5 个启用查询、0 个开放交易；`501000114077` 继续停用且历史账本保留 |
+| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
+| 安全状态 | 测试账户 `00030484` 启用查询和交易，但 OC 心跳过期，报单准入失败关闭；生产配置未修改 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-16 22:22 Asia/Shanghai` 已按明确指令切回生产只读；API、worker 和全部依赖健康，Stream 无积压 |
-| 更新时间 | `2026-09-16` |
+| 最近确认 | `2026-09-17 10:00 Asia/Shanghai` 已按明确指令切到测试；Relay 依赖健康，等待测试 OC 启动并恢复 heartbeat |
+| 更新时间 | `2026-09-17` |
 
 新线程按以下顺序恢复：
 
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-17 10:00 Asia/Shanghai` 按用户明确指令从生产切到测试环境：TEST schema 29 和 API 内嵌 worker 正常，数据库、Redis、行情、事件桥和订单服务均为 `ok`，Stream `pending=0,lag=0`。测试 OC 最后 heartbeat 为 `2026-09-16 22:22:05 Asia/Shanghai`，当前 `HEARTBEAT_STALE`、`order_entry_ready=false`，因此总体显示 `degraded`；这是 OC 尚未启动造成的失败关闭，不是 Relay 切换或协议错误。
 - `2026-09-16 22:22 Asia/Shanghai` 按用户明确指令从测试切回生产：独立 API/worker 和全部依赖健康，6 个账户保留、5 个启用查询、0 个开放交易；业务 Stream consumer group `pending=0,lag=0`，无新 WARN/ERROR。`307000051389:event` 仍未创建但其他 Stream 存在，沿用“尚未产生事件”的监控结论。
 - `2026-09-16 15:18 Asia/Shanghai` 按用户明确指令从生产重启到测试环境：TEST schema 29 已就绪，API 内嵌账本同步 worker 健康；账户 `00030484` 的 Redis、券商登录、订单快照和报单准入均 ready，当前 `counter_session_id=hxproc-8c52fcb4c88e9250`。六条 Stream 中仅不存在正常的空 DLQ Stream，consumer group `pending=0,lag=0`；生产配置和数据未修改。
 - `2026-09-16 14:40 Asia/Shanghai` 按用户明确指令从测试切回生产：生产库已升级到 schema 29，独立 API/worker 健康，6 个账户保留、5 个启用查询、0 个开放交易。五个启用账户的旧版 OC 均为 `UP`，Redis、券商登录和订单快照 ready；资产、当日订单、当日成交只读接口全部通过。旧版 heartbeat 暂无可选 `counter_session_id`，Relay 兼容为空且不影响查询和落账；业务 Stream consumer group `pending=0,lag=0`、无 DLQ 或解析错误，因此未增加吞错规则。`307000051389:event` 尚未创建但 heartbeat 正常，当前按“未产生事件”监控，不标记协议故障。
