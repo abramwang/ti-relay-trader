@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
-| 安全状态 | 测试账户 `00030484` 启用查询和交易；当前 OC heartbeat 已过期，Relay 以 `HEARTBEAT_STALE` 失败关闭；生产配置未修改 |
+| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立 API/worker |
+| 安全状态 | 6 个生产账户保留，5 个启用查询、0 个开放交易；`501000114077` 继续停用且历史账本保留 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-17 19:19 Asia/Shanghai` 接受 OC `42150cb` 的进程级报单锁存设计；Relay 移除 TEST 专属拒单冷却，发布 SDK 0.1.39 |
+| 最近确认 | `2026-09-17 19:38 Asia/Shanghai` 按用户明确指令切回生产；API/worker 和全部依赖正常，生产交易权限保持关闭 |
 | 更新时间 | `2026-09-17` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-17 19:38 Asia/Shanghai` 按用户明确指令从测试切回生产：`.runtime/active-config.yaml -> config/relay.prod.yaml`，数据库 migration 完成，独立 API/worker 健康；6 个账户保留、5 个启用查询、0 个开放交易，`501000114077` 继续停用且历史账本不删除。生产 API、PostgreSQL、Redis、行情、事件桥和订单服务均为 `ok`；20 条受监控 Stream 健康、总 `lag=0`、待处理 DLQ 为 0，盘后 5 个启用账户显示 `off_hours` 属正常状态。
 - `2026-09-17 19:19 Asia/Shanghai` 接受 OC `42150cb` 对华鑫 TEST 柜台的最小边界：精确全局状态拒绝在当前 OC 进程内锁存，先发布 `DEGRADED / counter_order_entry_not_ready / accepting_trade_commands=false` 心跳，再发布拒单事件；查询继续，满足快照条件时撤单继续，恢复只通过人工确认后的 OC 重启和新 `counter_session_id`。Relay 已移除订单账本反推、五分钟冷却及专属 API 字段，只按新鲜 OC heartbeat 返回通用 `OC_TRADE_COMMANDS_PAUSED`；SDK `0.1.39` 同步该语义，生产行为不变。当前 OC 最后 heartbeat 为 `17:54:17 Asia/Shanghai`，19:19 已过期，Relay 正确以 `HEARTBEAT_STALE` 失败关闭，在线锁存验收等待 OC 新版本进程启动。
 - `2026-09-17 15:20 Asia/Shanghai` 按用户明确指令从生产切到测试环境：TEST schema 29、API 内嵌 worker 及全部依赖为 `ok`；账户 `00030484` 的 Redis、券商登录、订单快照和报单准入均 ready，当前 `counter_session_id=hxproc-0eb87c8f23897e76`，下一次柜台时段切换为 `15:30`。Stream `pending=0,lag=0`，空 DLQ Stream 未创建属于正常状态；切换时旧行情连接产生的一条 `context canceled` 不属于当前运行故障。
 - `2026-09-17 14:42 Asia/Shanghai` 按用户明确指令从测试切回生产：独立 API/worker、数据库、Redis、行情和事件桥正常，6 个账户保留、5 个启用查询、0 个开放交易。五个启用账户的 OC heartbeat、券商登录和订单快照均 ready，并已提供不同的 `hxproc-*` 进程会话 ID；Stream `pending=0,lag=0`、无待处理 DLQ。总体暂显示 `degraded` 仅因为无事件账户 `307000051389` 尚未创建 `event` Stream，其他 Stream 与 heartbeat 正常，未作为协议或数据故障处理。
