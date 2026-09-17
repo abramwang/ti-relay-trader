@@ -560,36 +560,6 @@ func TestInsertFillBuildsIdempotentFillWrite(t *testing.T) {
 	}
 }
 
-func TestLatestGatewayIssuesQueriesBrokerAndTestCounterRejects(t *testing.T) {
-	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
-	repo := NewRepository(exec)
-	since := time.Date(2026, 9, 17, 15, 0, 0, 0, time.UTC)
-
-	_, err := repo.LatestGatewayIssues(context.Background(), since, true)
-	if err == nil || !strings.Contains(err.Error(), "stop after query") {
-		t.Fatalf("LatestGatewayIssues() error = %v", err)
-	}
-	requireQueryContains(t, exec.query, "code = 'BROKER_NOT_READY'")
-	requireQueryContains(t, exec.query, "'TEST_COUNTER_STATE_REJECTED' AS code")
-	requireQueryContains(t, exec.query, "reject_code = 'BROKER_REJECTED'")
-	requireQueryContains(t, exec.query, "reject_message LIKE '%当前状态禁止此项操作%'")
-	requireQueryContains(t, exec.query, "adapter_context->>'counter_session_id'")
-	requireArgLen(t, exec.args, 1)
-	if exec.args[0] != since {
-		t.Fatalf("since arg = %#v, want %#v", exec.args[0], since)
-	}
-
-	exec.err = errors.New("stop production query")
-	_, err = repo.LatestGatewayIssues(context.Background(), since, false)
-	if err == nil || !strings.Contains(err.Error(), "stop production query") {
-		t.Fatalf("LatestGatewayIssues() production error = %v", err)
-	}
-	requireQueryContains(t, exec.query, "FROM raw_stream_messages")
-	if strings.Contains(exec.query, "FROM orders") || strings.Contains(exec.query, "TEST_COUNTER_STATE_REJECTED") {
-		t.Fatalf("production gateway issue query scans TEST order rejects:\n%s", exec.query)
-	}
-}
-
 func TestArchiveRawStreamMessageBuildsAuditWrite(t *testing.T) {
 	exec := &recordingExecutor{}
 	repo := NewRepository(exec)

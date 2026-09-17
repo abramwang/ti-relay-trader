@@ -23,30 +23,25 @@ Both orders have zero fills, `leaves_qty=100`, terminal rejection state, the sam
 
 The mismatch is between OC's heartbeat readiness claim and the counter's actual order-entry state. Relay had no stronger pre-trade field available. `broker_trade_date=20450806` is preserved only as an outlier audit value; Relay normalized the standard trade date to `20260917`. The evidence does not prove that the outlier date caused the rejection, so OC must confirm that relationship.
 
-## Relay Mitigation
+## Resolution
 
-Relay now derives a TEST-only rejection circuit from the authoritative order ledger:
+OC commit `42150cb` now owns the Huaxin TEST-specific state rule:
 
-1. Match only `BROKER_REJECTED` whose message contains `当前状态禁止此项操作`.
-2. Require `environment=test` and `counter_mode=huaxin_7x24_test`.
-3. Scope the issue to the current `counter_session_id`; an OC restart creates a clean session.
-4. Hold readiness closed for five minutes after the reject.
-5. Return `order_entry_block_reason=TEST_COUNTER_STATE_REJECTED_COOLDOWN` and `order_entry_cooldown=true`.
-6. Set `next_transition_at` to the earlier of cooldown expiry and the configured window transition.
-7. Expose `last_issue_code`, `last_issue_message`, and `last_issue_at` for audit.
+1. The exact global state rejection latches the current OC process as unavailable for new orders.
+2. OC publishes `state=DEGRADED`, `state_text=counter_order_entry_not_ready`, and `accepting_trade_commands=false` before the rejected order event.
+3. Queries continue; cancellation remains available when broker login and the initial order snapshot allow it.
+4. Recovery requires an operator-confirmed OC restart and a fresh `counter_session_id`; OC does not infer recovery from a timer or probe order.
+5. Production behavior is unchanged.
 
-`RelayClient.verify_ready(force=True)` therefore fails closed before a subsequent write during the cooldown. The original batch can still contain multiple children because its order events arrive after the single batch command has already been published.
+Relay therefore does not inspect rejected order history or implement a TEST-specific cooldown. Fresh OC heartbeat state is the sole dynamic counter-availability input. `RelayClient.verify_ready(force=True)` fails closed with the general reason `OC_TRADE_COMMANDS_PAUSED` while `accepting_trade_commands=false`. The static TEST schedule remains an independent outer boundary.
 
-The circuit does not apply to production, previous OC sessions, or other business rejection messages. It does not modify order state or change the meaning of HTTP `202 Accepted`.
-
-## Remaining OC Requirement
-
-Relay's circuit is defensive, not a substitute for authoritative OC readiness. OC should make `accepting_trade_commands` reflect the counter's actual business state and set it to false before accepting Relay commands whenever the counter would return the global state rejection. See [OC TEST order-entry readiness requirement](OC_TEST_ORDER_ENTRY_READINESS_REQUIREMENT_20260917.md).
+See [OC TEST order-entry readiness requirement](OC_TEST_ORDER_ENTRY_READINESS_REQUIREMENT_20260917.md) for the original requirement and accepted implementation boundary.
 
 ## Chronos Retest
 
-1. Install `relay-sdk==0.1.38`.
+1. Install `relay-sdk==0.1.39`.
 2. Call `verify_ready(force=True)` before the first write.
-3. If a legal minimal order receives the global state rejection, call `verify_ready(force=True)` again.
-4. Confirm the second call raises `RelayBrokerNotReadyError` with code `TEST_COUNTER_STATE_REJECTED_COOLDOWN` and sends no new command.
-5. After five minutes, or after OC restarts into a different process session, confirm readiness can recover from fresh heartbeat state.
+3. Reproduce the exact global state rejection and confirm the degraded heartbeat precedes its `order.event`.
+4. Confirm the next `verify_ready(force=True)` raises `RelayBrokerNotReadyError` with `OC_TRADE_COMMANDS_PAUSED` and sends no new command.
+5. Confirm queries and eligible cancellations still work while new orders are locked.
+6. Restart OC after counter recovery, then confirm a new `counter_session_id` and fresh `accepting_trade_commands=true` heartbeat restore readiness.

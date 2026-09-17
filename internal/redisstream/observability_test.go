@@ -197,19 +197,19 @@ func TestGatewayStatusClassifiesHeartbeatAndBrokerNotReady(t *testing.T) {
 	}
 }
 
-func TestGatewayStatusTemporarilyBlocksTestCounterAfterGlobalStateReject(t *testing.T) {
+func TestGatewayStatusUsesOCLatchedOrderEntryState(t *testing.T) {
 	location := timeutil.Location()
 	now := time.Date(2026, 9, 17, 15, 42, 0, 0, location)
 	payload, err := json.Marshal(map[string]any{
 		"component_id":              "oc.huaxin.a1",
 		"component_role":            "broker_trader_gateway",
 		"counter_session_id":        "hxproc-current",
-		"state":                     "UP",
-		"state_text":                "running",
+		"state":                     "DEGRADED",
+		"state_text":                "counter_order_entry_not_ready",
 		"redis_ready":               true,
 		"broker_ready":              true,
 		"order_snapshot_ready":      true,
-		"accepting_trade_commands":  true,
+		"accepting_trade_commands":  false,
 		"accepting_cancel_commands": true,
 	})
 	if err != nil {
@@ -249,37 +249,12 @@ func TestGatewayStatusTemporarilyBlocksTestCounterAfterGlobalStateReject(t *test
 		stream: "relay:prod:v1:huaxin:a1:hb",
 		latest: latest,
 	}
-	issue := ledger.GatewayIssue{
-		AccountID:        "a1",
-		Code:             testCounterStateRejectCode,
-		Message:          "当前状态禁止此项操作",
-		CounterSessionID: "hxproc-current",
-		ReceivedAt:       time.Date(2026, 9, 17, 15, 41, 46, 0, location),
-	}
-
-	status := service.gatewayStatus(now, true, command, issue)
-	if status.OrderEntryReady || !status.OrderEntryCooldown || status.Status != "degraded" ||
-		status.OrderEntryBlockReason != "TEST_COUNTER_STATE_REJECTED_COOLDOWN" ||
-		status.OrderEntrySource != "oc_heartbeat+configured_test_schedule+relay_rejection_circuit" ||
-		status.OrderEntryNextChangeAt == nil ||
-		status.OrderEntryNextChangeAt.Format(time.RFC3339) != "2026-09-17T15:46:46+08:00" {
-		t.Fatalf("test counter rejection cooldown status = %+v", status)
-	}
-
-	status = service.gatewayStatus(now, true, command, ledger.GatewayIssue{
-		AccountID:        "a1",
-		Code:             testCounterStateRejectCode,
-		Message:          "当前状态禁止此项操作",
-		CounterSessionID: "hxproc-previous",
-		ReceivedAt:       issue.ReceivedAt,
-	})
-	if !status.OrderEntryReady || status.OrderEntryCooldown {
-		t.Fatalf("previous process issue blocked current session = %+v", status)
-	}
-
-	status = service.gatewayStatus(issue.ReceivedAt.Add(testCounterStateRejectCooldown+time.Second), true, command, issue)
-	if !status.OrderEntryReady || status.OrderEntryCooldown {
-		t.Fatalf("expired rejection cooldown status = %+v", status)
+	status := service.gatewayStatus(now, true, command, ledger.GatewayIssue{})
+	if status.OrderEntryReady || status.Status != "degraded" ||
+		status.BrokerSessionState != "blocked" ||
+		status.OrderEntryBlockReason != "OC_TRADE_COMMANDS_PAUSED" ||
+		status.OrderEntrySource != "oc_heartbeat+configured_test_schedule" {
+		t.Fatalf("OC latched order-entry status = %+v", status)
 	}
 }
 

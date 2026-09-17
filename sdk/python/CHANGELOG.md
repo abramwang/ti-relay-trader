@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.39 - 2026-09-17
+
+- Make fresh OC heartbeat state the sole dynamic source of counter order-entry
+  readiness. `accepting_trade_commands=false` fails closed through the existing
+  `verify_ready(force=True)` API.
+- Remove the TEST-only rejection-cooldown fields introduced in `0.1.38`; Relay
+  no longer derives counter availability from rejected order history.
+
+### Safety
+
+- Recovery now requires authoritative OC heartbeat evidence. Relay does not
+  use timers or probe orders to infer that a counter has recovered.
+
 ## 0.1.38 - 2026-09-17
 
 - Expose TEST counter rejection-circuit evidence through typed readiness fields:

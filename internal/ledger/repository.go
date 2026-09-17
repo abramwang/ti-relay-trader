@@ -187,11 +187,10 @@ type DeadLetterReview struct {
 }
 
 type GatewayIssue struct {
-	AccountID        string    `json:"account_id"`
-	Code             string    `json:"code"`
-	Message          string    `json:"message,omitempty"`
-	CounterSessionID string    `json:"counter_session_id,omitempty"`
-	ReceivedAt       time.Time `json:"received_at"`
+	AccountID  string    `json:"account_id"`
+	Code       string    `json:"code"`
+	Message    string    `json:"message,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 type JobRun struct {
@@ -2011,7 +2010,7 @@ func (repo *Repository) ListDeadLetterReviews(ctx context.Context, streamKey, st
 	return reviews, nil
 }
 
-func (repo *Repository) LatestGatewayIssues(ctx context.Context, since time.Time, includeTestCounterStateRejects bool) (map[string]GatewayIssue, error) {
+func (repo *Repository) LatestBrokerNotReady(ctx context.Context, since time.Time) (map[string]GatewayIssue, error) {
 	if repo == nil || repo.exec == nil {
 		return nil, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
 	}
@@ -2022,11 +2021,7 @@ func (repo *Repository) LatestGatewayIssues(ctx context.Context, since time.Time
 	if err != nil {
 		return nil, err
 	}
-	query := latestBrokerNotReadySQL
-	if includeTestCounterStateRejects {
-		query = latestGatewayIssuesSQL
-	}
-	rows, err := queryer.QueryContext(ctx, query, since)
+	rows, err := queryer.QueryContext(ctx, latestBrokerNotReadySQL, since)
 	if err != nil {
 		return nil, fmt.Errorf("list broker not ready issues: %w", err)
 	}
@@ -2035,7 +2030,7 @@ func (repo *Repository) LatestGatewayIssues(ctx context.Context, since time.Time
 	issues := make(map[string]GatewayIssue)
 	for rows.Next() {
 		var issue GatewayIssue
-		if err := rows.Scan(&issue.AccountID, &issue.Code, &issue.Message, &issue.CounterSessionID, &issue.ReceivedAt); err != nil {
+		if err := rows.Scan(&issue.AccountID, &issue.Code, &issue.Message, &issue.ReceivedAt); err != nil {
 			return nil, fmt.Errorf("scan broker not ready issue: %w", err)
 		}
 		issues[issue.AccountID] = issue

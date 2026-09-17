@@ -1550,56 +1550,11 @@ WHERE stream_key = $1
 ORDER BY review_id DESC
 `
 
-const latestGatewayIssuesSQL = `
-WITH candidates AS (
-    SELECT
-        account_id,
-        code,
-        COALESCE(body->>'message', '') AS message,
-        COALESCE(
-            NULLIF(body #>> '{payload,counter_session_id}', ''),
-            NULLIF(body #>> '{adapter_context,counter_session_id}', '')
-        ) AS counter_session_id,
-        received_at
-    FROM raw_stream_messages
-    WHERE code = 'BROKER_NOT_READY'
-        AND account_id IS NOT NULL
-        AND account_id <> ''
-        AND received_at >= $1
-
-    UNION ALL
-
-    SELECT
-        account_id,
-        'TEST_COUNTER_STATE_REJECTED' AS code,
-        reject_message,
-        NULLIF(adapter_context->>'counter_session_id', '') AS counter_session_id,
-        COALESCE(terminal_at, last_updated_at, accepted_at, created_at, updated_at) AS received_at
-    FROM orders
-    WHERE reject_code = 'BROKER_REJECTED'
-        AND reject_message LIKE '%当前状态禁止此项操作%'
-        AND COALESCE(terminal_at, last_updated_at, accepted_at, created_at, updated_at) >= $1
-)
-SELECT DISTINCT ON (account_id)
-    account_id,
-    code,
-    COALESCE(message, ''),
-    COALESCE(counter_session_id, ''),
-    received_at
-FROM candidates
-ORDER BY account_id, received_at DESC
-`
-
 const latestBrokerNotReadySQL = `
 SELECT DISTINCT ON (account_id)
     account_id,
     code,
     COALESCE(body->>'message', ''),
-    COALESCE(
-        NULLIF(body #>> '{payload,counter_session_id}', ''),
-        NULLIF(body #>> '{adapter_context,counter_session_id}', ''),
-        ''
-    ),
     received_at
 FROM raw_stream_messages
 WHERE code = 'BROKER_NOT_READY'

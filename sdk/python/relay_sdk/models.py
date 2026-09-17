@@ -112,10 +112,6 @@ class AccountReadiness:
     order_snapshot_ready: bool = False
     accepting_trade_commands: bool = False
     last_heartbeat_at: str = ""
-    order_entry_cooldown: bool = False
-    last_issue_code: str = ""
-    last_issue_message: str = ""
-    last_issue_at: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -141,10 +137,6 @@ class AccountReadiness:
             order_snapshot_ready=_bool(data, "order_snapshot_ready"),
             accepting_trade_commands=_bool(data, "accepting_trade_commands"),
             last_heartbeat_at=_text(data, "last_heartbeat_at"),
-            order_entry_cooldown=_bool(data, "order_entry_cooldown"),
-            last_issue_code=_text(data, "last_issue_code"),
-            last_issue_message=_text(data, "last_issue_message"),
-            last_issue_at=_text(data, "last_issue_at"),
             raw=dict(data),
         )
 

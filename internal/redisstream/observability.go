@@ -18,10 +18,8 @@ import (
 )
 
 const (
-	monitoringStartMinute          = 8*60 + 55
-	monitoringEndMinute            = 15*60 + 30
-	testCounterStateRejectCode     = "TEST_COUNTER_STATE_REJECTED"
-	testCounterStateRejectCooldown = 5 * time.Minute
+	monitoringStartMinute = 8*60 + 55
+	monitoringEndMinute   = 15*60 + 30
 )
 
 type ObservabilityStore interface {
@@ -30,7 +28,7 @@ type ObservabilityStore interface {
 	ListDeadLetters(ctx context.Context, query ledger.DeadLetterQuery) (ledger.DeadLetterPage, error)
 	AddDeadLetterReview(ctx context.Context, review ledger.DeadLetterReview) (ledger.DeadLetterReview, error)
 	ListDeadLetterReviews(ctx context.Context, streamKey, streamID string) ([]ledger.DeadLetterReview, error)
-	LatestGatewayIssues(ctx context.Context, since time.Time, includeTestCounterStateRejects bool) (map[string]ledger.GatewayIssue, error)
+	LatestBrokerNotReady(ctx context.Context, since time.Time) (map[string]ledger.GatewayIssue, error)
 }
 
 type TradingDayCalendar interface {
@@ -97,7 +95,6 @@ type GatewayRuntimeStatus struct {
 	PendingTrades           int64      `json:"pending_trade_count"`
 	PendingQueries          int64      `json:"pending_query_count"`
 	BrokerNotReady          bool       `json:"broker_not_ready"`
-	OrderEntryCooldown      bool       `json:"order_entry_cooldown,omitempty"`
 	LastIssueCode           string     `json:"last_issue_code,omitempty"`
 	LastIssueMessage        string     `json:"last_issue_message,omitempty"`
 	LastIssueAt             *time.Time `json:"last_issue_at,omitempty"`
@@ -283,11 +280,7 @@ func (service *RuntimeObservability) buildSnapshot(ctx context.Context, now time
 		checkpointByStream[checkpoint.StreamKey] = checkpoint
 	}
 
-	issues, err := service.store.LatestGatewayIssues(
-		ctx,
-		now.Add(-24*time.Hour),
-		service.cfg.Service.Environment == config.EnvironmentTest,
-	)
+	issues, err := service.store.LatestBrokerNotReady(ctx, now.Add(-24*time.Hour))
 	if err != nil {
 		snapshot.Errors = append(snapshot.Errors, "broker issue query failed")
 		issues = map[string]ledger.GatewayIssue{}
@@ -567,14 +560,7 @@ func (service *RuntimeObservability) gatewayStatus(
 		status.LastIssueMessage = issue.Message
 		lastIssueAt := issue.ReceivedAt
 		status.LastIssueAt = &lastIssueAt
-		issueMatchesSession := issue.CounterSessionID == "" || status.CounterSessionID == "" || issue.CounterSessionID == status.CounterSessionID
-		status.BrokerNotReady = monitoringActive && issue.Code == "BROKER_NOT_READY" && issueMatchesSession && now.Before(issue.ReceivedAt.Add(5*time.Minute))
-		status.OrderEntryCooldown = monitoringActive &&
-			service.cfg.Service.Environment == config.EnvironmentTest &&
-			command.account.OrderEntrySchedule != nil &&
-			strings.TrimSpace(command.account.OrderEntrySchedule.CounterMode) == "huaxin_7x24_test" &&
-			issue.Code == testCounterStateRejectCode && issueMatchesSession &&
-			now.Before(issue.ReceivedAt.Add(testCounterStateRejectCooldown))
+		status.BrokerNotReady = monitoringActive && now.Sub(issue.ReceivedAt) <= 5*time.Minute
 	}
 	if !monitoringActive {
 		status.Status = "off_hours"
@@ -584,8 +570,6 @@ func (service *RuntimeObservability) gatewayStatus(
 		switch {
 		case status.BrokerNotReady || boolIsFalse(status.BrokerReady) || stateText == "broker_not_ready":
 			status.Status = "broker_not_ready"
-		case status.OrderEntryCooldown:
-			status.Status = "degraded"
 		case strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT"):
 			status.Status = "reconnecting"
 		case status.LastHeartbeatAt == nil:
@@ -642,6 +626,10 @@ func (service *RuntimeObservability) applyOrderEntryReadiness(
 		status.OrderEntryBlockReason = "BROKER_DISCONNECTED"
 		return
 	}
+	if !boolIsTrue(status.AcceptingTradeCommands) {
+		status.OrderEntryBlockReason = "OC_TRADE_COMMANDS_PAUSED"
+		return
+	}
 	if state != "UP" || !boolIsTrue(status.RedisReady) || !boolIsTrue(status.BrokerReady) {
 		status.BrokerSessionState = "starting"
 		status.OrderEntryBlockReason = "OC_STARTING"
@@ -650,10 +638,6 @@ func (service *RuntimeObservability) applyOrderEntryReadiness(
 	if !boolIsTrue(status.OrderSnapshotReady) {
 		status.BrokerSessionState = "starting"
 		status.OrderEntryBlockReason = "ORDER_SNAPSHOT_NOT_READY"
-		return
-	}
-	if !boolIsTrue(status.AcceptingTradeCommands) {
-		status.OrderEntryBlockReason = "OC_TRADE_COMMANDS_PAUSED"
 		return
 	}
 	if account.OrderEntrySchedule != nil {
@@ -669,17 +653,6 @@ func (service *RuntimeObservability) applyOrderEntryReadiness(
 			status.OrderEntryBlockReason = "OUTSIDE_TEST_COUNTER_WINDOW"
 			return
 		}
-	}
-	if status.OrderEntryCooldown {
-		status.OrderEntryBlockReason = "TEST_COUNTER_STATE_REJECTED_COOLDOWN"
-		status.OrderEntrySource += "+relay_rejection_circuit"
-		if status.LastIssueAt != nil {
-			cooldownEnd := status.LastIssueAt.Add(testCounterStateRejectCooldown)
-			if status.OrderEntryNextChangeAt == nil || cooldownEnd.Before(*status.OrderEntryNextChangeAt) {
-				status.OrderEntryNextChangeAt = &cooldownEnd
-			}
-		}
-		return
 	}
 	status.OrderEntryReady = true
 	status.BrokerSessionState = "ready"
