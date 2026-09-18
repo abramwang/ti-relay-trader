@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
-| 安全状态 | TEST 新版 OC 的托管凭据 `v1`、交易闭环和跨进程重启恢复均已验收；生产仍为旧版 OC，4 个计划升级账户已预置凭据 `v2`，生产下单关闭 |
+| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立账本同步 worker |
+| 安全状态 | 生产仍为旧版 OC，5 个启用账户只读、0 个开放交易；4 个计划升级账户已预置凭据 `v2`；TEST 新版 OC 的完整托管链路已验收 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-18 16:23 Asia/Shanghai` 按用户明确指令切到测试；新版 OC 新会话成功恢复凭据并通过四类只读查询，整体状态 `ok` |
+| 最近确认 | `2026-09-18 16:25 Asia/Shanghai` TEST 健康复核通过后按用户授权切回生产；盘后 5 户 off_hours、0 个开放交易、总 lag=0 |
 | 更新时间 | `2026-09-18` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-18 16:25 Asia/Shanghai` 切换前再次确认 TEST 新版 OC、凭据 `v1`、柜台、订单快照、Stream 和日志全部正常；随后按用户授权切回生产。生产目标库 migration 成功，独立 API/worker 和全部依赖为 `ok`，6 个账户保留、5 个启用查询、0 个开放交易；当前已过生产监控窗口，五户按预期显示 `off_hours`，最后一轮旧 OC 状态的柜台和订单快照均 ready，报单继续由 `RELAY_TRADING_DISABLED` 阻断。20 条受监控 Stream 健康、总 `lag=0`、pending DLQ=0；四户预置生产凭据 `v2` 未修改。
 - `2026-09-18 16:23 Asia/Shanghai` 按用户明确指令从生产切到 TEST：目标库 migration 成功，API 内嵌 worker、Redis、PostgreSQL、行情和事件桥均为 `ok`。OC `counter_session_id` 已从首次验收会话变更为新进程会话，但仍成功加载账户 `00030484` 的凭据 `v1`，托管账户、Key ID、柜台登录、订单快照及报单/撤单准入全部匹配。资金、持仓、订单、成交四类查询在新会话下均取得唯一成功终态并落账，consumer group `pending=0,lag=0`、无 DLQ，完成 TEST 跨进程凭据恢复验收。生产配置、旧版 OC 和预置的四户凭据 `v2` 均未修改。
 - `2026-09-18 14:07 Asia/Shanghai` 已为计划升级新版 OC 的四个生产账户预置 `oc.secret.v1` 凭据 `v2`：富盈13号、智算汇利混合、涌盈波动率和债享5号。首次 `v1` 的动态密码为空，用户指出后立即以与 TEST 相同的动态密码完整轮换为 `v2`；`current` 均已指向 `v2`，独立认证解密确认登录账户匹配、交易密码非空、动态密码非空且符合预期，四户 PostgreSQL `started/succeeded` 审计完整。旧 `v1` 密文只保留审计且不再生效；`307000051389` 与停用账户 `501000114077` 未写凭据。当前旧版 OC 未重启，生产仍为 5 个网关在线、0 个开放交易、总 `lag=0`。
 - `2026-09-18 14:02 Asia/Shanghai` 按用户明确指令从 TEST 切回生产：目标库 migration 成功，独立 API/worker 均健康；6 个账户保留、5 个启用查询、0 个开放交易，`501000114077` 继续停用且历史账本不删除。当前生产仍为旧版 OC，五个启用账户 heartbeat 新鲜，Redis、柜台登录和订单快照全部 ready；心跳不含可选的托管凭据字段时 Relay 保持向后兼容，报单统一由 `RELAY_TRADING_DISABLED` 阻断。20 条受监控 Stream 健康、总 `lag=0`、pending DLQ=0，未向生产发布查询或交易命令；后续等待用户协调维护窗口替换新版 OC。
