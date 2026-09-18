@@ -49,6 +49,7 @@ operations:
   # Heartbeat/lag/DLQ reads are always available. Keep review writes disabled
   # until the 9092 endpoint is protected by trusted access control.
   actions_write_enabled: false
+  credential_admin_enabled: false
   heartbeat_stale_seconds: 30
   lag_warning_entries: 500
   lag_critical_entries: 5000

@@ -26,6 +26,7 @@ CONFIG="${RELAY_CONFIG_PATH:-$DEFAULT_CONFIG}"
 EXPECTED_ENV="${RELAY_EXPECTED_ENV:-$DEFAULT_EXPECTED_ENV}"
 HEALTH_URL="${RELAY_HEALTH_URL:-http://127.0.0.1:9092/healthz}"
 STATUS_URL="${RELAY_STATUS_URL:-http://127.0.0.1:9092/v1/status}"
+CREDENTIAL_ENV_FILE="${RELAY_CREDENTIAL_ENV_FILE:-$ROOT_DIR/config/relay.credentials.env}"
 
 cron_block() {
   cat <<EOF
@@ -103,6 +104,31 @@ prepare_relay_env() {
     export NO_PROXY="$bypass"
   fi
   export no_proxy="$NO_PROXY"
+}
+
+load_credential_env() {
+  [[ -e "$CREDENTIAL_ENV_FILE" ]] || return 0
+  [[ -f "$CREDENTIAL_ENV_FILE" ]] || {
+    echo "$SERVICE_NAME refuses credential env: not a regular file" >&2
+    return 1
+  }
+  local mode
+  mode="$(stat -c '%a' "$CREDENTIAL_ENV_FILE")"
+  case "$mode" in
+    400|600) ;;
+    *)
+      echo "$SERVICE_NAME refuses credential env: permissions must be 0400 or 0600" >&2
+      return 1
+      ;;
+  esac
+  if [[ "$(stat -c '%u' "$CREDENTIAL_ENV_FILE")" != "$(id -u)" ]]; then
+    echo "$SERVICE_NAME refuses credential env: owner must match the service user" >&2
+    return 1
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$CREDENTIAL_ENV_FILE"
+  set +a
 }
 
 validate_config() {
@@ -186,6 +212,7 @@ start_service() {
   (
     cd "$ROOT_DIR"
     prepare_relay_env
+    load_credential_env
     setsid "$BIN" -config "$CONFIG" -root "$ROOT_DIR" -addr "$ADDR" >> "$LOG_FILE" 2>&1 < /dev/null &
     echo $! > "$PID_FILE"
   )

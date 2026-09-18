@@ -9,6 +9,7 @@ const (
 	CapabilityExplicitCommandIDs     = "orders.explicit_command_ids.v1"
 	CapabilityAssetReadinessErrors   = "assets.readiness_errors.v1"
 	CapabilityAccountOrderReadiness  = "accounts.order_entry_readiness.v1"
+	CapabilityManagedCredentialState = "accounts.managed_credential_state.v1"
 	CapabilityCancelAttemptLedger    = "cancel_attempts.cursor_pagination.v1"
 )
 
@@ -41,6 +42,7 @@ func Catalog() CatalogDocument {
 			CapabilityExplicitCommandIDs,
 			CapabilityAssetReadinessErrors,
 			CapabilityAccountOrderReadiness,
+			CapabilityManagedCredentialState,
 			CapabilityCancelAttemptLedger,
 		},
 		Enums: map[string][]string{

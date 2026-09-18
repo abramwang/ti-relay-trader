@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/credentials"
 	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
@@ -73,6 +74,74 @@ func TestHealthzEnvelope(t *testing.T) {
 	}
 	if envelope.RequestID != "req-health" {
 		t.Fatalf("request_id = %q", envelope.RequestID)
+	}
+}
+
+type fakeCredentialAdmin struct {
+	rotated credentials.BrokerCredentials
+}
+
+func (fake *fakeCredentialAdmin) Status(_ context.Context, accountID string, _ bool) (credentials.CredentialStatus, error) {
+	return credentials.CredentialStatus{
+		Environment: "test", BrokerID: "huaxin", AccountID: accountID, Configured: true,
+		CredentialVersion: 2, KeyID: "hx-test-202609", DecryptionVerified: true,
+	}, nil
+}
+
+func (fake *fakeCredentialAdmin) Rotate(_ context.Context, accountID, _ string, plaintext credentials.BrokerCredentials) (credentials.RotationResult, error) {
+	fake.rotated = plaintext
+	return credentials.RotationResult{
+		Environment: "test", BrokerID: "huaxin", AccountID: accountID,
+		CredentialVersion: 3, KeyID: "hx-test-202609", RestartRequired: true,
+	}, nil
+}
+
+func (fake *fakeCredentialAdmin) Disable(_ context.Context, accountID, _ string) (credentials.DisableResult, error) {
+	return credentials.DisableResult{Environment: "test", BrokerID: "huaxin", AccountID: accountID, Disabled: true}, nil
+}
+
+func TestCredentialAdminRequiresTokenAndNeverEchoesPlaintext(t *testing.T) {
+	cfg := config.Default()
+	cfg.Operations.CredentialAdminEnabled = true
+	cfg.Accounts = []config.AccountRouteConfig{{AccountID: "501000114077", BrokerID: "huaxin", GatewayID: "501000114077"}}
+	fake := &fakeCredentialAdmin{}
+	token := strings.Repeat("a", 32)
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		CredentialAdmin: fake,
+		CredentialToken: token,
+	})
+	body := `{"account_id":"501000114077","operator":"relay-admin","broker_login_user":"secret-user","broker_password":"secret-password","dynamic_password":"secret-dynamic"}`
+
+	unauthorized := httptest.NewRequest(http.MethodPost, "/v1/admin/credentials/rotate", strings.NewReader(body))
+	unauthorized.Header.Set("Content-Type", "application/json")
+	unauthorizedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorizedRecorder, unauthorized)
+	if unauthorizedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("unauthorized status = %d", unauthorizedRecorder.Code)
+	}
+	bareToken := httptest.NewRequest(http.MethodPost, "/v1/admin/credentials/rotate", strings.NewReader(body))
+	bareToken.Header.Set("Authorization", token)
+	bareTokenRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(bareTokenRecorder, bareToken)
+	if bareTokenRecorder.Code != http.StatusForbidden {
+		t.Fatalf("bare token status = %d", bareTokenRecorder.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/credentials/rotate", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("rotate status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	for _, secret := range []string{"secret-user", "secret-password", "secret-dynamic"} {
+		if strings.Contains(recorder.Body.String(), secret) {
+			t.Fatalf("credential response leaked %q: %s", secret, recorder.Body.String())
+		}
+	}
+	if fake.rotated.BrokerPassword != "secret-password" {
+		t.Fatalf("credential manager received %#v", fake.rotated)
 	}
 }
 

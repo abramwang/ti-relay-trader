@@ -5,6 +5,8 @@ config/*.yml
 !config/*.example.yml
 config/relay.alerts.env
 !config/relay.alerts.env.example
+config/relay.credentials.env
+!config/relay.credentials.env.example
 
 # Build and runtime artifacts.
 bin/
@@ -16,6 +18,7 @@ tmp/
 outputs/backups/
 outputs/jobs/
 outputs/restore-drills/
+outputs/ui/
 .runtime/
 
 # Broker delivery statements contain account transaction details and stay local.

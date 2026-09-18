@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-18 13:12 Asia/Shanghai` 已完成 OC `oc.secret.v1` 的 Relay 侧实现：每账户 AES-256-GCM 版本信封、先写版本再切换 current、PostgreSQL 轮换/停用审计、`relayctl credentials`、`/operations` 内网管理模块和托管心跳失败关闭；TEST/生产数据库均升级到 schema 30，SDK 发布为 `0.1.40`。真实凭据尚未写入；等待与 OC 通过安全渠道对齐两套 Key ID/Key 后先做 TEST 单账户验收。当前 TEST 业务 Stream 继续使用旧 `relay:prod:*` 命名，未做单边切换。
 - `2026-09-18 12:40 Asia/Shanghai` 按用户明确指令从生产切到测试环境：`.runtime/active-config.yaml -> config/relay.local.yaml`，TEST migration 完成，API 内嵌账本同步 worker 及 Redis、PostgreSQL、行情和事件桥均为 `ok`；账户 `00030484` 启用查询和交易配置。OC 最新 heartbeat 为 `2026-09-17 23:04:06 Asia/Shanghai`，当前 `HEARTBEAT_STALE`、`order_entry_ready=false`，因此 Relay 正确失败关闭；`cmd.trade/cmd.query pending=0,lag=0`，无 DLQ。生产配置和数据未修改，切回生产仍需用户新的明确指令。
 - `2026-09-17 19:38 Asia/Shanghai` 按用户明确指令从测试切回生产：`.runtime/active-config.yaml -> config/relay.prod.yaml`，数据库 migration 完成，独立 API/worker 健康；6 个账户保留、5 个启用查询、0 个开放交易，`501000114077` 继续停用且历史账本不删除。生产 API、PostgreSQL、Redis、行情、事件桥和订单服务均为 `ok`；20 条受监控 Stream 健康、总 `lag=0`、待处理 DLQ 为 0，盘后 5 个启用账户显示 `off_hours` 属正常状态。
 - `2026-09-17 19:19 Asia/Shanghai` 接受 OC `42150cb` 对华鑫 TEST 柜台的最小边界：精确全局状态拒绝在当前 OC 进程内锁存，先发布 `DEGRADED / counter_order_entry_not_ready / accepting_trade_commands=false` 心跳，再发布拒单事件；查询继续，满足快照条件时撤单继续，恢复只通过人工确认后的 OC 重启和新 `counter_session_id`。Relay 已移除订单账本反推、五分钟冷却及专属 API 字段，只按新鲜 OC heartbeat 返回通用 `OC_TRADE_COMMANDS_PAUSED`；SDK `0.1.39` 同步该语义，生产行为不变。当前 OC 最后 heartbeat 为 `17:54:17 Asia/Shanghai`，19:19 已过期，Relay 正确以 `HEARTBEAT_STALE` 失败关闭，在线锁存验收等待 OC 新版本进程启动。
@@ -63,7 +64,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务当前 16:30 启动、16:45 为完成 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50。窗口内显示等待，18:50 仍未就绪则标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- TEST 与生产 schema 均为 `29 fill_order_context_inheritance`，Python SDK 当前版本为 `relay-sdk==0.1.39`。
+- TEST 与生产 schema 均为 `30 oc_credential_audit`，Python SDK 当前版本为 `relay-sdk==0.1.40`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -91,12 +92,13 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 下一步
 
-1. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，让今后同类日直接依赖 OC，不要求 OC 提供历史查询。
-2. 从后续自然交易日持续验收 OC 当日资金、逆回购净息、公司行为和外部资金流，确保历史券商文件只停留在一次性事故修复边界。
-3. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
-4. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
-5. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-6. 当前处于测试环境，账户 `00030484` 已可用于策略联调；任何切回生产或调整生产交易权限都必须收到用户新的明确指令。
+1. 与 OC 安全对齐 TEST/PROD 两套 Key ID/Key，先在 TEST 写入 `00030484` 凭据并验收登录、心跳版本、查询、最小订单、重启恢复和无明文泄漏；新版 OC 部署窗口再同步把 TEST 从旧 `relay:prod:*` 迁移到 `relay:test:*`。
+2. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，让今后同类日直接依赖 OC，不要求 OC 提供历史查询。
+3. 从后续自然交易日持续验收 OC 当日资金、逆回购净息、公司行为和外部资金流，确保历史券商文件只停留在一次性事故修复边界。
+4. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
+5. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
+6. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
+7. 当前处于测试环境；任何切回生产、切换 TEST Stream namespace 或调整生产交易权限都必须收到用户新的明确指令。
 
 ## 系统边界
 

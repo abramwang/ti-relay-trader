@@ -27,6 +27,7 @@ import (
 
 	"ti-relay-trader/internal/api"
 	relayconfig "ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/credentials"
 	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
@@ -96,6 +97,12 @@ var (
 			Title:       "架构与当前实现",
 			Path:        "docs/ARCHITECTURE.md",
 			Description: "Go + Python 分工、服务边界、多账户模型、Redis Stream、持久化和当前主链路。",
+		},
+		{
+			Slug:        "oc-credential-management",
+			Title:       "OC 账户凭据管理",
+			Path:        "docs/OC_CREDENTIAL_MANAGEMENT.md",
+			Description: "OC 托管账户的加密信封、版本轮换、Web/CLI 运维、心跳门禁和上线步骤。",
 		},
 		{
 			Slug:        "roadmap",
@@ -344,11 +351,12 @@ func runDocsPortal(absRoot string, cfg relayconfig.Config, flagAddr string, addr
 
 	mux := http.NewServeMux()
 	server := &portalServer{
-		root:       absRoot,
-		logger:     logger,
-		cfg:        cfg,
-		configPath: strings.TrimSpace(*cfgPath),
-		aliases:    apiDeps.Accounts,
+		root:                     absRoot,
+		logger:                   logger,
+		cfg:                      cfg,
+		configPath:               strings.TrimSpace(*cfgPath),
+		aliases:                  apiDeps.Accounts,
+		credentialAdminAvailable: apiDeps.CredentialAdmin != nil && len(strings.TrimSpace(apiDeps.CredentialToken)) >= 32,
 	}
 	mux.HandleFunc("/", server.handleHome)
 	mux.HandleFunc("/healthz", server.handleHealthz)
@@ -494,15 +502,57 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		}
 	}
 
+	var credentialAdmin *credentials.Manager
+	credentialAdminToken := ""
+	if cfg.Operations.CredentialAdminEnabled {
+		protocolEnvironment, environmentErr := credentials.ProtocolEnvironment(cfg.Service.Environment)
+		var key credentials.KeyMaterial
+		var keyErr error
+		if environmentErr == nil {
+			key, keyErr = credentials.LoadKeyMaterial(protocolEnvironment)
+		}
+		credentialAdminToken = strings.TrimSpace(os.Getenv(credentials.AdminTokenEnv))
+		switch {
+		case environmentErr != nil:
+			logger.Warn("relay_credential_admin_unavailable", "reason", "unsupported service environment")
+		case keyErr != nil:
+			logger.Warn("relay_credential_admin_unavailable", "reason", "credential encryption key is not configured")
+		case len(credentialAdminToken) < 32:
+			logger.Warn("relay_credential_admin_unavailable", "reason", "administrator token must contain at least 32 characters")
+		default:
+			secretStore, storeErr := credentials.OpenRedisSecretStore(cfg.Redis.URL)
+			if storeErr != nil {
+				logger.Warn("relay_credential_admin_unavailable", "reason", "credential Redis store could not be opened")
+			} else {
+				credentialAdmin, err = credentials.NewManager(credentials.ManagerOptions{
+					Store: secretStore, Audit: credentials.NewSQLAuditStore(db), Environment: protocolEnvironment,
+					BrokerID: "huaxin", Key: key,
+				})
+				if err != nil {
+					_ = secretStore.Close()
+					logger.Warn("relay_credential_admin_unavailable", "reason", "credential manager initialization failed")
+				} else {
+					previousCleanup := cleanup
+					cleanup = func() {
+						_ = secretStore.Close()
+						previousCleanup()
+					}
+				}
+			}
+		}
+	}
+
 	deps := api.Dependencies{
-		Orders:       orders,
-		Jobs:         repo,
-		Settlements:  repo,
-		Accounts:     repo,
-		Performance:  perf,
-		Operations:   runtimeOperations,
-		Market:       marketClient,
-		DatabasePing: db.PingContext,
+		Orders:          orders,
+		Jobs:            repo,
+		Settlements:     repo,
+		Accounts:        repo,
+		Performance:     perf,
+		Operations:      runtimeOperations,
+		CredentialAdmin: credentialAdmin,
+		CredentialToken: credentialAdminToken,
+		Market:          marketClient,
+		DatabasePing:    db.PingContext,
 	}
 	if redisPublisher != nil {
 		deps.RedisPing = redisPublisher.Ping
@@ -615,11 +665,12 @@ func exitError(format string, args ...any) {
 }
 
 type portalServer struct {
-	root       string
-	logger     *slog.Logger
-	cfg        relayconfig.Config
-	configPath string
-	aliases    api.AccountAliasStore
+	root                     string
+	logger                   *slog.Logger
+	cfg                      relayconfig.Config
+	configPath               string
+	aliases                  api.AccountAliasStore
+	credentialAdminAvailable bool
 }
 
 func (s *portalServer) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -1106,8 +1157,10 @@ func (s *portalServer) handleOperationsStatus(w http.ResponseWriter, r *http.Req
 	}
 
 	var body bytes.Buffer
-	if err := operationsStatusTemplate.Execute(&body, map[string]string{
-		"PublicURL": publicURL,
+	if err := operationsStatusTemplate.Execute(&body, map[string]any{
+		"PublicURL":              publicURL,
+		"Environment":            serviceEnvironment,
+		"CredentialAdminEnabled": s.credentialAdminAvailable,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1117,9 +1170,9 @@ func (s *portalServer) handleOperationsStatus(w http.ResponseWriter, r *http.Req
 		Title:      "运行运维",
 		Active:     "operations",
 		Summary:    "Gateway heartbeat, Redis Stream lag and dead-letter operations",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/operations-status.css?v=20260730-0001">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/operations-status.css?v=20260918-0003">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/operations-status.js?v=20260730-0001"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/operations-status.js?v=20260918-0003"></script>`),
 		ProjectDir: s.root,
 	})
 }

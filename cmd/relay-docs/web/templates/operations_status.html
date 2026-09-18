@@ -68,6 +68,43 @@
     </div>
   </section>
 
+  <section class="operations-panel credential-panel" id="credentialAdminPanel"
+    data-environment="{{.Environment}}" data-enabled="{{.CredentialAdminEnabled}}">
+    <div class="operations-panel-head">
+      <div>
+        <h2>OC 账户凭据</h2>
+        <span>加密版本、轮换审计与 OC 加载状态</span>
+      </div>
+      <span id="credentialAdminState">管理员令牌未验证</span>
+    </div>
+    <div class="credential-workspace">
+      <div class="credential-status-grid">
+        <div><span>环境</span><strong id="credentialEnvironment">--</strong></div>
+        <div><span>账户</span><strong id="credentialManagedAccount">--</strong></div>
+        <div><span>当前版本</span><strong id="credentialVersion">--</strong></div>
+        <div><span>Key ID</span><strong id="credentialKeyID">--</strong></div>
+        <div><span>信封校验</span><strong id="credentialVerify">--</strong></div>
+        <div><span>签发时间</span><strong id="credentialIssuedAt">--</strong></div>
+        <div><span>凭据来源</span><strong id="credentialSource">--</strong></div>
+        <div><span>信封 SHA256</span><strong id="credentialEnvelopeSHA" title="">--</strong></div>
+      </div>
+      <form class="credential-form" id="credentialForm" autocomplete="off">
+        <label>管理员令牌<input id="credentialAdminToken" type="password" autocomplete="off" required {{if not .CredentialAdminEnabled}}disabled{{end}}></label>
+        <button id="credentialUnlock" type="button" {{if not .CredentialAdminEnabled}}disabled{{end}}>验证</button>
+        <label>账户<select id="credentialAccount" required></select></label>
+        <label>操作人<input id="credentialOperator" maxlength="120" required></label>
+        <label>登录用户<input id="credentialLoginUser" autocomplete="off" required></label>
+        <label>登录密码<input id="credentialPassword" type="password" autocomplete="new-password" required></label>
+        <label>动态密码<input id="credentialDynamicPassword" type="password" autocomplete="new-password"></label>
+        <label>账户确认<input id="credentialConfirmAccount" autocomplete="off" placeholder="输入账户编号"></label>
+        <div class="credential-actions">
+          <button id="credentialRotate" class="primary" type="submit" disabled>写入新版本</button>
+          <button id="credentialDisable" class="danger" type="button" disabled>停用凭据</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
   <section class="operations-panel stream-panel">
     <div class="operations-panel-head">
       <div>

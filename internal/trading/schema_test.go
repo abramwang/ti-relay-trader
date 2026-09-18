@@ -12,6 +12,7 @@ func TestCatalogAdvertisesAssetReadinessErrors(t *testing.T) {
 	catalog := Catalog()
 	foundAssetReadiness := false
 	foundOrderReadiness := false
+	foundManagedCredentialState := false
 	for _, capability := range catalog.Capabilities {
 		if capability == CapabilityAssetReadinessErrors {
 			foundAssetReadiness = true
@@ -19,8 +20,11 @@ func TestCatalogAdvertisesAssetReadinessErrors(t *testing.T) {
 		if capability == CapabilityAccountOrderReadiness {
 			foundOrderReadiness = true
 		}
+		if capability == CapabilityManagedCredentialState {
+			foundManagedCredentialState = true
+		}
 	}
-	if !foundAssetReadiness || !foundOrderReadiness {
+	if !foundAssetReadiness || !foundOrderReadiness || !foundManagedCredentialState {
 		t.Fatalf("catalog readiness capabilities missing: %#v", catalog.Capabilities)
 	}
 }

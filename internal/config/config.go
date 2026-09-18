@@ -90,11 +90,12 @@ type PerformanceConfig struct {
 }
 
 type OperationsConfig struct {
-	ActionsWriteEnabled   bool  `yaml:"actions_write_enabled"`
-	HeartbeatStaleSeconds int   `yaml:"heartbeat_stale_seconds"`
-	LagWarningEntries     int64 `yaml:"lag_warning_entries"`
-	LagCriticalEntries    int64 `yaml:"lag_critical_entries"`
-	SnapshotCacheSeconds  int   `yaml:"snapshot_cache_seconds"`
+	ActionsWriteEnabled    bool  `yaml:"actions_write_enabled"`
+	CredentialAdminEnabled bool  `yaml:"credential_admin_enabled"`
+	HeartbeatStaleSeconds  int   `yaml:"heartbeat_stale_seconds"`
+	LagWarningEntries      int64 `yaml:"lag_warning_entries"`
+	LagCriticalEntries     int64 `yaml:"lag_critical_entries"`
+	SnapshotCacheSeconds   int   `yaml:"snapshot_cache_seconds"`
 }
 
 type WorkerConfig struct {

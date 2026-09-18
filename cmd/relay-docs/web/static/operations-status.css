@@ -72,6 +72,104 @@
   background: var(--surface-2);
 }
 
+.credential-workspace {
+  display: grid;
+  grid-template-columns: minmax(480px, 1fr) minmax(560px, 1.25fr);
+}
+
+.credential-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 1px;
+  padding: 16px;
+  background: var(--border);
+}
+
+.credential-status-grid > div {
+  min-height: 66px;
+  padding: 12px;
+  background: var(--surface-1);
+}
+
+.credential-status-grid span,
+.credential-status-grid strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credential-status-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.credential-status-grid strong {
+  margin-top: 7px;
+  color: #e7e9ee;
+  font: 600 12px "JetBrains Mono", ui-monospace, monospace;
+}
+
+.credential-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px 12px;
+  padding: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.credential-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.credential-form input,
+.credential-form select,
+.credential-form button {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: #e7e9ee;
+}
+
+.credential-form input,
+.credential-form select {
+  padding: 0 10px;
+}
+
+.credential-form button {
+  align-self: end;
+  cursor: pointer;
+}
+
+.credential-form button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.credential-form button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.credential-form button.danger {
+  border-color: rgba(242, 54, 69, 0.55);
+  color: #ff7d86;
+}
+
+.credential-actions {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .operations-actions select,
 .dlq-filters select,
 .detail-review input,
@@ -229,7 +327,10 @@
 .status-error,
 .status-stale,
 .status-degraded,
-.status-missing {
+.status-missing,
+.status-credential_not_ready,
+.status-credential_identity_mismatch,
+.status-credential_metadata_invalid {
   border-color: rgba(242, 54, 69, 0.48);
   color: #ff6e79;
 }
@@ -462,5 +563,117 @@
   .operations-status td {
     padding-right: 9px;
     padding-left: 9px;
+  }
+}
+
+@media (max-width: 1100px) {
+  body.page-operations .app-shell {
+    min-width: 0;
+  }
+
+  body.page-operations .global-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  body.page-operations .brand-product,
+  body.page-operations .status-pill,
+  body.page-operations .help-pill {
+    display: none;
+  }
+
+  body.page-operations .global-nav {
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  body.page-operations .nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .operations-status {
+    padding: 16px 14px 28px;
+  }
+
+  .operations-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .operations-actions {
+    width: 100%;
+  }
+
+  .operations-actions label {
+    grid-template-columns: auto minmax(0, 1fr);
+    flex: 1;
+  }
+
+  .operations-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operations-overview > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .operations-overview > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .credential-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-form {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .dlq-workspace {
+    display: block;
+    min-height: 0;
+  }
+
+  .dlq-workspace > .operations-table-wrap {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 620px) {
+  .operations-status {
+    padding: 12px 10px 24px;
+  }
+
+  .operations-head h1 {
+    font-size: 20px;
+  }
+
+  .operations-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .operations-overview,
+  .credential-status-grid,
+  .credential-form {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-overview > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .operations-overview > div:last-child {
+    border-bottom: 0;
+  }
+
+  .credential-actions {
+    grid-template-columns: 1fr;
   }
 }

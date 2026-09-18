@@ -90,6 +90,11 @@ type GatewayRuntimeStatus struct {
 	OrderSnapshotReady      *bool      `json:"order_snapshot_ready,omitempty"`
 	AcceptingTradeCommands  *bool      `json:"accepting_trade_commands,omitempty"`
 	AcceptingCancelCommands *bool      `json:"accepting_cancel_commands,omitempty"`
+	CredentialStatus        string     `json:"credential_status,omitempty"`
+	CredentialVersion       int64      `json:"credential_version,omitempty"`
+	CredentialKeyID         string     `json:"credential_key_id,omitempty"`
+	CredentialSource        string     `json:"credential_source,omitempty"`
+	ManagedAccountID        string     `json:"managed_account_id,omitempty"`
 	LastHeartbeatAt         *time.Time `json:"last_heartbeat_at,omitempty"`
 	HeartbeatAgeSecs        int64      `json:"heartbeat_age_seconds,omitempty"`
 	PendingTrades           int64      `json:"pending_trade_count"`
@@ -140,6 +145,11 @@ type heartbeatPayload struct {
 	OrderSnapshotReady      *bool  `json:"order_snapshot_ready"`
 	AcceptingTradeCommands  *bool  `json:"accepting_trade_commands"`
 	AcceptingCancelCommands *bool  `json:"accepting_cancel_commands"`
+	CredentialStatus        string `json:"credential_status"`
+	CredentialVersion       int64  `json:"credential_version"`
+	CredentialKeyID         string `json:"credential_key_id"`
+	CredentialSource        string `json:"credential_source"`
+	ManagedAccountID        string `json:"managed_account_id"`
 	PendingTradeCount       int64  `json:"pending_trade_count"`
 	PendingQueryCount       int64  `json:"pending_query_count"`
 }
@@ -545,6 +555,11 @@ func (service *RuntimeObservability) gatewayStatus(
 				status.OrderSnapshotReady = payload.OrderSnapshotReady
 				status.AcceptingTradeCommands = payload.AcceptingTradeCommands
 				status.AcceptingCancelCommands = payload.AcceptingCancelCommands
+				status.CredentialStatus = strings.TrimSpace(payload.CredentialStatus)
+				status.CredentialVersion = payload.CredentialVersion
+				status.CredentialKeyID = strings.TrimSpace(payload.CredentialKeyID)
+				status.CredentialSource = strings.TrimSpace(payload.CredentialSource)
+				status.ManagedAccountID = strings.TrimSpace(payload.ManagedAccountID)
 				status.PendingTrades = payload.PendingTradeCount
 				status.PendingQueries = payload.PendingQueryCount
 				if !envelope.ProducedAt.IsZero() {
@@ -567,7 +582,14 @@ func (service *RuntimeObservability) gatewayStatus(
 	} else {
 		state := strings.ToUpper(strings.TrimSpace(status.State))
 		stateText := strings.ToLower(strings.TrimSpace(status.StateText))
+		credentialStatus := strings.ToLower(strings.TrimSpace(status.CredentialStatus))
 		switch {
+		case stateText == "credential_not_ready" || (credentialStatus != "" && credentialStatus != "loaded"):
+			status.Status = "credential_not_ready"
+		case credentialStatus == "loaded" && (status.ManagedAccountID == "" || status.ManagedAccountID != command.account.AccountID):
+			status.Status = "credential_identity_mismatch"
+		case credentialStatus == "loaded" && (status.CredentialVersion < 1 || status.CredentialKeyID == "" || status.CredentialSource != "relay_redis_encrypted"):
+			status.Status = "credential_metadata_invalid"
 		case status.BrokerNotReady || boolIsFalse(status.BrokerReady) || stateText == "broker_not_ready":
 			status.Status = "broker_not_ready"
 		case strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT"):
@@ -619,6 +641,19 @@ func (service *RuntimeObservability) applyOrderEntryReadiness(
 	}
 	state := strings.ToUpper(strings.TrimSpace(status.State))
 	stateText := strings.ToLower(strings.TrimSpace(status.StateText))
+	credentialStatus := strings.ToLower(strings.TrimSpace(status.CredentialStatus))
+	if stateText == "credential_not_ready" || (credentialStatus != "" && credentialStatus != "loaded") {
+		status.OrderEntryBlockReason = "OC_CREDENTIAL_NOT_READY"
+		return
+	}
+	if credentialStatus == "loaded" && (status.ManagedAccountID == "" || status.ManagedAccountID != account.AccountID) {
+		status.OrderEntryBlockReason = "OC_CREDENTIAL_IDENTITY_MISMATCH"
+		return
+	}
+	if credentialStatus == "loaded" && (status.CredentialVersion < 1 || status.CredentialKeyID == "" || status.CredentialSource != "relay_redis_encrypted") {
+		status.OrderEntryBlockReason = "OC_CREDENTIAL_METADATA_INVALID"
+		return
+	}
 	if status.BrokerNotReady || stateText == "broker_not_ready" ||
 		boolIsFalse(status.RedisReady) || boolIsFalse(status.BrokerReady) ||
 		strings.Contains(stateText, "reconnect") || strings.Contains(state, "RECONNECT") {

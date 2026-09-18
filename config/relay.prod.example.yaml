@@ -23,7 +23,7 @@ redis:
   url: "redis://:<password>@<production-redis-host>:<production-redis-port>/0"
   env: "prod"
   broker_id: "huaxin"
-  gateway_id: "<production_gateway_id>"
+  gateway_id: "<production_account_id>"
 
 market:
   base_url: "http://meridian-data.quantstage.com"
@@ -44,6 +44,7 @@ performance:
 
 operations:
   actions_write_enabled: false
+  credential_admin_enabled: false
   heartbeat_stale_seconds: 30
   lag_warning_entries: 500
   lag_critical_entries: 5000
@@ -64,8 +65,8 @@ accounts:
   - account_id: "<production_account_id>"
     alias: "生产账户"
     broker_id: "huaxin"
-    gateway_id: "<production_gateway_id>"
-    stream_prefix: "relay:prod:v1:huaxin:<production_gateway_id>"
+    gateway_id: "<production_account_id>"
+    stream_prefix: "relay:prod:v1:huaxin:<production_account_id>"
     enabled: true
     # Flip this to true only after read-only redis-probe, status checks, and
     # account route review have passed on the production host.

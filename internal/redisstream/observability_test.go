@@ -258,6 +258,54 @@ func TestGatewayStatusUsesOCLatchedOrderEntryState(t *testing.T) {
 	}
 }
 
+func TestGatewayStatusBlocksCredentialFailuresAndIdentityMismatch(t *testing.T) {
+	location := timeutil.Location()
+	now := time.Date(2026, 9, 18, 10, 0, 0, 0, location)
+	buildStatus := func(t *testing.T, payload map[string]any) GatewayRuntimeStatus {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"protocol": Protocol, "message_type": "heartbeat", "message_id": "hb-credential",
+			"produced_at": now.Add(-time.Second).Format(time.RFC3339Nano), "payload": payload,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		latest := redis.NewXMessageSliceCmd(context.Background())
+		latest.SetVal([]redis.XMessage{{ID: "1789700000000-0", Values: map[string]any{"body": string(body)}}})
+		service := &RuntimeObservability{cfg: config.Config{Operations: config.OperationsConfig{HeartbeatStaleSeconds: 30}}}
+		return service.gatewayStatus(now, true, heartbeatProbeCommand{
+			account: config.AccountRouteConfig{AccountID: "501000114077", BrokerID: "huaxin", GatewayID: "501000114077", TradingEnabled: true},
+			stream:  "relay:test:v1:huaxin:501000114077:hb", latest: latest,
+		}, ledger.GatewayIssue{})
+	}
+
+	base := map[string]any{
+		"state": "DEGRADED", "state_text": "credential_not_ready", "redis_ready": true,
+		"broker_ready": false, "order_snapshot_ready": false, "accepting_trade_commands": false,
+		"credential_status": "decrypt_failed", "credential_version": 2,
+		"credential_key_id": "hx-test-202609", "credential_source": "relay_redis_encrypted",
+		"managed_account_id": "501000114077",
+	}
+	status := buildStatus(t, base)
+	if status.Status != "credential_not_ready" || status.OrderEntryReady ||
+		status.OrderEntryBlockReason != "OC_CREDENTIAL_NOT_READY" || status.CredentialVersion != 2 {
+		t.Fatalf("credential failure status = %+v", status)
+	}
+
+	base["state"] = "UP"
+	base["state_text"] = "running"
+	base["broker_ready"] = true
+	base["order_snapshot_ready"] = true
+	base["accepting_trade_commands"] = true
+	base["accepting_cancel_commands"] = true
+	base["credential_status"] = "loaded"
+	base["managed_account_id"] = "307000051387"
+	status = buildStatus(t, base)
+	if status.Status != "credential_identity_mismatch" || status.OrderEntryReady || status.OrderEntryBlockReason != "OC_CREDENTIAL_IDENTITY_MISMATCH" {
+		t.Fatalf("credential identity mismatch status = %+v", status)
+	}
+}
+
 func TestGatewayStatusUsesOCV12ReadinessFlags(t *testing.T) {
 	location := timeutil.Location()
 	now := time.Date(2026, 7, 30, 9, 1, 10, 0, location)

@@ -111,6 +111,11 @@ class AccountReadiness:
     broker_ready: bool = False
     order_snapshot_ready: bool = False
     accepting_trade_commands: bool = False
+    credential_status: str = ""
+    credential_version: int = 0
+    credential_key_id: str = ""
+    credential_source: str = ""
+    managed_account_id: str = ""
     last_heartbeat_at: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -136,6 +141,11 @@ class AccountReadiness:
             broker_ready=_bool(data, "broker_ready"),
             order_snapshot_ready=_bool(data, "order_snapshot_ready"),
             accepting_trade_commands=_bool(data, "accepting_trade_commands"),
+            credential_status=_text(data, "credential_status"),
+            credential_version=_int(data, "credential_version"),
+            credential_key_id=_text(data, "credential_key_id"),
+            credential_source=_text(data, "credential_source"),
+            managed_account_id=_text(data, "managed_account_id"),
             last_heartbeat_at=_text(data, "last_heartbeat_at"),
             raw=dict(data),
         )

@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/config"
+	"ti-relay-trader/internal/credentials"
 	"ti-relay-trader/internal/events"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
@@ -36,6 +38,8 @@ type Dependencies struct {
 	Accounts        AccountAliasStore
 	Performance     PerformanceService
 	Operations      OperationsService
+	CredentialAdmin CredentialAdminService
+	CredentialToken string
 	Market          *market.MeridianClient
 	Events          *events.Hub
 	DatabasePing    HealthCheckFunc
@@ -137,6 +141,12 @@ type OperationsService interface {
 	ActionsWriteEnabled() bool
 }
 
+type CredentialAdminService interface {
+	Status(ctx context.Context, accountID string, verifyDecryption bool) (credentials.CredentialStatus, error)
+	Rotate(ctx context.Context, accountID, operator string, plaintext credentials.BrokerCredentials) (credentials.RotationResult, error)
+	Disable(ctx context.Context, accountID, operator string) (credentials.DisableResult, error)
+}
+
 type PerformanceSeriesSummary struct {
 	AccountID                string   `json:"account_id"`
 	DateFrom                 string   `json:"date_from"`
@@ -162,18 +172,20 @@ var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
 var errPerformanceServiceUnavailable = errors.New("performance service is unavailable")
 
 type Server struct {
-	cfg     config.Config
-	logger  *slog.Logger
-	started time.Time
-	orders  OrderService
-	jobs    JobRunStore
-	settles SettlementStore
-	aliases AccountAliasStore
-	perf    PerformanceService
-	ops     OperationsService
-	market  *market.MeridianClient
-	events  *events.Hub
-	health  statusHealthChecks
+	cfg             config.Config
+	logger          *slog.Logger
+	started         time.Time
+	orders          OrderService
+	jobs            JobRunStore
+	settles         SettlementStore
+	aliases         AccountAliasStore
+	perf            PerformanceService
+	ops             OperationsService
+	credentialAdmin CredentialAdminService
+	credentialToken string
+	market          *market.MeridianClient
+	events          *events.Hub
+	health          statusHealthChecks
 }
 
 type statusHealthChecks struct {
@@ -201,17 +213,19 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	}
 
 	server := &Server{
-		cfg:     cfg,
-		logger:  logger,
-		started: timeutil.Now(),
-		orders:  deps.Orders,
-		jobs:    deps.Jobs,
-		settles: deps.Settlements,
-		aliases: deps.Accounts,
-		perf:    deps.Performance,
-		ops:     deps.Operations,
-		market:  marketClient,
-		events:  deps.Events,
+		cfg:             cfg,
+		logger:          logger,
+		started:         timeutil.Now(),
+		orders:          deps.Orders,
+		jobs:            deps.Jobs,
+		settles:         deps.Settlements,
+		aliases:         deps.Accounts,
+		perf:            deps.Performance,
+		ops:             deps.Operations,
+		credentialAdmin: deps.CredentialAdmin,
+		credentialToken: strings.TrimSpace(deps.CredentialToken),
+		market:          marketClient,
+		events:          deps.Events,
 		health: statusHealthChecks{
 			Database:    deps.DatabasePing,
 			Redis:       deps.RedisPing,
@@ -250,6 +264,9 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/operations/dlq/reviews", server.handleDeadLetterReviews)
 	mux.HandleFunc("/v1/operations/dlq/review", server.handleDeadLetterReview)
 	mux.HandleFunc("/v1/operations/dlq", server.handleDeadLetters)
+	mux.HandleFunc("/v1/admin/credentials", server.handleCredentialAdmin)
+	mux.HandleFunc("/v1/admin/credentials/rotate", server.handleCredentialRotate)
+	mux.HandleFunc("/v1/admin/credentials/disable", server.handleCredentialDisable)
 	mux.HandleFunc("/v1/settlements/snapshots", server.handleSettlementSnapshots)
 	mux.HandleFunc("/v1/reconciliations/breaks", server.handleReconciliationBreaks)
 	mux.HandleFunc("/v1/reconciliations/review-report", server.handleDailyReviewReport)
@@ -1741,6 +1758,11 @@ func (s *Server) handleAccountReadiness(w http.ResponseWriter, r *http.Request, 
 		view.BrokerReady = gateway.BrokerReady
 		view.OrderSnapshotReady = gateway.OrderSnapshotReady
 		view.AcceptingTradeCommands = gateway.AcceptingTradeCommands
+		view.CredentialStatus = gateway.CredentialStatus
+		view.CredentialVersion = gateway.CredentialVersion
+		view.CredentialKeyID = gateway.CredentialKeyID
+		view.CredentialSource = gateway.CredentialSource
+		view.ManagedAccountID = gateway.ManagedAccountID
 		view.LastHeartbeatAt = gateway.LastHeartbeatAt
 		break
 	}
@@ -3693,6 +3715,167 @@ func (s *Server) handleOperationsStatus(w http.ResponseWriter, r *http.Request) 
 	httpx.WriteOK(w, r, http.StatusOK, snapshot)
 }
 
+type credentialRotateRequest struct {
+	AccountID       string `json:"account_id"`
+	Operator        string `json:"operator"`
+	ConfirmAccount  string `json:"confirm_account,omitempty"`
+	BrokerLoginUser string `json:"broker_login_user"`
+	BrokerPassword  string `json:"broker_password"`
+	DynamicPassword string `json:"dynamic_password"`
+}
+
+type credentialDisableRequest struct {
+	AccountID      string `json:"account_id"`
+	Operator       string `json:"operator"`
+	ConfirmAccount string `json:"confirm_account"`
+}
+
+func (s *Server) handleCredentialAdmin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if !s.authorizeCredentialAdmin(w, r) {
+		return
+	}
+	accountID := strings.TrimSpace(r.URL.Query().Get("account_id"))
+	if !s.credentialAccountAllowed(accountID) {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "managed credential account not found", nil)
+		return
+	}
+	status, err := s.credentialAdmin.Status(r.Context(), accountID, true)
+	if err != nil {
+		s.logger.Warn("credential_admin_status_failed", "account_id", accountID, "error", err)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "credential status query failed", nil)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+		"status":                        status,
+		"write_enabled":                 true,
+		"restart_required_after_change": true,
+	})
+}
+
+func (s *Server) handleCredentialRotate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+		return
+	}
+	if !s.authorizeCredentialAdmin(w, r) {
+		return
+	}
+	defer r.Body.Close()
+	var request credentialRotateRequest
+	if err := decodeCredentialAdminRequest(w, r, &request); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid credential rotation body", nil)
+		return
+	}
+	request.AccountID = strings.TrimSpace(request.AccountID)
+	if !s.credentialAccountAllowed(request.AccountID) {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "managed credential account not found", nil)
+		return
+	}
+	if s.cfg.Service.Environment == config.EnvironmentProduction && strings.TrimSpace(request.ConfirmAccount) != request.AccountID {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "production credential rotation requires exact account confirmation", nil)
+		return
+	}
+	if strings.TrimSpace(request.Operator) == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "credential operator is required", nil)
+		return
+	}
+	plaintext := credentials.BrokerCredentials{
+		BrokerLoginUser: request.BrokerLoginUser,
+		BrokerPassword:  request.BrokerPassword,
+		DynamicPassword: request.DynamicPassword,
+	}
+	if err := credentials.ValidateBrokerCredentials(plaintext); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "broker login user and password are required", nil)
+		return
+	}
+	result, err := s.credentialAdmin.Rotate(r.Context(), request.AccountID, request.Operator, plaintext)
+	plaintext = credentials.BrokerCredentials{}
+	request.BrokerLoginUser = ""
+	request.BrokerPassword = ""
+	request.DynamicPassword = ""
+	if err != nil {
+		s.logger.Error("credential_admin_rotate_failed", "account_id", request.AccountID, "error", err)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "credential rotation failed; inspect credential audit", nil)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusCreated, map[string]any{"rotation": result})
+}
+
+func (s *Server) handleCredentialDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodPost)
+		return
+	}
+	if !s.authorizeCredentialAdmin(w, r) {
+		return
+	}
+	defer r.Body.Close()
+	var request credentialDisableRequest
+	if err := decodeCredentialAdminRequest(w, r, &request); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid credential disable body", nil)
+		return
+	}
+	request.AccountID = strings.TrimSpace(request.AccountID)
+	if !s.credentialAccountAllowed(request.AccountID) {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "managed credential account not found", nil)
+		return
+	}
+	if strings.TrimSpace(request.ConfirmAccount) != request.AccountID {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "credential disable requires exact account confirmation", nil)
+		return
+	}
+	if strings.TrimSpace(request.Operator) == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "credential operator is required", nil)
+		return
+	}
+	result, err := s.credentialAdmin.Disable(r.Context(), request.AccountID, request.Operator)
+	if err != nil {
+		s.logger.Error("credential_admin_disable_failed", "account_id", request.AccountID, "error", err)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "credential disable failed; inspect credential audit", nil)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"disable": result})
+}
+
+func (s *Server) authorizeCredentialAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !s.cfg.Operations.CredentialAdminEnabled || s.credentialAdmin == nil || len(s.credentialToken) < 32 {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "credential administration is disabled", nil)
+		return false
+	}
+	authorization := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, "Bearer ") {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "credential administrator authorization failed", nil)
+		return false
+	}
+	provided := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	if len(provided) != len(s.credentialToken) || subtle.ConstantTimeCompare([]byte(provided), []byte(s.credentialToken)) != 1 {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "credential administrator authorization failed", nil)
+		return false
+	}
+	return true
+}
+
+func (s *Server) credentialAccountAllowed(accountID string) bool {
+	account, ok := s.cfg.AccountRoute(strings.TrimSpace(accountID))
+	return ok && strings.TrimSpace(account.BrokerID) == "huaxin"
+}
+
+func decodeCredentialAdminRequest(w http.ResponseWriter, r *http.Request, target any) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("credential request contains trailing data")
+	}
+	return nil
+}
+
 func (s *Server) handleDeadLetters(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -5128,6 +5311,11 @@ type AccountReadinessView struct {
 	BrokerReady            *bool      `json:"broker_ready,omitempty"`
 	OrderSnapshotReady     *bool      `json:"order_snapshot_ready,omitempty"`
 	AcceptingTradeCommands *bool      `json:"accepting_trade_commands,omitempty"`
+	CredentialStatus       string     `json:"credential_status,omitempty"`
+	CredentialVersion      int64      `json:"credential_version,omitempty"`
+	CredentialKeyID        string     `json:"credential_key_id,omitempty"`
+	CredentialSource       string     `json:"credential_source,omitempty"`
+	ManagedAccountID       string     `json:"managed_account_id,omitempty"`
 	LastHeartbeatAt        *time.Time `json:"last_heartbeat_at,omitempty"`
 }
 

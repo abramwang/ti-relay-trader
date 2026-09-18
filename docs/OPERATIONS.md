@@ -1,6 +1,6 @@
 # relay 运行配置与任务管理
 
-更新时间：`2026-06-15`
+更新时间：`2026-09-18`
 
 ## 配置文件口径
 
@@ -16,8 +16,11 @@
 | `config/relay.test.yaml` | 否 | 部署机测试配置，可包含测试凭据 |
 | `config/relay.local.yaml` | 否 | 本地开发配置，可包含本地凭据 |
 | `config/relay.prod.yaml` | 否 | 部署机生产配置，可包含真实凭据 |
+| `config/relay.credentials.env` | 否 | OC 凭据主密钥和 Web 管理令牌，仅允许 `0400/0600` |
 
 仓库通过 `.gitignore` 忽略 `config/*.yaml` 和 `config/*.yml`，只允许提交 `*.example.yaml` 或 `*.example.yml`。
+
+华鑫登录凭据不再写入账户 YAML 或 OC 公共 `config.ini`。加密托管、轮换和停用流程见 [OC_CREDENTIAL_MANAGEMENT.md](OC_CREDENTIAL_MANAGEMENT.md)。
 
 建议部署时使用：
 
@@ -285,7 +288,7 @@ migrations/postgres/*.up.sql
 migrations/postgres/*.down.sql
 ```
 
-真实 DSN 仍放在部署机本地配置或安全渠道。测试和生产数据库应应用 `000001` 到 `000022`。
+真实 DSN 仍放在部署机本地配置或安全渠道。测试和生产数据库应应用 `000001` 到 `000030`。
 
 当前环境已安装 `psql`，同时可使用内置 runner：
 

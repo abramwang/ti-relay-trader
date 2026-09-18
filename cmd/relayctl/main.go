@@ -68,6 +68,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl redis-scan: %v\n", err)
 			os.Exit(1)
 		}
+	case "credentials":
+		if err := runCredentials(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl credentials: %v\n", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -500,6 +505,7 @@ func usage() {
   performance-gold-compare Compare database NAV gold with economic NAV previews
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
+  credentials    Rotate, verify, or disable encrypted OC account credentials
 
 Examples:
   RELAY_DATABASE_URL=postgres://... REDIS_URL=redis://... go run ./cmd/relayctl ledger-sync -stream-prefix relay:prod:v1:huaxin:00030484 -count 20
@@ -514,7 +520,9 @@ Examples:
   RELAY_CONFIG_PATH=config/relay.local.yaml go run ./cmd/relayctl redis-probe
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -samples 2
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -stream-prefix relay:prod:v1:huaxin:00030484
-  go run ./cmd/relayctl redis-scan -config config/relay.prod.yaml`)
+  go run ./cmd/relayctl redis-scan -config config/relay.prod.yaml
+  go run ./cmd/relayctl credentials status -config config/relay.prod.yaml -account 314000046830
+  go run ./cmd/relayctl credentials rotate -config config/relay.prod.yaml -account 314000046830 -operator relay-admin -input -`)
 }
 
 func splitCSV(value string) []string {

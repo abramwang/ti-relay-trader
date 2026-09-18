@@ -58,6 +58,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "orders.batch_child_outcomes.v1",
                             "orders.explicit_command_ids.v1",
                             "accounts.order_entry_readiness.v1",
+                            "accounts.managed_credential_state.v1",
                             "cancel_attempts.cursor_pagination.v1",
                         ],
                         "http_routes": [{"method": "GET", "path": "/v1/schema"}],
@@ -90,6 +91,11 @@ class RelayHandler(BaseHTTPRequestHandler):
                             "broker_ready": True,
                             "order_snapshot_ready": True,
                             "accepting_trade_commands": True,
+                            "credential_status": "loaded",
+                            "credential_version": 3,
+                            "credential_key_id": "hx-test-202609",
+                            "credential_source": "relay_redis_encrypted",
+                            "managed_account_id": "acct-1",
                         }
                     },
                 }
@@ -990,6 +996,10 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(readiness.order_entry_block_reason, "OUTSIDE_TEST_COUNTER_WINDOW")
         self.assertEqual(readiness.counter_mode, "huaxin_7x24_test")
         self.assertEqual(readiness.counter_session_id, "huaxin-test-session-20260915-a")
+        self.assertEqual(readiness.credential_status, "loaded")
+        self.assertEqual(readiness.credential_version, 3)
+        self.assertEqual(readiness.credential_key_id, "hx-test-202609")
+        self.assertEqual(readiness.managed_account_id, "acct-1")
 
         with self.assertRaises(RelayBrokerNotReadyError) as raised:
             self.client.verify_ready(force=False)

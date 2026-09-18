@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.40 - 2026-09-18
+
+- Expose the OC managed-credential heartbeat fields on `AccountReadiness`:
+  `credential_status`, `credential_version`, `credential_key_id`,
+  `credential_source`, and `managed_account_id`.
+- Relay fails closed with `OC_CREDENTIAL_NOT_READY` when OC reports a missing,
+  invalid, or undecryptable credential, and with
+  `OC_CREDENTIAL_IDENTITY_MISMATCH` when the managed account does not match.
+
+### Compatibility
+
+- Older OC heartbeats without managed-credential fields remain compatible
+  during the coordinated rollout.
+
 ## 0.1.39 - 2026-09-17
 
 - Make fresh OC heartbeat state the sole dynamic source of counter order-entry

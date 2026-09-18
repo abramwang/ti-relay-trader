@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-09-02`
+更新时间：`2026-09-18`
 
 ## 状态口径
 
@@ -38,6 +38,22 @@
 8. N12 已完成 API Console 断言集合、批量下单工作台和 API/worker 独立常驻进程；当前继续收敛 N13 绩效数据质量、页面可读性和查询性能。
 9. [x] 将盘后 OC 权威查询从行情结算中拆出：15:01 `post_close_capture` 不依赖 Meridian，先固化 `broker_close` 资金/持仓；`post_close_settlement` 再从该不可变输入生成正式 close，行情故障只延后结算和绩效，不再导致券商收盘数据漏采。
 10. [x] 对齐 Meridian 权威日线生产窗口：上游 16:30 启动、16:45 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50，任务页显示上游窗口和重试截止。`2026-08-28` 首次对齐验收在 16:40 完成，三户 canonical 差异均为 0。
+11. [x] 实现 `oc.secret.v1` Relay 侧账户凭据管理：AES-256-GCM 版本信封、先版本后 current 的原子轮换、PostgreSQL 审计、CLI、内网 Web 运维入口和 OC 心跳失败关闭均已完成；等待与新版 OC 共用 TEST/PROD 密钥后的在线验收。
+
+### N14 OC 托管账户凭据
+
+状态：`doing`
+
+- [x] 实现 TEST/PROD 独立主密钥、严格 AAD、随机 nonce 和版本化 Redis String。
+- [x] 实现账户级轮换锁、写后认证解密、最后切换 current 和停用只删指针。
+- [x] 新增 migration 30，凭据写操作要求先写 PostgreSQL 审计。
+- [x] 增加 `relayctl credentials rotate/status/disable`，输入文件权限不超过 `0600`。
+- [x] 在 `/operations` 增加内网凭据管理模块，独立管理员令牌保存在 sessionStorage，密码提交后清空且响应永不回显。
+- [x] 解析 OC 凭据心跳；未加载和托管账户错配分别以 `OC_CREDENTIAL_NOT_READY`、`OC_CREDENTIAL_IDENTITY_MISMATCH` 阻断报单。
+- [x] 发布 SDK `0.1.40`，只暴露非敏感 readiness 字段，不向策略端开放凭据写接口。
+- [ ] 与 OC 安全交换 TEST/PROD Key ID/Key，先完成 TEST 单账户写入、登录、下单、重启恢复和明文泄漏扫描。
+- [ ] 在维护窗口把旧 TEST `relay:prod:*` 命名与新版 OC 同步迁移到 `relay:test:*`；切换前不单边修改当前运行配置。
+- [ ] PROD 保持交易关闭，逐账户写入凭据和重启 OC；全部账户 heartbeat 验收后清理旧明文配置。
 
 ### N13 可信成本账与绩效重建
 

@@ -21,11 +21,11 @@ database:
 
 redis:
   url: "redis://:<password>@<test-redis-host>:6379/0"
-  # Keep this value aligned with the front service stream namespace. Some
-  # broker test counters may still use relay:prod:* stream names.
-  env: "prod"
+  # Managed OC uses relay:test:*. Existing relay:prod:* TEST deployments must
+  # migrate Relay and OC together in one maintenance window.
+  env: "test"
   broker_id: "huaxin"
-  gateway_id: "<test_gateway_id>"
+  gateway_id: "<test_account_id>"
 
 market:
   base_url: "http://meridian-data.quantstage.com"
@@ -35,6 +35,7 @@ market:
 
 operations:
   actions_write_enabled: false
+  credential_admin_enabled: false
   heartbeat_stale_seconds: 30
   lag_warning_entries: 500
   lag_critical_entries: 5000
@@ -55,8 +56,8 @@ accounts:
   - account_id: "<test_account_id>"
     alias: "券商测试"
     broker_id: "huaxin"
-    gateway_id: "<test_gateway_id>"
-    stream_prefix: "relay:prod:v1:huaxin:<test_gateway_id>"
+    gateway_id: "<test_account_id>"
+    stream_prefix: "relay:test:v1:huaxin:<test_account_id>"
     enabled: true
     trading_enabled: true
     simulated: false

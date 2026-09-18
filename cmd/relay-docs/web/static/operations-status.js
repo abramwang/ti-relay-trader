@@ -3,6 +3,7 @@
 
   const state = {
     snapshot: null,
+    accountRoutes: [],
     accountID: "",
     streamRole: "",
     dlqStatus: "",
@@ -13,6 +14,8 @@
     selectedDeadLetter: null,
     refreshTimer: null,
     toastTimer: null,
+    credentialToken: sessionStorage.getItem("relayCredentialAdminToken") || "",
+    credentialUnlocked: false,
   };
 
   const elements = {
@@ -38,12 +41,36 @@
     dlqNext: document.getElementById("dlqNext"),
     dlqDetail: document.getElementById("dlqDetail"),
     toast: document.getElementById("operationsToast"),
+    credentialPanel: document.getElementById("credentialAdminPanel"),
+    credentialAdminState: document.getElementById("credentialAdminState"),
+    credentialEnvironment: document.getElementById("credentialEnvironment"),
+    credentialManagedAccount: document.getElementById("credentialManagedAccount"),
+    credentialVersion: document.getElementById("credentialVersion"),
+    credentialKeyID: document.getElementById("credentialKeyID"),
+    credentialVerify: document.getElementById("credentialVerify"),
+    credentialIssuedAt: document.getElementById("credentialIssuedAt"),
+    credentialSource: document.getElementById("credentialSource"),
+    credentialEnvelopeSHA: document.getElementById("credentialEnvelopeSHA"),
+    credentialForm: document.getElementById("credentialForm"),
+    credentialAdminToken: document.getElementById("credentialAdminToken"),
+    credentialUnlock: document.getElementById("credentialUnlock"),
+    credentialAccount: document.getElementById("credentialAccount"),
+    credentialOperator: document.getElementById("credentialOperator"),
+    credentialLoginUser: document.getElementById("credentialLoginUser"),
+    credentialPassword: document.getElementById("credentialPassword"),
+    credentialDynamicPassword: document.getElementById("credentialDynamicPassword"),
+    credentialConfirmAccount: document.getElementById("credentialConfirmAccount"),
+    credentialRotate: document.getElementById("credentialRotate"),
+    credentialDisable: document.getElementById("credentialDisable"),
   };
 
   const statusLabels = {
     online: "在线",
     off_hours: "非监控时段",
     broker_not_ready: "柜台未就绪",
+    credential_not_ready: "凭据未就绪",
+    credential_identity_mismatch: "凭据账户错配",
+    credential_metadata_invalid: "凭据元数据无效",
     reconnecting: "重连中",
     stale: "心跳超时",
     degraded: "状态异常",
@@ -68,10 +95,11 @@
   };
 
   async function getJSON(url, options = {}) {
+    const { headers = {}, ...fetchOptions } = options;
     const response = await fetch(url, {
       cache: "no-store",
-      headers: { Accept: "application/json", ...(options.headers || {}) },
-      ...options,
+      ...fetchOptions,
+      headers: { Accept: "application/json", ...headers },
     });
     const text = await response.text();
     let payload;
@@ -140,6 +168,18 @@
     state.accountID = elements.accountFilter.value;
   }
 
+  function renderCredentialAccountOptions() {
+    const credentialCurrent = elements.credentialAccount.value;
+    const routes = state.accountRoutes.filter((route) => route.broker_id === "huaxin");
+    elements.credentialAccount.innerHTML = routes.map((route) => {
+      const label = route.alias ? `${route.alias} (${route.account_id})` : route.account_id;
+      return `<option value="${escapeHTML(route.account_id)}">${escapeHTML(label)}</option>`;
+    }).join("");
+    if (routes.some((route) => route.account_id === credentialCurrent)) {
+      elements.credentialAccount.value = credentialCurrent;
+    }
+  }
+
   function renderOverview() {
     const snapshot = state.snapshot;
     const summary = snapshot?.summary || {};
@@ -192,6 +232,9 @@
             ${gateway.next_transition_at
               ? `<br><span>下次切换 ${formatTime(gateway.next_transition_at, true)}</span>`
               : ""}
+            ${gateway.credential_status
+              ? `<br><span>凭据 ${escapeHTML(gateway.credential_status)} · v${formatNumber(gateway.credential_version)} · ${escapeHTML(gateway.credential_key_id || "--")}${gateway.managed_account_id ? ` · ${escapeHTML(gateway.managed_account_id)}` : ""}</span>`
+              : ""}
           </td>
           <td>${formatTime(gateway.last_heartbeat_at, true)}</td>
           <td class="mono-cell">${gateway.last_heartbeat_at ? `${formatNumber(gateway.heartbeat_age_seconds)}s` : "--"}</td>
@@ -237,6 +280,106 @@
     renderOverview();
     renderGateways();
     renderStreams();
+  }
+
+  async function loadAccountRoutes() {
+    const data = await getJSON("/v1/account-routes");
+    state.accountRoutes = data.routes || [];
+    renderCredentialAccountOptions();
+  }
+
+  function credentialAdminEnabled() {
+    return elements.credentialPanel?.dataset.enabled === "true";
+  }
+
+  function credentialHeaders() {
+    return { Authorization: `Bearer ${state.credentialToken}` };
+  }
+
+  function clearCredentialPlaintext() {
+    elements.credentialLoginUser.value = "";
+    elements.credentialPassword.value = "";
+    elements.credentialDynamicPassword.value = "";
+  }
+
+  function setCredentialUnlocked(unlocked) {
+    state.credentialUnlocked = unlocked;
+    elements.credentialRotate.disabled = !unlocked;
+    elements.credentialDisable.disabled = !unlocked;
+    elements.credentialAdminState.textContent = unlocked ? "管理权限已验证" :
+      (credentialAdminEnabled() ? "管理员令牌未验证" : "当前环境未启用");
+  }
+
+  async function loadCredentialStatus() {
+    const accountID = elements.credentialAccount.value;
+    if (!accountID || !state.credentialToken) return;
+    const data = await getJSON(`/v1/admin/credentials?account_id=${encodeURIComponent(accountID)}`, {
+      headers: credentialHeaders(),
+    });
+    const status = data.status || {};
+    setCredentialUnlocked(true);
+    elements.credentialEnvironment.textContent = status.environment || elements.credentialPanel.dataset.environment || "--";
+    elements.credentialManagedAccount.textContent = status.account_id || accountID;
+    elements.credentialVersion.textContent = status.configured ? `v${formatNumber(status.credential_version)}` : "未配置";
+    elements.credentialKeyID.textContent = status.key_id || "--";
+    elements.credentialVerify.textContent = status.decryption_verified ? "认证解密通过" : "--";
+    elements.credentialIssuedAt.textContent = formatTime(status.issued_at, true);
+    elements.credentialSource.textContent = status.credential_source || "--";
+    elements.credentialEnvelopeSHA.textContent = status.envelope_sha256 || "--";
+    elements.credentialEnvelopeSHA.title = status.envelope_sha256 || "";
+  }
+
+  async function unlockCredentialAdmin() {
+    state.credentialToken = elements.credentialAdminToken.value.trim();
+    if (!state.credentialToken) throw new Error("请输入管理员令牌");
+    await loadCredentialStatus();
+    sessionStorage.setItem("relayCredentialAdminToken", state.credentialToken);
+  }
+
+  async function rotateCredential(event) {
+    event.preventDefault();
+    const accountID = elements.credentialAccount.value;
+    if (!accountID || !state.credentialUnlocked) return;
+    if (elements.credentialPanel.dataset.environment === "production" && elements.credentialConfirmAccount.value.trim() !== accountID) {
+      throw new Error("生产环境需要准确输入账户编号确认");
+    }
+    if (!window.confirm(`确认写入 ${accountID} 的新凭据版本？OC 需要单账户重启后生效。`)) return;
+    try {
+      const data = await getJSON("/v1/admin/credentials/rotate", {
+        method: "POST",
+        headers: { ...credentialHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountID,
+          operator: elements.credentialOperator.value.trim(),
+          confirm_account: elements.credentialConfirmAccount.value.trim(),
+          broker_login_user: elements.credentialLoginUser.value,
+          broker_password: elements.credentialPassword.value,
+          dynamic_password: elements.credentialDynamicPassword.value,
+        }),
+      });
+      showToast(`凭据 v${data.rotation?.credential_version || "--"} 已写入，等待 OC 重启`);
+      await loadCredentialStatus();
+    } finally {
+      clearCredentialPlaintext();
+    }
+  }
+
+  async function disableCredential() {
+    const accountID = elements.credentialAccount.value;
+    if (!accountID || !state.credentialUnlocked) return;
+    if (elements.credentialConfirmAccount.value.trim() !== accountID) throw new Error("请输入完整账户编号确认停用");
+    if (!window.confirm(`确认停用 ${accountID} 的当前凭据？对应 OC 仍需停止或重启。`)) return;
+    const data = await getJSON("/v1/admin/credentials/disable", {
+      method: "POST",
+      headers: { ...credentialHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account_id: accountID,
+        operator: elements.credentialOperator.value.trim(),
+        confirm_account: elements.credentialConfirmAccount.value.trim(),
+      }),
+    });
+    showToast(data.disable?.disabled ? "当前凭据已停用，需停止或重启 OC" : "凭据停用完成");
+    await loadCredentialStatus();
   }
 
   function dlqQuery() {
@@ -360,7 +503,7 @@
 
   async function refreshAll(force = false) {
     try {
-      await loadSnapshot(force);
+      await Promise.all([loadSnapshot(force), loadAccountRoutes()]);
       await loadDeadLetters();
     } catch (error) {
       showToast(error.message, true);
@@ -368,6 +511,17 @@
   }
 
   elements.refresh.addEventListener("click", () => refreshAll(true));
+  elements.credentialUnlock.addEventListener("click", () => unlockCredentialAdmin().catch((error) => {
+    setCredentialUnlocked(false);
+    sessionStorage.removeItem("relayCredentialAdminToken");
+    showToast(error.message, true);
+  }));
+  elements.credentialForm.addEventListener("submit", (event) => rotateCredential(event).catch((error) => showToast(error.message, true)));
+  elements.credentialDisable.addEventListener("click", () => disableCredential().catch((error) => showToast(error.message, true)));
+  elements.credentialAccount.addEventListener("change", () => {
+    elements.credentialConfirmAccount.value = "";
+    loadCredentialStatus().catch((error) => showToast(error.message, true));
+  });
   elements.refreshDLQ.addEventListener("click", () => loadDeadLetters().catch((error) => showToast(error.message, true)));
   elements.accountFilter.addEventListener("change", () => {
     state.accountID = elements.accountFilter.value;
@@ -413,7 +567,18 @@
     loadDeadLetters().catch((error) => showToast(error.message, true));
   });
 
-  refreshAll(true);
+  elements.credentialAdminToken.value = state.credentialToken;
+  setCredentialUnlocked(false);
+  refreshAll(true).then(() => {
+    if (credentialAdminEnabled() && state.credentialToken) {
+      loadCredentialStatus().catch(() => {
+        sessionStorage.removeItem("relayCredentialAdminToken");
+        state.credentialToken = "";
+        elements.credentialAdminToken.value = "";
+        setCredentialUnlocked(false);
+      });
+    }
+  });
   state.refreshTimer = setInterval(() => {
     if (document.visibilityState === "visible") refreshAll(false);
   }, 10000);

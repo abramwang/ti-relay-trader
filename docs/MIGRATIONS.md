@@ -1,6 +1,6 @@
 # relay PostgreSQL Migration
 
-更新时间：`2026-09-02`
+更新时间：`2026-09-18`
 
 ## 当前状态
 
@@ -61,6 +61,12 @@ migrations/postgres/000026_etf_settlement_finalizations.up.sql
 migrations/postgres/000026_etf_settlement_finalizations.down.sql
 migrations/postgres/000027_order_submission_identity.up.sql
 migrations/postgres/000027_order_submission_identity.down.sql
+migrations/postgres/000028_reverse_repo_asset_receivable.up.sql
+migrations/postgres/000028_reverse_repo_asset_receivable.down.sql
+migrations/postgres/000029_fill_order_context_inheritance.up.sql
+migrations/postgres/000029_fill_order_context_inheritance.down.sql
+migrations/postgres/000030_oc_credential_audit.up.sql
+migrations/postgres/000030_oc_credential_audit.down.sql
 ```
 
 文件命名采用 `golang-migrate` / `goose` 常见的 `version_name.up.sql`、`version_name.down.sql` 形式，但 SQL 本身保持工具无关。部署阶段可以用 `psql`、`golang-migrate`、`goose` 或内部发布脚本执行。
@@ -96,7 +102,11 @@ migrations/postgres/000027_order_submission_identity.down.sql
 25. `000025_broker_close_snapshots` 增加不可变 `broker_close` 资金/持仓快照类型，确保 15:01 OC 最终数据捕获不依赖 Meridian。
 26. `000026_etf_settlement_finalizations` 增加版本化 ETF T0 最终清算表，约束申赎单位、实际现金/费用恒等式、current 版本和确认审计。
 27. `000027_order_submission_identity` 从 `cmd.trade` raw archive 恢复订单首次提交 `origin_message_id/request_id/idempotency_key`；恢复前值写入 `adapter_context`，历史幂等键已被别单占用时只审计冲突、不破坏唯一约束。
-28. 生产 `relay_schema_migrations` 已于 `2026-09-02 21:17:30 Asia/Shanghai` 应用到 `27:order_submission_identity`。
+28. `000028_reverse_repo_asset_receivable` 为资产和快照增加逆回购本金应收，保持净资产只计一次。
+29. `000029_fill_order_context_inheritance` 让成交按订单主键继承 Relay 自有策略归属字段。
+30. `000030_oc_credential_audit` 记录凭据轮换/停用的开始、成功或失败审计，仅保存版本、Key ID、信封 SHA256、操作人和非敏感元数据。
+
+TEST `relay_trader_test` 与 PROD `relay_trader` 已于 `2026-09-18 13:11 Asia/Shanghai` 应用到 `30:oc_credential_audit`。
 
 当前环境已安装 PostgreSQL client：
 

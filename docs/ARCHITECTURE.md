@@ -196,6 +196,8 @@ worker 成功落账后向固定 PostgreSQL channel 发布版本化账本事件�
 
 Redis Stream 详细协议、排错和重放口径见 [docs/REDIS_LEDGER_SYNC.md](/home/ti-relay-trader/docs/REDIS_LEDGER_SYNC.md:1) 与 [docs/THIRD_PARTY_INTEGRATION_GUIDE.md](/home/ti-relay-trader/docs/THIRD_PARTY_INTEGRATION_GUIDE.md:1)。
 
+华鑫 OC 托管模式的登录凭据不进入上述 Stream。Relay 使用 `oc.secret.v1` 将每账户凭据加密为版本化 Redis String，OC 只读本账户密文；轮换顺序、心跳门禁、Web/CLI 运维入口和逐账户上线步骤见 [OC_CREDENTIAL_MANAGEMENT.md](/home/ti-relay-trader/docs/OC_CREDENTIAL_MANAGEMENT.md:1)。
+
 ## 数据与基础设施依赖
 
 当前内网资源入口：
