@@ -51,7 +51,9 @@
 - [x] 在 `/operations` 增加内网凭据管理模块，独立管理员令牌保存在 sessionStorage，密码提交后清空且响应永不回显。
 - [x] 解析 OC 凭据心跳；未加载和托管账户错配分别以 `OC_CREDENTIAL_NOT_READY`、`OC_CREDENTIAL_IDENTITY_MISMATCH` 阻断报单。
 - [x] 发布 SDK `0.1.40`，只暴露非敏感 readiness 字段，不向策略端开放凭据写接口。
-- [ ] 与 OC 安全交换 TEST/PROD Key ID/Key，先完成 TEST 单账户写入、登录、下单、重启恢复和明文泄漏扫描。
+- [x] 与 OC 安全交换 TEST/PROD Key ID/Key；主密钥只部署于本机 `0600` 忽略文件，管理接口鉴权和无凭据空状态已在 TEST 验证。
+- [x] 为 TEST `00030484` 写入首个凭据版本，完成 Redis 指针、认证解密、PostgreSQL 双阶段审计及仓库/日志无明文泄漏扫描。
+- [ ] 由 OC 明确华鑫 `user_product_info` 来自非敏感公共配置还是扩展 `oc.secret.v1`；契约闭合后完成登录、凭据心跳、查询、下单和重启恢复验收。
 - [ ] 在维护窗口把旧 TEST `relay:prod:*` 命名与新版 OC 同步迁移到 `relay:test:*`；切换前不单边修改当前运行配置。
 - [ ] PROD 保持交易关闭，逐账户写入凭据和重启 OC；全部账户 heartbeat 验收后清理旧明文配置。
 
