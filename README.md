@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | TEST/PROD 托管凭据主密钥仅部署于本机 `0600` 忽略文件；TEST `00030484` 凭据 `v1` 已由 OC 加载并完成只读验收；生产运行态未切换 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-18 13:43 Asia/Shanghai` 当前仍为测试环境；新版 OC 凭据、心跳、柜台、快照和四类查询全部正常，TEST 已迁移到 `relay:test:*` |
+| 最近确认 | `2026-09-18 13:57 Asia/Shanghai` 当前仍为测试环境；新版 OC 加密凭据下的主动成交、幂等重放、working 撤单及查询回查全部通过 |
 | 更新时间 | `2026-09-18` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-18 13:57 Asia/Shanghai` 完成新版 TEST OC 加密凭据下的最小写链路验收。以 Meridian `600000.SH` 实时盘口为参考提交 100 股买单，Relay 返回 HTTP 202 和唯一 accepted 回执，订单最终 `filled 100/100, leaves=0`，唯一成交价格 `9.08`、`matched_at=13:56:05+08:00`，三类订单 ID、原命令关联和 OC 会话 ID 全程稳定；相同幂等键和请求重放返回 HTTP 200、`replayed=true`，`cmd.trade` 未新增消息。第二笔 100 股低价买单进入 working 后撤单，撤单回执 accepted，最终 `cancelled, filled=0, leaves=0`。随后资金、持仓、订单、成交四类 OC 查询全部唯一成功终态并与实时账本一致：2 笔订单分别为 filled/cancelled、1 笔唯一成交、0 活动订单；服务保持 TEST `ok`，consumer group `pending=0,lag=0`，无 DLQ 或错误日志。测试柜台订单状态时间仍使用模拟时钟，成交权威时间继续读取 `Fill.matched_at`。
 - `2026-09-18 13:43 Asia/Shanghai` 新版 TEST OC 已加载账户 `00030484` 的加密凭据 `v1`：heartbeat 的 `credential_status=loaded`、版本、Key ID、来源及托管账户均与 Relay 一致，Redis、柜台登录、订单快照、报单和撤单准入全部 ready。Relay 已按预定维护步骤从兼容旧 OC 的 `relay:prod:*` 迁移到标准 `relay:test:*`，重启后整体状态为 `ok`。资金、持仓、订单、成交四类只读查询均取得唯一成功终态并落账，持仓 38 条、当日订单和成交为空，Stream `pending=0,lag=0`、无 DLQ。`user_product_info` 由 OC 内部填写，不属于 `oc.secret.v1`，Relay 无需传递或扩展协议；生产运行态未切换。
 - `2026-09-18 13:29 Asia/Shanghai` TEST 账户 `00030484` 已按 `oc.secret.v1` 写入首个凭据版本：Redis `current=v1`、AES-GCM 认证解密、信封身份及 PostgreSQL `started/succeeded` 审计全部通过；临时明文文件已删除，仓库与 API 日志泄漏扫描为 0。用户随后确认 `user_product_info` 由 OC 内部填写，不属于 Relay 托管凭据。
 - `2026-09-18 13:27 Asia/Shanghai` 已把用户提供的 TEST/PROD `Key ID + AES-256` 主密钥部署到 Git 忽略且权限为 `0600` 的 `config/relay.credentials.env`，并生成独立 Web 管理令牌；文件不重复保存 Redis 密码。当前 TEST 实例重启后，凭据管理接口无令牌返回 `403`、授权查询返回 `200`，账户 `00030484` 明确为 `configured=false`，因此尚无版本信封或 `current` 指针。生产运行态未切换，下一步需取得该账户券商登录用户/密码后再通过 `/operations` 首次轮换，并与 OC 联合验收。
@@ -95,7 +96,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 下一步
 
-1. TEST/PROD 两套 Key ID/Key、本机安全部署、TEST `00030484` 凭据 `v1`、OC 登录/心跳/只读查询和 `relay:test:*` 迁移均已完成；下一维护窗口补做最小订单及 OC 再次重启后的凭据恢复验收，不为此主动打断当前柜台会话。
+1. TEST/PROD 两套 Key ID/Key、本机安全部署、TEST `00030484` 凭据 `v1`、OC 登录/心跳/查询/最小交易闭环和 `relay:test:*` 迁移均已完成；下一维护窗口只需补做 OC 再次重启后的凭据恢复验收，不为此主动打断当前柜台会话。
 2. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，让今后同类日直接依赖 OC，不要求 OC 提供历史查询。
 3. 从后续自然交易日持续验收 OC 当日资金、逆回购净息、公司行为和外部资金流，确保历史券商文件只停留在一次性事故修复边界。
 4. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
