@@ -53,8 +53,9 @@
 - [x] 发布 SDK `0.1.40`，只暴露非敏感 readiness 字段，不向策略端开放凭据写接口。
 - [x] 与 OC 安全交换 TEST/PROD Key ID/Key；主密钥只部署于本机 `0600` 忽略文件，管理接口鉴权和无凭据空状态已在 TEST 验证。
 - [x] 为 TEST `00030484` 写入首个凭据版本，完成 Redis 指针、认证解密、PostgreSQL 双阶段审计及仓库/日志无明文泄漏扫描。
-- [ ] 由 OC 明确华鑫 `user_product_info` 来自非敏感公共配置还是扩展 `oc.secret.v1`；契约闭合后完成登录、凭据心跳、查询、下单和重启恢复验收。
-- [ ] 在维护窗口把旧 TEST `relay:prod:*` 命名与新版 OC 同步迁移到 `relay:test:*`；切换前不单边修改当前运行配置。
+- [x] 确认华鑫 `user_product_info` 由 OC 内部填写，无需扩展 `oc.secret.v1`；完成新版 OC 登录、凭据心跳及资金/持仓/订单/成交查询验收。
+- [x] 在新版 OC 启动窗口把旧 TEST `relay:prod:*` 命名同步迁移到 `relay:test:*`，Relay 状态、账本同步及 Stream lag 验收通过。
+- [ ] 在不打断当前柜台会话的维护窗口补做 TEST 最小订单和 OC 再次重启后的凭据恢复验收。
 - [ ] PROD 保持交易关闭，逐账户写入凭据和重启 OC；全部账户 heartbeat 验收后清理旧明文配置。
 
 ### N13 可信成本账与绩效重建
