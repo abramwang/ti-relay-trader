@@ -270,6 +270,7 @@ func (service *RuntimeObservability) buildSnapshot(ctx context.Context, now time
 		Streams:             make([]StreamRuntimeStatus, 0, len(service.cfg.Accounts)*4),
 		DeadLetters: map[string]int64{
 			"pending":      0,
+			"recovered":    0,
 			"acknowledged": 0,
 			"ignored":      0,
 			"replayed":     0,

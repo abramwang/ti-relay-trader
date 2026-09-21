@@ -224,6 +224,7 @@
 - [x] 展示每条 `reply/event/hb/dlq` 的 Redis 最新 ID、PostgreSQL checkpoint、最近消费时间、最近错误和真实 lag。
 - [x] lag 使用有上限的 Redis 服务端计数；支持 stream trim，阈值默认 warning `500`、critical `5000`。
 - [x] 新增 `stream_dlq_reviews` 不可变审核记录和 DLQ/`BROKER_NOT_READY` 部分索引；DLQ 支持待处理、已确认、已忽略、已重放状态，生产审核写默认关闭。
+- [x] 增加查询中断自动恢复聚合：仅当同一 `origin_message_id` 的 `QUERY_INTERRUPTED` 后续收到合法 `completed/is_last=true` 终态时标记 `recovered`，保留原始审计且不再计入当前 pending DLQ 或拉低 API 状态。
 - [x] 新增 `/v1/operations/status`、`/v1/operations/dlq*`，并把摘要接入 `/v1/status`。
 - [x] 新增 `/operations` 独立运维页面和 API Console 运维分组。
 - [x] 使用 Meridian 交易日和 `08:55-15:30 Asia/Shanghai` 监控窗口抑制非交易日、盘前和 OC 关停后误报。

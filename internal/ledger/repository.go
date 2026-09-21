@@ -126,6 +126,7 @@ type CommandStatus struct {
 	State              string               `json:"state"`
 	Terminal           bool                 `json:"terminal"`
 	Success            bool                 `json:"success"`
+	Recovered          bool                 `json:"recovered,omitempty"`
 	Contradictory      bool                 `json:"contradictory"`
 	ReplyCount         int                  `json:"reply_count"`
 	TerminalCount      int                  `json:"terminal_count"`
@@ -1900,6 +1901,7 @@ func (repo *Repository) DeadLetterStatusCounts(ctx context.Context) (map[string]
 
 	counts := map[string]int64{
 		"pending":      0,
+		"recovered":    0,
 		"acknowledged": 0,
 		"ignored":      0,
 		"replayed":     0,
@@ -2045,7 +2047,7 @@ func validDeadLetterStatus(status string, allowPending bool) bool {
 	switch status {
 	case "acknowledged", "ignored", "replayed":
 		return true
-	case "pending":
+	case "pending", "recovered":
 		return allowPending
 	default:
 		return false
@@ -2359,6 +2361,7 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 	result.State = "pending"
 	result.Terminal = false
 	result.Success = false
+	result.Recovered = false
 	result.Contradictory = false
 	result.TerminalCount = 0
 	result.ReplyCount = len(result.Replies)
@@ -2368,9 +2371,12 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 	var acceptedValid int
 	var acceptedInvalid int
 	var failed int
+	var interruptedFailures int
 	var dataPages int
+	lastInterruptedIndex := -1
+	lastCompletedValidIndex := -1
 	tradeAction := result.ExpectedResultType == "order_action_receipt"
-	for _, reply := range result.Replies {
+	for index, reply := range result.Replies {
 		if reply.ResultType == result.ExpectedResultType && reply.ResultType != "" {
 			dataPages++
 		}
@@ -2388,17 +2394,32 @@ func summarizeCommandStatus(result CommandStatus) CommandStatus {
 			result.TerminalCount++
 			if reply.IsLast && (result.ExpectedResultType == "" || reply.ResultType == result.ExpectedResultType) {
 				completedValid++
+				lastCompletedValidIndex = index
 			} else {
 				completedInvalid++
 			}
 		case "failed", "rejected":
 			result.TerminalCount++
 			failed++
+			if strings.EqualFold(strings.TrimSpace(reply.Code), string(trading.ErrorQueryInterrupted)) {
+				interruptedFailures++
+				lastInterruptedIndex = index
+			}
 		}
 	}
 	result.Terminal = result.TerminalCount > 0
 	result.Contradictory = failed > 0 && (dataPages > 0 || acceptedValid > 0)
+	recoveredQuery := result.ExpectedResultType != "" && !tradeAction &&
+		completedValid == 1 && completedInvalid == 0 &&
+		acceptedValid == 0 && acceptedInvalid == 0 &&
+		failed > 0 && failed == interruptedFailures &&
+		lastCompletedValidIndex > lastInterruptedIndex
 	switch {
+	case recoveredQuery:
+		result.State = "completed"
+		result.Success = true
+		result.Recovered = true
+		result.Contradictory = false
 	case result.TerminalCount > 1:
 		result.State = "invalid"
 		result.Contradictory = true

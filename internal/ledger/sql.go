@@ -1466,22 +1466,26 @@ ON CONFLICT (stream_key) DO UPDATE SET
 `
 
 const deadLetterPageSQL = `
+WITH dead_letters AS (
 SELECT
     raw.stream_key,
     raw.stream_id,
-    COALESCE(raw.account_id, ''),
-    COALESCE(raw.action, ''),
-    COALESCE(raw.code, ''),
-    COALESCE(raw.body->>'message', ''),
-    COALESCE(raw.origin_message_id, ''),
-    COALESCE(raw.request_id, ''),
+    raw.account_id,
+    raw.action,
+    raw.code,
     raw.body,
+    raw.origin_message_id,
+    raw.request_id,
     raw.received_at,
-    COALESCE(review.status, 'pending') AS review_status,
-    COALESCE(review.operator, ''),
-    COALESCE(review.note, ''),
-    review.created_at,
-    count(*) OVER() AS total_count
+    raw.raw_message_pk,
+    CASE
+        WHEN review.status IS NOT NULL THEN review.status
+        WHEN recovery.recovered THEN 'recovered'
+        ELSE 'pending'
+    END AS review_status,
+    review.operator,
+    review.note,
+    review.created_at
 FROM raw_stream_messages raw
 LEFT JOIN LATERAL (
     SELECT status, operator, note, created_at
@@ -1491,17 +1495,61 @@ LEFT JOIN LATERAL (
     ORDER BY review_id DESC
     LIMIT 1
 ) review ON true
+LEFT JOIN LATERAL (
+    SELECT TRUE AS recovered
+    FROM raw_stream_messages reply
+    WHERE upper(COALESCE(raw.code, '')) = 'QUERY_INTERRUPTED'
+        AND COALESCE(raw.origin_message_id, '') <> ''
+        AND reply.message_type = 'reply'
+        AND reply.account_id = raw.account_id
+        AND reply.origin_message_id = raw.origin_message_id
+        AND lower(COALESCE(reply.status, '')) = 'completed'
+        AND lower(COALESCE(reply.body #>> '{chunk,is_last}', 'false')) = 'true'
+        AND COALESCE(reply.body->>'result_type', '') = CASE raw.action
+            WHEN 'account.asset.query' THEN 'asset_page'
+            WHEN 'account.positions.query' THEN 'position_page'
+            WHEN 'order.list.query' THEN 'order_page'
+            WHEN 'fill.list.query' THEN 'fill_page'
+            WHEN 'fee.list.query' THEN 'fee_page'
+            ELSE NULL
+        END
+        AND (reply.received_at > raw.received_at OR
+            (reply.received_at = raw.received_at AND reply.raw_message_pk > raw.raw_message_pk))
+    LIMIT 1
+) recovery ON true
 WHERE raw.stream_role = 'dlq'
     AND ($1 = '' OR raw.account_id = $1)
-    AND ($2 = '' OR COALESCE(review.status, 'pending') = $2)
-ORDER BY raw.received_at DESC, raw.raw_message_pk DESC
+)
+SELECT
+    stream_key,
+    stream_id,
+    COALESCE(account_id, ''),
+    COALESCE(action, ''),
+    COALESCE(code, ''),
+    COALESCE(body->>'message', ''),
+    COALESCE(origin_message_id, ''),
+    COALESCE(request_id, ''),
+    body,
+    received_at,
+    review_status,
+    COALESCE(operator, ''),
+    COALESCE(note, ''),
+    created_at,
+    count(*) OVER() AS total_count
+FROM dead_letters
+WHERE ($2 = '' OR review_status = $2)
+ORDER BY received_at DESC, raw_message_pk DESC
 LIMIT $3 OFFSET $4
 `
 
 const deadLetterStatusCountsSQL = `
+WITH dead_letters AS (
 SELECT
-    COALESCE(review.status, 'pending') AS review_status,
-    count(*)::bigint
+    CASE
+        WHEN review.status IS NOT NULL THEN review.status
+        WHEN recovery.recovered THEN 'recovered'
+        ELSE 'pending'
+    END AS review_status
 FROM raw_stream_messages raw
 LEFT JOIN LATERAL (
     SELECT status
@@ -1511,8 +1559,33 @@ LEFT JOIN LATERAL (
     ORDER BY review_id DESC
     LIMIT 1
 ) review ON true
+LEFT JOIN LATERAL (
+    SELECT TRUE AS recovered
+    FROM raw_stream_messages reply
+    WHERE upper(COALESCE(raw.code, '')) = 'QUERY_INTERRUPTED'
+        AND COALESCE(raw.origin_message_id, '') <> ''
+        AND reply.message_type = 'reply'
+        AND reply.account_id = raw.account_id
+        AND reply.origin_message_id = raw.origin_message_id
+        AND lower(COALESCE(reply.status, '')) = 'completed'
+        AND lower(COALESCE(reply.body #>> '{chunk,is_last}', 'false')) = 'true'
+        AND COALESCE(reply.body->>'result_type', '') = CASE raw.action
+            WHEN 'account.asset.query' THEN 'asset_page'
+            WHEN 'account.positions.query' THEN 'position_page'
+            WHEN 'order.list.query' THEN 'order_page'
+            WHEN 'fill.list.query' THEN 'fill_page'
+            WHEN 'fee.list.query' THEN 'fee_page'
+            ELSE NULL
+        END
+        AND (reply.received_at > raw.received_at OR
+            (reply.received_at = raw.received_at AND reply.raw_message_pk > raw.raw_message_pk))
+    LIMIT 1
+) recovery ON true
 WHERE raw.stream_role = 'dlq'
-GROUP BY COALESCE(review.status, 'pending')
+)
+SELECT review_status, count(*)::bigint
+FROM dead_letters
+GROUP BY review_status
 ORDER BY review_status
 `
 

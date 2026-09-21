@@ -338,7 +338,7 @@ scripts/restore-postgres-drill.sh outputs/backups/relay_trader_*.dump 2026-07-31
 
 1. 每个 broker/gateway/account 的最新 OC 心跳、组件状态、账户级下单准入、下一次时段切换、pending trade/query 和最近 `BROKER_NOT_READY`。
 2. `reply/event/hb/dlq` 的 Redis 最新 ID、PostgreSQL checkpoint、最近消费时间、累计处理/错误数和 lag。
-3. DLQ 的待处理、已确认、已忽略、已重放数量及原始报文。
+3. DLQ 的待处理、已自动恢复、已确认、已忽略、已重放数量及原始报文。
 4. `/v1/status.runtime` 的紧凑摘要，供首页、探针和外部监控读取。
 
 默认阈值和写保护：
@@ -365,6 +365,8 @@ DLQ 读取始终可用。审核动作使用以下接口，并写入不可变 `st
 - `POST /v1/operations/dlq/review`
 
 生产默认 `actions_write_enabled=false`。`replayed` 仅表示操作人记录“已通过受控流程重放”，该接口不会把原始坏消息自动重新发布到 Redis，避免误触交易命令。
+
+`QUERY_INTERRUPTED` 有一个严格的自动恢复分支：同一查询命令的 `origin_message_id` 后续收到与 action 匹配的 `completed/is_last=true` 终态，并且成功终态晚于中断回报时，命令状态返回 `state=completed`、`success=true`、`recovered=true`，对应未人工审核的 DLQ 显示为 `recovered`，不计入 `pending_dead_letters`。该逻辑不删除或覆盖中断回报和 DLQ 原文；非 `QUERY_INTERRUPTED`、错误结果类型、缺失末页、成功后又中断等情况仍按矛盾终态告警。
 
 ## Cron 任务管理
 

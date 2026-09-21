@@ -82,6 +82,7 @@
     idle: "暂无数据",
     unknown: "未知",
     pending: "待处理",
+    recovered: "已自动恢复",
     acknowledged: "已确认",
     ignored: "已忽略",
     replayed: "已重放",
@@ -192,7 +193,10 @@
     elements.streamLag.textContent = formatNumber(summary.total_lag);
     elements.streamAttention.textContent = `${formatNumber(summary.streams_attention)} 条流需关注`;
     elements.pendingDLQ.textContent = formatNumber(summary.pending_dead_letters);
-    elements.updatedAt.textContent = `刷新 ${formatTime(snapshot?.generated_at)}`;
+    const recoveredDLQ = Number(snapshot?.dead_letters?.recovered || 0);
+    elements.updatedAt.textContent = recoveredDLQ > 0
+      ? `自动恢复 ${formatNumber(recoveredDLQ)} · 刷新 ${formatTime(snapshot?.generated_at)}`
+      : `刷新 ${formatTime(snapshot?.generated_at)}`;
     elements.dlqWriteMode.textContent = snapshot?.actions_write_enabled
       ? "审核动作已启用，所有操作写入审计记录"
       : "当前环境只读，审核动作未启用";

@@ -353,7 +353,7 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 识别华鑫 7x24 的四个时段，Relay 也不根据时钟推导会话切换。字段缺失时 Relay 保持失败关闭；
 生产正常 A 股准入和状态机不使用 TEST 时间表。
 
-`COMMAND_OUTCOME_UNKNOWN` 表示 OC 重启时交易命令结果不可安全推断，Relay 不把草稿订单改成拒绝，必须先查询对账。`QUERY_INTERRUPTED` 可使用新 `message_id` 重试查询。批量下单 reply 的 `failed_orders[]` 按 `index/gateway_order_id` 逐笔回写对应失败子单，不把整个 batch 合并成一个虚拟订单。
+`COMMAND_OUTCOME_UNKNOWN` 表示 OC 重启时交易命令结果不可安全推断，Relay 不把草稿订单改成拒绝，必须先查询对账。`QUERY_INTERRUPTED` 可使用新 `message_id` 重试查询；若恢复竞态中同一 `origin_message_id` 随后收到 action/result type 匹配的合法查询末页，`GET /v1/command-status/{origin_message_id}` 返回 `state=completed`、`success=true`、`recovered=true`，原始中断与 DLQ 仍保留审计。批量下单 reply 的 `failed_orders[]` 按 `index/gateway_order_id` 逐笔回写对应失败子单，不把整个 batch 合并成一个虚拟订单。
 
 ## API 路由规划
 

@@ -1170,9 +1170,9 @@ func (s *portalServer) handleOperationsStatus(w http.ResponseWriter, r *http.Req
 		Title:      "运行运维",
 		Active:     "operations",
 		Summary:    "Gateway heartbeat, Redis Stream lag and dead-letter operations",
-		Head:       template.HTML(`<link rel="stylesheet" href="/assets/operations-status.css?v=20260918-0003">`),
+		Head:       template.HTML(`<link rel="stylesheet" href="/assets/operations-status.css?v=20260921-1443">`),
 		Content:    template.HTML(body.String()),
-		Scripts:    template.HTML(`<script defer src="/assets/operations-status.js?v=20260918-0003"></script>`),
+		Scripts:    template.HTML(`<script defer src="/assets/operations-status.js?v=20260921-1443"></script>`),
 		ProjectDir: s.root,
 	})
 }

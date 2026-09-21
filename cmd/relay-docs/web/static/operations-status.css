@@ -311,7 +311,8 @@
 }
 
 .status-online,
-.status-ok {
+.status-ok,
+.status-recovered {
   border-color: rgba(8, 153, 129, 0.45);
   color: #36c9ad;
 }

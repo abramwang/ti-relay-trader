@@ -1392,6 +1392,31 @@ func TestSummarizeCommandStatusRequiresSingleCompletedFinalReply(t *testing.T) {
 		t.Fatalf("completed-after-data status = %#v", completedAfterData)
 	}
 
+	recovered := summarizeCommandStatus(CommandStatus{
+		OriginMessageID: "msg-position-recovered",
+		Action:          "account.positions.query",
+		Replies: []CommandReplyStatus{
+			{Status: "failed", ResultType: "error_result", Code: string(trading.ErrorQueryInterrupted)},
+			{Status: "partial", ResultType: "position_page"},
+			{Status: "completed", ResultType: "position_page", IsLast: true},
+		},
+	})
+	if !recovered.Success || !recovered.Recovered || recovered.Contradictory || recovered.State != "completed" || recovered.TerminalCount != 2 {
+		t.Fatalf("recovered interrupted query status = %#v", recovered)
+	}
+
+	interruptedAfterCompletion := summarizeCommandStatus(CommandStatus{
+		OriginMessageID: "msg-position-late-interruption",
+		Action:          "account.positions.query",
+		Replies: []CommandReplyStatus{
+			{Status: "completed", ResultType: "position_page", IsLast: true},
+			{Status: "failed", ResultType: "error_result", Code: string(trading.ErrorQueryInterrupted)},
+		},
+	})
+	if interruptedAfterCompletion.Success || interruptedAfterCompletion.Recovered || !interruptedAfterCompletion.Contradictory || interruptedAfterCompletion.State != "invalid" {
+		t.Fatalf("late interrupted query status = %#v", interruptedAfterCompletion)
+	}
+
 	contradictory := summarizeCommandStatus(CommandStatus{
 		OriginMessageID: "msg-asset-2",
 		Action:          "account.asset.query",
@@ -1491,11 +1516,41 @@ func TestListDeadLettersBuildsFilteredPageQuery(t *testing.T) {
 	}
 	requireQueryContains(t, exec.query, "FROM raw_stream_messages raw")
 	requireQueryContains(t, exec.query, "LEFT JOIN LATERAL")
+	requireQueryContains(t, exec.query, "WHEN recovery.recovered THEN 'recovered'")
+	requireQueryContains(t, exec.query, "upper(COALESCE(raw.code, '')) = 'QUERY_INTERRUPTED'")
+	requireQueryContains(t, exec.query, "reply.origin_message_id = raw.origin_message_id")
+	requireQueryContains(t, exec.query, "reply.received_at > raw.received_at")
 	requireQueryContains(t, exec.query, "LIMIT $3 OFFSET $4")
 	requireArgLen(t, exec.args, 4)
 	if exec.args[0] != "acct-1" || exec.args[1] != "pending" || exec.args[2] != 25 || exec.args[3] != 50 {
 		t.Fatalf("dead letter query args = %#v", exec.args)
 	}
+}
+
+func TestListDeadLettersAcceptsRecoveredFilter(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.ListDeadLetters(context.Background(), DeadLetterQuery{Status: "recovered"})
+	if err == nil {
+		t.Fatal("ListDeadLetters() expected query error")
+	}
+	if exec.args[1] != "recovered" {
+		t.Fatalf("dead letter status arg = %#v", exec.args[1])
+	}
+}
+
+func TestDeadLetterStatusCountsRecognizesRecoveredQueries(t *testing.T) {
+	exec := &recordingQueryExecutor{err: errors.New("stop after query")}
+	repo := NewRepository(exec)
+
+	_, err := repo.DeadLetterStatusCounts(context.Background())
+	if err == nil {
+		t.Fatal("DeadLetterStatusCounts() expected query error")
+	}
+	requireQueryContains(t, exec.query, "WHEN recovery.recovered THEN 'recovered'")
+	requireQueryContains(t, exec.query, "reply.origin_message_id = raw.origin_message_id")
+	requireQueryContains(t, exec.query, "GROUP BY review_status")
 }
 
 func TestAddDeadLetterReviewBuildsAuditedInsert(t *testing.T) {
