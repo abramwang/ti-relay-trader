@@ -11,10 +11,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立账本同步 worker |
-| 安全状态 | 生产仍为旧版 OC，4 个启用账户只读、0 个开放交易；`501000114077/307000051389` 已停用但历史保留；4 个计划升级账户已预置凭据 `v2` |
+| 安全状态 | 生产新版 OC 已加载 4 户凭据 `v2`，但每户误启动 3 个进程会话（1 个健康、2 个未登录）；4 个启用账户只读、0 个开放交易；`501000114077/307000051389` 已停用但历史保留 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-19 10:22 Asia/Shanghai` 生产账户 `307000051389` 已停用；6 户保留、4 户启用、0 户开放交易，历史读取正常 |
-| 更新时间 | `2026-09-19` |
+| 最近确认 | `2026-09-21 10:17 Asia/Shanghai` 四个启用账户均存在 3 个活跃 OC 会话；健康会话产生的订单/成交账本数量闭合且无重复，未登录重复会话会覆盖运维状态并抢占查询命令 |
+| 更新时间 | `2026-09-21` |
 
 新线程按以下顺序恢复：
 
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-21 10:17 Asia/Shanghai` 定位生产“收到订单但运维心跳未登录”为 OC 重复启动：四个启用账户各有 3 个持续心跳的 `counter_session_id`，其中 1 个已登录并产生全部当日订单/成交事件，2 个未登录且与健康实例共用消费身份，已导致查询随机返回 `BROKER_NOT_READY`。四户当日订单累计成交量与成交明细逐户一致，原始订单/成交事件语义重复为 0，账本尚未受污染。Relay 未重启、未改账，生产交易继续关闭；等待 OC 停止 8 个重复实例并修复重复启动入口，完整证据和验收门禁见 [OC 生产重复会话事故](/home/ti-relay-trader/docs/OC_PROD_DUPLICATE_SESSION_INCIDENT_20260921.md:1)。
 - `2026-09-19 10:22 Asia/Shanghai` 按用户要求停用生产账户 `307000051389`：配置改为 `enabled=false/trading_enabled=false`，OC 端可保持关闭；账户路由、数据库别名及历史订单/成交/持仓/快照全部保留并可读。生产 API/worker 重启健康，6 个配置账户中现有 4 个启用查询、0 个开放交易，运行监控由 20 条 Stream 收敛为四户 16 条且总 `lag=0`、pending DLQ=0。今天是非交易日，系统正确标记 `non_trading_day`；盘前、盘后、绩效及运行监控默认账户集合均按 `enabled=true` 选择，不会因两个停用账户无 OC 响应而整体失败。
 - `2026-09-18 16:25 Asia/Shanghai` 切换前再次确认 TEST 新版 OC、凭据 `v1`、柜台、订单快照、Stream 和日志全部正常；随后按用户授权切回生产。生产目标库 migration 成功，独立 API/worker 和全部依赖为 `ok`，6 个账户保留、5 个启用查询、0 个开放交易；当前已过生产监控窗口，五户按预期显示 `off_hours`，最后一轮旧 OC 状态的柜台和订单快照均 ready，报单继续由 `RELAY_TRADING_DISABLED` 阻断。20 条受监控 Stream 健康、总 `lag=0`、pending DLQ=0；四户预置生产凭据 `v2` 未修改。
 - `2026-09-18 16:23 Asia/Shanghai` 按用户明确指令从生产切到 TEST：目标库 migration 成功，API 内嵌 worker、Redis、PostgreSQL、行情和事件桥均为 `ok`。OC `counter_session_id` 已从首次验收会话变更为新进程会话，但仍成功加载账户 `00030484` 的凭据 `v1`，托管账户、Key ID、柜台登录、订单快照及报单/撤单准入全部匹配。资金、持仓、订单、成交四类查询在新会话下均取得唯一成功终态并落账，consumer group `pending=0,lag=0`、无 DLQ，完成 TEST 跨进程凭据恢复验收。生产配置、旧版 OC 和预置的四户凭据 `v2` 均未修改。
@@ -101,13 +102,13 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 下一步
 
-1. 当前生产保持旧版 OC 和 Relay 只读；四个计划升级账户的生产凭据 `v2` 已就绪，等待用户协调维护窗口逐账户替换新版 OC。切换后验收凭据 heartbeat、查询和重启恢复；未经用户明确指令不得开放生产下单。
+1. 先由 OC 在生产主机停止四户共 8 个未登录重复实例，保留每户唯一健康会话，并清理 `08:55/09:00` 的重复启动入口；Relay 随后复验唯一会话、四类只读查询、Stream lag 和 DLQ。未经用户明确指令不得开放生产下单。
 2. 与 OC 协调当前交易日的多柜台资金范围、按需柜台划转事件和资金明细字段，让今后同类日直接依赖 OC，不要求 OC 提供历史查询。
 3. 从后续自然交易日持续验收 OC 当日资金、逆回购净息、公司行为和外部资金流，确保历史券商文件只停留在一次性事故修复边界。
 4. 等待添利1号 `2026-08-25` 赎回的真实清算资金证据；到账后以同一版本化终值口径完成 8 月 25/26 日，不使用 PCF 预计现金提前确认。
 5. 与用户确认富盈13号的可信起算日和盘前持仓锚点，再启用 `meridian_pre_close_mark_to_market` 顺序重建；确认前不改生产配置。
 6. 次优先项为内部 Webhook 告警实配、数据库异机备份及长区间交易质量查询性能优化。
-7. 当前处于测试环境；任何切回生产、切换 TEST Stream namespace 或调整生产交易权限都必须收到用户新的明确指令。
+7. 当前处于生产环境且下单关闭；任何环境切换、Stream namespace 调整或生产交易权限变更都必须收到用户新的明确指令。
 
 ## 系统边界
 
@@ -220,6 +221,7 @@ PYTHONPATH=sdk/python .venv/bin/python -m unittest discover -s sdk/python/tests 
 - [添利1号 ETF T0 最终清算审计](/home/ti-relay-trader/docs/TIANLI1_ETF_SETTLEMENT_RECONCILIATION_20260828.md:1)
 - [Meridian 证券价位契约验收](/home/ti-relay-trader/docs/MERIDIAN_INSTRUMENT_PRICE_TICK_REQUIREMENTS_20260902.md:1)
 - [Meridian 盘后水位协调](/home/ti-relay-trader/docs/MERIDIAN_POSTCLOSE_READINESS_COORDINATION_20260826.md:1)
+- [OC 生产重复会话事故](/home/ti-relay-trader/docs/OC_PROD_DUPLICATE_SESSION_INCIDENT_20260921.md:1)
 - [2026-08-06 延后结算记录](/home/ti-relay-trader/docs/SETTLEMENT_HOLD_20260806.md:1)
 - [数据库迁移](/home/ti-relay-trader/docs/MIGRATIONS.md:1)
 - [备份与恢复](/home/ti-relay-trader/docs/DATABASE_BACKUP_RESTORE.md:1)
