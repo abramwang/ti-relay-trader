@@ -269,6 +269,43 @@ class BatchGateClient(FakeClient):
         return super().get_positions(account_id)
 
 
+class TransientBrokerNotReadyClient(FakeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.action_attempts: dict[tuple[str, str], int] = {}
+
+    def _refresh(self, account_id: str, action: str) -> FakeReceipt:
+        key = (account_id, action)
+        attempt = self.action_attempts.get(key, 0) + 1
+        self.action_attempts[key] = attempt
+        receipt = super()._refresh(account_id, action)
+        receipt.message_id = f"{receipt.message_id}-{attempt}"
+        receipt.raw["message_id"] = receipt.message_id
+        self.query_actions[receipt.message_id] = action
+        if action == "account.asset.query" and attempt == 1:
+            self.query_statuses[receipt.message_id] = {
+                "origin_message_id": receipt.message_id,
+                "account_id": account_id,
+                "action": action,
+                "expected_result_type": "asset_page",
+                "state": "failed",
+                "terminal": True,
+                "success": False,
+                "contradictory": False,
+                "reply_count": 1,
+                "terminal_count": 1,
+                "replies": [
+                    {
+                        "status": "failed",
+                        "result_type": "error_result",
+                        "code": "BROKER_NOT_READY",
+                        "is_last": False,
+                    }
+                ],
+            }
+        return receipt
+
+
 def trading_day(is_trading_day: bool = True) -> TradingDayInfo:
     return TradingDayInfo(
         requested_date="20260615",
@@ -520,6 +557,25 @@ class TradingDayJobTest(unittest.TestCase):
         self.assertTrue(report["dependency_wait"]["recovered"])
         self.assertEqual(report["dependency_wait"]["attempts"], 2)
         self.assertIn("recovered after 2 checks", report["warnings"][-1])
+
+    def test_pre_open_retries_broker_not_ready_query_within_refresh_window(self) -> None:
+        client = TransientBrokerNotReadyClient()
+
+        report = run_pre_open_init(
+            JobOptions(
+                job_name="pre_open_init",
+                refresh_wait_seconds=0,
+                refresh_timeout_seconds=0.2,
+                refresh_poll_seconds=0.005,
+                transient_query_retry_seconds=0.01,
+            ),
+            client=client,
+            trading_day=trading_day(),
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(client.action_attempts[("acct-1", "account.asset.query")], 2)
+        self.assertEqual(report["accounts"][0]["refresh_freshness"]["query_retry_attempts"], 1)
 
     def test_pre_open_refreshes_enabled_accounts(self) -> None:
         client = FakeClient()

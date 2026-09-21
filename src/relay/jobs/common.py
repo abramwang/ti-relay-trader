@@ -34,6 +34,7 @@ DEFAULT_MERIDIAN_BASE_URL = "http://meridian-data.quantstage.com"
 DEFAULT_QUERY_LIMIT = 500
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 60.0
 DEFAULT_REFRESH_POLL_SECONDS = 1.0
+DEFAULT_TRANSIENT_QUERY_RETRY_SECONDS = 5.0
 DEFAULT_SETTLEMENT_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEPENDENCY_READY_TIMEOUT_SECONDS = 60.0
 DEFAULT_DEPENDENCY_RETRY_SECONDS = 3.0
@@ -85,6 +86,7 @@ class JobOptions:
     refresh_wait_seconds: float = 1.0
     refresh_timeout_seconds: float = DEFAULT_REFRESH_TIMEOUT_SECONDS
     refresh_poll_seconds: float = DEFAULT_REFRESH_POLL_SECONDS
+    transient_query_retry_seconds: float = DEFAULT_TRANSIENT_QUERY_RETRY_SECONDS
     query_limit: int = DEFAULT_QUERY_LIMIT
     dry_run: bool = False
     skip_refresh: bool = False
@@ -154,6 +156,17 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         default=DEFAULT_REFRESH_POLL_SECONDS,
         help="local ledger polling interval while waiting for refreshed asset/positions",
     )
+    parser.add_argument(
+        "--transient-query-retry-seconds",
+        type=float,
+        default=float(
+            os.getenv(
+                "RELAY_TRANSIENT_QUERY_RETRY_SECONDS",
+                str(DEFAULT_TRANSIENT_QUERY_RETRY_SECONDS),
+            )
+        ),
+        help="seconds between retries after an explicitly retryable OC query failure",
+    )
     parser.add_argument("--query-limit", type=int, default=DEFAULT_QUERY_LIMIT, help="orders/fills sample limit")
     parser.add_argument("--dry-run", action="store_true", help="do not publish refresh commands")
     parser.add_argument("--skip-refresh", action="store_true", help="skip refresh commands and only query local ledger")
@@ -185,6 +198,7 @@ def parse_args(job_name: str, description: str) -> JobOptions:
         refresh_wait_seconds=max(args.refresh_wait_seconds, 0.0),
         refresh_timeout_seconds=max(args.refresh_timeout_seconds, 0.0),
         refresh_poll_seconds=max(args.refresh_poll_seconds, 0.05),
+        transient_query_retry_seconds=max(args.transient_query_retry_seconds, 0.1),
         query_limit=max(args.query_limit, 1),
         dry_run=args.dry_run,
         skip_refresh=args.skip_refresh,
@@ -939,6 +953,8 @@ def wait_for_refreshed_ledgers(
     started_waiting_at = time.monotonic()
     deadline = time.monotonic() + options.refresh_timeout_seconds
     attempts = {account_id: 0 for account_id in pending}
+    query_retry_attempts = {account_id: 0 for account_id in pending}
+    next_query_retry_at = {account_id: started_waiting_at for account_id in pending}
     last_reports: dict[str, dict[str, Any]] = {}
     while pending:
         for account_id, account_report in list(pending.items()):
@@ -957,12 +973,37 @@ def wait_for_refreshed_ledgers(
             freshness["query_terminal_failure"] = terminal_status["terminal_failure"]
             freshness["ok"] = bool(freshness.get("ok")) and bool(terminal_status["ok"])
             freshness["attempts"] = attempts[account_id]
+            freshness["query_retry_attempts"] = query_retry_attempts[account_id]
             last_reports[account_id] = freshness
             if freshness.get("ok"):
                 freshness["fresh_after_seconds"] = round(time.monotonic() - started_waiting_at, 3)
                 account_report["refresh_freshness"] = freshness
                 del pending[account_id]
             elif terminal_status["terminal_failure"]:
+                retry_steps = retryable_query_failure_steps(terminal_status)
+                now = time.monotonic()
+                if retry_steps and now < deadline:
+                    freshness["retryable_query_failure"] = True
+                    freshness["retryable_query_steps"] = retry_steps
+                    if now >= next_query_retry_at[account_id]:
+                        retry_errors: list[str] = []
+                        for step in retry_steps:
+                            _value, result = capture_call(
+                                f"retry_refresh_{step}",
+                                getattr(client, f"refresh_{step}"),
+                                account_id,
+                            )
+                            account_report["refresh"].append({"step": step, "retry": True, **result})
+                            if result.get("error"):
+                                retry_errors.append(str(result["error"]))
+                        query_retry_attempts[account_id] += 1
+                        freshness["query_retry_attempts"] = query_retry_attempts[account_id]
+                        freshness["last_query_retry_at"] = now_iso()
+                        if retry_errors:
+                            freshness["query_retry_errors"] = retry_errors
+                        next_query_retry_at[account_id] = now + options.transient_query_retry_seconds
+                    account_report["refresh_freshness"] = freshness
+                    continue
                 freshness["error"] = query_terminal_error(terminal_status)
                 account_report["refresh_freshness"] = freshness
                 account_report["snapshot_blocked"] = True
@@ -1009,7 +1050,6 @@ def refresh_timeout_error(report: Mapping[str, Any], timeout_seconds: float) -> 
 
 def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, Any]) -> dict[str, Any]:
     commands: dict[str, dict[str, Any]] = {}
-    terminal_failure = False
     refreshes = account_report.get("refresh")
     if not isinstance(refreshes, list) or not refreshes:
         return {"ok": False, "terminal_failure": True, "commands": commands}
@@ -1023,7 +1063,6 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
                 "state": "invalid",
                 "error": str(refresh.get("error")),
             }
-            terminal_failure = True
             continue
         result = refresh.get("result")
         if not isinstance(result, Mapping):
@@ -1031,7 +1070,6 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
                 "state": "invalid",
                 "error": "refresh receipt missing result",
             }
-            terminal_failure = True
             continue
         message_id = str(result.get("message_id") or "").strip()
         expected_action = str(result.get("action") or "").strip()
@@ -1041,7 +1079,6 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
                 "action": expected_action,
                 "error": "refresh receipt missing message_id",
             }
-            terminal_failure = True
             continue
         try:
             value = client.get_command_status(message_id)
@@ -1068,11 +1105,13 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
             command["success"] = False
             command["error"] = f"query action mismatch: expected {expected_action}, got {action or '-'}"
         commands[step] = command
-        if state in {"failed", "invalid"}:
-            terminal_failure = True
-        elif not success:
+        if state not in {"failed", "invalid"} and not success:
             continue
 
+    terminal_failure = any(
+        isinstance(command, Mapping) and command.get("state") in {"failed", "invalid"}
+        for command in commands.values()
+    )
     return {
         "ok": bool(commands) and all(
             isinstance(command, Mapping)
@@ -1083,6 +1122,28 @@ def refreshed_query_terminal_status(client: Any, account_report: Mapping[str, An
         "terminal_failure": terminal_failure,
         "commands": commands,
     }
+
+
+def retryable_query_failure_steps(report: Mapping[str, Any]) -> list[str]:
+    """Return failed refresh steps only when every terminal failure is explicitly retryable."""
+    commands = report.get("commands")
+    if not isinstance(commands, Mapping):
+        return []
+    failed_steps: list[str] = []
+    for step, value in commands.items():
+        if not isinstance(value, Mapping) or value.get("state") not in {"failed", "invalid"}:
+            continue
+        if value.get("state") == "invalid":
+            return []
+        replies = value.get("replies")
+        terminal_reply = replies[-1] if isinstance(replies, list) and replies else {}
+        if not isinstance(terminal_reply, Mapping):
+            return []
+        code = str(terminal_reply.get("code") or "").strip().upper()
+        if code != "BROKER_NOT_READY":
+            return []
+        failed_steps.append(str(step))
+    return failed_steps
 
 
 def compact_query_status_for_report(status: Mapping[str, Any]) -> dict[str, Any]:

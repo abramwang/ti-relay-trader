@@ -30,6 +30,7 @@ RELAY_BASE_URL=http://127.0.0.1:9092
 RELAY_PERFORMANCE_ACCOUNT_IDS=$PERFORMANCE_ACCOUNT_IDS
 RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS=60
 RELAY_REFRESH_TIMEOUT_SECONDS=180
+RELAY_TRANSIENT_QUERY_RETRY_SECONDS=5
 
 # Relay A-share pre-open initialization, 09:01 Asia/Shanghai.
 1 9 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --refresh-timeout-seconds \$RELAY_REFRESH_TIMEOUT_SECONDS --settlement-timeout-seconds \$RELAY_SETTLEMENT_HTTP_TIMEOUT_SECONDS --persist --trigger cron --output $CRON_LOG_DIR/reports/pre_open_init.json >> $CRON_LOG_DIR/pre_open_init.log 2>&1

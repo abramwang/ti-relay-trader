@@ -3400,6 +3400,50 @@ func TestDailyReviewSnapshotUsesPersistedValuedAsset(t *testing.T) {
 	}
 }
 
+func TestDailyReviewSnapshotAppliesPartialOpenRecovery(t *testing.T) {
+	run := &ledger.JobRun{Report: map[string]any{
+		"accounts": []any{
+			map[string]any{
+				"account_id":       "acct-full",
+				"snapshot_blocked": true,
+				"errors":           []any{"BROKER_NOT_READY"},
+				"snapshot":         map[string]any{"positions_count": 12},
+			},
+			map[string]any{
+				"account_id":       "acct-position-only",
+				"snapshot_blocked": true,
+				"snapshot": map[string]any{
+					"asset":           map[string]any{"net_asset": 1000.0},
+					"positions_count": 7,
+				},
+			},
+		},
+		"recovery": map[string]any{
+			"status":                      "partial_recovered",
+			"position_source":             "09:01 OC raw archive",
+			"position_accounts":           []any{"acct-full", "acct-position-only"},
+			"asset_accounts":              []any{"acct-full"},
+			"missing_open_asset_accounts": []any{"acct-position-only"},
+		},
+	}}
+
+	full := dailyReviewSnapshot(run, "open_snapshot", "acct-full")
+	if full == nil || !full.Persisted || full.Blocked || full.PositionSnapshots != 12 {
+		t.Fatalf("full recovery snapshot = %#v", full)
+	}
+	if full.RecoveryStatus != "partial_recovered" || full.RecoverySource != "09:01 OC raw archive" {
+		t.Fatalf("full recovery metadata = %#v", full)
+	}
+
+	positionOnly := dailyReviewSnapshot(run, "open_snapshot", "acct-position-only")
+	if positionOnly == nil || positionOnly.Persisted || !positionOnly.Blocked || positionOnly.PositionSnapshots != 7 {
+		t.Fatalf("position-only recovery snapshot = %#v", positionOnly)
+	}
+	if positionOnly.Asset != nil || positionOnly.AssetUpdatedAt != "" {
+		t.Fatalf("position-only recovery exposed stale asset = %#v", positionOnly)
+	}
+}
+
 func TestDailyPerformanceQuery(t *testing.T) {
 	store := &fakeSettlementStore{
 		performance: ledger.DailyPerformance{

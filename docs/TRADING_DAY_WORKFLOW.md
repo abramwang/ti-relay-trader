@@ -93,7 +93,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_canonical --base-url
 2. 盘前和正式结算通过 Meridian 交易日接口解析目标交易日；`post_close_capture` 直接使用东八区目标日期，Meridian 不可用不会阻断 OC 查询。若 `/v1/status` 已明确返回非交易日，可正常跳过。
 3. 非交易日默认跳过账户刷新，返回 `ok=true, skipped=true`。
 4. 先向所有启用账户发布资金、持仓、订单、成交刷新命令，再进入等待阶段；单账户异常不会阻塞其它账户发出查询。
-5. 所有账户共享一个最多 60 秒的新鲜度等待窗口，轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间；不会按账户分别累计 60 秒，也不会在等待阶段反复查询柜台。
+5. 所有账户共享一个最多 60 秒的新鲜度等待窗口，生产 cron 当前放宽为 180 秒；轮询 Relay 本地账本，直到资产和持仓的 `updated_at/captured_at` 晚于本轮刷新开始时间。OC 明确返回 `BROKER_NOT_READY` 时，每 5 秒只重发失败的查询步骤；业务拒绝、协议错误和其他失败仍立即阻断，不按账户分别累计等待时间。
 6. 读取本地账本快照摘要，统计资金、持仓数、订单数、成交数和未终态订单。
 7. 输出 JSON 报告，可通过 `--output` 写入文件。
 8. 若某账户资金/持仓刷新未确认，则该账户进入 `snapshot_blocked_accounts`，不参与本次 open/close 快照落盘，避免把早盘或旧持仓固化为日终持仓。
@@ -101,6 +101,7 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_canonical --base-url
 10. `post_close_capture` 写入 `broker_close`；`post_close_settlement` 使用 `input_snapshot_type=broker_close` 写入 `close` 和 `reconciliation_runs`。前者负责查询 OC，后者不再查询 OC。
     - 多账户快照最多并行处理 3 个账户，open/close 调用使用默认 60 秒独立超时。
     - 故障恢复可在确认资金/持仓账本仍是原任务数据后使用 `--skip-refresh --snapshot-only --snapshot-captured-at '<RFC3339 +08:00>'`，按原始业务时间幂等补写；恢复模式不读取当前订单成交、不做当前行情重估，也不写 reconciliation。
+    - 若盘中账本已被后续查询覆盖，只能从 PostgreSQL raw archive 按原 `origin_message_id` 恢复。持仓与资金证据必须分别验收；仅有盘前持仓时允许恢复 `position_snapshots(open)`，但不得用盘中资金倒填 `asset_snapshots(open)`，绩效继续以前收盘经济资产回退并保留缺失质量标记。
 11. 传入 `--persist` 时，将报告写入 PostgreSQL `job_runs`，并在 `/v1/status.job_runs` 展示最近运行摘要，同时可在 `/jobs` 查看任务时间线、状态、耗时、错误摘要和完整 report JSON。
 12. `/v1/status.trading_day.phase` 在 Meridian 明确当前日期不是交易日时返回 `non_trading`，不再按本地时钟误显示 `continuous` 或 `post_close`。
 13. 任务结束后按报告聚合外部告警：任务失败或快照阻断为 `critical`，单账户异常为 `warning`；刷新超时、阻断账户和错误摘要写入 `relay.alert.v1` Webhook。非交易日正常跳过和 dry-run 不发送，投递结果回写同一条 `job_runs`。

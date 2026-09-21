@@ -47,6 +47,7 @@ type DailyReviewSummary struct {
 type DailyReviewJobView struct {
 	RunID             string `json:"run_id,omitempty"`
 	Status            string `json:"status"`
+	RecoveryStatus    string `json:"recovery_status,omitempty"`
 	Skipped           bool   `json:"skipped,omitempty"`
 	StartedAt         string `json:"started_at,omitempty"`
 	FinishedAt        string `json:"finished_at,omitempty"`
@@ -68,6 +69,8 @@ type DailyReviewAccount struct {
 type DailyReviewSnapshot struct {
 	Persisted                bool           `json:"persisted"`
 	Blocked                  bool           `json:"blocked,omitempty"`
+	RecoveryStatus           string         `json:"recovery_status,omitempty"`
+	RecoverySource           string         `json:"recovery_source,omitempty"`
 	Asset                    map[string]any `json:"asset,omitempty"`
 	AssetUpdatedAt           string         `json:"asset_updated_at,omitempty"`
 	PositionsLatestUpdatedAt string         `json:"positions_latest_updated_at,omitempty"`
@@ -278,9 +281,11 @@ func dailyReviewJobView(run *ledger.JobRun) DailyReviewJobView {
 	if run == nil {
 		return DailyReviewJobView{Status: "missing"}
 	}
+	recovery := reviewMap(run.Report["recovery"])
 	return DailyReviewJobView{
 		RunID:             run.RunID,
 		Status:            run.Status,
+		RecoveryStatus:    stringFromAny(recovery["status"]),
 		Skipped:           run.Skipped,
 		StartedAt:         optionalBusinessTime(run.StartedAt),
 		FinishedAt:        optionalBusinessTime(run.FinishedAt),
@@ -361,7 +366,44 @@ func dailyReviewSnapshot(run *ledger.JobRun, wrapperKey string, accountID string
 		snapshot.Errors = append(snapshot.Errors, reviewStrings(settled["errors"])...)
 	}
 	snapshot.Errors = uniqueStrings(snapshot.Errors)
+	if wrapperKey == "open_snapshot" {
+		applyDailyReviewOpenRecovery(run, accountID, snapshot)
+	}
 	return snapshot
+}
+
+func applyDailyReviewOpenRecovery(run *ledger.JobRun, accountID string, snapshot *DailyReviewSnapshot) {
+	if run == nil || snapshot == nil {
+		return
+	}
+	recovery := reviewMap(run.Report["recovery"])
+	status := stringFromAny(recovery["status"])
+	if status == "" || !reviewStringListContains(recovery["position_accounts"], accountID) {
+		return
+	}
+	snapshot.RecoveryStatus = status
+	snapshot.RecoverySource = stringFromAny(recovery["position_source"])
+	snapshot.PositionSnapshots = snapshot.PositionsCount
+	if reviewStringListContains(recovery["asset_accounts"], accountID) {
+		snapshot.Persisted = true
+		snapshot.Blocked = false
+		return
+	}
+	if reviewStringListContains(recovery["missing_open_asset_accounts"], accountID) {
+		snapshot.Persisted = false
+		snapshot.Blocked = true
+		snapshot.Asset = nil
+		snapshot.AssetUpdatedAt = ""
+	}
+}
+
+func reviewStringListContains(value any, expected string) bool {
+	for _, item := range reviewStrings(value) {
+		if item == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) hydrateDailyReviewSnapshotAsset(ctx context.Context, accountID string, tradeDate string, snapshotType string, snapshot *DailyReviewSnapshot) *DailyReviewSnapshot {
