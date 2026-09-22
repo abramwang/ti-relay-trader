@@ -1744,6 +1744,63 @@ func TestCalculateEconomicNAVUsesConfirmedBrokerAssetBasis(t *testing.T) {
 	}
 }
 
+func TestCalculateEconomicNAVKeepsConfirmedBrokerNAVWhenStrategyAttributionIsPending(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-09-21",
+			CashTotal:          900,
+			NetAsset:           900,
+			OpenNetAsset:       1_000,
+			OpenSnapshotSource: "open",
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"open":  {CashTotal: 1_000, NetAsset: 1_000},
+			"close": {CashTotal: 900, NetAsset: 900},
+			"reconcile": {
+				NetAsset: 1_100,
+				Source:   "broker_historical_funds_statement_one_time_audit",
+				RawPayload: map[string]any{
+					"economic_nav_base_confirmed":            true,
+					"recurring_import":                       false,
+					"asset_scope":                            "broker_reported_total_asset_excluding_fund_occupancy",
+					"statement_sha256":                       "test-sha256",
+					"reported_open_total_asset":              1_000.0,
+					"reported_close_total_asset":             1_100.0,
+					"reported_daily_pnl":                     100.0,
+					"reported_deposit":                       0.0,
+					"reported_withdrawal":                    0.0,
+					"open_outstanding_etf_settlement_asset":  0.0,
+					"close_outstanding_etf_settlement_asset": 0.0,
+				},
+			},
+		},
+	}
+	service, err := New(Options{
+		Store:               store,
+		FormulaVersion:      "performance_economic_nav.unit",
+		WarningToleranceCNY: 1,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260921", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	if result.Status != "provisional" {
+		t.Fatalf("Status = %q, want provisional", result.Status)
+	}
+	assertClose(t, result.NAV.AccountDayPnL, 100)
+	for _, flag := range []string{"nav_contribution_residual_exceeds_warning", "strategy_attribution_pending", "broker_asset_basis_account_nav_authoritative"} {
+		if !containsString(result.QualityFlags, flag) {
+			t.Fatalf("missing %s in %#v", flag, result.QualityFlags)
+		}
+	}
+}
+
 func TestCalculateEconomicNAVDoesNotRequirePreviousNAVAtConfirmedInception(t *testing.T) {
 	store := &fakePerformanceStore{
 		daily: ledger.DailyPerformance{AccountID: "acct-1", TradeDate: "2026-07-27", CashTotal: 900, NetAsset: 900},

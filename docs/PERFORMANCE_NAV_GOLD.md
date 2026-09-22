@@ -97,6 +97,8 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 债享5号 `314000046830` 原有 17 条 2026 年 7 月人工金标继续以 `manual_user_confirmed` 保留。2026 年 9 月 22 日取得的开户以来完整券商资金文件形成 178 条 `2025-12-29..2026-09-21` current confirmed 金标，来源为 `broker_historical_funds_statement_one_time_audit`；两类证据按 source 隔离，不互相覆盖。五类券商文件同时通过资金、成交、费用和持仓数量全量门禁后，另生成独立 `broker_statement_nav.v1` finalized 账户净值；这不是金标直接参与 v2.7 公式，完整审计见 `docs/DEBT5_FULL_HISTORY_RECONCILIATION_20260922.md`。
 
+涌盈波动率 `307000051388` 于 2026 年 9 月 22 日使用更新后的券商资金文件补充 9 月 9 日至 21 日资产基数。资金文件证明 9 月 10 日转出 3300 万、9 月 11 日转出 17 万，并通过独立 `reconcile` 和 `cash_ledger.external_flow` 恢复 v2.7 连续性；该操作只用于已知事故的一次性审计，不建立日常券商文件导入。账户级资产和盈亏由券商恒等式确认，证券归因残差继续独立展示。详见 `docs/BROKER_FUNDS_BRIDGE_RECOVERY_307000051388_20260922.md`。
+
 数据库驱动对比结果：
 
 - `2026-07-22..08-26` 以证券空仓干净锚点连续重建 26 个 current v2.7 账户日，0 blocked；日初资产、日末资产和每日盈亏与券商资产基数的最大差异均为 `0.00 CNY`。

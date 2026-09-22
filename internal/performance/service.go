@@ -586,8 +586,15 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	accountedContribution := formalAttributedPnL
 	attributionResidual := roundMoney(accountDayPnL - accountedContribution)
 	if math.Abs(attributionResidual) > attributionWarningThreshold {
-		status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "nav_contribution_residual_exceeds_warning")
+		if assetBasis.Applied {
+			result.QualityFlags = appendUnique(result.QualityFlags, "broker_asset_basis_account_nav_authoritative")
+			if status == "finalized" {
+				status = "provisional"
+			}
+		} else {
+			status = "blocked"
+		}
 	}
 	if contribution.Summary.MissingFeeItems > 0 {
 		result.QualityFlags = appendUnique(result.QualityFlags, "net_performance_fee_incomplete")

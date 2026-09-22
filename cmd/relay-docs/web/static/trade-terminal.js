@@ -4051,6 +4051,11 @@
       reverse_repo_principal_separate_from_cash: "逆回购本金独立于可见资金",
       reverse_repo_estimated_interest_excluded: "逆回购预估利息延后确认",
       strategy_attribution_pending: "策略归因待完成",
+      broker_asset_basis_reconciled: "券商资产基数已闭合",
+      broker_asset_statement_one_time_audit: "一次性券商资产审计",
+      broker_asset_basis_account_nav_authoritative: "账户净值已由券商资产确认",
+      partial_counter_visibility_reconciled: "多柜台可见资金差异已对账",
+      modified_dietz_external_flow_weighting: "外部资金按发生时点加权",
       missing_iopv: "缺少 IOPV",
       minute_iopv_fallback: "IOPV 使用分钟回退",
       missing_meridian_etf_redemption_unit: "缺少 ETF 最小申赎单位",
@@ -4105,6 +4110,7 @@
       missing_positive_economic_nav: "缺少正经济净值",
       missing_open_economic_nav: "缺少日初经济净值",
       open_asset_observation_unavailable: "日初资产观测不可用",
+      open_cash_derived_from_economic_nav: "日初现金由经济净值推导",
       close_asset_observation_unavailable: "日终资产观测不可用"
     }[value] || value || "未知质量标记";
   }
