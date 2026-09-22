@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2953,6 +2954,7 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 		if navErr != nil {
 			return nil, PerformanceSeriesSummary{}, navErr
 		}
+		series = mergePerformanceNAVDates(series, navs)
 		series = overlayPerformanceNAVSeries(series, navs)
 	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
@@ -3037,7 +3039,7 @@ func buildPerformanceSeries(accountID string, dateFrom string, dateTo string, se
 func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger.PerformanceNAV) []ledger.DailyPerformance {
 	byDate := make(map[string]ledger.PerformanceNAV, len(navs))
 	for _, nav := range navs {
-		if !strings.HasPrefix(nav.FormulaVersion, "performance_economic_nav.v2") {
+		if !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
 			continue
 		}
 		byDate[nav.TradeDate] = nav
@@ -3045,7 +3047,7 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 	previousClose := 0.0
 	if len(series) > 0 {
 		for _, nav := range navs {
-			if nav.TradeDate < series[0].TradeDate && nav.Status != "blocked" && strings.HasPrefix(nav.FormulaVersion, "performance_economic_nav.v2") {
+			if nav.TradeDate < series[0].TradeDate && nav.Status != "blocked" && isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
 				previousClose = nav.CloseEconomicNAV
 			}
 		}
@@ -3103,6 +3105,37 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 		}
 		series[index].UnrealizedPnL = 0
 		series[index].UnrealizedPnLAvailable = false
+		if statement, ok := nav.PnLComponents["broker_statement"].(map[string]any); ok {
+			if value, ok := floatFromAny(statement["cash_total"]); ok {
+				series[index].CashAvailable = value
+				series[index].CashTotal = value
+			}
+			if value, ok := floatFromAny(statement["market_value"]); ok {
+				series[index].MarketValue = value
+				series[index].StockValue = value
+				series[index].PositionMarketValue = value
+			}
+			series[index].OpenSnapshotSource = "broker_statement"
+		}
+		if observation, ok := nav.PnLComponents["trading_observation"].(map[string]any); ok {
+			if value, ok := floatFromAny(observation["fills_count"]); ok {
+				series[index].FillsCount = int64(value)
+			}
+			if value, ok := floatFromAny(observation["buy_amount"]); ok {
+				series[index].BuyAmount = value
+			}
+			if value, ok := floatFromAny(observation["sell_amount"]); ok {
+				series[index].SellAmount = value
+			}
+			if value, ok := floatFromAny(observation["turnover"]); ok {
+				series[index].Turnover = value
+			}
+			if value, ok := floatFromAny(observation["fee_total"]); ok {
+				series[index].FeeTotal = value
+			}
+		}
+		series[index].NetPnL = nav.AccountDayPnL
+		series[index].GrossPnL = nav.AccountDayPnL + series[index].FeeTotal
 		series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, "broker_unrealized_pnl_excluded")
 		if nav.Status == "blocked" {
 			series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, "performance_nav_blocked")
@@ -3112,6 +3145,32 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 		}
 	}
 	return series
+}
+
+func mergePerformanceNAVDates(series []ledger.DailyPerformance, navs []ledger.PerformanceNAV) []ledger.DailyPerformance {
+	present := make(map[string]bool, len(series))
+	for _, item := range series {
+		present[item.TradeDate] = true
+	}
+	for _, nav := range navs {
+		if present[nav.TradeDate] || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
+			continue
+		}
+		series = append(series, ledger.DailyPerformance{
+			AccountID:         nav.AccountID,
+			TradeDate:         nav.TradeDate,
+			PerformanceStatus: nav.Status,
+			FormulaVersion:    nav.FormulaVersion,
+			CapturedAt:        nav.FinalizedAt,
+		})
+		present[nav.TradeDate] = true
+	}
+	sort.Slice(series, func(i, j int) bool { return series[i].TradeDate < series[j].TradeDate })
+	return series
+}
+
+func isOfficialPerformanceNAVFormula(value string) bool {
+	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1"
 }
 
 func hasLegacyDiagnosticSeries(series []ledger.DailyPerformance) bool {
@@ -3139,7 +3198,7 @@ func removeStringValues(values []string, removed ...string) []string {
 
 func hasResearchPerformanceSeries(series []ledger.DailyPerformance) bool {
 	for _, item := range series {
-		if strings.HasPrefix(item.FormulaVersion, "performance_economic_nav.v2") {
+		if isOfficialPerformanceNAVFormula(item.FormulaVersion) {
 			return true
 		}
 	}
@@ -3154,7 +3213,7 @@ func buildResearchPerformanceSeries(series []ledger.DailyPerformance, summary Pe
 	started := false
 	for index := range series {
 		item := &series[index]
-		if !strings.HasPrefix(item.FormulaVersion, "performance_economic_nav.v2") || item.PerformanceStatus == "blocked" {
+		if !isOfficialPerformanceNAVFormula(item.FormulaVersion) || item.PerformanceStatus == "blocked" {
 			item.QualityFlags = appendUniqueStrings(item.QualityFlags, "excluded_from_official_performance_series")
 			continue
 		}

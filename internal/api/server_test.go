@@ -3691,6 +3691,37 @@ func TestPerformanceSeriesUsesV2DailyReturnChain(t *testing.T) {
 	}
 }
 
+func TestPerformanceSeriesMergesBrokerStatementNAVWithoutAssetSnapshot(t *testing.T) {
+	series := []ledger.DailyPerformance{
+		{AccountID: "acct-1", TradeDate: "2026-07-22", NetAsset: 1},
+	}
+	navs := []ledger.PerformanceNAV{
+		{
+			AccountID: "acct-1", TradeDate: "2025-12-30", Status: "finalized", FormulaVersion: "broker_statement_nav.v1",
+			OpenEconomicNAV: 1000, CloseEconomicNAV: 1010, AccountDayPnL: 10, DailyReturn: 0.01,
+			PnLComponents: map[string]any{
+				"broker_statement":    map[string]any{"cash_total": 110.0, "market_value": 900.0},
+				"trading_observation": map[string]any{"fills_count": 2.0, "buy_amount": 500.0, "fee_total": 1.0},
+			},
+		},
+		{AccountID: "acct-1", TradeDate: "2026-07-22", Status: "provisional", FormulaVersion: "performance_economic_nav.v2.7", OpenEconomicNAV: 1010, CloseEconomicNAV: 1111, AccountDayPnL: 101, DailyReturn: 0.1},
+	}
+
+	series = mergePerformanceNAVDates(series, navs)
+	series = overlayPerformanceNAVSeries(series, navs)
+	series, summary := buildPerformanceSeries("acct-1", "2025-12-30", "2026-07-22", series)
+
+	if len(series) != 2 || series[0].TradeDate != "2025-12-30" {
+		t.Fatalf("merged series = %#v", series)
+	}
+	if series[0].PerformanceStatus != "finalized" || series[0].OpenSnapshotSource != "broker_statement" || series[0].CashTotal != 110 || series[0].MarketValue != 900 || series[0].FillsCount != 2 || series[0].FeeTotal != 1 || series[0].NetPnL != 10 || series[0].GrossPnL != 11 {
+		t.Fatalf("broker statement row = %#v", series[0])
+	}
+	if math.Abs(summary.TotalReturn-0.111) > 0.0000001 || summary.StartNetAsset != 1000 || summary.EndNetAsset != 1111 || summary.TotalPnL != 111 {
+		t.Fatalf("mixed official summary = %#v", summary)
+	}
+}
+
 func TestPerformanceSeriesQueryWithBenchmarkBars(t *testing.T) {
 	var queries []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

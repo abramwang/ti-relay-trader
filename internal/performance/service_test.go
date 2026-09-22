@@ -1849,6 +1849,15 @@ func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 	}
 }
 
+func TestPerformanceNAVSupportsContinuityFromBrokerStatement(t *testing.T) {
+	if !performanceNAVSupportsContinuity("broker_statement_nav.v1", "performance_economic_nav.v2.7") {
+		t.Fatal("broker statement NAV must be eligible as the previous confirmed account NAV")
+	}
+	if performanceNAVSupportsContinuity("legacy_cash_snapshot_diagnostic", "performance_economic_nav.v2.7") {
+		t.Fatal("legacy cash diagnostics must not enter NAV continuity")
+	}
+}
+
 func TestConfirmedBrokerAssetBasisAcceptsSignedSettlementLiabilityRelease(t *testing.T) {
 	observation := ledger.AssetPositionObservation{
 		NetAsset: 4_318_640.10,

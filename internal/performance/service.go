@@ -1617,7 +1617,7 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 			sameDateVersion = item.Version
 			continue
 		}
-		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 && item.Status != "blocked" && item.FormulaVersion == service.formulaVersion &&
+		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 && item.Status != "blocked" && performanceNAVSupportsContinuity(item.FormulaVersion, service.formulaVersion) &&
 			(previous.AccountID == "" || item.TradeDate > previous.TradeDate) {
 			previous = item
 		}
@@ -1639,6 +1639,10 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 		}
 	}
 	return previous, sameDateVersion, flags, nil
+}
+
+func performanceNAVSupportsContinuity(formulaVersion, currentFormulaVersion string) bool {
+	return formulaVersion == currentFormulaVersion || formulaVersion == "broker_statement_nav.v1"
 }
 
 func (service *Service) currentEconomicNAV(ctx context.Context, accountID, tradeDate string) (ledger.PerformanceNAV, bool, error) {

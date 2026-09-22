@@ -194,6 +194,8 @@ migrations/postgres/000001_init_ledger.down.sql
 
 `performance_economic_nav.v2.7` 补充干净开户首日语义：仅当 `performance_account_inceptions` 为 confirmed、`clean_start=true`、日期与可信 `reconcile` 一致，且前资产为零、当日只有正入金没有出金时，`inception_funding_as_open_capital=true` 才允许将盘前入金作为首日 `open_economic_nav`。它不生成普通 `cash_ledger external_flow`，避免首日资本被重复扣减或误记为收益。
 
+`broker_statement_nav.v1` 是完整券商历史账表通过独立硬门禁后的账户级 finalized NAV，不是从 `performance_nav_gold_versions` 反向贴值。受控 CLI 必须同时验证零资产锚点、逐日资产恒等式、资金流水唯一性和现金桥、成交与交割单、交割事项与资金流水、逐证券股份余额；任一失败则整批拒绝。该来源可以补足没有旧 OC close 快照的历史账户日，并允许后续 v2.7 从最后一条确认 NAV 连续承接，但不生成或覆盖 OC 的订单、成交、资产和持仓快照。证券级归因与账户级 NAV 分开标识，券商文件不进入 cron。
+
 `000026_etf_settlement_finalizations` 将 ETF T0 的日内暂估与跨日最终清算物理分离。`performance_etf_settlement_versions` 以 `account_id + source_trade_date + security_id + version` 唯一，且同一业务键只能有一个 current 版本。只有 `status=confirmed`、`settlement_complete=true`、PCF 交易日/Schema 和确认人/时间完整的记录才能替换 IOPV+15bp 估算。最终贡献恒等式为：
 
 ```text

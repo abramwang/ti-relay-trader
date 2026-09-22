@@ -58,6 +58,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-gold-compare: %v\n", err)
 			os.Exit(1)
 		}
+	case "performance-broker-statement":
+		if err := runPerformanceBrokerStatement(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-broker-statement: %v\n", err)
+			os.Exit(1)
+		}
 	case "redis-probe":
 		if err := runRedisProbe(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl redis-probe: %v\n", err)
@@ -503,6 +508,7 @@ func usage() {
   performance-rebuild  Rebuild trusted position costs and v2 economic NAVs
   performance-gold-import  Validate or import versioned manual NAV gold
   performance-gold-compare Compare database NAV gold with economic NAV previews
+  performance-broker-statement  Audit a complete broker export and optionally publish confirmed account NAV
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
   credentials    Rotate, verify, or disable encrypted OC account credentials
@@ -517,6 +523,7 @@ Examples:
   go run ./cmd/relayctl performance-rebuild -config config/relay.prod.yaml -accounts 307000051387 -date-from 20260729 -date-to 20260731 -persist
   go run ./cmd/relayctl performance-gold-import -config config/relay.prod.yaml -account 314000046830 -input testdata/performance/314000046830_manual_nav_202607.csv -confirmed-by user -persist
   go run ./cmd/relayctl performance-gold-compare -config config/relay.prod.yaml -account 314000046830 -date-from 20260701 -date-to 20260731
+  go run ./cmd/relayctl performance-broker-statement -config config/relay.prod.yaml -account 314000046830 -dir reference -confirmed-by user -persist
   RELAY_CONFIG_PATH=config/relay.local.yaml go run ./cmd/relayctl redis-probe
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -samples 2
   go run ./cmd/relayctl redis-probe -config config/relay.local.yaml -stream-prefix relay:prod:v1:huaxin:00030484

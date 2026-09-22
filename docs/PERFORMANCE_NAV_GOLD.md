@@ -95,7 +95,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 两户首个非零日均为 `2026-07-27`：前一记录 7 月 24 日资产为零，当日盘前入金分别为 `51,010,941.93 / 49,964,482.45` 元。v2.7 只有在起算配置为 confirmed clean start、可信资产基数显式标记 `inception_funding_as_open_capital=true` 且资产恒等式闭合时，才把这笔盘前入金作为收益率起算资本；不得把它计入首日策略盈利。
 
-债享5号 `314000046830` 原有 17 条 2026 年 7 月人工金标继续以 `manual_user_confirmed` 保留。券商历史资金文件又形成 62 条 `2026-06-01..08-26` 的独立 confirmed version 1 资产基数，来源为 `broker_historical_funds_statement_one_time_audit`；两类证据按 source 隔离，不互相覆盖。
+债享5号 `314000046830` 原有 17 条 2026 年 7 月人工金标继续以 `manual_user_confirmed` 保留。2026 年 9 月 22 日取得的开户以来完整券商资金文件形成 178 条 `2025-12-29..2026-09-21` current confirmed 金标，来源为 `broker_historical_funds_statement_one_time_audit`；两类证据按 source 隔离，不互相覆盖。五类券商文件同时通过资金、成交、费用和持仓数量全量门禁后，另生成独立 `broker_statement_nav.v1` finalized 账户净值；这不是金标直接参与 v2.7 公式，完整审计见 `docs/DEBT5_FULL_HISTORY_RECONCILIATION_20260922.md`。
 
 数据库驱动对比结果：
 
