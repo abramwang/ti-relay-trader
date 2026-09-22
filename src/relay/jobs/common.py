@@ -92,7 +92,7 @@ class JobOptions:
     skip_refresh: bool = False
     persist: bool = False
     trigger: str = "manual"
-    watermark_retry_until: str = "18:50"
+    watermark_retry_until: str = "19:10"
     allow_non_trading_day: bool = False
     skip_trading_day_check: bool = False
     output: str = ""
@@ -174,7 +174,7 @@ def parse_args(job_name: str, description: str) -> JobOptions:
     parser.add_argument("--trigger", default="manual", help="job trigger label persisted with --persist, for example cron or manual")
     parser.add_argument(
         "--watermark-retry-until",
-        default=os.getenv("RELAY_CANONICAL_WATERMARK_RETRY_UNTIL", "18:50"),
+        default=os.getenv("RELAY_CANONICAL_WATERMARK_RETRY_UNTIL", "19:10"),
         help="Asia/Shanghai HH:MM deadline for canonical Meridian watermark polling",
     )
     parser.add_argument("--allow-non-trading-day", action="store_true", help="run account flow even when target date is not a trading day")
@@ -1288,14 +1288,13 @@ def select_accounts(accounts: Iterable[Any], requested: tuple[str, ...]) -> list
     selected: list[str] = []
     for account in accounts:
         account_id = str(getattr(account, "account_id", "")).strip()
-        if not account_id:
+        if not account_id or not bool(getattr(account, "enabled", True)):
             continue
         if requested_set:
             if account_id in requested_set:
                 selected.append(account_id)
             continue
-        if bool(getattr(account, "enabled", True)):
-            selected.append(account_id)
+        selected.append(account_id)
     return selected
 
 

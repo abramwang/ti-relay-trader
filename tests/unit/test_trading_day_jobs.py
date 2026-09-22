@@ -20,6 +20,7 @@ from relay.jobs.common import (  # noqa: E402
     run_post_close_settlement,
     run_pre_open_init,
     refreshed_query_terminal_status,
+    select_accounts,
     settlement_snapshot_client,
     summarize_snapshot,
 )
@@ -35,6 +36,19 @@ class FakeReceipt:
             "message_id": self.message_id,
             "stream_id": f"{action}-1",
         }
+
+
+class AccountSelectionTest(unittest.TestCase):
+    def test_explicit_requested_accounts_still_exclude_disabled_routes(self) -> None:
+        accounts = [
+            SimpleNamespace(account_id="acct-enabled", enabled=True),
+            SimpleNamespace(account_id="acct-disabled", enabled=False),
+        ]
+
+        self.assertEqual(
+            select_accounts(accounts, ("acct-enabled", "acct-disabled")),
+            ["acct-enabled"],
+        )
 
 
 class FakeClient:

@@ -146,7 +146,7 @@ class CanonicalPerformanceJobTest(unittest.TestCase):
                 job_name="performance_canonical",
                 target_date="20260826",
                 trigger="meridian_watermark_poll",
-                watermark_retry_until="18:50",
+                watermark_retry_until="19:10",
             ),
             client=FakeClient(),
             trading_day=trading_day(),
@@ -165,12 +165,12 @@ class CanonicalPerformanceJobTest(unittest.TestCase):
                 job_name="performance_canonical",
                 target_date="20260826",
                 trigger="meridian_watermark_poll",
-                watermark_retry_until="18:50",
+                watermark_retry_until="19:10",
             ),
             client=FakeClient(),
             trading_day=trading_day(),
             watermark_loader=lambda _base, _timeout: watermark(target=20260825),
-            current_time=datetime.fromisoformat("2026-08-26T18:50:00+08:00"),
+            current_time=datetime.fromisoformat("2026-08-26T19:10:00+08:00"),
         )
 
         self.assertFalse(report["ok"])
@@ -178,7 +178,7 @@ class CanonicalPerformanceJobTest(unittest.TestCase):
         self.assertFalse(report.get("waiting_for_meridian", False))
         self.assertFalse(report["skipped"])
         self.assertTrue(report["watermark_poll"]["deadline_exceeded"])
-        self.assertIn("before 18:50", report["errors"][0])
+        self.assertIn("before 19:10", report["errors"][0])
 
     def test_rebuilds_and_compares_level1_nav_after_watermark_is_ready(self) -> None:
         client = FakeClient()
@@ -273,6 +273,61 @@ class CanonicalPerformanceJobTest(unittest.TestCase):
         self.assertEqual(comparison["canonical"]["price_source"], CANONICAL_PRICE_SOURCE)
         self.assertEqual(client.recorded_jobs[0]["job_name"], "performance_daily")
         self.assertEqual(client.recorded_jobs[0]["trigger"], "meridian_canonical_ready")
+
+    def test_account_quality_block_does_not_fail_completed_canonical_price_job(self) -> None:
+        client = FakeClient()
+        blocked_nav = nav(
+            "acct-ready",
+            version=2,
+            close=1001,
+            price_source=CANONICAL_PRICE_SOURCE,
+            fallback=False,
+        )
+        blocked_nav["status"] = "blocked"
+        blocked_nav["quality_flags"] = ["previous_economic_nav_gap"]
+        client.navs["acct-ready"] = [blocked_nav]
+
+        def quality_runner(*_args, **_kwargs):
+            return {
+                "ok": True,
+                "finished_at": "2026-08-26T17:10:00+08:00",
+                "performance_summary": {
+                    "accounts": 1,
+                    "ready": 0,
+                    "attention": 0,
+                    "blocked": 1,
+                    "not_applicable": 0,
+                    "published": 0,
+                    "preview_only": 0,
+                },
+                "performance_ready_accounts": [],
+                "performance_attention_accounts": [],
+                "performance_blocked_accounts": ["acct-ready"],
+                "performance_not_applicable_accounts": [],
+                "performance_published_accounts": [],
+                "performance_preview_only_accounts": [],
+                "warnings": ["daily performance has account-level attention or blocked results"],
+                "errors": [],
+            }
+
+        report = run_canonical_performance(
+            JobOptions(
+                job_name="performance_canonical",
+                target_date="20260826",
+                account_ids=("acct-ready",),
+            ),
+            client=client,
+            trading_day=trading_day(),
+            watermark_loader=lambda _base, _timeout: watermark(),
+            quality_runner=quality_runner,
+        )
+
+        self.assertTrue(report["ok"])
+        self.assertTrue(report["canonical_completed"])
+        self.assertTrue(report["completed_with_account_issues"])
+        self.assertEqual(report["rebuild_account_ids"], [])
+        self.assertEqual(report["performance_blocked_accounts"], ["acct-ready"])
+        self.assertIn("account performance remains blocked", report["warnings"][0])
 
     def test_skips_rebuild_when_completed_job_is_already_persisted(self) -> None:
         client = FakeClient()

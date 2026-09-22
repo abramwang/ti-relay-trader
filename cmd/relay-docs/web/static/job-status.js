@@ -26,7 +26,7 @@
     { name: "post_close_capture", title: "券商收盘捕获", expectedTime: "15:01", purpose: "独立查询并固化券商最终资金、持仓和交易账本" },
     { name: "post_close_settlement", title: "盘后结算", expectedTime: "", purpose: "基于券商收盘快照补行情并生成正式对账输入" },
     { name: "performance_daily", title: "每日绩效计算", expectedTime: "", purpose: "盘后结算成功后计算成本账和经济净值质量" },
-    { name: "performance_canonical", title: "权威行情复算", expectedTime: "16:40", purpose: "Meridian 日线水位到达后重算绩效并审计 Level1 差异" },
+    { name: "performance_canonical", title: "权威行情复算", expectedTime: "17:10", purpose: "Meridian 日线校准与质量水位到达后重算绩效并审计 Level1 差异" },
   ];
   const expectedRunGraceMinutes = 5;
 

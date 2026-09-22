@@ -156,16 +156,22 @@ fi
 
 performance_args=()
 performance_account_ids=()
+declare -A captured_accounts=()
+for account_id in "${capture_state[@]:2}"; do
+  if [[ -n "$account_id" ]]; then
+    captured_accounts["$account_id"]=1
+  fi
+done
 IFS=',' read -r -a configured_accounts <<< "$PERFORMANCE_ACCOUNT_IDS"
 for account_id in "${configured_accounts[@]}"; do
   account_id="${account_id//[[:space:]]/}"
-  if [[ -n "$account_id" ]]; then
+  if [[ -n "$account_id" && -n "${captured_accounts[$account_id]:-}" ]]; then
     performance_args+=(--account-id "$account_id")
     performance_account_ids+=("$account_id")
   fi
 done
 if [[ ${#performance_args[@]} -eq 0 ]]; then
-  echo "relay post-close pipeline: no valid performance accounts configured" >&2
+  echo "relay post-close pipeline: no configured performance account has a successful broker close snapshot" >&2
   exit 2
 fi
 

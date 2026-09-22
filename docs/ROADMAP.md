@@ -38,7 +38,8 @@
 8. N12 已完成 API Console 断言集合、批量下单工作台和 API/worker 独立常驻进程；当前继续收敛 N13 绩效数据质量、页面可读性和查询性能。
 9. [x] 将盘后 OC 权威查询从行情结算中拆出：15:01 `post_close_capture` 不依赖 Meridian，先固化 `broker_close` 资金/持仓；`post_close_settlement` 再从该不可变输入生成正式 close，行情故障只延后结算和绩效，不再导致券商收盘数据漏采。
 10. [x] 对齐 Meridian 权威日线生产窗口：上游 16:30 启动、16:45 SLA；Relay 16:40 首查并每 10 分钟重试至 18:50，任务页显示上游窗口和重试截止。`2026-08-28` 首次对齐验收在 16:40 完成，三户 canonical 差异均为 0。
-11. [x] 实现并在线验收 `oc.secret.v1` Relay 侧账户凭据管理：AES-256-GCM 版本信封、先版本后 current 的原子轮换、PostgreSQL 审计、CLI、内网 Web 运维入口和 OC 心跳失败关闭均已完成；TEST `v1` 与 PROD 四户 `v2` 均已由新版 OC 成功加载。
+11. [x] 跟随 Meridian 2026-09 盘后状态机升级调整当前 canonical 窗口：等待 16:40/16:50 校准复验和 17:05 截止，Relay 改为 17:10-19:10；同时禁止显式任务名单绕过账户 `enabled=false`，避免停用账户缺少 close 快照把已成功复算的活跃账户整体标红。
+12. [x] 实现并在线验收 `oc.secret.v1` Relay 侧账户凭据管理：AES-256-GCM 版本信封、先版本后 current 的原子轮换、PostgreSQL 审计、CLI、内网 Web 运维入口和 OC 心跳失败关闭均已完成；TEST `v1` 与 PROD 四户 `v2` 均已由新版 OC 成功加载。
 
 ### N14 OC 托管账户凭据
 

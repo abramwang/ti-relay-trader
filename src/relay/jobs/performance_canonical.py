@@ -308,8 +308,9 @@ def run_canonical_performance(
     if not quality_report.get("ok", False):
         report["errors"].append("canonical performance quality task failed")
     if blocked_accounts:
-        report["errors"].append(
-            "canonical performance has blocked accounts: " + ",".join(blocked_accounts)
+        report.setdefault("warnings", []).append(
+            "canonical prices are ready but account performance remains blocked: "
+            + ",".join(blocked_accounts)
         )
     if preview_only_accounts:
         report["errors"].append(
@@ -318,6 +319,9 @@ def run_canonical_performance(
     report["errors"].extend(canonical_source_errors)
     report["ok"] = not report["errors"]
     report["canonical_completed"] = report["ok"]
+    report["completed_with_account_issues"] = report["canonical_completed"] and bool(
+        blocked_accounts or preview_only_accounts
+    )
 
     comparison_summary = report["comparison_summary"]
     if comparison_summary["warning_accounts"]:
@@ -436,7 +440,6 @@ def is_canonical_nav(nav: Mapping[str, Any]) -> bool:
         and nav_price_source(nav) == CANONICAL_PRICE_SOURCE
         and LEVEL1_FALLBACK_FLAG not in flags
         and DAILY_UNAVAILABLE_FLAG not in flags
-        and str(nav.get("status") or "") != "blocked"
     )
 
 

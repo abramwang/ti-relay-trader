@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKER_BEGIN="# RELAY_TRADER_CRON_BEGIN"
 MARKER_END="# RELAY_TRADER_CRON_END"
 CRON_LOG_DIR="${RELAY_CRON_LOG_DIR:-/var/log/relay}"
-PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-307000051387,307000051388,307000051389,314000046830}"
+PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-307000051387,307000051388,314000046830}"
 
 current_crontab() {
   crontab -l 2>/dev/null || true
@@ -38,10 +38,11 @@ RELAY_TRANSIENT_QUERY_RETRY_SECONDS=5
 # Broker close capture starts at 15:01. Settlement and performance follow their successful upstream jobs.
 1 15 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock \$RELAY_HOME/scripts/run-post-close-pipeline.sh >> $CRON_LOG_DIR/post_close_pipeline.log 2>&1
 
-# Meridian starts its canonical parent at 16:30 with a 16:45 readiness SLA.
-# Relay first checks at 16:40, retries every 10 minutes through 18:50, and stops after one successful rebuild.
-40,50 16 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
-*/10 17,18 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
+# Meridian starts its canonical parent at 16:30, then calibrates and verifies through 17:05.
+# Relay first checks at 17:10, retries every 10 minutes through 19:10, and stops after one successful rebuild.
+10,20,30,40,50 17 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
+*/10 18 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
+0,10 19 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
 $MARKER_END
 EOF
   } | crontab -

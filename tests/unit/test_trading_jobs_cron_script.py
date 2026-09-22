@@ -52,9 +52,14 @@ class TradingJobsCronScriptTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             installed = crontab_file.read_text(encoding="utf-8")
-            self.assertIn("40,50 16 * * 1-5", installed)
-            self.assertIn("*/10 17,18 * * 1-5", installed)
-            self.assertNotIn("*/10 16,17 * * 1-5", installed)
+            self.assertIn("10,20,30,40,50 17 * * 1-5", installed)
+            self.assertIn("*/10 18 * * 1-5", installed)
+            self.assertIn("0,10 19 * * 1-5", installed)
+            self.assertIn(
+                "RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830",
+                installed,
+            )
+            self.assertNotIn("40,50 16 * * 1-5", installed)
 
 
 if __name__ == "__main__":
