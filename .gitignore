@@ -23,9 +23,7 @@ outputs/ui/
 .runtime/
 
 # Broker delivery statements contain account transaction details and stay local.
-reference/*_20??????.csv
-reference/*_资金.csv
-reference/*_资金流水.csv
+reference/*.csv
 
 # Python cache and local environments.
 __pycache__/
