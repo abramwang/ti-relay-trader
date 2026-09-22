@@ -2099,6 +2099,18 @@ func TestCalculateEconomicNAVUsesMeridianPositionValuationInsteadOfBrokerCost(t 
 				MarketValue: 1333200,
 			}},
 		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"open": {
+				CashTotal:           900000,
+				NetAsset:            1899900,
+				PositionMarketValue: 999900,
+			},
+			"close": {
+				CashTotal:           899500,
+				NetAsset:            2232700,
+				PositionMarketValue: 1333200,
+			},
+		},
 		fills: []trading.Fill{{
 			FillID:         "buy-1",
 			AccountID:      "acct-1",
@@ -2137,6 +2149,109 @@ func TestCalculateEconomicNAVUsesMeridianPositionValuationInsteadOfBrokerCost(t 
 		t.Fatalf("broker values unexpectedly used: %#v", result.Valuation)
 	}
 	if !containsString(result.QualityFlags, "broker_position_cost_excluded") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+}
+
+func TestCalculateEconomicNAVDoesNotDoubleCountPositionsWhenOpenAssetFallsBackToPreviousClose(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-09-21",
+			CashTotal:          850,
+			NetAsset:           1050,
+			PreviousNetAsset:   1000,
+			OpenNetAsset:       1000,
+			OpenSnapshotSource: "previous_close_fallback",
+			QualityFlags:       []string{"missing_open_asset", "open_asset_fallback"},
+		},
+		positions: map[string][]trading.Position{
+			"open": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  20,
+			}},
+			"close": {{
+				AccountID: "acct-1",
+				Symbol:    "600000",
+				Exchange:  trading.ExchangeSH,
+				Quantity:  20,
+			}},
+		},
+		observationErr: ledger.ErrAssetNotFound,
+	}
+	marketClient := &fakeContributionMarket{
+		metadata: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "instrument_type": "stock",
+		}}}},
+		bars: market.MeridianResponse{StatusCode: 200, Payload: map[string]any{"data": []any{map[string]any{
+			"security_id": "600000.SH", "pre_close": 10.0, "close": 10.0,
+		}}}},
+	}
+	service, err := New(Options{Store: store, Market: marketClient})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260921", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+
+	assertClose(t, result.Valuation.OpenPositionValue, 200)
+	assertClose(t, result.Valuation.OpenVisibleCash, 800)
+	assertClose(t, result.NAV.OpenEconomicNAV, 1000)
+	if !containsString(result.QualityFlags, "open_asset_fallback") ||
+		!containsString(result.QualityFlags, "open_asset_observation_unavailable") ||
+		!containsString(result.QualityFlags, "open_cash_derived_from_economic_nav") {
+		t.Fatalf("quality flags = %#v", result.QualityFlags)
+	}
+}
+
+func TestCalculateEconomicNAVBlocksWhenPreviousTradingDayNAVIsMissing(t *testing.T) {
+	store := &fakePerformanceStore{
+		daily: ledger.DailyPerformance{
+			AccountID:          "acct-1",
+			TradeDate:          "2026-09-22",
+			CashTotal:          1010,
+			NetAsset:           1010,
+			PreviousNetAsset:   1000,
+			OpenNetAsset:       1000,
+			OpenSnapshotSource: "open",
+		},
+		observations: map[string]ledger.AssetPositionObservation{
+			"open":  {CashTotal: 1000, NetAsset: 1000},
+			"close": {CashTotal: 1010, NetAsset: 1010},
+		},
+		inception: ledger.PerformanceInception{
+			AccountID: "acct-1", InceptionDate: "2026-09-18", Status: "confirmed", CleanStart: true,
+		},
+		navs: []ledger.PerformanceNAV{{
+			AccountID:      "acct-1",
+			TradeDate:      "2026-09-18",
+			Status:         "provisional",
+			FormulaVersion: "performance_economic_nav.unit",
+			CumulativeNAV:  1,
+		}},
+	}
+	service, err := New(Options{
+		Store:          store,
+		Calendar:       weekdayCalendar{},
+		FormulaVersion: "performance_economic_nav.unit",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := service.CalculateEconomicNAV(context.Background(), "acct-1", "20260922", EconomicNAVOptions{})
+	if err != nil {
+		t.Fatalf("CalculateEconomicNAV() error = %v", err)
+	}
+	if result.Status != "blocked" || result.NAV.Status != "blocked" {
+		t.Fatalf("status = %q nav status = %q, want blocked", result.Status, result.NAV.Status)
+	}
+	if !containsString(result.QualityFlags, "previous_economic_nav_gap") {
 		t.Fatalf("quality flags = %#v", result.QualityFlags)
 	}
 }

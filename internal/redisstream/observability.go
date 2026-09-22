@@ -436,7 +436,7 @@ func (service *RuntimeObservability) monitoringWindow(ctx context.Context, now t
 	}
 	hour, minute, _ := now.Clock()
 	minutes := hour*60 + minute
-	if minutes < monitoringStartMinute || minutes > monitoringEndMinute {
+	if minutes < monitoringStartMinute || minutes >= monitoringEndMinute {
 		return false, "off_hours", status
 	}
 	return true, "trading_session", status

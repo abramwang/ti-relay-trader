@@ -439,24 +439,28 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		result.QualityFlags = appendUnique(result.QualityFlags, "post_close_settlement_included_in_broker_asset_basis")
 	}
 	result.AssetBasis = assetBasis
-	openVisibleCash := firstPositiveFloat(daily.OpenNetAsset, daily.PreviousNetAsset)
+	openVisibleCash := 0.0
 	closeVisibleCash := firstPositiveFloat(daily.CashTotal, daily.NetAsset)
 	brokerOpenPositionValue := 0.0
 	brokerClosePositionValue := daily.PositionMarketValue
 	if openObservationErr == nil && (openObservation.CashTotal != 0 || openObservation.NetAsset != 0) {
 		openVisibleCash = openObservation.CashTotal
 		brokerOpenPositionValue = openObservation.PositionMarketValue
+		if openVisibleCash > 0 || contribution.Summary.OpenPositionValue > 0 {
+			openEconomicNAV = roundMoney(openVisibleCash + contribution.Summary.OpenPositionValue)
+		}
 	} else {
 		result.QualityFlags = appendUnique(result.QualityFlags, "open_asset_observation_unavailable")
+		if openEconomicNAV > 0 {
+			openVisibleCash = roundMoney(openEconomicNAV - contribution.Summary.OpenPositionValue)
+			result.QualityFlags = appendUnique(result.QualityFlags, "open_cash_derived_from_economic_nav")
+		}
 	}
 	if closeObservationErr == nil && (closeObservation.CashTotal != 0 || closeObservation.NetAsset != 0) {
 		closeVisibleCash = closeObservation.CashTotal
 		brokerClosePositionValue = closeObservation.PositionMarketValue
 	} else {
 		result.QualityFlags = appendUnique(result.QualityFlags, "close_asset_observation_unavailable")
-	}
-	if openVisibleCash > 0 || contribution.Summary.OpenPositionValue > 0 {
-		openEconomicNAV = roundMoney(openVisibleCash + contribution.Summary.OpenPositionValue)
 	}
 	valuationPriceSource := "meridian_1d_pre_close_and_close"
 	if containsStringValue(contribution.QualityFlags, "meridian_level1_close_fallback") {
@@ -618,6 +622,9 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 			continue
 		}
 		result.QualityFlags = appendUnique(result.QualityFlags, flag)
+		if flag == "previous_economic_nav_gap" && !confirmedInceptionDay {
+			status = "blocked"
+		}
 	}
 	previousCumulative := 1.0
 	if previousNAV.CumulativeNAV > 0 {
@@ -1610,13 +1617,26 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 			sameDateVersion = item.Version
 			continue
 		}
-		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 && item.Status != "blocked" && item.FormulaVersion == service.formulaVersion {
+		if item.TradeDate < tradeDate && item.CumulativeNAV > 0 && item.Status != "blocked" && item.FormulaVersion == service.formulaVersion &&
+			(previous.AccountID == "" || item.TradeDate > previous.TradeDate) {
 			previous = item
 		}
 	}
 	flags := make([]string, 0)
 	if previous.AccountID == "" {
 		flags = appendUnique(flags, "missing_previous_economic_nav")
+	} else if service.calendar != nil {
+		_, parsed, parseErr := parseTradeDate(tradeDate)
+		if parseErr == nil {
+			status, calendarErr := service.calendar.TradingDayStatus(ctx, parsed.AddDate(0, 0, -1).Format("20060102"))
+			expectedDate := strings.TrimSpace(status.PreviousOrCurrentTradingDate)
+			if calendarErr == nil && expectedDate != "" {
+				expectedDate, _, parseErr = parseTradeDate(expectedDate)
+				if parseErr == nil && previous.TradeDate != expectedDate {
+					flags = appendUnique(flags, "previous_economic_nav_gap")
+				}
+			}
+		}
 	}
 	return previous, sameDateVersion, flags, nil
 }

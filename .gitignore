@@ -17,6 +17,7 @@ build/
 tmp/
 outputs/backups/
 outputs/jobs/
+outputs/recovery/
 outputs/restore-drills/
 outputs/ui/
 .runtime/
