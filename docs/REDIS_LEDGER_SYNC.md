@@ -222,6 +222,7 @@ go run ./cmd/relayctl ledger-sync -config config/relay.local.yaml -count 20
 | `parse_errors` | body 无法解析为 JSON 的消息数 |
 | `ledger_errors` | PostgreSQL 写入失败数 |
 | `unsupported` | 暂不支持的消息类型数 |
+| `gateway_status_normalized` | 将 OC 非终态部分成交 `gateway_status=partially_filled` 规范化为标准 `working` 的条数；原始报文不改写 |
 
 ## 真实联调结果
 

@@ -70,36 +70,37 @@ type LedgerEntryError struct {
 }
 
 type LedgerProcessResult struct {
-	Seen               int                         `json:"seen"`
-	Archived           int                         `json:"archived"`
-	Accounts           int                         `json:"accounts"`
-	Orders             int                         `json:"orders"`
-	OrderEvents        int                         `json:"order_events"`
-	CancelAttempts     int                         `json:"cancel_attempts"`
-	CancelFailures     int                         `json:"cancel_failures"`
-	Fills              int                         `json:"fills"`
-	Transfers          int                         `json:"transfers"`
-	Fees               int                         `json:"fees"`
-	Assets             int                         `json:"assets"`
-	Positions          int                         `json:"positions"`
-	StalePositions     int64                       `json:"stale_positions,omitempty"`
-	Replies            int                         `json:"replies"`
-	Skipped            int                         `json:"skipped"`
-	SkipReasons        []string                    `json:"skip_reasons,omitempty"`
-	ParseErrors        int                         `json:"parse_errors"`
-	LedgerErrors       int                         `json:"ledger_errors"`
-	Unsupported        int                         `json:"unsupported"`
-	DeadLetters        int                         `json:"dead_letters"`
-	DataQualityDLQ     int                         `json:"data_quality_dead_letters"`
-	LastStreamID       string                      `json:"last_stream_id,omitempty"`
-	LastMessageID      string                      `json:"last_message_id,omitempty"`
-	LastEventType      string                      `json:"last_event_type,omitempty"`
-	LastAction         string                      `json:"last_action,omitempty"`
-	LastAccountID      string                      `json:"last_account_id,omitempty"`
-	AccountIDs         []string                    `json:"account_ids,omitempty"`
-	LastGatewayOID     string                      `json:"last_gateway_order_id,omitempty"`
-	LastCancelAttempt  *ledger.OrderCancelAttempt  `json:"last_cancel_attempt,omitempty"`
-	CancelFailureItems []ledger.OrderCancelAttempt `json:"cancel_failure_items,omitempty"`
+	Seen                    int                         `json:"seen"`
+	Archived                int                         `json:"archived"`
+	Accounts                int                         `json:"accounts"`
+	Orders                  int                         `json:"orders"`
+	OrderEvents             int                         `json:"order_events"`
+	CancelAttempts          int                         `json:"cancel_attempts"`
+	CancelFailures          int                         `json:"cancel_failures"`
+	Fills                   int                         `json:"fills"`
+	Transfers               int                         `json:"transfers"`
+	Fees                    int                         `json:"fees"`
+	Assets                  int                         `json:"assets"`
+	Positions               int                         `json:"positions"`
+	StalePositions          int64                       `json:"stale_positions,omitempty"`
+	Replies                 int                         `json:"replies"`
+	Skipped                 int                         `json:"skipped"`
+	SkipReasons             []string                    `json:"skip_reasons,omitempty"`
+	ParseErrors             int                         `json:"parse_errors"`
+	LedgerErrors            int                         `json:"ledger_errors"`
+	Unsupported             int                         `json:"unsupported"`
+	DeadLetters             int                         `json:"dead_letters"`
+	DataQualityDLQ          int                         `json:"data_quality_dead_letters"`
+	GatewayStatusNormalized int                         `json:"gateway_status_normalized"`
+	LastStreamID            string                      `json:"last_stream_id,omitempty"`
+	LastMessageID           string                      `json:"last_message_id,omitempty"`
+	LastEventType           string                      `json:"last_event_type,omitempty"`
+	LastAction              string                      `json:"last_action,omitempty"`
+	LastAccountID           string                      `json:"last_account_id,omitempty"`
+	AccountIDs              []string                    `json:"account_ids,omitempty"`
+	LastGatewayOID          string                      `json:"last_gateway_order_id,omitempty"`
+	LastCancelAttempt       *ledger.OrderCancelAttempt  `json:"last_cancel_attempt,omitempty"`
+	CancelFailureItems      []ledger.OrderCancelAttempt `json:"cancel_failure_items,omitempty"`
 }
 
 const maxLedgerSkipReasons = 200
@@ -361,6 +362,9 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			result.Accounts++
 		}
 		for _, order := range orders {
+			if hasGatewayStatusNormalization(order.AdapterContext) {
+				result.GatewayStatusNormalized++
+			}
 			result.noteAccount(order.AccountID)
 			if err := writer.UpsertOrder(ctx, order); err != nil {
 				result.LedgerErrors++
@@ -578,6 +582,9 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 			return result
 		}
 		if complete {
+			if hasGatewayStatusNormalization(event.Order.AdapterContext) {
+				result.GatewayStatusNormalized++
+			}
 			result.noteAccount(event.AccountID)
 			if err := writer.UpsertAccount(ctx, accountFromEnvelope(envelope, event.AccountID)); err != nil {
 				result.LedgerErrors++
@@ -597,6 +604,9 @@ func processEventEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 				return result
 			}
 		} else {
+			if hasGatewayStatusNormalization(event.Order.AdapterContext) {
+				result.GatewayStatusNormalized++
+			}
 			result.noteAccount(event.AccountID)
 			if err := writer.UpdateOrderStatus(ctx, event); err != nil {
 				if errors.Is(err, ledger.ErrOrderNotFound) {
@@ -1884,9 +1894,10 @@ func (payload orderPayload) completeOrderLedgerFields() bool {
 func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	limitPrice := firstPositive(payload.LimitPrice, payload.Price)
 	orderQty := firstPositiveInt(payload.OrderQty, payload.Qty)
+	gatewayStatus, gatewayStatusContext := normalizePartialFillGatewayStatus(payload, orderQty)
 	status, gatewayStatus, inferredTerminal := trading.NormalizeOrderExecutionState(
 		trading.OrderStatus(strings.TrimSpace(payload.Status)),
-		trading.GatewayStatus(strings.TrimSpace(payload.GatewayStatus)),
+		gatewayStatus,
 		orderQty,
 		payload.CumFilledQty,
 		payload.LeavesQty,
@@ -1901,6 +1912,7 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 	adapterStatusName := firstNonEmpty(payload.AdapterStatusName, payload.AdapterStatus)
 	rejectCode, rejectMessage := orderPayloadRejectInfo(envelope, payload, status, gatewayStatus)
 	adapterContext := withOrderPayloadContext(orderDebugContext(envelope, rejectCode, rejectMessage), payload)
+	adapterContext = mergeContextMaps(adapterContext, gatewayStatusContext)
 	counterSessionID := firstNonEmpty(payload.CounterSessionID, stringFromMap(payload.AdapterContext, "counter_session_id"), stringFromMap(envelope.AdapterContext, "counter_session_id"))
 	adapterContext = mergeContextMaps(adapterContext, stringContext("counter_session_id", counterSessionID))
 	tradeDate, tradeDateContext := guardedOrderTradeDate(payload, envelope)
@@ -1951,6 +1963,32 @@ func (payload orderPayload) toOrder(envelope EntryEnvelope) trading.Order {
 		TerminalAt:        parseTime(payload.TerminalAt),
 		AdapterContext:    adapterContext,
 	}
+}
+
+func normalizePartialFillGatewayStatus(payload orderPayload, orderQty int64) (trading.GatewayStatus, map[string]any) {
+	reported := strings.ToLower(strings.TrimSpace(payload.GatewayStatus))
+	reportedStatus := strings.ToLower(strings.TrimSpace(payload.Status))
+	quantitiesClose := payload.CumFilledQty+payload.LeavesQty+payload.CancelledQty+payload.InvalidQty == orderQty
+	if reported != string(trading.OrderStatusPartiallyFilled) ||
+		(reportedStatus != "" && reportedStatus != string(trading.OrderStatusPartiallyFilled) && reportedStatus != string(trading.OrderStatusWorking)) ||
+		payload.IsTerminal ||
+		orderQty <= 0 ||
+		payload.CumFilledQty <= 0 ||
+		payload.CumFilledQty >= orderQty ||
+		payload.LeavesQty <= 0 ||
+		payload.CancelledQty < 0 ||
+		payload.InvalidQty < 0 ||
+		!quantitiesClose {
+		return trading.GatewayStatus(strings.TrimSpace(payload.GatewayStatus)), nil
+	}
+	return trading.GatewayStatusWorking, map[string]any{
+		"relay_gateway_status_normalized_from": reported,
+		"relay_gateway_status_normalization":   "partial_fill_to_working",
+	}
+}
+
+func hasGatewayStatusNormalization(context map[string]any) bool {
+	return stringFromMap(context, "relay_gateway_status_normalization") == "partial_fill_to_working"
 }
 
 func guardedOrderTradeDate(payload orderPayload, envelope EntryEnvelope) (string, map[string]any) {
@@ -2522,6 +2560,7 @@ func (result *LedgerProcessResult) add(other LedgerProcessResult) {
 	result.Unsupported += other.Unsupported
 	result.DeadLetters += other.DeadLetters
 	result.DataQualityDLQ += other.DataQualityDLQ
+	result.GatewayStatusNormalized += other.GatewayStatusNormalized
 	remainingReasons := maxLedgerSkipReasons - len(result.SkipReasons)
 	if remainingReasons > len(other.SkipReasons) {
 		remainingReasons = len(other.SkipReasons)

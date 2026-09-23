@@ -190,6 +190,7 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"parse_errors", report.Totals.ParseErrors,
 					"dead_letters", report.Totals.DeadLetters,
 					"data_quality_dead_letters", report.Totals.DataQualityDLQ,
+					"gateway_status_normalized", report.Totals.GatewayStatusNormalized,
 					"processing_duration_ms", report.ProcessingDuration.Milliseconds(),
 				)
 			}
@@ -315,17 +316,18 @@ func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, curs
 		ProcessedCount: int64(report.Count),
 		ErrorCount:     int64(len(report.Errors)),
 		Metadata: map[string]any{
-			"last_batch_archived":      report.Totals.Archived,
-			"last_batch_orders":        report.Totals.Orders,
-			"last_batch_order_events":  report.Totals.OrderEvents,
-			"last_batch_fills":         report.Totals.Fills,
-			"last_batch_transfers":     report.Totals.Transfers,
-			"last_batch_assets":        report.Totals.Assets,
-			"last_batch_positions":     report.Totals.Positions,
-			"last_batch_parse_errors":  report.Totals.ParseErrors,
-			"last_batch_ledger_errors": report.Totals.LedgerErrors,
-			"last_batch_dead_letters":  report.Totals.DeadLetters,
-			"last_batch_data_quality":  report.Totals.DataQualityDLQ,
+			"last_batch_archived":                  report.Totals.Archived,
+			"last_batch_orders":                    report.Totals.Orders,
+			"last_batch_order_events":              report.Totals.OrderEvents,
+			"last_batch_fills":                     report.Totals.Fills,
+			"last_batch_transfers":                 report.Totals.Transfers,
+			"last_batch_assets":                    report.Totals.Assets,
+			"last_batch_positions":                 report.Totals.Positions,
+			"last_batch_parse_errors":              report.Totals.ParseErrors,
+			"last_batch_ledger_errors":             report.Totals.LedgerErrors,
+			"last_batch_dead_letters":              report.Totals.DeadLetters,
+			"last_batch_data_quality":              report.Totals.DataQualityDLQ,
+			"last_batch_gateway_status_normalized": report.Totals.GatewayStatusNormalized,
 		},
 	}
 	if report.Count > 0 {

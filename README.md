@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-23 10:00 Asia/Shanghai` 绩效页默认区间改为账户最近权威绩效日向前一个自然月；当天 canonical 尚未完成时曲线和明细一起回退，不再请求当天 preview 形成阻断。生产浏览器验收涌盈波动率默认 `20260822..20260922`、焦点日 `20260922`、状态“已发布”，无页面或 HTTP 错误；生产下单保持关闭 |
+| 最近确认 | `2026-09-23 10:45 Asia/Shanghai` Relay 已兼容 OC 非标准部分成交 `gateway_status`：严格映射为标准 `working`，raw 不改写；生产三户 `975` 条事件完成重放，两笔活动订单数量与成交闭合，API 和 16 条 Stream 恢复 `ok`，lag/DLQ 均为 0，生产下单保持关闭 |
 | 更新时间 | `2026-09-23` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-23 10:45 Asia/Shanghai` 发布 OC 部分成交状态兼容：仅当 `gateway_status=partially_filled` 且数量满足有效非终态部分成交时，标准账本映射为 `status=partially_filled + gateway_status=working`；实时事件和订单查询页共用规则，raw 永久保留原值，标准账本记录审计字段，同步报告记录规范化计数。生产三户当日 `481/299/195` 条原始事件已全部重放为同量订单事件，0 解析/数据库错误；两笔仍在部分成交的订单已更新为 `12,500/175,000` 和 `23,000/291,200`，与 2/4 条成交合计一致，当日孤立成交为 0。旧 checkpoint 错误已转存审计，API、16 条 Stream 和全部核心依赖恢复 `ok`，总 lag=0、pending DLQ=0；OC 后续可随正常版本修正，无需紧急升级。详见 [兼容与验收记录](/home/ti-relay-trader/docs/OC_PARTIAL_FILL_GATEWAY_STATUS_20260923.md:1)。
 - `2026-09-23 10:00 Asia/Shanghai` 发布绩效默认权威区间：新增只读 `performance/default-range`，仅接受成功 `performance_canonical` 对应的 Meridian 权威日线 NAV、人工 finalized NAV 或 `broker_statement_nav.v1`；默认结束日为账户最近权威绩效日，起始日向前一个自然月并夹紧月末。当天尚无权威结果时不调用当天 economic NAV preview；完全无权威历史的账户显示正常空态。生产三户可用账户均解析至 `2026-08-22..2026-09-22`，涌盈波动率 Playwright 实测曲线 22 条、焦点日已发布、无控制台/HTTP 错误；富盈13号因尚无可信起算锚点显示“暂无权威绩效数据”。交易权限保持 0。
 - `2026-09-22 20:50 Asia/Shanghai` 完成涌盈波动率 `307000051388` 的资产快照与资金桥恢复。最新券商资金文件 42/42 行满足 `收盘资产=前收+入金-出金+当日盈亏`，9 月 10 日 `33,000,000 CNY` 和 9 月 11 日 `170,000 CNY` 转出均以 0.00 元残差闭合；成交资金明细与 OC open 将两笔流量分别夹定在 09:01 后至首笔成交前、09:01 前。9 月 9 日至 21 日 9 条独立 `reconcile`、2 条 confirmed external flow 和金标已落库，顺序重建至 9 月 22 日后 11 个交易日均为 provisional、0 blocked。券商权威资产已闭合但证券归因未闭合的日期保留账户 NAV，并明确标记 `strategy_attribution_pending`，不再丢弃整日净值；OC open/close、订单和成交均未覆盖。写前备份 SHA-256 为 `6fb2097d22e3f0e0283909dcae57eb0a70a66aace288a7a9886a132d678a855f`，详见 [恢复记录](/home/ti-relay-trader/docs/BROKER_FUNDS_BRIDGE_RECOVERY_307000051388_20260922.md:1)。
 - `2026-09-22 20:05 Asia/Shanghai` 追清当日 `performance_canonical` 失败：Meridian 三类未复权日线水位实际于 16:33:14 全部到达 `20260922`，原失败由 cron 显式名单仍包含已停用 `307000051389` 引起；补跑后又准确识别 `307000051388` 的既有 `previous_economic_nav_gap` 是账户资金连续性问题，不是行情未就绪。当前显式任务名单也会强制过滤 `enabled=false`，盘后绩效只处理本轮 broker close 成功账户；canonical 价格完成但单账户账务 blocked 时，任务成功并保留账户级告警。三个纳入绩效的启用账户 canonical 比较均为 0 差异，任务终态 `succeeded`。跟随 Meridian 16:40/16:50 校准与 17:05 状态机截止，Relay 当前改为 17:10 首查、每 10 分钟重试至 19:10。
@@ -86,7 +87,6 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 当前进展与阻塞
 
-- `2026-09-23 10:05 Asia/Shanghai` 生产 OC 在三户的部分成交事件中发送了协议未定义的 `gateway_status=partially_filled`，今日累计 975 条；标准应为 `gateway_status=working + atlas_status=partially_filled`。原始事件均已归档，后续终态和真实成交正常落库，代表订单最终 600/600 与两条成交闭合；中间 partial 事件因数据库约束未落订单账本，导致债享5号 event Stream 当前 `attention`、API 总体 `degraded`，但 `lag=0`、pending DLQ=0，核心依赖和四户心跳正常。等待 OC 按现有 wire 契约修正，详见 [OC 部分成交状态偏差](/home/ti-relay-trader/docs/OC_PARTIAL_FILL_GATEWAY_STATUS_20260923.md:1)。
 - Chronos 跨日订单 R1/R2/R4 已完成；R3 TEST-only 人工遗留订单处置待实现。TEST 定义为一次 OC 进程生命周期一个 `counter_session_id`，进程内短线重连不变；OC 不识别 7x24 四时段，Relay 时间表只控制准入且不推导会话变化。生产正常 A 股逻辑严格隔离。详见 [需求响应](/home/ti-relay-trader/docs/CHRONOS_CROSS_DAY_ORDER_REQUIREMENT_RESPONSE_20260916.md:1)。
 - Chronos 本轮验收把测试订单的 `accepted_at/last_updated_at=09:46:44` 与逐笔成交时间混淆；权威成交字段为 `Fill.matched_at=13:53:00+08:00`。Chronos 底层投影已读取该字段，仍需修正验收取证、页面或持久化消费口径；测试柜台状态时钟差异不外推到生产，详见 [Chronos 成交时间字段语义纠正](/home/ti-relay-trader/docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md:1)。
 - 首页已移除主栏 `200/126/280px` 固定 Grid 行约束：5 个快捷入口自动排布，账户路由表按实际账户行数撑开，左右两栏共同决定 dashboard 高度。Playwright 已在 `1600x900` 与 `1366x768` 验证入口、6 行账户路由和右侧运行边界无裁切、无重叠。

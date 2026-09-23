@@ -813,6 +813,134 @@ func TestProcessLedgerEntryWritesOrderEvent(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryNormalizesOCPartialFillGatewayStatus(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:event", "2-partial-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-partial-1",
+			"event_type":"order.event",
+			"produced_at":"2026-09-23T01:30:01Z",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"payload":{
+				"gateway_order_id":"external-huaxin-31400004683001-12002A620001744",
+				"account_id":"314000046830",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"S",
+				"business_type":"S",
+				"order_qty":600,
+				"cum_filled_qty":400,
+				"leaves_qty":200,
+				"limit_price":9.54,
+				"status":"partially_filled",
+				"gateway_status":"partially_filled",
+				"is_terminal":false
+			}
+		}`,
+	})
+
+	if result.LedgerErrors != 0 || result.Orders != 1 || result.OrderEvents != 1 || result.GatewayStatusNormalized != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(writer.orders) != 1 || len(writer.orderEvents) != 1 || len(writer.raw) != 1 {
+		t.Fatalf("writes = orders %d events %d raw %d", len(writer.orders), len(writer.orderEvents), len(writer.raw))
+	}
+	order := writer.orders[0]
+	if order.Status != trading.OrderStatusPartiallyFilled || order.GatewayStatus != trading.GatewayStatusWorking || order.IsTerminal {
+		t.Fatalf("normalized state = %#v", order)
+	}
+	if order.CumFilledQty != 400 || order.LeavesQty != 200 {
+		t.Fatalf("normalized quantities = %d/%d", order.CumFilledQty, order.LeavesQty)
+	}
+	if order.AdapterContext["relay_gateway_status_normalized_from"] != "partially_filled" ||
+		order.AdapterContext["relay_gateway_status_normalization"] != "partial_fill_to_working" {
+		t.Fatalf("normalization audit = %#v", order.AdapterContext)
+	}
+	if !strings.Contains(writer.raw[0].BodyText, `"gateway_status":"partially_filled"`) {
+		t.Fatalf("raw payload was not preserved: %s", writer.raw[0].BodyText)
+	}
+}
+
+func TestProcessLedgerEntryNormalizesOCPartialFillOrderPage(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:307000051387:reply", "2-partial-page-1", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"reply",
+			"message_id":"reply-partial-page-1",
+			"action":"order.list.query",
+			"result_type":"order_page",
+			"status":"completed",
+			"produced_at":"2026-09-23T02:00:00Z",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"307000051387","account_id":"307000051387"},
+			"payload":{"items":[{
+				"gateway_order_id":"external-huaxin-30700005138701-12002A620000071",
+				"account_id":"307000051387",
+				"symbol":"000001",
+				"exchange":"SZ",
+				"trade_side":"B",
+				"business_type":"S",
+				"order_qty":175000,
+				"cum_filled_qty":12500,
+				"leaves_qty":162500,
+				"limit_price":10.20,
+				"status":"partially_filled",
+				"gateway_status":"partially_filled",
+				"is_terminal":false
+			}]}
+		}`,
+	})
+
+	if result.LedgerErrors != 0 || result.Orders != 1 || result.GatewayStatusNormalized != 1 || len(writer.orders) != 1 {
+		t.Fatalf("result/writes = %#v/%#v", result, writer.orders)
+	}
+	order := writer.orders[0]
+	if order.Status != trading.OrderStatusPartiallyFilled || order.GatewayStatus != trading.GatewayStatusWorking || order.CumFilledQty != 12500 || order.LeavesQty != 162500 {
+		t.Fatalf("normalized order page = %#v", order)
+	}
+}
+
+func TestProcessLedgerEntryDoesNotApplyPartialCompatibilityToInconsistentQuantities(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:314000046830:event", "2-partial-bad", map[string]any{
+		"body": `{
+			"protocol":"relay.stream.v1",
+			"message_type":"event",
+			"message_id":"event-partial-bad",
+			"event_type":"order.event",
+			"produced_at":"2026-09-23T01:30:02Z",
+			"routing":{"env":"prod","broker_id":"huaxin","gateway_id":"314000046830","account_id":"314000046830"},
+			"payload":{
+				"gateway_order_id":"gw-partial-bad",
+				"account_id":"314000046830",
+				"symbol":"600000",
+				"exchange":"SH",
+				"trade_side":"S",
+				"business_type":"S",
+				"order_qty":600,
+				"cum_filled_qty":400,
+				"leaves_qty":199,
+				"limit_price":9.54,
+				"status":"partially_filled",
+				"gateway_status":"partially_filled",
+				"is_terminal":false
+			}
+		}`,
+	})
+
+	if result.GatewayStatusNormalized != 0 || len(writer.orders) != 1 {
+		t.Fatalf("unexpected normalization: result=%#v orders=%#v", result, writer.orders)
+	}
+	if writer.orders[0].GatewayStatus != trading.GatewayStatus("partially_filled") || writer.orders[0].Status != trading.OrderStatusPartiallyFilled || writer.orders[0].IsTerminal {
+		t.Fatalf("inconsistent input was silently normalized: %#v", writer.orders[0])
+	}
+	if _, exists := writer.orders[0].AdapterContext["relay_gateway_status_normalization"]; exists {
+		t.Fatalf("compatibility audit was added to a terminal order: %#v", writer.orders[0].AdapterContext)
+	}
+}
+
 func TestProcessLedgerEntryDoesNotExposeFilledUntilQuantitiesClose(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	incomplete := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:event", "2-filled-1", map[string]any{
