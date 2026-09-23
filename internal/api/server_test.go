@@ -3648,6 +3648,79 @@ func TestPerformanceSeriesQuery(t *testing.T) {
 	}
 }
 
+func TestPerformanceDefaultRangeUsesLatestCanonicalAccountNAV(t *testing.T) {
+	jobs := &fakeJobRunStore{runs: []ledger.JobRun{
+		{
+			JobName: "performance_canonical", TargetTradeDate: "2026-09-23", Status: "failed",
+			Report: map[string]any{"canonical_completed": false},
+		},
+		{
+			JobName: "performance_canonical", TargetTradeDate: "2026-09-22", Status: "succeeded",
+			Report: map[string]any{"canonical_completed": true},
+		},
+		{
+			JobName: "performance_canonical", TargetTradeDate: "2026-09-21", Status: "succeeded",
+			Report: map[string]any{"canonical_completed": true},
+		},
+	}}
+	performance := &fakePerformanceService{navs: []ledger.PerformanceNAV{
+		{
+			AccountID: "acct-1", TradeDate: "2026-09-21", Status: "provisional", FormulaVersion: "performance_economic_nav.v2.7",
+			PnLComponents: map[string]any{"market_valuation": map[string]any{"price_source": "meridian_1d_pre_close_and_close"}},
+		},
+		{
+			AccountID: "acct-1", TradeDate: "2026-09-22", Status: "provisional", FormulaVersion: "performance_economic_nav.v2.7",
+			PnLComponents: map[string]any{"market_valuation": map[string]any{"price_source": "meridian_1d_pre_close_and_close"}},
+		},
+		{
+			AccountID: "acct-1", TradeDate: "2026-09-23", Status: "provisional", FormulaVersion: "performance_economic_nav.v2.7",
+			PnLComponents: map[string]any{"market_valuation": map[string]any{"price_source": "meridian_level1_pre_close_and_last"}},
+			QualityFlags:  []string{"meridian_level1_close_fallback"},
+		},
+	}}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Jobs:        jobs,
+		Performance: performance,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/performance/default-range?reference_date=20260923", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	for _, expected := range []string{
+		`"reference_date":"2026-09-23"`,
+		`"date_from":"2026-08-22"`,
+		`"date_to":"2026-09-22"`,
+		`"available":true`,
+		`"fallback_applied":true`,
+		`"anchor_source":"performance_canonical"`,
+	} {
+		if !strings.Contains(rec.Body.String(), expected) {
+			t.Fatalf("response missing %s: %s", expected, rec.Body.String())
+		}
+	}
+}
+
+func TestPreviousCalendarMonthDateClampsMonthEnd(t *testing.T) {
+	for input, expected := range map[string]string{
+		"2026-09-22": "2026-08-22",
+		"2026-03-31": "2026-02-28",
+		"2024-03-31": "2024-02-29",
+		"2026-01-30": "2025-12-30",
+	} {
+		actual, err := previousCalendarMonthDate(input)
+		if err != nil {
+			t.Fatalf("previousCalendarMonthDate(%q): %v", input, err)
+		}
+		if actual != expected {
+			t.Fatalf("previousCalendarMonthDate(%q) = %q, want %q", input, actual, expected)
+		}
+	}
+}
+
 func TestPerformanceSeriesWithoutV2NAVIsDiagnosticOnly(t *testing.T) {
 	series := []ledger.DailyPerformance{
 		{AccountID: "acct-1", TradeDate: "2026-07-28", NetAsset: 1000, PreviousNetAsset: 100, DailyPnL: 900, ReturnRate: 9},

@@ -774,7 +774,7 @@ open 持仓缺失时只允许使用前一交易日 close 快照兜底，并且�
 4. 质量状态按 `passed/warning/blocked` 汇总，`missing` 输入进入阻断，`estimated/provisional` 和历史任务不匹配进入提示；所选历史交易日不会误用最新任务状态。
 5. 绩效辅助接口并行读取且带请求代次保护，切换账户或连续查询时旧响应不会覆盖新结果。
 6. 分钟 K 线从绩效页完全移除，只保留在交易测试页；CSV 下载继续保留。
-7. 单日没有正式净值序列时，所选交易日保持不变并继续读取当日 economic NAV preview；最近正式序列只作为图表上下文，不覆盖当日明细。`tests/integration/performance_visual_smoke.py` 验证日期稳定、四项主指标、canvas 有效像素、七项质量检查和无浏览器/HTTP 错误；`1600x1000` 与 `1280x800` 均无横向溢出。
+7. 默认进入页面时先通过 `performance/default-range` 选择账户最近一个权威绩效交易日，并向前取一个自然月；当前交易日尚未完成 canonical 复算时，曲线和明细一起回退到该权威日，不请求当天 economic NAV preview，因此不会把尚未结算表现成质量阻断。用户主动填写日期并点击查询时仍保持所选区间，可用于查看指定交易日的只读 preview。`tests/integration/performance_visual_smoke.py` 验证日期稳定、四项主指标、canvas 有效像素、七项质量检查和无浏览器/HTTP 错误；`1600x1000` 与 `1280x800` 均无横向溢出。
 8. 区间查询采用渐进加载：`performance/series` 返回后立即绘制净值、基准和回撤曲线，归因、成本、交易质量与 economic NAV 明细在后台继续计算。贡献接口和 economic NAV 对同一账户交易日发起的重复贡献计算由服务内 singleflight 合并；结果完成即释放，不跨请求缓存，避免实时账表产生陈旧读。
 
 ### Phase 3 贡献聚合

@@ -57,6 +57,8 @@
     performanceError: "",
     performanceSelectedDate: "",
     performanceSeriesFallback: false,
+    performanceRangeMode: "default",
+    performanceDefaultRange: null,
     performanceSettings: null,
     feeRules: [],
     cashLedgerEntries: [],
@@ -478,6 +480,26 @@
     return date.getUTCFullYear().toString().padStart(4, "0") +
       String(date.getUTCMonth() + 1).padStart(2, "0") +
       String(date.getUTCDate()).padStart(2, "0");
+  }
+
+  function shiftCompactMonth(value, months) {
+    const digits = compactDate(value);
+    if (!digits) {
+      return "";
+    }
+    const year = Number(digits.slice(0, 4));
+    const month = Number(digits.slice(4, 6)) - 1;
+    const day = Number(digits.slice(6, 8));
+    const targetMonth = new Date(Date.UTC(year, month + Number(months || 0), 1));
+    const lastTargetDay = new Date(Date.UTC(
+      targetMonth.getUTCFullYear(),
+      targetMonth.getUTCMonth() + 1,
+      0
+    )).getUTCDate();
+    targetMonth.setUTCDate(Math.min(day, lastTargetDay));
+    return targetMonth.getUTCFullYear().toString().padStart(4, "0") +
+      String(targetMonth.getUTCMonth() + 1).padStart(2, "0") +
+      String(targetMonth.getUTCDate()).padStart(2, "0");
   }
 
   function displayDate(value) {
@@ -3527,7 +3549,7 @@
   function ensurePerformanceDefaults() {
     const day = defaultQueryDate();
     if (!els.perfDateFrom.value) {
-      els.perfDateFrom.value = day;
+      els.perfDateFrom.value = shiftCompactMonth(day, -1);
     }
     if (!els.perfDateTo.value) {
       els.perfDateTo.value = day;
@@ -3592,29 +3614,63 @@
     return { dateFrom, dateTo, benchmarkSecurityID };
   }
 
-  async function loadPerformance() {
+  async function loadPerformance(options = {}) {
     if (!state.activeAccount) {
       renderPerformance();
       return;
     }
     const loadSeq = ++state.performanceLoadSeq;
     const isCurrentLoad = () => loadSeq === state.performanceLoadSeq;
-    const params = performanceParams();
     const accountID = encodeURIComponent(state.activeAccount);
-    const query = new URLSearchParams({
-      date_from: params.dateFrom,
-      date_to: params.dateTo
-    });
-    if (params.benchmarkSecurityID) {
-      query.set("benchmark_security_id", params.benchmarkSecurityID);
-    }
+    const useDefaultRange = options.defaultRange !== false && state.performanceRangeMode === "default";
     els.performanceStatus.textContent = "查询中...";
     els.loadPerformanceButton.disabled = true;
     state.performanceDetailsLoading = true;
     try {
+      let defaultRange = null;
+      if (useDefaultRange) {
+        const referenceDate = defaultQueryDate();
+        const resolved = await request(
+          "/v1/accounts/" + accountID + "/performance/default-range?reference_date=" + encodeURIComponent(referenceDate)
+        );
+        if (!isCurrentLoad()) {
+          return;
+        }
+        defaultRange = resolved.default_range || null;
+        state.performanceDefaultRange = defaultRange;
+        if (!defaultRange || defaultRange.available !== true) {
+          state.performanceError = "";
+          state.performanceSelectedDate = "";
+          state.performanceSeriesFallback = false;
+          state.performanceSummary = null;
+          state.performanceSeries = [];
+          state.performanceDaily = null;
+          state.performanceContribution = null;
+          state.performanceTradeQuality = null;
+          state.performanceCostLedger = null;
+          state.performanceEconomicNAV = null;
+          state.performanceNAVReconciliation = null;
+          state.performanceLoaded = true;
+          state.performanceDetailsLoading = false;
+          renderPerformance();
+          return;
+        }
+        els.perfDateFrom.value = compactDate(defaultRange.date_from);
+        els.perfDateTo.value = compactDate(defaultRange.date_to);
+      } else {
+        state.performanceDefaultRange = null;
+      }
+      const params = performanceParams();
+      const query = new URLSearchParams({
+        date_from: params.dateFrom,
+        date_to: params.dateTo
+      });
+      if (params.benchmarkSecurityID) {
+        query.set("benchmark_security_id", params.benchmarkSecurityID);
+      }
       let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
       const selectedDate = params.dateTo;
-      let seriesFallback = false;
+      let seriesFallback = Boolean(defaultRange && defaultRange.fallback_applied);
       if (!isCurrentLoad()) {
         return;
       }
@@ -4684,7 +4740,10 @@
     const unattributed = pnlComponents.unattributed || {};
     const costLedger = state.performanceCostLedger || {};
     const costSummary = costLedger.summary || {};
-    const selectedDate = state.performanceSelectedDate || compactDate(daily.trade_date) || compactDate(els.perfDateTo.value);
+    const noAuthoritativeDefault = state.performanceDefaultRange && state.performanceDefaultRange.available === false;
+    const selectedDate = noAuthoritativeDefault
+      ? ""
+      : (state.performanceSelectedDate || compactDate(daily.trade_date) || compactDate(els.perfDateTo.value));
     const officialSeriesItem = series.find((item) => compactDate(item.trade_date) === selectedDate) || {};
     const officialPublished = String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
       && officialSeriesItem.performance_status !== "blocked";
@@ -4702,6 +4761,7 @@
     const feeCovered = Number(securityPnL.fee_covered_orders) || 0;
     els.performanceRangeHint.textContent = [
       activeAccountLabel() || "未选择账户",
+      noAuthoritativeDefault ? "截至 " + displayDate(state.performanceDefaultRange.reference_date) + " 暂无权威绩效" : "",
       selectedDate ? displayDate(selectedDate) + (officialPublished ? " 已发布" : (notApplicable ? " 当日不适用" : " 当日试算")) : "等待交易日",
       state.performanceSeriesFallback && latest.trade_date ? "正式曲线截至 " + displayDate(latest.trade_date) : "",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
@@ -4779,13 +4839,17 @@
     setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
-      : (state.performanceLoaded
-        ? (state.performanceDetailsLoading
-          ? "曲线已加载 · 明细计算中..."
-          : (state.performanceSeriesFallback ? "当日试算已加载 · 最近正式序列 " + formatInt(series.length) + " 条" : "已加载 " + formatInt(series.length) + " 条"))
-        : "等待查询");
+      : (noAuthoritativeDefault
+        ? "已加载 · 暂无权威绩效数据"
+        : (state.performanceLoaded
+          ? (state.performanceDetailsLoading
+            ? "曲线已加载 · 明细计算中..."
+            : (state.performanceSeriesFallback ? "已加载 " + formatInt(series.length) + " 条 · 已回退最近权威日" : "已加载 " + formatInt(series.length) + " 条"))
+          : "等待查询"));
     if (series.length === 0) {
-      els.performanceSeriesBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">暂无 close 快照绩效序列</div></td></tr>';
+      els.performanceSeriesBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">' +
+        (noAuthoritativeDefault ? "当前账户暂无可用的权威绩效序列" : "暂无 close 快照绩效序列") +
+        '</div></td></tr>';
       return;
     }
     els.performanceSeriesBody.innerHTML = series.map((item) => `
@@ -6978,7 +7042,15 @@
         : state.selectedTab === "transfers" ? loadComponentTransfersOnly : loadOrdersOnly;
       gotoPage(page, "next", loader);
     });
-    els.loadPerformanceButton.addEventListener("click", () => loadPerformance().catch((err) => showToast(err.message, "error")));
+    els.loadPerformanceButton.addEventListener("click", () => {
+      state.performanceRangeMode = "custom";
+      loadPerformance({ defaultRange: false }).catch((err) => showToast(err.message, "error"));
+    });
+    for (const input of [els.perfDateFrom, els.perfDateTo]) {
+      input.addEventListener("input", () => {
+        state.performanceRangeMode = "custom";
+      });
+    }
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     for (const button of els.performanceTableViewButtons) {
       button.addEventListener("click", () => setPerformanceTableView(button.dataset.performanceTableView));

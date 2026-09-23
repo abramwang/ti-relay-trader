@@ -167,6 +167,16 @@ type PerformanceSeriesSummary struct {
 	BenchmarkObservationDays int      `json:"benchmark_observation_days,omitempty"`
 }
 
+type PerformanceDefaultRange struct {
+	AccountID       string `json:"account_id"`
+	ReferenceDate   string `json:"reference_date"`
+	DateFrom        string `json:"date_from"`
+	DateTo          string `json:"date_to"`
+	Available       bool   `json:"available"`
+	FallbackApplied bool   `json:"fallback_applied"`
+	AnchorSource    string `json:"anchor_source,omitempty"`
+}
+
 var errSettlementStoreUnavailable = errors.New("settlement store is unavailable")
 var errMarketClientUnavailable = errors.New("meridian market client is unavailable")
 var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
@@ -1582,6 +1592,12 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handlePerformanceSeries(w, r, accountID)
+		case "default-range":
+			if len(parts) != 3 || r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handlePerformanceDefaultRange(w, r, accountID)
 		case "series.csv":
 			if len(parts) != 3 || r.Method != http.MethodGet {
 				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -2350,6 +2366,139 @@ func (s *Server) handlePerformanceSeries(w http.ResponseWriter, r *http.Request,
 		"summary": summary,
 		"series":  series,
 	})
+}
+
+func (s *Server) handlePerformanceDefaultRange(w http.ResponseWriter, r *http.Request, accountID string) {
+	if s.perf == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "performance service is unavailable", nil)
+		return
+	}
+	if s.jobs == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "job run store is unavailable", nil)
+		return
+	}
+	referenceDate := strings.TrimSpace(r.URL.Query().Get("reference_date"))
+	if referenceDate == "" {
+		referenceDate = timeutil.Now().Format("2006-01-02")
+	}
+	normalizedReference, err := normalizeAPIDate(referenceDate)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid reference_date", err.Error())
+		return
+	}
+	result, err := s.performanceDefaultRange(r.Context(), accountID, normalizedReference)
+	if err != nil {
+		s.writePerformanceError(w, r, err)
+		return
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"default_range": result})
+}
+
+func (s *Server) performanceDefaultRange(ctx context.Context, accountID string, referenceDate string) (PerformanceDefaultRange, error) {
+	dateFrom, err := previousCalendarMonthDate(referenceDate)
+	if err != nil {
+		return PerformanceDefaultRange{}, err
+	}
+	result := PerformanceDefaultRange{
+		AccountID:     accountID,
+		ReferenceDate: referenceDate,
+		DateFrom:      dateFrom,
+		DateTo:        referenceDate,
+	}
+
+	navs, err := s.perf.ListPerformanceNAVs(ctx, accountID, "", referenceDate)
+	if err != nil {
+		return PerformanceDefaultRange{}, err
+	}
+	runs, err := s.jobs.ListJobRuns(ctx, ledger.JobRunQuery{
+		JobNames: []string{"performance_canonical"},
+		Limit:    500,
+	})
+	if err != nil && !errors.Is(err, ledger.ErrJobRunNotFound) {
+		return PerformanceDefaultRange{}, err
+	}
+	canonicalDates := make(map[string]bool, len(runs))
+	for _, run := range runs {
+		if canonicalPerformanceRunSucceeded(run) && run.TargetTradeDate <= referenceDate {
+			canonicalDates[run.TargetTradeDate] = true
+		}
+	}
+	sort.SliceStable(navs, func(i, j int) bool { return navs[i].TradeDate > navs[j].TradeDate })
+	for _, nav := range navs {
+		if nav.TradeDate > referenceDate {
+			continue
+		}
+		anchorSource, authoritative := authoritativePerformanceNAVSource(nav, canonicalDates[nav.TradeDate])
+		if !authoritative {
+			continue
+		}
+		dateFrom, err = previousCalendarMonthDate(nav.TradeDate)
+		if err != nil {
+			return PerformanceDefaultRange{}, err
+		}
+		result.DateFrom = dateFrom
+		result.DateTo = nav.TradeDate
+		result.Available = true
+		result.FallbackApplied = nav.TradeDate != referenceDate
+		result.AnchorSource = anchorSource
+		return result, nil
+	}
+	return result, nil
+}
+
+func previousCalendarMonthDate(value string) (string, error) {
+	normalized, err := normalizeAPIDate(value)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := time.Parse("2006-01-02", normalized)
+	if err != nil {
+		return "", err
+	}
+	targetMonth := time.Date(parsed.Year(), parsed.Month()-1, 1, 0, 0, 0, 0, time.UTC)
+	lastTargetDay := targetMonth.AddDate(0, 1, -1).Day()
+	targetDay := parsed.Day()
+	if targetDay > lastTargetDay {
+		targetDay = lastTargetDay
+	}
+	return time.Date(targetMonth.Year(), targetMonth.Month(), targetDay, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), nil
+}
+
+func canonicalPerformanceRunSucceeded(run ledger.JobRun) bool {
+	status := strings.ToLower(strings.TrimSpace(run.Status))
+	if status != "succeeded" && status != "completed" {
+		return false
+	}
+	completed, _ := run.Report["canonical_completed"].(bool)
+	return completed
+}
+
+func authoritativePerformanceNAVSource(nav ledger.PerformanceNAV, canonicalRunSucceeded bool) (string, bool) {
+	if nav.Status == "blocked" || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
+		return "", false
+	}
+	if nav.FormulaVersion == "broker_statement_nav.v1" {
+		return "broker_statement", true
+	}
+	flags := make(map[string]bool, len(nav.QualityFlags))
+	for _, flag := range nav.QualityFlags {
+		flags[flag] = true
+	}
+	valuation, _ := nav.PnLComponents["market_valuation"].(map[string]any)
+	priceSource, _ := valuation["price_source"].(string)
+	canonicalPrices := strings.TrimSpace(priceSource) == "meridian_1d_pre_close_and_close" &&
+		!flags["meridian_level1_close_fallback"] &&
+		!flags["meridian_daily_bars_unavailable"]
+	if !canonicalPrices {
+		return "", false
+	}
+	if strings.EqualFold(nav.Status, "finalized") {
+		return "finalized_nav", true
+	}
+	if canonicalRunSucceeded {
+		return "performance_canonical", true
+	}
+	return "", false
 }
 
 func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Request, accountID string) {

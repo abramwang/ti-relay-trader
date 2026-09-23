@@ -29,6 +29,25 @@ func TestTradeTerminalUsesMatchedAtForFillTimes(t *testing.T) {
 	}
 }
 
+func TestTradeTerminalDefaultsPerformanceToLatestAuthoritativeMonth(t *testing.T) {
+	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
+	if err != nil {
+		t.Fatalf("read trade terminal script: %v", err)
+	}
+	text := string(script)
+	for _, required := range []string{
+		`shiftCompactMonth(day, -1)`,
+		`/performance/default-range?reference_date=`,
+		`defaultRange.available !== true`,
+		`state.performanceRangeMode = "custom"`,
+		`已回退最近权威日`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("trade terminal is missing authoritative performance default %q", required)
+		}
+	}
+}
+
 func TestPortalAccountRowsPreferDatabaseAliases(t *testing.T) {
 	rows := portalAccountRowsHTML(
 		[]relayconfig.AccountRouteConfig{{

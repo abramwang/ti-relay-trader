@@ -108,7 +108,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 2. `批量下单`：面向券商测试环境的篮子委托工作台，支持逐行编辑和粘贴 `代码,方向,价格,数量`，展示批次金额、申购/赎回笔数、命令 Message/Stream/Request ID 及逐笔草稿状态。
 3. `订单监控`：用底部订单模块扩展成完整页面，展示委托数、活动委托、成交数和最近回报；成交回报不再是独立页面，而是该页面里的 `当日成交` tab。
 4. `资金持仓`：用当前持仓模块扩展成完整页面，展示总资产、可用资金、市值、当日盈亏，以及资金总额、股票市值、基金市值、持仓盈亏、平仓盈亏、手续费和持仓表。持仓表同时展示 `盈亏/%` 和 `当日盈亏/%`：前者按买入成本计算总浮盈，后者老仓按今日开盘价、当日买入按成交成本计算日内浮动贡献。CSV 资金摘要同时导出账户别名、所属券商和原始 `broker_id`。
-5. `绩效分析`：承接收盘后 close/open 快照、经济净值、证券贡献、交易质量、NAV 对账和 CSV 导出。主图展示账户归一化净值、上证指数基准、超额收益及账户/基准回撤；数据质量区固定检查资产快照、Meridian bars、收益归因、订单成交账本、T+1 NAV 对账和盘前/盘后任务。不再单独提供“盘后对账”页面入口，详细口径见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。
+5. `绩效分析`：承接收盘后 close/open 快照、经济净值、证券贡献、交易质量、NAV 对账和 CSV 导出。默认区间以账户最近一个权威绩效交易日为结束日、向前取一个自然月；当天只有 Level1 临时净值或尚未完成权威行情复算时自动回退，不读取当天 preview 形成阻断。主图展示账户归一化净值、上证指数基准、超额收益及账户/基准回撤；数据质量区固定检查资产快照、Meridian bars、收益归因、订单成交账本、T+1 NAV 对账和盘前/盘后任务。不再单独提供“盘后对账”页面入口，详细口径见 [docs/PERFORMANCE_ANALYSIS_DESIGN.md](/home/ti-relay-trader/docs/PERFORMANCE_ANALYSIS_DESIGN.md:1)。
 
 批量下单工作台采用三段式写入流程：先编辑或导入委托，再校验代码、枚举、价格、数量及客户端/Relay 订单号唯一性，最后输入账户后四位二次确认。任何账户、幂等键或逐行字段变化都会使已校验状态失效。只有 `/v1/status.environment=test` 且所选账户 `trading_enabled=true` 时写控件才会启用；环境未知、生产环境和只读账户都在浏览器侧锁定，API 的账户路由权限仍作为服务端最终门禁。生产只读 Playwright 会强制操作禁用按钮并确认没有 `/v1/*` 写请求。
 
@@ -153,7 +153,7 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 
 ## 当前边界
 
-1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。生产环境的交易终端采用 `/v1/status.trading_day.previous_or_current_trading_date` 作为订单、成交和资金持仓默认日期；测试环境的订单/成交监控默认使用东八区自然日，以便在周末或节假日验证券商测试柜台，行情、绩效及资金持仓仍以最近交易日为默认口径。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
+1. 行情/盘口当前通过 Meridian `/v1/market/snapshots` 获取；如果当日不是交易日，relay 会先调用 Meridian `/v1/metadata/trading-day` 取得最近交易日再读取 historical 快照。生产环境的交易终端采用 `/v1/status.trading_day.previous_or_current_trading_date` 作为订单、成交和资金持仓默认日期；测试环境的订单/成交监控默认使用东八区自然日，以便在周末或节假日验证券商测试柜台。行情与资金持仓继续使用最近交易日，绩效则以该日期为参考再回退到账户最近的权威绩效日。若当日是交易日，relay 会显式带上 `trade_date=东八区当天`，避免 Meridian 实时缓存尚未换日时回放旧交易日快照。交易测试页分钟 K 线通过 Meridian `/v1/market/bars` 获取：当前交易日盘中使用 realtime，15:00 后使用 auto，非交易日回退最近交易日 historical。
 2. 实时推送使用 9092 内部事件 hub 和 SSE；生产由持久化位点 worker 成功落账后发送 PostgreSQL 通知，API 事件桥接收后驱动同一个 SSE 出口。
 3. 撤单记录 tab 当前占位，等待撤单查询或事件分类落盘后展示。
 4. Redis/DB 状态来自 `/v1/status` 依赖健康检查；页面顶部当前展示摘要状态，后续可扩展为更细的 lag、DLQ 和 pending query/trade 监控。
