@@ -863,6 +863,121 @@ func TestAccountAssetUsesStoredPositionValuesWithoutMarketLookup(t *testing.T) {
 	}
 }
 
+func TestAccountAssetUsesSnapshotPreviousCloseBeforeFirstTrade(t *testing.T) {
+	marketRequests := 0
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		marketRequests++
+		if r.URL.Path != "/v1/market/snapshots" {
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"security_id":"600000.SH","open":0,"last":0,"pre_close":9.8}],"meta":{"count":1}}`)
+	}))
+	defer meridian.Close()
+
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID: "acct-1", CashAvailable: 900, CashTotal: 1000, NetAsset: 1000,
+		}},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH,
+				Quantity: 100, SellableQty: 100, AvgCost: 9.5,
+			}},
+			Count: 1,
+		},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if marketRequests != 1 {
+		t.Fatalf("market requests = %d, want only the Level1 snapshot lookup", marketRequests)
+	}
+	for _, want := range []string{`"market_value":980`, `"net_asset":1980`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("response missing %s: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestAccountAssetFallsBackToPreviousDailyCloseBeforeLevel1Exists(t *testing.T) {
+	today := timeutil.Now().Format("2006-01-02")
+	previous := timeutil.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	requests := make([]string, 0, 3)
+	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/market/snapshots":
+			_, _ = io.WriteString(w, `{"data":[],"meta":{"count":0}}`)
+		case "/v1/metadata/trading-day":
+			_, _ = fmt.Fprintf(w, `{"data":{"date":"%s","is_trading_day":true,"previous_or_current_trading_date":"%s"}}`, strings.ReplaceAll(previous, "-", ""), strings.ReplaceAll(previous, "-", ""))
+		case "/v1/market/bars":
+			if got := r.URL.Query().Get("security_ids"); got != "600000.SH" {
+				t.Fatalf("security_ids = %q", got)
+			}
+			if got := r.URL.Query().Get("start_date"); got != strings.ReplaceAll(previous, "-", "") {
+				t.Fatalf("start_date = %q", got)
+			}
+			if got := r.URL.Query().Get("end_date"); got != strings.ReplaceAll(previous, "-", "") {
+				t.Fatalf("end_date = %q", got)
+			}
+			if got := r.URL.Query().Get("adjustment"); got != "none" {
+				t.Fatalf("adjustment = %q", got)
+			}
+			_, _ = fmt.Fprintf(w, `{"data":[{"security_id":"600000.SH","trade_date":"%s","open":9.6,"close":9.7}],"meta":{"count":1}}`, strings.ReplaceAll(previous, "-", ""))
+		default:
+			t.Fatalf("unexpected meridian path %s", r.URL.Path)
+		}
+	}))
+	defer meridian.Close()
+
+	service := &fakeOrderSubmitter{
+		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+			AccountID: "acct-1", CashAvailable: 900, CashTotal: 1000, NetAsset: 1000,
+		}},
+		positionsResult: orderflow.ListPositionsResult{
+			Positions: []trading.Position{{
+				AccountID: "acct-1", Symbol: "600000", Exchange: trading.ExchangeSH,
+				Quantity: 100, SellableQty: 100, AvgCost: 9.5,
+			}},
+			Count: 1,
+		},
+	}
+	cfg := config.Default()
+	cfg.Market.BaseURL = meridian.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(requests) != 3 {
+		t.Fatalf("meridian requests = %#v", requests)
+	}
+	if service.positionQuery.TradeDate != "" {
+		t.Fatalf("current position query unexpectedly changed trade date: %#v", service.positionQuery)
+	}
+	var body struct {
+		Data struct {
+			Asset trading.Asset `json:"asset"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if math.Abs(body.Data.Asset.MarketValue-970) > 0.000001 || math.Abs(body.Data.Asset.NetAsset-1970) > 0.000001 {
+		t.Fatalf("fallback asset for %s = %#v", today, body.Data.Asset)
+	}
+}
+
 func TestAccountAssetCanSkipEnrichment(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
@@ -981,20 +1096,27 @@ func TestAccountPositionsCanSkipEnrichment(t *testing.T) {
 }
 
 func TestAccountPositionsEnrichesInstrumentName(t *testing.T) {
+	previous := timeutil.Now().AddDate(0, 0, -1).Format("20060102")
 	meridian := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/market/snapshots" {
+		switch r.URL.Path {
+		case "/v1/market/snapshots", "/v1/market/bars":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"data":[],"meta":{"count":0}}`)
 			return
-		}
-		if r.URL.Path != "/v1/metadata/instruments" {
+		case "/v1/metadata/trading-day":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"data":{"date":"%s","is_trading_day":true,"previous_or_current_trading_date":"%s"}}`, previous, previous)
+			return
+		case "/v1/metadata/instruments":
+			if got := r.URL.Query().Get("security_ids"); got != "000767.SZ" {
+				t.Fatalf("security_ids = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":[{"security_id":"000767.SZ","name":"晋控电力"}],"meta":{"count":1}}`)
+			return
+		default:
 			t.Fatalf("unexpected meridian path %s", r.URL.Path)
 		}
-		if got := r.URL.Query().Get("security_ids"); got != "000767.SZ" {
-			t.Fatalf("security_ids = %q", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":[{"security_id":"000767.SZ","name":"晋控电力"}],"meta":{"count":1}}`)
 	}))
 	defer meridian.Close()
 

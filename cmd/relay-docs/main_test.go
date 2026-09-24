@@ -48,6 +48,25 @@ func TestTradeTerminalDefaultsPerformanceToLatestAuthoritativeMonth(t *testing.T
 	}
 }
 
+func TestTradeTerminalDoesNotOverrideAssetWithIncompletePositionValuation(t *testing.T) {
+	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
+	if err != nil {
+		t.Fatalf("read trade terminal script: %v", err)
+	}
+	text := string(script)
+	for _, required := range []string{
+		`const liveTotals = livePortfolioTotals();`,
+		`quantity !== null && quantity > 0`,
+		`rowMarketValue === null || rowMarketValue <= 0`,
+		`return null;`,
+		`liveTotals ? liveTotals.netAsset : asset.net_asset`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("trade terminal is missing incomplete valuation guard %q", required)
+		}
+	}
+}
+
 func TestPortalAccountRowsPreferDatabaseAliases(t *testing.T) {
 	rows := portalAccountRowsHTML(
 		[]relayconfig.AccountRouteConfig{{

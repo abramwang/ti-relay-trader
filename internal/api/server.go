@@ -981,13 +981,49 @@ func (s *Server) positionMarketQuotes(ctx context.Context, positions []trading.P
 			if lastPrice, ok := floatFromAny(row["last"]); ok && lastPrice > 0 {
 				quote.last = lastPrice
 				quote.hasLast = true
+			} else if previousClose, ok := floatFromAny(row["pre_close"]); ok && previousClose > 0 {
+				quote.last = previousClose
+				quote.hasLast = true
 			}
 			if quote.hasOpen || quote.hasLast {
 				quotes[id] = quote
 			}
 		}
 	}
+
+	missing := positionQuoteIDsWithoutLast(ids, quotes)
+	if len(missing) == 0 {
+		return quotes
+	}
+	previous, err := s.previousTradingDate(ctx, tradeDate)
+	if err != nil {
+		s.logger.Warn("position_previous_close_date_failed", "trade_date", tradeDate, "missing_count", len(missing), "error", err)
+		return quotes
+	}
+	for id, fallback := range s.historicalPositionMarketQuotes(ctx, missing, previous) {
+		if !fallback.hasLast || fallback.last <= 0 {
+			continue
+		}
+		quote := quotes[id]
+		if quote.hasLast {
+			continue
+		}
+		quote.last = fallback.last
+		quote.hasLast = true
+		quotes[id] = quote
+	}
 	return quotes
+}
+
+func positionQuoteIDsWithoutLast(ids []string, quotes map[string]positionMarketQuote) []string {
+	missing := make([]string, 0)
+	for _, id := range ids {
+		if quote := quotes[id]; quote.hasLast && quote.last > 0 {
+			continue
+		}
+		missing = append(missing, id)
+	}
+	return missing
 }
 
 func (s *Server) historicalPositionMarketQuotes(ctx context.Context, ids []string, tradeDate string) map[string]positionMarketQuote {

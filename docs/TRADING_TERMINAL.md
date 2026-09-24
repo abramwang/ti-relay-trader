@@ -1,6 +1,6 @@
 # relay 交易终端
 
-更新时间：`2026-08-02`
+更新时间：`2026-09-24`
 
 ## 目标
 
@@ -66,6 +66,8 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 | ETF 成分股划转 | `GET /v1/transfers`、`GET /v1/history/transfers` |
 
 行情和证券主数据相关字段约束全部以 Meridian 为准。relay 只做同源薄代理和交易页输入转换，不重新定义行情数据字段；响应保持 Meridian `data/meta/error` 结构，页面直接使用 `security_id`、`name`、`instrument_type`、`market_level`、`trade_date`、`last`、`pre_close`、`bids`、`asks` 等字段。
+
+盘前持仓估值遵循 `last -> pre_close -> 上一交易日未复权日线 close` 的回退顺序。前两项来自当日 Meridian Level1；若某证券在首条快照发布前仍无价格，Relay 只为该缺失证券查询 Meridian 上一交易日 `frequency=1d&adjustment=none` 的收盘价。前端仅在全部正持仓都有有效估值时才用实时持仓重算总资产，否则保留资金接口结果，避免把日初证券市值短暂覆盖为 0。开盘后 `last` 到达即自然接管，不修改 OC 原始资金和持仓报文。
 
 价格精度只依据 Meridian `metadata_instrument.v2`：`price_decimals` 控制显示位数，`price_tick` 控制下单价格输入步长；当前沪深股票为 2 位，ETF/可转债为 3 位。证券主数据与行情快照合并刷新时保留价位字段；缺失规则时价格框使用 `step=any`，2 位仅作为中性展示回退，不代表可报价格校验。当前实盘不支持北交所，未来开通权限后再补独立契约验收。
 

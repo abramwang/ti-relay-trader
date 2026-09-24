@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+交易终端资产回归覆盖盘前 Meridian Level1 尚无最新价的两条路径：快照已有 `pre_close` 时直接估值，快照整体未出现时只对缺失证券回退上一交易日未复权日线收盘，防止总资产退化为纯现金。
+
 ## 目录约定
 
 - `tests/unit/`: Go 和 Python 的单元测试，后续用于配置、schema、状态机、账表计算等小粒度测试。

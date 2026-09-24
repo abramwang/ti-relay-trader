@@ -3013,8 +3013,12 @@
     let unclassifiedValue = 0;
     for (const position of state.allPositions) {
       const view = livePositionView(position);
+      const quantity = finiteNumber(position.quantity);
       const rowMarketValue = finiteNumber(view.marketValue);
       const rowPnl = finiteNumber(view.pnl);
+      if (quantity !== null && quantity > 0 && (rowMarketValue === null || rowMarketValue <= 0)) {
+        return null;
+      }
       if (rowMarketValue !== null) {
         marketValue += rowMarketValue;
       }
