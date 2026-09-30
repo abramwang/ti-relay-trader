@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立账本同步 worker |
+| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-09-30 Asia/Shanghai` 跟随 Meridian 增加 CTP 股指期货行情薄代理：支持期货状态、快照、分钟线及 SSE，交易终端支持 `IF/IH/IC/IM.CFFEX` 活跃合约自动补全、实时快照和 K 线；OC 尚无期货交易路由，终端前后两层保持行情只读。SDK 发布为 `0.1.41`，生产环境和交易权限未变更 |
+| 最近确认 | `2026-09-30 20:34 Asia/Shanghai` 按用户明确指令切换到测试柜台：测试迁移完成，9092、Redis、PostgreSQL、Meridian 和内嵌账本同步正常；账户 `00030484` 配置允许交易，但测试 OC 最后心跳为 `2026-09-19 08:21:40`，readiness 以 `HEARTBEAT_STALE` 失败关闭，当前不得发单。切回生产仍需用户新的明确指令 |
 | 更新时间 | `2026-09-30` |
 
 新线程按以下顺序恢复：
@@ -28,6 +28,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ### 已验证运行态
 
+- `2026-09-30 20:34 Asia/Shanghai` 按用户明确指令从生产切换到 TEST：`.runtime/active-config.yaml -> config/relay.local.yaml`，目标库 migration 成功，API 内嵌 worker、Redis、PostgreSQL、Meridian 和事件流均正常。测试账户 `00030484` 为 `trading_enabled=true`，但 OC 最后 heartbeat 停在 `2026-09-19 08:21:40 Asia/Shanghai`，当前 `HEARTBEAT_STALE / order_entry_ready=false`，Relay 正确失败关闭；reply/event/hb/dlq 四条 Stream 总 lag 为 0、pending DLQ 为 0。生产配置和生产账本未修改，切回生产必须取得用户新的明确指令。
 - `2026-09-30 Asia/Shanghai` 接入 Meridian CTP 股指期货正式契约：Relay 新增 `/v1/meridian/futures/{status,snapshots,bars}` 与两条期货 SSE 薄代理，Python SDK `0.1.41` 同步查询和快照订阅。交易终端以 Meridian 活跃快照生成 `IF/IH/IC/IM.CFFEX` 自动补全，按资产类型选择期货实时快照/分钟线并持续刷新；由于 OC 当前不支持期货下单，CFFEX 在风险提示和提交函数均失败关闭。未改生产环境、账户配置或下单权限。
 - `2026-09-24 09:23 Asia/Shanghai` 定位并修复交易终端盘前总资产短暂等于可用资金。OC 当前资金页只含现金，09:01 的当前持仓也不带行情市值；盘前初始化虽已正确落库上一交易日收盘估值的 `open` 快照，但交易终端的全量持仓实时汇总会在 Meridian 首条 Level1 到达前把市值按 0 覆盖。当前实时持仓估值按 Meridian 标准字段逐级使用 `last -> pre_close -> 上一交易日 adjustment=none 日线 close`，仅补缺失证券；浏览器发现任一正持仓仍无有效估值时回退资产接口，不生成现金-only 总资产。新增两组 API 回归覆盖“有昨收、无最新价”和“Level1 整体尚未出现”，全量 Go 测试通过；生产下单继续关闭。
 - `2026-09-23 10:45 Asia/Shanghai` 发布 OC 部分成交状态兼容：仅当 `gateway_status=partially_filled` 且数量满足有效非终态部分成交时，标准账本映射为 `status=partially_filled + gateway_status=working`；实时事件和订单查询页共用规则，raw 永久保留原值，标准账本记录审计字段，同步报告记录规范化计数。生产三户当日 `481/299/195` 条原始事件已全部重放为同量订单事件，0 解析/数据库错误；两笔仍在部分成交的订单已更新为 `12,500/175,000` 和 `23,000/291,200`，与 2/4 条成交合计一致，当日孤立成交为 0。旧 checkpoint 错误已转存审计，API、16 条 Stream 和全部核心依赖恢复 `ok`，总 lag=0、pending DLQ=0；OC 后续可随正常版本修正，无需紧急升级。详见 [兼容与验收记录](/home/ti-relay-trader/docs/OC_PARTIAL_FILL_GATEWAY_STATUS_20260923.md:1)。
