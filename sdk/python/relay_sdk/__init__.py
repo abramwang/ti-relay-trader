@@ -88,4 +88,4 @@ __all__ = [
     "retry_decision",
 ]
 
-__version__ = "0.1.40"
+__version__ = "0.1.41"

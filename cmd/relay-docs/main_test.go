@@ -67,6 +67,26 @@ func TestTradeTerminalDoesNotOverrideAssetWithIncompletePositionValuation(t *tes
 	}
 }
 
+func TestTradeTerminalSupportsFuturesMarketDataWithoutEnablingTrading(t *testing.T) {
+	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
+	if err != nil {
+		t.Fatalf("read trade terminal script: %v", err)
+	}
+	text := string(script)
+	for _, required := range []string{
+		`/^(IF|IH|IC|IM)\d{0,4}$/`,
+		`/v1/meridian/futures/snapshots?`,
+		`/v1/meridian/futures/bars?`,
+		`/v1/meridian/stream/futures/snapshots?`,
+		`当前 Relay/OC 尚未接入期货交易路由`,
+		`当前仅支持股指期货行情，未发送下单请求`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("trade terminal is missing futures market-data guard %q", required)
+		}
+	}
+}
+
 func TestPortalAccountRowsPreferDatabaseAliases(t *testing.T) {
 	rows := portalAccountRowsHTML(
 		[]relayconfig.AccountRouteConfig{{

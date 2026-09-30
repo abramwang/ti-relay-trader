@@ -19,17 +19,22 @@ import (
 )
 
 const (
-	instrumentsPath    = "/v1/metadata/instruments"
-	metadataStatusPath = "/v1/metadata/status"
-	adjustFactorsPath  = "/v1/metadata/adjust-factors"
-	barsPath           = "/v1/market/bars"
-	snapshotsPath      = "/v1/market/snapshots"
-	etfComponentsPath  = "/v1/market/etf-components"
-	etfCashPath        = "/v1/market/etf-cash-components"
-	etfPCFStatusPath   = "/v1/market/etf-pcf-status"
-	barStreamPath      = "/v1/stream/market/bars"
-	snapshotStreamPath = "/v1/stream/market/snapshots"
-	tradingDayPath     = "/v1/metadata/trading-day"
+	instrumentsPath           = "/v1/metadata/instruments"
+	metadataStatusPath        = "/v1/metadata/status"
+	adjustFactorsPath         = "/v1/metadata/adjust-factors"
+	barsPath                  = "/v1/market/bars"
+	snapshotsPath             = "/v1/market/snapshots"
+	etfComponentsPath         = "/v1/market/etf-components"
+	etfCashPath               = "/v1/market/etf-cash-components"
+	etfPCFStatusPath          = "/v1/market/etf-pcf-status"
+	barStreamPath             = "/v1/stream/market/bars"
+	snapshotStreamPath        = "/v1/stream/market/snapshots"
+	futuresStatusPath         = "/v1/futures/status"
+	futuresSnapshotsPath      = "/v1/futures/snapshots"
+	futuresBarsPath           = "/v1/futures/bars"
+	futuresSnapshotStreamPath = "/v1/futures/stream/snapshots"
+	futuresBarStreamPath      = "/v1/futures/stream/bars"
+	tradingDayPath            = "/v1/metadata/trading-day"
 )
 
 const (
@@ -185,6 +190,52 @@ func (client *MeridianClient) MarketBarStream(ctx context.Context, values url.Va
 		query.Set("watch_interval_ms", "1000")
 	}
 	return client.marketStream(ctx, barStreamPath, query)
+}
+
+func (client *MeridianClient) FuturesStatus(ctx context.Context) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, futuresStatusPath, nil)
+}
+
+func (client *MeridianClient) FuturesSnapshots(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, futuresSnapshotsPath, cloneValues(values))
+}
+
+func (client *MeridianClient) FuturesBars(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, futuresBarsPath, cloneValues(values))
+}
+
+func (client *MeridianClient) FuturesSnapshotStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	if client == nil {
+		return nil, errors.New("meridian client is nil")
+	}
+	query := cloneValues(values)
+	if strings.TrimSpace(query.Get("include_existing")) == "" {
+		query.Set("include_existing", "true")
+	}
+	return client.marketStream(ctx, futuresSnapshotStreamPath, query)
+}
+
+func (client *MeridianClient) FuturesBarStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	if client == nil {
+		return nil, errors.New("meridian client is nil")
+	}
+	query := cloneValues(values)
+	if strings.TrimSpace(query.Get("frequency")) == "" {
+		query.Set("frequency", "1m")
+	}
+	if strings.TrimSpace(query.Get("include_existing")) == "" {
+		query.Set("include_existing", "true")
+	}
+	return client.marketStream(ctx, futuresBarStreamPath, query)
 }
 
 func (client *MeridianClient) marketStream(ctx context.Context, path string, query url.Values) (*http.Response, error) {

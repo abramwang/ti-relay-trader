@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.40.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.41.tar.gz"
 ```
 
 ## Quick Start
@@ -46,6 +46,12 @@ bars = client.get_meridian_bars(
     frequency="1m",
     start_time="09:30:00",
     end_time="15:00:00",
+)
+futures = client.get_meridian_futures_snapshots(product_ids=["IF", "IH", "IC", "IM"])
+futures_bars = client.get_meridian_futures_bars(
+    security_id="IF2610.CFFEX",
+    trade_date="20260930",
+    data_scope="realtime",
 )
 contributions = client.get_performance_contributions(trade_date="20260724")
 quality = client.get_trade_quality(date_from="20260722", date_to="20260724")
@@ -345,6 +351,11 @@ P8 helper methods are available for strategy and research tooling:
 - `block_nav_reconciliation(trade_date=..., operator=...)`
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
+- `get_meridian_futures_status()`
+- `get_meridian_futures_snapshots(security_id=... | product_ids=...)`
+- `get_meridian_futures_bars(security_id=..., trade_date=...)`
+- `stream_meridian_futures_snapshots(security_id=... | product_ids=...)`
+- `stream_meridian_futures_bars(security_id=..., trade_date=...)`
 - `get_meridian_instruments(security_ids=..., instrument_type=...)`
 - `get_meridian_metadata_status()`
 - `get_meridian_adjust_factors(security_id=..., start_date=..., end_date=...)`

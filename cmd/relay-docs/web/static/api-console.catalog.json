@@ -814,6 +814,77 @@
     ]
   },
   {
+    "id": "meridian-futures-status",
+    "group": "行情",
+    "title": "Meridian CTP 期货状态",
+    "method": "GET",
+    "path": "/v1/meridian/futures/status",
+    "status": "ready",
+    "fields": []
+  },
+  {
+    "id": "meridian-futures-snapshots",
+    "group": "行情",
+    "title": "Meridian 股指期货快照",
+    "method": "GET",
+    "path": "/v1/meridian/futures/snapshots",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "IF2610.CFFEX" },
+      { "name": "security_ids", "label": "security_ids", "source": "query", "defaultValue": "" },
+      { "name": "product_id", "label": "product_id", "source": "query", "defaultValue": "" },
+      { "name": "product_ids", "label": "product_ids", "source": "query", "defaultValue": "" },
+      { "name": "allow_stale", "label": "allow_stale", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "100" }
+    ]
+  },
+  {
+    "id": "meridian-futures-bars",
+    "group": "行情",
+    "title": "Meridian 股指期货 Bars",
+    "method": "GET",
+    "path": "/v1/meridian/futures/bars",
+    "status": "ready",
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "IF2610.CFFEX" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260930" },
+      { "name": "frequency", "label": "frequency", "source": "query", "type": "select", "defaultValue": "1m", "options": ["1m", "1d"] },
+      { "name": "series_type", "label": "series_type", "source": "query", "type": "select", "defaultValue": "contract", "options": ["contract"] },
+      { "name": "adjustment", "label": "adjustment", "source": "query", "type": "select", "defaultValue": "none", "options": ["none"] },
+      { "name": "data_scope", "label": "data_scope", "source": "query", "type": "select", "defaultValue": "realtime", "options": ["realtime", "historical"] },
+      { "name": "format", "label": "format", "source": "query", "type": "select", "defaultValue": "json", "options": ["json"] },
+      { "name": "limit", "label": "limit", "source": "query", "type": "number", "defaultValue": "300" }
+    ]
+  },
+  {
+    "id": "meridian-futures-snapshot-stream",
+    "group": "行情",
+    "title": "Meridian 股指期货快照 SSE",
+    "method": "GET",
+    "path": "/v1/meridian/stream/futures/snapshots",
+    "status": "ready",
+    "stream": true,
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "IF2610.CFFEX" },
+      { "name": "include_existing", "label": "include_existing", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] }
+    ]
+  },
+  {
+    "id": "meridian-futures-bar-stream",
+    "group": "行情",
+    "title": "Meridian 股指期货分钟线 SSE",
+    "method": "GET",
+    "path": "/v1/meridian/stream/futures/bars",
+    "status": "ready",
+    "stream": true,
+    "fields": [
+      { "name": "security_id", "label": "security_id", "source": "query", "defaultValue": "IF2610.CFFEX" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "defaultValue": "20260930" },
+      { "name": "frequency", "label": "frequency", "source": "query", "type": "select", "defaultValue": "1m", "options": ["1m"] },
+      { "name": "include_existing", "label": "include_existing", "source": "query", "type": "select", "defaultValue": "true", "options": ["true", "false"] }
+    ]
+  },
+  {
     "id": "meridian-etf-components",
     "group": "行情",
     "title": "Meridian ETF PCF 成份券",

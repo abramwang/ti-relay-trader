@@ -267,6 +267,11 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/meridian/market/etf-pcf-status", server.handleMeridianMarketETFPCFStatus)
 	mux.HandleFunc("/v1/meridian/stream/market/bars", server.handleMeridianMarketBarStream)
 	mux.HandleFunc("/v1/meridian/stream/market/snapshots", server.handleMeridianMarketSnapshotStream)
+	mux.HandleFunc("/v1/meridian/futures/status", server.handleMeridianFuturesStatus)
+	mux.HandleFunc("/v1/meridian/futures/snapshots", server.handleMeridianFuturesSnapshots)
+	mux.HandleFunc("/v1/meridian/futures/bars", server.handleMeridianFuturesBars)
+	mux.HandleFunc("/v1/meridian/stream/futures/snapshots", server.handleMeridianFuturesSnapshotStream)
+	mux.HandleFunc("/v1/meridian/stream/futures/bars", server.handleMeridianFuturesBarStream)
 	mux.HandleFunc("/v1/events/stream", server.handleEventsStream)
 	mux.HandleFunc("/v1/jobs/runs", server.handleJobRuns)
 	mux.HandleFunc("/v1/command-status/", server.handleCommandStatus)
@@ -667,12 +672,82 @@ func (s *Server) handleMeridianMarketSnapshotStream(w http.ResponseWriter, r *ht
 	s.handleMeridianMarketStream(w, r, "snapshots", s.marketSnapshotStream)
 }
 
+func (s *Server) handleMeridianFuturesStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.FuturesStatus(r.Context())
+	if err != nil {
+		s.logger.Warn("meridian_futures_status_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian futures status request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian futures status request failed")
+}
+
+func (s *Server) handleMeridianFuturesSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.FuturesSnapshots(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_futures_snapshots_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian futures request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian futures request failed")
+}
+
+func (s *Server) handleMeridianFuturesBars(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+		return
+	}
+	if s.market == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "meridian market client is unavailable", nil)
+		return
+	}
+	response, err := s.market.FuturesBars(r.Context(), r.URL.Query())
+	if err != nil {
+		s.logger.Warn("meridian_futures_bars_failed", "error", err)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.CodeUnavailable, "meridian futures request failed", err.Error())
+		return
+	}
+	s.writeMeridianResponse(w, r, response, "meridian futures request failed")
+}
+
+func (s *Server) handleMeridianFuturesSnapshotStream(w http.ResponseWriter, r *http.Request) {
+	s.handleMeridianMarketStream(w, r, "futures_snapshots", s.futuresSnapshotStream)
+}
+
+func (s *Server) handleMeridianFuturesBarStream(w http.ResponseWriter, r *http.Request) {
+	s.handleMeridianMarketStream(w, r, "futures_bars", s.futuresBarStream)
+}
+
 func (s *Server) marketBarStream(ctx context.Context, values url.Values) (*http.Response, error) {
 	return s.market.MarketBarStream(ctx, values)
 }
 
 func (s *Server) marketSnapshotStream(ctx context.Context, values url.Values) (*http.Response, error) {
 	return s.market.MarketSnapshotStream(ctx, values)
+}
+
+func (s *Server) futuresSnapshotStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	return s.market.FuturesSnapshotStream(ctx, values)
+}
+
+func (s *Server) futuresBarStream(ctx context.Context, values url.Values) (*http.Response, error) {
+	return s.market.FuturesBarStream(ctx, values)
 }
 
 func (s *Server) handleMeridianMarketStream(

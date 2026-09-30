@@ -1860,6 +1860,77 @@ func TestMeridianMarketBarStreamProxy(t *testing.T) {
 	}
 }
 
+func TestMeridianFuturesProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/futures/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "latest_snapshot_count": 16})
+		case "/v1/futures/snapshots":
+			if r.URL.Query().Get("security_id") != "IF2610.CFFEX" {
+				t.Fatalf("snapshot query = %s", r.URL.RawQuery)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"security_id": "IF2610.CFFEX", "product_id": "IF", "last": 4620.2}},
+				"meta": map[string]any{"schema_version": "futures_market_snapshot.v1"},
+			})
+		case "/v1/futures/bars":
+			if r.URL.Query().Get("series_type") != "contract" || r.URL.Query().Get("trade_date") != "20260930" {
+				t.Fatalf("bars query = %s", r.URL.RawQuery)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"security_id": "IF2610.CFFEX", "close": 4620.2}},
+				"meta": map[string]any{"schema_version": "futures_minute_bar.v1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	for _, path := range []string{
+		"/v1/meridian/futures/status",
+		"/v1/meridian/futures/snapshots?security_id=IF2610.CFFEX",
+		"/v1/meridian/futures/bars?security_id=IF2610.CFFEX&trade_date=20260930&series_type=contract",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestMeridianFuturesStreamProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/futures/stream/snapshots" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("security_id") != "IF2610.CFFEX" || r.URL.Query().Get("include_existing") != "true" {
+			t.Fatalf("futures stream query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: futures_snapshots\n")
+		_, _ = io.WriteString(w, `data: {"data":[{"security_id":"IF2610.CFFEX","last":4620.2}]}`+"\n\n")
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.Market.BaseURL = upstream.URL
+	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/meridian/stream/futures/snapshots?security_id=IF2610.CFFEX", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "event: futures_snapshots") {
+		t.Fatalf("futures SSE response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestEventsStreamPublishesSSE(t *testing.T) {
 	eventHub := events.NewHub()
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{

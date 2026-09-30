@@ -51,7 +51,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.40"
+SDK_VERSION = "0.1.41"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -1270,6 +1270,137 @@ class RelayClient:
         }
         query.update(extra_query)
         return self._request("GET", "/v1/meridian/market/bars", query=query)
+
+    def get_meridian_futures_status(self) -> Mapping[str, Any]:
+        """Return Meridian's CTP futures service status through relay."""
+
+        return self._request("GET", "/v1/meridian/futures/status")
+
+    def get_meridian_futures_snapshots(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        product_id: str | None = None,
+        product_ids: str | Iterable[str] | None = None,
+        allow_stale: bool | None = None,
+        limit: int | None = 100,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Return Meridian ``futures_market_snapshot.v1`` rows through relay."""
+
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "product_id": product_id,
+            "product_ids": _join_query_values(product_ids),
+            "allow_stale": allow_stale,
+            "limit": limit,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/futures/snapshots", query=query)
+
+    def get_meridian_futures_bars(
+        self,
+        *,
+        security_id: str,
+        trade_date: str | None = None,
+        frequency: str = "1m",
+        series_type: str = "contract",
+        adjustment: str = "none",
+        data_scope: str | None = None,
+        format: str = "json",
+        limit: int | None = 300,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Return Meridian CTP futures bars without redefining its query contract."""
+
+        query = {
+            "security_id": security_id,
+            "trade_date": trade_date,
+            "frequency": frequency,
+            "series_type": series_type,
+            "adjustment": adjustment,
+            "data_scope": data_scope,
+            "format": format,
+            "limit": limit,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/futures/bars", query=query)
+
+    def stream_meridian_futures_snapshots(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        product_id: str | None = None,
+        product_ids: str | Iterable[str] | None = None,
+        include_existing: bool = True,
+        idle_timeout: float = 30.0,
+        **extra_query: Any,
+    ) -> Iterable[RelayEvent]:
+        """Read one Meridian futures snapshot SSE connection through relay."""
+
+        if idle_timeout <= 0:
+            raise ValueError("idle_timeout must be positive")
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "product_id": product_id,
+            "product_ids": _join_query_values(product_ids),
+            "include_existing": include_existing,
+        }
+        query.update(extra_query)
+        response = self._open(
+            "GET",
+            "/v1/meridian/stream/futures/snapshots",
+            query=query,
+            timeout=idle_timeout,
+        )
+
+        def read_events() -> Iterable[RelayEvent]:
+            try:
+                yield from iter_sse_events(response)
+            finally:
+                response.close()
+
+        return read_events()
+
+    def stream_meridian_futures_bars(
+        self,
+        *,
+        security_id: str,
+        trade_date: str | None = None,
+        frequency: str = "1m",
+        include_existing: bool = True,
+        idle_timeout: float = 30.0,
+        **extra_query: Any,
+    ) -> Iterable[RelayEvent]:
+        """Read one Meridian futures minute-bar SSE connection through relay."""
+
+        if idle_timeout <= 0:
+            raise ValueError("idle_timeout must be positive")
+        query = {
+            "security_id": security_id,
+            "trade_date": trade_date,
+            "frequency": frequency,
+            "include_existing": include_existing,
+        }
+        query.update(extra_query)
+        response = self._open(
+            "GET",
+            "/v1/meridian/stream/futures/bars",
+            query=query,
+            timeout=idle_timeout,
+        )
+
+        def read_events() -> Iterable[RelayEvent]:
+            try:
+                yield from iter_sse_events(response)
+            finally:
+                response.close()
+
+        return read_events()
 
     def get_meridian_instruments(
         self,

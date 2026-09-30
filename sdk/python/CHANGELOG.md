@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.41 - 2026-09-30
+
+- Add Relay-proxied Meridian CTP index-futures status, snapshot, minute-bar,
+  and snapshot SSE helpers.
+- Preserve Meridian's `IF/IH/IC/IM.CFFEX` contracts and response schemas;
+  this release adds market-data access only and does not enable futures orders.
+
 ## 0.1.40 - 2026-09-18
 
 - Expose the OC managed-credential heartbeat fields on `AccountReadiness`:

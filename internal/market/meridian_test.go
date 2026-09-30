@@ -266,6 +266,76 @@ func TestMarketStreamsUseRealtimeDefaults(t *testing.T) {
 	}
 }
 
+func TestFuturesEndpointsPassThroughAuthoritativeContract(t *testing.T) {
+	queries := make(map[string]url.Values)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries[r.URL.Path] = r.URL.Query()
+		switch r.URL.Path {
+		case futuresStatusPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "latest_snapshot_count": 16})
+		case futuresSnapshotsPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"security_id": "IF2610.CFFEX", "product_id": "IF", "last": 4620.2}},
+				"meta": map[string]any{"schema_version": "futures_market_snapshot.v1"},
+			})
+		case futuresBarsPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"security_id": "IF2610.CFFEX", "close": 4620.2}},
+				"meta": map[string]any{"schema_version": "futures_minute_bar.v1"},
+			})
+		case futuresSnapshotStreamPath, futuresBarStreamPath:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: ready\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMeridianClient(config.MarketConfig{BaseURL: server.URL, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("NewMeridianClient: %v", err)
+	}
+	status, err := client.FuturesStatus(context.Background())
+	if err != nil || status.StatusCode != http.StatusOK {
+		t.Fatalf("FuturesStatus: status=%d err=%v", status.StatusCode, err)
+	}
+	values := url.Values{
+		"security_id": {"IF2610.CFFEX"},
+		"trade_date":  {"20260930"},
+		"series_type": {"contract"},
+	}
+	if response, callErr := client.FuturesSnapshots(context.Background(), values); callErr != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("FuturesSnapshots: status=%d err=%v", response.StatusCode, callErr)
+	}
+	if response, callErr := client.FuturesBars(context.Background(), values); callErr != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("FuturesBars: status=%d err=%v", response.StatusCode, callErr)
+	}
+	snapshotStream, err := client.FuturesSnapshotStream(context.Background(), url.Values{"security_id": {"IF2610.CFFEX"}})
+	if err != nil {
+		t.Fatalf("FuturesSnapshotStream: %v", err)
+	}
+	snapshotStream.Body.Close()
+	barStream, err := client.FuturesBarStream(context.Background(), url.Values{"security_id": {"IF2610.CFFEX"}})
+	if err != nil {
+		t.Fatalf("FuturesBarStream: %v", err)
+	}
+	barStream.Body.Close()
+
+	if query := queries[futuresSnapshotsPath]; query.Get("security_id") != "IF2610.CFFEX" || query.Get("trade_date") != "20260930" {
+		t.Fatalf("futures snapshots query = %s", query.Encode())
+	}
+	if query := queries[futuresBarsPath]; query.Get("series_type") != "contract" {
+		t.Fatalf("futures bars query = %s", query.Encode())
+	}
+	if query := queries[futuresSnapshotStreamPath]; query.Get("include_existing") != "true" {
+		t.Fatalf("futures snapshot stream query = %s", query.Encode())
+	}
+	if query := queries[futuresBarStreamPath]; query.Get("frequency") != "1m" || query.Get("include_existing") != "true" {
+		t.Fatalf("futures bar stream query = %s", query.Encode())
+	}
+}
+
 func TestMarketSnapshotsFallsBackWhenRealtimeUnavailable(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

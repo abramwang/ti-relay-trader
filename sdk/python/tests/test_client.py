@@ -315,6 +315,86 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/meridian/futures/status":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {"status": "ok", "latest_snapshot_count": 16},
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/futures/snapshots":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["IF2610.CFFEX"])[0],
+                                "product_id": "IF",
+                                "trading_day": "20260930",
+                                "last": 4620.2,
+                            }
+                        ],
+                        "meta": {"schema_version": "futures_market_snapshot.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/futures/bars":
+            self._json(
+                {
+                    "ok": True,
+                    "data": {
+                        "data": [
+                            {
+                                "security_id": query.get("security_id", ["IF2610.CFFEX"])[0],
+                                "trade_date": 20260930,
+                                "datetime": "2026-09-30T09:31:00+08:00",
+                                "close": 4620.2,
+                            }
+                        ],
+                        "meta": {"schema_version": "futures_minute_bar.v1"},
+                    },
+                }
+            )
+            return
+        if parsed.path == "/v1/meridian/stream/futures/snapshots":
+            payload = {
+                "data": [
+                    {
+                        "security_id": query.get("security_id", ["IF2610.CFFEX"])[0],
+                        "product_id": "IF",
+                        "last": 4620.2,
+                    }
+                ]
+            }
+            body = "event: futures_snapshots\n" + "data: " + json.dumps(payload) + "\n\n"
+            encoded = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+            return
+        if parsed.path == "/v1/meridian/stream/futures/bars":
+            payload = {
+                "data": [
+                    {
+                        "security_id": query.get("security_id", ["IF2610.CFFEX"])[0],
+                        "frequency": "1m",
+                        "close": 4620.2,
+                    }
+                ]
+            }
+            body = "event: futures_bars\n" + "data: " + json.dumps(payload) + "\n\n"
+            encoded = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+            return
         if parsed.path == "/v1/meridian/metadata/instruments":
             self._json(
                 {
@@ -1431,6 +1511,39 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(event.event_type, "order.changed")
         self.assertEqual(event.account_ids, ("acct-1",))
         self.assertEqual(event.data["orders"], 1)
+
+    def test_meridian_futures_market_data(self):
+        status = self.client.get_meridian_futures_status()
+        self.assertEqual(status["latest_snapshot_count"], 16)
+        snapshots = self.client.get_meridian_futures_snapshots(product_ids=["IF", "IH", "IC", "IM"])
+        self.assertEqual(snapshots["meta"]["schema_version"], "futures_market_snapshot.v1")
+        bars = self.client.get_meridian_futures_bars(
+            security_id="IF2610.CFFEX",
+            trade_date="20260930",
+            data_scope="realtime",
+        )
+        self.assertEqual(bars["data"][0]["close"], 4620.2)
+        stream = self.client.stream_meridian_futures_snapshots(security_id="IF2610.CFFEX", idle_timeout=2)
+        event = next(stream)
+        stream.close()
+        self.assertEqual(event.event_type, "futures_snapshots")
+        self.assertEqual(event.raw["data"][0]["security_id"], "IF2610.CFFEX")
+        bar_stream = self.client.stream_meridian_futures_bars(
+            security_id="IF2610.CFFEX",
+            trade_date="20260930",
+            idle_timeout=2,
+        )
+        bar_event = next(bar_stream)
+        bar_stream.close()
+        self.assertEqual(bar_event.event_type, "futures_bars")
+        self.assertEqual(bar_event.raw["data"][0]["close"], 4620.2)
+
+        recent = RelayHandler.requests[-5:]
+        self.assertEqual(recent[0][1], "/v1/meridian/futures/status")
+        self.assertEqual(recent[1][2]["product_ids"], ["IF,IH,IC,IM"])
+        self.assertEqual(recent[2][2]["series_type"], ["contract"])
+        self.assertEqual(recent[3][1], "/v1/meridian/stream/futures/snapshots")
+        self.assertEqual(recent[4][1], "/v1/meridian/stream/futures/bars")
 
     def test_stream_events_sends_last_event_id(self):
         stream = self.client.stream_events(last_event_id="evt-test-42", idle_timeout=2)
