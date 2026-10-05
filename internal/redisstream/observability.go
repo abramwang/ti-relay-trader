@@ -462,7 +462,7 @@ func (service *RuntimeObservability) streamStatus(monitoringActive bool, command
 		CheckpointMeta: checkpoint.Metadata,
 	}
 	if checkpoint.LastError != "" {
-		status.ActiveError = map[string]any{"code": "CHECKPOINT_ERROR", "message": checkpoint.LastError, "stream_id": checkpoint.LastStreamID}
+		status.ActiveError = map[string]any{"code": "CHECKPOINT_ERROR", "message": checkpoint.LastError, "stream_id": checkpointErrorStreamID(checkpoint.Metadata, checkpoint.LastError)}
 	}
 	if value, exists := checkpoint.Metadata["active_error"]; exists {
 		status.ActiveError, _ = value.(map[string]any)

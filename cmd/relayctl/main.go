@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "checkpoint-reconcile":
+		if err := runCheckpointReconcile(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl checkpoint-reconcile: %v\n", err)
+			os.Exit(1)
+		}
 	case "ledger-sync":
 		if err := runLedgerSync(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl ledger-sync: %v\n", err)
@@ -507,6 +512,7 @@ func loadConfig(path string) (*config.Config, error) {
 
 func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, `relayctl commands:
+  checkpoint-reconcile  Audit and recover a TEST reply checkpoint with four read-only queries
   ledger-sync    Archive Redis reply/event streams into PostgreSQL ledger
   ledger-replay  Rebuild order/fill/transfer ledgers from archived raw stream messages
   migrate        Run PostgreSQL migration status/up/down

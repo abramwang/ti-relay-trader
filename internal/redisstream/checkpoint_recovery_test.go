@@ -74,4 +74,10 @@ func TestRecoveredCheckpointRetainsHistoricalErrorWithoutDegradingHealth(t *test
 	if s.Status != "error" {
 		t.Fatalf("unknown outcome lost blocking state: %+v", s)
 	}
+	command.checkpoint.LastError = "123-0: original error"
+	command.checkpoint.Metadata = map[string]any{"last_error_stream_id": "123-0"}
+	s = service.streamStatus(true, command)
+	if s.ActiveError["stream_id"] != "123-0" || s.CheckpointID != "1000-0" {
+		t.Fatalf("legacy error locator followed cursor: %+v", s)
+	}
 }
