@@ -75,3 +75,20 @@ GET /v1/operations/status?force=true：reply.active_error=null；last_recovered_
 四条 queries、reconciliation.page_audit 和 test_legacy_order_resolutions。
 检查原订单时仍会看到 working，这是保留的柜台历史事实，不是新会话活动委托。
 重建基线后，最小 Direct 写验收由 Chronos 按既定测试授权安排；Relay 本轮没有发出任何交易指令。
+
+## 消费端独立验收结果
+
+Chronos 已提交 `/home/ti-chronos-strategy/docs/RELAY-CHECKPOINT-RECOVERY-DIRECT-ACCEPTANCE-20261005.md`。
+以上复验入口及恢复审计通过；本节记录后续消费端验收，不改变前述 19:30 只读对账时点的事实。
+
+- 新篮子 `basket-accept-20261005195830-direct1`，Direct 买入 `510300.SH` 100 股，限价 4.433。
+- HTTP 202 / accepted，最终 filled，1 笔成交，价格 4.428，`fill.matched_at` 为东八区 19:58:41。
+- 订单、成交与 Chronos durable 投影关联一致；未重试、未重复创建业务 ID。
+- 显式 finish 后运行 completed，活动运行、connected/expected runtimes 均为 0；报告确认流健康、lag/DLQ=0。
+- TEST 恢复及 Direct 最小写链验收关闭；TWAP replay clock、切片与停止/撤单等场景仍待 Chronos 后续验证，生产准入不在本轮范围内。
+
+费用口径注意：消费端报告记为 TEST 费用 0，但该订单原始回报的 `fee_complete=false`、
+`fee_source=unavailable`；不能据此宣称权威实际费用完整或生产费用链已验收。
+订单受理/状态时间为测试柜台 09:56:19，创建时间和逐笔成交时间为 19:58:41；
+两组时钟已存在于 OC 原始回报，成交时间继续只使用 `fill.matched_at`，不得从订单状态时间推导。
+不得重发本报告中的篮子或订单。

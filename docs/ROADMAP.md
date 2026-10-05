@@ -231,7 +231,7 @@
 - [x] 增加查询中断自动恢复聚合：仅当同一 `origin_message_id` 的 `QUERY_INTERRUPTED` 后续收到合法 `completed/is_last=true` 终态时标记 `recovered`，保留原始审计且不再计入当前 pending DLQ 或拉低 API 状态。
 - [x] 增加 reply checkpoint 独立错误定位与显式 TEST 跨会话只读对账工具：四类唯一成功终态、全分页账本比对、页级摘要、会话连续性和条件更新审计；无关成功批次不清告警。
 - [x] 完成 Relay 2026-10-05 跨会话恢复在线核对：四类查询唯一成功终态、39 条持仓一致、当日订单/成交为 0、完整页级审计落库；32 笔 TEST 遗留订单经用户确认独立处置，原 working 不修改，API 恢复 ok。
-- [ ] Chronos 复验跨会话恢复审计并重建基线；Direct 写验收本轮未执行，复核说明见 CHRONOS_CHECKPOINT_RECOVERY_ONLINE_REVIEW_20261005.md。
+- [x] Chronos 2026-10-05 独立复验跨会话恢复与 Direct 最小写链：新业务 ID 的 510300.SH 买入 100 股全额成交，订单/成交关联一致，任务 completed、活动运行和 runtime 归零；恢复审计及历史错误保留。消费端报告：/home/ti-chronos-strategy/docs/RELAY-CHECKPOINT-RECOVERY-DIRECT-ACCEPTANCE-20261005.md。仅关闭 TEST checkpoint/Direct 验收，不外推生产准入或 TWAP 等算法验收。
 - [x] 新增 `/v1/operations/status`、`/v1/operations/dlq*`，并把摘要接入 `/v1/status`。
 - [x] 新增 `/operations` 独立运维页面和 API Console 运维分组。
 - [x] 使用 Meridian 交易日和半开区间 `08:55 <= t < 15:30 Asia/Shanghai` 监控窗口抑制非交易日、盘前和 OC 关停后误报；15:30 起心跳和 Stream 统一显示灰色 `off_hours`，不会因计划关停标红。
