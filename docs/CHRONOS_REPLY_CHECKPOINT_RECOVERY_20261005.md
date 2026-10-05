@@ -46,7 +46,8 @@ Chronos 的 RELAY-REPLY-CHECKPOINT-RECOVERY-ACCEPTANCE-20261005.md 确认字段�
 已实现可审计的跨会话只读恢复工具：先依据归档原始 reply 结构化旧错误，再以新 message_id
 查询资金、持仓、订单、成交，验证四类唯一完整成功终态、全量分页账本一致性和无待对账事项。
 恢复审计必须记录原始错误 ID、旧/新 session、四类查询 ID、完成时间和核对摘要。
-完整在线恢复尚未验收，因此当前不能通知 Chronos 已满足端到端恢复要求，也不能启动交易验收。
+Relay 在线恢复已于 19:30 完成，可以通知 Chronos 继续消费端复验和基线重建；Direct 写验收未执行。
+详见 [在线复核结果](CHRONOS_CHECKPOINT_RECOVERY_ONLINE_REVIEW_20261005.md)。
 
 ## 显式只读恢复工具
 
@@ -68,7 +69,8 @@ go run ./cmd/relayctl checkpoint-reconcile -config .runtime/active-config.yaml -
 - 资金比较 OC 现金及可用资金；Meridian 行情估值不属于柜台链路恢复前提。
 - 持仓比较证券集合、数量、可用量和总成本。
 - 订单比较证券、方向、业务类型、数量和状态，成交数量必须逐笔闭合。
-- 历史任何未终态订单、未知结果命令、开放对账差异均保守阻断；本工具不把旧订单自动标成撤单。
+- 历史未处置的未终态订单、未知结果命令、开放对账差异均保守阻断；本工具不把旧订单自动标成撤单。
+- 用户明确确认后的 TEST 遗留处置独立落库，必须匹配当前会话及原订单快照，不修改柜台历史事实。
 - ETF 成分股划转存在时保留阻断，等待单独对账，不将其当作普通成交。
 - 对账前后 reply/event 最新 ID 与消费位点必须一致；再次验证查询页数量和身份，防止迟到矛盾回报。
 - 对账期间 heartbeat 不得出现其他 session；有界扫描溢出、跨日期、游标并发变化均不清告警。
@@ -79,6 +81,9 @@ LastError、原始 reply、累计错误计数及当前消费位点全部保留�
 
 本轮已在 TEST 执行 normalize-only：原错误为 1791184129654-0、account.positions.query、BROKER_NOT_READY，
 旧会话 hxproc-06f32d57d79c7b23；当前会话 hxproc-f628d7f70535b145。
-17:49–18:00 Asia/Shanghai 为休市时段，未发布查询或交易，完整恢复留待有效窗口验证。
+17:49–18:00 Asia/Shanghai 为休市时段，该轮未发布查询或交易。
 18:03 已发布当前 TEST API/内嵌 worker；完整恢复命令在休市正确返回 blocked，未发布查询，
 reply 长度仍为 775、原消费位点和 active_error 保持不变。全量 Go 及 redisstream/ledger/relayctl race 测试通过。
+
+19:30 的四类查询已完成全分页核对，原错误成功恢复；32 笔 TEST 历史订单按用户明确授权独立处置，
+原 working 事实全部保留。阻断/成功尝试均持久化，重复恢复不再次发布查询。

@@ -20,8 +20,10 @@ import (
 type checkpointReconcileStore interface {
 	checkpointRecoveryStore
 	GetStreamCheckpoint(context.Context, string) (ledger.StreamCheckpoint, error)
-	CheckpointReconciliationBlocked(context.Context, string) (bool, error)
+	CheckpointReconciliationBlocked(context.Context, string, string) (bool, error)
+	ResolvedTestOrderKeys(context.Context, string, string) (map[string]ledger.TestOrderResolution, error)
 	StructureStreamCheckpointError(context.Context, ledger.StreamCheckpoint, map[string]any) (bool, error)
+	RecordCheckpointReconciliationAttempt(context.Context, ledger.StreamCheckpoint, string, any) (bool, error)
 	ReadCheckpointReply(context.Context, string, string) (json.RawMessage, error)
 	GetCommandStatus(context.Context, string) (ledger.CommandStatus, error)
 	GetLatestAsset(context.Context, string) (trading.Asset, error)
@@ -38,8 +40,8 @@ type CheckpointReconcileReport struct {
 
 // Explicit operator action; never called by health polling and never sends trades.
 // normalizeOnly permits evidence preparation while the counter is off hours.
-func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Context, account string, normalizeOnly bool, query func(context.Context, string) (string, error)) (CheckpointReconcileReport, error) {
-	report := CheckpointReconcileReport{AccountID: account, Status: "blocked", Evidence: map[string]any{}}
+func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Context, account string, normalizeOnly bool, query func(context.Context, string) (string, error)) (report CheckpointReconcileReport, returnErr error) {
+	report = CheckpointReconcileReport{AccountID: account, Status: "blocked", Evidence: map[string]any{}}
 	if service.cfg.Redis.Env != "test" || service.cfg.Service.Environment != config.EnvironmentTest {
 		return report, errors.New("explicit checkpoint reconciliation currently supports TEST only")
 	}
@@ -57,7 +59,11 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 		return report, err
 	}
 	if active, present := cp.Metadata["active_error"]; present && active == nil {
-		return report, errors.New("checkpoint already recovered; no new queries sent")
+		report.Status = "already_recovered"
+		if evidence, ok := cp.Metadata["last_recovered_error"].(map[string]any); ok {
+			report.Evidence = evidence
+		}
+		return report, nil
 	}
 	id := checkpointErrorStreamID(cp.Metadata, cp.LastError)
 	if id == "" {
@@ -95,6 +101,31 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 		return report, nil
 	}
 	report.Status = "blocked"
+	defer func() {
+		if report.Status == "recovered" {
+			return
+		}
+		if returnErr != nil {
+			report.Evidence["blocked_reason"] = returnErr.Error()
+		}
+		report.Evidence["finished_at"] = service.now()
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		latest, err := store.GetStreamCheckpoint(auditCtx, stream)
+		if err == nil && (latest.LastError != cp.LastError || checkpointErrorStreamID(latest.Metadata, latest.LastError) != id) {
+			err = errors.New("active error changed before recording reconciliation attempt")
+		}
+		if err == nil {
+			var recorded bool
+			recorded, err = store.RecordCheckpointReconciliationAttempt(auditCtx, latest, id, report)
+			if err == nil && !recorded {
+				err = errors.New("checkpoint changed before reconciliation attempt audit")
+			}
+		}
+		if err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("persist reconciliation attempt: %w", err))
+		}
+	}()
 	if query == nil {
 		return report, errors.New("read-only query publisher required")
 	}
@@ -110,7 +141,9 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 	session := gateway.CounterSessionID
 	report.Evidence["new_counter_session_id"] = session
 	report.Evidence["started_at"] = started
-	blocked, err := store.CheckpointReconciliationBlocked(ctx, account)
+	// Historical working orders must not prevent gathering read-only evidence.
+	// They still prevent committing recovery at the final gate below.
+	blocked, err := store.CheckpointRecoveryBlocked(ctx, account)
 	if err != nil {
 		return report, err
 	}
@@ -120,14 +153,11 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 	statuses := make([]ledger.CommandStatus, 0, 4)
 	seen := map[string]bool{}
 	for _, action := range []string{ActionAccountAsset, ActionAccountPositions, ActionOrderList, ActionFillList} {
-		current, err := service.Snapshot(ctx, true)
+		current, err := service.waitReconcileReady(ctx, account, session)
 		if err != nil {
 			return report, err
 		}
-		g, err := reconcileReady(current, account)
-		if err != nil {
-			return report, err
-		}
+		g := recoveryGateway(current, account)
 		if g.CounterSessionID != session {
 			return report, errors.New("OC session changed before query")
 		}
@@ -147,29 +177,26 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 		report.Evidence["queries"] = statuses
 	}
 	// Wait until archived replies have also been applied to the ledger.
-	var auditStart RuntimeSnapshot
-	for {
-		snapshot, err := service.Snapshot(ctx, true)
-		if err != nil {
-			return report, err
-		}
-		g := recoveryGateway(snapshot, account)
-		if !checkpointGatewayReady(g) || g.CounterSessionID != session {
-			return report, errors.New("readiness or session changed after queries")
-		}
-		if snapshot.Summary.TotalLag == 0 && snapshot.Summary.PendingDeadLetters == 0 && len(snapshot.Errors) == 0 {
-			auditStart = snapshot
-			break
-		}
-		if err := recoveryPause(ctx); err != nil {
-			return report, err
-		}
+	auditStart, err := service.waitReconcileReady(ctx, account, session)
+	if err != nil {
+		return report, err
 	}
 	summary, err := auditRecoveryLedger(ctx, store, statuses, account, started.In(timeutil.Location()).Format("2006-01-02"))
 	if err != nil {
 		return report, err
 	}
 	report.Evidence["reconciliation"] = summary
+	resolutions, err := store.ResolvedTestOrderKeys(ctx, account, session)
+	if err != nil {
+		return report, err
+	}
+	report.Evidence["test_legacy_order_resolutions"] = resolutions
+	unresolved, err := unresolvedRecoveryOrders(ctx, store, account, resolutions)
+	if err != nil {
+		return report, err
+	}
+	report.Evidence["unresolved_orders"] = unresolved
+	report.Evidence["unresolved_order_count"] = len(unresolved)
 	final, err := service.Snapshot(ctx, true)
 	if err != nil {
 		return report, err
@@ -207,12 +234,12 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 	if err := service.verifyRecoverySession(ctx, route.StreamPrefix, started, session); err != nil {
 		return report, err
 	}
-	blocked, err = store.CheckpointReconciliationBlocked(ctx, account)
+	blocked, err = store.CheckpointReconciliationBlocked(ctx, account, session)
 	if err != nil {
 		return report, err
 	}
 	if blocked {
-		return report, errors.New("new unknown command or reconciliation break")
+		return report, fmt.Errorf("recovery remains blocked: %d unresolved historical/current orders, or unknown commands/open reconciliation breaks", len(unresolved))
 	}
 	latest, err := store.GetStreamCheckpoint(ctx, stream)
 	if err != nil {
@@ -232,6 +259,42 @@ func (service *RuntimeObservability) ReconcileReplyCheckpoint(ctx context.Contex
 	}
 	report.Status = "recovered"
 	return report, nil
+}
+
+type unresolvedRecoveryOrder struct {
+	GatewayOrderID   string              `json:"gateway_order_id"`
+	TradeDate        string              `json:"trade_date"`
+	CounterSessionID string              `json:"counter_session_id,omitempty"`
+	OriginMessageID  string              `json:"origin_message_id,omitempty"`
+	Status           trading.OrderStatus `json:"status"`
+	OrderQty         int64               `json:"order_qty"`
+	FilledQty        int64               `json:"cum_filled_qty"`
+	LeavesQty        int64               `json:"leaves_qty"`
+}
+
+func unresolvedRecoveryOrders(ctx context.Context, store checkpointReconcileStore, account string, resolutions map[string]ledger.TestOrderResolution) ([]unresolvedRecoveryOrder, error) {
+	unresolved := []unresolvedRecoveryOrder{}
+	for offset := 0; ; offset += 500 {
+		orders, err := store.ListOrders(ctx, trading.OrderQuery{AccountID: account, Limit: 500, Cursor: strconv.Itoa(offset)})
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range orders {
+			if o.IsTerminal {
+				continue
+			}
+			if _, confirmed := resolutions[o.TradeDate+"/"+o.GatewayOrderID]; confirmed {
+				continue
+			}
+			unresolved = append(unresolved, unresolvedRecoveryOrder{GatewayOrderID: o.GatewayOrderID, TradeDate: o.TradeDate,
+				CounterSessionID: o.CounterSessionID, OriginMessageID: o.OriginMessageID, Status: o.Status, OrderQty: o.OrderQty,
+				FilledQty: o.CumFilledQty, LeavesQty: o.LeavesQty})
+		}
+		if len(orders) < 500 {
+			break
+		}
+	}
+	return unresolved, nil
 }
 
 func eligibleRecoveryError(e EntryEnvelope, cp ledger.StreamCheckpoint, account, broker, gateway, environment string) bool {
@@ -291,6 +354,41 @@ func recoveryGateway(snapshot RuntimeSnapshot, account string) *GatewayRuntimeSt
 		}
 	}
 	return nil
+}
+
+// A reply is archived before its worker checkpoint is committed. Wait for this
+// bounded handoff (and OC pending heartbeat) without relaxing the final gate.
+func (service *RuntimeObservability) waitReconcileReady(ctx context.Context, account, session string) (RuntimeSnapshot, error) {
+	for {
+		snapshot, err := service.Snapshot(ctx, true)
+		if err != nil {
+			return snapshot, err
+		}
+		if _, err := reconcileReadyIgnoringHandoff(snapshot, account, session); err != nil {
+			return snapshot, err
+		}
+		g := recoveryGateway(snapshot, account)
+		if snapshot.Summary.TotalLag == 0 && g.PendingTrades == 0 && g.PendingQueries == 0 {
+			return snapshot, nil
+		}
+		if err := recoveryPause(ctx); err != nil {
+			return snapshot, err
+		}
+	}
+}
+
+func reconcileReadyIgnoringHandoff(snapshot RuntimeSnapshot, account, session string) (*GatewayRuntimeStatus, error) {
+	g := recoveryGateway(snapshot, account)
+	if g == nil || g.CounterSessionID != session {
+		return nil, errors.New("OC session changed during query handoff")
+	}
+	copySnapshot := snapshot
+	copySnapshot.Gateways = append([]GatewayRuntimeStatus(nil), snapshot.Gateways...)
+	copyGateway := recoveryGateway(copySnapshot, account)
+	copyGateway.PendingTrades = 0
+	copyGateway.PendingQueries = 0
+	copySnapshot.Summary.TotalLag = 0
+	return reconcileReady(copySnapshot, account)
 }
 
 func reconcileReady(snapshot RuntimeSnapshot, account string) (*GatewayRuntimeStatus, error) {
@@ -528,7 +626,7 @@ func auditRecoveryLedger(ctx context.Context, store checkpointReconcileStore, st
 	if len(positions)+len(orders)+len(fills)+len(fillTotals) != 0 {
 		return nil, errors.New("query records missing from ledger or orphan fills")
 	}
-	return map[string]any{"status": "matched", "trade_date": date, "order_count": orderCount, "page_audit": pages, "unexplained_active_orders": 0,
+	return map[string]any{"status": "matched", "scope": "current_business_date", "trade_date": date, "order_count": orderCount, "page_audit": pages, "unexplained_active_orders": 0,
 		"asset_scope": "OC cash_available and cash_total; market valuation is not part of counter recovery"}, nil
 }
 

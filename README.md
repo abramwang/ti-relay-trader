@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-05` 已实现并发布显式 TEST 跨会话只读恢复工具 checkpoint-reconcile：四类唯一成功终态、500 条全分页核对、页级摘要和新旧会话审计。旧错误 1791184129654-0 已依据 raw 结构化，仍保持 active；18:03 休市执行正确 blocked、零查询发布。全量 Go/race 通过，完整在线恢复待有效窗口验收，不发交易、不切环境。详见 docs/CHRONOS_REPLY_CHECKPOINT_RECOVERY_20261005.md |
+| 最近确认 | `2026-10-05 19:30 Asia/Shanghai` TEST 跨会话只读恢复完成：四类查询唯一成功终态、39 条持仓/当日空订单成交一致，active_error=null、API ok、lag/DLQ=0。32 笔旧 TEST working 经用户确认独立处置，原事实保留，TEST schema=31；未切环境、未发交易。可通知 Chronos 复验并重建基线，详见 docs/CHRONOS_CHECKPOINT_RECOVERY_ONLINE_REVIEW_20261005.md |
 | 更新时间 | `2026-10-05` |
 
 新线程按以下顺序恢复：

@@ -1,0 +1,1 @@
+DROP TABLE test_legacy_order_resolutions;

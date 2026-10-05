@@ -82,12 +82,18 @@ func TestExplicitRecoveryRejectsProductionWithoutQueries(t *testing.T) {
 
 type recoveryAuditStore struct {
 	checkpointReconcileStore
+	ObservabilityStore
 	raw             map[string]json.RawMessage
 	positions       []trading.Position
 	orders          []trading.Order
 	fills           []trading.Fill
 	asset           trading.Asset
 	positionOffsets []int
+	checkpoint      ledger.StreamCheckpoint
+}
+
+func (s *recoveryAuditStore) GetStreamCheckpoint(context.Context, string) (ledger.StreamCheckpoint, error) {
+	return s.checkpoint, nil
 }
 
 func (s *recoveryAuditStore) ReadCheckpointReply(_ context.Context, _, id string) (json.RawMessage, error) {
@@ -214,5 +220,71 @@ func TestRecoveryReadinessRejectsOffHoursAndOtherErrors(t *testing.T) {
 	snapshot.Gateways[0].Status = "off_hours"
 	if _, err := reconcileReady(snapshot, "a"); err == nil {
 		t.Fatal("off hours treated as recovered")
+	}
+}
+
+func TestRecoveryHandoffWaitsOnlyForLagAndPending(t *testing.T) {
+	yes := true
+	now := time.Now()
+	snapshot := RuntimeSnapshot{Summary: RuntimeSummary{TotalLag: 10}, Gateways: []GatewayRuntimeStatus{{AccountID: "a", Status: "online", OrderEntryReady: true,
+		CounterSessionID: "s", LastHeartbeatAt: &now, PendingQueries: 1, RedisReady: &yes, BrokerReady: &yes, OrderSnapshotReady: &yes, AcceptingTradeCommands: &yes}}}
+	if _, err := reconcileReadyIgnoringHandoff(snapshot, "a", "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconcileReady(snapshot, "a"); err == nil {
+		t.Fatal("final gate lost zero-pending requirement")
+	}
+	if snapshot.Summary.TotalLag != 10 || snapshot.Gateways[0].PendingQueries != 1 {
+		t.Fatal("handoff check mutated live evidence")
+	}
+	if _, err := reconcileReadyIgnoringHandoff(snapshot, "a", "another"); err == nil {
+		t.Fatal("session change treated as handoff")
+	}
+	snapshot.Summary.PendingDeadLetters = 1
+	if _, err := reconcileReadyIgnoringHandoff(snapshot, "a", "s"); err == nil {
+		t.Fatal("DLQ treated as transient handoff")
+	}
+	snapshot.Summary.PendingDeadLetters = 0
+	snapshot.Gateways[0].Status = "off_hours"
+	if _, err := reconcileReadyIgnoringHandoff(snapshot, "a", "s"); err == nil {
+		t.Fatal("off hours treated as handoff")
+	}
+}
+
+func TestRecoveryInventoriesHistoricalOrdersWithoutChangingThem(t *testing.T) {
+	s := &recoveryAuditStore{orders: []trading.Order{
+		{GatewayOrderID: "old", TradeDate: "2026-09-15", Status: "working", IsTerminal: false, OrderQty: 100, LeavesQty: 100},
+		{GatewayOrderID: "done", Status: "filled", IsTerminal: true},
+	}}
+	orders, err := unresolvedRecoveryOrders(context.Background(), s, "a", nil)
+	if err != nil || len(orders) != 1 || orders[0].GatewayOrderID != "old" {
+		t.Fatalf("inventory: %v %v", orders, err)
+	}
+	if s.orders[0].Status != "working" || s.orders[0].IsTerminal {
+		t.Fatal("historical fact changed during read-only inventory")
+	}
+	confirmed := map[string]ledger.TestOrderResolution{"2026-09-15/old": {GatewayOrderID: "old", TradeDate: "2026-09-15"}}
+	orders, err = unresolvedRecoveryOrders(context.Background(), s, "a", confirmed)
+	if err != nil || len(orders) != 0 {
+		t.Fatalf("explicit TEST disposition ignored: %v %v", orders, err)
+	}
+	if s.orders[0].Status != "working" || s.orders[0].IsTerminal {
+		t.Fatal("resolution changed original broker state")
+	}
+	wrongDay := map[string]ledger.TestOrderResolution{"2026-09-16/old": {GatewayOrderID: "old", TradeDate: "2026-09-16"}}
+	orders, err = unresolvedRecoveryOrders(context.Background(), s, "a", wrongDay)
+	if err != nil || len(orders) != 1 {
+		t.Fatal("resolution from different trade date excluded an order")
+	}
+}
+
+func TestRecoveredCheckpointReplaysAuditWithoutPublishingQueries(t *testing.T) {
+	store := &recoveryAuditStore{checkpoint: ledger.StreamCheckpoint{Metadata: map[string]any{"active_error": nil, "last_recovered_error": map[string]any{"stream_id": "original"}}}}
+	service := &RuntimeObservability{store: store, cfg: config.Config{Service: config.ServiceConfig{Environment: config.EnvironmentTest}, Redis: config.RedisConfig{Env: "test"},
+		Accounts: []config.AccountRouteConfig{{AccountID: "a", Enabled: true, StreamPrefix: "relay:test:v1:b:g"}}}}
+	called := false
+	report, err := service.ReconcileReplyCheckpoint(context.Background(), "a", false, func(context.Context, string) (string, error) { called = true; return "", nil })
+	if err != nil || called || report.Status != "already_recovered" || report.Evidence["stream_id"] != "original" {
+		t.Fatalf("replay: %+v %v, published=%v", report, err, called)
 	}
 }
