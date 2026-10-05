@@ -10,11 +10,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，独立账本同步 worker |
+| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-04 21:10 Asia/Shanghai` 按用户明确指令切回生产环境：生产迁移完成，API、独立 worker、Redis、PostgreSQL、Meridian 和事件流均为 `ok`；6 个账户中 4 个启用查询、0 个开放交易。当天非交易日，4 个生产 OC 正确显示 `off_hours`，16 条 Stream 总 lag 为 0、pending DLQ 为 0 |
-| 更新时间 | `2026-10-04` |
+| 最近确认 | `2026-10-05 10:51 Asia/Shanghai` 按用户明确指令切换到测试环境，目标库迁移完成，API、Redis、数据库正常。账户 `00030484` 的 OC 心跳新鲜、登录和订单快照就绪，但 `accepting_trade_commands=false`，readiness 返回 `OC_TRADE_COMMANDS_PAUSED`，当前不可下单；四条 Stream 总 lag=0、pending DLQ=0 |
+| 更新时间 | `2026-10-05` |
 
 新线程按以下顺序恢复：
 
