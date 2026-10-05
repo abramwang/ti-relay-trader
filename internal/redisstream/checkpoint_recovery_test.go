@@ -10,6 +10,28 @@ import (
 	"ti-relay-trader/internal/ledger"
 )
 
+func TestCheckpointErrorLocatorIndependentOfConsumptionCursor(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		metadata  map[string]any
+		lastError string
+		want      string
+	}{
+		{"active", map[string]any{"active_error": map[string]any{"stream_id": "123-0"}}, "456-0: error", "123-0"},
+		{"persisted", map[string]any{"last_error_stream_id": "123-0"}, "456-0: error", "123-0"},
+		{"legacy", nil, "123-0: indeterminate command failure BROKER_NOT_READY", "123-0"},
+		{"invalid", nil, "not-an-id: error", ""},
+		{"signed", nil, "+123-0: error", ""},
+		{"overflow", nil, "999999999999999999999999-0: error", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := checkpointErrorStreamID(tc.metadata, tc.lastError); got != tc.want {
+				t.Fatalf("locator = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckpointRecoveryRequiresAllReadinessEvidence(t *testing.T) {
 	yes := true
 	now := time.Now()

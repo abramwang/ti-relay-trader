@@ -40,7 +40,11 @@ func (service *RuntimeObservability) recoverCheckpointErrors(ctx context.Context
 		if err != nil || blocked {
 			continue
 		}
-		messages, err := service.client.XRangeN(ctx, stream.StreamKey, stream.CheckpointID, stream.CheckpointID, 1).Result()
+		errorID := checkpointErrorStreamID(map[string]any{"active_error": stream.ActiveError}, stream.LastError)
+		if errorID == "" {
+			continue
+		}
+		messages, err := service.client.XRangeN(ctx, stream.StreamKey, errorID, errorID, 1).Result()
 		if err != nil || len(messages) != 1 {
 			continue
 		}
@@ -106,6 +110,42 @@ func (service *RuntimeObservability) recoverCheckpointErrors(ctx context.Context
 		snapshot.Summary.StreamsAttention--
 		snapshot.Summary.StreamsHealthy++
 	}
+}
+
+// Legacy text supplies only an entry locator; the raw reply must still prove
+// the error code, action and routing before any recovery is allowed.
+func checkpointErrorStreamID(metadata map[string]any, lastError string) string {
+	if active, ok := metadata["active_error"].(map[string]any); ok {
+		if id, ok := active["stream_id"].(string); ok && validCheckpointStreamID(id) {
+			return id
+		}
+	}
+	if id, ok := metadata["last_error_stream_id"].(string); ok && validCheckpointStreamID(id) {
+		return id
+	}
+	id, _, found := strings.Cut(lastError, ": ")
+	if found && validCheckpointStreamID(id) {
+		return id
+	}
+	return ""
+}
+
+func validCheckpointStreamID(id string) bool {
+	ms, seq, found := strings.Cut(id, "-")
+	if !found || ms == "" || seq == "" {
+		return false
+	}
+	for _, part := range []string{ms, seq} {
+		for _, c := range part {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		if _, err := strconv.ParseUint(part, 10, 64); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func boolReady(value *bool) bool { return value != nil && *value }

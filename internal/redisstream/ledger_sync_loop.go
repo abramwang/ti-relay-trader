@@ -341,18 +341,11 @@ func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, curs
 			"action":    last.Action,
 			"stream_id": last.StreamID, "observed_at": now,
 		}
+		checkpoint.Metadata["last_error_stream_id"] = last.StreamID
 	} else if previous, err := store.GetStreamCheckpoint(ctx, cursor.name); err == nil && previous.LastError != "" {
 		checkpoint.LastError = previous.LastError
-		active, _ := previous.Metadata["active_error"].(map[string]any)
-		action, _ := active["action"].(string)
-		if active != nil && active["code"] == "BROKER_NOT_READY" && strings.HasSuffix(action, ".query") && report.Totals.Archived > 0 && report.Totals.Skipped == 0 {
-			checkpoint.Metadata["active_error"] = nil
-			checkpoint.Metadata["last_recovered_error"] = map[string]any{
-				"code": "BROKER_NOT_READY", "message": previous.LastError,
-				"stream_id": previous.LastStreamID, "observed_at": previous.LastProcessedAt,
-				"recovered_at": now, "recovery_source": "successful_consumption_batch",
-			}
-		}
+		// An unrelated successful batch cannot prove recovery of this command.
+		checkpoint.Metadata["last_error_stream_id"] = checkpointErrorStreamID(previous.Metadata, previous.LastError)
 	}
 	if report.Count > 0 {
 		checkpoint.LastSeenAt = now
