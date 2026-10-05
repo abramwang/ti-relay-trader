@@ -114,24 +114,26 @@ type GatewayRuntimeStatus struct {
 }
 
 type StreamRuntimeStatus struct {
-	AccountID      string         `json:"account_id"`
-	BrokerID       string         `json:"broker_id"`
-	GatewayID      string         `json:"gateway_id"`
-	Role           string         `json:"role"`
-	StreamKey      string         `json:"stream_key"`
-	Exists         bool           `json:"exists"`
-	Length         int64          `json:"length"`
-	LatestStreamID string         `json:"latest_stream_id,omitempty"`
-	LatestAt       *time.Time     `json:"latest_at,omitempty"`
-	CheckpointID   string         `json:"checkpoint_id,omitempty"`
-	LastConsumedAt *time.Time     `json:"last_consumed_at,omitempty"`
-	Lag            int64          `json:"lag"`
-	LagCapped      bool           `json:"lag_capped,omitempty"`
-	Status         string         `json:"status"`
-	LastError      string         `json:"last_error,omitempty"`
-	ProcessedCount int64          `json:"processed_count"`
-	ErrorCount     int64          `json:"error_count"`
-	CheckpointMeta map[string]any `json:"checkpoint_metadata,omitempty"`
+	AccountID          string         `json:"account_id"`
+	BrokerID           string         `json:"broker_id"`
+	GatewayID          string         `json:"gateway_id"`
+	Role               string         `json:"role"`
+	StreamKey          string         `json:"stream_key"`
+	Exists             bool           `json:"exists"`
+	Length             int64          `json:"length"`
+	LatestStreamID     string         `json:"latest_stream_id,omitempty"`
+	LatestAt           *time.Time     `json:"latest_at,omitempty"`
+	CheckpointID       string         `json:"checkpoint_id,omitempty"`
+	LastConsumedAt     *time.Time     `json:"last_consumed_at,omitempty"`
+	Lag                int64          `json:"lag"`
+	LagCapped          bool           `json:"lag_capped,omitempty"`
+	Status             string         `json:"status"`
+	LastError          string         `json:"last_error,omitempty"`
+	ActiveError        map[string]any `json:"active_error"`
+	LastRecoveredError map[string]any `json:"last_recovered_error,omitempty"`
+	ProcessedCount     int64          `json:"processed_count"`
+	ErrorCount         int64          `json:"error_count"`
+	CheckpointMeta     map[string]any `json:"checkpoint_metadata,omitempty"`
 }
 
 type heartbeatPayload struct {
@@ -342,6 +344,7 @@ func (service *RuntimeObservability) buildSnapshot(ctx context.Context, now time
 		}
 	}
 	snapshot.Summary.PendingDeadLetters = snapshot.DeadLetters["pending"]
+	service.recoverCheckpointErrors(ctx, &snapshot)
 	return snapshot
 }
 
@@ -458,6 +461,13 @@ func (service *RuntimeObservability) streamStatus(monitoringActive bool, command
 		ErrorCount:     checkpoint.ErrorCount,
 		CheckpointMeta: checkpoint.Metadata,
 	}
+	if checkpoint.LastError != "" {
+		status.ActiveError = map[string]any{"code": "CHECKPOINT_ERROR", "message": checkpoint.LastError, "stream_id": checkpoint.LastStreamID}
+	}
+	if value, exists := checkpoint.Metadata["active_error"]; exists {
+		status.ActiveError, _ = value.(map[string]any)
+	}
+	status.LastRecoveredError, _ = checkpoint.Metadata["last_recovered_error"].(map[string]any)
 	if !checkpoint.LastProcessedAt.IsZero() {
 		lastConsumedAt := checkpoint.LastProcessedAt
 		status.LastConsumedAt = &lastConsumedAt
@@ -507,7 +517,7 @@ func (service *RuntimeObservability) streamStatus(monitoringActive bool, command
 	}
 
 	switch {
-	case status.LastError != "":
+	case status.ActiveError != nil:
 		status.Status = "error"
 	case status.Lag < 0:
 		status.Status = "unknown"

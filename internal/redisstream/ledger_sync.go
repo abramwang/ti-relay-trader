@@ -67,6 +67,8 @@ type LedgerStreamReport struct {
 type LedgerEntryError struct {
 	StreamID string `json:"stream_id"`
 	Error    string `json:"error"`
+	Code     string `json:"code,omitempty"`
+	Action   string `json:"action,omitempty"`
 }
 
 type LedgerProcessResult struct {
@@ -829,9 +831,17 @@ func processLedgerStreamMessages(
 		report.Count++
 		report.Totals.add(entryResult)
 		if len(entryResult.SkipReasons) > 0 {
+			code := "CHECKPOINT_ERROR"
+			action := ""
+			if envelope, err := DecodeEntry(streamName, message.ID, message.Values); err == nil && isIndeterminateCommandError(envelope) {
+				code = envelope.Code
+				action = envelope.Action
+			}
 			report.Errors = append(report.Errors, LedgerEntryError{
 				StreamID: message.ID,
 				Error:    strings.Join(entryResult.SkipReasons, "; "),
+				Code:     code,
+				Action:   action,
 			})
 		}
 	}
