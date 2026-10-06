@@ -1643,7 +1643,11 @@ func TestCancelAttemptReconciliationAndRetrySafety(t *testing.T) {
 				attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
 				t.Fatalf("attempt = %#v", attempt)
 			}
-			if raw := attempt.RawPayload.(cancelAttemptPayload); raw.RetrySafe == nil || !*raw.RetrySafe {
+			var raw cancelAttemptPayload
+			if err := json.Unmarshal(attempt.RawPayload.(json.RawMessage), &raw); err != nil {
+				t.Fatal(err)
+			}
+			if raw.RetrySafe == nil || !*raw.RetrySafe {
 				t.Fatal("safety normalization changed the original payload audit")
 			}
 		})
@@ -1664,6 +1668,38 @@ func TestCancelUnknownEnvelopeCannotBeOverriddenByAcceptedPayload(t *testing.T) 
 	attempt := writer.cancelAttempts[0]
 	if attempt.Status != "outcome_unknown" || attempt.Code != "COMMAND_OUTCOME_UNKNOWN" || !attempt.ReconciliationRequired || attempt.RetrySafe == nil || *attempt.RetrySafe {
 		t.Fatalf("attempt = %#v", attempt)
+	}
+}
+
+type unchangedCancelWriter struct{ *fakeLedgerWriter }
+
+func (writer unchangedCancelWriter) UpsertOrderCancelAttemptChanged(context.Context, ledger.OrderCancelAttempt) (bool, error) {
+	return false, nil
+}
+
+func TestControlledCancelFaultPreservesAuditAndSuppressesUnchangedProjection(t *testing.T) {
+	body := `{"protocol":"relay.stream.v1","message_type":"deadletter","message_id":"dlq-fault",
+	"origin_message_id":"original-cancel","action":"order.cancel","code":"CANCEL_RESPONSE_TIMEOUT",
+	"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+	"payload":{"gateway_order_id":"gw-cancel","cancel_status":"unknown","reconciliation_required":true,
+	"retry_safe":false,"order_state_changed":false,"controlled_test_fault":true,"fault_plan_id":"plan-test",
+	"original_body":{"message_id":"original-cancel","idempotency_key":"idem-cancel","payload":{"cancel_id":"cancel-test"}}}}`
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:dlq", "8-4", map[string]any{"body": body})
+	if result.CancelAttempts != 1 || writer.cancelAttempts[0].Status != "timeout" {
+		t.Fatalf("result = %#v", result)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(writer.cancelAttempts[0].RawPayload.(json.RawMessage), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["fault_plan_id"] != "plan-test" || raw["controlled_test_fault"] != true || raw["original_body"] == nil {
+		t.Fatalf("raw audit = %#v", raw)
+	}
+	replayWriter := unchangedCancelWriter{&fakeLedgerWriter{}}
+	replay := ProcessLedgerEntry(context.Background(), replayWriter, "relay:test:v1:huaxin:00030484:dlq", "8-5", map[string]any{"body": body})
+	if replay.Archived != 1 || replay.CancelAttempts != 0 || replay.CancelFailures != 0 || len(replay.CancelFailureItems) != 0 {
+		t.Fatalf("unchanged projection still notified: %#v", replay)
 	}
 }
 

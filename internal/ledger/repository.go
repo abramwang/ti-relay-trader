@@ -131,6 +131,7 @@ type CommandStatus struct {
 	ReplyCount         int                  `json:"reply_count"`
 	TerminalCount      int                  `json:"terminal_count"`
 	Replies            []CommandReplyStatus `json:"replies"`
+	CancelAttempts     []OrderCancelAttempt `json:"cancel_attempts,omitempty"`
 }
 
 type StreamCheckpoint struct {
@@ -557,8 +558,13 @@ func isUniqueViolation(err error) bool {
 }
 
 func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt OrderCancelAttempt) error {
+	_, err := repo.UpsertOrderCancelAttemptChanged(ctx, attempt)
+	return err
+}
+
+func (repo *Repository) UpsertOrderCancelAttemptChanged(ctx context.Context, attempt OrderCancelAttempt) (bool, error) {
 	if repo == nil || repo.exec == nil {
-		return fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
+		return false, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)
 	}
 	attempt.AttemptID = strings.TrimSpace(attempt.AttemptID)
 	attempt.AccountID = strings.TrimSpace(attempt.AccountID)
@@ -566,23 +572,26 @@ func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt Or
 	attempt.GatewayOrderID = strings.TrimSpace(attempt.GatewayOrderID)
 	attempt.Status = strings.ToLower(strings.TrimSpace(attempt.Status))
 	if attempt.AttemptID == "" || attempt.AccountID == "" || attempt.TradeDate == "" || attempt.GatewayOrderID == "" || attempt.Status == "" {
-		return fmt.Errorf("%w: cancel attempt identity, trade_date, gateway_order_id and status are required", ErrInvalidLedgerInput)
+		return false, fmt.Errorf("%w: cancel attempt identity, trade_date, gateway_order_id and status are required", ErrInvalidLedgerInput)
 	}
 	if _, err := time.Parse("2006-01-02", attempt.TradeDate); err != nil {
-		return fmt.Errorf("%w: cancel attempt trade_date must be YYYY-MM-DD", ErrInvalidLedgerInput)
+		return false, fmt.Errorf("%w: cancel attempt trade_date must be YYYY-MM-DD", ErrInvalidLedgerInput)
 	}
 	if attempt.OccurredAt.IsZero() {
 		attempt.OccurredAt = repo.now()
 	}
+	if attempt.AdapterContext == nil {
+		attempt.AdapterContext = map[string]any{}
+	}
 	rawPayload, err := marshalJSONObject(attempt.RawPayload)
 	if err != nil {
-		return err
+		return false, err
 	}
 	adapterContext, err := marshalJSONObject(attempt.AdapterContext)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = repo.exec.ExecContext(ctx, upsertOrderCancelAttemptSQL,
+	result, err := repo.exec.ExecContext(ctx, upsertOrderCancelAttemptSQL,
 		attempt.AttemptID,
 		attempt.AccountID,
 		attempt.TradeDate,
@@ -605,9 +614,13 @@ func (repo *Repository) UpsertOrderCancelAttempt(ctx context.Context, attempt Or
 		adapterContext,
 	)
 	if err != nil {
-		return fmt.Errorf("upsert cancel attempt %s/%s: %w", attempt.AccountID, attempt.AttemptID, err)
+		return false, fmt.Errorf("upsert cancel attempt %s/%s: %w", attempt.AccountID, attempt.AttemptID, err)
 	}
-	return nil
+	if result == nil {
+		return true, nil
+	}
+	count, err := result.RowsAffected()
+	return count > 0, err
 }
 
 func (repo *Repository) ListOrderCancelAttempts(ctx context.Context, query OrderCancelAttemptQuery) ([]OrderCancelAttempt, error) {
@@ -2353,6 +2366,31 @@ func (repo *Repository) GetCommandStatus(ctx context.Context, originMessageID st
 	if err := rows.Err(); err != nil {
 		return CommandStatus{}, fmt.Errorf("command status rows: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return CommandStatus{}, err
+	}
+	if result.Action == "order.cancel" || result.Action == "" {
+		attemptRows, err := queryer.QueryContext(ctx, orderCancelAttemptSelectColumns+
+			" WHERE (origin_message_id = $1 OR attempt_id = $1) AND ($2 = '' OR account_id = $2) ORDER BY cancel_attempt_pk", originMessageID, result.AccountID)
+		if err != nil {
+			return CommandStatus{}, fmt.Errorf("query command cancel outcomes: %w", err)
+		}
+		defer attemptRows.Close()
+		for attemptRows.Next() {
+			attempt, err := scanOrderCancelAttempt(attemptRows)
+			if err != nil {
+				return CommandStatus{}, fmt.Errorf("scan command cancel outcome: %w", err)
+			}
+			result.CancelAttempts = append(result.CancelAttempts, attempt)
+			if result.AccountID == "" {
+				result.AccountID = attempt.AccountID
+				result.Action = "order.cancel"
+			}
+		}
+		if err := attemptRows.Err(); err != nil {
+			return CommandStatus{}, fmt.Errorf("command cancel outcomes: %w", err)
+		}
+	}
 
 	return summarizeCommandStatus(result), nil
 }
@@ -3397,10 +3435,16 @@ func scanOrderCancelAttempt(row rowScanner) (OrderCancelAttempt, error) {
 	attempt.CorrelationID = correlationID.String
 	attempt.Code = code.String
 	attempt.Message = message.String
-	attempt.ReconciliationRequired = attempt.ReconciliationRequired || attempt.Status != string(trading.ReplyStatusAccepted)
+	if attempt.Status == "timeout" || attempt.Status == "outcome_unknown" {
+		attempt.ReconciliationRequired = true
+		noRetry := false
+		attempt.RetrySafe = &noRetry
+	}
 	if retrySafe.Valid {
 		value := retrySafe.Bool
-		attempt.RetrySafe = &value
+		if attempt.Status != "timeout" && attempt.Status != "outcome_unknown" {
+			attempt.RetrySafe = &value
+		}
 	}
 	if orderStateChanged.Valid {
 		value := orderStateChanged.Bool

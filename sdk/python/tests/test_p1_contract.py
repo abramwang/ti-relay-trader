@@ -6,6 +6,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
 from relay_sdk import (
+    CommandStatus,
+    OrderCancelAttempt,
     RelayBrokerNotReadyError,
     RelayCancelRejectedError,
     RelayClient,
@@ -32,6 +34,27 @@ class RecordingOpener:
 
 
 class RelayP1ContractTests(unittest.TestCase):
+    def test_accepted_cancel_receipt_preserves_unknown_outcome_audit(self):
+        status = CommandStatus.from_dict({
+            "origin_message_id": "cancel-original",
+            "action": "order.cancel", "state": "accepted", "success": True,
+            "cancel_attempts": [{
+                "attempt_id": "cancel-original", "gateway_order_id": "gw-test",
+                "status": "timeout", "code": "CANCEL_RESPONSE_TIMEOUT",
+                "reconciliation_required": True, "retry_safe": False,
+            }],
+        })
+        self.assertTrue(status.success)
+        outcome = OrderCancelAttempt.from_dict(status.raw["cancel_attempts"][0])
+        self.assertEqual(outcome.status, "timeout")
+        self.assertTrue(outcome.reconciliation_required)
+        self.assertFalse(outcome.retry_safe)
+        rejected = OrderCancelAttempt.from_dict({
+            "status": "rejected", "reconciliation_required": False, "retry_safe": True,
+        })
+        self.assertFalse(rejected.reconciliation_required)
+        self.assertTrue(rejected.retry_safe)
+
     def test_json_price_round_trip_uses_decimal_micro_units(self):
         cases = (
             ("stock", 11.2, "0.01", 11_200_000),

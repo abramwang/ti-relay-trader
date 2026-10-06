@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-06 17:58 Asia/Shanghai` 已评审 Chronos TEST 撤单故障需求并发布拒撤/未知结果安全语义修正，TEST API/核心依赖 ok；schema=31、SDK=0.1.41，无新故障控制面、未发交易或切环境。后续先完善撤单乱序投影/SSE 去重，再协调 OC TEST 真实故障入口；阶段回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md，OC 需求 docs/OC_TEST_CANCEL_FAULT_INJECTION_REQUIREMENT_20261006.md。10-05 checkpoint/Direct 消费端验收已通过，历史 TEST working 独立处置仍保留 |
+| 最近确认 | `2026-10-06 18:55 Asia/Shanghai` 已归档 OC 故障入口说明（默认关闭，声明 10c908c/ecb07b1）并发布 Relay 撤单乱序/重复保护、有界 SSE 去重、完整 fault 审计及 command-status.cancel_attempts 关联；TEST API/依赖 ok，schema=31、SDK=0.1.41，无需升级 SDK。全量 Go、相关 race、TEST 临时库及 SDK 56/56 通过。未启用故障、未发交易、未切环境或重启 OC；待授权窗口联合验收，步骤 docs/TEST_CANCEL_FAULT_ACCEPTANCE_RUNBOOK_20261006.md，回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md（v2）。SSE 重启/gap 后仍需全量对账 |
 | 更新时间 | `2026-10-06` |
 
 新线程按以下顺序恢复：

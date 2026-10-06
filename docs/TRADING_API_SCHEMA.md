@@ -346,6 +346,19 @@ OC v1.2 生成的 `gateway_order_id` 是不透明稳定标识。Relay 不从 `ba
 
 `order.cancel` 的 `reply.status=accepted` 只表示撤单请求已交给柜台接口。OC 可以继续发布 `event_type=order.cancel.event`，其中 `event_name` 支持 `order.cancel.accepted` 和 `order.cancel.rejected`；响应超时则写入 `CANCEL_RESPONSE_TIMEOUT` DLQ。Relay 按原命令 `origin_message_id` 将 reply/event 幂等写入同一条 `order_cancel_attempts`，后到的柜台事件会覆盖 reply 的暂态 `reconciliation_required`；accepted 只补充动作证据，rejected 另外发布 `order.cancel.rejected` SSE，两者都不直接修改原订单的 `status/gateway_status/reject_code/reject_message`。成功撤单仍只以普通 `order.event.gateway_status=cancelled` 为准。
 
+确定拒撤尊重显式 `reconciliation_required=false`，缺失该字段时保守要求对账。
+`timeout/outcome_unknown` 强制 `reconciliation_required=true/retry_safe=false`，
+不由迟到 accepted 或确定动作结果清除；原始失败审计与后续订单终态分别保留。
+相同结果重消费不再产生数据库变更通知，迟到 accepted 不覆盖失败，普通 reply 不覆盖已取得的柜台 event。
+SSE 在当前有界重放窗口内按账户、attempt_id、原订单和结果阶段去重；
+不承诺跨进程 exactly-once，重启/gap/游标过期必须全分页对账。
+撤单尝试 `raw_payload` 保留完整 OC payload，包括受控 TEST 的 `fault_plan_id/original_body`，
+审计字段不影响准入或业务状态。
+
+`GET /v1/command-status/{origin_message_id}` 对撤单附加可选 `cancel_attempts` 审计关联。
+`state=accepted/success=true` 与其中 `status=timeout` 可同时存在，前者是命令受理，后者是动作结果未知。
+SDK 0.1.41 可从 `CommandStatus.raw["cancel_attempts"]` 读取，不需要升级 SDK 或改变命令格式。
+
 `GET /v1/order-cancel-attempts` 提供上述证据的账户级持久化分页读取，支持日期、原订单
 `gateway_order_id`、状态和 cursor 过滤。`ORDER_NOT_FOUND` 不推导原订单终态。可选
 `counter_session_id` 用于证明订单所属 OC 进程会话；它是不透明值，不能按自然日生成。TEST 中

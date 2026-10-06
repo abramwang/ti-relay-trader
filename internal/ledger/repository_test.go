@@ -258,12 +258,28 @@ func TestUpsertOrderCancelAttemptKeepsCancelOutcomeSeparate(t *testing.T) {
 	requireQueryContains(t, exec.query, "INSERT INTO order_cancel_attempts")
 	requireQueryContains(t, exec.query, "ON CONFLICT (account_id, attempt_id) DO UPDATE")
 	requireQueryContains(t, exec.query, "reconciliation_required = EXCLUDED.reconciliation_required")
+	requireQueryContains(t, exec.query, "EXCLUDED.status <> 'accepted' OR order_cancel_attempts.status = 'accepted'")
+	requireQueryContains(t, exec.query, "order_cancel_attempts.status NOT IN ('timeout', 'outcome_unknown')")
+	requireQueryContains(t, exec.query, "IS DISTINCT FROM")
 	requireArgLen(t, exec.args, 20)
 	if exec.args[0] != "msg-cancel-1" || exec.args[1] != "acct-1" || exec.args[3] != "gw-1" {
 		t.Fatalf("cancel attempt identity args = %#v", exec.args[:4])
 	}
 	assertJSONContains(t, exec.args[18], `"cancel_status":"rejected"`)
 	assertJSONContains(t, exec.args[19], `"broker_error_id":1`)
+}
+
+func TestUpsertOrderCancelAttemptChangedReportsReplay(t *testing.T) {
+	for _, count := range []rowsAffectedResult{0, 1} {
+		exec := &recordingExecutor{result: count}
+		changed, err := NewRepository(exec).UpsertOrderCancelAttemptChanged(context.Background(), OrderCancelAttempt{
+			AttemptID: "cancel-1", AccountID: "acct-1", TradeDate: "2026-10-06",
+			GatewayOrderID: "gw-1", Status: "rejected",
+		})
+		if err != nil || changed != (count == 1) {
+			t.Fatalf("count=%d changed/error=%v/%v", count, changed, err)
+		}
+	}
 }
 
 func TestUpsertOrderFeeRecordBuildsAuthoritativeOrderFeeWrite(t *testing.T) {

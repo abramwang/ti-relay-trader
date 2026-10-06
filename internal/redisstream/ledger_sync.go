@@ -791,12 +791,24 @@ func processCancelAttemptEnvelope(
 		OccurredAt:             occurredAt,
 		StreamKey:              envelope.Stream,
 		StreamID:               envelope.StreamID,
-		RawPayload:             payload,
+		RawPayload:             json.RawMessage(envelope.Payload),
 		AdapterContext:         mergeContextMaps(envelope.AdapterContext, stringContext("counter_session_id", firstNonEmpty(payload.CounterSessionID, stringFromMap(envelope.AdapterContext, "counter_session_id")))),
 	}
-	if err := writer.UpsertOrderCancelAttempt(ctx, attempt); err != nil {
+	var writeErr error
+	changed := true
+	if changeWriter, ok := writer.(interface {
+		UpsertOrderCancelAttemptChanged(context.Context, ledger.OrderCancelAttempt) (bool, error)
+	}); ok {
+		changed, writeErr = changeWriter.UpsertOrderCancelAttemptChanged(ctx, attempt)
+	} else {
+		writeErr = writer.UpsertOrderCancelAttempt(ctx, attempt)
+	}
+	if writeErr != nil {
 		result.LedgerErrors++
-		result.SkipReasons = append(result.SkipReasons, err.Error())
+		result.SkipReasons = append(result.SkipReasons, writeErr.Error())
+		return result
+	}
+	if !changed {
 		return result
 	}
 	result.CancelAttempts++

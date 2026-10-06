@@ -303,8 +303,29 @@ ON CONFLICT (account_id, attempt_id) DO UPDATE SET
     stream_key = COALESCE(EXCLUDED.stream_key, order_cancel_attempts.stream_key),
     stream_id = COALESCE(EXCLUDED.stream_id, order_cancel_attempts.stream_id),
     raw_payload = EXCLUDED.raw_payload,
-    adapter_context = order_cancel_attempts.adapter_context || EXCLUDED.adapter_context,
+    adapter_context = (CASE WHEN jsonb_typeof(order_cancel_attempts.adapter_context) = 'object'
+                           THEN order_cancel_attempts.adapter_context ELSE '{}'::jsonb END) || EXCLUDED.adapter_context,
     updated_at = now()
+WHERE order_cancel_attempts.gateway_order_id = EXCLUDED.gateway_order_id
+  AND (order_cancel_attempts.status NOT IN ('timeout', 'outcome_unknown')
+       OR EXCLUDED.status IN ('timeout', 'outcome_unknown'))
+  AND (EXCLUDED.status <> 'accepted' OR order_cancel_attempts.status = 'accepted')
+  AND (EXCLUDED.status IN ('timeout', 'outcome_unknown')
+       OR COALESCE(order_cancel_attempts.stream_key, '') NOT LIKE '%:event'
+       OR COALESCE(EXCLUDED.stream_key, '') LIKE '%:event')
+  AND ROW(order_cancel_attempts.status, order_cancel_attempts.code, order_cancel_attempts.message,
+          order_cancel_attempts.retry_safe, order_cancel_attempts.order_state_changed,
+          order_cancel_attempts.reconciliation_required, order_cancel_attempts.order_id,
+          order_cancel_attempts.order_stream_id, order_cancel_attempts.adapter_context)
+      IS DISTINCT FROM
+      ROW(EXCLUDED.status, COALESCE(EXCLUDED.code, order_cancel_attempts.code),
+          COALESCE(EXCLUDED.message, order_cancel_attempts.message),
+          COALESCE(EXCLUDED.retry_safe, order_cancel_attempts.retry_safe),
+          COALESCE(EXCLUDED.order_state_changed, order_cancel_attempts.order_state_changed),
+          EXCLUDED.reconciliation_required, COALESCE(EXCLUDED.order_id, order_cancel_attempts.order_id),
+          COALESCE(EXCLUDED.order_stream_id, order_cancel_attempts.order_stream_id),
+          (CASE WHEN jsonb_typeof(order_cancel_attempts.adapter_context) = 'object'
+                THEN order_cancel_attempts.adapter_context ELSE '{}'::jsonb END) || EXCLUDED.adapter_context)
 `
 
 const orderCancelAttemptSelectColumns = `

@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -101,6 +102,13 @@ func (hub *Hub) Publish(event Event) Event {
 
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+	if key := cancelOutcomeKey(event); key != "" {
+		for _, previous := range hub.history {
+			if cancelOutcomeKey(previous) == key {
+				return previous
+			}
+		}
+	}
 	hub.nextEventID++
 	event.ID = hub.cursorLocked(hub.nextEventID)
 	hub.appendHistoryLocked(event)
@@ -116,6 +124,30 @@ func (hub *Hub) Publish(event Event) Event {
 		}
 	}
 	return event
+}
+
+func cancelOutcomeKey(event Event) string {
+	if event.Type != TypeOrderCancelRejected {
+		return ""
+	}
+	data, ok := event.Data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	attempt, ok := data["cancel_attempt"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	identity := make([]string, 0, 4)
+	for _, field := range []string{"account_id", "attempt_id", "gateway_order_id", "status"} {
+		value, ok := attempt[field].(string)
+		if !ok || value == "" {
+			return ""
+		}
+		identity = append(identity, value)
+	}
+	key, _ := json.Marshal(identity)
+	return string(key)
 }
 
 func (hub *Hub) Subscribe(ctx context.Context, filter Subscription) (<-chan Event, func()) {

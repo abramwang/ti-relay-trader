@@ -7,6 +7,45 @@ import (
 	"time"
 )
 
+func TestHubDeduplicatesCancelOutcomeAndReplaysOriginalCursor(t *testing.T) {
+	hub := NewHubWithReplayCapacity(10)
+	ch, unsubscribe := hub.Subscribe(context.Background(), Subscription{AccountID: "acct-1"})
+	defer unsubscribe()
+	before := hub.CurrentCursor()
+	makeEvent := func(attemptID, status, stream string) Event {
+		return Event{
+			Type: TypeOrderCancelRejected, AccountIDs: []string{"acct-1"}, Stream: stream,
+			Data: map[string]any{"cancel_attempt": map[string]any{
+				"account_id": "acct-1", "attempt_id": attemptID, "gateway_order_id": "gw-1", "status": status,
+			}},
+		}
+	}
+	first := hub.Publish(makeEvent("cancel-1", "rejected", "reply"))
+	duplicate := hub.Publish(makeEvent("cancel-1", "rejected", "event"))
+	if duplicate.ID != first.ID || hub.CurrentCursor() != first.ID {
+		t.Fatalf("duplicate advanced cursor: first=%s duplicate=%s current=%s", first.ID, duplicate.ID, hub.CurrentCursor())
+	}
+	if event := <-ch; event.ID != first.ID {
+		t.Fatalf("delivered event = %#v", event)
+	}
+	select {
+	case event := <-ch:
+		t.Fatalf("duplicate notification = %#v", event)
+	default:
+	}
+	_, resume, closeReplay := hub.SubscribeFrom(context.Background(), Subscription{AccountID: "acct-1"}, before)
+	defer closeReplay()
+	if len(resume.Events) != 1 || resume.Events[0].ID != first.ID {
+		t.Fatalf("resume = %#v", resume)
+	}
+	if event := hub.Publish(makeEvent("cancel-2", "rejected", "event")); event.ID == first.ID {
+		t.Fatal("distinct manual cancel identity was suppressed")
+	}
+	if event := hub.Publish(makeEvent("cancel-1", "timeout", "dlq")); event.ID == first.ID {
+		t.Fatal("new indeterminate outcome was suppressed")
+	}
+}
+
 func TestHubPublishesToMatchingAccount(t *testing.T) {
 	hub := NewHub()
 	ctx, cancel := context.WithCancel(context.Background())

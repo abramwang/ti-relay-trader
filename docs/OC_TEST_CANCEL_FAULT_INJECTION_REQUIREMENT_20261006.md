@@ -1,7 +1,8 @@
 # OC TEST 撤单受控故障入口需求
 
 日期：2026-10-06，全部业务时间为 Asia/Shanghai。
-状态：待 OC 评审及实现；本文不是已部署功能的操作说明。
+状态：OC 已反馈实现提交 10c908c/ecb07b1，默认关闭；在线联合验收待授权窗口。
+本文保留最初需求，实际对接方式见 OC_TEST_CANCEL_FAULT_INTEGRATION_20261006.md。
 来源：/home/ti-chronos-strategy/docs/RELAY-TEST-CANCEL-FAULT-INJECTION-REQUIREMENT-20261005.md。
 
 ## 边界

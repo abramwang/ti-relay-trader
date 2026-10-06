@@ -1516,6 +1516,26 @@ func TestListOrderCancelAttemptsReturnsAuditablePage(t *testing.T) {
 	}
 }
 
+func TestCommandStatusSeparatesCancelAcceptanceAndTimeout(t *testing.T) {
+	noRetry := false
+	store := &fakeSettlementStore{commandStatus: ledger.CommandStatus{
+		OriginMessageID: "cancel-original", AccountID: "acct-1", Action: redisstream.ActionOrderCancel,
+		State: "accepted", Success: true, Terminal: true,
+		CancelAttempts: []ledger.OrderCancelAttempt{{
+			AttemptID: "cancel-original", GatewayOrderID: "gw-test", Status: "timeout",
+			Code: "CANCEL_RESPONSE_TIMEOUT", ReconciliationRequired: true, RetrySafe: &noRetry,
+		}},
+	}}
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Settlements: store})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/command-status/cancel-original", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"state":"accepted"`) ||
+		!strings.Contains(rec.Body.String(), `"cancel_attempts":[`) || !strings.Contains(rec.Body.String(), `"status":"timeout"`) ||
+		!strings.Contains(rec.Body.String(), `"retry_safe":false`) || !strings.Contains(rec.Body.String(), `"reconciliation_required":true`) {
+		t.Fatalf("cancel command status = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRefreshAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		refreshPositionsResult: orderflow.RefreshQueryResult{

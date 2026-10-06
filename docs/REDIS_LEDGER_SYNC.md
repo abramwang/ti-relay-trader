@@ -33,6 +33,13 @@ OC 增量兼容已经落地：`order.cancel.event` 的 accepted/rejected 结果�
 
 `hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`action=order.cancel` 的 `CANCEL_RESPONSE_TIMEOUT` 和 `COMMAND_OUTCOME_UNKNOWN` 分别生成 `timeout/outcome_unknown` 撤单审计，强制 `reconciliation_required=true/retry_safe=false`，不修改原订单。确定拒撤尊重显式 `reconciliation_required=false`；字段缺失时仍保守要求对账。原始回报永久归档，不由安全投影覆盖。
 
+撤单投影使用 SQL 原子比较阻止重复及状态回退；实际未变更时不产生消费通知，raw 仍归档。
+迟到 accepted 不覆盖失败，普通 reply 不覆盖已取得的柜台 event；未知结果不能被后到动作接受/拒绝清除。
+完整 payload 保留 OC fault_plan_id、controlled_test_fault 和 original_body；这些字段只作审计。
+command-status 附带同一 origin_message_id 的 cancel_attempts，但命令接受语义不变。
+SSE 同一结果在当前 Hub 的有界重放窗口内复用原游标；它不是持久 exactly-once 通知系统，
+通知与账本之间尚无事务 outbox，重启或 gap 后必须以全分页账本恢复。
+
 `relayctl redis-probe` 是只读 Redis 排障入口。除 stream 长度和最新消息摘要外，现在还输出 consumer group 的 consumers、pending、lag、last delivered ID，并为有 PEL 的 group 展示有限条 pending entry 的 ID、consumer、idle 和 delivery count；探针不会执行 ACK、CLAIM 或删除。
 
 ## Stream 命名与方向
