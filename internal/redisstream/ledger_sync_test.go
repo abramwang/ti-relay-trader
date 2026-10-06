@@ -2,6 +2,7 @@ package redisstream
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -1582,6 +1583,100 @@ func TestProcessLedgerEntryRecordsCancelTimeoutDLQ(t *testing.T) {
 		len(writer.cancelAttempts) != 1 || !writer.cancelAttempts[0].ReconciliationRequired ||
 		writer.cancelAttempts[0].Status != "timeout" {
 		t.Fatalf("timeout result/writer = %#v / %#v", result, writer.cancelAttempts)
+	}
+}
+
+func TestCancelAttemptReconciliationAndRetrySafety(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+	for _, test := range []struct {
+		name          string
+		messageType   string
+		code          string
+		flag          *bool
+		wantStatus    string
+		wantReconcile bool
+		wantRetrySafe bool
+	}{
+		{"explicit rejection needs no reconciliation", "event", "BROKER_CANCEL_REJECTED", boolPtr(false), "rejected", false, true},
+		{"rejection explicit reconciliation", "event", "BROKER_CANCEL_REJECTED", boolPtr(true), "rejected", true, true},
+		{"legacy rejection fails closed", "event", "BROKER_CANCEL_REJECTED", nil, "rejected", true, true},
+		{"unknown reply overrides unsafe flags", "reply", "COMMAND_OUTCOME_UNKNOWN", boolPtr(false), "outcome_unknown", true, false},
+		{"unknown DLQ is audited", "deadletter", "COMMAND_OUTCOME_UNKNOWN", boolPtr(false), "outcome_unknown", true, false},
+		{"timeout reply is audited", "reply", "CANCEL_RESPONSE_TIMEOUT", boolPtr(false), "timeout", true, false},
+		{"timeout DLQ is audited", "deadletter", "CANCEL_RESPONSE_TIMEOUT", nil, "timeout", true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := map[string]any{
+				"gateway_order_id": "gw-cancel-fault", "cancel_status": "rejected",
+				"code": test.code, "message": "controlled cancel result",
+				"retry_safe": true, "order_state_changed": false,
+			}
+			if test.flag != nil {
+				payload["reconciliation_required"] = *test.flag
+			}
+			body, err := json.Marshal(map[string]any{
+				"protocol": "relay.stream.v1", "message_type": test.messageType,
+				"message_id": "fault-result", "origin_message_id": "original-cancel",
+				"request_id": "request-cancel", "action": "order.cancel", "status": "failed",
+				"code": test.code, "event_type": "order.cancel.event", "event_name": "order.cancel.rejected",
+				"produced_at": "2026-10-05T12:00:00Z",
+				"routing":     map[string]string{"env": "test", "broker_id": "huaxin", "gateway_id": "00030484", "account_id": "00030484"},
+				"payload":     payload,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer := &fakeLedgerWriter{}
+			role := test.messageType
+			if role == "deadletter" {
+				role = "dlq"
+			}
+			result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:"+role, "8-1", map[string]any{"body": string(body)})
+			if result.Archived != 1 || result.CancelAttempts != 1 || result.LedgerErrors != 0 ||
+				len(writer.cancelAttempts) != 1 || len(writer.orderUpdates) != 0 || len(writer.orderEvents) != 0 {
+				t.Fatalf("result/writer = %#v / %#v", result, writer)
+			}
+			attempt := writer.cancelAttempts[0]
+			if attempt.AttemptID != "original-cancel" || attempt.OriginMessageID != "original-cancel" ||
+				attempt.Status != test.wantStatus || attempt.ReconciliationRequired != test.wantReconcile ||
+				attempt.RetrySafe == nil || *attempt.RetrySafe != test.wantRetrySafe ||
+				attempt.OrderStateChanged == nil || *attempt.OrderStateChanged {
+				t.Fatalf("attempt = %#v", attempt)
+			}
+			if raw := attempt.RawPayload.(cancelAttemptPayload); raw.RetrySafe == nil || !*raw.RetrySafe {
+				t.Fatal("safety normalization changed the original payload audit")
+			}
+		})
+	}
+}
+
+func TestCancelUnknownEnvelopeCannotBeOverriddenByAcceptedPayload(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:reply", "8-3", map[string]any{
+		"body": `{"protocol":"relay.stream.v1","message_type":"reply","message_id":"unknown-cancel",
+		"origin_message_id":"original-cancel","action":"order.cancel","status":"failed","code":"COMMAND_OUTCOME_UNKNOWN",
+		"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+		"payload":{"gateway_order_id":"gw-cancel","cancel_status":"accepted","code":"OK","retry_safe":true,"reconciliation_required":false}}`,
+	})
+	if result.CancelAttempts != 1 || len(writer.cancelAttempts) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	attempt := writer.cancelAttempts[0]
+	if attempt.Status != "outcome_unknown" || attempt.Code != "COMMAND_OUTCOME_UNKNOWN" || !attempt.ReconciliationRequired || attempt.RetrySafe == nil || *attempt.RetrySafe {
+		t.Fatalf("attempt = %#v", attempt)
+	}
+}
+
+func TestUnknownSubmitDLQDoesNotCreateCancelAttempt(t *testing.T) {
+	writer := &fakeLedgerWriter{}
+	result := ProcessLedgerEntry(context.Background(), writer, "relay:test:v1:huaxin:00030484:dlq", "8-2", map[string]any{
+		"body": `{"protocol":"relay.stream.v1","message_type":"deadletter","message_id":"unknown-submit",
+		"origin_message_id":"original-submit","action":"order.submit","code":"COMMAND_OUTCOME_UNKNOWN",
+		"routing":{"env":"test","broker_id":"huaxin","gateway_id":"00030484","account_id":"00030484"},
+		"payload":{"gateway_order_id":"gw-submit"}}`,
+	})
+	if result.Archived != 1 || result.DeadLetters != 1 || result.CancelAttempts != 0 || len(writer.cancelAttempts) != 0 || len(writer.orderUpdates) != 0 {
+		t.Fatalf("result/writer = %#v / %#v", result, writer)
 	}
 }
 

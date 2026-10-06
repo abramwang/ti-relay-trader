@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-05 Asia/Shanghai` Chronos 独立验收 TEST checkpoint 恢复及 Direct 写链通过：新业务 ID 的 510300.SH 买入 100 股于 19:58:41 全额成交，任务正常收口、活动 runtime 归零。32 笔旧 TEST working 独立处置且原事实保留，TEST schema=31。当前仍为 TEST；本次 Relay 仅更新文档，未发单或切环境。详见 docs/CHRONOS_CHECKPOINT_RECOVERY_ONLINE_REVIEW_20261005.md；消费端报告 /home/ti-chronos-strategy/docs/RELAY-CHECKPOINT-RECOVERY-DIRECT-ACCEPTANCE-20261005.md |
-| 更新时间 | `2026-10-05` |
+| 最近确认 | `2026-10-06 17:58 Asia/Shanghai` 已评审 Chronos TEST 撤单故障需求并发布拒撤/未知结果安全语义修正，TEST API/核心依赖 ok；schema=31、SDK=0.1.41，无新故障控制面、未发交易或切环境。后续先完善撤单乱序投影/SSE 去重，再协调 OC TEST 真实故障入口；阶段回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md，OC 需求 docs/OC_TEST_CANCEL_FAULT_INJECTION_REQUIREMENT_20261006.md。10-05 checkpoint/Direct 消费端验收已通过，历史 TEST working 独立处置仍保留 |
+| 更新时间 | `2026-10-06` |
 
 新线程按以下顺序恢复：
 

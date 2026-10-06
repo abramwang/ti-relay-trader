@@ -31,7 +31,7 @@ OC 增量兼容已经落地：`order.cancel.event` 的 accepted/rejected 结果�
 
 `relayctl ledger-sync` 命令是受控批处理入口，不会写入 `cmd.trade` 或 `cmd.query`，也不会移动 consumer group 位点。自动资金持仓刷新在内嵌同步循环和独立 worker 中均可启用。
 
-`hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`CANCEL_RESPONSE_TIMEOUT` 还会生成 `reconciliation_required=true` 的撤单审计记录。
+`hb/dlq` 由 worker 消费；心跳就绪字段进入 `/v1/operations/status`，DLQ 进入运行统计与人工审核。`action=order.cancel` 的 `CANCEL_RESPONSE_TIMEOUT` 和 `COMMAND_OUTCOME_UNKNOWN` 分别生成 `timeout/outcome_unknown` 撤单审计，强制 `reconciliation_required=true/retry_safe=false`，不修改原订单。确定拒撤尊重显式 `reconciliation_required=false`；字段缺失时仍保守要求对账。原始回报永久归档，不由安全投影覆盖。
 
 `relayctl redis-probe` 是只读 Redis 排障入口。除 stream 长度和最新消息摘要外，现在还输出 consumer group 的 consumers、pending、lag、last delivered ID，并为有 PEL 的 group 展示有限条 pending entry 的 ID、consumer、idle 和 delivery count；探针不会执行 ACK、CLAIM 或删除。
 

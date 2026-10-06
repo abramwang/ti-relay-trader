@@ -212,8 +212,13 @@ func ProcessLedgerEntry(ctx context.Context, writer LedgerWriter, stream, stream
 			result.DataQualityDLQ++
 		}
 		code, _ := orderErrorInfo(envelope)
-		if trading.ErrorCode(strings.TrimSpace(code)) == trading.ErrorCancelResponseTimeout {
-			return processCancelAttemptEnvelope(ctx, writer, envelope, "timeout", result)
+		if envelope.Action == ActionOrderCancel {
+			switch trading.ErrorCode(strings.TrimSpace(code)) {
+			case trading.ErrorCancelResponseTimeout:
+				return processCancelAttemptEnvelope(ctx, writer, envelope, "timeout", result)
+			case trading.ErrorCommandOutcomeUnknown:
+				return processCancelAttemptEnvelope(ctx, writer, envelope, "outcome_unknown", result)
+			}
 		}
 		return result
 	}
@@ -704,7 +709,7 @@ type cancelAttemptPayload struct {
 	Message                string `json:"message"`
 	RetrySafe              *bool  `json:"retry_safe"`
 	OrderStateChanged      *bool  `json:"order_state_changed"`
-	ReconciliationRequired bool   `json:"reconciliation_required"`
+	ReconciliationRequired *bool  `json:"reconciliation_required"`
 	OccurredAt             string `json:"occurred_at"`
 }
 
@@ -726,8 +731,26 @@ func processCancelAttemptEnvelope(
 	attemptID := firstNonEmpty(envelope.OriginMessageID, envelope.RequestID, envelope.MessageID, envelope.Stream+":"+envelope.StreamID)
 	status := firstNonEmpty(payload.CancelStatus, defaultStatus)
 	status = strings.ToLower(strings.TrimSpace(status))
-	if status == "failed" && trading.ErrorCode(firstNonEmpty(payload.Code, envelope.Code)) == trading.ErrorCancelResponseTimeout {
+	code := firstNonEmpty(payload.Code, envelope.Code)
+	if envelope.Code == string(trading.ErrorCancelResponseTimeout) || envelope.Code == string(trading.ErrorCommandOutcomeUnknown) {
+		code = envelope.Code
+	}
+	switch trading.ErrorCode(code) {
+	case trading.ErrorCancelResponseTimeout:
 		status = "timeout"
+	case trading.ErrorCommandOutcomeUnknown:
+		status = "outcome_unknown"
+	}
+	reconciliationRequired := status != string(trading.ReplyStatusAccepted)
+	if payload.ReconciliationRequired != nil {
+		reconciliationRequired = *payload.ReconciliationRequired
+	}
+	retrySafe := payload.RetrySafe
+	if status == "timeout" || status == "outcome_unknown" {
+		// Indeterminate outcomes must fail closed even if a callback claims retry safety.
+		reconciliationRequired = true
+		noRetry := false
+		retrySafe = &noRetry
 	}
 	occurredAt := parseTime(payload.OccurredAt)
 	if occurredAt.IsZero() {
@@ -760,11 +783,11 @@ func processCancelAttemptEnvelope(
 		RequestID:              envelope.RequestID,
 		CorrelationID:          firstNonEmpty(envelope.CorrelationID, envelope.RequestCorrelationID),
 		Status:                 status,
-		Code:                   firstNonEmpty(payload.Code, envelope.Code),
+		Code:                   code,
 		Message:                firstNonEmpty(payload.Message, envelope.Message),
-		RetrySafe:              payload.RetrySafe,
+		RetrySafe:              retrySafe,
 		OrderStateChanged:      payload.OrderStateChanged,
-		ReconciliationRequired: payload.ReconciliationRequired || status != string(trading.ReplyStatusAccepted),
+		ReconciliationRequired: reconciliationRequired,
 		OccurredAt:             occurredAt,
 		StreamKey:              envelope.Stream,
 		StreamID:               envelope.StreamID,

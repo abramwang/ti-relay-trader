@@ -232,6 +232,8 @@
 - [x] 增加 reply checkpoint 独立错误定位与显式 TEST 跨会话只读对账工具：四类唯一成功终态、全分页账本比对、页级摘要、会话连续性和条件更新审计；无关成功批次不清告警。
 - [x] 完成 Relay 2026-10-05 跨会话恢复在线核对：四类查询唯一成功终态、39 条持仓一致、当日订单/成交为 0、完整页级审计落库；32 笔 TEST 遗留订单经用户确认独立处置，原 working 不修改，API 恢复 ok。
 - [x] Chronos 2026-10-05 独立复验跨会话恢复与 Direct 最小写链：新业务 ID 的 510300.SH 买入 100 股全额成交，订单/成交关联一致，任务 completed、活动运行和 runtime 归零；恢复审计及历史错误保留。消费端报告：/home/ti-chronos-strategy/docs/RELAY-CHECKPOINT-RECOVERY-DIRECT-ACCEPTANCE-20261005.md。仅关闭 TEST checkpoint/Direct 验收，不外推生产准入或 TWAP 等算法验收。
+- [x] 评审 Chronos TEST 撤单故障注入需求，修正确定拒撤显式 reconciliation_required=false、unknown 撤单 DLQ 落审计及未知/超时结果强制不可自动重试；原始审计和订单事实保留，阶段回执见 CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md。
+- [ ] 完善撤单 reply/event 乱序投影、按撤单身份的 SSE 去重和原命令审计关联；与 OC 的 TEST-only 精确一次/短 TTL 故障入口、Chronos 异步拒撤 durable 投影联合验证 rejected、unknown 两种最终分支，不伪造远端回报，不外推生产。
 - [x] 新增 `/v1/operations/status`、`/v1/operations/dlq*`，并把摘要接入 `/v1/status`。
 - [x] 新增 `/operations` 独立运维页面和 API Console 运维分组。
 - [x] 使用 Meridian 交易日和半开区间 `08:55 <= t < 15:30 Asia/Shanghai` 监控窗口抑制非交易日、盘前和 OC 关停后误报；15:30 起心跳和 Stream 统一显示灰色 `off_hours`，不会因计划关停标红。
