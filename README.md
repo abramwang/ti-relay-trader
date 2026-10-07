@@ -10,11 +10,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 测试环境，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步 worker |
+| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-06 18:55 Asia/Shanghai` 已归档 OC 故障入口说明（默认关闭，声明 10c908c/ecb07b1）并发布 Relay 撤单乱序/重复保护、有界 SSE 去重、完整 fault 审计及 command-status.cancel_attempts 关联；TEST API/依赖 ok，schema=31、SDK=0.1.41，无需升级 SDK。全量 Go、相关 race、TEST 临时库及 SDK 56/56 通过。未启用故障、未发交易、未切环境或重启 OC；待授权窗口联合验收，步骤 docs/TEST_CANCEL_FAULT_ACCEPTANCE_RUNBOOK_20261006.md，回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md（v2）。SSE 重启/gap 后仍需全量对账 |
-| 更新时间 | `2026-10-06` |
+| 最近确认 | `2026-10-07 18:12 Asia/Shanghai` 按用户指令切回生产，目标库迁移检查完成，API/独立 worker、数据库、Redis、事件桥等核心依赖 ok；6 户配置、4 户启用、trading_enabled=0，生产下单关闭。未发送交易命令或重启 OC。TEST 撤单故障联合验收仍待授权窗口，步骤 docs/TEST_CANCEL_FAULT_ACCEPTANCE_RUNBOOK_20261006.md，回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md（v2），SDK=0.1.41；SSE 重启/gap 后仍需全量对账 |
+| 更新时间 | `2026-10-07` |
 
 新线程按以下顺序恢复：
 
