@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-07 18:12 Asia/Shanghai` 按用户指令切回生产，目标库迁移检查完成，API/独立 worker、数据库、Redis、事件桥等核心依赖 ok；6 户配置、4 户启用、trading_enabled=0，生产下单关闭。未发送交易命令或重启 OC。TEST 撤单故障联合验收仍待授权窗口，步骤 docs/TEST_CANCEL_FAULT_ACCEPTANCE_RUNBOOK_20261006.md，回执 docs/CHRONOS_TEST_CANCEL_FAULT_REVIEW_20261006.md（v2），SDK=0.1.41；SSE 重启/gap 后仍需全量对账 |
-| 更新时间 | `2026-10-07` |
+| 最近确认 | `2026-10-10 13:11 Asia/Shanghai` 修复默认资产查询跨日期清零逆回购本金：查询日改取资金快照 updated_at 的东八区日期。四户接口与 10-09 close 一致，债享/富盈/智算分别恢复 5,076,000/38,149,000/258,000 CNY 本金；数据库及历史绩效未修改，仅重启 API，独立 worker 保持运行，production/ok、trading_enabled=0。全量 Go 与 API/performance race 通过，报告 docs/ASSET_REPO_SNAPSHOT_DATE_FIX_20261010.md。TEST 故障联合验收仍待授权窗口，SDK=0.1.41 |
+| 更新时间 | `2026-10-10` |
 
 新线程按以下顺序恢复：
 

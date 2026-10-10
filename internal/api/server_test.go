@@ -1035,6 +1035,73 @@ func TestAccountAssetIncludesReverseRepoPrincipalReceivable(t *testing.T) {
 	}
 }
 
+type datedAssetFillsSubmitter struct {
+	*fakeOrderSubmitter
+	tradeDate string
+}
+
+func (submitter *datedAssetFillsSubmitter) ListFills(ctx context.Context, query trading.FillQuery) (orderflow.ListFillsResult, error) {
+	result, err := submitter.fakeOrderSubmitter.ListFills(ctx, query)
+	if query.TradeDate != submitter.tradeDate {
+		return orderflow.ListFillsResult{}, err
+	}
+	return result, err
+}
+
+func TestAccountAssetRepoUsesSnapshotBusinessDate(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		capturedAt time.Time
+		tradeDate  string
+	}{
+		{"previous close on a weekend", time.Date(2026, 10, 9, 15, 1, 21, 0, timeutil.Location()), "2026-10-09"},
+		{"stale snapshot across a holiday", time.Date(2026, 9, 30, 15, 1, 0, 0, timeutil.Location()), "2026-09-30"},
+		{"UTC timestamp uses Shanghai day", time.Date(2026, 10, 8, 17, 0, 0, 0, time.UTC), "2026-10-09"},
+		{"missing capture retains current-day fallback", time.Time{}, timeutil.Now().Format("2006-01-02")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &datedAssetFillsSubmitter{
+				tradeDate: test.tradeDate,
+				fakeOrderSubmitter: &fakeOrderSubmitter{
+					assetResult: orderflow.GetAssetResult{Asset: trading.Asset{
+						AccountID: "acct-1", CashTotal: 1000, MarketValue: 100,
+						ReverseRepoReceivable: 1000, NetAsset: 2100, UpdatedAt: test.capturedAt,
+					}},
+					listFillsResult: orderflow.ListFillsResult{Fills: []trading.Fill{{
+						FillID: "fill-repo", AccountID: "acct-1", GatewayOrderID: "repo-1",
+						Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell,
+						Qty: 10, Price: 1.5, MatchedAt: test.capturedAt.Add(-time.Minute),
+					}}},
+				},
+			}
+			if !test.capturedAt.IsZero() {
+				service.listFillsResult.Fills = append(service.listFillsResult.Fills, trading.Fill{
+					FillID: "late-fill", AccountID: "acct-1", GatewayOrderID: "repo-late",
+					Symbol: "204001", Exchange: trading.ExchangeSH, TradeSide: trading.TradeSideSell,
+					Qty: 20, Price: 1.5, MatchedAt: test.capturedAt.Add(time.Minute),
+				})
+			}
+			handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Orders: service})
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/accounts/acct-1/asset", nil))
+			var body struct {
+				Data struct {
+					Asset trading.Asset `json:"asset"`
+				} `json:"data"`
+			}
+			if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+				t.Fatalf("asset response = %d %s", rec.Code, rec.Body.String())
+			}
+			if service.fillQuery.TradeDate != test.tradeDate || body.Data.Asset.ReverseRepoReceivable != 1000 || body.Data.Asset.NetAsset != 2100 {
+				t.Fatalf("query/asset = %#v / %#v", service.fillQuery, body.Data.Asset)
+			}
+			if !body.Data.Asset.UpdatedAt.Equal(test.capturedAt) {
+				t.Fatal("enrichment changed the snapshot capture time")
+			}
+		})
+	}
+}
+
 func TestAccountPositions(t *testing.T) {
 	service := &fakeOrderSubmitter{
 		positionsResult: orderflow.ListPositionsResult{

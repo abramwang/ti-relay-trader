@@ -2143,7 +2143,7 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 	}
 	if enrich {
 		result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
-		result.Asset = s.enrichAssetWithReverseRepo(r.Context(), result.Asset, timeutil.Now().Format("2006-01-02"))
+		result.Asset = s.enrichAssetWithReverseRepo(r.Context(), result.Asset)
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }
@@ -2184,9 +2184,14 @@ func applyPositionTotalsToAsset(asset trading.Asset, totals assetPositionTotals)
 	return asset
 }
 
-func (s *Server) enrichAssetWithReverseRepo(ctx context.Context, asset trading.Asset, tradeDate string) trading.Asset {
+func (s *Server) enrichAssetWithReverseRepo(ctx context.Context, asset trading.Asset) trading.Asset {
 	if s.orders == nil || strings.TrimSpace(asset.AccountID) == "" {
 		return asset
+	}
+	tradeDate := timeutil.Now().Format("2006-01-02")
+	if !asset.UpdatedAt.IsZero() {
+		// Cash and repo principal must refer to the same snapshot, including on closed days.
+		tradeDate = timeutil.InBusinessLocation(asset.UpdatedAt).Format("2006-01-02")
 	}
 	fills, err := s.listReverseRepoFills(ctx, asset.AccountID, tradeDate)
 	if err != nil {
