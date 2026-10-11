@@ -431,6 +431,10 @@ SDK 0.1.41 可从 `CommandStatus.raw["cancel_attempts"]` 读取，不需要升�
 | `POST` | `/v1/jobs/runs` | `JobRunRequest` | `JobRun` | 已实现，日流程任务报告落盘 |
 | `POST` | `/v1/settlements/snapshots` | `SettlementSnapshotRequest` | `SettlementSnapshotResult` | 已实现，盘前 open 资产快照、收盘 close 资产/持仓快照和 reconciliation run 落盘 |
 
+### 费率预算范围
+
+`GET /v1/performance/fee-rules` 自 `2026-10-11` 返回四个启用生产账户各 8 条 active 规则，明确匹配 `SH/SZ × stock/etf × B/S`、`business_type=S`。这是用户确认共享的历史样本预算，不是券商结算合同；`raw_payload.authority=sample_verified_budget`、`not_broker_settlement_rule=true` 保留样本覆盖、确认日、发布摘要、订单粒度及未知边界。股票最低佣金 0 仅为预算假设，不能解释成正式免最低收费。实际费用始终优先，ETF 申赎/逆回购/期货不套用，历史日无新规则也不回退未来参数。SDK 0.1.42 `get_fee_rules` 保留这些证据，详见 [费率发布响应](CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md)。生产 POST 和交易权限保持关闭。
+
 ## Redis Stream 映射
 
 HTTP API 不直接暴露前置 Redis envelope，但后端会映射到以下 action：

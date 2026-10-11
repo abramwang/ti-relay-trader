@@ -528,6 +528,8 @@ net_pnl = gross_pnl - fee_total
 4. `effective_from/effective_to` 使用 `Asia/Shanghai` 交易日。已用于结算的规则不可原地修改，只能创建新版本。
 5. 每次计算保存 `fee_rule_id/version`、估算基数、各费用分项和总额，保证历史结果可复现。
 
+当前普通成交回退估算已统一为订单级：同一账户、交易日、`gateway_order_id` 累加成交额，最低佣金/固定费只计一次，逐 fill 分配累计费用的增量；累计总额研究舍入为 6 位。实际订单费用仍优先。四个启用生产账户自 `2026-10-11` 发布 SH/SZ 股票/ETF 买卖的样本核验预算，不回溯历史、不覆盖 ETF 申赎/逆回购/期货。股票最低佣金、券商舍入及其它未核验边界均写入 raw_payload，不能将预算冒充券商合同。范围和验收见 [Chronos 费率发布响应](CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md)。
+
 费用取值优先级：
 
 ```text

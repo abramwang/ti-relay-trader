@@ -173,7 +173,7 @@ func TestContributionFeeForFillChargesAuthoritativeOrderFeeOnce(t *testing.T) {
 		FeeSource:           "broker_order_fund_detail",
 		FeeAsOf:             feeAsOf,
 	}})
-	consumed := make(map[string]bool)
+	consumed := make(map[string]contributionOrderFeeState)
 	fill := trading.Fill{GatewayOrderID: "gw-fee-1", Price: 10, Qty: 100}
 
 	first := contributionFeeForFill(fill, contributionInstrument{}, nil, authoritative, consumed)

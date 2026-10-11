@@ -1,0 +1,49 @@
+{
+  "publication_id": "huaxin-budget-20261011-v1",
+  "environment": "production",
+  "effective_from": "2026-10-11",
+  "confirmed_by": "user-confirmation-20261011",
+  "account_ids": ["314000046830", "314000045768", "307000051387", "307000051388"],
+  "evidence": {
+    "authority": "sample_verified_budget",
+    "approved_on": "2026-10-11",
+    "timezone": "Asia/Shanghai",
+    "not_broker_settlement_rule": true,
+    "charging_basis": "order",
+    "currency": "CNY",
+    "rate_unit": "turnover_ratio",
+    "profile_version": 1,
+    "actual_fee_precedence": true,
+    "sample_date_from": "2026-09-22",
+    "sample_date_to": "2026-10-09",
+    "sample_records": 7724,
+    "source": "OC order_fee_records with fee_complete and association_complete, ordinary business_type=S, repo excluded",
+    "source_document": "docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md",
+    "account_sample_coverage": {
+      "307000051387": {"etf": 1649, "stock": 174},
+      "307000051388": {"etf": 1588, "stock": 0},
+      "314000045768": {"etf": 1653, "stock": 0},
+      "314000046830": {"etf": 0, "stock": 2660}
+    },
+    "shared_profile_basis": "User explicitly approved common sample-verified budget parameters for these four accounts; zero sample count is not own-account verification",
+    "commission_inclusivity": "Use observed BrokerageFee as the whole commission budget; do not add handling/regulatory fees again; broker inclusion contract unverified",
+    "rounding": {"budget_total_decimals": 6, "budget_method": "roundMoney_math.Round", "broker_component_rounding": "unverified", "broker_cent_rounding": "unverified"},
+    "minimum_application": "Only when commission_rate>0, once per account/trade_date/gateway_order_id across fills; separate orders receive separate minimums",
+    "fixed_fee_application": "Once per order with positive executed turnover; no charge for unfilled cancellation",
+    "stock_minimum_assumption": "Published minimum_commission=0 is a budget assumption, not a verified zero-minimum broker contract",
+    "stock_minimum_sample_turnover_cny": 336,
+    "unverified_boundaries": ["stock minimum/odd-lot/small orders", "contractual inclusion of regulatory charges", "broker per-component/cent rounding", "cancel-replace minimum treatment", "zero commission rate with nonzero minimum", "fee profile changes after sample period"],
+    "excluded_scope": ["ETF primary subscription/redemption", "ETF T0 15bp friction model", "reverse repo", "futures", "BSE", "disabled accounts"],
+    "historical_recalculation": false
+  },
+  "templates": [
+    {"name": "Huaxin sample budget SH stock buy", "market": "SH", "instrument_type": "stock", "business_type": "S", "trade_side": "B", "commission_rate": 0.0001354, "minimum_commission": 0, "stamp_duty_rate": 0, "transfer_fee_rate": 0.00001, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SH stock sell", "market": "SH", "instrument_type": "stock", "business_type": "S", "trade_side": "S", "commission_rate": 0.0001354, "minimum_commission": 0, "stamp_duty_rate": 0.0005, "transfer_fee_rate": 0.00001, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SZ stock buy", "market": "SZ", "instrument_type": "stock", "business_type": "S", "trade_side": "B", "commission_rate": 0.0001354, "minimum_commission": 0, "stamp_duty_rate": 0, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SZ stock sell", "market": "SZ", "instrument_type": "stock", "business_type": "S", "trade_side": "S", "commission_rate": 0.0001354, "minimum_commission": 0, "stamp_duty_rate": 0.0005, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SH ETF buy", "market": "SH", "instrument_type": "etf", "business_type": "S", "trade_side": "B", "commission_rate": 0.00005, "minimum_commission": 0.1, "stamp_duty_rate": 0, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SH ETF sell", "market": "SH", "instrument_type": "etf", "business_type": "S", "trade_side": "S", "commission_rate": 0.00005, "minimum_commission": 0.1, "stamp_duty_rate": 0, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SZ ETF buy", "market": "SZ", "instrument_type": "etf", "business_type": "S", "trade_side": "B", "commission_rate": 0.00005, "minimum_commission": 0.1, "stamp_duty_rate": 0, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0},
+    {"name": "Huaxin sample budget SZ ETF sell", "market": "SZ", "instrument_type": "etf", "business_type": "S", "trade_side": "S", "commission_rate": 0.00005, "minimum_commission": 0.1, "stamp_duty_rate": 0, "transfer_fee_rate": 0, "handling_fee_rate": 0, "other_rate": 0, "fixed_fee": 0}
+  ]
+}

@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-fee-rules-publish":
+		if err := runFeeRulesPublish(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fee-rules-publish: %v\n", err)
+			os.Exit(1)
+		}
 	case "checkpoint-reconcile":
 		if err := runCheckpointReconcile(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl checkpoint-reconcile: %v\n", err)
@@ -517,6 +522,7 @@ func usage() {
   ledger-replay  Rebuild order/fill/transfer ledgers from archived raw stream messages
   migrate        Run PostgreSQL migration status/up/down
   performance-rebuild  Rebuild trusted position costs and v2 economic NAVs
+  performance-fee-rules-publish  Preview or atomically publish approved account budget rules
   performance-gold-import  Validate or import versioned manual NAV gold
   performance-gold-compare Compare database NAV gold with economic NAV previews
   performance-broker-statement  Audit a complete broker export and optionally publish confirmed account NAV

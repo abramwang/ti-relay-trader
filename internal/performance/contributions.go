@@ -227,7 +227,7 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	}
 	authoritativeFees := authoritativeOrderFees(feeRecords)
 	feeCoverageFills := append([]trading.Fill(nil), fills...)
-	consumedOrderFees := make(map[string]bool)
+	consumedOrderFees := make(map[string]contributionOrderFeeState)
 	ordinaryFillCount := len(fills)
 	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
 	redemptionTransferFills := redemptionFillsFromComponentTransfers(orders, fills, transfers)
@@ -1295,7 +1295,7 @@ func calculateOrdinaryContribution(
 	bucket contributionBucket,
 	rules []ledger.FeeRule,
 	authoritativeFees map[string]ledger.OrderFeeRecord,
-	consumedOrderFees map[string]bool,
+	consumedOrderFees map[string]contributionOrderFeeState,
 	openNAV float64,
 	hasRedemption bool,
 	componentLink componentSaleBucketLink,
@@ -1500,21 +1500,43 @@ func calculateContributionFillFee(fill trading.Fill, instrument contributionInst
 		}
 		return contributionFee{source: "missing", flags: []string{"missing_fee_rule"}}
 	}
-	amount := contributionFillAmount(fill)
+	return calculateContributionRuleFee(contributionFillAmount(fill), fill.TradeSide, rule)
+}
+
+func calculateContributionRuleFee(amount float64, side trading.TradeSide, rule ledger.FeeRule) contributionFee {
 	commission := amount * rule.CommissionRate
 	if rule.CommissionRate > 0 && commission < rule.MinimumCommission {
 		commission = rule.MinimumCommission
 	}
 	fee := commission + amount*(rule.TransferFeeRate+rule.HandlingFeeRate+rule.OtherRate) + rule.FixedFee
-	if fill.TradeSide == trading.TradeSideSell || fill.TradeSide == trading.TradeSideRedemption {
+	if side == trading.TradeSideSell || side == trading.TradeSideRedemption {
 		fee += amount * rule.StampDutyRate
 	}
 	return contributionFee{
 		estimated: fee,
 		effective: fee,
 		source:    "estimated",
-		flags:     []string{"estimated_fee_from_account_rule"},
+		flags:     contributionBudgetFeeFlags(rule),
 	}
+}
+
+func contributionBudgetFeeFlags(rule ledger.FeeRule) []string {
+	flags := []string{"estimated_fee_from_account_rule"}
+	if rule.RawPayload["authority"] == "sample_verified_budget" {
+		flags = append(flags, "sample_verified_budget_not_broker_settlement")
+		if rule.InstrumentType == "stock" {
+			flags = append(flags, "stock_minimum_commission_unverified")
+		}
+	}
+	return flags
+}
+
+type contributionOrderFeeState struct {
+	actualConsumed bool
+	actualFillSeen bool
+	turnover       float64
+	estimatedFee   float64
+	ruleID         string
 }
 
 func contributionFeeForFill(
@@ -1522,21 +1544,58 @@ func contributionFeeForFill(
 	instrument contributionInstrument,
 	rules []ledger.FeeRule,
 	authoritativeFees map[string]ledger.OrderFeeRecord,
-	consumedOrderFees map[string]bool,
+	consumedOrderFees map[string]contributionOrderFeeState,
 ) contributionFee {
 	gatewayOrderID := strings.TrimSpace(fill.GatewayOrderID)
+	key := strings.Join([]string{fill.AccountID, fill.TradeDate, gatewayOrderID}, "\x00")
+	state := consumedOrderFees[key]
 	if record, ok := authoritativeFees[gatewayOrderID]; ok {
-		if consumedOrderFees[gatewayOrderID] {
+		if state.actualConsumed {
 			return contributionFee{}
 		}
-		consumedOrderFees[gatewayOrderID] = true
+		state.actualConsumed = true
+		consumedOrderFees[key] = state
 		return contributionFee{
 			actual:    record.TotalFee,
 			effective: record.TotalFee,
 			source:    "actual_order_fee:" + record.FeeSource,
 		}
 	}
-	return calculateContributionFillFee(fill, instrument, rules)
+	fee := calculateContributionFillFee(fill, instrument, rules)
+	if strings.HasPrefix(fee.source, "actual") {
+		state.actualFillSeen = true
+		consumedOrderFees[key] = state
+		if state.turnover > 0 {
+			fee.flags = append(fee.flags, "missing_fee_rule", "mixed_actual_and_budget_order_fee")
+		}
+		return fee
+	}
+	if fee.source != "estimated" {
+		return fee
+	}
+	if gatewayOrderID == "" {
+		return contributionFee{source: "missing", flags: []string{"missing_fee_rule", "missing_fee_order_identity"}}
+	}
+	if contributionFillAmount(fill) <= 0 {
+		return contributionFee{source: "missing", flags: []string{"missing_fee_rule", "invalid_fee_turnover"}}
+	}
+	if state.actualFillSeen {
+		return contributionFee{source: "missing", flags: []string{"missing_fee_rule", "mixed_actual_and_budget_order_fee"}}
+	}
+	rule, _, _ := selectContributionFeeRule(fill, instrument, rules)
+	if state.turnover > 0 && state.ruleID != rule.RuleID {
+		return contributionFee{source: "missing", flags: []string{"missing_fee_rule", "fee_rule_changed_within_order"}}
+	}
+	// Charge the change in cumulative order budget, not a new minimum per execution.
+	state.turnover += contributionFillAmount(fill)
+	state.ruleID = rule.RuleID
+	fee = calculateContributionRuleFee(state.turnover, fill.TradeSide, rule)
+	total := roundMoney(fee.estimated)
+	fee.estimated = roundMoney(total - state.estimatedFee)
+	fee.effective = fee.estimated
+	state.estimatedFee = total
+	consumedOrderFees[key] = state
+	return fee
 }
 
 func selectContributionFeeRule(fill trading.Fill, instrument contributionInstrument, rules []ledger.FeeRule) (ledger.FeeRule, bool, bool) {

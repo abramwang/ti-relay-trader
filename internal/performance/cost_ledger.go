@@ -359,7 +359,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		return CostLedgerResult{}, err
 	}
 	authoritativeFees := authoritativeOrderFees(feeRecords)
-	consumedOrderFees := make(map[string]bool)
+	consumedOrderFees := make(map[string]contributionOrderFeeState)
 
 	for _, fill := range fills {
 		if t0Buckets.consumedFills[contributionFillKey(fill)] {
