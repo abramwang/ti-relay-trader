@@ -2744,17 +2744,49 @@ func (s *Server) handlePerformanceFeeRules(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee rule query", err.Error())
 			return
 		}
+		if limit > 500 {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "fee rule limit must not exceed 500", nil)
+			return
+		}
+		if limit == 0 {
+			limit = 200
+		}
+		accountID := strings.TrimSpace(r.URL.Query().Get("account_id"))
+		status := strings.TrimSpace(r.URL.Query().Get("status"))
+		if status != "" && status != "active" && status != "draft" && status != "retired" {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee rule status", nil)
+			return
+		}
+		effectiveOn := strings.TrimSpace(r.URL.Query().Get("effective_on"))
+		if effectiveOn != "" {
+			effectiveOn, err = normalizeAPIDate(effectiveOn)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid fee rule effective_on", err.Error())
+				return
+			}
+		}
 		rules, err := s.perf.ListFeeRules(r.Context(), ledger.FeeRuleQuery{
-			AccountID:   r.URL.Query().Get("account_id"),
-			Status:      r.URL.Query().Get("status"),
-			EffectiveOn: r.URL.Query().Get("effective_on"),
+			AccountID:   accountID,
+			Status:      status,
+			EffectiveOn: effectiveOn,
 			Limit:       limit,
+			FetchExtra:  true,
 		})
 		if err != nil {
 			s.writePerformanceError(w, r, err)
 			return
 		}
-		httpx.WriteOK(w, r, http.StatusOK, map[string]any{"rules": rules, "count": len(rules)})
+		isComplete := len(rules) <= limit
+		if !isComplete {
+			rules = rules[:limit]
+		}
+		if rules == nil {
+			rules = []ledger.FeeRule{}
+		}
+		httpx.WriteOK(w, r, http.StatusOK, map[string]any{
+			"rules": rules, "count": len(rules), "is_complete": isComplete,
+			"query": map[string]any{"account_id": accountID, "status": status, "effective_on": effectiveOn, "limit": limit},
+		})
 	case http.MethodPost:
 		if !s.requirePerformanceWrite(w, r) {
 			return

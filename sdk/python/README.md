@@ -13,8 +13,25 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.41.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.42.tar.gz"
 ```
+
+## Fee Rules
+
+```python
+from relay_sdk import RelayClient
+
+client = RelayClient(account_id="307000051387")
+page = client.get_fee_rules(effective_on="2026-10-12")
+print(page.count, page.is_complete, page.request_id, page.time)
+for rule in page.rules:
+    print(rule.rule_id, rule.version, rule.raw_payload)
+```
+
+This method is GET-only. Missing parameters remain `None`; an empty complete
+list means no published rule, not zero fees. Truncated or completeness-unknown
+responses raise `RelayPaginationError` by default. `page.raw` preserves the full
+HTTP envelope. Rates are not inferred, selected, or calculated by the SDK.
 
 ## Quick Start
 

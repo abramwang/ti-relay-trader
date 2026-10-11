@@ -68,6 +68,73 @@ def _order_outcome(order: "Order", *, replayed: bool = False) -> str:
 
 
 @dataclass(frozen=True)
+class FeeRule:
+    """Published fee rule; absent numeric parameters remain unknown, not zero."""
+
+    rule_id: str = ""
+    account_id: str = ""
+    version: int = 0
+    status: str = ""
+    market: str = ""
+    instrument_type: str = ""
+    business_type: str = ""
+    trade_side: str = ""
+    effective_from: str = ""
+    effective_to: str = ""
+    commission_rate: float | None = None
+    minimum_commission: float | None = None
+    stamp_duty_rate: float | None = None
+    transfer_fee_rate: float | None = None
+    handling_fee_rate: float | None = None
+    other_rate: float | None = None
+    fixed_fee: float | None = None
+    repo_fee_rate: float | None = None
+    estimated_friction_rate: float | None = None
+    raw_payload: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "FeeRule":
+        fields = {
+            name: (None if data.get(name) in (None, "") else float(data[name]))
+            for name in (
+                "commission_rate", "minimum_commission", "stamp_duty_rate",
+                "transfer_fee_rate", "handling_fee_rate", "other_rate", "fixed_fee",
+                "repo_fee_rate", "estimated_friction_rate",
+            )
+        }
+        return cls(
+            rule_id=_text(data, "rule_id"), account_id=_text(data, "account_id"),
+            version=_int(data, "version"), status=_text(data, "status"),
+            market=_text(data, "market"), instrument_type=_text(data, "instrument_type"),
+            business_type=_text(data, "business_type"), trade_side=_text(data, "trade_side"),
+            effective_from=_text(data, "effective_from"), effective_to=_text(data, "effective_to"),
+            raw_payload=dict(data.get("raw_payload") or {}), raw=dict(data), **fields,
+        )
+
+
+@dataclass(frozen=True)
+class FeeRulePage:
+    rules: tuple[FeeRule, ...] = ()
+    count: int = 0
+    is_complete: bool | None = None
+    query: Mapping[str, Any] = field(default_factory=dict)
+    request_id: str = ""
+    time: str = ""
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_envelope(cls, envelope: Mapping[str, Any]) -> "FeeRulePage":
+        data = envelope.get("data", envelope)
+        return cls(
+            rules=tuple(FeeRule.from_dict(item) for item in data.get("rules", [])),
+            count=_int(data, "count", -1), is_complete=_optional_bool(data, "is_complete"),
+            query=dict(data.get("query") or {}), request_id=_text(envelope, "request_id"),
+            time=_text(envelope, "time"), raw=dict(envelope),
+        )
+
+
+@dataclass(frozen=True)
 class Account:
     account_id: str = ""
     broker_id: str = ""

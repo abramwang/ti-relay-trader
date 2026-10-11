@@ -30,6 +30,8 @@ from .models import (
     ComponentTransfer,
     Fill,
     FillPage,
+    FeeRule,
+    FeeRulePage,
     Order,
     OrderCancelAttempt,
     OrderCancelAttemptPage,
@@ -56,6 +58,8 @@ __all__ = [
     "ComponentTransfer",
     "Fill",
     "FillPage",
+    "FeeRule",
+    "FeeRulePage",
     "Order",
     "OrderCancelAttempt",
     "OrderCancelAttemptPage",
@@ -88,4 +92,4 @@ __all__ = [
     "retry_decision",
 ]
 
-__version__ = "0.1.41"
+__version__ = "0.1.42"

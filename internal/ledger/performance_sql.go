@@ -98,7 +98,7 @@ WHERE ($1 = '' OR account_id = $1)
         $3::date IS NULL
         OR (effective_from <= $3::date AND (effective_to IS NULL OR effective_to >= $3::date))
     )
-ORDER BY account_id, effective_from DESC, version DESC
+ORDER BY account_id, effective_from DESC, version DESC, rule_id
 LIMIT $4
 `
 

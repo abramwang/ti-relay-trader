@@ -90,6 +90,8 @@
 - [x] 建立数量连续性检查：`日初数量 + 买入 - 卖出 +/- 公司行为/转移 = 日终数量`；不平时按账户、证券和交易日阻断成本结果，不使用柜台日终成本覆盖。
 - [x] 修复贡献汇总：显式区分 `account_day_pnl` 缺失和真实零值，主净值、证券贡献与资金管理贡献输出可解释残差。
 - [x] 接入 OC `fee.list.query/fee_page` 订单级实际费用：新增 `000022_order_fee_records`，按 `account_id + fee_record_id` 幂等更新；只有 `fee_complete && association_complete` 才进入绩效。普通贡献、移动成本账和逆回购按订单只扣一次，ETF T0 继续使用独立 15bp 摩擦模型；盘后任务在订单/成交后刷新费用，SDK `0.1.23` 提供查询和刷新方法。
+- [x] 响应 Chronos 费率只读需求第一阶段：`fee-rules` 返回真实额外一行判定的 `is_complete/query`；SDK 0.1.42 提供 GET-only `get_fee_rules` 和原始证据模型，缺数值不补零，完整性未知或截断失败关闭；普通估算规则同优先级冲突不按返回顺序选择。7,724 条 OC 实际费用核对及未确认边界见 `docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md`。
+- [ ] 确认普通股票/ETF 预算费率、账户共享及生效日，统一订单级最低佣金/固定费和舍入限制，然后受控发布版本化 active 规则并完成 Chronos 验收；当前生产费率表为空，历史实费核验不能自动替代未来费率合同，Web 写权限及生产下单继续关闭。
 - [x] 拆分交易可用性与费用完备性门禁：核心交易字段及订单成交关联完整时，缺费用的订单仍进入数量桥、移动成本、成交额和毛收益；按当日有成交唯一订单统计费用覆盖，缺口只使净绩效保持 provisional 并等待券商交割单。
 - [x] 建立 OC 新版本后的每日绩效计算与发布任务。15:01 盘后结算成功后先由服务器本机 `relayctl performance-rebuild` 按账户计算并落库非阻断的移动成本账和 provisional 经济净值，再由 `performance_daily` 记录 `ready/attention/blocked/not_applicable`、`published/preview_only`、费用覆盖和质量标记。公网 `performance.settings_write_enabled` 继续关闭；成本或净值任一 blocked 时，本机发布器也拒绝写入该账户 NAV。
 - [x] 完成五账户券商交割单外部核验：共 109,451 行，覆盖 2026-06-01..2026-08-03；`307000051387/2026-07-30` 的 28 条普通买卖全部唯一匹配已有订单，14 个 OC 错配订单得到外部证实。交割单不进入日常自动账本流程；已有稳定身份且唯一闭合的历史故障可经用户确认执行一次性审计修复，详见 `docs/BROKER_STATEMENT_AUTHORITY_ASSESSMENT_20260804.md`。

@@ -35,6 +35,7 @@ from .models import (
     ComponentTransfer,
     Fill,
     FillPage,
+    FeeRulePage,
     Order,
     OrderCancelAttempt,
     OrderCancelAttemptPage,
@@ -51,7 +52,7 @@ from .streaming import iter_sse_events
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.41"
+SDK_VERSION = "0.1.42"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -126,6 +127,43 @@ class RelayClient:
         """Return relay service and dependency health from ``GET /v1/status``."""
 
         return self._request("GET", "/v1/status")
+
+    def get_fee_rules(
+        self,
+        account_id: str | None = None,
+        *,
+        effective_on: str | None = None,
+        status: str | None = "active",
+        limit: int = 500,
+        require_complete: bool = True,
+    ) -> FeeRulePage:
+        """Read published rules with audit metadata; never infer rates or write rules."""
+
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("fee rule limit must be an integer between 1 and 500")
+        if status not in (None, "", "active", "draft", "retired"):
+            raise ValueError("invalid fee rule status")
+        envelope = self._request_envelope(
+            "GET", "/v1/performance/fee-rules",
+            query={
+                "account_id": account_id or self.account_id or None,
+                "effective_on": effective_on, "status": status, "limit": limit,
+            },
+        )
+        page = FeeRulePage.from_envelope(envelope)
+        if page.count != len(page.rules):
+            raise RelayPaginationError(
+                "fee rule response count does not match rules",
+                code="FEE_RULE_RESPONSE_INVALID", request_id=page.request_id or None,
+                raw_response=page.raw,
+            )
+        if require_complete and page.is_complete is not True:
+            raise RelayPaginationError(
+                "fee rule list is truncated or completeness is unknown; narrow account/date filters",
+                code="FEE_RULE_LIST_INCOMPLETE", request_id=page.request_id or None,
+                raw_response=page.raw,
+            )
+        return page
 
     def get_account_readiness(
         self,

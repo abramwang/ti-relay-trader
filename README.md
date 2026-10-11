@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-10 14:47 Asia/Shanghai` 只读核查智算 `307000051387/20261009` T0 绩效阻断：交易/划转/成本闭合，现有待结算模型未处理同日赎回现金。OC 父订单 turnover=1,265,327.70 与归因残差吻合，但需确认资金字段语义和已入 cash_total 的证据，未据此补账或强制发布。报告 docs/ETF_T0_SAME_DAY_CASH_AUDIT_20261010.md；production/ok、trading_enabled=0。此前资产逆回购跨日查询修复已发布，SDK=0.1.41 |
-| 更新时间 | `2026-10-10` |
+| 最近确认 | `2026-10-11 Asia/Shanghai` 响应 Chronos 费率发布需求：只读列表补齐 is_complete/query，SDK 0.1.42 新增 get_fee_rules 和完整证据模型，普通规则同分冲突失败关闭。核对 7,724 条实际费用得候选预算参数，但生产规则表仍为空；待确认生效日、规费/舍入和按订单最低收费后再激活，不宣布全需求通过。全量 Go/race、临时表集成、SDK 61/61 通过。报告 docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md；生产下单关闭，智算 10-09 同日赎回现金问题继续待 OC 确认 |
+| 更新时间 | `2026-10-11` |
 
 新线程按以下顺序恢复：
 
@@ -86,7 +86,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务 16:30 启动，随后执行 16:40/16:50 本地校准和质量复验，状态机 17:05 截止；Relay 17:10 首查并每 10 分钟重试至 19:10。窗口内显示等待，19:10 仍未就绪才标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- TEST 与生产 schema 均为 `30 oc_credential_audit`，Python SDK 当前版本为 `relay-sdk==0.1.41`。
+- TEST 与生产 schema 均为 `30 oc_credential_audit`，Python SDK 当前版本为 `relay-sdk==0.1.42`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -113,6 +113,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - `2026-09-02` 的 14 条 `meridian_watermark_poll` 是 `16:40..18:50` 对同一权威绩效复算的重复水位检查，并非 14 个独立任务；根因是 Meridian 当日父任务受 3 只新股行业映射缺口阻断。现已补写单一终态记录 `performance_canonical-20260902-watermark-poll`，旧记录保留审计但在页面折叠。
 
 ### 下一步
+
+Chronos 费率预算优先完成参数、生效日与共享账户确认，再统一订单级最低佣金/固定费及舍入边界，受控发布 active 规则。目前只读 API/SDK 已完善，但仍无已发布规则，不通知全量验收通过。详见 `docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md`。
 
 优先项：确认智算 `2026-10-09` 赎回订单资金 `turnover=1,265,327.70` 的实际到账和柜台可见性语义，再完善同日赎回现金抵减待结算估值；目前仅条件试算可将归因残差降至 -22.48 元，不把残差或 PCF 清单金额当作真实资金。详见 `docs/ETF_T0_SAME_DAY_CASH_AUDIT_20261010.md`。
 

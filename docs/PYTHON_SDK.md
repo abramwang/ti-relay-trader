@@ -16,7 +16,7 @@ SDK 的定位：
 
 ## 当前状态
 
-源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.41`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
+源码包已落在 `sdk/python/relay_sdk`，当前版本号 `0.1.42`。当前实现不依赖第三方 Python 包，使用标准库 HTTP 客户端，便于策略机在内网环境直接 editable 安装或通过 tar.gz 包安装。
 
 已实现能力：
 
@@ -35,7 +35,7 @@ SDK 的定位：
 13. `scripts/build-python-sdk.py` 打包脚本。
 14. SDK 发布检查脚本：`scripts/check-python-sdk-release.py`。
 15. `record_settlement_snapshot()`，用于收盘任务固化 close 资产/持仓快照和 reconciliation run。
-16. 9092 `/sdk/relay-sdk-0.1.41.tar.gz` 和 `.sha256` 下载入口。
+16. 9092 `/sdk/relay-sdk-0.1.42.tar.gz` 和 `.sha256` 下载入口。
 17. `AccountReadiness` 暴露 OC 托管凭据的非敏感状态、版本、Key ID、来源和账户身份；SDK 不提供凭据写入能力。
 17. `record_job_run()` 支持显式 `target_trade_date`、`timezone`、`duration_ms` 参数，并兼容 `status="completed"` 到 `succeeded`。
 18. `get_performance_daily()`、`get_performance_series()`、`get_performance_series_csv()`、`get_performance_contributions()`、`get_trade_quality()`、`preview_cost_ledger()`、`rebuild_cost_ledger()`、`preview_economic_nav()`、`rebuild_economic_nav()`、`preview_economic_nav_reconciliation()`、`rebuild_economic_nav_reconciliation()`、`confirm_nav_reconciliation()`、`block_nav_reconciliation()`、`list_economic_nav()`、`list_nav_reconciliations()`、`list_reconciliation_breaks()` 和 `get_meridian_bars()`，覆盖 P8 新增 HTTP 能力；绩效序列支持 `benchmark_security_id` 基准对照，贡献接口按证券和策略返回只读归因结果，交易质量接口按日或区间返回成交率、撤单率、拒单率、拒单原因覆盖和真正的账本异常。`trade_quality.v5` 不把有完整原因的业务拒单或 ETF 申赎独立执行记录计为普通成交异常。
@@ -97,15 +97,15 @@ python -m pip install "http://meridian-data.quantstage.com/sdk/meridian-data-sdk
 relay SDK 当前命令：
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.41.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.42.tar.gz"
 ```
 
 校验文件：
 
 ```bash
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.41.tar.gz
-curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.41.tar.gz.sha256
-sha256sum -c relay-sdk-0.1.41.tar.gz.sha256
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.42.tar.gz
+curl -O http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.42.tar.gz.sha256
+sha256sum -c relay-sdk-0.1.42.tar.gz.sha256
 ```
 
 本机工作区 editable 安装：
@@ -455,6 +455,8 @@ Relay SDK 与 Meridian SDK 是两套独立客户端。Relay 服务端通过 Go H
 `record_job_run()` 的标准状态枚举是 `running`、`succeeded`、`skipped`、`failed`；SDK 接受 `completed` 作为 `succeeded` 的兼容别名。
 
 ## 模型清单
+
+`0.1.42` 新增公开只读 `get_fee_rules(account_id=None, effective_on=None, status="active", limit=500, require_complete=True)`，返回 `FeeRulePage`，其中 `rules` 为 `FeeRule`。保留 `count/is_complete/query/request_id/time/raw` 和规则 `raw_payload`；缺参数为 `None` 而不是 0。完整性未知/截断默认抛 `RelayPaginationError`，完整空列表不代表免手续费。该 SDK 不选规则、不推导费率、不写入规则，当前参数发布状态及剩余门禁见 `docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md`。
 
 SDK 模型和 9092 API schema 一一对应：
 

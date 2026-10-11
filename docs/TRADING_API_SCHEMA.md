@@ -389,7 +389,7 @@ SDK 0.1.41 可从 `CommandStatus.raw["cancel_attempts"]` 读取，不需要升�
 | `GET` | `/v1/accounts/{account_id}/performance/series` | `date_from/date_to/benchmark_security_id` query | `PerformanceSeries` | 已实现，读取 close 资产快照生成净值序列，同时返回 open-to-close 日内绩效字段，并可用 Meridian bars 增加基准和超额收益 |
 | `GET` | `/v1/accounts/{account_id}/performance/series.csv` | `date_from/date_to/benchmark_security_id` query | `text/csv` | 已实现，导出账户绩效、基准和超额收益 CSV |
 | `GET` | `/v1/performance/settings` | - | `PerformanceSettings` | 已实现，返回经济净值公式版本、对账阈值和人工输入写入开关 |
-| `GET` | `/v1/performance/fee-rules` | `account_id/status/effective_on/limit` query | `[]FeeRule` | 已实现，读取账户级、生效区间版本化费率规则 |
+| `GET` | `/v1/performance/fee-rules` | `account_id/status/effective_on/limit` query | `{rules,count,is_complete,query}` | 已实现，读取账户级、生效区间版本化费率规则；上限 500，真实额外一行判定完整性 |
 | `POST` | `/v1/performance/fee-rules` | `FeeRule` | `FeeRule` | 已实现，新增费率规则；默认因 `performance.settings_write_enabled=false` 返回 `403` |
 | `GET` | `/v1/accounts/{account_id}/cash-ledger` | `trade_date/date_from/date_to/flow_class/status/limit` query | `[]CashLedgerEntry` | 已实现，读取人工资金流水、外部入出金和柜台间划转 |
 | `POST` | `/v1/accounts/{account_id}/cash-ledger` | `CashLedgerEntry` | `CashLedgerEntry` | 已实现，新增手工资金流水；默认写入关闭 |
@@ -510,6 +510,8 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 经济净值输入层由 `000009_performance_accounting` 提供：
 
 - `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。
+
+费率只读列表显式返回 `is_complete`，以额外读取一行判断截断，因此恰好 500 行可以证明完整，而 501 行不会冒充完整。未传 `limit` 或为 0 时默认 200，正值上限 500；超过上限、非法日期或非法状态返回 400，不再静默换成较小上限。`query` 回显规范化的 `account_id/status/effective_on/limit`，外层保留 `request_id/time`。日期有效期首尾均包含，列表不替调用方选择适用规则；实际账户必须明确匹配，不借用其他账户参数。普通贡献估算按市场/证券类型/业务/方向明确匹配数选择最具体规则，同分多条一律 `fee_rule_conflict`，不按 version 或返回顺序任意覆盖。SDK `0.1.42 get_fee_rules()` 默认拒绝不完整或旧响应中完整性未知的列表；完整空列表仍表示无已发布规则，不能当作零费用。当前数值字段和研究公式的语义、样本证据及尚待确认的收费/舍入口径见 `docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md`。
 - `cash_ledger` 扩展为可人工维护的资金流水，支持 `external` 外部入出金、`internal_transfer` 极速/普通柜台内部划转、`settlement_income` 清算收入、`fee` 和 `adjustment`。外部净流入修正收益率，内部划转成对记录但不计入账户净收益。
 - `performance_nav_baselines` 记录手工确认的日初经济净值基线，解决逆回购回款、占款释放和柜台间划转导致的前一日日终资产与当日日初资产差异。
 - `performance_nav_versions` 与 `performance_nav_reconciliations` 保存滚动经济净值和 T+1 对账结果。`economic-nav/preview` 可无写权限试算，`economic-nav/rebuild` 会把同账户同交易日旧 current 版本退役并插入新 current 版本；`economic-nav/reconcile` 读取下一交易日 open 资产/持仓快照，计算 T+1 观测资产残差并可受写开关保护落库；`nav-reconciliations/confirm` 和 `/block` 可人工确认或阻断对账，并将 current economic NAV 就地推进为 `finalized/blocked`；策略归因尚未拆分完成的账户日收益写入 `pnl_components.unattributed`。

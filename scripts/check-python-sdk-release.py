@@ -166,6 +166,7 @@ def verify_archive_contents(archive: Path, version: str) -> None:
         f"{package_root}/tests/test_pagination.py",
         f"{package_root}/tests/test_streaming.py",
         f"{package_root}/tests/test_p1_contract.py",
+        f"{package_root}/tests/test_fee_rules.py",
     }
     with tarfile.open(archive, "r:gz") as tar:
         names = set(tar.getnames())

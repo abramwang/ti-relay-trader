@@ -43,6 +43,7 @@ type FeeRuleQuery struct {
 	Status      string
 	EffectiveOn string
 	Limit       int
+	FetchExtra  bool
 }
 
 type CashLedgerEntry struct {
@@ -241,11 +242,15 @@ func (repo *Repository) ListFeeRules(ctx context.Context, query FeeRuleQuery) ([
 	if err != nil {
 		return nil, err
 	}
+	queryLimit := normalized.Limit
+	if normalized.FetchExtra {
+		queryLimit++
+	}
 	rows, err := queryer.QueryContext(ctx, listFeeRulesSQL,
 		normalized.AccountID,
 		normalized.Status,
 		nullString(normalized.EffectiveOn),
-		normalized.Limit,
+		queryLimit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list fee rules: %w", err)

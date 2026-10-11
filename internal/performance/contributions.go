@@ -1493,8 +1493,11 @@ func calculateContributionFillFee(fill trading.Fill, instrument contributionInst
 			source:    source,
 		}
 	}
-	rule, ok := selectContributionFeeRule(fill, instrument, rules)
+	rule, ok, conflict := selectContributionFeeRule(fill, instrument, rules)
 	if !ok {
+		if conflict {
+			return contributionFee{source: "missing", flags: []string{"missing_fee_rule", "fee_rule_conflict"}}
+		}
 		return contributionFee{source: "missing", flags: []string{"missing_fee_rule"}}
 	}
 	amount := contributionFillAmount(fill)
@@ -1536,10 +1539,14 @@ func contributionFeeForFill(
 	return calculateContributionFillFee(fill, instrument, rules)
 }
 
-func selectContributionFeeRule(fill trading.Fill, instrument contributionInstrument, rules []ledger.FeeRule) (ledger.FeeRule, bool) {
+func selectContributionFeeRule(fill trading.Fill, instrument contributionInstrument, rules []ledger.FeeRule) (ledger.FeeRule, bool, bool) {
 	bestScore := -1
 	var best ledger.FeeRule
+	conflict := false
 	for _, rule := range rules {
+		if rule.AccountID != "" && rule.AccountID != fill.AccountID {
+			continue
+		}
 		score := 0
 		matches := []struct {
 			ruleValue string
@@ -1565,9 +1572,12 @@ func selectContributionFeeRule(fill trading.Fill, instrument contributionInstrum
 		if valid && score > bestScore {
 			best = rule
 			bestScore = score
+			conflict = false
+		} else if valid && score == bestScore {
+			conflict = true
 		}
 	}
-	return best, bestScore >= 0
+	return best, bestScore >= 0 && !conflict, conflict
 }
 
 func finalizeContributionResult(result *ContributionResult) {

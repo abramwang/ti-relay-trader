@@ -4637,6 +4637,7 @@ type fakeAccountAliasStore struct {
 type fakePerformanceService struct {
 	createdRule                   ledger.FeeRule
 	rules                         []ledger.FeeRule
+	feeRuleQuery                  ledger.FeeRuleQuery
 	createdCash                   ledger.CashLedgerEntry
 	cashEntries                   []ledger.CashLedgerEntry
 	createdBaseline               ledger.NavBaseline
@@ -4683,7 +4684,8 @@ func (service *fakePerformanceService) CreateFeeRule(_ context.Context, rule led
 	return rule, nil
 }
 
-func (service *fakePerformanceService) ListFeeRules(_ context.Context, _ ledger.FeeRuleQuery) ([]ledger.FeeRule, error) {
+func (service *fakePerformanceService) ListFeeRules(_ context.Context, query ledger.FeeRuleQuery) ([]ledger.FeeRule, error) {
+	service.feeRuleQuery = query
 	if service.err != nil {
 		return nil, service.err
 	}

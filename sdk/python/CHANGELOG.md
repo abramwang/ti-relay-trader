@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.42 - 2026-10-11
+
+- Add public GET-only `get_fee_rules()` and `FeeRule`/`FeeRulePage` models.
+- Preserve account/date filters, count, query, request ID, response time and raw
+  verification evidence; missing numeric fields remain `None`, not zero.
+- Reject truncated or legacy completeness-unknown lists by default and reject
+  count mismatches. This release does not infer rates or activate fee rules.
+
 ## 0.1.41 - 2026-09-30
 
 - Add Relay-proxied Meridian CTP index-futures status, snapshot, minute-bar,
