@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.43 - 2026-10-13
+
+- Add GET-only historical close `get_position_baseline_page()` and
+  `get_position_baseline()` with typed baseline, row, page and snapshot models.
+- Preserve generation identity, full-account proof, scope, source times and
+  every HTTP audit page; require complete evidence before treating missing
+  securities as zero, including verified empty accounts.
+- Verify full count, digest, strict security ordering, continuous offsets and
+  unchanged evidence across pages. Rebuilt generations fail explicitly.
+- Never refresh the counter, fall back to current positions, or interpret a
+  historical sellable quantity as current execution authorization.
+
 ## 0.1.42 - 2026-10-11
 
 - Add public GET-only `get_fee_rules()` and `FeeRule`/`FeeRulePage` models.

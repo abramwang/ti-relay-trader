@@ -19,13 +19,14 @@
 - 已增加 migration loader 单元测试，并验证 `relayctl migrate` 在无 DSN 时给出明确错误。
 - 已增加 SDK 只读 live smoke：`tests/integration/sdk_live_smoke.py`，可对运行中的 9092 验证状态、账户、资金、持仓、订单、成交和 SSE 首事件；`--allow-degraded` 仅用于明确接受运行态告警的生产只读验收。
 - 已增加 SDK 发布检查脚本：`scripts/check-python-sdk-release.py`，覆盖版本一致性、tar.gz 内容、sha256、SDK 单元测试和可选 live smoke。
+- 已增加完整历史 close 数量基线测试和 `sdk_position_baseline_live_smoke.py`：完整/空/缺历史/部分查询、旧行、10001 行、总数/摘要/分页和重建失败关闭；`RELAY_POSITION_BASELINE_LIVE_DATABASE_URL` 只读验证历史样本，`RELAY_POSITION_BASELINE_ISOLATED_DATABASE_URL` 仅在连接本地 TEMP 表验证大集合和重建，不写永久账表。两个变量仅用于指定的 `TestPositionBaseline*` 测试，不用于其他写库集成测试。
 - 已增加 9092 页面轻量冒烟测试：`tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、静态资源、基础 API 和 SDK 下载入口。
 - 已增加绩效页 Playwright 只读测试：`tests/integration/performance_visual_smoke.py`，覆盖账户切换、查询日期稳定、当日四项主指标、ECharts canvas 有效像素、七项数据质量检查、无横向溢出、无控制台错误和无 HTTP 错误。
 - 已增加任务复核页 Playwright 只读测试：`tests/integration/jobs_visual_smoke.py`，覆盖交易日选择、六账户复核结论、任务时间东八区格式、无横向溢出、无控制台错误和无 HTTP 错误。
 - 运维页 Playwright 会动态读取 `/v1/accounts`，验证六个 gateway 和账户筛选器均使用 PostgreSQL 落库别名，不回退显示旧的“生产查询账户”配置名。
 - 已增加交易终端 Playwright 交互测试：`tests/integration/trade_terminal_interaction_smoke.py`，覆盖生产环境/账户切换、只读下单护栏、日期查询、持仓和订单分页/排序、持仓联动代码、分钟 K 线 canvas 及订单详情。
 - 已增加批量下单 Playwright 交互测试：`tests/integration/batch_order_interaction_smoke.py`，用浏览器路由模拟券商测试环境和拦截批量 POST，覆盖粘贴导入、编辑后校验失效、账户后四位确认、标准请求体及发布结果；真实生产页面仍验证零写请求。
-- 已增加 API Console Playwright 交互测试：`tests/integration/api_console_interaction_smoke.py`，覆盖状态、账户、历史订单表单填写、请求预览、JSON/表格响应、命名集合保存/恢复、JSON 导入导出和响应断言，并在浏览器路由层中止所有 `/v1/*` 写请求。
+- 已增加 API Console Playwright 交互测试：`tests/integration/api_console_interaction_smoke.py`，覆盖状态、账户、历史订单及完整 close 基线表单、请求预览、JSON/表格响应、命名集合保存/恢复、JSON 导入导出和响应断言，并在浏览器路由层中止所有 `/v1/*` 写请求。基线要求传入已有完整 close 的交易日。
 - 已增加 API catalog 一致性检查：`scripts/check-api-catalog.py`，校验 67 个 catalog 条目、Go handler 注册模式、源码 schema 和在线 `/v1/schema`。
 - 已增加生产只读发布验收入口：`scripts/check-readonly-release.py`，先强制校验 `environment=production`、`trading_enabled=0`，再组合单元测试、SDK、API 和双视口 Playwright；清单见 `docs/RELEASE_CHECKLIST.md`。
 - 已增加 API/worker 跨进程事件桥集成测试：`tests/integration/event_bridge_smoke_test.go` 在显式提供生产式测试配置时直接发送 PostgreSQL 通知，验证 API SSE 能收到对应账本事件，全程不写 Redis 命令或交易账表。

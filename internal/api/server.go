@@ -1581,6 +1581,14 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 		s.handleAccountAsset(w, r, accountID)
 	case "positions":
 		if len(parts) == 3 {
+			if parts[2] == "baseline" {
+				if r.Method != http.MethodGet {
+					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+					return
+				}
+				s.handlePositionBaseline(w, r, accountID)
+				return
+			}
 			if parts[2] == "history" {
 				if r.Method != http.MethodGet {
 					httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
@@ -4583,9 +4591,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		} else if !assetResult.Asset.UpdatedAt.IsZero() {
 			accountCapturedAt = assetResult.Asset.UpdatedAt
 		}
-		positionResult.Positions, err = s.settles.ListPositionSnapshots(ctx, trading.PositionQuery{
-			AccountID: accountID, TradeDate: tradeDate, SnapshotType: inputSnapshotType, History: true, Limit: 2000,
-		})
+		positionResult, err = s.listAllSettlementPositions(ctx, trading.PositionQuery{AccountID: accountID, TradeDate: tradeDate, SnapshotType: inputSnapshotType, History: true})
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("%s positions: %v", inputSnapshotType, err))
 		}
@@ -4598,7 +4604,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("asset: %v", err))
 		}
-		positionResult, err = s.orders.ListPositions(ctx, trading.PositionQuery{AccountID: accountID, Limit: 2000})
+		positionResult, err = s.listAllSettlementPositions(ctx, trading.PositionQuery{AccountID: accountID})
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("positions: %v", err))
 		}
@@ -4784,6 +4790,52 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 	out.ReconciliationBreaks = openReconciliationBreakCount(out.breaks)
 	out.Breaks = append(out.Breaks, out.breaks...)
 	return out
+}
+
+func (s *Server) listAllSettlementPositions(ctx context.Context, query trading.PositionQuery) (orderflow.ListPositionsResult, error) {
+	query.Limit = settlementPageLimit
+	combined := orderflow.ListPositionsResult{Query: query, Positions: []trading.Position{}}
+	seen := map[string]bool{}
+	for {
+		var rows []trading.Position
+		var next string
+		if query.History {
+			positions, err := s.settles.ListPositionSnapshots(ctx, query)
+			if err != nil {
+				return combined, err
+			}
+			rows = positions
+			if len(rows) == query.Limit {
+				offset, _ := strconv.Atoi(query.Cursor)
+				next = strconv.Itoa(offset + query.Limit)
+			}
+		} else {
+			result, err := s.orders.ListPositions(ctx, query)
+			if err != nil {
+				return combined, err
+			}
+			rows, next = result.Positions, result.NextCursor
+		}
+		for _, position := range rows {
+			key := position.Symbol + "." + string(position.Exchange)
+			if seen[key] {
+				return combined, fmt.Errorf("settlement positions changed or duplicated at %s", key)
+			}
+			seen[key] = true
+			combined.Positions = append(combined.Positions, position)
+		}
+		combined.Count = len(combined.Positions)
+		if combined.Count > ledger.PositionBaselineMaxRows {
+			return combined, fmt.Errorf("settlement positions exceeded %d rows", ledger.PositionBaselineMaxRows)
+		}
+		if next == "" {
+			return combined, nil
+		}
+		if next == query.Cursor {
+			return combined, fmt.Errorf("settlement position cursor did not advance")
+		}
+		query.Cursor = next
+	}
 }
 
 func (s *Server) listAllSettlementOrders(ctx context.Context, accountID string, tradeDate string) (orderflow.ListOrdersResult, error) {

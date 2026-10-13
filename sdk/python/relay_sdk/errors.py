@@ -176,6 +176,8 @@ def error_from_payload(
         "status_code": status_code,
         "raw_response": payload,
     }
+    if code.startswith("POSITION_BASELINE_"):
+        return RelayPaginationError(message, **kwargs)
     if code == "BROKER_NOT_READY":
         return RelayBrokerNotReadyError(message, **kwargs)
     if code == "IDEMPOTENCY_CONFLICT":

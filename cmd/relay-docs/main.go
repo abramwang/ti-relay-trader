@@ -177,6 +177,12 @@ var (
 			Description: "Chronos P0/P1、价格精度和发布要求的 Relay 侧逐项验收结论。",
 		},
 		{
+			Slug:        "chronos-position-baseline-20261013",
+			Title:       "Chronos 完整持仓基线",
+			Path:        "docs/CHRONOS_POSITION_BASELINE_RESPONSE_20261013.md",
+			Description: "历史 close 数量基线、完成证明、代际分页、SDK 0.1.43 和只读验收。",
+		},
+		{
 			Slug:        "chronos-fill-time-semantics-20260915",
 			Title:       "Chronos 成交时间语义",
 			Path:        "docs/CHRONOS_FILL_TIME_SEMANTICS_20260915.md",

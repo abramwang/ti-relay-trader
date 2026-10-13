@@ -13,7 +13,7 @@ python -m pip install -e sdk/python
 Internal package install:
 
 ```bash
-python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.42.tar.gz"
+python -m pip install "http://relay-trader.quantstage.com/sdk/relay-sdk-0.1.43.tar.gz"
 ```
 
 ## Fee Rules
@@ -32,6 +32,32 @@ This method is GET-only. Missing parameters remain `None`; an empty complete
 list means no published rule, not zero fees. Truncated or completeness-unknown
 responses raise `RelayPaginationError` by default. `page.raw` preserves the full
 HTTP envelope. Rates are not inferred, selected, or calculated by the SDK.
+
+## Complete Historical Position Baseline
+
+```python
+snapshot = client.get_position_baseline(
+    trade_date="20261009", expected_environment="production", page_size=500,
+)
+print(snapshot.baseline.baseline_id, snapshot.baseline.total_rows)
+for row in snapshot.positions:
+    print(row.security_id, row.quantity, row.sellable_qty)
+for page in snapshot.pages:
+    print(page.request_id, page.time, page.offset, page.raw)
+```
+
+This is GET-only and reads an explicitly dated historical close, without OC
+refresh or fallback to current positions. Complete full-account proof is
+required, including empty accounts; missing history is not an empty account.
+The SDK verifies generation, scope, continuous offsets, unique sorted rows,
+total count and the full SHA256 digest. Partial/unknown or rebuilt baselines
+raise `RelayPaginationError` instead of returning a partial portfolio.
+
+`get_position_baseline_page(..., require_complete=False)` is for quality
+inspection only. A complete historical baseline is not trading authorization;
+historical `sellable_qty` is not a next-day availability promise. Provenance is
+retained in `baseline.raw`. Limits are 500 rows/page and 100000 rows/baseline,
+with explicit failure rather than truncation.
 
 ## Quick Start
 

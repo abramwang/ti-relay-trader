@@ -45,6 +45,12 @@ from .models import (
     SchemaCatalog,
     StreamReconciliation,
 )
+from .position_baseline import (
+    PositionBaseline,
+    PositionBaselinePage,
+    PositionBaselineRow,
+    PositionBaselineSnapshot,
+)
 
 __all__ = [
     "Account",
@@ -67,6 +73,10 @@ __all__ = [
     "OrderFeeRecord",
     "Position",
     "PositionPage",
+    "PositionBaseline",
+    "PositionBaselinePage",
+    "PositionBaselineRow",
+    "PositionBaselineSnapshot",
     "CommandReplyStatus",
     "CommandStatus",
     "RelayClient",
@@ -92,4 +102,4 @@ __all__ = [
     "retry_decision",
 ]
 
-__version__ = "0.1.42"
+__version__ = "0.1.43"

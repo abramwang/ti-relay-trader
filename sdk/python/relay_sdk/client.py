@@ -49,10 +49,17 @@ from .models import (
     StreamReconciliation,
 )
 from .streaming import iter_sse_events
+from .position_baseline import (
+    PositionBaselinePage,
+    PositionBaselineSnapshot,
+    canonical_date,
+    invalid_baseline,
+    position_baseline_digest,
+)
 
 
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected"}
-SDK_VERSION = "0.1.42"
+SDK_VERSION = "0.1.43"
 TRADING_SCHEMA_VERSION = "relay.trading.v1alpha1"
 JOB_STATUS_ALIASES = {"completed": "succeeded"}
 OrderStatusCallback = Callable[[Order, RelayEvent], object]
@@ -380,6 +387,92 @@ class RelayClient:
             cursor=cursor,
             max_pages=max_pages,
         )
+
+    def get_position_baseline_page(
+        self,
+        account_id: str | None = None,
+        *,
+        trade_date: str,
+        baseline_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 500,
+        expected_environment: str | None = None,
+        require_complete: bool = True,
+    ) -> PositionBaselinePage:
+        """GET one generation-bound historical close page, retaining all evidence."""
+
+        account_id = self._resolve_account(account_id)
+        day = canonical_date(trade_date)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be 1..500")
+        if expected_environment not in (None, "production", "test"):
+            raise ValueError("expected_environment must be production or test")
+        envelope = self._request_envelope(
+            "GET", f"/v1/accounts/{parse.quote(account_id)}/positions/baseline",
+            query={"trade_date": day, "snapshot_type": "close", "baseline_id": baseline_id, "cursor": cursor, "limit": limit},
+        )
+        page = PositionBaselinePage.from_envelope(envelope)
+        b = page.baseline
+        if b.account_id != account_id or b.trade_date != day or b.snapshot_type != "close" or not b.broker_id or not b.gateway_id:
+            raise invalid_baseline("returned baseline scope does not match the request", envelope, "POSITION_BASELINE_SCOPE_MISMATCH")
+        if expected_environment is not None and b.environment != expected_environment:
+            raise invalid_baseline("returned baseline environment does not match", envelope, "POSITION_BASELINE_SCOPE_MISMATCH")
+        expected_query = {"account_id": account_id, "broker_id": b.broker_id, "gateway_id": b.gateway_id, "trade_date": day, "snapshot_type": "close", "limit": limit, "cursor": cursor or "", "baseline_id": baseline_id or ""}
+        if any(page.query.get(key) != value for key, value in expected_query.items()) or page.query.get("environment") != b.environment or page.count > limit:
+            raise invalid_baseline("baseline query echo/count does not match", envelope)
+        if baseline_id and b.baseline_id != baseline_id:
+            raise invalid_baseline("baseline generation changed", envelope, "POSITION_BASELINE_CHANGED")
+        if require_complete and not b.is_complete:
+            raise invalid_baseline("historical full-account baseline is not proven complete", envelope, "POSITION_BASELINE_INCOMPLETE")
+        return page
+
+    def get_position_baseline(
+        self,
+        account_id: str | None = None,
+        *,
+        trade_date: str,
+        baseline_id: str | None = None,
+        page_size: int = 500,
+        max_pages: int = 1000,
+        max_rows: int = 100000,
+        expected_environment: str | None = None,
+    ) -> PositionBaselineSnapshot:
+        """Read and verify a complete close baseline; never refresh or fall back."""
+
+        if isinstance(max_pages, bool) or not isinstance(max_pages, int) or not 1 <= max_pages <= 1000:
+            raise ValueError("max_pages must be 1..1000")
+        if isinstance(max_rows, bool) or not isinstance(max_rows, int) or not 1 <= max_rows <= 100000:
+            raise ValueError("max_rows must be 1..100000")
+        rows, pages, seen_cursors = [], [], set()
+        cursor = None
+        metadata = None
+        for _ in range(max_pages):
+            page = self.get_position_baseline_page(account_id, trade_date=trade_date, baseline_id=baseline_id, cursor=cursor, limit=page_size, expected_environment=expected_environment)
+            b = page.baseline
+            if metadata is None:
+                metadata = b
+                baseline_id = b.baseline_id
+                expected_environment = b.environment
+                if b.total_rows > max_rows:
+                    raise invalid_baseline("baseline exceeds the caller's row limit", page.raw, "POSITION_BASELINE_TOO_LARGE")
+            elif b.raw != metadata.raw:
+                raise invalid_baseline("baseline evidence changed between pages", page.raw, "POSITION_BASELINE_CHANGED")
+            if page.offset != len(rows):
+                raise invalid_baseline("baseline page offset has gaps or overlaps", page.raw)
+            for row in page.positions:
+                if rows and row.security_id <= rows[-1].security_id:
+                    raise invalid_baseline("baseline securities duplicate or sorting changed", page.raw)
+                rows.append(row)
+            pages.append(page)
+            if page.page_complete:
+                if len(rows) != metadata.total_rows or position_baseline_digest(rows) != metadata.content_sha256:
+                    raise invalid_baseline("baseline total/digest does not match", page.raw, "POSITION_BASELINE_DIGEST_MISMATCH")
+                return PositionBaselineSnapshot(metadata, tuple(rows), tuple(pages))
+            if page.next_cursor in seen_cursors:
+                raise invalid_baseline("baseline cursor did not advance", page.raw)
+            seen_cursors.add(page.next_cursor)
+            cursor = page.next_cursor
+        raise invalid_baseline("baseline exceeded max_pages without completion", pages[-1].raw, "POSITION_BASELINE_INCOMPLETE")
 
     def get_positions_raw(self, account_id: str | None = None) -> list[Position]:
         """Return locally stored broker positions without names, quotes, or PnL enrichment."""

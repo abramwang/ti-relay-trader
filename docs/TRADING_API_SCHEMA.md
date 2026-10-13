@@ -383,6 +383,7 @@ SDK 0.1.41 可从 `CommandStatus.raw["cancel_attempts"]` 读取，不需要升�
 | `POST` | `/v1/accounts/{account_id}/asset/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `GET` | `/v1/accounts/{account_id}/positions` | `PositionQuery` | `[]Position` | 已实现，默认读取 PostgreSQL 当前持仓 |
 | `GET` | `/v1/accounts/{account_id}/positions/history` | `PositionQuery` | `[]Position` | 已实现，读取 `position_snapshots` 历史快照，默认 `snapshot_type=close`，可传 `snapshot_type=open` |
+| `GET` | `/v1/accounts/{account_id}/positions/baseline` | `PositionBaselineQuery` | `PositionBaselinePage` | 历史 close 完整账户数量基线，代际绑定分页、独立资金/持仓查询完成证明、总数与 SHA256；不发布 OC 命令 |
 | `GET` | `/v1/accounts/{account_id}/performance/daily` | `trade_date` query | `DailyPerformance` | 已实现，读取日初 open、日终 close、持仓快照和成交汇总 |
 | `GET` | `/v1/accounts/{account_id}/performance/contributions` | `trade_date` query | `ContributionResult` | 已实现，只读聚合证券/策略贡献、费用、贡献 bp 和质量标记；空日期取 Meridian 当前或最近交易日 |
 | `GET` | `/v1/accounts/{account_id}/performance/default-range` | `reference_date` query | `PerformanceDefaultRange` | 已实现，按账户选择不晚于参考交易日的最近权威绩效日，并返回向前一个自然月的默认区间 |
@@ -482,6 +483,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 成交入账时会按同一 `account_id + trade_date + gateway_order_id` 从订单账本继承缺失的 `business_type`、`strategy_type`、`strategy_id`、`basket_id`、`parent_order_id` 和 `t0_order_group_id`。OC 不需要重复维护这些由 Relay 下单请求持久化的归属字段；原始成交报文保持不变，继承只作用于结构化成交账本。
 
 订单、成交、ETF 划转、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
+
+完整历史账户数量基线使用独立 `/v1/accounts/{account_id}/positions/baseline` 契约和 `positions.close_baseline.v1` capability。显式指定 `trade_date`，仅支持 `close`；返回 `complete/partial/unavailable`，只有完整基线允许 `missing_security_means_zero=true`。逐页固定内容寻址 `baseline_id`、总数和摘要，重建后旧 ID/游标返回 409，不混合新旧行；GET 仅读归档，不刷新 OC 或回退当前持仓。单页 1..500、全基线上限 100000，超限明确失败。`page_complete` 仍不是全账户完成证明，历史可卖量也不等于当前交易授权。全部元数据、八项完成证明、摘要和 SDK 0.1.43 见 [P0 回执](CHRONOS_POSITION_BASELINE_RESPONSE_20261013.md)。
 
 `GET /v1/events/stream` 的账本事件使用 API Hub 生成的进程 epoch 单调游标，游标是 opaque string，客户端不得解析或自行构造。初次连接先收到无 SSE ID 的 `relay.connected`，其 data 包含 `resume_status=fresh`、`current_cursor`、`replay_capacity=2048` 和 `reconciliation_required=false`。恢复连接携带 `Last-Event-ID` 后，同一 API 进程且游标仍在窗口内时，服务端先返回 `resume_status=resumed`，再按原顺序发送游标之后且符合账户过滤的事件。
 

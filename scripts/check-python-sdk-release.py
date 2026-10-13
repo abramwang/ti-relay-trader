@@ -162,11 +162,13 @@ def verify_archive_contents(archive: Path, version: str) -> None:
         f"{package_root}/relay_sdk/models.py",
         f"{package_root}/relay_sdk/errors.py",
         f"{package_root}/relay_sdk/streaming.py",
+        f"{package_root}/relay_sdk/position_baseline.py",
         f"{package_root}/tests/test_client.py",
         f"{package_root}/tests/test_pagination.py",
         f"{package_root}/tests/test_streaming.py",
         f"{package_root}/tests/test_p1_contract.py",
         f"{package_root}/tests/test_fee_rules.py",
+        f"{package_root}/tests/test_position_baseline.py",
     }
     with tarfile.open(archive, "r:gz") as tar:
         names = set(tar.getnames())

@@ -11,6 +11,7 @@ const (
 	CapabilityAccountOrderReadiness  = "accounts.order_entry_readiness.v1"
 	CapabilityManagedCredentialState = "accounts.managed_credential_state.v1"
 	CapabilityCancelAttemptLedger    = "cancel_attempts.cursor_pagination.v1"
+	CapabilityPositionCloseBaseline  = "positions.close_baseline.v1"
 )
 
 type CatalogDocument struct {
@@ -44,6 +45,7 @@ func Catalog() CatalogDocument {
 			CapabilityAccountOrderReadiness,
 			CapabilityManagedCredentialState,
 			CapabilityCancelAttemptLedger,
+			CapabilityPositionCloseBaseline,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
@@ -66,6 +68,7 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/accounts/{account_id}/asset/refresh", Response: "RefreshQueryResult", Description: "refresh account asset from front gateway"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/positions", Response: "[]Position", Description: "account positions"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/positions/history", Request: "PositionQuery", Response: "[]Position", Description: "historical account position snapshots"},
+			{Method: "GET", Path: "/v1/accounts/{account_id}/positions/baseline", Request: "PositionBaselineQuery", Response: "PositionBaselinePage", Description: "GET-only historical close quantity baseline with full-query evidence and generation-bound pagination"},
 			{Method: "POST", Path: "/v1/accounts/{account_id}/positions/refresh", Response: "RefreshQueryResult", Description: "refresh account positions from front gateway"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/daily", Request: "trade_date", Response: "DailyPerformance", Description: "daily account equity and PnL summary"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/performance/contributions", Request: "trade_date", Response: "ContributionResult", Description: "read-only security and strategy daily contribution attribution"},
@@ -159,6 +162,10 @@ func Catalog() CatalogDocument {
 			"FillQuery",
 			"ComponentTransferQuery",
 			"PositionQuery",
+			"PositionBaselineQuery",
+			"PositionBaseline",
+			"PositionBaselineRow",
+			"PositionBaselinePage",
 			"RefreshQueryResult",
 			"CommandStatus",
 			"OrderCancelAttempt",

@@ -133,6 +133,19 @@ def main() -> int:
         if order_rows < 1 or "gateway_order_id" not in table_text:
             raise AssertionError("historical order table assertion failed")
 
+        select_endpoint(page, "/v1/accounts/{account_id}/positions/baseline", exact=True)
+        fill_field(page, "account_id", args.account_id)
+        fill_field(page, "trade_date", args.trade_date)
+        fill_field(page, "limit", "2")
+        send_and_wait(page, timeout=30_000)
+        baseline_json = json.loads(page.locator("#jsonOutput").inner_text())
+        baseline = baseline_json.get("data", {}).get("baseline", {})
+        if baseline.get("completeness") != "complete" or not baseline.get("missing_security_means_zero"):
+            raise AssertionError("historical baseline completeness assertion failed")
+        baseline_rows = page.locator("#tableOutput tbody tr").count()
+        if baseline_rows != min(2, baseline["total_rows"]) or "security_id" not in page.locator("#tableOutput").inner_text():
+            raise AssertionError("baseline form/quantity table assertion failed")
+
         diagnostics = page.evaluate(
             """() => ({
                 endpointCount: document.querySelectorAll('.endpoint-item').length,
@@ -146,7 +159,7 @@ def main() -> int:
                 horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
             })"""
         )
-        diagnostics.update({"accountRows": account_rows, "orderRows": order_rows})
+        diagnostics.update({"accountRows": account_rows, "orderRows": order_rows, "baselineRows": baseline_rows, "baselineID": baseline["baseline_id"]})
         page.screenshot(path=str(output), full_page=False)
         browser.close()
 

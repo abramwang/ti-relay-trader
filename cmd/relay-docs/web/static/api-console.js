@@ -999,7 +999,7 @@
   }
 
   async function loadCatalog() {
-    const response = await fetch("/assets/api-console.catalog.json?v=20260930-futures");
+    const response = await fetch("/assets/api-console.catalog.json?v=20261013-position-baseline");
     if (!response.ok) {
       throw new Error("load endpoint catalog failed: HTTP " + response.status);
     }

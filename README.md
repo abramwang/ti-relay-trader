@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-13 Asia/Shanghai` 用户确认智算赎回回款已到账；09:31 仅补一次资金查询成功，现金仍 49,058,097.20，较昨收增加 427,810、扣逆回购本金后净增 174,810，金额分项/利息与柜台应收范围仍待核验，不将差额直接写成回款。9 日资金归因和后续 NAV 阻断未解除，最新净值为 10-08。给 OC 的窄范围说明 docs/OC_ETF_REDEMPTION_CASH_SCOPE_CHECK_20261013.md 已整理；未改正式快照/流水/NAV，生产下单与 Web 写权限关闭 |
+| 最近确认 | `2026-10-13 Asia/Shanghai` 完成并发布 Chronos 历史 close 持仓基线 P0、SDK 0.1.43 和 API Console；四户及真实空账户只读验收通过，等待 Chronos 消费端验收。生产下单/Web 写权限关闭，worker 不变；智算 10-09 资金归因和后续 NAV 阻断仍待 OC 现金范围证据，用户已确认回款到账但尚无可归属的精确金额，不将现金差额直接记作回款 |
 | 更新时间 | `2026-10-13` |
 
 新线程按以下顺序恢复：
@@ -86,7 +86,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - 每个资金账户都带必填 `broker_id` 所属券商标签；当前六户均为 `huaxin`。该标签与账户别名、Gateway 和环境分离，后续新增券商沿用同一账户路由模型。
 - `2026-08-26` 已验证 `archive_incomplete -> Level1 provisional -> canonical daily` 全链路：3 个活跃账户 ready，1 个空账户 not_applicable，0 blocked；权威日线复算与 provisional NAV 差异为 0。
 - Meridian 权威日线父任务 16:30 启动，随后执行 16:40/16:50 本地校准和质量复验，状态机 17:05 截止；Relay 17:10 首查并每 10 分钟重试至 19:10。窗口内显示等待，19:10 仍未就绪才标记 Meridian 上游阻塞；同一交易日所有轮询复用一个 `run_id`。
-- TEST 与生产 schema 均为 `30 oc_credential_audit`，Python SDK 当前版本为 `relay-sdk==0.1.42`。
+- TEST 与生产 schema 均为 `30 oc_credential_audit`，Python SDK 当前版本为 `relay-sdk==0.1.43`。
 - 公网绩效写入口和生产下单权限保持关闭；本机任务可按质量门禁写入版本化绩效结果。
 
 ### 当前进展与阻塞
@@ -113,6 +113,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 - `2026-09-02` 的 14 条 `meridian_watermark_poll` 是 `16:40..18:50` 对同一权威绩效复算的重复水位检查，并非 14 个独立任务；根因是 Meridian 当日父任务受 3 只新股行业映射缺口阻断。现已补写单一终态记录 `performance_canonical-20260902-watermark-poll`，旧记录保留审计但在页面折叠。
 
 ### 下一步
+
+Chronos 完整历史 close 持仓基线 P0 已发布：GET-only 完成证明、内容寻址 ID、跨页重建 409、全量数量摘要及 SDK 0.1.43。四户历史 13/1/7/1 行与真实空账户只读验收通过，10,001 行及超限/部分状态测试通过；API Console 已有表单入口。下一步可交给 Chronos 独立验收，当前时点原子基线尚未实现。详见 [P0 回执](/home/ti-relay-trader/docs/CHRONOS_POSITION_BASELINE_RESPONSE_20261013.md:1)。生产环境和零下单权限保持不变，独立 worker 未重启，未发送 OC 查询或重建真实账表。
 
 Chronos 费率预算已完成用户确认、订单级计算及四户版本化发布，可通知其使用 SDK 0.1.42 做只读消费端验收。有效日从 `2026-10-11` 开始，股票最低收费/券商舍入仍未核验，不混同实际费用或开放生产交易。详见 `docs/CHRONOS_FEE_RULE_PUBLICATION_RESPONSE_20261011.md`。
 

@@ -85,6 +85,22 @@
     ]
   },
   {
+    "id": "positions-baseline",
+    "group": "账户",
+    "title": "完整收盘持仓基线",
+    "method": "GET",
+    "path": "/v1/accounts/{account_id}/positions/baseline",
+    "status": "ready",
+    "fields": [
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "" },
+      { "name": "trade_date", "label": "trade_date", "source": "query", "required": true, "defaultValue": "" },
+      { "name": "snapshot_type", "label": "snapshot_type", "source": "query", "type": "select", "defaultValue": "close", "options": ["close"] },
+      { "name": "baseline_id", "label": "baseline_id", "source": "query", "defaultValue": "" },
+      { "name": "cursor", "label": "cursor", "source": "query", "defaultValue": "" },
+      { "name": "limit", "label": "limit", "source": "query", "type": "integer", "defaultValue": "500" }
+    ]
+  },
+  {
     "id": "daily-performance",
     "group": "账户",
     "title": "日终权益/PnL",
