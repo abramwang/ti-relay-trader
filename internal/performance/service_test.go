@@ -1000,6 +1000,37 @@ func TestClassifyETFFinalSettlementReleasesSignedLiability(t *testing.T) {
 	}
 }
 
+func TestClassifyETFFinalSettlementSeparatesGrossReceivableAndPayable(t *testing.T) {
+	for _, test := range []struct {
+		date                          string
+		amount, openCarry, closeCarry float64
+	}{
+		{"2026-10-12", 174799.92, 172982.71, -1817.21},
+		{"2026-10-13", -1817.21, -1817.21, 0},
+	} {
+		t.Run(test.date, func(t *testing.T) {
+			at, _ := time.Parse(time.RFC3339, test.date+"T19:05:02+08:00")
+			items := []ledger.CashLedgerEntry{{
+				EntryID: "actual-leg", Amount: test.amount, EffectiveAt: at,
+				RawPayload: map[string]any{
+					"settlement_kind":   "etf_redemption_final_settlement",
+					"source_trade_date": "2026-10-09", "source_accrual_amount": test.amount,
+					"released_estimate": test.amount,
+				},
+			}}
+			closeAt, _ := time.Parse(time.RFC3339, test.date+"T15:01:00+08:00")
+			generic, summary, flags := classifyETFSettlementReceipts(items, test.date, closeAt)
+			assertClose(t, generic, 0)
+			assertClose(t, summary.ReleasedEstimate, test.openCarry-test.closeCarry)
+			assertClose(t, summary.PostCloseReceiptAmount, test.amount)
+			assertClose(t, summary.SettlementVariance, 0)
+			if containsString(flags, "etf_settlement_receipt_invalid") {
+				t.Fatalf("valid separate settlement leg rejected: %v", flags)
+			}
+		})
+	}
+}
+
 func TestCalculateContributionsExcludesETFComponentSaleFees(t *testing.T) {
 	matchedAt := time.Date(2026, 7, 24, 10, 8, 0, 0, timeutil.Location())
 	store := &fakePerformanceStore{

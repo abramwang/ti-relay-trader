@@ -171,9 +171,18 @@ func buildBrokerFundsAuditPlan(ctx context.Context, repo *ledger.Repository, acc
 			return nil, fmt.Errorf("funds row %d belongs to account %q", index+2, value)
 		}
 	}
-	rows, failures, err := parseBrokerFunds(data)
+	rows, _, err := parseBrokerFunds(data)
 	if err != nil {
 		return nil, err
+	}
+	// A historical slice has no evidence of the balance before its first row.
+	// Full opening-zero validation belongs to the separate inception audit.
+	failures := 0
+	for index := 1; index < len(rows); index++ {
+		row, previous := rows[index], rows[index-1]
+		if previous.TotalCents+row.DepositCents-row.WithdrawalCents+row.DailyPnLCents != row.TotalCents {
+			failures++
+		}
 	}
 	evidence := brokerTransactionEvidence{rowsByDate: map[string]int{}, firstIntradayByDate: map[string]string{}}
 	files := map[string]brokerStatementFile{

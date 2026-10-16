@@ -1,6 +1,8 @@
 # ETF T0 绩效自动化的数据边界与方案
 
-日期：2026-10-16，Asia/Shanghai。状态：可行性核查与方案，尚未实现或修改生产账本。
+日期：2026-10-16，Asia/Shanghai。状态：自动化数据渠道的可行性方案，尚未实现；历史绩效修复另行记录。
+
+后续进展：已按用户授权完成387/388历史问题的一次性连续绩效恢复，见 `docs/PERFORMANCE_CONTINUITY_RECOVERY_20261016.md`；这不代表本方案中的自动资金渠道已经实现。OC只读测试说明见 `docs/OC_ETF_CASH_CAPABILITY_TEST_REQUIREMENTS_20261016.md`。
 
 ## 结论
 

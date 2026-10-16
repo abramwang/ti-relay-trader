@@ -78,6 +78,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-broker-funds-audit: %v\n", err)
 			os.Exit(1)
 		}
+	case "performance-recovery-20261016":
+		if err := runPerformanceRecovery20261016(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-recovery-20261016: %v\n", err)
+			os.Exit(1)
+		}
 	case "redis-probe":
 		if err := runRedisProbe(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl redis-probe: %v\n", err)
