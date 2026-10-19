@@ -1975,7 +1975,7 @@
       positionProfit: hasPositionProfit ? positionProfit : finiteNumber(asset.position_profit),
       closeProfit,
       commission,
-      dayProfit: metricDayProfit(asset, effectiveDayPositionProfit, closeProfit, commission, hasDayPositionProfit),
+      dayProfit: publishedAccountDayProfit(asset, accountID, tradeDate) ?? metricDayProfit(asset, effectiveDayPositionProfit, closeProfit, commission, hasDayPositionProfit),
       updatedAt: asset.updated_at || asset.captured_at || ""
     };
   }
@@ -2061,6 +2061,8 @@
         csvLine(["平仓盈亏", csvNumber(metrics.closeProfit)]),
         csvLine(["手续费", csvNumber(metrics.commission)]),
         csvLine(["当日盈亏", csvNumber(metrics.dayProfit)]),
+        csvLine(["当日盈亏来源", publishedAccountDayProfit(assetResult.asset, accountID, tradeDate) !== null ? assetResult.asset.account_day_pnl_source : "持仓与柜台数据估算"]),
+        csvLine(["当日盈亏绩效日", assetResult.asset.account_day_pnl_trade_date || ""]),
         csvLine(["资金更新时间", metrics.updatedAt]),
         "",
         csvLine(["持仓明细"]),
@@ -2707,6 +2709,9 @@
     els.marketValue.textContent = formatNumber(marketValue);
     els.dayProfit.textContent = formatSigned(dayProfit);
     els.dayProfit.className = Number(dayProfit) < 0 ? "down" : "up";
+    els.dayProfit.title = publishedAccountDayProfit(asset) !== null
+      ? displayDate(asset.account_day_pnl_trade_date) + " · 已发布账户绩效 · " + asset.account_day_pnl_source
+      : "持仓与柜台数据估算，非已发布账户绩效";
     els.cashTotal.textContent = formatNumber(asset.cash_total);
     els.stockValue.textContent = formatNumber(stockValue);
     els.fundValue.textContent = formatNumber(fundValue);
@@ -2762,10 +2767,26 @@
     if (assetCloseProfit !== null) {
       return assetCloseProfit;
     }
+    if (publishedAccountDayProfit(asset) !== null) {
+      return null;
+    }
     return estimatedCloseProfit();
   }
 
+  function publishedAccountDayProfit(asset, accountID = state.activeAccount, tradeDate = selectedAssetTradeDateSafe()) {
+    if (!asset || asset.account_id !== accountID ||
+      !String(asset.account_day_pnl_source || "").startsWith("performance_economic_nav.v2.") ||
+      compactDate(asset.account_day_pnl_trade_date) !== compactDate(tradeDate)) {
+      return null;
+    }
+    return finiteNumber(asset.account_day_pnl);
+  }
+
   function metricDayProfit(asset, dayPositionProfit, closeProfit, commission, preferComputed = false) {
+    const published = publishedAccountDayProfit(asset);
+    if (published !== null) {
+      return published;
+    }
     const assetDayProfit = finiteNumber(asset && asset.day_profit);
     if (!preferComputed && assetDayProfit !== null) {
       return assetDayProfit;

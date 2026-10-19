@@ -121,7 +121,9 @@ rejected
 
 OC 的原始 `asset_page` 可能只包含柜台可见资金。Relay 默认读模型和派生 `open/close` 快照会补足普通持仓市值；标准 `broker_close -> close` 结算还会按当日 `204001.SH` 普通成交账本计算逆回购本金应收，并使用 `net_asset = cash_total + market_value + reverse_repo_receivable`。应收只统计成交时间不晚于资金快照捕获时间的成交：更晚的成交发生时，旧快照现金尚未扣除对应本金，不能重复叠加。逆回购预估利息不提前进入资产，待实际回款后再通过资金账确认；`broker_close` 继续保留 OC 原始口径。
 
-OC于2026-10-19说明，华鑫当前原始映射为 `cash_available=UsefulMoney`、`cash_total=UsefulMoney+FrozenCash+FrozenCommission+UnDeliveredFrozenCash+UnDeliveredFrozenCommission`、`net_asset=cash_total`、`market_value=0`。这只是现有资金投影，不证明普通/极速柜台全范围；FetchLimit不再叠加，Deposit/Withdraw也不直接归为产品外部资金。多行资金回包存在末行覆盖和OwnerUnit未保留的已知OC限制，尚待修正与当前日原始回包验证；Relay不在缺证据时补齐或汇总丢失范围。详见 [能力反馈](OC_CASH_CAPABILITY_FEEDBACK_RESPONSE_20261019.md)。
+OC于2026-10-19说明，华鑫当前原始映射为 `cash_available=UsefulMoney`、`cash_total=UsefulMoney+FrozenCash+FrozenCommission+UnDeliveredFrozenCash+UnDeliveredFrozenCommission`、`net_asset=cash_total`、`market_value=0`。这只是现有资金投影，不证明普通/极速柜台全范围；FetchLimit不再叠加，Deposit/Withdraw也不直接归为产品外部资金。OC已报告P0修正多行末行覆盖、保留OwnerUnit并对含糊多行返回失败，但真实账户部署/在线范围尚待验证；Relay不在缺证据时补齐或汇总丢失范围。详见 [P0交付记录](OC_CASH_P0_DELIVERY_REVIEW_20261019.md)。
+
+生产默认 `enrich=true` 的资产响应在收盘后可返回 `account_day_pnl`、`account_day_pnl_source`、`account_day_pnl_trade_date`。仅当同账户同日current非blocked的v2净值与当前资金快照的现金、市值及总资产逐项匹配时，`day_profit`和可空元数据 `account_day_pnl` 使用已发布账户日收益；0值由后者显式表达。无匹配证据、盘中或测试环境不应用，`enrich=false`保持原始口径，不回写账本。前端和当前日CSV优先使用该账户/日期匹配值，不再由柜台当前均价的平仓估算覆盖；持仓浮盈仍是独立指标，已发布值也不等于券商最终清算。见 [387核查与修复](ASSET_DAY_PNL_ALIGNMENT_20261019.md)。
 
 ### Position
 

@@ -2152,6 +2152,7 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 	if enrich {
 		result.Asset = s.enrichAssetWithPositionTotals(r.Context(), result.Asset)
 		result.Asset = s.enrichAssetWithReverseRepo(r.Context(), result.Asset)
+		result.Asset = s.enrichAssetWithPublishedDayPnL(r.Context(), result.Asset)
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }

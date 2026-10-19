@@ -29,6 +29,24 @@ func TestTradeTerminalUsesMatchedAtForFillTimes(t *testing.T) {
 	}
 }
 
+func TestTradeTerminalPrefersPublishedAccountDayPnLToPositionCostEstimate(t *testing.T) {
+	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`const published = publishedAccountDayProfit(asset);`,
+		`asset.account_id !== accountID`,
+		`compactDate(asset.account_day_pnl_trade_date) !== compactDate(tradeDate)`,
+		`return finiteNumber(asset.account_day_pnl);`,
+		`dayProfit: publishedAccountDayProfit(asset, accountID, tradeDate) ??`,
+	} {
+		if !strings.Contains(string(script), required) {
+			t.Fatalf("missing published account-day PnL guard: %s", required)
+		}
+	}
+}
+
 func TestTradeTerminalDefaultsPerformanceToLatestAuthoritativeMonth(t *testing.T) {
 	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
 	if err != nil {
