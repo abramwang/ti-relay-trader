@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-fuying13-recovery-20261019":
+		if err := runFuying13Recovery20261019(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-recovery-20261019: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fee-rules-publish":
 		if err := runFeeRulesPublish(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fee-rules-publish: %v\n", err)
@@ -532,6 +537,7 @@ func usage() {
   performance-gold-compare Compare database NAV gold with economic NAV previews
   performance-broker-statement  Audit a complete broker export and optionally publish confirmed account NAV
   performance-broker-funds-audit  One-time recovery of broker asset bases and external flows
+  performance-fuying13-recovery-20261019  Audit the reviewed ETF-settlement-free historical segment
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
   credentials    Rotate, verify, or disable encrypted OC account credentials
