@@ -2,6 +2,8 @@
 
 日期：`2026-08-01`
 
+Relay接入语义于 `2026-10-19` 依据OC最新反馈校正：`fee_complete/association_complete` 仅代表柜台费用快照完整性和订单关联，不代表券商最终交割。该校正不改变wire字段；最新能力与待验收项见 [Relay反馈](OC_CASH_CAPABILITY_FEEDBACK_RESPONSE_20261019.md)。
+
 ## 1. 实现结论
 
 OC 已接入华鑫现货交易 API 的 `ReqQryOrderFundDetail` / `OnRspQryOrderFundDetail`，新增 Relay 查询动作：
@@ -132,13 +134,15 @@ OC 在 `reply` Stream 返回一条终态 `fee_page`：
 | `fee_as_of` | 本次从柜台获取费用的时间，不等同于券商结算时间。 |
 | `settled_at` | 当前 SDK 不提供结算时间，因此返回空字符串。 |
 
+`adapter_context.component_fee_total` 是同一条费用记录六个分项的合计，不是ETF篮子成分股所有订单的费用汇总；不能与本记录 `total_fee` 再次相加，也不能按名称额外分摊到各个成分订单。
+
 `account_total_fee` 是本页所有去重后 `items[].total_fee` 的直接求和。Relay 应优先使用每条订单费用入账，并只将该汇总用于对账，不能再次计费。
 
 ## 5. Relay 接入规则
 
 1. 以 `account_id + fee_record_id` 为唯一键执行 upsert。
 2. `record_scope=order` 的费用只关联到对应订单，不按 `fill_id` 或成交笔数重复计算。
-3. 只有 `fee_complete=true` 且 `association_complete=true` 时，才可将该订单费用标记为 finalized。
+3. `fee_complete=true` 且 `association_complete=true` 只表示该柜台订单费用快照满足现有消费条件；没有独立最终交割证据时不得据此标记最终清算完成，也不得自动将NAV或ETF清算版本推进为finalized/confirmed。
 4. `fee_complete=false` 时可保存最新快照，但绩效仍保持 provisional，后续查询允许覆盖费用金额和完整性状态。
 5. `order.list.query`、`fill.list.query` 和实时事件中 `fee_source=unavailable` 的 `fee` 不参与实际费用优先级。
 6. `other_fee` 是柜台总费用与公开分项的残差；总账以 `total_fee` 为准，不应再把 `other_fee` 之外的分项重复相加计费。

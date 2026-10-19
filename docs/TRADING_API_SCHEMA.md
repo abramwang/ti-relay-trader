@@ -121,6 +121,8 @@ rejected
 
 OC 的原始 `asset_page` 可能只包含柜台可见资金。Relay 默认读模型和派生 `open/close` 快照会补足普通持仓市值；标准 `broker_close -> close` 结算还会按当日 `204001.SH` 普通成交账本计算逆回购本金应收，并使用 `net_asset = cash_total + market_value + reverse_repo_receivable`。应收只统计成交时间不晚于资金快照捕获时间的成交：更晚的成交发生时，旧快照现金尚未扣除对应本金，不能重复叠加。逆回购预估利息不提前进入资产，待实际回款后再通过资金账确认；`broker_close` 继续保留 OC 原始口径。
 
+OC于2026-10-19说明，华鑫当前原始映射为 `cash_available=UsefulMoney`、`cash_total=UsefulMoney+FrozenCash+FrozenCommission+UnDeliveredFrozenCash+UnDeliveredFrozenCommission`、`net_asset=cash_total`、`market_value=0`。这只是现有资金投影，不证明普通/极速柜台全范围；FetchLimit不再叠加，Deposit/Withdraw也不直接归为产品外部资金。多行资金回包存在末行覆盖和OwnerUnit未保留的已知OC限制，尚待修正与当前日原始回包验证；Relay不在缺证据时补齐或汇总丢失范围。详见 [能力反馈](OC_CASH_CAPABILITY_FEEDBACK_RESPONSE_20261019.md)。
+
 ### Position
 
 持仓对象映射 `TiRspQryPosition`，保留 A 股 T+1 可卖数量：
@@ -501,6 +503,8 @@ close 结算返回 `day_end_expired_orders/day_end_expired_order_ids`。该集�
 `GET /v1/accounts/{account_id}/performance/cost-ledger/preview?trade_date=YYYYMMDD` 只读试算 `performance_position_cost.v3.2`，`POST .../cost-ledger/rebuild` 在开启绩效写保护后保存结果。非起算日以上一 close 成本状态承接总成本，以当日券商 open 持仓作为物理数量，并查询 Meridian `adjust-factors`：数量比匹配 `ex_factor` 时保存 `corporate_action_type=quantity_adjustment`，总成本不变、单位成本随数量调整；因子存在但数量不变时保存 `price_adjustment`；无法闭合时保存 `mismatch` 并阻断。账户起算配置显式使用 `cost_source=meridian_pre_close_mark_to_market` 时，只在已确认起算日以券商盘前持仓数量乘 Meridian 当日未复权 `pre_close` 建立 CORE 初始成本；缺少任一证券前收盘价即阻断，绝不回退使用柜台平均成本。普通持仓使用 `cost_bucket=CORE`；完整 ETF T0 买入/赎回组使用 `ETF_T0:{group_id}`，买入成本与底仓隔离且赎回后日内归零。只有与 OC 实际 `transfer.event` 按篮子、证券、时间和数量闭合的成分卖出才会在移动成本前剥离；PCF 不用于合成跨市场划转。赎回名义价格不进入成本账，IOPV 退出估值与 15bp 摩擦仍由 contributions 返回。
 
 `POST /v1/accounts/{account_id}/fees/refresh` 发布 OC `fee.list.query`，只支持 OC 当前柜台交易日；`GET /v1/accounts/{account_id}/fees` 查询已落库的订单费用，支持 `trade_date/date_from/date_to/gateway_order_id/fee_complete/limit/cursor`。`fee_page.account_total_fee` 仅用于账户级核对，不参与逐订单累计；费用记录由 `account_id + fee_record_id` 幂等更新，只有完整且关联成功的订单费用可进入绩效。历史费用不由该刷新接口回补。
+
+`fee_complete/association_complete` 与绩效 `fee_coverage_complete` 描述柜台费用快照的消费/覆盖条件，不是券商最终清算证明。`fee_as_of` 不等同于 `settled_at`；`actual_fee` 表示观测到的费用而非承诺最终交割金额。`adapter_context.component_fee_total` 是该条记录六个分项之和，不是ETF所有成分委托的费用汇总，不能与total_fee重复相加。最终清算与NAV人工确认仍需相应的独立证据，不能只因上述布尔值为true就自动推进终值状态。
 
 费用缺失不等于订单不可用。订单和成交核心字段及关联完整时，Relay 仍使用它计算数量桥、移动成本、成交额和毛收益；费用完整性按当日有成交的唯一 `gateway_order_id` 单独统计。覆盖不完整时，贡献摘要返回 `fee_required_orders/fee_covered_orders/fee_coverage_complete/fee_coverage_source`，并将净绩效标记为 provisional、等待券商交割单，不把订单标记为数据质量失败。
 
