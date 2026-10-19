@@ -69,6 +69,53 @@ func TestProcessLedgerEntryWritesAssetReply(t *testing.T) {
 	}
 }
 
+func TestProcessLedgerEntryFailedAssetQueryPreservesPreviousSnapshot(t *testing.T) {
+	for _, code := range []string{"QUERY_FAILED", "QUERY_EMPTY_RESULT", "QUERY_SUBMIT_FAILED"} {
+		t.Run(code, func(t *testing.T) {
+			writer := &fakeLedgerWriter{}
+			body := map[string]any{
+				"protocol": "relay.stream.v1", "message_type": "reply",
+				"message_id": "reply-asset-before-failure", "action": "account.asset.query",
+				"result_type": "asset_page", "status": "completed", "code": "OK",
+				"routing":     map[string]any{"env": "prod", "broker_id": "huaxin", "gateway_id": "00030484", "account_id": "00030484"},
+				"produced_at": "2026-10-19T09:01:00+08:00",
+				"payload":     map[string]any{"account": map[string]any{"account_id": "00030484", "cash_available": 900000, "cash_total": 1000000, "net_asset": 1000000}},
+			}
+			encoded, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream := "relay:prod:v1:huaxin:00030484:reply"
+			before := ProcessLedgerEntry(context.Background(), writer, stream, "1-0", map[string]any{"body": string(encoded)})
+			if before.Assets != 1 || len(writer.assets) != 1 {
+				t.Fatalf("could not seed previous asset snapshot: %#v", before)
+			}
+			body["message_id"] = "reply-asset-failure"
+			body["status"], body["code"] = "failed", code
+			body["message"] = "ambiguous account scope, empty result, or SDK return=-2"
+			body["payload"] = map[string]any{"account": map[string]any{"account_id": "00030484", "cash_available": 0, "cash_total": 0, "net_asset": 0}}
+			encoded, err = json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := ProcessLedgerEntry(context.Background(), writer, stream, "2-0", map[string]any{"body": string(encoded)})
+			if after.Archived != 1 || after.Replies != 1 || after.Assets != 0 || after.Accounts != 0 || after.Orders != 0 || after.ParseErrors != 0 || after.LedgerErrors != 0 {
+				t.Fatalf("failed query mutated a ledger or lost the reply: %#v", after)
+			}
+			if len(writer.assets) != 1 || writer.assets[0].asset.CashTotal != 1000000 || len(writer.raw) != 2 {
+				t.Fatalf("failed query replaced the previous balance: assets=%#v raw=%d", writer.assets, len(writer.raw))
+			}
+			got, err := json.Marshal(writer.raw[1].Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(got), code) || !strings.Contains(string(got), "SDK return=-2") {
+				t.Fatalf("failed query lost raw error evidence: %s", got)
+			}
+		})
+	}
+}
+
 func TestProcessLedgerEntryWritesPositionReply(t *testing.T) {
 	writer := &fakeLedgerWriter{}
 	result := ProcessLedgerEntry(context.Background(), writer, "relay:prod:v1:huaxin:00030484:reply", "1-2", map[string]any{

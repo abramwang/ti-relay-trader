@@ -2,7 +2,7 @@
 
 日期：2026-10-16，全部业务时间 Asia/Shanghai。
 
-2026-10-19进展：OC已反馈SDK兼容和静态能力复核，尚无账户业务查询样本或新只读取证工具。费用语义、多行资金回包限制及下一轮P0/P1交付已明确在 [Relay反馈与验收安排](OC_CASH_CAPABILITY_FEEDBACK_RESPONSE_20261019.md)；本需求的在线验收尚未通过。
+2026-10-19最新进展：OC先完成SDK静态复核，随后报告P0实现基线 `a5cc9d9` 已交付，含多行资金修正、初始化查询门禁和独立 `huaxin_cash_probe`。尚未取得真实账户回包，在线权限、范围和最终性验收未通过；最新接收边界与安排见 [P0交付记录](OC_CASH_P0_DELIVERY_REVIEW_20261019.md)。原费用语义校正见 [Relay反馈](OC_CASH_CAPABILITY_FEEDBACK_RESPONSE_20261019.md)。
 
 ## 目标与边界
 
