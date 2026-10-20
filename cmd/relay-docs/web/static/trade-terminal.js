@@ -4728,6 +4728,62 @@
     return state.performanceChart;
   }
 
+  function performanceCashFlowTooltip(item) {
+    const events = Array.isArray(item.cash_flow_events) ? item.cash_flow_events : [];
+    if (!events.length) return "";
+    const lines = events.map((event) => {
+      const amount = Number(event.amount);
+      const strategy = event.kind === "strategy_capital";
+      const direction = strategy ? (amount > 0 ? "策略资本转入" : "策略资本转出") : (amount > 0 ? "资金流入" : "资金流出");
+      const time = event.time_precision === "second" && event.effective_at
+        ? formatShortDateTime(event.effective_at) : "时刻未记录";
+      const scope = event.granularity === "daily_net" ? " · 日净额" : "";
+      const color = strategy ? "#b79be8" : (amount > 0 ? "#35b995" : "#f07c82");
+      return '<div style="color:' + color + '">' + direction + "　" + formatSigned(amount) + " 元</div>" +
+        '<div style="color:#959aa6">' + escapeHTML(time + scope) + "</div>";
+    });
+    return '<div style="margin-top:8px;border-top:1px solid #363a45;padding-top:6px">资金变动 · 东八区</div>' +
+      '<div style="max-height:140px;overflow-y:auto">' + lines.join("") + "</div>" +
+      '<div style="margin-top:4px">当日净流入　' + formatSigned(item.external_net_flow) + " 元</div>";
+  }
+
+  function performanceCashMarkerSeries(rows, labels, accountNAV) {
+    const amountLabel = (amount) => {
+      const absolute = Math.abs(amount);
+      const unit = absolute >= 100000000 ? 100000000 : (absolute >= 10000 ? 10000 : 1);
+      return (amount > 0 ? "+" : "-") + formatNumber(absolute / unit, unit === 1 ? 0 : 2) +
+        (unit === 100000000 ? "亿" : (unit === 10000 ? "万" : "元"));
+    };
+    return [
+      { name: "资金流入", color: "#35b995", direction: 1, symbol: "triangle", rotate: 0, offset: [0, -12], position: "top" },
+      { name: "资金流出", color: "#f07c82", direction: -1, symbol: "triangle", rotate: 180, offset: [0, 12], position: "bottom" },
+      { name: "策略资本转移", color: "#b79be8", direction: 0, symbol: "diamond", rotate: 0, offset: [12, 0], position: "right" }
+    ].map((definition) => ({
+      name: definition.name,
+      type: "scatter",
+      z: 6,
+      symbol: definition.symbol,
+      symbolRotate: definition.rotate,
+      symbolOffset: definition.offset,
+      symbolSize: 10,
+      itemStyle: { color: definition.color, opacity: 1 },
+      label: {
+        show: true, position: definition.position, color: definition.color, fontSize: 10,
+        formatter: (params) => amountLabel(params.data.amount)
+      },
+      labelLayout: { hideOverlap: true },
+      data: rows.flatMap((item, index) => {
+        if (accountNAV[index] === null) return [];
+        const events = (item.cash_flow_events || []).filter((event) => definition.direction === 0
+          ? event.kind === "strategy_capital"
+          : event.kind === "external" && Number(event.amount) * definition.direction > 0);
+        if (!events.length) return [];
+        return [{ value: [labels[index], accountNAV[index]], row_index: index,
+          amount: events.reduce((sum, event) => sum + Number(event.amount), 0) }];
+      })
+    }));
+  }
+
   function renderPerformanceChart() {
     if (!els.performanceChart || !els.performanceChartRange) {
       return;
@@ -4785,21 +4841,26 @@
       axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
       tooltip: {
         trigger: "axis",
+        enterable: true,
+        confine: true,
         backgroundColor: "rgba(17,21,30,0.96)",
         borderColor: "#363a45",
         borderWidth: 1,
         padding: [8, 10],
         textStyle: { color: "#d1d4dc", fontSize: 11 },
         formatter(params) {
-          const index = Array.isArray(params) && params.length ? params[0].dataIndex : 0;
+          const point = Array.isArray(params) ? params[0] : params;
+          const axisIndex = point ? labels.indexOf(String(point.axisValue)) : -1;
+          const index = axisIndex >= 0 ? axisIndex : (point?.data?.row_index ?? point?.dataIndex ?? 0);
           const item = rows[index] || {};
           return [
             "<strong>" + escapeHTML(displayDate(item.trade_date)) + "</strong>",
             "账户净值　" + formatNumber(accountNAV[index], cashRepoHistory ? 6 : 4) + "　净资产 " + formatNumber(item.net_asset),
+            "当日盈亏　" + (item.performance_status === "blocked" ? "--" : formatSigned(item.daily_pnl)) + "　收益率 " + (item.performance_status === "blocked" ? "--" : formatPercent(item.return_rate)),
             "上证基准　" + formatNumber(benchmarkNAV[index], 4) + "　收盘 " + formatNumber(item.benchmark_close, 2),
             "超额收益　" + formatPercent(item.excess_cumulative_return),
             "账户回撤　" + formatPercent(item.drawdown) + "　基准 " + formatPercent(item.benchmark_drawdown)
-          ].join("<br>");
+          ].join("<br>") + performanceCashFlowTooltip(item);
         }
       },
       legend: { show: false },
@@ -4929,7 +4990,8 @@
           lineStyle: { width: 1, color: "#787b86", type: "dashed" },
           itemStyle: { color: "#787b86" },
           emphasis: { focus: "series" }
-        }
+        },
+        ...performanceCashMarkerSeries(rows, labels, accountNAV)
       ]
     }, true);
   }

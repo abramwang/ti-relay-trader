@@ -268,6 +268,17 @@ type RawStreamSummaryBucket struct {
 	LastReceivedAt time.Time `json:"last_received_at,omitempty"`
 }
 
+// PerformanceCashEvent is a display projection, not a new cash ledger entry.
+type PerformanceCashEvent struct {
+	EntryID       string  `json:"entry_id,omitempty"`
+	Kind          string  `json:"kind"`
+	Amount        float64 `json:"amount"`
+	EffectiveAt   string  `json:"effective_at,omitempty"`
+	TimePrecision string  `json:"time_precision"`
+	Granularity   string  `json:"granularity"`
+	Source        string  `json:"source"`
+}
+
 type DailyPerformance struct {
 	AccountID              string    `json:"account_id"`
 	TradeDate              string    `json:"trade_date"`
@@ -319,6 +330,9 @@ type DailyPerformance struct {
 	QualityFlags           []string  `json:"quality_flags,omitempty"`
 	OpenCapturedAt         time.Time `json:"open_captured_at,omitempty"`
 	CapturedAt             time.Time `json:"captured_at,omitempty"`
+
+	ExternalNetFlow float64                `json:"external_net_flow"`
+	CashFlowEvents  []PerformanceCashEvent `json:"cash_flow_events,omitempty"`
 }
 
 type AssetPositionObservation struct {

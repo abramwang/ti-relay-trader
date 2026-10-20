@@ -452,6 +452,20 @@ net_pnl = gross_pnl - fee_total
 3. 回撤曲线：账户回撤和基准回撤。
 4. PnL 分解：已实现、浮动、费用、净收益的 waterfall 或堆叠柱。
 
+#### 资金变动标记（2026-10-20 已实现）
+
+当前页面采用净值/超额上图与回撤下图联动。净值线上增加绿色向上三角表示流入、红色向下三角表示流出，金额使用元/万/亿；同日同方向合并为一个可视标记，同日反向资金保留两个标记，避免净额为零时消失。紫色菱形单列策略间资本转移，不混同产品外部资金。
+
+悬浮显示当日净资产、盈亏、收益率和各笔资金金额；已有精确发生时间按 `Asia/Shanghai` 展示。历史只有日期/日净额的记录明确显示“时刻未记录 / 日净额”，不把查询时间、收益计权用的占位时间或预计到账时间当实际资金时刻。标记横坐标仍是日净值的交易日，不声称存在盘中净值采样。
+
+`GET /v1/accounts/{account_id}/performance/series` 的每个已发布日期新增：
+
+- `external_net_flow`：沿用该版 NAV 的外部资金净额。
+- `cash_flow_events[]`：`kind=external/strategy_capital`、带符号的 `amount`、可选 `entry_id/effective_at`、`time_precision=date/second`、`granularity=transaction/daily_net`、证据路径 `source`。
+- 优先投影既有 NAV 的 `bank_flow_details`、`broker_statement.external_flow_details`、`cash_bridge.weighted_external_flow_details`；缺少拆分明细的余额差只标为该版 NAV 的日净额余项，不补造成银行交易。旧时间精度不明或中点估算保守按日期展示。
+
+本功能不增加数据库/行情/柜台查询，不修改已发布净值、资金流水、收益计权或生产权限。柜台内部划转、ETF 回款、IOPV 估值、逆回购返本和资产差额均不自动当作外部入金；首次起算资本也不额外制造为盘中入金。
+
 ### 贡献表
 
 持仓/交易贡献表放在主图下方，默认按 `net_contribution` 绝对值排序。

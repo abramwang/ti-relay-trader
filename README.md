@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-10-20` 绩效净值图已增加资金流入/流出金额标记，悬浮显示东八区实际时刻、当日盈亏及净流量；策略资本独立，日期级旧记录不补造时刻。只读投影既有NAV证据，不重算净值、不改权限；浏览器验证富盈13号375点及同日双向资金样例，设计见 `docs/PERFORMANCE_ANALYSIS_DESIGN.md`“资金变动标记”。
+
 ### 已验证运行态
 
 - `2026-10-04 21:10 Asia/Shanghai` 按用户明确指令从 TEST 切回生产：`.runtime/active-config.yaml -> config/relay.prod.yaml`，目标库 migration 成功，独立 API/worker、Redis、PostgreSQL、Meridian 和事件流均正常。6 个配置账户保持 4 个启用查询、0 个开放交易，`501000114077` 与 `307000051389` 继续停用且历史账本保留；当天为非交易日，4 个启用账户均正确显示 `off_hours`，16 条生产 Stream 总 lag 为 0、pending DLQ 为 0。

@@ -3413,6 +3413,8 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 	for index := range series {
 		nav, ok := byDate[series[index].TradeDate]
 		if !ok {
+			series[index].ExternalNetFlow = 0
+			series[index].CashFlowEvents = nil
 			series[index].PerformanceStatus = "blocked"
 			series[index].FormulaVersion = "legacy_cash_snapshot_diagnostic"
 			series[index].PreviousNetAsset = 0
@@ -3442,6 +3444,8 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 		previousCarveout = carveout
 		series[index].PerformanceStatus = nav.Status
 		series[index].FormulaVersion = nav.FormulaVersion
+		series[index].ExternalNetFlow = nav.ExternalNetFlow
+		series[index].CashFlowEvents = performanceCashEvents(nav)
 		series[index].NetAsset = nav.CloseEconomicNAV
 		series[index].OpenNetAsset = nav.OpenEconomicNAV
 		series[index].PreviousNetAsset = previousClose

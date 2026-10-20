@@ -22,6 +22,7 @@
 - 已增加完整历史 close 数量基线测试和 `sdk_position_baseline_live_smoke.py`：完整/空/缺历史/部分查询、旧行、10001 行、总数/摘要/分页和重建失败关闭；`RELAY_POSITION_BASELINE_LIVE_DATABASE_URL` 只读验证历史样本，`RELAY_POSITION_BASELINE_ISOLATED_DATABASE_URL` 仅在连接本地 TEMP 表验证大集合和重建，不写永久账表。两个变量仅用于指定的 `TestPositionBaseline*` 测试，不用于其他写库集成测试。
 - 已增加 9092 页面轻量冒烟测试：`tests/integration/page_smoke.py`，覆盖首页、文档、测试索引、API Console、交易终端、静态资源、基础 API 和 SDK 下载入口。
 - 已增加绩效页 Playwright 只读测试：`tests/integration/performance_visual_smoke.py`，覆盖账户切换、查询日期稳定、当日四项主指标、ECharts canvas 有效像素、七项数据质量检查、无横向溢出、无控制台错误和无 HTTP 错误。
+- `internal/api/performance_cash_events_test.go` 覆盖历史/券商/原生NAV资金明细投影、东八区时间、同日反向资金、日期精度和日净额回退；`performance_cash_markers_smoke.py` 将真实序列逐日对照图表资金标记，并仅在浏览器模拟等额进出、策略资本和未知时刻，验证悬浮和缩放，禁止所有非GET业务请求。
 - `tests/integration/asset_day_pnl_smoke.py`：以已发布NAV验证资金持仓页账户当日盈亏及CSV来源，覆盖桌面/手机视口；禁发非GET API请求。需指定`--account-id`、`--trade-date`、`--output-dir`，只适用于有匹配收盘资产与非阻断NAV的日期。
 - 已增加任务复核页 Playwright 只读测试：`tests/integration/jobs_visual_smoke.py`，覆盖交易日选择、六账户复核结论、任务时间东八区格式、无横向溢出、无控制台错误和无 HTTP 错误。
 - 运维页 Playwright 会动态读取 `/v1/accounts`，验证六个 gateway 和账户筛选器均使用 PostgreSQL 落库别名，不回退显示旧的“生产查询账户”配置名。

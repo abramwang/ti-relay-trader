@@ -2163,7 +2163,7 @@ func TestCalculateReturnDenominatorUsesMidSessionWeightForDateOnlyCashFlow(t *te
 	denominator, details, flags := calculateReturnDenominator(1000, flows, tradeDate)
 
 	assertClose(t, denominator, 900)
-	if len(details) != 1 || details[0]["weight"] != 0.5 || details[0]["weighted"] != -100.0 {
+	if len(details) != 1 || details[0]["weight"] != 0.5 || details[0]["weighted"] != -100.0 || details[0]["effective_time_precision"] != "date" {
 		t.Fatalf("weight details = %#v", details)
 	}
 	if !containsString(flags, "external_flow_time_estimated_mid_session") {

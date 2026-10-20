@@ -1556,7 +1556,18 @@ tr.flash {
 }
 
 .performance-chart-section {
-  grid-template-rows: 44px 52px minmax(0, 1fr);
+  grid-template-rows: minmax(44px, auto) 52px minmax(0, 1fr);
+}
+
+.performance-chart-toolbar {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.performance-chart-toolbar > div:first-child {
+  flex-wrap: wrap;
 }
 
 .performance-range-summary {
@@ -1589,10 +1600,10 @@ tr.flash {
 
 .performance-chart-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  overflow: hidden;
 }
 
 .performance-chart-legend span {
@@ -1620,6 +1631,30 @@ tr.flash {
 
 .performance-chart-legend .drawdown::before {
   background: #f23645;
+}
+
+.performance-chart-legend .cash-in::before,
+.performance-chart-legend .cash-out::before {
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  background: transparent;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.performance-chart-legend .cash-in::before {
+  border-bottom: 7px solid #35b995;
+}
+
+.performance-chart-legend .cash-out::before {
+  border-top: 7px solid #f07c82;
+}
+
+.performance-chart-legend .strategy-capital::before {
+  border-radius: 0;
+  background: #b79be8;
+  transform: rotate(45deg);
 }
 
 .performance-chart-shell {

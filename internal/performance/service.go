@@ -1738,12 +1738,17 @@ func calculateReturnDenominator(openNAV float64, flows []ledger.CashLedgerEntry,
 		}
 		weighted := flow.Amount * weight
 		denominator += weighted
+		precision := "second"
+		if cashFlowHasDateOnlyPrecision(flow) || flow.EffectiveAt.IsZero() {
+			precision = "date"
+		}
 		details = append(details, map[string]any{
-			"entry_id":     flow.EntryID,
-			"amount":       roundMoney(flow.Amount),
-			"weight":       roundRatio(weight),
-			"weighted":     roundMoney(weighted),
-			"effective_at": flow.EffectiveAt,
+			"entry_id":                 flow.EntryID,
+			"amount":                   roundMoney(flow.Amount),
+			"weight":                   roundRatio(weight),
+			"weighted":                 roundMoney(weighted),
+			"effective_at":             flow.EffectiveAt,
+			"effective_time_precision": precision,
 		})
 	}
 	if denominator <= 0 {
