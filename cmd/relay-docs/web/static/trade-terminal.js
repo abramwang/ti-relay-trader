@@ -53,6 +53,7 @@
     performanceNAVReconciliation: null,
     performanceChart: null,
     performanceLoadSeq: 0,
+    performanceAbortController: null,
     performanceReviewBusy: false,
     performanceReviewSettingsError: "",
     performanceLoaded: false,
@@ -3769,8 +3770,14 @@
       return;
     }
     const loadSeq = ++state.performanceLoadSeq;
-    const isCurrentLoad = () => loadSeq === state.performanceLoadSeq;
     const accountID = encodeURIComponent(state.activeAccount);
+    const isCurrentLoad = () => loadSeq === state.performanceLoadSeq && accountID === encodeURIComponent(state.activeAccount);
+    if (state.performanceAbortController) {
+      state.performanceAbortController.abort();
+    }
+    const controller = new AbortController();
+    state.performanceAbortController = controller;
+    const performanceRequest = (path) => request(path, { signal: controller.signal });
     const useDefaultRange = options.defaultRange !== false && state.performanceRangeMode === "default";
     els.performanceStatus.textContent = "查询中...";
     els.loadPerformanceButton.disabled = true;
@@ -3779,7 +3786,7 @@
       let defaultRange = null;
       if (useDefaultRange) {
         const referenceDate = defaultQueryDate();
-        const resolved = await request(
+        const resolved = await performanceRequest(
           "/v1/accounts/" + accountID + "/performance/default-range?reference_date=" + encodeURIComponent(referenceDate)
         );
         if (!isCurrentLoad()) {
@@ -3817,7 +3824,7 @@
       if (params.benchmarkSecurityID) {
         query.set("benchmark_security_id", params.benchmarkSecurityID);
       }
-      let data = await request("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
+      let data = await performanceRequest("/v1/accounts/" + accountID + "/performance/series?" + query.toString());
       const selectedDate = params.dateTo;
       let seriesFallback = Boolean(defaultRange && defaultRange.fallback_applied);
       if (!isCurrentLoad()) {
@@ -3828,7 +3835,7 @@
           date_from: shiftCompactDate(params.dateTo, -45),
           date_to: params.dateTo
         });
-        const fallbackData = await request("/v1/accounts/" + accountID + "/performance/series?" + fallbackQuery.toString());
+        const fallbackData = await performanceRequest("/v1/accounts/" + accountID + "/performance/series?" + fallbackQuery.toString());
         if (!isCurrentLoad()) {
           return;
         }
@@ -3854,77 +3861,82 @@
       state.performanceLoaded = true;
       state.performanceDetailsLoading = true;
       renderPerformance();
+      els.loadPerformanceButton.disabled = false;
       const dailyDate = selectedDate;
       const qualityQuery = new URLSearchParams({
         date_from: params.dateFrom,
         date_to: params.dateTo
       });
-      const detailResults = await Promise.allSettled([
-        request("/v1/performance/settings"),
-        request("/v1/accounts/" + accountID + "/performance/daily?trade_date=" + encodeURIComponent(dailyDate)),
-        request("/v1/accounts/" + accountID + "/performance/contributions?trade_date=" + encodeURIComponent(dailyDate)),
-        request("/v1/accounts/" + accountID + "/performance/trade-quality?" + qualityQuery.toString()),
-        request("/v1/accounts/" + accountID + "/performance/cost-ledger/preview?trade_date=" + encodeURIComponent(dailyDate)),
-        request("/v1/accounts/" + accountID + "/performance/economic-nav/preview?trade_date=" + encodeURIComponent(dailyDate)),
-        request("/v1/accounts/" + accountID + "/performance/nav-reconciliations?trade_date=" + encodeURIComponent(dailyDate))
-      ]);
-      if (!isCurrentLoad()) {
-        return;
-      }
-      const [settingsResult, dailyResult, contributionResult, qualityResult, costResult, economicResult, reconciliationResult] = detailResults;
-
-      if (settingsResult.status === "fulfilled") {
-        state.performanceSettings = settingsResult.value;
-        state.performanceReviewSettingsError = "";
-      } else {
-        state.performanceSettings = null;
-        state.performanceReviewSettingsError = settingsResult.reason.message;
-        pushLog("warn", "绩效写权限读取失败", settingsResult.reason.message);
-      }
-
-      if (dailyResult.status === "fulfilled") {
-        state.performanceDaily = dailyResult.value.performance || state.performanceDaily;
-      } else {
-        pushLog("warn", "日终快照读取失败", displayDate(dailyDate) + " " + dailyResult.reason.message);
-      }
-
-      if (contributionResult.status === "fulfilled") {
-        state.performanceContribution = contributionResult.value.contribution || null;
-      } else {
-        state.performanceContribution = null;
-        pushLog("warn", "证券贡献读取失败", displayDate(dailyDate) + " " + contributionResult.reason.message);
-      }
-
-      if (qualityResult.status === "fulfilled") {
-        state.performanceTradeQuality = qualityResult.value.trade_quality || null;
-      } else {
-        state.performanceTradeQuality = null;
-        pushLog("warn", "交易质量读取失败", displayDate(params.dateFrom) + " 至 " + displayDate(params.dateTo) + " " + qualityResult.reason.message);
-      }
-
-      if (costResult.status === "fulfilled") {
-        state.performanceCostLedger = costResult.value.cost_ledger || null;
-      } else {
-        state.performanceCostLedger = null;
-        pushLog("warn", "持仓成本账读取失败", displayDate(dailyDate) + " " + costResult.reason.message);
-      }
-
-      if (economicResult.status === "fulfilled") {
-        state.performanceEconomicNAV = economicResult.value.economic_nav || null;
-      } else {
-        state.performanceEconomicNAV = null;
-        pushLog("warn", "经济净值预览失败", displayDate(dailyDate) + " " + economicResult.reason.message);
-      }
-
-      if (reconciliationResult.status === "fulfilled") {
+      let reconciliations = [];
+      const updateReconciliation = () => {
         state.performanceNAVReconciliation = selectPerformanceNAVReconciliation(
-          reconciliationResult.value.reconciliations,
-          state.performanceEconomicNAV && state.performanceEconomicNAV.nav
+          reconciliations, state.performanceEconomicNAV && state.performanceEconomicNAV.nav
         );
-      } else {
-        state.performanceNAVReconciliation = null;
-        pushLog("warn", "经济净值对账读取失败", displayDate(dailyDate) + " " + reconciliationResult.reason.message);
-      }
+      };
+      const loadDetail = async (path, apply, errorTitle, onError) => {
+        try {
+          const result = await performanceRequest(path);
+          if (!isCurrentLoad()) return;
+          apply(result);
+        } catch (err) {
+          if (!isCurrentLoad() || err.name === "AbortError") return;
+          if (onError) onError(err);
+          pushLog("warn", errorTitle, err.message);
+        }
+        if (isCurrentLoad()) renderPerformance();
+      };
+      const dailyQuery = "?trade_date=" + encodeURIComponent(dailyDate);
+      const root = "/v1/accounts/" + accountID + "/performance/";
+      const loadEconomic = async () => {
+        try {
+          const published = await performanceRequest(root + "economic-nav" + dailyQuery);
+          if (!isCurrentLoad()) return;
+          const nav = (published.navs || []).find((item) => item.is_current === true &&
+            item.account_id === state.activeAccount && compactDate(item.trade_date) === dailyDate &&
+            (String(item.formula_version || "").startsWith("performance_economic_nav.v2") || item.formula_version === "broker_statement_nav.v1"));
+          if (nav) {
+            state.performanceEconomicNAV = publishedPerformanceEconomicView(nav);
+            updateReconciliation();
+            renderPerformance();
+            return;
+          }
+          await loadDetail(root + "economic-nav/preview" + dailyQuery, (result) => {
+            state.performanceEconomicNAV = result.economic_nav || null;
+            updateReconciliation();
+          }, "经济净值预览失败");
+        } catch (err) {
+          if (isCurrentLoad() && err.name !== "AbortError") {
+            pushLog("warn", "已发布净值读取失败", err.message);
+          }
+        }
+      };
+      await Promise.all([
+        loadDetail("/v1/performance/settings", (result) => {
+          state.performanceSettings = result;
+          state.performanceReviewSettingsError = "";
+        }, "绩效写权限读取失败", (err) => {
+          state.performanceSettings = null;
+          state.performanceReviewSettingsError = err.message;
+        }),
+        loadDetail(root + "daily" + dailyQuery, (result) => {
+          state.performanceDaily = result.performance || state.performanceDaily;
+        }, "日终快照读取失败"),
+        loadDetail(root + "contributions" + dailyQuery, (result) => {
+          state.performanceContribution = result.contribution || null;
+        }, "证券贡献读取失败"),
+        loadDetail(root + "trade-quality?" + qualityQuery.toString(), (result) => {
+          state.performanceTradeQuality = result.trade_quality || null;
+        }, "交易质量读取失败"),
+        loadDetail(root + "cost-ledger/preview" + dailyQuery, (result) => {
+          state.performanceCostLedger = result.cost_ledger || null;
+        }, "持仓成本账读取失败"),
+        loadEconomic(),
+        loadDetail(root + "nav-reconciliations" + dailyQuery, (result) => {
+          reconciliations = result.reconciliations || [];
+          updateReconciliation();
+        }, "经济净值对账读取失败")
+      ]);
+      if (!isCurrentLoad()) return;
       state.performanceDetailsLoading = false;
       renderPerformance();
       showToast("绩效数据已更新");
@@ -3953,6 +3965,29 @@
         els.loadPerformanceButton.disabled = false;
       }
     }
+  }
+
+  function publishedPerformanceEconomicView(nav) {
+    const components = nav.pnl_components || {};
+    const bridge = components.cash_bridge || {};
+    const management = components.cash_management || {};
+    return {
+      account_id: nav.account_id,
+      trade_date: nav.trade_date,
+      status: nav.status,
+      formula_version: nav.formula_version,
+      persisted: true,
+      nav,
+      quality_flags: nav.quality_flags || [],
+      valuation: components.market_valuation || {},
+      etf_settlement: components.etf_settlement || {},
+      cash_flows: {
+        external_net_flow: nav.external_net_flow,
+        settlement_adjust: nav.settlement_adjustment,
+        income_expense: management.known_income_expense,
+        internal_transfer: bridge.internal_transfer_net
+      }
+    };
   }
 
   function downloadPerformanceCSV() {

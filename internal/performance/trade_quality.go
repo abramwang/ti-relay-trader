@@ -109,20 +109,13 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 	if err != nil {
 		return TradeQualityResult{}, err
 	}
-	orders, err := service.listTradeQualityOrders(ctx, accountID, normalizedFrom, normalizedTo)
+	data, err := service.readTradeQualityLedger(ctx, accountID, normalizedFrom, normalizedTo)
 	if err != nil {
 		return TradeQualityResult{}, err
 	}
-	fills, err := service.listTradeQualityFills(ctx, accountID, normalizedFrom, normalizedTo)
-	if err != nil {
-		return TradeQualityResult{}, err
-	}
+	orders, fills, feeRecords := data.Orders, data.Fills, data.Fees
 	fills = dedupeContributionFills(fills)
 	fills = filterTradeQualityOrdinaryFills(fills, orders)
-	feeRecords, err := service.listTradeQualityOrderFees(ctx, accountID, normalizedFrom, normalizedTo)
-	if err != nil {
-		return TradeQualityResult{}, err
-	}
 
 	result := TradeQualityResult{
 		AccountID:       accountID,
@@ -237,6 +230,24 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 	}
 	result.AnomaliesReturned = len(result.Anomalies)
 	return result, nil
+}
+
+func (service *Service) readTradeQualityLedger(ctx context.Context, accountID, dateFrom, dateTo string) (ledger.TradeQualityLedger, error) {
+	if reader, ok := service.store.(interface {
+		ReadTradeQualityLedger(context.Context, string, string, string, int) (ledger.TradeQualityLedger, error)
+	}); ok {
+		return reader.ReadTradeQualityLedger(ctx, accountID, dateFrom, dateTo, 200000)
+	}
+	var result ledger.TradeQualityLedger
+	var err error
+	if result.Orders, err = service.listTradeQualityOrders(ctx, accountID, dateFrom, dateTo); err != nil {
+		return result, err
+	}
+	if result.Fills, err = service.listTradeQualityFills(ctx, accountID, dateFrom, dateTo); err != nil {
+		return result, err
+	}
+	result.Fees, err = service.listTradeQualityOrderFees(ctx, accountID, dateFrom, dateTo)
+	return result, err
 }
 
 func (service *Service) resolveTradeQualityRange(ctx context.Context, dateFrom, dateTo string) (string, string, error) {

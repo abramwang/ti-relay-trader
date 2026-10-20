@@ -3571,19 +3571,9 @@ func (s *Server) applyBenchmarkSeries(ctx context.Context, series []ledger.Daily
 		return nil
 	}
 
-	closes := make(map[string]float64, len(series))
-	for _, item := range series {
-		normalizedDate, err := normalizeAPIDate(item.TradeDate)
-		if err != nil {
-			continue
-		}
-		closePrice, ok, err := s.benchmarkClose(ctx, securityID, normalizedDate)
-		if err != nil {
-			return err
-		}
-		if ok {
-			closes[normalizedDate] = closePrice
-		}
+	closes, err := s.benchmarkCloses(ctx, securityID, series)
+	if err != nil {
+		return err
 	}
 
 	var startClose float64
@@ -3644,56 +3634,6 @@ func (s *Server) applyBenchmarkSeries(ctx context.Context, series []ledger.Daily
 		summary.BenchmarkObservationDays = observations
 	}
 	return nil
-}
-
-func (s *Server) benchmarkClose(ctx context.Context, securityID string, normalizedTradeDate string) (float64, bool, error) {
-	values := url.Values{}
-	values.Set("security_id", securityID)
-	values.Set("trade_date", strings.ReplaceAll(normalizedTradeDate, "-", ""))
-	values.Set("frequency", "1m")
-	values.Set("adjustment", "none")
-	values.Set("start_time", "14:55:00")
-	values.Set("end_time", "15:00:00")
-	values.Set("limit", "10")
-
-	response, err := s.market.MarketBars(ctx, values)
-	if err != nil {
-		return 0, false, fmt.Errorf("%w: %v", errBenchmarkBarsUnavailable, err)
-	}
-	if response.StatusCode >= http.StatusBadRequest {
-		return 0, false, fmt.Errorf("%w: status %d", errBenchmarkBarsUnavailable, response.StatusCode)
-	}
-	if errorPayload, ok := response.Payload["error"].(map[string]any); ok {
-		return 0, false, fmt.Errorf("%w: %s", errBenchmarkBarsUnavailable, meridianErrorMessage(errorPayload))
-	}
-	rows, ok := response.Payload["data"].([]any)
-	if !ok || len(rows) == 0 {
-		return 0, false, nil
-	}
-
-	var latestKey string
-	var latestClose float64
-	found := false
-	for _, raw := range rows {
-		row, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		closePrice, ok := floatFromAny(row["close"])
-		if !ok || closePrice <= 0 {
-			continue
-		}
-		key := stringFromAny(row["datetime"])
-		if key == "" {
-			key = stringFromAny(row["trade_date"])
-		}
-		if !found || key >= latestKey {
-			latestKey = key
-			latestClose = closePrice
-			found = true
-		}
-	}
-	return latestClose, found, nil
 }
 
 func meridianErrorMessage(payload map[string]any) string {

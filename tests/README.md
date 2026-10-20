@@ -51,6 +51,11 @@ python3 -m venv .venv
   --date-from 20260701 \
   --date-to 20260729
 
+# GET-only: published metrics appear before delayed quality, replaced requests cancel.
+.venv/bin/python tests/integration/performance_loading_smoke.py \
+  --account-id 314000046830 --date-from 20260101 --date-to 20261019 \
+  --replacement-from 20260920
+
 .venv/bin/python tests/integration/jobs_visual_smoke.py \
   --base-url http://127.0.0.1:9092 \
   --trade-date 2026-07-31

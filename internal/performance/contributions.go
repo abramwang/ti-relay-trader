@@ -198,9 +198,18 @@ func (service *Service) CalculateContributions(ctx context.Context, accountID, t
 	if err != nil {
 		return ContributionResult{}, err
 	}
-	value, err, _ := service.contributionFlights.Do(accountID+"|"+normalizedDate, func() (any, error) {
-		return service.calculateContributions(ctx, accountID, normalizedDate)
-	})
+	calculate := func() (any, error) {
+		result, err := service.calculateContributions(ctx, accountID, normalizedDate)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return result, err
+	}
+	value, err, _ := service.contributionFlights.Do(accountID+"|"+normalizedDate, calculate)
+	// A still-live reader must not inherit a superseded reader's cancellation.
+	if errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		value, err, _ = service.contributionFlights.Do(accountID+"|"+normalizedDate, calculate)
+	}
 	if err != nil {
 		return ContributionResult{}, err
 	}

@@ -68,6 +68,7 @@ def main() -> int:
                 const status =
                     document.querySelector("#performanceStatus")?.textContent || "";
                 return !document.querySelector("#loadPerformanceButton")?.disabled &&
+                    !status.includes("明细计算中") &&
                     (status.includes("已加载") || status.includes("查询失败"));
             }""",
             timeout=60_000,
@@ -84,6 +85,7 @@ def main() -> int:
                     const status = document.querySelector("#performanceStatus")?.textContent || "";
                     return active?.title.includes(accountID) &&
                         !document.querySelector("#loadPerformanceButton")?.disabled &&
+                        !status.includes("明细计算中") &&
                         (status.includes("已加载") || status.includes("查询失败"));
                 }""",
                 arg=args.account_id,
@@ -124,6 +126,7 @@ def main() -> int:
                 const hint =
                     document.querySelector("#performanceRangeHint")?.textContent || "";
                 return !button?.disabled &&
+                    !text.includes("明细计算中") &&
                     (text.includes("已加载") || text.includes("查询失败")) &&
                     hint.includes(expected.dateTo);
             }""",

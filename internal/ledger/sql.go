@@ -915,7 +915,7 @@ open_asset AS (
     FROM open_asset_ranked
     WHERE rn = 1
 ),
-positions AS (
+positions AS MATERIALIZED (
     SELECT
         trade_date,
         count(*)::bigint AS positions_count,
@@ -939,20 +939,21 @@ fills AS (
         COALESCE(sum(fee), 0) AS fee_total
     FROM (
         SELECT
-            CASE
-                WHEN trade_date IS NOT NULL THEN trade_date
-                ELSE (COALESCE(matched_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date
-            END AS fill_date,
+            trade_date AS fill_date,
             trade_side,
             price,
             qty,
             fee
         FROM fills
         WHERE account_id = $1
-            AND (
-                (trade_date IS NOT NULL AND trade_date >= $2::date AND trade_date <= $3::date)
-                OR (trade_date IS NULL AND COALESCE(matched_at, created_at) >= $4 AND COALESCE(matched_at, created_at) < $5)
-            )
+            AND trade_date >= $2::date AND trade_date <= $3::date
+        UNION ALL
+        SELECT
+            (COALESCE(matched_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date AS fill_date,
+            trade_side, price, qty, fee
+        FROM fills
+        WHERE account_id = $1 AND trade_date IS NULL
+            AND COALESCE(matched_at, created_at) >= $4 AND COALESCE(matched_at, created_at) < $5
     ) fill_rows
     GROUP BY fill_date
 )

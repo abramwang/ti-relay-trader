@@ -4083,21 +4083,15 @@ func TestPerformanceSeriesQueryWithBenchmarkBars(t *testing.T) {
 			return
 		}
 		queries = append(queries, r.URL.RawQuery)
-		tradeDate := r.URL.Query().Get("trade_date")
-		closePrice := 100.0
-		if tradeDate == "20260613" {
-			closePrice = 105.0
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{
 				"security_id":    r.URL.Query().Get("security_id"),
-				"trade_date":     tradeDate,
-				"datetime":       tradeDate[:4] + "-" + tradeDate[4:6] + "-" + tradeDate[6:8] + "T15:00:00+08:00",
-				"frequency":      "1m",
+				"trade_date":     "20260612",
+				"frequency":      "1d",
 				"adjustment":     "none",
-				"close":          closePrice,
+				"close":          100.0,
 				"schema_version": "market_bar.v1",
-			}},
+			}, {"security_id": r.URL.Query().Get("security_id"), "trade_date": "20260613", "close": 105.0}},
 			"meta": map[string]any{"schema_version": "market_bar.v1"},
 		})
 	}))
@@ -4123,11 +4117,11 @@ func TestPerformanceSeriesQueryWithBenchmarkBars(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if len(queries) != 2 {
-		t.Fatalf("meridian bars calls = %d, want 2: %v", len(queries), queries)
+	if len(queries) != 1 {
+		t.Fatalf("meridian bars calls = %d, want 1: %v", len(queries), queries)
 	}
-	if !strings.Contains(queries[0], "trade_date=20260612") || !strings.Contains(queries[0], "start_time=14%3A55%3A00") || !strings.Contains(queries[0], "end_time=15%3A00%3A00") {
-		t.Fatalf("benchmark query did not use meridian bars close window: %s", queries[0])
+	if !strings.Contains(queries[0], "start_date=20260612") || !strings.Contains(queries[0], "end_date=20260613") || !strings.Contains(queries[0], "frequency=1d") {
+		t.Fatalf("benchmark query did not use meridian daily range: %s", queries[0])
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, `"benchmark_security_id":"000300.SH"`) || !strings.Contains(body, `"benchmark_total_return":0.05`) {
