@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-fuying13-continuous-recovery":
+		if err := runFuyingContinuousRecovery(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-continuous-recovery: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fuying13-carveout-publish":
 		if err := runFuyingCarveoutPublication(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-carveout-publish: %v\n", err)
@@ -544,6 +549,7 @@ func usage() {
   performance-broker-funds-audit  One-time recovery of broker asset bases and external flows
   performance-fuying13-recovery-20261019  Audit the reviewed ETF-settlement-free historical segment
   performance-fuying13-carveout-publish  Publish the user-approved April cash/repo carve-out only
+  performance-fuying13-continuous-recovery  Restore the verified source/posting-ledger account NAV chain
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
   credentials    Rotate, verify, or disable encrypted OC account credentials

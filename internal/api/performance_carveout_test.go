@@ -8,10 +8,30 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/ledger"
 )
+
+func TestReconstructedEconomicNAVIsPublishedAndAuthoritativeForDefaultRange(t *testing.T) {
+	nav := ledger.PerformanceNAV{AccountID: "acct", TradeDate: "2025-07-08", FormulaVersion: "broker_reconstructed_economic_nav.v1", Status: "provisional",
+		OpenEconomicNAV: 1000, CloseEconomicNAV: 1005, AccountDayPnL: 5, DailyReturn: .005, CumulativeNAV: 1.005,
+		UpdatedAt:     time.Date(2026, 10, 20, 5, 0, 0, 0, time.UTC),
+		PnLComponents: map[string]any{"account_ledger_verified": true, "trading_observation": map[string]any{"positions_count": 2.0}}}
+	series := mergePerformanceNAVDates(nil, []ledger.PerformanceNAV{nav})
+	series = overlayPerformanceNAVSeries(series, []ledger.PerformanceNAV{nav})
+	if len(series) != 1 || series[0].CapturedAt.IsZero() || series[0].PositionsCount != 2 || series[0].NetAsset != 1005 {
+		t.Fatalf("reconstructed published date = %+v", series)
+	}
+	if source, ok := authoritativePerformanceNAVSource(nav, false); !ok || source != "broker_reconstructed_economic_nav" {
+		t.Fatalf("verified historical default anchor = %s/%v", source, ok)
+	}
+	delete(nav.PnLComponents, "account_ledger_verified")
+	if _, ok := authoritativePerformanceNAVSource(nav, false); ok {
+		t.Fatal("unverified historical rows must not become authoritative defaults")
+	}
+}
 
 func TestCashRepoCarveoutPublishedSeries(t *testing.T) {
 	navs := []ledger.PerformanceNAV{

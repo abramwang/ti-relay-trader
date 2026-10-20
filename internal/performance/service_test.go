@@ -1938,6 +1938,9 @@ func TestConfirmedBrokerAssetBasisRejectsSettlementCarryMismatch(t *testing.T) {
 }
 
 func TestPerformanceNAVSupportsContinuityFromBrokerStatement(t *testing.T) {
+	if !performanceNAVSupportsContinuity("broker_reconstructed_economic_nav.v1", "performance_economic_nav.v2.7") {
+		t.Fatal("verified reconstructed account NAV must carry into subsequent daily NAV")
+	}
 	if !performanceNAVSupportsContinuity("broker_statement_nav.v1", "performance_economic_nav.v2.7") {
 		t.Fatal("broker statement NAV must be eligible as the previous confirmed account NAV")
 	}

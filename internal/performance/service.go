@@ -1649,7 +1649,7 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 }
 
 func performanceNAVSupportsContinuity(formulaVersion, currentFormulaVersion string) bool {
-	return formulaVersion == currentFormulaVersion || formulaVersion == "broker_statement_nav.v1"
+	return formulaVersion == currentFormulaVersion || formulaVersion == "broker_statement_nav.v1" || formulaVersion == "broker_reconstructed_economic_nav.v1"
 }
 
 func (service *Service) currentEconomicNAV(ctx context.Context, accountID, tradeDate string) (ledger.PerformanceNAV, bool, error) {

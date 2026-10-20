@@ -2628,6 +2628,9 @@ func authoritativePerformanceNAVSource(nav ledger.PerformanceNAV, canonicalRunSu
 	if nav.FormulaVersion == "broker_statement_nav.v1" || nav.FormulaVersion == "broker_cash_repo_carveout.v1" {
 		return "broker_statement", true
 	}
+	if nav.FormulaVersion == "broker_reconstructed_economic_nav.v1" && nav.PnLComponents["account_ledger_verified"] == true {
+		return "broker_reconstructed_economic_nav", true
+	}
 	flags := make(map[string]bool, len(nav.QualityFlags))
 	for _, flag := range nav.QualityFlags {
 		flags[flag] = true
@@ -3478,6 +3481,9 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 			series[index].OpenSnapshotSource = "broker_statement"
 		}
 		if observation, ok := nav.PnLComponents["trading_observation"].(map[string]any); ok {
+			if value, ok := floatFromAny(observation["positions_count"]); ok {
+				series[index].PositionsCount = int64(value)
+			}
 			if value, ok := floatFromAny(observation["fills_count"]); ok {
 				series[index].FillsCount = int64(value)
 			}
@@ -3516,12 +3522,16 @@ func mergePerformanceNAVDates(series []ledger.DailyPerformance, navs []ledger.Pe
 		if present[nav.TradeDate] || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
 			continue
 		}
+		capturedAt := nav.FinalizedAt
+		if capturedAt.IsZero() {
+			capturedAt = nav.UpdatedAt
+		}
 		series = append(series, ledger.DailyPerformance{
 			AccountID:         nav.AccountID,
 			TradeDate:         nav.TradeDate,
 			PerformanceStatus: nav.Status,
 			FormulaVersion:    nav.FormulaVersion,
-			CapturedAt:        nav.FinalizedAt,
+			CapturedAt:        capturedAt,
 		})
 		present[nav.TradeDate] = true
 	}
@@ -3530,7 +3540,7 @@ func mergePerformanceNAVDates(series []ledger.DailyPerformance, navs []ledger.Pe
 }
 
 func isOfficialPerformanceNAVFormula(value string) bool {
-	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1" || value == "broker_cash_repo_carveout.v1"
+	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1" || value == "broker_cash_repo_carveout.v1" || value == "broker_reconstructed_economic_nav.v1"
 }
 
 func validatePerformanceNAVScope(navs []ledger.PerformanceNAV) error {
