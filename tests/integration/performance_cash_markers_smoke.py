@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--date-to", default="20261019")
     parser.add_argument("--width", type=int, default=1600)
     parser.add_argument("--check-capital-reference-date", default="")
+    parser.add_argument("--check-reference-overlay", action="store_true")
     parser.add_argument("--output-dir", default="outputs/recovery/performance_cash_markers_20261020")
     args = parser.parse_args()
     output = Path(args.output_dir)
@@ -89,6 +90,53 @@ def main():
         page.wait_for_timeout(300)
         page.screenshot(path=str(output / f"cash-markers-live-{args.width}.png"))
 
+        if args.check_reference_overlay:
+            toggle = page.locator("#performanceCapitalReferenceToggle")
+            assert not toggle.is_checked(), "reference curve must be hidden by default"
+            initial = page.evaluate("""() => {
+                const chart = echarts.getInstanceByDom(document.querySelector('#performanceChart'));
+                const option = chart.getOption();
+                if (option.series.filter(s => s.name.startsWith('出金前资本参考')).some(s => s.data.length)) throw Error('reference visible by default');
+                chart.dispatchAction({type:'dataZoom', start:60, end:100});
+                return {formal: option.series[0].data, drawdown:option.series[3].data,
+                    metrics:Array.from(document.querySelectorAll('.performance-primary-metrics strong')).map(e=>e.textContent)};
+            }""")
+            series_requests = []
+            page.on("request", lambda request: series_requests.append(request.url)
+                    if "/performance/series?" in request.url else None)
+            toggle.check()
+            overlay = page.evaluate("""() => {
+                const option = echarts.getInstanceByDom(document.querySelector('#performanceChart')).getOption();
+                return {formal:option.series[0].data, drawdown:option.series[3].data,
+                    index:option.series.find(s=>s.name === '出金前资本参考指数（非正式）').data,
+                    referenceDrawdown:option.series.find(s=>s.name === '出金前资本参考回撤（非正式）').data,
+                    zoom:option.dataZoom[0].start,
+                    metrics:Array.from(document.querySelectorAll('.performance-primary-metrics strong')).map(e=>e.textContent)};
+            }""")
+            assert overlay["formal"] == initial["formal"] and overlay["drawdown"] == initial["drawdown"]
+            assert overlay["metrics"] == initial["metrics"] and abs(overlay["zoom"]-60) < .5
+            expected_index = [row.get("capital_reference", {}).get("index") for row in rows]
+            expected_drawdown = [None if row.get("capital_reference", {}).get("drawdown") is None
+                                 else row["capital_reference"]["drawdown"] * 100 for row in rows]
+            assert overlay["index"] == expected_index and overlay["referenceDrawdown"] == expected_drawdown
+            assert any(value is not None for value in expected_index)
+            page.wait_for_timeout(350)
+            cyan = page.evaluate("""() => {
+                const canvas=document.querySelector('#performanceChart canvas');
+                const p=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+                let count=0;
+                for(let i=0;i<p.length;i+=4) if(p[i]>30 && p[i]<110 && p[i+1]>150 && p[i+2]>150 && Math.abs(p[i+1]-p[i+2])<50 && p[i+3]>0) count++;
+                return count;
+            }""")
+            assert cyan > 50, "reference overlay canvas is blank"
+            page.screenshot(path=str(output / f"reference-overlay-{args.width}.png"))
+            toggle.uncheck()
+            page.evaluate("""() => {
+                const option=echarts.getInstanceByDom(document.querySelector('#performanceChart')).getOption();
+                if(option.series.filter(s=>s.name.startsWith('出金前资本参考')).some(s=>s.data.length)) throw Error('reference still plotted after uncheck');
+            }""")
+            assert not series_requests, "checkbox triggered a performance reload"
+
         if args.check_capital_reference_date:
             date = args.check_capital_reference_date
             selected = next(row for row in rows if row["trade_date"] == date)
@@ -96,7 +144,8 @@ def main():
             assert abs(ref["daily_return"] - selected["daily_pnl"] / ref["capital"]) < 1e-12
             single_url = args.base_url + f"/v1/accounts/{args.account_id}/performance/series?trade_date={date}"
             single = page.request.get(single_url).json()["data"]["series"][0]
-            assert single["capital_reference"] == ref, "reference depends on selected date range"
+            daily_fields = [key for key in ref if key not in {"index", "drawdown", "series_policy", "series_status"}]
+            assert all(single["capital_reference"][key] == ref[key] for key in daily_fields), "daily reference depends on selected date range"
             csv_url = args.base_url + f"/v1/accounts/{args.account_id}/performance/series.csv?trade_date={date}"
             exported = list(csv.DictReader(io.StringIO(page.request.get(csv_url).text())))
             assert len(exported) == 1 and exported[0]["reference_position_value_date"] == ref["position_value_date"]
@@ -105,14 +154,14 @@ def main():
             row = page.locator(f'[data-cash-impact-date="{date}"]')
             row.wait_for(state="visible")
             text = row.inner_text()
-            assert f'{ref["daily_return"] * 100:.2f}%' in text, text
+            assert f'{ref["retained_capital_return"] * 100:.2f}%' in text, text
             assert f'{selected["return_rate"] * 100:.2f}%' in text, text
             assert "固定持仓试算" in text and ref["position_value_date"] in text, text
             tooltip = page.evaluate("""(date) => {
                 const option = echarts.getInstanceByDom(document.querySelector('#performanceChart')).getOption();
                 return option.tooltip[0].formatter([{axisValue: date, dataIndex: 999}]);
             }""", date)
-            assert "资本参考 · 非正式净值" in tooltip and f'{ref["daily_return"] * 100:.2f}%' in tooltip, tooltip
+            assert "资本参考 · 非正式净值" in tooltip and f'{ref["retained_capital_return"] * 100:.2f}%' in tooltip, tooltip
             row.scroll_into_view_if_needed()
             page.screenshot(path=str(output / f"capital-impact-{args.width}.png"))
 

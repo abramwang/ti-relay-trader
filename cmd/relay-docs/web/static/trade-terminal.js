@@ -52,6 +52,7 @@
     performanceEconomicNAV: null,
     performanceNAVReconciliation: null,
     performanceChart: null,
+    performanceShowCapitalReference: false,
     performanceLoadSeq: 0,
     performanceAbortController: null,
     performanceReviewBusy: false,
@@ -254,6 +255,7 @@
     perfExcessReturn: byID("perfExcessReturn"),
     performanceChart: byID("performanceChart"),
     performanceChartRange: byID("performanceChartRange"),
+    performanceCapitalReferenceToggle: byID("performanceCapitalReferenceToggle"),
     performanceQualityPanel: byID("performanceQualityPanel"),
     performanceQualityDate: byID("performanceQualityDate"),
     performanceQualityStatus: byID("performanceQualityStatus"),
@@ -4750,7 +4752,8 @@
     if (!ref) return "";
     return [
       '<div style="margin-top:6px;border-top:1px solid #363a45;padding-top:6px">资本参考 · 非正式净值</div>',
-      "资金前资本参考收益　" + optionalCapitalPercent(ref.daily_return),
+      "出金前资本参考收益　" + optionalCapitalPercent(ref.retained_capital_return),
+      "参考收益分母　" + formatNumber(ref.retained_capital),
       "日初资本　" + formatNumber(ref.capital),
       "正式收益分母　" + (ref.formal_return_denominator > 0 ? formatNumber(ref.formal_return_denominator) : "--"),
       "股票/ETF仓位参考　" + optionalCapitalPosition(ref.position_ratio_before) + " → " + optionalCapitalPosition(ref.position_ratio_after),
@@ -4776,9 +4779,9 @@
       return `<tr data-cash-impact-date="${escapeHTML(item.trade_date)}">
         <td>${escapeHTML(displayDate(item.trade_date))}</td>
         <td>${flows}</td>
-        <td class="num">${formatNumber(ref.capital)}<br>${ref.formal_return_denominator > 0 ? formatNumber(ref.formal_return_denominator) : "--"}</td>
+        <td class="num">${ref.formal_return_denominator > 0 ? formatNumber(ref.formal_return_denominator) : "--"}<br>${formatNumber(ref.retained_capital)}</td>
         <td class="num ${classForNumber(item.return_rate)}">${item.performance_status === "blocked" ? "--" : formatPercent(item.return_rate)}</td>
-        <td class="num ${classForNumber(ref.daily_return)}">${optionalCapitalPercent(ref.daily_return)}</td>
+        <td class="num ${classForNumber(ref.retained_capital_return)}">${optionalCapitalPercent(ref.retained_capital_return)}</td>
         <td class="num">${optionalCapitalPosition(ref.position_ratio_before)} → ${optionalCapitalPosition(ref.position_ratio_after)}</td>
         <td>${formatNumber(ref.position_value)}<br>${escapeHTML(capitalPositionSource(ref))}</td>
       </tr>`;
@@ -4846,6 +4849,9 @@
     if (!els.performanceChart || !els.performanceChartRange) {
       return;
     }
+    if (els.performanceCapitalReferenceToggle) {
+      els.performanceCapitalReferenceToggle.checked = state.performanceShowCapitalReference;
+    }
     if (state.activeView !== "performance" && state.activeView !== "snapshots") {
       return;
     }
@@ -4865,6 +4871,14 @@
       if (item.performance_status === "blocked") return null;
       const value = numericOrNull(item.cumulative_return);
       return value === null ? null : 1 + value;
+    });
+    const showReference = state.performanceShowCapitalReference;
+    const referenceIndex = rows.map((item) => item.capital_reference?.series_status === "available"
+      ? numericOrNull(item.capital_reference.index) : null);
+    const referenceDrawdown = rows.map((item) => {
+      const value = item.capital_reference?.series_status === "available"
+        ? numericOrNull(item.capital_reference.drawdown) : null;
+      return value === null ? null : value * 100;
     });
     const benchmarkNAV = rows.map((item) => {
       const value = numericOrNull(item.benchmark_cumulative_return);
@@ -4912,13 +4926,19 @@
           const axisIndex = point ? labels.indexOf(String(point.axisValue)) : -1;
           const index = axisIndex >= 0 ? axisIndex : (point?.data?.row_index ?? point?.dataIndex ?? 0);
           const item = rows[index] || {};
+          const comparison = showReference ? [
+            "出金前资本参考指数（非正式）　" + formatNumber(referenceIndex[index], cashRepoHistory ? 6 : 4),
+            "参考当日收益　" + optionalCapitalPercent(item.capital_reference?.retained_capital_return) +
+              "　参考回撤 " + optionalCapitalPercent(item.capital_reference?.drawdown)
+          ] : [];
           return [
             "<strong>" + escapeHTML(displayDate(item.trade_date)) + "</strong>",
             "账户净值　" + formatNumber(accountNAV[index], cashRepoHistory ? 6 : 4) + "　净资产 " + formatNumber(item.net_asset),
             "当日盈亏　" + (item.performance_status === "blocked" ? "--" : formatSigned(item.daily_pnl)) + "　收益率 " + (item.performance_status === "blocked" ? "--" : formatPercent(item.return_rate)),
             "上证基准　" + formatNumber(benchmarkNAV[index], 4) + "　收盘 " + formatNumber(item.benchmark_close, 2),
             "超额收益　" + formatPercent(item.excess_cumulative_return),
-            "账户回撤　" + formatPercent(item.drawdown) + "　基准 " + formatPercent(item.benchmark_drawdown)
+            "账户回撤　" + formatPercent(item.drawdown) + "　基准 " + formatPercent(item.benchmark_drawdown),
+            ...comparison
           ].join("<br>") + performanceCashFlowTooltip(item);
         }
       },
@@ -4952,7 +4972,7 @@
         {
           type: "value",
           scale: true,
-          name: "净值",
+          name: showReference ? "净值 / 参考指数" : "净值",
           nameTextStyle: { color: "#6f7480", fontSize: 10 },
           axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => Number(value).toFixed(cashRepoHistory ? 6 : 2) },
           axisLine: { show: false },
@@ -5050,7 +5070,29 @@
           itemStyle: { color: "#787b86" },
           emphasis: { focus: "series" }
         },
-        ...performanceCashMarkerSeries(rows, labels, accountNAV)
+        ...performanceCashMarkerSeries(rows, labels, accountNAV),
+        {
+          name: "出金前资本参考指数（非正式）",
+          type: "line",
+          data: showReference ? referenceIndex : [],
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 2, color: "#43c6cf", type: "dashed" },
+          itemStyle: { color: "#43c6cf" },
+          emphasis: { focus: "series" }
+        },
+        {
+          name: "出金前资本参考回撤（非正式）",
+          type: "line",
+          xAxisIndex: 1,
+          yAxisIndex: 2,
+          data: showReference ? referenceDrawdown : [],
+          showSymbol: false,
+          connectNulls: false,
+          lineStyle: { width: 1.5, color: "#43c6cf", type: "dashed" },
+          itemStyle: { color: "#43c6cf" },
+          emphasis: { focus: "series" }
+        }
       ]
     }, true);
   }
@@ -7448,6 +7490,16 @@
       });
     }
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
+    if (els.performanceCapitalReferenceToggle) {
+      els.performanceCapitalReferenceToggle.addEventListener("change", () => {
+        const zoom = state.performanceChart?.getOption().dataZoom?.[0];
+        state.performanceShowCapitalReference = els.performanceCapitalReferenceToggle.checked;
+        renderPerformanceChart();
+        if (zoom && state.performanceChart) {
+          state.performanceChart.dispatchAction({ type: "dataZoom", dataZoomIndex: 0, start: zoom.start, end: zoom.end });
+        }
+      });
+    }
     for (const button of els.performanceTableViewButtons) {
       button.addEventListener("click", () => setPerformanceTableView(button.dataset.performanceTableView));
     }

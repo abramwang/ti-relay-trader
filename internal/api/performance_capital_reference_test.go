@@ -21,7 +21,8 @@ func capitalSample() (ledger.PerformanceNAV, ledger.PerformanceNAV) {
 		PnLComponents: map[string]any{"market_valuation": map[string]any{"close_position_value": 22236308.0}}}
 	nav := ledger.PerformanceNAV{AccountID: "acct", TradeDate: "2026-07-02", Status: "provisional", FormulaVersion: prior.FormulaVersion,
 		OpenEconomicNAV: 153307151.58, ExternalNetFlow: -114000000, AccountDayPnL: -1778039.17,
-		CloseEconomicNAV: 37529112.41, ReturnDenominator: 39307151.58, DailyReturn: -.045234495468, CumulativeNAV: .904229077133}
+		CloseEconomicNAV: 37529112.41, ReturnDenominator: 39307151.58, DailyReturn: -.045234495468, CumulativeNAV: .904229077133,
+		PnLComponents: map[string]any{"bank_flow_details": []map[string]any{{"amount": -114000000.0, "weight": 1.0}}}}
 	return nav, prior
 }
 
@@ -92,6 +93,107 @@ func TestCapitalReferenceZeroBlockedAndNonpositiveCapital(t *testing.T) {
 	nav.Status, nav.OpenEconomicNAV = "provisional", 0
 	if ref := performanceCapitalReference(nav, &prior); ref.DailyReturn != nil {
 		t.Fatalf("zero denominator: %+v", ref)
+	}
+}
+
+func TestCapitalReferenceIndexIsSeparateSelectedRangeChain(t *testing.T) {
+	series := []ledger.DailyPerformance{
+		{TradeDate: "2026-07-01", FormulaVersion: "broker_reconstructed_economic_nav.v1", PerformanceStatus: "provisional", ReturnRate: .1, CumulativeReturn: .1, CapitalReference: &ledger.PerformanceCapitalReference{RetainedCapitalReturn: floatPtr(.1)}},
+		{TradeDate: "2026-07-02", FormulaVersion: "broker_reconstructed_economic_nav.v1", PerformanceStatus: "provisional", ReturnRate: -.5, CumulativeReturn: -.45, Drawdown: -.5, CapitalReference: &ledger.PerformanceCapitalReference{RetainedCapitalReturn: floatPtr(-.1)}},
+		{TradeDate: "2026-07-03", FormulaVersion: "broker_reconstructed_economic_nav.v1", PerformanceStatus: "provisional", CumulativeReturn: -.45, Drawdown: -.5, CapitalReference: &ledger.PerformanceCapitalReference{RetainedCapitalReturn: floatPtr(0)}},
+	}
+	for repeat := 0; repeat < 2; repeat++ {
+		buildCapitalReferenceSeries(series)
+		if math.Abs(*series[0].CapitalReference.Index-1.1) > 1e-12 || math.Abs(*series[1].CapitalReference.Index-.99) > 1e-12 || math.Abs(*series[2].CapitalReference.Drawdown-(-.1)) > 1e-12 {
+			t.Fatalf("diagnostic chain = %+v %+v", series[1].CapitalReference, series[2].CapitalReference)
+		}
+		if series[1].ReturnRate != -.5 || series[1].CumulativeReturn != -.45 || series[1].Drawdown != -.5 {
+			t.Fatal("official performance changed")
+		}
+	}
+	buildCapitalReferenceSeries(series[1:])
+	if math.Abs(*series[1].CapitalReference.Index-.9) > 1e-12 || series[1].CapitalReference.SeriesPolicy != "retained_withdrawal_capital_chain.v1" {
+		t.Fatal("selected-range base is not 1")
+	}
+}
+
+func TestRetainedCapitalCountsInflowsAndAddsBackWeightedWithdrawals(t *testing.T) {
+	nav, prior := capitalSample()
+	ref := performanceCapitalReference(nav, &prior)
+	if ref.RetainedCapital == nil || *ref.RetainedCapital != nav.OpenEconomicNAV || math.Abs(*ref.RetainedCapitalReturn-(-.011597887976362074)) > 1e-12 {
+		t.Fatalf("July2 retained capital = %+v", ref)
+	}
+	// The historical large deposit must not divide a trading loss by the tiny
+	// remaining pre-deposit balance or force a negative diagnostic index.
+	nav.OpenEconomicNAV, nav.ReturnDenominator, nav.ExternalNetFlow, nav.AccountDayPnL = 36047.57, 70036047.57, 70000000, -215992.93
+	nav.PnLComponents = nil
+	ref = performanceCapitalReference(nav, nil)
+	if ref.RetainedCapitalReturn == nil || *ref.RetainedCapitalReturn <= -.01 || *ref.DailyReturn > -5 {
+		t.Fatalf("large inflow distorted reference: %+v", ref)
+	}
+	// Same-day opposing flows require gross withdrawal weights, not just net
+	// flow or max(open capital, official denominator).
+	nav.OpenEconomicNAV, nav.ReturnDenominator, nav.ExternalNetFlow = 1000, 1200, 200
+	nav.PnLComponents = map[string]any{"bank_flow_details": []map[string]any{
+		{"amount": 400.0, "weight": .75}, {"amount": -200.0, "weight": .5},
+	}}
+	for _, pnl := range []float64{-130, 130} {
+		nav.AccountDayPnL = pnl
+		ref = performanceCapitalReference(nav, nil)
+		if ref.RetainedCapital == nil || *ref.RetainedCapital != 1300 || math.Abs(*ref.RetainedCapitalReturn-pnl/1300) > 1e-12 {
+			t.Fatalf("weighted/opposing flow reference = %+v", ref)
+		}
+	}
+}
+
+func TestRetainedCapitalRequiresEvidenceAndSupportsApprovedOpeningAnchor(t *testing.T) {
+	nav, _ := capitalSample()
+	nav.PnLComponents = nil
+	if ref := performanceCapitalReference(nav, nil); ref.RetainedCapitalReturn != nil || ref.RetainedCapitalStatus != "missing_withdrawal_weights" {
+		t.Fatalf("withdrawal weight invented: %+v", ref)
+	}
+	nav.PnLComponents = map[string]any{"return_policy": "daily_end_net_flow_convention"}
+	if ref := performanceCapitalReference(nav, nil); ref.RetainedCapital == nil || *ref.RetainedCapital != nav.ReturnDenominator {
+		t.Fatalf("approved day-end convention lost: %+v", ref)
+	}
+	nav.PnLComponents = map[string]any{"bank_flow_details": []map[string]any{{"amount": -100.0, "weight": .5}}}
+	if ref := performanceCapitalReference(nav, nil); ref.RetainedCapitalReturn != nil || ref.RetainedCapitalStatus != "incomplete_flow_evidence" {
+		t.Fatalf("partial cash evidence accepted: %+v", ref)
+	}
+	nav.ReturnDenominator, nav.ExternalNetFlow, nav.AccountDayPnL = 0, 0, 0
+	nav.PnLComponents = map[string]any{"observed_opening_anchor": true}
+	ref := performanceCapitalReference(nav, nil)
+	if ref.RetainedCapitalReturn == nil || *ref.RetainedCapitalReturn != 0 || *ref.RetainedCapital != nav.OpenEconomicNAV {
+		t.Fatalf("approved zero-PnL anchor unavailable: %+v", ref)
+	}
+}
+
+func TestCapitalReferenceIndexDoesNotBridgeUnknownOrInvalidDays(t *testing.T) {
+	for _, reason := range []string{"missing_reference", "missing_return", "blocked", "unpublished", "minus_100_percent", "nonfinite"} {
+		t.Run(reason, func(t *testing.T) {
+			rows := make([]ledger.DailyPerformance, 3)
+			for i := range rows {
+				rows[i] = ledger.DailyPerformance{FormulaVersion: "performance_economic_nav.v2.7", PerformanceStatus: "provisional", CapitalReference: &ledger.PerformanceCapitalReference{RetainedCapitalReturn: floatPtr(.01)}}
+			}
+			switch reason {
+			case "missing_reference":
+				rows[1].CapitalReference = nil
+			case "missing_return":
+				rows[1].CapitalReference.RetainedCapitalReturn = nil
+			case "blocked":
+				rows[1].PerformanceStatus = "blocked"
+			case "unpublished":
+				rows[1].FormulaVersion = "legacy_cash_snapshot"
+			case "minus_100_percent":
+				rows[1].CapitalReference.RetainedCapitalReturn = floatPtr(-1)
+			case "nonfinite":
+				rows[1].CapitalReference.RetainedCapitalReturn = floatPtr(math.NaN())
+			}
+			buildCapitalReferenceSeries(rows)
+			if rows[0].CapitalReference.Index == nil || rows[2].CapitalReference.Index != nil || rows[2].CapitalReference.Drawdown != nil || rows[2].CapitalReference.SeriesStatus != "interrupted" {
+				t.Fatal("unknown interval bridged or reset")
+			}
+		})
 	}
 }
 

@@ -2716,6 +2716,13 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"reference_position_value_date",
 		"reference_position_ratio_before",
 		"reference_position_ratio_after",
+		"reference_retained_capital",
+		"reference_retained_capital_return",
+		"reference_retained_capital_status",
+		"reference_index",
+		"reference_drawdown",
+		"reference_series_policy",
+		"reference_series_status",
 	})
 	for _, item := range series {
 		row := []string{
@@ -3326,6 +3333,7 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 		series = overlayPerformanceCapitalReferences(series, navs, prior)
 	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
+	buildCapitalReferenceSeries(series)
 	if benchmarkSecurityID := strings.TrimSpace(values.Get("benchmark_security_id")); benchmarkSecurityID != "" {
 		if s.market == nil {
 			return nil, PerformanceSeriesSummary{}, errMarketClientUnavailable

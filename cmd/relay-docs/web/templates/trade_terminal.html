@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261020-capital-reference">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261020-retained-capital-overlay">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -420,6 +420,10 @@
               </div>
               <div class="performance-chart-legend" aria-label="图例">
                 <span class="account">账户净值</span>
+                <label class="capital-reference-toggle" title="区间基期=1 · 正常计入入金、保留计权出金资本 · 非正式净值">
+                  <input id="performanceCapitalReferenceToggle" type="checkbox">
+                  出金前资本参考（非正式）
+                </label>
                 <span class="benchmark">上证基准</span>
                 <span class="excess">超额收益</span>
                 <span class="drawdown">回撤</span>
@@ -526,9 +530,9 @@
                   <tr>
                     <th>交易日</th>
                     <th>资金变动 / 东八区时间</th>
-                    <th class="num">日初资本 / 正式分母</th>
+                    <th class="num">正式 / 参考分母</th>
                     <th class="num">正式收益率</th>
-                    <th class="num">资金前资本参考收益</th>
+                    <th class="num">出金前资本参考收益</th>
                     <th class="num">股票/ETF仓位前 / 后（参考）</th>
                     <th>固定市值 / 来源（日净额试算）</th>
                   </tr>
@@ -869,6 +873,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261020-capital-reference"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261020-retained-capital-overlay"></script>
 </body>
 </html>

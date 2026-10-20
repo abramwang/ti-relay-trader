@@ -291,6 +291,13 @@ type PerformanceCapitalReference struct {
 	PositionValueDate       string   `json:"position_value_date,omitempty"`
 	PositionRatioBefore     *float64 `json:"position_ratio_before"`
 	PositionRatioAfter      *float64 `json:"position_ratio_after"`
+	RetainedCapital         *float64 `json:"retained_capital"`
+	RetainedCapitalReturn   *float64 `json:"retained_capital_return"`
+	RetainedCapitalStatus   string   `json:"retained_capital_status"`
+	Index                   *float64 `json:"index"`
+	Drawdown                *float64 `json:"drawdown"`
+	SeriesPolicy            string   `json:"series_policy,omitempty"`
+	SeriesStatus            string   `json:"series_status,omitempty"`
 }
 
 type DailyPerformance struct {

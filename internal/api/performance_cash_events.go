@@ -10,7 +10,7 @@ import (
 
 // Project the evidence already used by the published NAV; never infer cash from
 // asset changes, ETF estimates, or internal counter transfers.
-func performanceCashEvents(nav ledger.PerformanceNAV) []ledger.PerformanceCashEvent {
+func performanceExternalFlowDetails(nav ledger.PerformanceNAV) ([]map[string]any, string) {
 	components := nav.PnLComponents
 	details := components["bank_flow_details"]
 	source := "bank_flow_details"
@@ -37,6 +37,12 @@ func performanceCashEvents(nav ledger.PerformanceNAV) []ledger.PerformanceCashEv
 			}
 		}
 	}
+	return rows, source
+}
+
+func performanceCashEvents(nav ledger.PerformanceNAV) []ledger.PerformanceCashEvent {
+	components := nav.PnLComponents
+	rows, source := performanceExternalFlowDetails(nav)
 	events := make([]ledger.PerformanceCashEvent, 0, len(rows)+2)
 	total := 0.0
 	for _, row := range rows {
