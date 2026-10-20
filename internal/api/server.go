@@ -184,6 +184,27 @@ var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
 var errPerformanceScopeConflict = errors.New("performance query spans independently published NAV scopes")
 var errPerformanceServiceUnavailable = errors.New("performance service is unavailable")
 
+type publishedNAVRange struct {
+	DateFrom string `json:"date_from"`
+	DateTo   string `json:"date_to"`
+	Count    int    `json:"count"`
+	Scope    string `json:"scope"`
+}
+
+type performanceScopeConflict struct {
+	Ranges []publishedNAVRange `json:"published_ranges"`
+}
+
+func (err *performanceScopeConflict) Error() string {
+	parts := make([]string, 0, len(err.Ranges))
+	for _, item := range err.Ranges {
+		parts = append(parts, fmt.Sprintf("%s至%s（%d个日期）", item.DateFrom, item.DateTo, item.Count))
+	}
+	return "历史净值尚未连续，当前仅发布：" + strings.Join(parts, "、") + "。请分段查看，未恢复日期不能按零收益拼接。"
+}
+
+func (err *performanceScopeConflict) Unwrap() error { return errPerformanceScopeConflict }
+
 type Server struct {
 	cfg             config.Config
 	logger          *slog.Logger
@@ -3294,7 +3315,12 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 
 func (s *Server) writePerformanceSeriesError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errPerformanceScopeConflict) {
-		httpx.WriteError(w, r, http.StatusConflict, "PERFORMANCE_SCOPE_CONFLICT", "所选区间跨越独立净值口径及未恢复区间，请分别查询剔除债券历史段与后续账户净值", err.Error())
+		var conflict *performanceScopeConflict
+		if errors.As(err, &conflict) {
+			httpx.WriteError(w, r, http.StatusConflict, "PERFORMANCE_SCOPE_CONFLICT", conflict.Error(), conflict)
+		} else {
+			httpx.WriteError(w, r, http.StatusConflict, "PERFORMANCE_SCOPE_CONFLICT", "历史净值尚未连续，请分别查询已发布的历史段与后续账户净值", err.Error())
+		}
 		return
 	}
 	if errors.Is(err, errSettlementStoreUnavailable) {
@@ -3509,18 +3535,35 @@ func isOfficialPerformanceNAVFormula(value string) bool {
 
 func validatePerformanceNAVScope(navs []ledger.PerformanceNAV) error {
 	carveout, account := false, false
+	ranges := make(map[bool]publishedNAVRange)
 	for _, nav := range navs {
 		if nav.Status == "blocked" || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
 			continue
 		}
-		if nav.FormulaVersion == "broker_cash_repo_carveout.v1" {
+		isCarveout := nav.FormulaVersion == "broker_cash_repo_carveout.v1"
+		if isCarveout {
 			carveout = true
 		} else {
 			account = true
 		}
+		item := ranges[isCarveout]
+		if item.DateFrom == "" || nav.TradeDate < item.DateFrom {
+			item.DateFrom = nav.TradeDate
+		}
+		if nav.TradeDate > item.DateTo {
+			item.DateTo = nav.TradeDate
+		}
+		item.Count++
+		item.Scope = "account_economic_nav"
+		if isCarveout {
+			item.Scope = "cash_repo_excluding_prior_bonds"
+		}
+		ranges[isCarveout] = item
 	}
 	if carveout && account {
-		return errPerformanceScopeConflict
+		items := []publishedNAVRange{ranges[true], ranges[false]}
+		sort.Slice(items, func(i, j int) bool { return items[i].DateFrom < items[j].DateFrom })
+		return &performanceScopeConflict{Ranges: items}
 	}
 	return nil
 }

@@ -5052,6 +5052,7 @@
     renderPerformanceChart();
     renderPerformanceQuality();
     setPerformanceTableView(state.performanceTableView);
+    els.performanceStatus.title = state.performanceError || "";
     els.performanceStatus.textContent = state.performanceError
       ? "查询失败：" + state.performanceError
       : (noAuthoritativeDefault

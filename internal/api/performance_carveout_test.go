@@ -65,6 +65,12 @@ func TestPerformanceCarveoutCannotBeSplicedIntoAccountNAV(t *testing.T) {
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "PERFORMANCE_SCOPE_CONFLICT") {
 		t.Fatalf("scope response = %d %s", response.Code, response.Body.String())
 	}
+	response = httptest.NewRecorder()
+	server.writePerformanceSeriesError(response, request, validatePerformanceNAVScope(navs))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "published_ranges") ||
+		!strings.Contains(response.Body.String(), "2025-07-07") || !strings.Contains(response.Body.String(), "2026-09-09") {
+		t.Fatalf("missing actionable history coverage: %d %s", response.Code, response.Body.String())
+	}
 	// A daily read may load all earlier NAVs: a different scope is not a previous-close anchor.
 	series := overlayPerformanceNAVSeries([]ledger.DailyPerformance{{TradeDate: "2026-09-09"}}, navs)
 	if series[0].PreviousNetAsset != 0 || series[0].OvernightAdjustment != 0 {
