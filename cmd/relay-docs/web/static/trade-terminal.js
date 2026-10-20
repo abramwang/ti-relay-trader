@@ -3893,7 +3893,7 @@
           if (!isCurrentLoad()) return;
           const nav = (published.navs || []).find((item) => item.is_current === true &&
             item.account_id === state.activeAccount && compactDate(item.trade_date) === dailyDate &&
-            (String(item.formula_version || "").startsWith("performance_economic_nav.v2") || item.formula_version === "broker_statement_nav.v1"));
+            (String(item.formula_version || "").startsWith("performance_economic_nav.v2") || item.formula_version === "broker_statement_nav.v1" || item.formula_version === "broker_cash_repo_carveout.v1"));
           if (nav) {
             state.performanceEconomicNAV = publishedPerformanceEconomicView(nav);
             updateReconciliation();
@@ -3910,7 +3910,8 @@
           }
         }
       };
-      await Promise.all([
+      const publishedCarveout = state.performanceDaily && state.performanceDaily.formula_version === "broker_cash_repo_carveout.v1";
+      const detailRequests = [
         loadDetail("/v1/performance/settings", (result) => {
           state.performanceSettings = result;
           state.performanceReviewSettingsError = "";
@@ -3918,6 +3919,9 @@
           state.performanceSettings = null;
           state.performanceReviewSettingsError = err.message;
         }),
+        loadEconomic()
+      ];
+      if (!publishedCarveout) detailRequests.push(
         loadDetail(root + "daily" + dailyQuery, (result) => {
           state.performanceDaily = result.performance || state.performanceDaily;
         }, "日终快照读取失败"),
@@ -3930,12 +3934,12 @@
         loadDetail(root + "cost-ledger/preview" + dailyQuery, (result) => {
           state.performanceCostLedger = result.cost_ledger || null;
         }, "持仓成本账读取失败"),
-        loadEconomic(),
         loadDetail(root + "nav-reconciliations" + dailyQuery, (result) => {
           reconciliations = result.reconciliations || [];
           updateReconciliation();
         }, "经济净值对账读取失败")
-      ]);
+      );
+      await Promise.all(detailRequests);
       if (!isCurrentLoad()) return;
       state.performanceDetailsLoading = false;
       renderPerformance();
@@ -4329,6 +4333,15 @@
       nav_contribution_residual_exceeds_warning: "净值与贡献残差超限",
       net_performance_fee_incomplete: "净收益费用不完整",
       performance_nav_blocked: "正式绩效已阻断",
+      user_confirmed_cash_repo_carveout: "用户确认的现金及逆回购历史段",
+      benchmark_bars_unavailable: "Meridian 基准行情暂不可用",
+      prior_bond_strategy_excluded: "已剔除另一债券策略",
+      cash_posting_income_basis: "结息按实际到账确认",
+      daily_end_net_flow_convention: "采用日末净流量计权约定",
+      not_full_account_accrual_nav: "不是全账户权责净值",
+      observed_opening_anchor_no_daily_return: "观察锚点，不推算此前当日收益",
+      strategy_capital_transfer_time_date_only: "策略间资本转移仅有日期精度",
+      interest_ownership_confirmed_accrual_cutoff_unverified: "结息归属已确认，未追溯应计期间",
       excluded_from_official_performance_series: "未纳入正式绩效曲线",
       official_performance_nav_unavailable: "缺少正式 v2 净值",
       cash_only_snapshot_not_performance_nav: "现金快照不作为绩效净值",
@@ -4359,7 +4372,8 @@
     return {
       meridian_level1_pre_close_and_last: "Meridian Level1 · pre_close / last",
       meridian_1d_pre_close_and_close: "Meridian 1d · pre_close / close",
-      meridian_pre_close_and_close: "Meridian · pre_close / close"
+      meridian_pre_close_and_close: "Meridian · pre_close / close",
+      verified_broker_cash_and_actual_repo_principal: "券商现金及实际逆回购本金"
     }[value] || value || "--";
   }
 
@@ -4459,6 +4473,16 @@
         .concat(Array.isArray(economic.quality_flags) ? economic.quality_flags : [])
         .concat(Array.isArray(nav.quality_flags) ? nav.quality_flags : [])
     ));
+    if (daily.formula_version === "broker_cash_repo_carveout.v1") {
+      const blockedDays = series.filter((item) => item.performance_status === "blocked").length;
+      return [
+        { label: "历史资产与资本桥", status: nav.status === "finalized" && !blockedDays ? "passed" : "blocked", detail: blockedDays ? formatInt(blockedDays) + " 日缺少已发布净值" : "逐日现金、逆回购及资本流闭合；按确认口径发布" },
+        { label: "策略与现金归属", status: "passed", detail: "初始现金及整笔56.93元结息归属已确认；债券收付作为策略资本" },
+        { label: "收益确认与计权", status: "warning", detail: "结息按到账日确认，采用日末净流量约定；不是完整权责或精确盘中计权" },
+        { label: "历史订单边界", status: "warning", detail: "本次发布不证明未成交、撤单、废单历史完整，也不放开7月8日后的ETF清算门槛" },
+        { label: "Meridian 基准行情", status: Number(summary.benchmark_observation_days) === series.length ? "passed" : "warning", detail: summary.benchmark_error ? "Meridian历史基准暂不可用；未补造行情或超额收益，不影响已确认净值" : formatInt(summary.benchmark_observation_days) + "/" + formatInt(series.length) + " 个交易日" }
+      ];
+    }
     const checks = [];
 
     const hasEconomicNAV = numericOrNull(nav.open_economic_nav) !== null && numericOrNull(nav.close_economic_nav) !== null;
@@ -4730,6 +4754,7 @@
       return value === null ? null : value * 100;
     });
     const summary = state.performanceSummary || {};
+    const cashRepoHistory = rows.some((item) => item.formula_version === "broker_cash_repo_carveout.v1");
     els.performanceChartRange.textContent = [
       state.performanceSeriesFallback ? "最近正式序列" : "所选区间",
       formatInt(rows.length) + " 个交易日",
@@ -4753,7 +4778,7 @@
           const item = rows[index] || {};
           return [
             "<strong>" + escapeHTML(displayDate(item.trade_date)) + "</strong>",
-            "账户净值　" + formatNumber(accountNAV[index], 4) + "　净资产 " + formatNumber(item.net_asset),
+            "账户净值　" + formatNumber(accountNAV[index], cashRepoHistory ? 6 : 4) + "　净资产 " + formatNumber(item.net_asset),
             "上证基准　" + formatNumber(benchmarkNAV[index], 4) + "　收盘 " + formatNumber(item.benchmark_close, 2),
             "超额收益　" + formatPercent(item.excess_cumulative_return),
             "账户回撤　" + formatPercent(item.drawdown) + "　基准 " + formatPercent(item.benchmark_drawdown)
@@ -4792,7 +4817,7 @@
           scale: true,
           name: "净值",
           nameTextStyle: { color: "#6f7480", fontSize: 10 },
-          axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => Number(value).toFixed(2) },
+          axisLabel: { color: "#6f7480", fontSize: 10, formatter: (value) => Number(value).toFixed(cashRepoHistory ? 6 : 2) },
           axisLine: { show: false },
           axisTick: { show: false },
           splitNumber: 4,
@@ -4929,7 +4954,9 @@
       ? ""
       : (state.performanceSelectedDate || compactDate(daily.trade_date) || compactDate(els.perfDateTo.value));
     const officialSeriesItem = series.find((item) => compactDate(item.trade_date) === selectedDate) || {};
-    const officialPublished = String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
+    const cashRepoCarveout = officialSeriesItem.formula_version === "broker_cash_repo_carveout.v1";
+    const officialPublished = (String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
+      || officialSeriesItem.formula_version === "broker_statement_nav.v1" || cashRepoCarveout)
       && officialSeriesItem.performance_status !== "blocked";
     const notApplicable = performanceAccountNotApplicable(
       daily,
@@ -4939,8 +4966,8 @@
       state.performanceTradeQuality || {}
     );
     const calculationState = performanceCalculationState(nav, costLedger, securityPnL, officialPublished, notApplicable);
-    const actualFee = numericOrNull(securityPnL.actual_fee) ?? numericOrNull(securityPnL.effective_fee) ?? numericOrNull(daily.fee_total);
-    const turnover = numericOrNull(tradingObservation.turnover) ?? numericOrNull(daily.turnover);
+    const actualFee = cashRepoCarveout ? null : (numericOrNull(securityPnL.actual_fee) ?? numericOrNull(securityPnL.effective_fee) ?? numericOrNull(daily.fee_total));
+    const turnover = cashRepoCarveout ? null : (numericOrNull(tradingObservation.turnover) ?? numericOrNull(daily.turnover));
     const feeRequired = Number(securityPnL.fee_required_orders) || 0;
     const feeCovered = Number(securityPnL.fee_covered_orders) || 0;
     els.performanceRangeHint.textContent = [
@@ -4949,6 +4976,7 @@
       selectedDate ? displayDate(selectedDate) + (officialPublished ? " 已发布" : (notApplicable ? " 当日不适用" : " 当日试算")) : "等待交易日",
       state.performanceSeriesFallback && latest.trade_date ? "正式曲线截至 " + displayDate(latest.trade_date) : "",
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
+      cashRepoCarveout ? "剔除债券 · 现金及逆回购 · 结息按实收" : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.performanceFocus.dataset.status = calculationState.status;
@@ -4966,6 +4994,7 @@
       "持仓 " + formatNumber(valuation.open_position_value),
       Math.abs(openETFSettlementAsset) > 0.000001 ? "ETF 待结算应收 " + formatSigned(openETFSettlementAsset) : ""
     ].filter(Boolean).join(" · ");
+    if (cashRepoCarveout) els.perfOpenEconomicBreakdown.textContent = "现金及实际逆回购本金 · 独立历史口径";
     els.perfCloseEconomicNav.textContent = formatNumber(nav.close_economic_nav);
     const etfSettlementEstimate = numericOrNull(valuation.etf_settlement_estimate) || 0;
     els.perfCloseEconomicBreakdown.textContent = [
@@ -4973,6 +5002,7 @@
       "持仓 " + formatNumber(valuation.close_position_value),
       Math.abs(etfSettlementEstimate) > 0.000001 ? "ETF 待结算 " + formatSigned(etfSettlementEstimate) : ""
     ].filter(Boolean).join(" · ");
+    if (cashRepoCarveout) els.perfCloseEconomicBreakdown.textContent = "现金及实际逆回购本金 · 不含债券策略";
     els.perfAccountDayPnl.textContent = formatSigned(nav.account_day_pnl);
     els.perfAccountDayPnl.className = classForNumber(nav.account_day_pnl);
     const etfSettlementVariance = numericOrNull(etfSettlement.settlement_variance) || 0;
@@ -4982,7 +5012,8 @@
       Math.abs(etfSettlementVariance) > 0.000001 ? "清算差额 " + formatSigned(etfSettlementVariance) : "",
       "未归因 " + formatSigned(unattributed.pnl)
     ].filter(Boolean).join(" · ");
-    els.perfAccountDailyReturn.textContent = formatPercent(nav.daily_return);
+    if (cashRepoCarveout) els.perfPnlBreakdown.textContent = "收付口径 · 债券资本转移不计收益";
+    els.perfAccountDailyReturn.textContent = formatPercent(nav.daily_return, cashRepoCarveout ? 4 : 2);
     els.perfAccountDailyReturn.className = classForNumber(nav.daily_return);
     els.perfReturnDenominator.textContent = "收益分母 " + formatNumber(nav.return_denominator);
     els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
@@ -5000,7 +5031,7 @@
       : (securityPnL.fee_coverage_complete === true ? "无需费用 · 完整" : "--");
     els.perfTotalReturn.textContent = formatPercent(summary.total_return);
     els.perfTotalReturn.className = classForNumber(summary.total_return);
-    els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown);
+    els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown, cashRepoCarveout ? 4 : 2);
     els.perfMaxDrawdown.className = classForNumber(summary.max_drawdown);
     els.perfBenchmarkReturn.textContent = formatPercent(summary.benchmark_total_return);
     els.perfBenchmarkReturn.className = classForNumber(summary.benchmark_total_return);

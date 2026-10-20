@@ -159,6 +159,7 @@ type PerformanceSeriesSummary struct {
 	TotalReturn              float64  `json:"total_return"`
 	MaxDrawdown              float64  `json:"max_drawdown"`
 	BenchmarkSecurityID      string   `json:"benchmark_security_id,omitempty"`
+	BenchmarkError           string   `json:"benchmark_error,omitempty"`
 	BenchmarkStartClose      *float64 `json:"benchmark_start_close,omitempty"`
 	BenchmarkEndClose        *float64 `json:"benchmark_end_close,omitempty"`
 	BenchmarkTotalReturn     *float64 `json:"benchmark_total_return,omitempty"`
@@ -180,6 +181,7 @@ type PerformanceDefaultRange struct {
 var errSettlementStoreUnavailable = errors.New("settlement store is unavailable")
 var errMarketClientUnavailable = errors.New("meridian market client is unavailable")
 var errBenchmarkBarsUnavailable = errors.New("benchmark bars are unavailable")
+var errPerformanceScopeConflict = errors.New("performance query spans independently published NAV scopes")
 var errPerformanceServiceUnavailable = errors.New("performance service is unavailable")
 
 type Server struct {
@@ -2602,7 +2604,7 @@ func authoritativePerformanceNAVSource(nav ledger.PerformanceNAV, canonicalRunSu
 	if nav.Status == "blocked" || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
 		return "", false
 	}
-	if nav.FormulaVersion == "broker_statement_nav.v1" {
+	if nav.FormulaVersion == "broker_statement_nav.v1" || nav.FormulaVersion == "broker_cash_repo_carveout.v1" {
 		return "broker_statement", true
 	}
 	flags := make(map[string]bool, len(nav.QualityFlags))
@@ -2677,6 +2679,9 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"fee_total",
 		"open_captured_at",
 		"captured_at",
+		"formula_version",
+		"performance_status",
+		"quality_flags",
 	})
 	for _, item := range series {
 		_ = writer.Write([]string{
@@ -2718,6 +2723,9 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			formatCSVFloat(item.FeeTotal),
 			formatCSVTime(item.OpenCapturedAt),
 			formatCSVTime(item.CapturedAt),
+			item.FormulaVersion,
+			item.PerformanceStatus,
+			strings.Join(item.QualityFlags, "|"),
 		})
 	}
 	writer.Flush()
@@ -3260,6 +3268,9 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 		if navErr != nil {
 			return nil, PerformanceSeriesSummary{}, navErr
 		}
+		if err := validatePerformanceNAVScope(navs); err != nil {
+			return nil, PerformanceSeriesSummary{}, err
+		}
 		series = mergePerformanceNAVDates(series, navs)
 		series = overlayPerformanceNAVSeries(series, navs)
 	}
@@ -3269,13 +3280,23 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 			return nil, PerformanceSeriesSummary{}, errMarketClientUnavailable
 		}
 		if err := s.applyBenchmarkSeries(r.Context(), series, &summary, benchmarkSecurityID); err != nil {
-			return nil, PerformanceSeriesSummary{}, err
+			if !errors.Is(err, errBenchmarkBarsUnavailable) {
+				return nil, PerformanceSeriesSummary{}, err
+			}
+			summary.BenchmarkError = err.Error()
+			for index := range series {
+				series[index].QualityFlags = appendUniqueStrings(series[index].QualityFlags, "benchmark_bars_unavailable")
+			}
 		}
 	}
 	return series, summary, nil
 }
 
 func (s *Server) writePerformanceSeriesError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errPerformanceScopeConflict) {
+		httpx.WriteError(w, r, http.StatusConflict, "PERFORMANCE_SCOPE_CONFLICT", "所选区间跨越独立净值口径及未恢复区间，请分别查询剔除债券历史段与后续账户净值", err.Error())
+		return
+	}
 	if errors.Is(err, errSettlementStoreUnavailable) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
 		return
@@ -3353,11 +3374,13 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 	previousClose := 0.0
 	if len(series) > 0 {
 		for _, nav := range navs {
-			if nav.TradeDate < series[0].TradeDate && nav.Status != "blocked" && isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
+			if nav.TradeDate < series[0].TradeDate && nav.Status != "blocked" && isOfficialPerformanceNAVFormula(nav.FormulaVersion) &&
+				(nav.FormulaVersion == "broker_cash_repo_carveout.v1") == (byDate[series[0].TradeDate].FormulaVersion == "broker_cash_repo_carveout.v1") {
 				previousClose = nav.CloseEconomicNAV
 			}
 		}
 	}
+	previousCarveout := len(series) > 0 && byDate[series[0].TradeDate].FormulaVersion == "broker_cash_repo_carveout.v1"
 	for index := range series {
 		nav, ok := byDate[series[index].TradeDate]
 		if !ok {
@@ -3383,6 +3406,11 @@ func overlayPerformanceNAVSeries(series []ledger.DailyPerformance, navs []ledger
 			)
 			continue
 		}
+		carveout := nav.FormulaVersion == "broker_cash_repo_carveout.v1"
+		if carveout != previousCarveout {
+			previousClose = 0
+		}
+		previousCarveout = carveout
 		series[index].PerformanceStatus = nav.Status
 		series[index].FormulaVersion = nav.FormulaVersion
 		series[index].NetAsset = nav.CloseEconomicNAV
@@ -3476,7 +3504,25 @@ func mergePerformanceNAVDates(series []ledger.DailyPerformance, navs []ledger.Pe
 }
 
 func isOfficialPerformanceNAVFormula(value string) bool {
-	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1"
+	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1" || value == "broker_cash_repo_carveout.v1"
+}
+
+func validatePerformanceNAVScope(navs []ledger.PerformanceNAV) error {
+	carveout, account := false, false
+	for _, nav := range navs {
+		if nav.Status == "blocked" || !isOfficialPerformanceNAVFormula(nav.FormulaVersion) {
+			continue
+		}
+		if nav.FormulaVersion == "broker_cash_repo_carveout.v1" {
+			carveout = true
+		} else {
+			account = true
+		}
+	}
+	if carveout && account {
+		return errPerformanceScopeConflict
+	}
+	return nil
 }
 
 func hasLegacyDiagnosticSeries(series []ledger.DailyPerformance) bool {

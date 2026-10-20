@@ -37,6 +37,7 @@
 - `test_fuying13_history_audit.py` 覆盖一次性券商历史审计的非零锚点、另一策略债券退出、成交/交割/现金双桥、原始身份、逆回购单位、未知委托终态及失败证据包；脚本无网络和数据库写入口，不进入每日任务。
 - `test_fuying13_history_rebuild.py` 覆盖原生ETF分类、股份余额、同日内部转托、除权日生效、实际逆回购本金/利息、日线范围与完整性、分红权益时点、缺页不当空仓，以及明确源日的实际ETF现金权责试算；脚本只有Meridian GET，不连接柜台或写库。
 - `test_fuying13_carveout.py` 覆盖债券剔除子组合的真实收付、策略资本/银证分离、两种日度计权、观察锚点、交接连续性、非正分母和未知业务门禁；全部结果仅为有条件的收付预览，不发布产品净值。
+- `cmd/relayctl/performance_fuying13_carveout_test.go` 覆盖正式发布器的固定输入指纹、显式确认、65点逐分桥、净值连乘和幂等防覆盖；`internal/api/performance_carveout_test.go` 覆盖历史段查询、跨口径409、不误用另一范围昨日资产及Meridian可选基准503不阻断已发布净值。历史现金段页面可用 `performance_visual_smoke.py --expect-quality-items 5` 验证，其余账户默认七项检查不变。
 - 已保留可选 PostgreSQL repository 集成测试，设置 `RELAY_LEDGER_TEST_DATABASE_URL` 后运行真实 migration/写库验证。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 

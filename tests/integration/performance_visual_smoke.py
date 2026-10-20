@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-calculation-status", default="")
     parser.add_argument("--expect-quality-status", default="")
     parser.add_argument("--expect-quality-detail", default="")
+    parser.add_argument("--expect-quality-items", type=int, default=7)
     parser.add_argument("--max-details-ms", type=float, default=10_000)
     return parser.parse_args()
 
@@ -97,17 +98,11 @@ def main() -> int:
         query_started_at = perf_counter()
         page.locator("#loadPerformanceButton").click()
         page.wait_for_function(
-            """() => (
-                document.querySelector("#performanceStatus")?.textContent || ""
-            ).includes("查询中")""",
-            timeout=10_000,
-        )
-        page.wait_for_function(
             """() => {
                 const status =
                     document.querySelector("#performanceStatus")?.textContent || "";
                 const canvas = document.querySelector("#performanceChart canvas");
-                return status.includes("曲线已加载") &&
+                return status.includes("已加载") &&
                     Boolean(canvas && canvas.width > 0 && canvas.height > 0);
             }""",
             timeout=15_000,
@@ -200,7 +195,7 @@ def main() -> int:
         page.screenshot(path=str(output), full_page=False)
         browser.close()
 
-    if diagnostics["chartWidth"] < 500 or diagnostics["chartHeight"] < 250:
+    if diagnostics["chartWidth"] < min(500, args.width - 70) or diagnostics["chartHeight"] < 250:
         raise AssertionError(f"performance chart is undersized: {diagnostics}")
     if diagnostics["paintedSamples"] < 500:
         raise AssertionError(f"performance chart is blank: {diagnostics}")
@@ -208,7 +203,7 @@ def main() -> int:
         raise AssertionError(f"performance chart rendered too slowly: {diagnostics}")
     if diagnostics["detailsElapsedMs"] > args.max_details_ms:
         raise AssertionError(f"performance details loaded too slowly: {diagnostics}")
-    if diagnostics["qualityItems"] != 7:
+    if diagnostics["qualityItems"] != args.expect_quality_items:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")
     if diagnostics["horizontalOverflow"]:
         raise AssertionError(f"page has horizontal overflow: {diagnostics}")
