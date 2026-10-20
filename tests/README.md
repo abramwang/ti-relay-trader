@@ -35,6 +35,7 @@
 - 已增加 Python 交易日任务测试，覆盖非交易日跳过、账户级异常隔离和快照流程关键语义。
 - 已增加 Python DataFrame 版本策略测试，固定 `pandas==2.3.3` constraints，并防止纯标准库 `relay-sdk` 无意引入 pandas/NumPy/PyArrow/Polars。
 - `test_fuying13_history_audit.py` 覆盖一次性券商历史审计的非零锚点、另一策略债券退出、成交/交割/现金双桥、原始身份、逆回购单位、未知委托终态及失败证据包；脚本无网络和数据库写入口，不进入每日任务。
+- `test_fuying13_history_rebuild.py` 覆盖原生ETF分类、股份余额、同日内部转托、除权日生效、实际逆回购本金/利息、日线范围与完整性、分红权益时点、缺页不当空仓，以及明确源日的实际ETF现金权责试算；脚本只有Meridian GET，不连接柜台或写库。
 - 已保留可选 PostgreSQL repository 集成测试，设置 `RELAY_LEDGER_TEST_DATABASE_URL` 后运行真实 migration/写库验证。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 
