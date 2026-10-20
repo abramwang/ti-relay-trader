@@ -103,6 +103,8 @@ def etf_ledger_bridge(settlements, postings, dates):
         raise ValueError("actual source/posting ledger does not close at the export cutoff")
     return balances, changes, {"matched_actual_rows": sum(source_keys.values()), "unmatched_rows": 0,
                                "explicit_anchor_rows": dict(known), "actual_cutoff_net_receivable_payable": "0.00",
+                               "unexported_etf_entitlements_verified": False,
+                               "zero_balance_scope": "exported_actual_cash_only_not_all_outstanding_entitlements",
                                "scope": "actual_exported_cash_not_broker_final_clearing_certificate"}
 
 
@@ -173,8 +175,10 @@ def build_days(book, valuations, prefix, claims, bridge, bank, statistics=None):
                  "as_of_export_not_private_final_clearing_certificate", policy]
         if is_prefix:
             flags += ["prior_bond_strategy_excluded", "cash_posting_income_basis"]
-        elif other:
-            flags.append("broker_reported_other_asset_retained_unclassified")
+        else:
+            flags.append("unexported_etf_entitlements_unverified")
+            if other:
+                flags.append("broker_reported_other_asset_retained_unclassified")
         if opening_anchor:
             flags.append("observed_opening_anchor_no_daily_return")
         components = {
@@ -257,7 +261,9 @@ def run(evidence, reconstruction, prefix_path, output):
               "etf_ledger_bridge": matched, "source_evidence": provenance,
               "daily_pnl_sum": str(sum(Decimal(str(nav["account_day_pnl"])) for nav in navs)),
               "last_point": navs[-1], "database_writes": 0,
-              "status": "reconstructed_from_actual_as_of_export_not_final_private_clearing"}
+              "publication_eligible": False,
+              "publication_hold_reasons": ["unexported_etf_entitlements_unverified"],
+              "status": "diagnostic_only_unexported_etf_entitlements_unverified"}
     output.mkdir(mode=0o700)
     (output / "INCOMPLETE").write_text("NAV recovery output has not completed\n")
     (output / "nav_plan.json").write_text(HISTORY.json_text({"report": result, "navs": navs}))

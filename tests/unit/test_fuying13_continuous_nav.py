@@ -27,6 +27,8 @@ class Fuying13ContinuousNAVTest(unittest.TestCase):
         balance, _, audit = MODULE.etf_ledger_bridge(rows, cash, ["20261016", "20261019"])
         self.assertEqual(balance, {"20261016": 20000, "20261019": 0})
         self.assertEqual(audit["matched_actual_rows"], 2)
+        self.assertFalse(audit["unexported_etf_entitlements_verified"])
+        self.assertEqual(audit["zero_balance_scope"], "exported_actual_cash_only_not_all_outstanding_entitlements")
         with self.assertRaises(ValueError):
             MODULE.etf_ledger_bridge(rows, cash[:1], ["20261016", "20261019"])
 
@@ -85,6 +87,14 @@ class Fuying13ContinuousNAVTest(unittest.TestCase):
         self.assertEqual(result[1]["account_day_pnl"], 18)
         self.assertEqual(result[1]["pnl_components"]["market_valuation"]["broker_reported_other_asset"], 5)
         self.assertIn("broker_reported_other_asset_retained_unclassified", result[1]["quality_flags"])
+        self.assertIn("unexported_etf_entitlements_unverified", result[1]["quality_flags"])
+        self.assertNotIn("unexported_etf_entitlements_unverified", result[0]["quality_flags"])
+
+    def test_empty_exported_cash_does_not_prove_no_outstanding_entitlements(self):
+        balance, _, audit = MODULE.etf_ledger_bridge([], [], ["20261016", "20261019"])
+        self.assertEqual(balance, {"20261016": 0, "20261019": 0})
+        self.assertEqual(audit["matched_actual_rows"], 0)
+        self.assertFalse(audit["unexported_etf_entitlements_verified"])
 
     def test_external_cash_is_never_assumed_from_asset_difference(self):
         book = {"20250708": {"total": "120", "deposit": "20", "withdrawal": "0", "cash": "100", "market_value": "10", "pnl": "0", "source_row": 2}}

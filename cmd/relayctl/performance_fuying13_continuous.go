@@ -23,6 +23,8 @@ const fuyingContinuousSource = "broker_fuying13_continuous_ledgers_20261020"
 const fuyingContinuousPlanSHA = "2aaeabcb3b65fa9201bf5ddc0c038b61c1dddf42253d6cbe0bfa3a2d212b40cd"
 const fuyingContinuousBaselineSHA = "2ab348c9709d81634f84e27e1c8f4a0cc1fd12dc4705ecd66825ca62ed17882c"
 
+var errFuyingContinuousPublicationSuspended = errors.New("historical NAV publication suspended: exported ETF cash matching does not verify unexported settlement entitlements; see docs/FUYING13_ETF_TAIL_REVIEW_20261020.md")
+
 func readPinnedJSON(path, digest string, target any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -105,6 +107,9 @@ func runFuyingContinuousRecovery(args []string) error {
 	persist := flags.Bool("persist", false, "commit all reviewed NAV dates in one transaction")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *persist {
+		return errFuyingContinuousPublicationSuspended
 	}
 	var plan struct {
 		Report map[string]any          `json:"report"`

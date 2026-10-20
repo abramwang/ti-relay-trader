@@ -1,12 +1,20 @@
 package main
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
 
 	"ti-relay-trader/internal/ledger"
 )
+
+func TestContinuousHistoryWithdrawnPlanCannotBeRepublished(t *testing.T) {
+	err := runFuyingContinuousRecovery([]string{"-persist", "-confirmed-by", "operator", "-plan", "/nonexistent/plan.json"})
+	if !errors.Is(err, errFuyingContinuousPublicationSuspended) {
+		t.Fatalf("withdrawn plan must fail before reading artifacts or connecting to the database: %v", err)
+	}
+}
 
 func syntheticContinuousNAVs() []ledger.PerformanceNAV {
 	result := make([]ledger.PerformanceNAV, 375)
