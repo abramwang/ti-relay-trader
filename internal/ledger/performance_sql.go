@@ -413,6 +413,14 @@ WHERE account_id = $1
 ORDER BY trade_date
 `
 
+const previousPerformanceNAVSQL = `
+SELECT ` + performanceNAVColumns + `
+FROM performance_nav_versions
+WHERE account_id = $1 AND is_current AND trade_date < $2::date
+ORDER BY trade_date DESC
+LIMIT 1
+`
+
 const upsertPerformanceNAVSQL = `
 WITH retire_current AS (
     UPDATE performance_nav_versions

@@ -3,6 +3,8 @@
 
 import argparse
 import copy
+import csv
+import io
 import json
 from pathlib import Path
 
@@ -16,6 +18,7 @@ def main():
     parser.add_argument("--date-from", default="20250401")
     parser.add_argument("--date-to", default="20261019")
     parser.add_argument("--width", type=int, default=1600)
+    parser.add_argument("--check-capital-reference-date", default="")
     parser.add_argument("--output-dir", default="outputs/recovery/performance_cash_markers_20261020")
     args = parser.parse_args()
     output = Path(args.output_dir)
@@ -85,6 +88,33 @@ def main():
         assert not layout["overflow"] and layout["legendFits"] and layout["chartBelowToolbar"], layout
         page.wait_for_timeout(300)
         page.screenshot(path=str(output / f"cash-markers-live-{args.width}.png"))
+
+        if args.check_capital_reference_date:
+            date = args.check_capital_reference_date
+            selected = next(row for row in rows if row["trade_date"] == date)
+            ref = selected["capital_reference"]
+            assert abs(ref["daily_return"] - selected["daily_pnl"] / ref["capital"]) < 1e-12
+            single_url = args.base_url + f"/v1/accounts/{args.account_id}/performance/series?trade_date={date}"
+            single = page.request.get(single_url).json()["data"]["series"][0]
+            assert single["capital_reference"] == ref, "reference depends on selected date range"
+            csv_url = args.base_url + f"/v1/accounts/{args.account_id}/performance/series.csv?trade_date={date}"
+            exported = list(csv.DictReader(io.StringIO(page.request.get(csv_url).text())))
+            assert len(exported) == 1 and exported[0]["reference_position_value_date"] == ref["position_value_date"]
+            assert abs(float(exported[0]["reference_daily_return"]) - ref["daily_return"]) < 1e-6
+            page.locator('[data-performance-table-view="cash-impact"]').click()
+            row = page.locator(f'[data-cash-impact-date="{date}"]')
+            row.wait_for(state="visible")
+            text = row.inner_text()
+            assert f'{ref["daily_return"] * 100:.2f}%' in text, text
+            assert f'{selected["return_rate"] * 100:.2f}%' in text, text
+            assert "固定持仓试算" in text and ref["position_value_date"] in text, text
+            tooltip = page.evaluate("""(date) => {
+                const option = echarts.getInstanceByDom(document.querySelector('#performanceChart')).getOption();
+                return option.tooltip[0].formatter([{axisValue: date, dataIndex: 999}]);
+            }""", date)
+            assert "资本参考 · 非正式净值" in tooltip and f'{ref["daily_return"] * 100:.2f}%' in tooltip, tooltip
+            row.scroll_into_view_if_needed()
+            page.screenshot(path=str(output / f"capital-impact-{args.width}.png"))
 
         # Only the browser's GET response is replaced, never the server or ledger.
         fixture = copy.deepcopy(payload)

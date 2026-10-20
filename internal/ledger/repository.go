@@ -279,6 +279,20 @@ type PerformanceCashEvent struct {
 	Source        string  `json:"source"`
 }
 
+// PerformanceCapitalReference never participates in published NAV compounding.
+type PerformanceCapitalReference struct {
+	Basis                   string   `json:"basis"`
+	Capital                 float64  `json:"capital"`
+	FormalReturnDenominator float64  `json:"formal_return_denominator"`
+	DailyReturn             *float64 `json:"daily_return"`
+	CapitalAfterNetFlow     *float64 `json:"capital_after_net_flow"`
+	PositionValue           *float64 `json:"position_value"`
+	PositionValueSource     string   `json:"position_value_source"`
+	PositionValueDate       string   `json:"position_value_date,omitempty"`
+	PositionRatioBefore     *float64 `json:"position_ratio_before"`
+	PositionRatioAfter      *float64 `json:"position_ratio_after"`
+}
+
 type DailyPerformance struct {
 	AccountID              string    `json:"account_id"`
 	TradeDate              string    `json:"trade_date"`
@@ -331,8 +345,9 @@ type DailyPerformance struct {
 	OpenCapturedAt         time.Time `json:"open_captured_at,omitempty"`
 	CapturedAt             time.Time `json:"captured_at,omitempty"`
 
-	ExternalNetFlow float64                `json:"external_net_flow"`
-	CashFlowEvents  []PerformanceCashEvent `json:"cash_flow_events,omitempty"`
+	ExternalNetFlow  float64                      `json:"external_net_flow"`
+	CashFlowEvents   []PerformanceCashEvent       `json:"cash_flow_events,omitempty"`
+	CapitalReference *PerformanceCapitalReference `json:"capital_reference,omitempty"`
 }
 
 type AssetPositionObservation struct {

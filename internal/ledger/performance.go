@@ -570,6 +570,34 @@ func (repo *Repository) ListPerformanceNAVs(ctx context.Context, accountID, date
 	return items, rows.Err()
 }
 
+func (repo *Repository) PreviousPerformanceNAV(ctx context.Context, accountID, tradeDate string) (*PerformanceNAV, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, fmt.Errorf("%w: account_id is required", ErrInvalidLedgerInput)
+	}
+	day, err := normalizeTradeDate(tradeDate)
+	if err != nil {
+		return nil, err
+	}
+	queryer, err := repo.queryer()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := queryer.QueryContext(ctx, previousPerformanceNAVSQL, accountID, day)
+	if err != nil {
+		return nil, fmt.Errorf("previous performance nav: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	nav, err := scanPerformanceNAV(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan previous performance nav: %w", err)
+	}
+	return &nav, rows.Err()
+}
+
 func (repo *Repository) UpsertPerformanceNAV(ctx context.Context, nav PerformanceNAV) (PerformanceNAV, error) {
 	if repo == nil || repo.exec == nil {
 		return PerformanceNAV{}, fmt.Errorf("%w: repository executor is nil", ErrInvalidLedgerInput)

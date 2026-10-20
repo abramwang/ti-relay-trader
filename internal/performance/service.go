@@ -344,6 +344,15 @@ func (service *Service) ListPerformanceNAVs(ctx context.Context, accountID, date
 	return service.store.ListPerformanceNAVs(ctx, accountID, dateFrom, dateTo)
 }
 
+func (service *Service) PreviousPerformanceNAV(ctx context.Context, accountID, tradeDate string) (*ledger.PerformanceNAV, error) {
+	if reader, ok := service.store.(interface {
+		PreviousPerformanceNAV(context.Context, string, string) (*ledger.PerformanceNAV, error)
+	}); ok {
+		return reader.PreviousPerformanceNAV(ctx, accountID, tradeDate)
+	}
+	return nil, nil
+}
+
 func (service *Service) ListNAVReconciliations(ctx context.Context, accountID, dateFrom, dateTo string) ([]ledger.NAVReconciliation, error) {
 	return service.store.ListNAVReconciliations(ctx, accountID, dateFrom, dateTo)
 }

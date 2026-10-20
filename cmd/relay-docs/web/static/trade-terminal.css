@@ -1989,6 +1989,18 @@ tr.flash {
   display: block;
 }
 
+.cash-impact-table th:first-child,
+.cash-impact-table td:first-child,
+.cash-impact-table .num {
+  white-space: nowrap;
+}
+
+.cash-impact-table td:last-child {
+  min-width: 150px;
+  max-width: 210px;
+  overflow-wrap: anywhere;
+}
+
 .contribution-table-panel.active {
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr);

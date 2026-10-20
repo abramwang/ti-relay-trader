@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261020-cash-markers">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261020-capital-reference">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -464,6 +464,7 @@
               <div class="performance-table-tabs" role="tablist" aria-label="绩效数据视图">
                 <button type="button" class="active" data-performance-table-view="contributions" role="tab" aria-selected="true">证券贡献</button>
                 <button type="button" data-performance-table-view="series" role="tab" aria-selected="false">净值序列</button>
+                <button type="button" data-performance-table-view="cash-impact" role="tab" aria-selected="false">资金影响</button>
                 <button type="button" data-performance-table-view="trade-quality" role="tab" aria-selected="false">交易质量</button>
               </div>
               <span id="performanceStatus">等待查询</span>
@@ -517,6 +518,22 @@
                   </tr>
                 </thead>
                 <tbody id="performanceSeriesBody"></tbody>
+              </table>
+            </div>
+            <div class="performance-table-panel table-wrap" data-performance-table-panel="cash-impact">
+              <table class="cash-impact-table">
+                <thead>
+                  <tr>
+                    <th>交易日</th>
+                    <th>资金变动 / 东八区时间</th>
+                    <th class="num">日初资本 / 正式分母</th>
+                    <th class="num">正式收益率</th>
+                    <th class="num">资金前资本参考收益</th>
+                    <th class="num">股票/ETF仓位前 / 后（参考）</th>
+                    <th>固定市值 / 来源（日净额试算）</th>
+                  </tr>
+                </thead>
+                <tbody id="performanceCashImpactBody"></tbody>
               </table>
             </div>
             <div class="performance-table-panel trade-quality-panel" data-performance-table-panel="trade-quality">
@@ -852,6 +869,6 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261020-cash-markers"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261020-capital-reference"></script>
 </body>
 </html>

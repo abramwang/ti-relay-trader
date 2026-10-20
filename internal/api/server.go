@@ -2706,9 +2706,19 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 		"formula_version",
 		"performance_status",
 		"quality_flags",
+		"external_net_flow",
+		"reference_open_capital",
+		"formal_return_denominator",
+		"reference_daily_return",
+		"reference_capital_after_net_flow",
+		"reference_position_value",
+		"reference_position_value_source",
+		"reference_position_value_date",
+		"reference_position_ratio_before",
+		"reference_position_ratio_after",
 	})
 	for _, item := range series {
-		_ = writer.Write([]string{
+		row := []string{
 			item.AccountID,
 			item.TradeDate,
 			formatCSVFloat(item.NetAsset),
@@ -2750,7 +2760,10 @@ func (s *Server) handlePerformanceSeriesCSV(w http.ResponseWriter, r *http.Reque
 			item.FormulaVersion,
 			item.PerformanceStatus,
 			strings.Join(item.QualityFlags, "|"),
-		})
+			formatCSVFloat(item.ExternalNetFlow),
+		}
+		row = append(row, performanceCapitalReferenceCSV(item.CapitalReference)...)
+		_ = writer.Write(row)
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
@@ -3297,6 +3310,20 @@ func (s *Server) performanceSeriesFromRequest(r *http.Request, accountID string)
 		}
 		series = mergePerformanceNAVDates(series, navs)
 		series = overlayPerformanceNAVSeries(series, navs)
+		var prior *ledger.PerformanceNAV
+		if len(series) > 0 {
+			if reader, ok := s.perf.(interface {
+				PreviousPerformanceNAV(context.Context, string, string) (*ledger.PerformanceNAV, error)
+			}); ok {
+				var priorErr error
+				prior, priorErr = reader.PreviousPerformanceNAV(r.Context(), accountID, series[0].TradeDate)
+				if priorErr != nil {
+					prior = nil
+					s.logger.Warn("performance_capital_reference_prior_unavailable", "account_id", accountID, "error", priorErr)
+				}
+			}
+		}
+		series = overlayPerformanceCapitalReferences(series, navs, prior)
 	}
 	series, summary := buildPerformanceSeries(accountID, normalizedDateFrom, normalizedDateTo, series)
 	if benchmarkSecurityID := strings.TrimSpace(values.Get("benchmark_security_id")); benchmarkSecurityID != "" {

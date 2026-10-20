@@ -263,6 +263,7 @@
     performanceQualityList: byID("performanceQualityList"),
     performanceStatus: byID("performanceStatus"),
     performanceSeriesBody: byID("performanceSeriesBody"),
+    performanceCashImpactBody: byID("performanceCashImpactBody"),
     performanceContributionBody: byID("performanceContributionBody"),
     tradeQualityBody: byID("tradeQualityBody"),
     performanceTableViewButtons: Array.from(document.querySelectorAll("[data-performance-table-view]")),
@@ -4119,7 +4120,7 @@
   }
 
   function setPerformanceTableView(view) {
-    const supported = new Set(["contributions", "series", "trade-quality"]);
+    const supported = new Set(["contributions", "series", "cash-impact", "trade-quality"]);
     state.performanceTableView = supported.has(view) ? view : "contributions";
     for (const button of els.performanceTableViewButtons) {
       const active = button.dataset.performanceTableView === state.performanceTableView;
@@ -4728,6 +4729,62 @@
     return state.performanceChart;
   }
 
+  function capitalPositionSource(reference) {
+    if (reference.position_value_source === "open_position_value") return "日初市值 · 固定持仓试算";
+    if (reference.position_value_source === "previous_published_close_position_value") {
+      return displayDate(reference.position_value_date) + " 收盘市值 · 固定持仓试算";
+    }
+    return "缺少日初持仓市值";
+  }
+
+  function optionalCapitalPercent(value) {
+    return value === null || value === undefined ? "--" : formatPercent(value);
+  }
+
+  function optionalCapitalPosition(value) {
+    return optionalCapitalPercent(value).replace(/^\+/, "");
+  }
+
+  function performanceCapitalReferenceTooltip(item) {
+    const ref = item.capital_reference;
+    if (!ref) return "";
+    return [
+      '<div style="margin-top:6px;border-top:1px solid #363a45;padding-top:6px">资本参考 · 非正式净值</div>',
+      "资金前资本参考收益　" + optionalCapitalPercent(ref.daily_return),
+      "日初资本　" + formatNumber(ref.capital),
+      "正式收益分母　" + (ref.formal_return_denominator > 0 ? formatNumber(ref.formal_return_denominator) : "--"),
+      "股票/ETF仓位参考　" + optionalCapitalPosition(ref.position_ratio_before) + " → " + optionalCapitalPosition(ref.position_ratio_after),
+      escapeHTML(capitalPositionSource(ref))
+    ].join("<br>");
+  }
+
+  function renderPerformanceCashImpact() {
+    if (!els.performanceCashImpactBody) return;
+    const rows = (state.performanceSeries || []).filter((item) => (item.cash_flow_events || []).length > 0);
+    if (!rows.length) {
+      els.performanceCashImpactBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">所选区间无已记录的资本变动</div></td></tr>';
+      return;
+    }
+    els.performanceCashImpactBody.innerHTML = rows.map((item) => {
+      const ref = item.capital_reference || {};
+      const flows = (item.cash_flow_events || []).map((flow) => {
+        const label = flow.kind === "strategy_capital" ? "策略资本" : "外部资金";
+        const time = flow.time_precision === "second" ? formatTime(flow.effective_at) : "时刻未记录";
+        const scope = flow.granularity === "daily_net" ? " · 日净额" : "";
+        return escapeHTML(label + " " + formatSigned(flow.amount) + " · " + time + scope);
+      }).join("<br>");
+      return `<tr data-cash-impact-date="${escapeHTML(item.trade_date)}">
+        <td>${escapeHTML(displayDate(item.trade_date))}</td>
+        <td>${flows}</td>
+        <td class="num">${formatNumber(ref.capital)}<br>${ref.formal_return_denominator > 0 ? formatNumber(ref.formal_return_denominator) : "--"}</td>
+        <td class="num ${classForNumber(item.return_rate)}">${item.performance_status === "blocked" ? "--" : formatPercent(item.return_rate)}</td>
+        <td class="num ${classForNumber(ref.daily_return)}">${optionalCapitalPercent(ref.daily_return)}</td>
+        <td class="num">${optionalCapitalPosition(ref.position_ratio_before)} → ${optionalCapitalPosition(ref.position_ratio_after)}</td>
+        <td>${formatNumber(ref.position_value)}<br>${escapeHTML(capitalPositionSource(ref))}</td>
+      </tr>`;
+    }).join("");
+  }
+
   function performanceCashFlowTooltip(item) {
     const events = Array.isArray(item.cash_flow_events) ? item.cash_flow_events : [];
     if (!events.length) return "";
@@ -4744,7 +4801,8 @@
     });
     return '<div style="margin-top:8px;border-top:1px solid #363a45;padding-top:6px">资金变动 · 东八区</div>' +
       '<div style="max-height:140px;overflow-y:auto">' + lines.join("") + "</div>" +
-      '<div style="margin-top:4px">当日净流入　' + formatSigned(item.external_net_flow) + " 元</div>";
+      '<div style="margin-top:4px">当日净流入　' + formatSigned(item.external_net_flow) + " 元</div>" +
+      performanceCapitalReferenceTooltip(item);
   }
 
   function performanceCashMarkerSeries(rows, labels, accountNAV) {
@@ -4843,6 +4901,7 @@
         trigger: "axis",
         enterable: true,
         confine: true,
+        extraCssText: "max-height:280px;max-width:460px;overflow-y:auto;white-space:normal",
         backgroundColor: "rgba(17,21,30,0.96)",
         borderColor: "#363a45",
         borderWidth: 1,
@@ -5141,6 +5200,7 @@
     renderPerformanceContributions();
     renderPerformanceTradeQuality();
     renderPerformanceChart();
+    renderPerformanceCashImpact();
     renderPerformanceQuality();
     setPerformanceTableView(state.performanceTableView);
     els.performanceStatus.title = state.performanceError || "";
