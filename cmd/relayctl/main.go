@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-etf-transfer-review":
+		if err := runETFTransferReview(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-etf-transfer-review: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fuying13-continuous-recovery":
 		if err := runFuyingContinuousRecovery(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-continuous-recovery: %v\n", err)
@@ -547,9 +552,10 @@ func usage() {
   performance-gold-compare Compare database NAV gold with economic NAV previews
   performance-broker-statement  Audit a complete broker export and optionally publish confirmed account NAV
   performance-broker-funds-audit  One-time recovery of broker asset bases and external flows
+  performance-etf-transfer-review  Read-only stored ETF component linkage evidence (no market or OC queries)
   performance-fuying13-recovery-20261019  Audit the reviewed ETF-settlement-free historical segment
   performance-fuying13-carveout-publish  Publish the user-approved April cash/repo carve-out only
-  performance-fuying13-continuous-recovery  Restore the verified source/posting-ledger account NAV chain
+  performance-fuying13-continuous-recovery  Audit the prior source/posting NAV plan; publication suspended
   redis-probe    Read-only Redis Stream probe using relay config
   redis-scan     Read-only Redis key scan for relay stream accounts
   credentials    Rotate, verify, or disable encrypted OC account credentials

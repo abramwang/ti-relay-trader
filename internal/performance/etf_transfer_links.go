@@ -20,6 +20,7 @@ type componentTransferGroup struct {
 	matchedAt                time.Time
 	expectedBySecurity       map[string]int64
 	linkedBySecurity         map[string]int64
+	sourcesBySecurity        map[string][]trading.ComponentTransfer
 	linkedFills              []trading.Fill
 }
 
@@ -73,6 +74,7 @@ func buildComponentSaleLinks(orders []trading.Order, fills []trading.Fill, trans
 				basketRoot:               firstNonBlank(basketRoot, strings.TrimSpace(order.Symbol)),
 				expectedBySecurity:       make(map[string]int64),
 				linkedBySecurity:         make(map[string]int64),
+				sourcesBySecurity:        make(map[string][]trading.ComponentTransfer),
 			}
 			result.groups[transfer.GatewayOrderID] = group
 		}
@@ -95,6 +97,7 @@ func buildComponentSaleLinks(orders []trading.Order, fills []trading.Fill, trans
 			continue
 		}
 		group.expectedBySecurity[componentSecurityID] += quantity
+		group.sourcesBySecurity[componentSecurityID] = append(group.sourcesBySecurity[componentSecurityID], transfer)
 	}
 
 	sortedFills := append([]trading.Fill(nil), fills...)
