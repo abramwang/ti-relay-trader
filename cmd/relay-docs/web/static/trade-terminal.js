@@ -541,7 +541,8 @@
 
   function isCurrentPositionLedgerDate(value) {
     const date = compactDate(value);
-    return date !== "" && (date === currentBusinessDate() || date === compactDate(defaultLedgerDate()));
+    return date !== "" && (date === currentBusinessDate() ||
+      (state.environment === "test" && date === compactDate(defaultLedgerDate())));
   }
 
   function terminalDefaultDate() {
@@ -1767,40 +1768,8 @@
       const data = await request("/v1/accounts/" + encodedAccountID + "/asset");
       return data.asset || null;
     }
-    const data = await request("/v1/accounts/" + encodedAccountID + "/performance/daily?trade_date=" + encodeURIComponent(tradeDate));
-    return assetFromPerformance(data.performance || {});
-  }
-
-  function assetFromPerformance(performance) {
-    const positionMarketValue = finiteNumber(performance.position_market_value);
-    const rawMarketValue = finiteNumber(performance.market_value);
-    const marketValue = rawMarketValue !== null && rawMarketValue > 0
-      ? rawMarketValue
-      : (positionMarketValue !== null ? positionMarketValue : performance.market_value);
-    const cashTotal = finiteNumber(performance.cash_total);
-    const rawNetAsset = finiteNumber(performance.net_asset);
-    const reverseRepoReceivable = finiteNumber(performance.reverse_repo_receivable) || 0;
-    const effectiveNetAsset = positionMarketValue !== null && positionMarketValue > 0 &&
-      cashTotal !== null && (rawNetAsset === null || rawNetAsset <= cashTotal)
-      ? cashTotal + positionMarketValue + reverseRepoReceivable
-      : performance.net_asset;
-    const stockValue = finiteNumber(performance.stock_value);
-    const fundValue = finiteNumber(performance.fund_value);
-    return {
-      account_id: performance.account_id,
-      cash_available: performance.cash_available,
-      cash_total: performance.cash_total,
-      net_asset: effectiveNetAsset,
-      market_value: marketValue,
-      stock_value: stockValue !== null && stockValue > 0 ? stockValue : (fundValue ? 0 : marketValue),
-      fund_value: fundValue !== null && fundValue > 0 ? fundValue : 0,
-      reverse_repo_receivable: reverseRepoReceivable,
-      day_profit: performance.daily_pnl,
-      position_profit: performance.position_profit || performance.unrealized_pnl,
-      close_profit: performance.close_profit || performance.settled_profit,
-      commission: performance.fee_total,
-      captured_at: performance.captured_at
-    };
+    const data = await request("/v1/accounts/" + encodedAccountID + "/asset?trade_date=" + encodeURIComponent(tradeDate));
+    return data.asset || null;
   }
 
   async function fetchPositionsPage() {
@@ -1960,7 +1929,7 @@
     const commission = accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
       ? metricCommission(asset)
       : finiteNumber(asset.commission);
-    const closeProfit = accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
+    const closeProfit = accountDayProfitUnavailable(asset) ? null : accountID === state.activeAccount && tradeDate === selectedAssetTradeDateSafe()
       ? metricCloseProfit(asset)
       : finiteNumber(asset.close_profit);
     const effectiveDayPositionProfit = hasDayPositionProfit
@@ -2065,7 +2034,8 @@
         csvLine(["平仓盈亏", csvNumber(metrics.closeProfit)]),
         csvLine(["手续费", csvNumber(metrics.commission)]),
         csvLine(["当日盈亏", csvNumber(metrics.dayProfit)]),
-        csvLine(["当日盈亏来源", publishedAccountDayProfit(assetResult.asset, accountID, tradeDate) !== null ? assetResult.asset.account_day_pnl_source : "持仓与柜台数据估算"]),
+        csvLine(["当日盈亏状态", accountDayProfitStatusLabel(assetResult.asset)]),
+        csvLine(["当日盈亏来源", publishedAccountDayProfit(assetResult.asset, accountID, tradeDate) !== null ? assetResult.asset.account_day_pnl_source : (accountDayProfitUnavailable(assetResult.asset) ? "暂无匹配的已发布账户绩效" : "持仓与柜台数据估算")]),
         csvLine(["当日盈亏绩效日", assetResult.asset.account_day_pnl_trade_date || ""]),
         csvLine(["资金更新时间", metrics.updatedAt]),
         "",
@@ -2709,13 +2679,14 @@
     const dayProfit = metricDayProfit(asset, dayPositionProfit, closeProfit, commission, Boolean(liveTotals));
     const netAsset = liveTotals ? liveTotals.netAsset : asset.net_asset;
     els.netAsset.textContent = formatNumber(netAsset);
+    els.netAsset.title = "资金总额 " + formatNumber(asset.cash_total) + " + 证券市值 " + formatNumber(marketValue) + " + 逆回购应收 " + formatNumber(asset.reverse_repo_receivable);
     els.cashAvailable.textContent = formatNumber(asset.cash_available);
     els.marketValue.textContent = formatNumber(marketValue);
-    els.dayProfit.textContent = formatSigned(dayProfit);
-    els.dayProfit.className = Number(dayProfit) < 0 ? "down" : "up";
+    els.dayProfit.textContent = accountDayProfitUnavailable(asset) ? accountDayProfitStatusLabel(asset) : formatSigned(dayProfit);
+    els.dayProfit.className = dayProfit === null ? "" : (Number(dayProfit) < 0 ? "down" : "up");
     els.dayProfit.title = publishedAccountDayProfit(asset) !== null
       ? displayDate(asset.account_day_pnl_trade_date) + " · 已发布账户绩效 · " + asset.account_day_pnl_source
-      : "持仓与柜台数据估算，非已发布账户绩效";
+      : (accountDayProfitUnavailable(asset) ? "收盘资产已保存；" + accountDayProfitStatusLabel(asset) + "，不使用柜台成本估算账户收益" : "持仓与柜台数据估算，非已发布账户绩效");
     els.cashTotal.textContent = formatNumber(asset.cash_total);
     els.stockValue.textContent = formatNumber(stockValue);
     els.fundValue.textContent = formatNumber(fundValue);
@@ -2767,6 +2738,9 @@
   }
 
   function metricCloseProfit(asset) {
+    if (accountDayProfitUnavailable(asset)) {
+      return null;
+    }
     const assetCloseProfit = finiteNumber(asset && asset.close_profit);
     if (assetCloseProfit !== null) {
       return assetCloseProfit;
@@ -2777,8 +2751,21 @@
     return estimatedCloseProfit();
   }
 
+  function accountDayProfitUnavailable(asset) {
+    const status = String(asset && asset.account_day_pnl_status || "");
+    return status !== "" && status !== "available";
+  }
+
+  function accountDayProfitStatusLabel(asset) {
+    const status = String(asset && asset.account_day_pnl_status || "");
+    if (status === "available") return "已发布";
+    if (status === "blocked") return "待复核";
+    if (status === "snapshot_mismatch") return "待核对";
+    return status ? "待核算" : "估算";
+  }
+
   function publishedAccountDayProfit(asset, accountID = state.activeAccount, tradeDate = selectedAssetTradeDateSafe()) {
-    if (!asset || asset.account_id !== accountID ||
+    if (!asset || accountDayProfitUnavailable(asset) || asset.account_id !== accountID ||
       !String(asset.account_day_pnl_source || "").startsWith("performance_economic_nav.v2.") ||
       compactDate(asset.account_day_pnl_trade_date) !== compactDate(tradeDate)) {
       return null;
@@ -2787,6 +2774,9 @@
   }
 
   function metricDayProfit(asset, dayPositionProfit, closeProfit, commission, preferComputed = false) {
+    if (accountDayProfitUnavailable(asset)) {
+      return null;
+    }
     const published = publishedAccountDayProfit(asset);
     if (published !== null) {
       return published;

@@ -2167,6 +2167,36 @@ func (s *Server) handleAccountAsset(w http.ResponseWriter, r *http.Request, acco
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid asset query", err.Error())
 		return
 	}
+	if tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date")); tradeDate != "" {
+		normalizedDate, err := normalizeAPIDate(tradeDate)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid trade_date", nil)
+			return
+		}
+		if _, ok := s.cfg.AccountRoute(accountID); !ok {
+			s.writeOrderError(w, r, orderflow.ErrRouteNotFound)
+			return
+		}
+		if s.settles == nil {
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "settlement store is unavailable", nil)
+			return
+		}
+		asset, err := s.settles.GetAssetSnapshot(r.Context(), accountID, normalizedDate, "close")
+		if err != nil {
+			if errors.Is(err, ledger.ErrAssetNotFound) {
+				httpx.WriteError(w, r, http.StatusNotFound, httpx.CodeNotFound, "close asset snapshot is unavailable", nil)
+			} else {
+				s.writeOrderError(w, r, err)
+			}
+			return
+		}
+		if enrich {
+			// Recovered snapshots may be imported later; the requested ledger date is authoritative.
+			asset = s.enrichCloseAssetWithPublishedDayPnL(r.Context(), asset, normalizedDate)
+		}
+		httpx.WriteOK(w, r, http.StatusOK, map[string]any{"asset": asset, "trade_date": normalizedDate, "snapshot_type": "close"})
+		return
+	}
 	result, err := s.orders.GetAsset(r.Context(), accountID)
 	if err != nil {
 		s.writeOrderError(w, r, err)

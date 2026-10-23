@@ -94,3 +94,32 @@ func TestAssetPublishedDayPnLRequiresMatchingCloseSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestCloseAssetWithoutPublishedPnLNeverAdvertisesEstimatedAccountReturn(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		navs       []ledger.PerformanceNAV
+		wantStatus string
+	}{
+		{"unavailable", nil, "pending"},
+		{"blocked", []ledger.PerformanceNAV{{AccountID: "acct-1", TradeDate: "2026-10-23", IsCurrent: true, Status: "blocked"}}, "blocked"},
+		{"mismatched", []ledger.PerformanceNAV{{AccountID: "acct-1", TradeDate: "2026-10-23", IsCurrent: true,
+			Status: "provisional", FormulaVersion: "performance_economic_nav.v2.7", CloseEconomicNAV: 1100,
+			PnLComponents: map[string]any{"market_valuation": map[string]any{"close_visible_cash": 900.0, "close_position_value": 100.0}}}}, "snapshot_mismatch"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Service.Environment = config.EnvironmentProduction
+			server := &Server{cfg: cfg, perf: &fakePerformanceService{navs: test.navs}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			asset := trading.Asset{AccountID: "acct-1", CashTotal: 1000, MarketValue: 100, NetAsset: 1100,
+				DayProfit: -2000000, UpdatedAt: time.Date(2026, 10, 23, 15, 1, 0, 0, timeutil.Location())}
+			got := server.enrichAssetWithPublishedDayPnL(context.Background(), asset)
+			if got.AccountDayPnL != nil || got.AccountDayPnLStatus != test.wantStatus || got.AccountDayPnLReason == "" || got.AccountDayPnLTradeDate != "2026-10-23" {
+				t.Fatalf("missing PnL represented as a valid number: %+v", got)
+			}
+			if got.NetAsset != asset.NetAsset || got.DayProfit != asset.DayProfit {
+				t.Fatal("quality projection overwrote the stored asset or raw broker diagnostic")
+			}
+		})
+	}
+}

@@ -125,6 +125,10 @@ OC于2026-10-19说明，华鑫当前原始映射为 `cash_available=UsefulMoney`
 
 生产默认 `enrich=true` 的资产响应在收盘后可返回 `account_day_pnl`、`account_day_pnl_source`、`account_day_pnl_trade_date`。仅当同账户同日current非blocked的v2净值与当前资金快照的现金、市值及总资产逐项匹配时，`day_profit`和可空元数据 `account_day_pnl` 使用已发布账户日收益；0值由后者显式表达。无匹配证据、盘中或测试环境不应用，`enrich=false`保持原始口径，不回写账本。前端和当前日CSV优先使用该账户/日期匹配值，不再由柜台当前均价的平仓估算覆盖；持仓浮盈仍是独立指标，已发布值也不等于券商最终清算。见 [387核查与修复](ASSET_DAY_PNL_ALIGNMENT_20261019.md)。
 
+`GET /v1/accounts/{account_id}/asset?trade_date=YYYYMMDD`（也接受 `YYYY-MM-DD`）直接读取该日 `asset_snapshots(close)`，返回 `asset`、`trade_date`、`snapshot_type=close`，不使用绩效曲线投影替代资产，不重估当前持仓或重加逆回购。没有close返回404，不回退当前账户资产；未知账户404、非法日期400。历史恢复的 `captured_at` 可能晚于业务日，日收益关联使用显式查询交易日，不拿导入时刻当交易日。不传日期保持既有当前资产行为。
+
+生产收盘资产的默认补全另返回 `account_day_pnl_status` 和可选 `account_day_pnl_reason`：`available` 表示同范围匹配的已发布账户日收益，`pending` 表示暂无可用净值/依赖不可用，`blocked` 表示该日净值已阻断，`snapshot_mismatch` 表示净值与现金/市值/总资产不匹配。后三种不返回 `account_day_pnl` 数值，前端显示待核算/待复核/待核对，CSV金额留空，不把缺失当0，也不回退柜台成本或卖出差额估算。原始 `day_profit` 仅保留兼容诊断，不能在不可用状态下当账户收益消费。`enrich=false` 不增加这些展示标记；指定日期时仍是已落盘的派生close，而不是原始OC现金页。盘中及TEST不套用此收盘门禁。见 [收盘资金持仓修正](ASSET_CLOSE_DISPLAY_20261023.md)。
+
 ### Position
 
 持仓对象映射 `TiRspQryPosition`，保留 A 股 T+1 可卖数量：

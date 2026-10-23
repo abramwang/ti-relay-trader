@@ -36,7 +36,8 @@
     "path": "/v1/accounts/{account_id}/asset",
     "status": "needs-config",
     "fields": [
-      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" }
+      { "name": "account_id", "label": "account_id", "source": "path", "required": true, "defaultValue": "00030484" },
+      { "name": "trade_date", "label": "trade_date（历史收盘快照）", "source": "query", "defaultValue": "" }
     ]
   },
   {

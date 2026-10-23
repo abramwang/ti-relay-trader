@@ -14,7 +14,7 @@ import (
 // Reuse a published close only when the visible asset snapshot still matches it.
 // This avoids estimating account returns from mutable broker position costs.
 func (s *Server) enrichAssetWithPublishedDayPnL(ctx context.Context, asset trading.Asset) trading.Asset {
-	if s.perf == nil || s.cfg.Service.Environment != config.EnvironmentProduction || asset.AccountID == "" || asset.UpdatedAt.IsZero() {
+	if s.cfg.Service.Environment != config.EnvironmentProduction || asset.AccountID == "" || asset.UpdatedAt.IsZero() {
 		return asset
 	}
 	at := timeutil.InBusinessLocation(asset.UpdatedAt)
@@ -22,21 +22,45 @@ func (s *Server) enrichAssetWithPublishedDayPnL(ctx context.Context, asset tradi
 	if at.Before(closeAt) {
 		return asset
 	}
-	date := at.Format("2006-01-02")
+	return s.enrichCloseAssetWithPublishedDayPnL(ctx, asset, at.Format("2006-01-02"))
+}
+
+func (s *Server) enrichCloseAssetWithPublishedDayPnL(ctx context.Context, asset trading.Asset, date string) trading.Asset {
+	if s.cfg.Service.Environment != config.EnvironmentProduction || asset.AccountID == "" {
+		return asset
+	}
+	asset.AccountDayPnL = nil
+	asset.AccountDayPnLSource = ""
+	asset.AccountDayPnLTradeDate = date
+	asset.AccountDayPnLStatus = "pending"
+	asset.AccountDayPnLReason = "published_nav_unavailable"
+	if s.perf == nil {
+		return asset
+	}
 	navs, err := s.perf.ListPerformanceNAVs(ctx, asset.AccountID, date, date)
 	if err != nil {
 		s.logger.Warn("asset_published_day_pnl_unavailable", "account_id", asset.AccountID, "error", err)
+		asset.AccountDayPnLReason = "published_nav_query_failed"
 		return asset
 	}
 	for _, nav := range navs {
-		if nav.AccountID != asset.AccountID || nav.TradeDate != date || !nav.IsCurrent ||
-			(nav.Status != "provisional" && nav.Status != "finalized") ||
+		if nav.AccountID != asset.AccountID || nav.TradeDate != date || !nav.IsCurrent {
+			continue
+		}
+		if nav.Status == "blocked" {
+			asset.AccountDayPnLStatus = "blocked"
+			asset.AccountDayPnLReason = "published_nav_blocked"
+			return asset
+		}
+		if (nav.Status != "provisional" && nav.Status != "finalized") ||
 			!strings.HasPrefix(nav.FormulaVersion, "performance_economic_nav.v2.") ||
 			math.IsNaN(nav.AccountDayPnL) || math.IsInf(nav.AccountDayPnL, 0) {
+			asset.AccountDayPnLReason = "published_nav_not_eligible"
 			continue
 		}
 		valuation, ok := nav.PnLComponents["market_valuation"].(map[string]any)
 		if !ok {
+			asset.AccountDayPnLReason = "published_nav_valuation_missing"
 			continue
 		}
 		cash, cashOK := floatFromAny(valuation["close_visible_cash"])
@@ -45,6 +69,8 @@ func (s *Server) enrichAssetWithPublishedDayPnL(ctx context.Context, asset tradi
 			return !math.IsNaN(left) && !math.IsInf(left, 0) && !math.IsNaN(right) && !math.IsInf(right, 0) && math.Abs(left-right) <= 0.01
 		}
 		if !cashOK || !marketOK || !matches(cash, asset.CashTotal) || !matches(marketValue, asset.MarketValue) || !matches(nav.CloseEconomicNAV, asset.NetAsset) {
+			asset.AccountDayPnLStatus = "snapshot_mismatch"
+			asset.AccountDayPnLReason = "published_nav_snapshot_mismatch"
 			continue
 		}
 		pnl := nav.AccountDayPnL
@@ -52,6 +78,8 @@ func (s *Server) enrichAssetWithPublishedDayPnL(ctx context.Context, asset tradi
 		asset.AccountDayPnL = &pnl
 		asset.AccountDayPnLSource = nav.FormulaVersion
 		asset.AccountDayPnLTradeDate = date
+		asset.AccountDayPnLStatus = "available"
+		asset.AccountDayPnLReason = ""
 		return asset
 	}
 	return asset

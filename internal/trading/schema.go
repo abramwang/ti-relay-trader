@@ -139,6 +139,8 @@ type Asset struct {
 	AccountDayPnL          *float64  `json:"account_day_pnl,omitempty"`
 	AccountDayPnLSource    string    `json:"account_day_pnl_source,omitempty"`
 	AccountDayPnLTradeDate string    `json:"account_day_pnl_trade_date,omitempty"`
+	AccountDayPnLStatus    string    `json:"account_day_pnl_status,omitempty"`
+	AccountDayPnLReason    string    `json:"account_day_pnl_reason,omitempty"`
 	PositionProfit         float64   `json:"position_profit,omitempty"`
 	CloseProfit            float64   `json:"close_profit,omitempty"`
 	Credit                 float64   `json:"credit,omitempty"`

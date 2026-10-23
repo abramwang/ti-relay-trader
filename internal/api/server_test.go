@@ -4865,6 +4865,8 @@ type fakeSettlementStore struct {
 	cancelAttempts             []ledger.OrderCancelAttempt
 	cancelAttemptQuery         ledger.OrderCancelAttemptQuery
 	assetSnapshotResult        trading.Asset
+	assetSnapshotAccountID     string
+	assetSnapshotTradeDate     string
 	assetSnapshotQueryType     string
 	positionSnapshotResults    []trading.Position
 	positionSnapshotQuery      trading.PositionQuery
@@ -4881,7 +4883,9 @@ func (store *fakeSettlementStore) ListOrderCancelAttempts(_ context.Context, que
 	return append([]ledger.OrderCancelAttempt(nil), store.cancelAttempts...), nil
 }
 
-func (store *fakeSettlementStore) GetAssetSnapshot(_ context.Context, _ string, _ string, snapshotType string) (trading.Asset, error) {
+func (store *fakeSettlementStore) GetAssetSnapshot(_ context.Context, accountID string, tradeDate string, snapshotType string) (trading.Asset, error) {
+	store.assetSnapshotAccountID = accountID
+	store.assetSnapshotTradeDate = tradeDate
 	store.assetSnapshotQueryType = snapshotType
 	if store.err != nil {
 		return trading.Asset{}, store.err
