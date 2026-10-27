@@ -98,6 +98,16 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-broker-funds-audit: %v\n", err)
 			os.Exit(1)
 		}
+	case "performance-recovery-20261027":
+		if err := runPerformanceRecovery20261027(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-recovery-20261027: %v\n", err)
+			os.Exit(1)
+		}
+	case "performance-recovery-20261027-apply":
+		if err := runPerformanceRecovery20261027Apply(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-recovery-20261027-apply: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-recovery-20261016":
 		if err := runPerformanceRecovery20261016(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-recovery-20261016: %v\n", err)
