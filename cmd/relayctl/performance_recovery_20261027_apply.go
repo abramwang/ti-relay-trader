@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -14,6 +13,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"reflect"
 	"time"
 
 	"ti-relay-trader/internal/config"
@@ -141,9 +141,7 @@ func runPerformanceRecovery20261027Apply(args []string) error {
 		}
 		current.Finalization.RawPayload["meridian_components"] = pcf
 		current.Finalization.RawPayload["meridian_cash_component"] = cash
-		got, _ := json.Marshal(current)
-		want, _ := json.Marshal(old)
-		if !bytes.Equal(got, want) {
+		if !equalRecovery20261027Plan(current, old) {
 			return errors.New("source evidence changed after preview")
 		}
 		existing, err := repo.ListETFSettlementFinalizations(ctx, old.AccountID, "2026-10-21")
@@ -241,6 +239,23 @@ func runPerformanceRecovery20261027Apply(args []string) error {
 		return fmt.Errorf("commit failed; prepared report is NOT a commit receipt: %w", err)
 	}
 	return writeJSON(map[string]any{"transaction_state": "committed", "committed_at": timeutil.Now(), "reviewed_plan_sha256": *planHash, "backup_sha256": *backupHash, "accounts": 2, "nav_days": 10, "reconcile_bases": 8, "finalizations": 2, "cash_entries": 198, "broker_commands": 0})
+}
+
+func equalRecovery20261027Plan(a, b recovery20261027Plan) bool {
+	// Structs become maps inside audit fields after JSON round-trips. Object
+	// field order is not evidence; arrays, numbers and all values still are.
+	normalize := func(p recovery20261027Plan) (any, error) {
+		data, err := json.Marshal(p)
+		if err != nil {
+			return nil, err
+		}
+		var value any
+		err = json.Unmarshal(data, &value)
+		return value, err
+	}
+	left, leftErr := normalize(a)
+	right, rightErr := normalize(b)
+	return leftErr == nil && rightErr == nil && reflect.DeepEqual(left, right)
 }
 
 func validateRecovery20261027Reviewed(r recovery20261027Reviewed) error {

@@ -1,12 +1,34 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"testing"
 
 	"ti-relay-trader/internal/ledger"
 )
+
+func TestRecovery20261027PlanJSONRoundTrip(t *testing.T) {
+	p := recovery20261027Plan{AccountID: "307000051387", Evidence: map[string]any{
+		"execution_aggregates": []recovery20261027Trade{{Code: "300033", Qty: 200, GrossCents: 3926400, Orders: 2}},
+	}}
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q recovery20261027Plan
+	if err := json.Unmarshal(data, &q); err != nil {
+		t.Fatal(err)
+	}
+	if !equalRecovery20261027Plan(p, q) {
+		t.Fatal("object field ordering changed evidence")
+	}
+	q.Evidence["execution_aggregates"].([]any)[0].(map[string]any)["qty"] = float64(201)
+	if equalRecovery20261027Plan(p, q) {
+		t.Fatal("actual quantity change was ignored")
+	}
+}
 
 func TestRecovery20261027ExecutionRoundingAndSplitOrders(t *testing.T) {
 	trade := recovery20261027Trade{Code: "300346", Qty: 300, GrossCents: 1288300, Orders: 1}
