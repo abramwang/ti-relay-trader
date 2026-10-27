@@ -652,13 +652,18 @@ SELECT
     position_profit,
     close_profit,
     credit,
-    captured_at
+    CASE WHEN snapshot_type = 'broker_close' THEN
+        COALESCE(NULLIF(raw_payload #>> '{asset,updated_at}', ''),
+                 NULLIF(raw_payload #>> '{broker_asset,updated_at}', ''))::timestamptz
+    ELSE captured_at END
 FROM asset_snapshots
 WHERE account_id = $1
 ORDER BY trade_date DESC, captured_at DESC, asset_snapshot_pk DESC
 LIMIT 1
 `
 
+// Batch completion is not the cash observation time; using it can double-count
+// reverse repos executed between the asset reply and the last query reply.
 const assetSnapshotSQL = `
 SELECT
     account_id,
@@ -674,7 +679,10 @@ SELECT
     position_profit,
     close_profit,
     credit,
-    captured_at
+    CASE WHEN snapshot_type = 'broker_close' THEN
+        COALESCE(NULLIF(raw_payload #>> '{asset,updated_at}', ''),
+                 NULLIF(raw_payload #>> '{broker_asset,updated_at}', ''))::timestamptz
+    ELSE captured_at END
 FROM asset_snapshots
 WHERE account_id = $1
     AND trade_date = $2::date

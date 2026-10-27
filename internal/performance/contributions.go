@@ -960,6 +960,11 @@ func (service *Service) buildT0Groups(orders []trading.Order, fills []trading.Fi
 			if explicitGroupID != "" && order.T0OrderGroupID != explicitGroupID {
 				continue
 			}
+			// Infer T0 only from whole-PCF-unit orders, not small core rebalances.
+			// Explicit groups can intentionally split a unit across several orders.
+			if explicitGroupID == "" && (group.redemptionUnit <= 0 || order.OrderQty <= 0 || order.OrderQty%group.redemptionUnit != 0) {
+				continue
+			}
 			orderTime := contributionOrderTime(order)
 			redemptionTime := contributionFillTime(redemption)
 			if explicitGroupID == "" && (orderTime.IsZero() || redemptionTime.IsZero()) {

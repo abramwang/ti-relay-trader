@@ -984,6 +984,9 @@ func (repo *Repository) GetLatestAsset(ctx context.Context, accountID string) (t
 	if err != nil {
 		return trading.Asset{}, fmt.Errorf("scan asset %s: %w", accountID, err)
 	}
+	if asset.UpdatedAt.IsZero() {
+		return trading.Asset{}, fmt.Errorf("%w: asset observation time is missing for %s", ErrAssetNotFound, accountID)
+	}
 	return asset, nil
 }
 

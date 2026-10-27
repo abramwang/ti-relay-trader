@@ -4697,6 +4697,8 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		assetResult.Asset, err = s.settles.GetAssetSnapshot(ctx, accountID, tradeDate, inputSnapshotType)
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("%s asset: %v", inputSnapshotType, err))
+		} else if inputSnapshotType == "broker_close" && assetResult.Asset.UpdatedAt.IsZero() {
+			out.Errors = append(out.Errors, "broker_close asset observation time is missing")
 		} else if !assetResult.Asset.UpdatedAt.IsZero() {
 			accountCapturedAt = assetResult.Asset.UpdatedAt
 		}
@@ -4809,6 +4811,7 @@ func (s *Server) buildAccountSettlementSnapshot(ctx context.Context, accountID s
 		"reverse_repo": map[string]any{
 			"principal_receivable": assetResult.Asset.ReverseRepoReceivable,
 			"source":               reverseRepoSource,
+			"cash_observed_at":     assetResult.Asset.UpdatedAt,
 		},
 	}
 	rawSummary := []ledger.RawStreamSummaryBucket{}

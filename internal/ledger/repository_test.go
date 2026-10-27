@@ -879,6 +879,9 @@ func TestGetAssetSnapshotBuildsExactBrokerCloseRead(t *testing.T) {
 	requireQueryContains(t, exec.query, "FROM asset_snapshots")
 	requireQueryContains(t, exec.query, "trade_date = $2::date")
 	requireQueryContains(t, exec.query, "snapshot_type = $3")
+	requireQueryContains(t, exec.query, "CASE WHEN snapshot_type = 'broker_close' THEN")
+	requireQueryContains(t, exec.query, "raw_payload #>> '{asset,updated_at}'")
+	requireQueryContains(t, exec.query, "ELSE captured_at END")
 	requireArgLen(t, exec.args, 3)
 	if exec.args[0] != "acct-1" || exec.args[1] != "2026-06-12" || exec.args[2] != "broker_close" {
 		t.Fatalf("args = %#v", exec.args)

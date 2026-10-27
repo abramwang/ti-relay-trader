@@ -136,11 +136,12 @@ type performanceRebuildItem struct {
 }
 
 type performanceRebuildReport struct {
-	DateFrom    string                   `json:"date_from"`
-	DateTo      string                   `json:"date_to"`
-	Persist     bool                     `json:"persist"`
-	Items       []performanceRebuildItem `json:"items"`
-	SkippedDays []string                 `json:"skipped_days,omitempty"`
+	DateFrom     string                   `json:"date_from"`
+	DateTo       string                   `json:"date_to"`
+	Persist      bool                     `json:"persist"`
+	PreviewChain bool                     `json:"preview_chain,omitempty"`
+	Items        []performanceRebuildItem `json:"items"`
+	SkippedDays  []string                 `json:"skipped_days,omitempty"`
 }
 
 func runPerformanceRebuild(args []string) error {
@@ -151,9 +152,13 @@ func runPerformanceRebuild(args []string) error {
 	dateFromValue := flags.String("date-from", "", "first trade date, YYYYMMDD or YYYY-MM-DD")
 	dateToValue := flags.String("date-to", "", "last trade date, defaults to date-from")
 	persist := flags.Bool("persist", false, "persist non-blocked cost states and provisional v2 NAVs")
+	previewChain := flags.Bool("preview-chain", false, "carry eligible preview costs and NAVs in memory, with a read-only database transaction")
 	timeout := flags.Duration("timeout", 5*time.Minute, "rebuild timeout")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *previewChain && *persist {
+		return fmt.Errorf("-preview-chain cannot be combined with -persist")
 	}
 	accounts := splitCSV(*accountsValue)
 	if len(accounts) == 0 {
@@ -193,8 +198,19 @@ func runPerformanceRebuild(args []string) error {
 	if err != nil {
 		return err
 	}
+	var store relayperformance.Store = ledger.NewRepository(db)
+	var preview *performancePreviewStore
+	if *previewChain {
+		tx, txErr := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+		if txErr != nil {
+			return txErr
+		}
+		defer tx.Rollback()
+		preview = &performancePreviewStore{Repository: ledger.NewRepository(tx), costs: make(map[string]map[string][]ledger.PositionCostState), navs: make(map[string]map[string]ledger.PerformanceNAV)}
+		store = preview
+	}
 	service, err := relayperformance.New(relayperformance.Options{
-		Store:               ledger.NewRepository(db),
+		Store:               store,
 		Calendar:            marketClient,
 		Market:              marketClient,
 		FormulaVersion:      cfg.Performance.FormulaVersion,
@@ -208,10 +224,12 @@ func runPerformanceRebuild(args []string) error {
 		return err
 	}
 	report := performanceRebuildReport{
-		DateFrom: dateFrom.Format("2006-01-02"),
-		DateTo:   dateTo.Format("2006-01-02"),
-		Persist:  *persist,
+		DateFrom:     dateFrom.Format("2006-01-02"),
+		DateTo:       dateTo.Format("2006-01-02"),
+		Persist:      *persist,
+		PreviewChain: *previewChain,
 	}
+	previewFailures := make(map[string]string)
 	for date := dateFrom; !date.After(dateTo); date = date.AddDate(0, 0, 1) {
 		dateText := date.Format("2006-01-02")
 		calendar, calendarErr := marketClient.TradingDayStatus(ctx, date.Format("20060102"))
@@ -224,9 +242,17 @@ func runPerformanceRebuild(args []string) error {
 		}
 		for _, accountID := range accounts {
 			item := performanceRebuildItem{AccountID: accountID, TradeDate: dateText}
+			if failedDate := previewFailures[accountID]; failedDate != "" {
+				item.Error = "preview chain stopped after blocked or failed date " + failedDate
+				report.Items = append(report.Items, item)
+				continue
+			}
 			cost, costErr := service.CalculateCostLedger(ctx, accountID, dateText, relayperformance.CostLedgerOptions{})
 			item.Cost = cost
 			if costErr != nil {
+				if preview != nil {
+					previewFailures[accountID] = dateText
+				}
 				item.Error = "cost ledger: " + costErr.Error()
 				report.Items = append(report.Items, item)
 				continue
@@ -243,6 +269,9 @@ func runPerformanceRebuild(args []string) error {
 			nav, navErr := service.CalculateEconomicNAV(ctx, accountID, dateText, relayperformance.EconomicNAVOptions{})
 			item.NAV = nav
 			if navErr != nil {
+				if preview != nil {
+					previewFailures[accountID] = dateText
+				}
 				item.Error = "economic nav: " + navErr.Error()
 				report.Items = append(report.Items, item)
 				continue
@@ -252,6 +281,13 @@ func runPerformanceRebuild(args []string) error {
 				item.NAV = nav
 				if navErr != nil {
 					item.Error = "persist economic nav: " + navErr.Error()
+				}
+			}
+			if preview != nil {
+				if performanceResultPublishable(cost.Status, nav.Status) {
+					preview.remember(accountID, dateText, cost.Positions, nav.NAV)
+				} else {
+					previewFailures[accountID] = dateText
 				}
 			}
 			report.Items = append(report.Items, item)

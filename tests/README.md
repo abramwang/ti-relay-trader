@@ -87,6 +87,8 @@ python3 scripts/check-readonly-release.py \
 
 ## 后续计划
 
+2026-10-27绩效修复：`go test ./internal/performance ./cmd/relayctl ./internal/api ./internal/ledger` 覆盖PCF整倍委托、底仓排除、显式分组、真实歧义、连续内存预览与源资金时间门禁。`TestBrokerCashTimestampReadOnly` 使用单独的 `RELAY_CASH_TIME_READONLY_DATABASE_URL` 显式启用，只读事务验证CTE及两条2026-10生产历史样本；不得使用会建表写入的其他集成测试开关替代。详见 `docs/PERFORMANCE_REPAIR_PREVIEW_20261027.md`。
+
 1. 将现有临时 PostgreSQL migration/repository 集成脚本接入外部 CI。
 2. 增加盘后对账和绩效贡献的更多固定样例数据测试；人工复核报告已有 API 固定样例和生产只读 Playwright 验收。
 3. [x] 增加 gateway 心跳、stream lag、非交易时段抑制和 DLQ 处置写保护测试；`operations_visual_smoke.py` 验证生产 6 gateway / 24 output stream 页面。
