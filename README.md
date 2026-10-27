@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N8-N12 完成；N13 可信成本账与绩效重建进行中 |
-| 最近确认 | `2026-10-27 Asia/Shanghai` 已发布T0分组/原始资金时刻修正（1d916cd），387/388共10账户日连续只读试算通过；两笔逆回购dry-run消除重复本金。历史close/NAV未写回，下一步合并真实清算/费用后备份修复；生产下单仍关闭、worker未重启。见 docs/PERFORMANCE_REPAIR_PREVIEW_20261027.md |
+| 最近确认 | `2026-10-27 17:18 Asia/Shanghai` 备份后已原子恢复387/388的实际ETF清算、资金桥及10账户日成本/NAV；两户各61日延伸至10-27，DB/域名接口均无阻断。历史派生close逆回购重复本金与768权益仍待修；生产下单关闭、API/worker未重启。见 docs/PERFORMANCE_ACTUAL_SETTLEMENT_RECOVERY_20261027.md |
 | 更新时间 | `2026-10-27` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-10-27` 已完成387/388实际清算与连续绩效恢复：159915的98个实物成分全部核对，另2行PCF明确零暴露；每户13.06过户费和652.34现金差额按源日应付、实际扣款日释放，T0净贡献分别-21386.47/-17430.61。备份后写入2条终值、198条清算现金、8个独立reconcile和10账户日成本/NAV，两户各61日、0 blocked，网页默认到10-27；仍为账户provisional，388部分repo费用提示保留。历史close未改、768未改，下步先重建两笔已确认重复本金的close，再核768权益。详细备份/验收及代码提交见 `docs/PERFORMANCE_ACTUAL_SETTLEMENT_RECOVERY_20261027.md`。
 
 - `2026-10-27` 绩效修复代码完成：自动T0分组按原委托量/PCF整数倍排除底仓，387/388从10-21到27共10账户日内存连续预览通过，未落库。逆回购根因追到broker_close读取用整批captured_at覆盖15:01:01原始资金时刻，已改为读取raw源时间、缺时刻拒绝派生写入。新增 `performance-rebuild -preview-chain` 只读事务；测试及证据见 `docs/PERFORMANCE_REPAIR_PREVIEW_20261027.md`。历史close/NAV尚未修复，新券商清算仍须加入独立计划后备份发布。
 
