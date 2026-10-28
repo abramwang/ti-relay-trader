@@ -62,7 +62,11 @@ func TestBrokerCashTimestampReadOnly(t *testing.T) {
 			}
 		})
 	}
-	for _, sample := range []struct{ account, date string }{{"307000051388", "2026-10-21"}, {"314000045768", "2026-10-26"}} {
+	for _, sample := range []struct{ account, date string }{
+		{"314000046830", "2026-08-13"},
+		{"307000051388", "2026-10-21"},
+		{"314000045768", "2026-10-26"},
+	} {
 		asset, err := NewRepository(tx).GetAssetSnapshot(ctx, sample.account, sample.date, "broker_close")
 		if err != nil {
 			t.Fatal(err)
