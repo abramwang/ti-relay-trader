@@ -33,6 +33,9 @@
 状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
 
 - [x] 审阅 OC 2026-11-03 阶段交付，核对 Relay 模型、字符串编号、持仓维度、凭据、行情及交易日差距；形成 A-E 建议答复及验收矩阵。
+- [x] 审阅 OC F0 回复：更新 UserID/InvestorID 分离和单合约查询离线能力，纠正 InstrumentField 权限边界、BizType/空投资单元、独立撤单只读约束；见 [审阅与下一步交付](OC_CTP_F0_FEEDBACK_REVIEW_20261103.md)，不标记为契约冻结。
+- [ ] F0 第一批：Relay 交付 HTTP/wire/SDK/DB 字段矩阵及 native_ids/身份/时间规范，由 OC 对照 SDK 确认。
+- [ ] F0 第二批：交付凭据 JSON/key/AAD 字节规范、虚构凭据正反测试向量，以及查询/心跳/报撤/恢复 fixture，双方离线回归。
 - [ ] F0：与 OC 冻结 schema、身份/夜盘归日、凭据和样例；向 Meridian 核实 SHFE 元数据/行情覆盖，交付可复用离线 fixture。
 - [ ] F1：扩展期货账本、原生字符串编号、多维持仓、资产、幂等和凭据；离线迁移与 A 股回归通过。
 - [ ] F2：查询、推送、持久化、完整快照和 readiness；OC 独立测试包就绪并获授权后验证只读链路。
