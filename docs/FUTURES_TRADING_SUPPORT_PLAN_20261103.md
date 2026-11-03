@@ -6,6 +6,8 @@
 
 同日反馈已并入：[OC F0 回复审阅与交付清单](OC_CTP_F0_FEEDBACK_REVIEW_20261103.md)。OC 接受总体分工，字段、凭据测试向量及协议 fixture 仍未冻结/交付。
 
+最新交付：[F0 首批字段与样例附录](CTP_F0_CONTRACT_DRAFT_20261103.md) 已提供候选矩阵、身份字节规范、公开凭据向量及离线样例；替代上句“尚未交付”的状态，但不代表全部材料或双方冻结完成。OC 最新 M2 报告基线 `7c4e49a` 增加查询调度、静态约束及缓存代次回收，尚未在线验收，也未标 M2 整体完成。
+
 ## 1. 目标与交付边界
 
 依据用户提供的《OC CTP 期货接入：阶段交付与 Relay 配合确认》，首次审阅的 OC 实现基线为 `dbd1e30`，使用指定 CTP `v6.7.13`。已交付配置、SDK 校验、认证登录状态机和四类查询原始结构收集；没有完成 Relay JSON 页、Redis 心跳、持久身份及交易闭环。当前程序仅开放 `--help/--check-config`，正常启动退出码为 3，不能替换在用交易服务。离线构建、5 个 CTest 和合成回调验证不等于真实柜台验收。
@@ -49,7 +51,7 @@
 ### B. 委托契约与校验
 
 - 建议采用 OC 提议的 `business_type=F`、`trade_side=B/S`、`offset_type=O/C/CT/CY`、`hedge_type=speculation`。买卖方向和持仓多空分开解释；期货必须显式提供开平，不沿用股票省略值。
-- 保留 HTTP `price/qty` 与 Redis payload `limit_price/order_qty` 的现有层次差异，通过明确映射转换，不因为 OC 文档示例就在 SDK 增加一套平行下单入口。
+- 更正现有实现：华鑫 HTTP 与命令 payload 目前均使用 `price/qty`，订单回报常用 `limit_price/order_qty`。CTP 候选命令按 OC 提案采用后者，需新增显式适配而非声称已有转换；具体精确价格字符串方案见 F0 附录。既有华鑫链路不改，不增加平行 SDK 下单方法。
 - 数量单位为手，必须正整数；价格按可信合约最小价位校验，使用精确十进制/整数档位比较，不用浮点余数误判。适用的合约有效期、数量限制和价格限制缺证据时返回未就绪，不凭股票规则猜测。
 - `symbol` 保存完整原生 InstrumentID，大小写及长度原样保留；Meridian security_id 为显式映射，不靠统一大写/截断生成。连续、主连等研究代码不得当可交易合约直接发送。
 - C/CT/CY 是否适用于某合约须由契约及样本确认。不能在拒单后自动换开平枚举，也不在 Relay 或 OC 自动拆平仓。
@@ -126,9 +128,9 @@ F2/F3 的离线工作可以与 OC 开发并行；在线验收依赖真实交付�
 
 ## 7. 下一步及待协调事项
 
-下一步只进入 F0：与 OC 冻结契约和脱敏样例，不先迁移生产表或开放期货交易。
+下一步继续 F0：请 OC 回签首批附录并核对公开向量，补齐字段长度、完整 schema 和恢复 fixture 后冻结；不先迁移生产表或开放期货交易。
 
-可复用现有测试源：`internal/orderflow/service_test.go`（幂等及撤单）、`internal/redisstream/ledger_sync_test.go`（回报和失败快照）、`internal/redisstream/checkpoint_recovery_test.go` 与 `checkpoint_reconcile_test.go`（恢复、完整页）。这些不是已交付 CTP fixture；F0 再抽取最小输入、期望输出及断言，保存到计划新增的 `testdata/ctp/`，不含真实凭据。
+可复用现有测试源：`internal/orderflow/service_test.go`（幂等及撤单）、`internal/redisstream/ledger_sync_test.go`（回报和失败快照）、`internal/redisstream/checkpoint_recovery_test.go` 与 `checkpoint_reconcile_test.go`（恢复、完整页）。已新增 `testdata/ctp/` 首批消息/查询真值表/公开凭据向量和 `tests/ctpcontract/` 离线测试；不是完整 CTP 恢复实现验收，不含真实凭据。其余拒撤、批量失败及 ACK 崩溃样例仍需补充。
 
 OC 已接受 A-E 原则，下一步由 Relay 先交付字段矩阵、字符串身份/日期规范、凭据字节级测试向量和协议样例，OC 对照 SDK 逐项确认；C/CT/CY 适用范围及最终资金投影仍待证据。OC 后续顺序为 M2 类型与调度、M3 协议与持久恢复、M4 离线恢复验证、M5 独立测试包。需要 Meridian 确认：SHFE 合约和行情覆盖及版本、交易日/时段、最小价位/乘数、结算价发布口径；现有 CFFEX 能力不足以替代确认。
 

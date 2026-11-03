@@ -1,0 +1,16 @@
+{
+  "contract_version": "ctp.f0.draft.1",
+  "synthetic_only": true,
+  "cases": [
+    {"name":"complete", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":1,"expected_replace":true},
+    {"name":"complete_empty_positions", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":1,"expected_replace":true},
+    {"name":"queue_expired_old_cache_readable", "ticket_matches":true,"context_matches":true,"sdk_submitted":false,"raw_completed":false,"typed_applied":false,"pages_complete":false,"terminal_count":1,"expected_replace":false},
+    {"name":"raw_complete_typed_invalid", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":false,"pages_complete":true,"terminal_count":1,"expected_replace":false},
+    {"name":"wrong_ticket_old_snapshot", "ticket_matches":false,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":1,"expected_replace":false},
+    {"name":"old_connection", "ticket_matches":true,"context_matches":false,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":1,"expected_replace":false},
+    {"name":"sdk_sent_timeout", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":false,"typed_applied":false,"pages_complete":false,"terminal_count":1,"expected_replace":false},
+    {"name":"missing_final", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":false,"terminal_count":0,"expected_replace":false},
+    {"name":"duplicate_terminal", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":2,"expected_replace":false},
+    {"name":"partial_resource_limit", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":false,"typed_applied":false,"pages_complete":false,"terminal_count":1,"expected_replace":false}
+  ]
+}
