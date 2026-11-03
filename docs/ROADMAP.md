@@ -35,6 +35,8 @@
 - [x] 审阅 OC 2026-11-03 阶段交付，核对 Relay 模型、字符串编号、持仓维度、凭据、行情及交易日差距；形成 A-E 建议答复及验收矩阵。
 - [x] 审阅 OC F0 回复：更新 UserID/InvestorID 分离和单合约查询离线能力，纠正 InstrumentField 权限边界、BizType/空投资单元、独立撤单只读约束；见 [审阅与下一步交付](OC_CTP_F0_FEEDBACK_REVIEW_20261103.md)，不标记为契约冻结。
 - [x] 根据 OC M2 `7c4e49a` 反馈交付 [F0 首批附录](CTP_F0_CONTRACT_DRAFT_20261103.md)：字段候选矩阵、原生身份字节规则、AES-GCM 公开向量、10 个消息样例及 10 项快照真值表；`tests/ctpcontract` 离线自洽测试通过，未实现或上线 CTP 业务。
+- [x] 审阅 OC `7a4bb66/c50226d` 回签并修正 draft.2：标准 fill_id、所有回执类型标记、批量继承冲突反例、int32手数及SDK来源规则；直接核验 Meridian 机器契约并新增8项显式映射用例。见 [draft.2 交付](CTP_F0_DRAFT2_REVIEW_20261103.md)，不自行定义期货标准代码。
+- [ ] Meridian 确认 SHFE 目录、原码映射、行情/时效/动态价格及夜盘覆盖；协作项已列于 `MERIDIAN_CTP_INSTRUMENT_ALIGNMENT_20261103.md`。现有公开契约仅列 IF/IH/IC/IM，未知标准关联不阻止柜台事实采集但不得放行新单。
 - [ ] F0 第一批：Relay 交付 HTTP/wire/SDK/DB 字段矩阵及 native_ids/身份/时间规范，由 OC 对照 SDK 确认。
 - [ ] F0 第二批：交付凭据 JSON/key/AAD 字节规范、虚构凭据正反测试向量，以及查询/心跳/报撤/恢复 fixture，双方离线回归。
 - [ ] 首批待回签：OC 独立解密向量、确认 CTP 专用价格字符串/字段映射、空间填充/身份算法和 M2 应用结果审计；补齐 SDK 字节长度、金额编码及 C/CT/CY 原生映射，再补拒撤/批量失败/ACK 崩溃共同样例。已交付部分不重复规划，不因单方测试通过关闭 F0。

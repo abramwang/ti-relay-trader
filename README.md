@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-03 Asia/Shanghai` 收到 OC M2 7c4e49a 后已交付 F0 首批字段/身份/凭据附录、10 个消息样例、10 项查询应用用例及离线测试。待 OC 回签和补齐恢复样例，未冻结/上线；未改环境或权限。见 docs/CTP_F0_CONTRACT_DRAFT_20261103.md |
+| 最近确认 | `2026-11-03 Asia/Shanghai` OC 回签后已修订 F0 draft.2 样例和回归，核验 Meridian 公开机器契约并明确 security_id/原码映射；SHFE覆盖待确认，不自行造标准代码。未冻结/上线，未改环境或权限。见 docs/CTP_F0_DRAFT2_REVIEW_20261103.md |
 | 更新时间 | `2026-11-03` |
 
 新线程按以下顺序恢复：
@@ -26,7 +26,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-03` 期货支持处于 F0：OC M2 基线7c4e49a报告查询队列/静态约束/缓存代次回收，尚未在线验收。Relay 已新增 `testdata/ctp/` 和 `tests/ctpcontract/`，提供候选字段矩阵、身份字节规范、AES-GCM公开虚构向量、10个消息和10项查询用例，详见 [首批附录](docs/CTP_F0_CONTRACT_DRAFT_20261103.md)。下一步 OC 回签、补 SDK 长度/金额编码/开平映射和完整恢复 fixture；不再只重复规划。运行时仍不支持这些期货 payload，严禁发布样例；未切环境、改账或开放权限，768历史资产范围问题保留。
+- `2026-11-03` 期货处于 F0：OC 报告7a4bb66/c50226d离线codec/凭据实现；Relay交付 [draft.2](docs/CTP_F0_DRAFT2_REVIEW_20261103.md)，修正fill_id、回执类型标记、批量继承及SDK约束，新增Meridian精确映射反例。标准代码必须来自Meridian security_id，原码按source_instrument_id/exchange_id保留，不自动拼接；在线契约仍仅列IF/IH/IC/IM，SHFE协作清单已整理。下一步OC复验draft.2、确认行情覆盖、补金额serializer与完整恢复fixture；运行时不接这些样例，未切环境/改账/开放权限，768历史资产问题保留。
 
 - `2026-10-28` 768现金范围追查：新增唯一余额链审计，4060条非零交割全部使用、5日逐证券/金额/笔数完全匹配，证明现金记录无缺口或重复。资金报告其他资产仍缺业务定义，不能凭同额删除或加回；已向用户询问并整理 `docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md` 可转券商。完整证据见 `docs/FUYING13_BALANCE_CHAIN_REVIEW_20261028.md`，确认范围后再连续重算。
 

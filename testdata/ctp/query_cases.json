@@ -1,5 +1,5 @@
 {
-  "contract_version": "ctp.f0.draft.1",
+  "contract_version": "ctp.f0.draft.2",
   "synthetic_only": true,
   "cases": [
     {"name":"complete", "ticket_matches":true,"context_matches":true,"sdk_submitted":true,"raw_completed":true,"typed_applied":true,"pages_complete":true,"terminal_count":1,"expected_replace":true},

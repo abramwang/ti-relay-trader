@@ -2,6 +2,8 @@
 
 版本：`ctp.f0.draft.1`，2026-11-03，Asia/Shanghai。**Relay 首批候选交付，待 OC 对照 SDK 确认；未冻结、未部署。**
 
+版本提示：本文保留 draft.1 评审基线，原样例见提交 `2e25e62`；OC 回签后已交付 [draft.2 修正及 Meridian 标的约束](CTP_F0_DRAFT2_REVIEW_20261103.md)，当前 testdata/ctp 和 runner 使用 draft.2。后者修正成交 ID、类型标记、批量继承及 SDK/标的映射边界，优先于本文相关待定项。
+
 本附录接续 [开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md) 和 [F0 回复审阅](OC_CTP_F0_FEEDBACK_REVIEW_20261103.md)。可以直接转给 OC，使用第 7 节命令做离线验证；不需要 Redis、数据库、真实账号或 SDK 会话。
 
 ## 1. 本轮与 M2 的关系

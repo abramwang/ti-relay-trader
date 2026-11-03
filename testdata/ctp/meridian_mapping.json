@@ -1,0 +1,21 @@
+{
+  "contract_version": "ctp.f0.draft.2",
+  "synthetic_only": true,
+  "source_contract_id": "meridian.ctp_futures_level1.v1",
+  "source_fixture_sha256": "6866f434282ab1c9fa3657567ead71974a27b70b681bbdbdbdea74cbf451b7cb",
+  "source_fixture": "Meridian testdata/ctp_futures/instruments.v1.json; selected fields, not a production catalog",
+  "instruments": [
+    {"schema_version":"futures_instrument.v1","security_id":"IF2612.CFFEX","source_instrument_id":"IF2612","exchange_id":"CFFEX","product_id":"IF","volume_multiple":300,"price_tick":0.2,"trading_status":"active_fixture","source_snapshot_id":"fixture-instruments-v1"},
+    {"schema_version":"futures_instrument.v1","security_id":"SC2610.INE","source_instrument_id":"sc2610","exchange_id":"INE","product_id":"SC","volume_multiple":1000,"price_tick":0.1,"trading_status":"fixture_only_not_production_scope","source_snapshot_id":"fixture-instruments-v1"}
+  ],
+  "cases": [
+    {"name":"explicit_mapping","security_id":"IF2612.CFFEX","source_instrument_id":"IF2612","exchange_id":"CFFEX","expected_match":true},
+    {"name":"case_distinct_native","security_id":"SC2610.INE","source_instrument_id":"sc2610","exchange_id":"INE","expected_match":true},
+    {"name":"native_must_not_uppercase","security_id":"SC2610.INE","source_instrument_id":"SC2610","exchange_id":"INE","expected_match":false},
+    {"name":"canonical_must_not_lowercase","security_id":"sc2610.INE","source_instrument_id":"sc2610","exchange_id":"INE","expected_match":false},
+    {"name":"wrong_exchange","security_id":"SC2610.INE","source_instrument_id":"sc2610","exchange_id":"SHFE","expected_match":false},
+    {"name":"derived_not_tradable","security_id":"IF.DOMINANT.CFFEX","source_instrument_id":"IF2612","exchange_id":"CFFEX","expected_match":false},
+    {"name":"shfe_not_in_verified_catalog","security_id":"RB2612.SHFE","source_instrument_id":"rb2612","exchange_id":"SHFE","expected_match":false},
+    {"name":"missing_standard_identity","security_id":"","source_instrument_id":"rb2612","exchange_id":"SHFE","expected_match":false}
+  ]
+}

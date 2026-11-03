@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -177,7 +178,7 @@ func object(t *testing.T, v any) map[string]any {
 func TestMessageFixtures(t *testing.T) {
 	var fixtures messages
 	readFixture(t, "messages.json", &fixtures)
-	if !fixtures.SyntheticOnly || fixtures.ContractVersion != "ctp.f0.draft.1" || len(fixtures.Cases) != 10 {
+	if !fixtures.SyntheticOnly || fixtures.ContractVersion != "ctp.f0.draft.2" || len(fixtures.Cases) != 10 {
 		t.Fatal("unexpected fixture catalogue")
 	}
 	names := map[string]bool{}
@@ -201,6 +202,9 @@ func TestMessageFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			p := object(t, body["payload"])
+			if err := validateDraftPayload(p, env.Action, env.EventType); err != nil {
+				t.Fatal(err)
+			}
 			if c.Suffix == "cmd.trade" {
 				if _, ok := body["routing"]; ok {
 					t.Fatal("commands route by stream, not invented routing field")
@@ -255,6 +259,12 @@ func TestMessageFixtures(t *testing.T) {
 				field := "submitted_at"
 				if c.Name == "fill" {
 					field = "matched_at"
+					if _, ok := ids["sdk_request_id"]; ok {
+						t.Fatal("TradeField has no order RequestID")
+					}
+					if ids["user_id"] != "EXTERNAL_USER" {
+						t.Fatal("source UserID overwritten by login collector")
+					}
 					if p["fee"] != nil || p["fee_complete"] != false {
 						t.Fatal("unknown fee fabricated")
 					}
@@ -310,20 +320,28 @@ func TestMessageFixtures(t *testing.T) {
 
 var decimalPrice = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]{1,9})?$`)
 
+func validDraftPrice(value string) bool {
+	if len(value) > 64 || !decimalPrice.MatchString(value) {
+		return false
+	}
+	n, err := strconv.ParseUint(strings.ReplaceAll(value, ".", ""), 10, 64)
+	return err == nil && n > 0
+}
+
 func TestDraftPriceLexemes(t *testing.T) {
 	for _, value := range []string{"1", "3600", "3600.000000000", "0.000000001"} {
-		if !decimalPrice.MatchString(value) || strings.Trim(value, "0.") == "" {
+		if !validDraftPrice(value) {
 			t.Fatalf("valid decimal rejected: %q", value)
 		}
 	}
-	for _, value := range []string{"", "0", "0.000", "1e3", "1E3", "01", "+1", "-1", " 1", "1 ", ".1", "1.", "0.0000000001", "NaN", "Inf"} {
-		if decimalPrice.MatchString(value) && strings.Trim(value, "0.") != "" {
+	for _, value := range []string{"", "0", "0.000", "1e3", "1E3", "01", "+1", "-1", " 1", "1 ", ".1", "1.", "0.0000000001", "NaN", "Inf", "18446744073709551616", strings.Repeat("1", 65)} {
+		if validDraftPrice(value) {
 			t.Fatalf("invalid decimal accepted: %q", value)
 		}
 	}
 	// SDK range/tick constraints are separate from this lexical candidate contract.
-	for _, value := range []json.Number{"0", "-1", "1.5", "1e2", "9223372036854775808"} {
-		if n, err := value.Int64(); err == nil && n > 0 {
+	for _, value := range []json.Number{"0", "-1", "1.0", "1.5", "1e2", "2147483648", "9223372036854775808"} {
+		if n, err := value.Int64(); err == nil && n > 0 && n <= 2147483647 {
 			t.Fatalf("invalid lot quantity accepted: %q", value)
 		}
 	}
@@ -345,11 +363,11 @@ func assertOrder(t *testing.T, p map[string]any) {
 		t.Fatal("qty is not integer number")
 	}
 	q, err := n.Int64()
-	if err != nil || q <= 0 {
+	if err != nil || q <= 0 || q > 2147483647 {
 		t.Fatal("qty is not positive lots")
 	}
 	price, ok := p["limit_price"].(string)
-	if !ok || !decimalPrice.MatchString(price) || strings.Trim(price, "0.") == "" {
+	if !ok || !validDraftPrice(price) {
 		t.Fatal("not positive plain decimal string")
 	}
 }
@@ -382,6 +400,9 @@ func TestIdentityRules(t *testing.T) {
 		t.Fatal("identity byte contract drift")
 	}
 	base := sha256.Sum256(raw)
+	if hex.EncodeToString(base[:]) != "429907f7d5b63b955664140887b7001952eb4eaaea32f99efe4c78649c09f0d6" {
+		t.Fatal("OC/Relay external order digest mismatch")
+	}
 	for i := range parts {
 		changed := append([]string(nil), parts...)
 		changed[i] += "x"
@@ -421,7 +442,7 @@ func TestQueryApplicationTruthTable(t *testing.T) {
 		} `json:"cases"`
 	}
 	readFixture(t, "query_cases.json", &f)
-	if !f.SyntheticOnly || f.ContractVersion != "ctp.f0.draft.1" || len(f.Cases) != 10 {
+	if !f.SyntheticOnly || f.ContractVersion != "ctp.f0.draft.2" || len(f.Cases) != 10 {
 		t.Fatal("wrong query catalogue")
 	}
 	for _, c := range f.Cases {
