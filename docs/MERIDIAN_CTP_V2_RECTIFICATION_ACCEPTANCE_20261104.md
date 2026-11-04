@@ -6,6 +6,8 @@
 
 V1 类型校验和 V2 每行请求隔离在本轮离线范围内复核通过，可关闭这两项整改待办。M1/M2 接收约定已明确；M3 的授权真实样本、SHFE 目录晋级、实时行情、完整夜盘及结算仍未验收。不能把离线通过升级为生产就绪或账户权限证明。
 
+同日已核对 Meridian《Relay-CTP-v2整改验收收口》：`M1/M2/V1/V2 accepted；M3 pending_authorized_sample` 与本回执一致，确认收口，无需再发一轮技术整改。其“账户级下单量边界”在此限定为 Trader InstrumentField 的柜台合约静态委托量边界，不代表账户专属权限或最终准入已验证。取得授权样本也不等于已授权目录切换，后续采集和发布按各自明确授权执行。
+
 ## Relay 实际执行
 
 | 验证 | 结果 | 证明边界 |
@@ -36,7 +38,7 @@ bash /home/ti_meridian_data/scripts/test-ctp-futures-instrument-query-gate.sh
 
 这次变化是 Meridian 静态快照导入与采集门禁，不是 `relay.stream.v1` 或 `ctp.f0.draft.2` 交易 wire 升级。六份共享 JSON 不变，OC 不需要为本次状态更新重新验证同一批 JSON，也不要求增加 Meridian 客户端、全交易所扫描或新的 Redis 字段。
 
-Relay 已更新 [给 OC 的回签确认](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md) 及其说明文档，重新打包固定提交源码。旧 `51a4d6b` 材料包保留作历史，此次转交应使用新包，避免旧“V1/V2待整改”文字造成误解。OC 的金额材料、完整wire和实际持久恢复待办不变。
+Relay 已更新 [给 OC 的回签确认](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md) 及其说明文档。按用户后续明确边界，只对接协议、字段定义、消息样例及验收证据，不要求交换二进制或源码包，也不以运行对方程序为验收前提。此前源码归档仅作历史备用，不需要转交或重新打包。OC 的金额材料、完整wire和实际持久恢复待办不变。
 
 ## 本轮证据指纹
 

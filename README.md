@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-04 Asia/Shanghai` Meridian V1/V2整改由Relay独立离线复验通过（9例、Python19项、假SPI）；给OC的确认文档及源码包同步更新，六份共享JSON/wire不变。SHFE真实源/在线覆盖、OC金额材料与实际恢复仍待完成，F0未冻结 |
+| 最近确认 | `2026-11-04 Asia/Shanghai` Meridian M1/M2/V1/V2离线验收双方收口，M3待授权真实样本；F0未冻结。与OC只对接协议/字段/样例/验收证据，双方独立实现测试部署，不互传程序或要求源码包；Meridian协调由Relay负责 |
 | 更新时间 | `2026-11-04` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-04` 已确认Meridian收口文档，M1/M2/V1/V2离线accepted、M3 pending_authorized_sample，无新增技术整改；“账户级下单量”仅按柜台合约静态量边界解释，不代表账户权限。按用户要求修正 [OC确认文档](docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)：只转协议/样例/证据，不需要二进制或源码包，旧包仅历史备用。下一步仍为金额协议材料、完整wire/恢复及获授权SHFE样本；未登录/采集/发布/改账。
 
 - `2026-11-04` Meridian整改已独立复验，V1/V2离线问题关闭，详见 [整改记录](docs/MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。快照完成证明新增connection_generation，Relay适配时保留真实代次，不改OC交易wire或要求其扫描全目录。已在用户转交前同步 [OC确认文档](docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md) 和固定提交包；旧51a4d6b包作历史。未切环境/运行采集/发布，SHFE及金融数据历史缺口保留。
 

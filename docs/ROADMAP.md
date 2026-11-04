@@ -40,6 +40,7 @@
 - [x] 明确 Relay 为唯一协调方，分别整理 [Meridian 待反馈项](MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复](OC_CTP_NEXT_ACTIONS_20261104.md)；不要求 OC 与 Meridian 直接对接。Meridian已回签M1/M2，OC已回签draft.2选定约束和共享样例，不代表整体验收。
 - [x] 复核 Meridian v2 接收契约与CU/AU/RB/OP Shadow；新增9例只读内存校验，明确5例错误类型被接受及采集器每行请求隔离静态风险。见 [v2复核](MERIDIAN_CTP_V2_REVIEW_20261104.md)，仅关闭“格式未知”，不标完整验收通过。
 - [x] Meridian V1/V2整改经Relay独立复验：跨仓9/9、其Python19项及假SPI门禁通过，六份指纹一致；新增完成证明connection_generation已纳入适配边界，不修改OC交易wire。见 [整改复核](MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)，关闭离线整改项，不冒充在线验收。
+- [x] 确认Meridian《Relay-CTP-v2整改验收收口》与既有回执一致：M1/M2/V1/V2离线accepted，M3等待授权真实样本。明确柜台静态量边界不等于账户权限；后续仅通过协议/样例/证据对接OC，不交换程序或要求源码包，不再循环索要收口回执。
 - [ ] 向OC核实原始证据出口，单合约结果只作诊断，不要求新增全目录扫描。获授权后优先用Meridian已有采集器取得完整SHFE源，再由Relay核验目录、静态映射、动态限价、完整夜盘及历史/结算覆盖；必要格式适配由Relay负责，真实connection_generation不能伪造。未知标准关联不阻止柜台事实采集但不得放行新单。
 - [ ] F0 第一批：Relay 交付 HTTP/wire/SDK/DB 字段矩阵及 native_ids/身份/时间规范，由 OC 对照 SDK 确认。
 - [ ] F0 第二批：交付凭据 JSON/key/AAD 字节规范、虚构凭据正反测试向量，以及查询/心跳/报撤/恢复 fixture，双方离线回归。

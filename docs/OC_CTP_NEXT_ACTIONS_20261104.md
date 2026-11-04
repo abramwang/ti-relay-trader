@@ -8,6 +8,8 @@
 
 由 Relay 统一协调 Meridian。OC 不需要调用 Meridian 接口、跟踪其 SDK、编写其导入格式或直接询问其行情覆盖。OC 保留柜台原始身份和约束，问题反馈给 Relay 即可。
 
+用户明确的后续边界：只对接协议文档、字段定义、消息样例与验收结果，双方独立实现/测试/部署。不要求交换二进制、源码包或运行对方测试程序；下文 Go 命令及归档说明仅保留为 Relay 既有本地验证记录，不是 OC 待办。
+
 | 事项 | Relay 答复 / OC 待反馈 |
 | --- | --- |
 | 标的定义 | 标准代码唯一来源是 Meridian。HTTP/SDK 的 security_id 由 Relay 精确解析为原生 symbol/exchange；OC 保持 InstrumentID/ExchangeID 原码，不大写、不拼后缀。未知映射不丢柜台事实，相关新单不放行 |

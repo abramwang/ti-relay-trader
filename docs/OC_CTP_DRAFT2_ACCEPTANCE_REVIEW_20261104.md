@@ -2,7 +2,7 @@
 
 日期：2026-11-04，Asia/Shanghai。来源：用户转交《OC 给 Relay 的 draft.2 共享样例复验回签》，OC 提交 `1aed721/f15a0f7`。本轮确认离线选定约束与材料身份，不冻结 F0、不开放运行入口。
 
-转交前更新：Meridian V1/V2 已整改，Relay 独立复验9例、19项Python测试及假SPI门禁均通过；SHFE真实样本/生产目录/行情仍未验收。见 [整改复核](MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。本文和源码包已同步当前状态，旧51a4d6b包留作历史；六份共享JSON和CTP交易wire未改变，不要求OC重复复验已通过的原样例。
+转交前更新：Meridian V1/V2 已整改，Relay 独立复验9例、19项Python测试及假SPI门禁均通过，双方已确认离线收口；SHFE真实样本/生产目录/行情仍未验收。见 [整改复核](MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。只需转交本文及必要协议样例，不需要程序或源码包；六份共享JSON和CTP交易wire未改变，不要求OC重复复验已通过的原样例。
 
 ## 1. 样例身份已核对
 
@@ -50,25 +50,13 @@ ack_safe 仅为参考事实满足门禁；already_complete 不表示需要再发
 
 本次附件提到 `OC_RELAY_CTP_FAULT_RECOVERY_RESPONSE_20261104.md` 和 money 测试已实现，但未附其内容、具体编码器实现或输入/输出向量。Relay 因此只能确认上述原则，不能认可一个尚未读到的具体哨兵/长度/舍入实现。**不是要求 OC 重做已实现的 serializer**，只需向 Relay 补交已有回签正文及金额候选向量：输入 binary64 位模式、期望文本或错误、字段必需/可选语义，包含负数、正负零、极小/极大值、无效哨兵和非有限值。具体规则经双方复验后冻结，不凭测试入口名称宣告实现验收通过。
 
-## 5. 完整材料包
+## 5. 协议对接材料
 
-本轮从包含本文的固定提交打包 `.runtime/ctp-f0-review-<完整提交号>.tar.gz`，归档内部根目录为 `relay-ctp-f0/`。包含：
+按用户最新要求，双方各自实现、测试和部署；交接协议文档、字段定义、消息样例、输入/输出向量及验收结果，不互传二进制，也不要求源码包或运行对方程序。
 
-- go.mod/go.sum、被依赖的 internal 源码、tests/ctpcontract 和全部 CTP JSON；
-- draft.1 原始字段附录、draft.2 修正说明、异常/恢复说明及本文；
-- Meridian 对齐与 Relay 复核记录，供 OC 理解边界，不要求 OC 编写 Meridian 客户端。
+OC 已收到并复验六份 JSON。本次只需本文；原字段说明可直接查阅 [字段附录](CTP_F0_CONTRACT_DRAFT_20261103.md) 和 [draft.2修正](CTP_F0_DRAFT2_REVIEW_20261103.md)。后续差异按版本、文件指纹、具体报文和预期结果核对，不以共享实现代替协议契约。
 
-包只含所选 Git 已提交源码/文档，不含 config、reference、生产数据库、日志或真实凭据。公开 AES-GCM 合成向量不是托管密钥。包名中的提交锁定实际源码，归档 SHA256 随本轮交付给出；不要把旧 `ctp-f0-draft2-source.tar.gz` 当成本轮完整包。
-
-解压后从 `relay-ctp-f0` 目录运行：
-
-```bash
-go test ./tests/ctpcontract ./internal/redisstream ./internal/orderflow ./internal/credentials -count=1
-```
-
-需要 Go 1.24 及 go.sum 对应依赖缓存或获准下载依赖，未附 vendor，不承诺无缓存断网安装。跨仓库 Meridian 复核脚本不属于上述测试，不要求 OC 安装 Meridian 环境。包中附录仍是候选，不将“完整交付现有附录”混同“完整 schema 已开发完毕”。
-
-本轮在仓库及独立临时目录解压后的四包测试均通过；使用本机既有 Go 工具链与依赖缓存，不声称在 OC 主机或完全断网的新机器验证通过。
+此前固定提交源码归档及解压回归属于 Relay 本地历史验证，不是 OC 交付或验收前提，不需要转交或更新。附录仍为候选，不能把文档交付当成完整schema或生产运行时已完成。
 
 ## 6. 下一步分工
 
