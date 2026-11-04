@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:relay:ctp:query-page:draft:1",
+  "title": "Offline CTP draft.2 query page candidate; not a deployed API",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "message_type", "message_id", "origin_message_id", "produced_at", "routing", "action", "status", "code", "result_type", "payload", "adapter_context"],
+  "properties": {
+    "protocol": {"const": "relay.stream.v1"},
+    "message_type": {"const": "reply"},
+    "message_id": {"$ref": "#/$defs/id"},
+    "origin_message_id": {"$ref": "#/$defs/id"},
+    "request_id": {"$ref": "#/$defs/id"},
+    "correlation_id": {"$ref": "#/$defs/id"},
+    "idempotency_key": {"$ref": "#/$defs/id"},
+    "produced_at": {"$ref": "#/$defs/time"},
+    "routing": {"$ref": "#/$defs/routing"},
+    "action": {"enum": ["account.asset.query", "account.positions.query", "order.list.query", "fill.list.query"]},
+    "status": {"enum": ["partial", "completed", "failed"]},
+    "code": {"$ref": "#/$defs/id"},
+    "message": {"type": "string"},
+    "result_type": {"enum": ["asset_page", "position_page", "order_page", "fill_page"]},
+    "chunk": {
+      "type": "object", "additionalProperties": false, "required": ["index", "is_last"],
+      "properties": {"index": {"$ref": "#/$defs/count"}, "is_last": {"type": "boolean"}}
+    },
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product_type", "schema_version"],
+      "properties": {
+        "product_type": {"const": "futures"}, "schema_version": {"const": "ctp.f0.draft.2"},
+        "account_id": {"$ref": "#/$defs/account"}, "trade_date": {"$ref": "#/$defs/day"},
+        "items": {"type": "array"}
+      }
+    },
+    "adapter_context": {
+      "type": "object", "required": ["query_evidence"],
+      "properties": {"query_evidence": {"$ref": "#/$defs/evidence"}},
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"action": {"const": "account.asset.query"}}},
+     "then": {"properties": {"result_type": {"const": "asset_page"}, "payload": {"properties": {"items": {"minItems": 1, "items": {"$ref": "#/$defs/asset"}}}}}}},
+    {"if": {"properties": {"action": {"const": "account.positions.query"}}},
+     "then": {"properties": {"result_type": {"const": "position_page"}, "payload": {"properties": {"items": {"items": {"$ref": "#/$defs/position"}}}}}}},
+    {"if": {"properties": {"action": {"const": "order.list.query"}}},
+     "then": {"properties": {"result_type": {"const": "order_page"}, "payload": {"properties": {"items": {"items": {"$ref": "#/$defs/order"}}}}}}},
+    {"if": {"properties": {"action": {"const": "fill.list.query"}}},
+     "then": {"properties": {"result_type": {"const": "fill_page"}, "payload": {"properties": {"items": {"items": {"$ref": "#/$defs/fill"}}}}}}},
+    {"if": {"properties": {"status": {"enum": ["partial", "completed"]}}},
+     "then": {"required": ["chunk"], "properties": {
+       "code": {"const": "OK"}, "payload": {"required": ["trade_date", "items"]},
+       "adapter_context": {"properties": {"query_evidence": {"properties": {
+         "sdk_request_id": {"type": "integer", "minimum": 1}, "sdk_return_code": {"const": 0},
+         "callback_error_id": {"enum": [0, null]}, "snapshot_applied": {"const": true}
+       }}}}
+     }},
+     "else": {"not": {"required": ["chunk"]}, "properties": {
+       "code": {"not": {"const": "OK"}}, "payload": {"not": {"required": ["items"]}},
+       "adapter_context": {"properties": {"query_evidence": {"properties": {"snapshot_applied": {"const": false}}}}}
+     }}},
+    {"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"chunk": {"properties": {"is_last": {"const": true}}}}}},
+    {"if": {"properties": {"status": {"const": "partial"}}}, "then": {"properties": {"chunk": {"properties": {"is_last": {"const": false}}}}}}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u0020\\u007f]+$(?![\\s\\S])"},
+    "account": {"type": "string", "pattern": "^[0-9]{6,20}$(?![\\s\\S])"},
+    "day": {"type": "string", "pattern": "^[0-9]{8}$(?![\\s\\S])", "format": "ctp-trading-day"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?\\+08:00$(?![\\s\\S])", "format": "shanghai-time"},
+    "source_time": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+    "count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+    "lots": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+    "money": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$(?![\\s\\S])"},
+    "price": {"type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$(?![\\s\\S])"},
+    "native_code": {"type": "string", "minLength": 1, "pattern": "^[!-~]+$(?![\\s\\S])"},
+    "routing": {
+      "type": "object", "additionalProperties": false, "required": ["env", "broker_id", "gateway_id", "account_id"],
+      "properties": {
+        "env": {"enum": ["test", "prod"]}, "broker_id": {"type": "string", "pattern": "^[a-z0-9_-]{1,32}$(?![\\s\\S])"},
+        "gateway_id": {"$ref": "#/$defs/id"}, "account_id": {"$ref": "#/$defs/account"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ticket", "sdk_request_id", "sdk_return_code", "callback_error_id", "connection_generation", "counter_session_id", "snapshot_applied"],
+      "properties": {
+        "ticket": {"$ref": "#/$defs/id"},
+        "sdk_request_id": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+        "sdk_return_code": {"type": ["integer", "null"]}, "callback_error_id": {"type": ["integer", "null"]},
+        "connection_generation": {"type": "integer", "minimum": 1}, "counter_session_id": {"$ref": "#/$defs/id"},
+        "snapshot_applied": {"type": "boolean"}, "failure_stage": {"$ref": "#/$defs/id"}
+      },
+      "allOf": [{"if": {"required": ["failure_stage"], "properties": {"failure_stage": {"const": "queue_expired"}}},
+        "then": {"properties": {"sdk_request_id": {"type": "null"}, "sdk_return_code": {"type": "null"}, "callback_error_id": {"type": "null"}, "snapshot_applied": {"const": false}}}}]
+    },
+    "fund_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["broker_id", "account_id", "currency_id", "biz_type", "trading_day", "settlement_id"],
+      "properties": {
+        "broker_id": {"$ref": "#/$defs/native_code", "maxLength": 10},
+        "account_id": {"$ref": "#/$defs/native_code", "maxLength": 12},
+        "currency_id": {"$ref": "#/$defs/native_code", "maxLength": 3},
+        "biz_type": {"$ref": "#/$defs/native_code", "maxLength": 1},
+        "trading_day": {"$ref": "#/$defs/day"}, "settlement_id": {"$ref": "#/$defs/count"}
+      }
+    },
+    "asset": {
+      "type": "object", "additionalProperties": false, "required": ["account_id", "captured_at", "futures"],
+      "properties": {
+        "account_id": {"$ref": "#/$defs/account"}, "captured_at": {"$ref": "#/$defs/time"},
+        "futures": {
+          "type": "object", "additionalProperties": false,
+          "required": ["scope", "balance", "available", "curr_margin", "frozen_margin", "frozen_cash", "frozen_commission", "commission", "position_profit", "close_profit", "deposit", "withdraw", "scope_verified"],
+          "properties": {
+            "scope": {"$ref": "#/$defs/fund_scope"}, "scope_verified": {"const": false},
+            "balance": {"$ref": "#/$defs/money"}, "available": {"$ref": "#/$defs/money"},
+            "curr_margin": {"$ref": "#/$defs/money"}, "frozen_margin": {"$ref": "#/$defs/money"},
+            "frozen_cash": {"$ref": "#/$defs/money"}, "frozen_commission": {"$ref": "#/$defs/money"},
+            "commission": {"$ref": "#/$defs/money"}, "position_profit": {"$ref": "#/$defs/money"},
+            "close_profit": {"$ref": "#/$defs/money"}, "deposit": {"$ref": "#/$defs/money"}, "withdraw": {"$ref": "#/$defs/money"}
+          }
+        }
+      }
+    },
+    "position": {
+      "type": "object", "additionalProperties": false, "required": ["account_id", "captured_at", "symbol", "exchange", "futures"],
+      "properties": {
+        "account_id": {"$ref": "#/$defs/account"}, "captured_at": {"$ref": "#/$defs/time"},
+        "symbol": {"$ref": "#/$defs/native_code", "maxLength": 80}, "exchange": {"$ref": "#/$defs/native_code", "maxLength": 8},
+        "futures": {
+          "type": "object", "additionalProperties": false,
+          "required": ["posi_direction", "hedge_flag", "position_date", "invest_unit_id", "position", "today_position", "yd_position", "long_frozen", "short_frozen", "position_cost", "open_cost", "use_margin"],
+          "properties": {
+            "posi_direction": {"$ref": "#/$defs/native_code", "maxLength": 1},
+            "hedge_flag": {"$ref": "#/$defs/native_code", "maxLength": 1},
+            "position_date": {"$ref": "#/$defs/native_code", "maxLength": 1},
+            "invest_unit_id": {"type": "string", "maxLength": 16, "pattern": "^[!-~]*$(?![\\s\\S])"},
+            "position": {"$ref": "#/$defs/count"}, "today_position": {"$ref": "#/$defs/count"}, "yd_position": {"$ref": "#/$defs/count"},
+            "long_frozen": {"$ref": "#/$defs/count"}, "short_frozen": {"$ref": "#/$defs/count"},
+            "position_cost": {"$ref": "#/$defs/money"}, "open_cost": {"$ref": "#/$defs/money"}, "use_margin": {"$ref": "#/$defs/money"}
+          }
+        }
+      }
+    },
+    "native_ids": {
+      "type": "object", "additionalProperties": false, "required": ["broker_id", "investor_id"],
+      "properties": {
+        "broker_id": {"$ref": "#/$defs/native_code", "maxLength": 10}, "investor_id": {"$ref": "#/$defs/native_code", "maxLength": 12},
+        "user_id": {"$ref": "#/$defs/native_code", "maxLength": 15},
+        "order_ref": {"type": "string", "maxLength": 12, "pattern": "^[!-~]*$(?![\\s\\S])"},
+        "order_sys_id": {"type": "string", "maxLength": 20, "pattern": "^[!-~]*$(?![\\s\\S])"},
+        "trade_id": {"$ref": "#/$defs/native_code", "maxLength": 20},
+        "front_id": {"type": ["integer", "null"]}, "session_id": {"type": ["integer", "null"]},
+        "sdk_request_id": {"type": ["integer", "null"]}
+      }
+    },
+    "trade_row": {
+      "type": "object",
+      "required": ["account_id", "gateway_order_id", "counter_session_id", "trade_date", "symbol", "exchange", "business_type", "trade_side", "offset_type", "hedge_type", "native_ids"],
+      "properties": {
+        "account_id": {"$ref": "#/$defs/account"}, "gateway_order_id": {"$ref": "#/$defs/id"}, "client_order_id": {"$ref": "#/$defs/id"},
+        "product_type": {"const": "futures"}, "schema_version": {"const": "ctp.f0.draft.2"},
+        "counter_session_id": {"$ref": "#/$defs/id"}, "trade_date": {"$ref": "#/$defs/day"},
+        "captured_at": {"$ref": "#/$defs/time"},
+        "symbol": {"$ref": "#/$defs/native_code", "maxLength": 80}, "exchange": {"$ref": "#/$defs/native_code", "maxLength": 8},
+        "business_type": {"const": "F"}, "trade_side": {"enum": ["B", "S"]},
+        "offset_type": {"enum": ["O", "C", "CT", "CY"]}, "hedge_type": {"const": "speculation"},
+        "native_ids": {"$ref": "#/$defs/native_ids"}
+      }
+    },
+    "order": {
+      "allOf": [{"$ref": "#/$defs/trade_row"}], "unevaluatedProperties": false,
+      "required": ["order_qty", "cum_filled_qty", "leaves_qty", "limit_price", "gateway_status", "submitted_at"],
+      "properties": {
+        "order_qty": {"$ref": "#/$defs/lots"}, "cum_filled_qty": {"$ref": "#/$defs/count"}, "leaves_qty": {"$ref": "#/$defs/count"},
+        "limit_price": {"$ref": "#/$defs/price"}, "gateway_status": {"enum": ["accepted", "working", "filled", "cancelled", "rejected"]},
+        "submitted_at": {"$ref": "#/$defs/source_time"}, "reject_code": {"type": ["string", "null"]}, "reject_message": {"type": ["string", "null"]}
+      }
+    },
+    "fill": {
+      "allOf": [{"$ref": "#/$defs/trade_row"}], "unevaluatedProperties": false,
+      "required": ["fill_id", "qty", "price", "matched_at", "fee", "fee_complete"],
+      "properties": {
+        "fill_id": {"type": "string", "pattern": "^ctp-fill-v1-[0-9a-f]{64}$(?![\\s\\S])"}, "qty": {"$ref": "#/$defs/lots"},
+        "price": {"$ref": "#/$defs/price"}, "matched_at": {"$ref": "#/$defs/source_time"},
+        "fee": {"anyOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]}, "fee_complete": {"type": "boolean"},
+        "native_ids": {"required": ["trade_id", "order_sys_id"], "not": {"required": ["sdk_request_id"]}, "properties": {"order_sys_id": {"minLength": 1}}}
+      }
+    }
+  }
+}

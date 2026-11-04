@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-04 Asia/Shanghai` 用户要求SHFE行情直接推进，不以Trader ReqQryInstrument为前提；已修正行情/交易边界，v2整改只约束可选Trader输入。交易准入仍由OC/Relay独立验收，F0未冻结；仅对接协议/样例/证据，不互传程序 |
+| 最近确认 | `2026-11-04 Asia/Shanghai` F0新增四类查询页字段附录/schema候选、订单/成交页样例；17项Python测试及Go四包通过，六份原共享JSON不变。仅单页离线验证，未接运行时/DB；下一步跨页/重复终态序列与OC字段复核。SHFE行情独立推进，不依赖Trader样本 |
 | 更新时间 | `2026-11-04` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-04` Relay已补 [CTP四类查询页契约](docs/CTP_QUERY_PAGE_CONTRACT_20261104.md)：严格JSON整数/金额字符串、账户与交易日、原生ID/数量、空结果/失败回包和页内重复检查；新增两份完整页，17项Python测试及四Go包通过。依赖仅在`.runtime/ctp-contract-venv`，运行服务/SDK不改。schema是待OC复核候选，不是完整分页/落库验收；继续补序列和HTTP/SDK/DB映射，金额哨兵共同向量仍待补，未登录/发布/迁移或改历史绩效。
 
 - `2026-11-04` 用户已交Meridian推进SHFE行情，明确CFFEX实时链路长期运行；Relay撤销原先以Trader完整样本阻塞行情的依赖，见 [边界修正](docs/MERIDIAN_SHFE_MARKET_BOUNDARY_UPDATE_20261104.md)。新增目录代理反例验证权威行情来源可无柜台量边界/Trader证据透传，未自行发布目录或开放交易。本轮先处理此新边界，未关联成交/重复终态共同样例仍为下一项，未标完成。
 

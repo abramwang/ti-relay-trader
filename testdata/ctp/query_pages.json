@@ -1,0 +1,24 @@
+{
+  "contract_version": "ctp.f0.draft.2",
+  "synthetic_only": true,
+  "cases": [
+    {"name": "orders", "stream_suffix": "reply", "body": {
+      "protocol": "relay.stream.v1", "message_type": "reply", "message_id": "fixture-order-page-1", "origin_message_id": "fixture-query-orders", "produced_at": "2026-11-03T21:03:00+08:00",
+      "routing": {"env": "test", "broker_id": "ctp_4900", "gateway_id": "990000000001", "account_id": "990000000001"},
+      "action": "order.list.query", "status": "completed", "code": "OK", "result_type": "order_page", "chunk": {"index": 0, "is_last": true},
+      "payload": {"product_type": "futures", "schema_version": "ctp.f0.draft.2", "trade_date": "20261104", "items": [
+        {"account_id": "990000000001", "gateway_order_id": "fixture-order-1", "counter_session_id": "ctpproc-fixture-1", "trade_date": "20261104", "symbol": "rb2612", "exchange": "SHFE", "business_type": "F", "trade_side": "B", "offset_type": "O", "hedge_type": "speculation", "order_qty": 1, "cum_filled_qty": 0, "leaves_qty": 1, "limit_price": "3600", "gateway_status": "working", "submitted_at": "2026-11-03T21:01:00+08:00", "captured_at": "2026-11-03T21:02:59+08:00", "native_ids": {"broker_id": "4900", "investor_id": "FIXTURE_INV", "user_id": "FIXTURE_USER", "order_ref": "000000000001", "order_sys_id": "00001234", "front_id": 1, "session_id": 2, "sdk_request_id": 3}}
+      ]},
+      "adapter_context": {"query_evidence": {"ticket": "fixture-ticket-4", "sdk_request_id": 13, "sdk_return_code": 0, "callback_error_id": 0, "connection_generation": 1, "counter_session_id": "ctpproc-fixture-1", "snapshot_applied": true}}
+    }},
+    {"name": "fills", "stream_suffix": "reply", "body": {
+      "protocol": "relay.stream.v1", "message_type": "reply", "message_id": "fixture-fill-page-1", "origin_message_id": "fixture-query-fills", "produced_at": "2026-11-03T21:03:01+08:00",
+      "routing": {"env": "test", "broker_id": "ctp_4900", "gateway_id": "990000000001", "account_id": "990000000001"},
+      "action": "fill.list.query", "status": "completed", "code": "OK", "result_type": "fill_page", "chunk": {"index": 0, "is_last": true},
+      "payload": {"product_type": "futures", "schema_version": "ctp.f0.draft.2", "trade_date": "20261104", "items": [
+        {"account_id": "990000000001", "gateway_order_id": "fixture-order-1", "fill_id": "ctp-fill-v1-5ad40797043cdb61172b14339c29986a866ac1cc606199b02b942f12c0b87393", "counter_session_id": "ctpproc-fixture-1", "trade_date": "20261104", "symbol": "rb2612", "exchange": "SHFE", "business_type": "F", "trade_side": "B", "offset_type": "O", "hedge_type": "speculation", "qty": 1, "price": "3600", "matched_at": "2026-11-03T21:01:01+08:00", "captured_at": "2026-11-03T21:03:00+08:00", "fee": null, "fee_complete": false, "native_ids": {"broker_id": "4900", "investor_id": "FIXTURE_INV", "user_id": "EXTERNAL_USER", "order_ref": "000000000001", "order_sys_id": "00001234", "trade_id": "00005678"}}
+      ]},
+      "adapter_context": {"query_evidence": {"ticket": "fixture-ticket-5", "sdk_request_id": 14, "sdk_return_code": 0, "callback_error_id": 0, "connection_generation": 1, "counter_session_id": "ctpproc-fixture-1", "snapshot_applied": true}}
+    }}
+  ]
+}
