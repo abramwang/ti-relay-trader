@@ -1,6 +1,6 @@
 # Relay 致 OC：问题答复与异常恢复样例
 
-日期：2026-11-04，Asia/Shanghai。接续 `ctp.f0.draft.2`，仍为离线候选，未冻结。本轮事项已整理，待 OC 回签；没有执行 OC 测试或真实柜台操作。
+日期：2026-11-04，Asia/Shanghai。接续 `ctp.f0.draft.2`，仍为离线候选，未冻结。已收到 OC `1aed721/f15a0f7` 共享样例复验回签，七份原始指纹匹配 Relay `8381d97`；最新关闭项、金额待补材料和完整源码包见 [回签确认](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)。没有执行 OC 测试或真实柜台操作。下文保留原始请求及样例解释。
 
 同日更新：Meridian 已交付 v2 接收格式与完整性约定，Relay 已独立复核并另行反馈两项校验问题，见 [Relay 复核记录](MERIDIAN_CTP_V2_REVIEW_20261104.md)。这些问题由 Relay 与 Meridian 收敛，不要求 OC 修 Meridian 或自行对接。
 
@@ -64,4 +64,4 @@ go test ./tests/ctpcontract ./internal/redisstream ./internal/orderflow ./intern
 
 本轮四包通过。旧 `ctp-f0-draft2-source.tar.gz` 是原提交归档，不包含本轮新增文件；应使用包含本文件的提交和根 Go 模块，不能只复制单个测试文件运行。
 
-仍待完成：金额 serializer、完整 HTTP/wire/SDK/DB schema、未关联成交持久恢复、同消息重放与不同消息矛盾终态、真正的 SDK/输出/ACK 崩溃注入，以及后续获授权在线验收。F0 整体保持未完成；未部署、切环境、改账或重启 OC。
+最新剩余项：OC 已报告金额 serializer 测试通过，Relay 尚缺具体实现说明/向量，待材料复核而非要求重做；完整 HTTP/wire/SDK/DB schema、未关联成交持久恢复、同消息重放与不同消息矛盾终态、真正的 SDK/输出/ACK 崩溃注入，以及后续获授权在线验收仍待完成。F0 整体保持未完成；未部署、切环境、改账或重启 OC。

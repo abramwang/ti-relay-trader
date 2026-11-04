@@ -37,14 +37,16 @@
 - [x] 根据 OC M2 `7c4e49a` 反馈交付 [F0 首批附录](CTP_F0_CONTRACT_DRAFT_20261103.md)：字段候选矩阵、原生身份字节规则、AES-GCM 公开向量、10 个消息样例及 10 项快照真值表；`tests/ctpcontract` 离线自洽测试通过，未实现或上线 CTP 业务。
 - [x] 审阅 OC `7a4bb66/c50226d` 回签并修正 draft.2：标准 fill_id、所有回执类型标记、批量继承冲突反例、int32手数及SDK来源规则；直接核验 Meridian 机器契约并新增8项显式映射用例。见 [draft.2 交付](CTP_F0_DRAFT2_REVIEW_20261103.md)，不自行定义期货标准代码。
 - [x] 11-04复核 Meridian 回执及在线目录：统一 instruments 接口已发布，CFFEX 541行、同发布分页及变更页大小409通过，SHFE明确503。Relay新增目录只读代理/API目录/SDK源码及回归，未部署或发布wheel；见 `MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md`。
-- [x] 明确 Relay 为唯一协调方，分别整理 [Meridian 待反馈项](MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复](OC_CTP_NEXT_ACTIONS_20261104.md)；不要求 OC 与 Meridian 直接对接。Meridian已回签M1/M2，OC本轮待回签。
+- [x] 明确 Relay 为唯一协调方，分别整理 [Meridian 待反馈项](MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复](OC_CTP_NEXT_ACTIONS_20261104.md)；不要求 OC 与 Meridian 直接对接。Meridian已回签M1/M2，OC已回签draft.2选定约束和共享样例，不代表整体验收。
 - [x] 复核 Meridian v2 接收契约与CU/AU/RB/OP Shadow；新增9例只读内存校验，明确5例错误类型被接受及采集器每行请求隔离静态风险。见 [v2复核](MERIDIAN_CTP_V2_REVIEW_20261104.md)，仅关闭“格式未知”，不标完整验收通过。
 - [ ] Meridian修正V1类型校验/V2回调请求隔离后由Relay复验；向OC核实原始证据出口，单合约结果只作诊断，不要求新增全目录扫描。获授权后优先用Meridian已有采集器取得完整SHFE源，再由Relay核验目录、静态映射、动态限价、完整夜盘及历史/结算覆盖；必要格式适配由Relay负责。未知标准关联不阻止柜台事实采集但不得放行新单。
 - [ ] F0 第一批：Relay 交付 HTTP/wire/SDK/DB 字段矩阵及 native_ids/身份/时间规范，由 OC 对照 SDK 确认。
 - [ ] F0 第二批：交付凭据 JSON/key/AAD 字节规范、虚构凭据正反测试向量，以及查询/心跳/报撤/恢复 fixture，双方离线回归。
 - [x] 已记录 OC 对独立凭据向量、原生身份算法、SDK 字节长度及 O/C/CT/CY 头文件映射的反馈；状态为 OC 报告通过，不冒充 Relay 已运行其代码或完成在线验收。
 - [x] 11-04补充拒撤/撤单未知/下单未知/批量部分失败4个消息样例及9个持久事实恢复期望窗口；共享回执处理和离线候选规则四包回归通过。未实现 CTP 运行时，也未完成真正崩溃注入。
-- [ ] OC 复验 draft.2 和新增异常样例；双方补齐金额serializer共同向量、完整schema、未关联成交、同消息重放/矛盾终态及SDK/输出/ACK真实崩溃恢复验收。参考真值表不替代持久化实现，不因单方测试通过关闭 F0。
+- [x] 收到OC `1aed721/f15a0f7` 回签，七份文件指纹与Relay `8381d97`完全匹配；draft.2选定约束/异常/查询/映射/恢复参考模型报告通过。Relay补显式写前保证、两组64状态及42个错误布尔形状回归，保留原JSON字节；见 [回签确认与材料包](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)。不冒称已运行OC的11项CTest。
+- [x] 补齐现有完整附录/Go模块源码包，在独立临时目录解压后四包测试通过；固定提交归档不含运行配置/reference/凭据，交付口径见上述回签确认。仅解决材料缺失，不代表完整schema已实现。
+- [ ] 复核OC已有金额serializer说明与共同向量；补齐完整schema、未关联成交、同消息重放/矛盾终态及SDK/输出/ACK真实崩溃恢复验收。参考真值表不替代持久化实现，不因单方测试通过关闭 F0。
 - [ ] F0：与 OC 冻结 schema、身份/夜盘归日、凭据和样例；向 Meridian 核实 SHFE 元数据/行情覆盖，交付可复用离线 fixture。
 - [ ] F1：扩展期货账本、原生字符串编号、多维持仓、资产、幂等和凭据；离线迁移与 A 股回归通过。
 - [ ] F2：查询、推送、持久化、完整快照和 readiness；OC 独立测试包就绪并获授权后验证只读链路。

@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-04 Asia/Shanghai` Meridian v2 接收约定已回签；Relay 离线复核发现错误类型接受及回调请求隔离缺口，待 Meridian 修正。SHFE仍未发布；Relay统一协调，不要求OC对接Meridian或扩展全目录扫描。详见 docs/MERIDIAN_CTP_V2_REVIEW_20261104.md |
+| 最近确认 | `2026-11-04 Asia/Shanghai` OC draft.2共享样例回签指纹完全匹配8381d97；Relay补写前保证/64状态离线回归。金额实现说明待补、真实持久恢复未验收；Meridian v2校验整改与SHFE覆盖仍待完成。详见 docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md |
 | 更新时间 | `2026-11-04` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-04` 已确认OC `1aed721/f15a0f7`选定约束/共享样例回签，六份JSON原字节不变；接受未证明写前顺序时判unknown的安全补充，Relay四包回归通过。补齐现有字段附录和Go runner的固定提交交付，详见 [回签确认](docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)。下一步核对OC已有金额说明/向量，继续完整schema与实际恢复；不重复开发OC已交付部分，未切环境/部署/放权，Meridian及历史绩效缺口保留。
 
 - `2026-11-04` 已复核 Meridian M1/M2 回签、v2机器契约及CU/AU/RB/OP Shadow样本；接收格式明确，但离线9例有5例错误类型被接受，另有C++非末页先追加后核请求号的静态风险。已整理 [复核与补充要求](docs/MERIDIAN_CTP_V2_REVIEW_20261104.md) 和可复跑脚本，由Relay协调修正；未改Meridian/OC工程、未采集或发布。完整SHFE源优先用Meridian既有采集器，OC单合约仅诊断，不拼造全目录；继续等待授权与独立行情验收。
 
