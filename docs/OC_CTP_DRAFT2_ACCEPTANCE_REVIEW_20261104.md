@@ -60,7 +60,7 @@ OC 已收到并复验六份 JSON。本次只需本文；原字段说明可直接
 
 ## 6. 下一步分工
 
-同日新增交付：[四类查询页字段契约](CTP_QUERY_PAGE_CONTRACT_20261104.md)、`testdata/ctp/query-page.schema.json` 和 `query_pages.json`。请按文档核对字段差异即可，不要求运行Relay程序；原六份共享JSON不变。候选仅覆盖查询输出，不代表完整命令schema或数据库实现完成。
+同日新增内部候选：[四类查询页字段契约](CTP_QUERY_PAGE_CONTRACT_20261104.md)、`testdata/ctp/query-page.schema.json` 和 `query_pages.json`，以及[序列验证](CTP_QUERY_SEQUENCE_REVIEW_20261104.md)。按用户最新要求暂不转交OC，待Relay收敛为一份最终对接稿再核对，不要求运行Relay程序；原六份共享JSON不变。候选仅覆盖查询输出，不代表完整命令schema或数据库实现完成。
 
 OC 继续四类 wire 转换、完整命令校验和真实持久恢复，向 Relay 补已有金额材料；不重复身份设计、不等待 SHFE 在线行情才写离线代码。Relay 负责完整字段矩阵、未关联成交、同消息重投与不同消息矛盾终态的后续共同样例和独立验证。
 
