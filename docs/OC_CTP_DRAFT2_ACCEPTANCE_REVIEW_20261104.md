@@ -2,6 +2,8 @@
 
 日期：2026-11-04，Asia/Shanghai。来源：用户转交《OC 给 Relay 的 draft.2 共享样例复验回签》，OC 提交 `1aed721/f15a0f7`。本轮确认离线选定约束与材料身份，不冻结 F0、不开放运行入口。
 
+转交前更新：Meridian V1/V2 已整改，Relay 独立复验9例、19项Python测试及假SPI门禁均通过；SHFE真实样本/生产目录/行情仍未验收。见 [整改复核](MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。本文和源码包已同步当前状态，旧51a4d6b包留作历史；六份共享JSON和CTP交易wire未改变，不要求OC重复复验已通过的原样例。
+
 ## 1. 样例身份已核对
 
 OC 提供的七份指纹与 Relay 提交 **`8381d97`** 的 `testdata/ctp/` 完全一致。该提交才是本批异常/恢复样例的上游基线；`2e25e62` 仅是历史 draft.1，不再作为本批交付标识。
@@ -72,4 +74,4 @@ go test ./tests/ctpcontract ./internal/redisstream ./internal/orderflow ./intern
 
 OC 继续四类 wire 转换、完整命令校验和真实持久恢复，向 Relay 补已有金额材料；不重复身份设计、不等待 SHFE 在线行情才写离线代码。Relay 负责完整字段矩阵、未关联成交、同消息重投与不同消息矛盾终态的后续共同样例和独立验证。
 
-Meridian 类型校验/请求隔离整改及 SHFE 覆盖仍由 Relay 单独协调。未授权登录、部署、报撤单或切换环境；本轮不改变华鑫运行链路和生产下单权限。
+Meridian类型校验/请求隔离的离线整改项已关闭，剩余SHFE真实样本、目录晋级、行情/完整夜盘和结算仍由Relay单独协调。Meridian快照完成证明新增connection_generation属于其导入契约，Relay负责真实代次映射，不新增OC交易wire字段、不要求OC扫描全目录。未授权登录、部署、报撤单或切换环境；本轮不改变华鑫运行链路和生产下单权限。

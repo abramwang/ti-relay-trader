@@ -2,7 +2,7 @@
 
 日期：2026-11-04，Asia/Shanghai。接续 `ctp.f0.draft.2`，仍为离线候选，未冻结。已收到 OC `1aed721/f15a0f7` 共享样例复验回签，七份原始指纹匹配 Relay `8381d97`；最新关闭项、金额待补材料和完整源码包见 [回签确认](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)。没有执行 OC 测试或真实柜台操作。下文保留原始请求及样例解释。
 
-同日更新：Meridian 已交付 v2 接收格式与完整性约定，Relay 已独立复核并另行反馈两项校验问题，见 [Relay 复核记录](MERIDIAN_CTP_V2_REVIEW_20261104.md)。这些问题由 Relay 与 Meridian 收敛，不要求 OC 修 Meridian 或自行对接。
+同日最新更新：Meridian v2类型校验/请求隔离两项整改已由Relay独立离线复验通过，见 [整改复核](MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。SHFE真实样本及在线目录/行情仍未验收。其快照完成证明新增connection_generation由Relay处理适配，不扩展本轮CTP交易wire；OC无需对接Meridian、增加全目录扫描或因该文档更新重跑未变的JSON。
 
 ## 协调边界与问题答复
 

@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-04 Asia/Shanghai` OC draft.2共享样例回签指纹完全匹配8381d97；Relay补写前保证/64状态离线回归。金额实现说明待补、真实持久恢复未验收；Meridian v2校验整改与SHFE覆盖仍待完成。详见 docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md |
+| 最近确认 | `2026-11-04 Asia/Shanghai` Meridian V1/V2整改由Relay独立离线复验通过（9例、Python19项、假SPI）；给OC的确认文档及源码包同步更新，六份共享JSON/wire不变。SHFE真实源/在线覆盖、OC金额材料与实际恢复仍待完成，F0未冻结 |
 | 更新时间 | `2026-11-04` |
 
 新线程按以下顺序恢复：
@@ -26,9 +26,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-04` Meridian整改已独立复验，V1/V2离线问题关闭，详见 [整改记录](docs/MERIDIAN_CTP_V2_RECTIFICATION_ACCEPTANCE_20261104.md)。快照完成证明新增connection_generation，Relay适配时保留真实代次，不改OC交易wire或要求其扫描全目录。已在用户转交前同步 [OC确认文档](docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md) 和固定提交包；旧51a4d6b包作历史。未切环境/运行采集/发布，SHFE及金融数据历史缺口保留。
+
 - `2026-11-04` 已确认OC `1aed721/f15a0f7`选定约束/共享样例回签，六份JSON原字节不变；接受未证明写前顺序时判unknown的安全补充，Relay四包回归通过。补齐现有字段附录和Go runner的固定提交交付，详见 [回签确认](docs/OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_20261104.md)。下一步核对OC已有金额说明/向量，继续完整schema与实际恢复；不重复开发OC已交付部分，未切环境/部署/放权，Meridian及历史绩效缺口保留。
 
-- `2026-11-04` 已复核 Meridian M1/M2 回签、v2机器契约及CU/AU/RB/OP Shadow样本；接收格式明确，但离线9例有5例错误类型被接受，另有C++非末页先追加后核请求号的静态风险。已整理 [复核与补充要求](docs/MERIDIAN_CTP_V2_REVIEW_20261104.md) 和可复跑脚本，由Relay协调修正；未改Meridian/OC工程、未采集或发布。完整SHFE源优先用Meridian既有采集器，OC单合约仅诊断，不拼造全目录；继续等待授权与独立行情验收。
+- `2026-11-04` 初轮Meridian M1/M2复核发现5个类型反例及非末页请求隔离风险，历史证据见 [初轮记录](docs/MERIDIAN_CTP_V2_REVIEW_20261104.md)；同日整改已独立复验通过，以上不再是当前阻塞。完整SHFE源仍优先用Meridian既有采集器，OC单合约仅诊断，不拼造全目录；继续等待授权与独立行情验收。
 
 - `2026-11-04` 按用户要求明确 Relay 为 OC/Meridian 唯一协调方；分别整理 [Meridian 待反馈项](docs/MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复及异常样例](docs/OC_CTP_NEXT_ACTIONS_20261104.md)。Relay 负责接收格式、原码映射、适配及联合验收，不要求 OC 实现 Meridian 导入格式。新增拒撤/未知结果/批量部分失败4例及持久恢复9个参考窗口，四包测试通过；仅离线样例，无真实崩溃注入。下一步取得两方回签，补金额serializer、完整schema及真实恢复证据；未切环境/部署/改账，SHFE仍未就绪，历史绩效缺口保留。
 
