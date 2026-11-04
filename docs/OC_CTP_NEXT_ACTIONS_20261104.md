@@ -2,6 +2,8 @@
 
 日期：2026-11-04，Asia/Shanghai。接续 `ctp.f0.draft.2`，仍为离线候选，未冻结。本轮事项已整理，待 OC 回签；没有执行 OC 测试或真实柜台操作。
 
+同日更新：Meridian 已交付 v2 接收格式与完整性约定，Relay 已独立复核并另行反馈两项校验问题，见 [Relay 复核记录](MERIDIAN_CTP_V2_REVIEW_20261104.md)。这些问题由 Relay 与 Meridian 收敛，不要求 OC 修 Meridian 或自行对接。
+
 ## 协调边界与问题答复
 
 由 Relay 统一协调 Meridian。OC 不需要调用 Meridian 接口、跟踪其 SDK、编写其导入格式或直接询问其行情覆盖。OC 保留柜台原始身份和约束，问题反馈给 Relay 即可。
@@ -16,6 +18,8 @@
 | 快照结果 | snapshot_applied 仅为 OC 本地类型化应用；Relay 自行检查完整分页并原子落库。旧缓存可读、原始末页到达均不能代替本次应用成功 |
 
 动态限价、夜盘和目录覆盖缺口由 Relay 向 Meridian 跟进。SHFE 仍未发布，不阻断 OC 不依赖在线数据的离线开发，也不因此开放任何期货交易权限。
+
+Meridian v2 只接受真实 exchange_full 请求及对应 IsLast 证明作为生产候选。OC 已报告的显式单合约查询保持诊断用途，不要求为此增加全市场扫描；优先由 Meridian 已有采集器在获授权窗口采样。OC 只需向 Relay 说明现有原始 QueryResult 的字段/范围和可用样例，Relay 决定可用性与适配，不拼接单合约结果冒充完整请求。InstrumentField 静态量边界不等于账户权限证明。
 
 ## 本轮共享异常样例
 

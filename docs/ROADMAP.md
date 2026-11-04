@@ -37,8 +37,9 @@
 - [x] 根据 OC M2 `7c4e49a` 反馈交付 [F0 首批附录](CTP_F0_CONTRACT_DRAFT_20261103.md)：字段候选矩阵、原生身份字节规则、AES-GCM 公开向量、10 个消息样例及 10 项快照真值表；`tests/ctpcontract` 离线自洽测试通过，未实现或上线 CTP 业务。
 - [x] 审阅 OC `7a4bb66/c50226d` 回签并修正 draft.2：标准 fill_id、所有回执类型标记、批量继承冲突反例、int32手数及SDK来源规则；直接核验 Meridian 机器契约并新增8项显式映射用例。见 [draft.2 交付](CTP_F0_DRAFT2_REVIEW_20261103.md)，不自行定义期货标准代码。
 - [x] 11-04复核 Meridian 回执及在线目录：统一 instruments 接口已发布，CFFEX 541行、同发布分页及变更页大小409通过，SHFE明确503。Relay新增目录只读代理/API目录/SDK源码及回归，未部署或发布wheel；见 `MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md`。
-- [x] 明确 Relay 为唯一协调方，分别整理 [Meridian 待反馈项](MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复](OC_CTP_NEXT_ACTIONS_20261104.md)；不要求 OC 与 Meridian 直接对接。文档已整理，不代表收到新回签。
-- [ ] Relay 向 Meridian 确认既有快照接收格式/完整性门禁，向 OC 核实原始证据出口；获授权后由 Relay 适配并协调真实 SHFE 源/完整快照交付与目录发布，随后验收静态映射、动态限价、完整夜盘及历史/结算覆盖。目录API已具备，不再重复设计入口；未知标准关联不阻止柜台事实采集但不得放行新单。
+- [x] 明确 Relay 为唯一协调方，分别整理 [Meridian 待反馈项](MERIDIAN_CTP_NEXT_ACTIONS_20261104.md) 和 [OC 问题答复](OC_CTP_NEXT_ACTIONS_20261104.md)；不要求 OC 与 Meridian 直接对接。Meridian已回签M1/M2，OC本轮待回签。
+- [x] 复核 Meridian v2 接收契约与CU/AU/RB/OP Shadow；新增9例只读内存校验，明确5例错误类型被接受及采集器每行请求隔离静态风险。见 [v2复核](MERIDIAN_CTP_V2_REVIEW_20261104.md)，仅关闭“格式未知”，不标完整验收通过。
+- [ ] Meridian修正V1类型校验/V2回调请求隔离后由Relay复验；向OC核实原始证据出口，单合约结果只作诊断，不要求新增全目录扫描。获授权后优先用Meridian已有采集器取得完整SHFE源，再由Relay核验目录、静态映射、动态限价、完整夜盘及历史/结算覆盖；必要格式适配由Relay负责。未知标准关联不阻止柜台事实采集但不得放行新单。
 - [ ] F0 第一批：Relay 交付 HTTP/wire/SDK/DB 字段矩阵及 native_ids/身份/时间规范，由 OC 对照 SDK 确认。
 - [ ] F0 第二批：交付凭据 JSON/key/AAD 字节规范、虚构凭据正反测试向量，以及查询/心跳/报撤/恢复 fixture，双方离线回归。
 - [x] 已记录 OC 对独立凭据向量、原生身份算法、SDK 字节长度及 O/C/CT/CY 头文件映射的反馈；状态为 OC 报告通过，不冒充 Relay 已运行其代码或完成在线验收。
