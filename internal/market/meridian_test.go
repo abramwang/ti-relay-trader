@@ -273,6 +273,8 @@ func TestFuturesEndpointsPassThroughAuthoritativeContract(t *testing.T) {
 		switch r.URL.Path {
 		case futuresStatusPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "latest_snapshot_count": 16})
+		case futuresInstrumentsPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}, "meta": map[string]any{"publication_snapshot_id": "fixture-publication"}})
 		case futuresSnapshotsPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{{"security_id": "IF2610.CFFEX", "product_id": "IF", "last": 4620.2}},
@@ -304,6 +306,13 @@ func TestFuturesEndpointsPassThroughAuthoritativeContract(t *testing.T) {
 		"security_id": {"IF2610.CFFEX"},
 		"trade_date":  {"20260930"},
 		"series_type": {"contract"},
+	}
+	catalogQuery := url.Values{"source_instrument_id": {"sc2610"}, "exchange_id": {"INE"}, "cursor": {"opaque+/="}, "limit": {"2"}}
+	if response, callErr := client.FuturesInstruments(context.Background(), catalogQuery); callErr != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("FuturesInstruments: status=%d err=%v", response.StatusCode, callErr)
+	}
+	if queries[futuresInstrumentsPath].Encode() != catalogQuery.Encode() {
+		t.Fatal("catalog selector or cursor changed")
 	}
 	if response, callErr := client.FuturesSnapshots(context.Background(), values); callErr != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("FuturesSnapshots: status=%d err=%v", response.StatusCode, callErr)

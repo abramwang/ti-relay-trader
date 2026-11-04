@@ -2,6 +2,8 @@
 
 日期：2026-11-03，Asia/Shanghai。版本：`ctp.f0.draft.2`，仍为离线候选，未冻结/部署。
 
+2026-11-04 更新：Meridian 已给出统一真实合约查询入口和显式 exchange_coverage；CFFEX production_ready、SHFE source_unavailable。最新只读验证、Relay 代理源码与 OC 待配合项见 [目录回执复核](MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md)，下文保留 draft.2 当时的证据。
+
 接续 [draft.1 字段附录](CTP_F0_CONTRACT_DRAFT_20261103.md)。原版及 OC 复验的三份原字节保留在提交 `2e25e62`；当前 `testdata/ctp/` 为 draft.2。凭据向量不变，不能用 draft.1 的消息指纹验证 draft.2。
 
 ## 1. OC 回签处理结果

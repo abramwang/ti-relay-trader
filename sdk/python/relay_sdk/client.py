@@ -1407,6 +1407,47 @@ class RelayClient:
 
         return self._request("GET", "/v1/meridian/futures/status")
 
+    def get_meridian_futures_instruments(
+        self,
+        *,
+        security_id: str | None = None,
+        security_ids: str | Iterable[str] | None = None,
+        source_instrument_id: str | None = None,
+        source_instrument_ids: str | Iterable[str] | None = None,
+        exchange_id: str | None = None,
+        exchange_ids: str | Iterable[str] | None = None,
+        product_id: str | None = None,
+        product_ids: str | Iterable[str] | None = None,
+        trading_status: str | None = None,
+        trading_statuses: str | Iterable[str] | None = None,
+        limit: int | None = 200,
+        cursor: str | None = None,
+        **extra_query: Any,
+    ) -> Mapping[str, Any]:
+        """Read a Meridian catalog page; preserve native IDs and publication metadata.
+
+        A cursor belongs to one publication and query. Cursor expiry and unavailable
+        exchanges raise the usual API error; this method does not restart pagination
+        or infer a security_id from a native symbol.
+        """
+
+        query = {
+            "security_id": security_id,
+            "security_ids": _join_query_values(security_ids),
+            "source_instrument_id": source_instrument_id,
+            "source_instrument_ids": _join_query_values(source_instrument_ids),
+            "exchange_id": exchange_id,
+            "exchange_ids": _join_query_values(exchange_ids),
+            "product_id": product_id,
+            "product_ids": _join_query_values(product_ids),
+            "trading_status": trading_status,
+            "trading_statuses": _join_query_values(trading_statuses),
+            "limit": limit,
+            "cursor": cursor,
+        }
+        query.update(extra_query)
+        return self._request("GET", "/v1/meridian/futures/instruments", query=query)
+
     def get_meridian_futures_snapshots(
         self,
         *,

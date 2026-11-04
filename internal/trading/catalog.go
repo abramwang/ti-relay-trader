@@ -113,6 +113,7 @@ func Catalog() CatalogDocument {
 			{Method: "GET", Path: "/v1/meridian/stream/market/bars", Response: "Meridian market_bars SSE", Description: "proxy Meridian realtime minute bars without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/stream/market/snapshots", Response: "Meridian market_snapshots SSE", Description: "proxy Meridian level1 snapshot SSE without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/futures/status", Response: "Meridian CTP futures status payload", Description: "proxy Meridian CTP futures service status"},
+			{Method: "GET", Path: "/v1/meridian/futures/instruments", Response: "Meridian futures_instrument.v1 payload", Description: "proxy Meridian authoritative futures catalog, publication cursors and exchange coverage"},
 			{Method: "GET", Path: "/v1/meridian/futures/snapshots", Response: "Meridian futures_market_snapshot.v1 payload", Description: "proxy Meridian CTP index futures snapshots without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/futures/bars", Response: "Meridian futures minute/daily bar payload", Description: "proxy Meridian CTP futures bars without redefining fields"},
 			{Method: "GET", Path: "/v1/meridian/stream/futures/snapshots", Response: "Meridian futures_snapshots SSE", Description: "proxy Meridian CTP futures snapshot SSE without redefining fields"},

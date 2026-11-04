@@ -30,6 +30,7 @@ const (
 	barStreamPath             = "/v1/stream/market/bars"
 	snapshotStreamPath        = "/v1/stream/market/snapshots"
 	futuresStatusPath         = "/v1/futures/status"
+	futuresInstrumentsPath    = "/v1/futures/instruments"
 	futuresSnapshotsPath      = "/v1/futures/snapshots"
 	futuresBarsPath           = "/v1/futures/bars"
 	futuresSnapshotStreamPath = "/v1/futures/stream/snapshots"
@@ -204,6 +205,13 @@ func (client *MeridianClient) FuturesSnapshots(ctx context.Context, values url.V
 		return MeridianResponse{}, errors.New("meridian client is nil")
 	}
 	return client.getJSON(ctx, futuresSnapshotsPath, cloneValues(values))
+}
+
+func (client *MeridianClient) FuturesInstruments(ctx context.Context, values url.Values) (MeridianResponse, error) {
+	if client == nil {
+		return MeridianResponse{}, errors.New("meridian client is nil")
+	}
+	return client.getJSON(ctx, futuresInstrumentsPath, cloneValues(values))
 }
 
 func (client *MeridianClient) FuturesBars(ctx context.Context, values url.Values) (MeridianResponse, error) {

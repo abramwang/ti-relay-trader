@@ -2,6 +2,8 @@
 
 日期：2026-11-03，Asia/Shanghai。背景：OC 开始普通期货交易接入，首批测评为 SHFE；Relay 需要复用 Meridian 标准，不另建合约目录或行情字段。
 
+2026-11-04 回执已收到：Meridian 已发布统一 `/v1/futures/instruments` 和 SDK 0.1.65，SHFE 目录及行情仍未发布；本清单保留原始需求，最新取证和下一步见 [目录回执复核](MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md)。不要继续将“目录接口不存在”作为待办，也不要把接口发布当成 SHFE ready。
+
 ## 已确认
 
 本轮在线读取 `GET /v1/contracts/futures/ctp-level1`，contract_id=`meridian.ctp_futures_level1.v1`、version=1；instrument schema=`futures_instrument.v1`，authoritative_products 为 IF/IH/IC/IM。

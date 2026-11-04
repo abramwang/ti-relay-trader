@@ -13,8 +13,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-03 Asia/Shanghai` OC 回签后已修订 F0 draft.2 样例和回归，核验 Meridian 公开机器契约并明确 security_id/原码映射；SHFE覆盖待确认，不自行造标准代码。未冻结/上线，未改环境或权限。见 docs/CTP_F0_DRAFT2_REVIEW_20261103.md |
-| 更新时间 | `2026-11-03` |
+| 最近确认 | `2026-11-04 Asia/Shanghai` Meridian统一期货目录已发布并实测：CFFEX 541行、分页绑定，SHFE明确503未发布。Relay目录代理与SDK源码已接入，未部署/发布wheel；SHFE等待获授权真实目录源及行情验收。见 docs/MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md |
+| 更新时间 | `2026-11-04` |
 
 新线程按以下顺序恢复：
 
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-04` 已复核 Meridian 合约目录回执：在线 `/v1/futures/instruments` 映射、同版本分页、变更页大小409和SHFE503均符合声明；现有观察expire_date不是法定到期日。新增 Relay `/v1/meridian/futures/instruments` 和 SDK `get_meridian_futures_instruments` 源码，保留上游标的/游标及错误详情，不升级外部数据框依赖。Go四包及SDK68项测试通过，当前未部署/发布wheel、未改环境/权限；SHFE需获授权的真实查询源/快照再交Meridian，详见 [回执复核](docs/MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md)。历史绩效问题与F0其余恢复验收仍保留。
 
 - `2026-11-03` 期货处于 F0：OC 报告7a4bb66/c50226d离线codec/凭据实现；Relay交付 [draft.2](docs/CTP_F0_DRAFT2_REVIEW_20261103.md)，修正fill_id、回执类型标记、批量继承及SDK约束，新增Meridian精确映射反例。标准代码必须来自Meridian security_id，原码按source_instrument_id/exchange_id保留，不自动拼接；在线契约仍仅列IF/IH/IC/IM，SHFE协作清单已整理。下一步OC复验draft.2、确认行情覆盖、补金额serializer与完整恢复fixture；运行时不接这些样例，未切环境/改账/开放权限，768历史资产问题保留。
 

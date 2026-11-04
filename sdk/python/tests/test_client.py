@@ -21,7 +21,7 @@ from relay_sdk import (
     TRADING_SCHEMA_VERSION,
 )
 from relay_sdk.client import _fill_key, _order_key
-from relay_sdk.errors import error_from_payload
+from relay_sdk.errors import RelayError, error_from_payload
 from relay_sdk.models import Fill, Order
 from relay_sdk.streaming import iter_sse_events
 
@@ -314,6 +314,28 @@ class RelayHandler(BaseHTTPRequestHandler):
                     },
                 }
             )
+            return
+        if parsed.path == "/v1/meridian/futures/instruments":
+            status, code = 200, None
+            if query.get("exchange_id") == ["SHFE"]:
+                status, code = 503, "source_unavailable"
+            elif query.get("cursor") == ["expired"]:
+                status, code = 409, "cursor_expired"
+            elif query.get("source_instrument_id") == ["ambiguous"]:
+                status, code = 409, "conflict"
+            elif query.get("security_id") == ["UNKNOWN.CFFEX"]:
+                status, code = 404, "not_found"
+            if code:
+                self._json({"ok": False, "error": {
+                    "code": "UNAVAILABLE" if status == 503 else "BAD_REQUEST",
+                    "message": "meridian futures instruments request failed",
+                    "detail": {"error": {"code": code}},
+                }}, status=status)
+            else:
+                self._json({"ok": True, "data": {
+                    "data": [{"security_id": "SC2610.INE", "source_instrument_id": "sc2610", "exchange_id": "INE"}],
+                    "meta": {"schema_version": "futures_instrument.v1", "publication_snapshot_id": "synthetic-only", "next_cursor": "opaque+/="},
+                }})
             return
         if parsed.path == "/v1/meridian/futures/status":
             self._json(
@@ -1544,6 +1566,43 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(recent[2][2]["series_type"], ["contract"])
         self.assertEqual(recent[3][1], "/v1/meridian/stream/futures/snapshots")
         self.assertEqual(recent[4][1], "/v1/meridian/stream/futures/bars")
+
+    def test_meridian_futures_instruments(self):
+        result = self.client.get_meridian_futures_instruments(
+            source_instrument_id="sc2610", exchange_id="INE", limit=2, cursor="opaque+/=",
+        )
+        self.assertEqual(result["data"][0]["source_instrument_id"], "sc2610")
+        self.assertEqual(result["meta"]["publication_snapshot_id"], "synthetic-only")
+        self.assertEqual(result["meta"]["next_cursor"], "opaque+/=")
+        self.assertEqual(RelayHandler.requests[-1][2], {
+            "source_instrument_id": ["sc2610"], "exchange_id": ["INE"], "limit": ["2"], "cursor": ["opaque+/="],
+        })
+        self.client.get_meridian_futures_instruments()
+        self.assertEqual(RelayHandler.requests[-1][2], {"limit": ["200"]})
+        self.client.get_meridian_futures_instruments(
+            security_ids=["IF2612.CFFEX", "IH2612.CFFEX"],
+            source_instrument_ids=["IF2612", "IH2612"], exchange_ids=["CFFEX"],
+            product_ids=["IF", "IH"], trading_statuses=["active_observed"],
+        )
+        query = RelayHandler.requests[-1][2]
+        self.assertEqual(query["security_ids"], ["IF2612.CFFEX,IH2612.CFFEX"])
+        self.assertEqual(query["source_instrument_ids"], ["IF2612,IH2612"])
+        self.assertEqual(query["exchange_ids"], ["CFFEX"])
+        self.assertEqual(query["product_ids"], ["IF,IH"])
+        self.assertEqual(query["trading_statuses"], ["active_observed"])
+        for kwargs, status, code in [
+            ({"exchange_id": "SHFE"}, 503, "source_unavailable"),
+            ({"cursor": "expired"}, 409, "cursor_expired"),
+            ({"source_instrument_id": "ambiguous"}, 409, "conflict"),
+            ({"security_id": "UNKNOWN.CFFEX"}, 404, "not_found"),
+        ]:
+            with self.subTest(code=code):
+                before = len(RelayHandler.requests)
+                with self.assertRaises(RelayError) as raised:
+                    self.client.get_meridian_futures_instruments(**kwargs)
+                self.assertEqual(raised.exception.status_code, status)
+                self.assertEqual(raised.exception.raw_response["error"]["detail"]["error"]["code"], code)
+                self.assertEqual(len(RelayHandler.requests), before + 1)
 
     def test_stream_events_sends_last_event_id(self):
         stream = self.client.stream_events(last_event_id="evt-test-42", idle_timeout=2)

@@ -395,6 +395,7 @@ P8 helper methods are available for strategy and research tooling:
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
 - `get_meridian_futures_status()`
+- `get_meridian_futures_instruments(security_id=... | source_instrument_id=..., exchange_id=..., limit=..., cursor=...)`（源码新增，待随下一版 wheel/API 部署发布）：返回 Meridian `futures_instrument.v1` 原始目录和 publication/coverage，不自行生成标准代码；409 游标失效及 503 未发布通过异常保留在 `raw_response["error"]["detail"]`，不自动重新分页。
 - `get_meridian_futures_snapshots(security_id=... | product_ids=...)`
 - `get_meridian_futures_bars(security_id=..., trade_date=...)`
 - `stream_meridian_futures_snapshots(security_id=... | product_ids=...)`
