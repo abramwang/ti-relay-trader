@@ -2,6 +2,8 @@
 
 日期：2026-11-04，Asia/Shanghai。来源：Meridian `docs/Relay-CTP合约目录与SHFE覆盖回执.md`，并直接只读核验其在线 `/v1/futures/instruments`。
 
+后续用户边界修正优先：SHFE行情不依赖Trader ReqQryInstrument完整快照，直接按权威行情资料和行情链路推进，见 [最新边界](MERIDIAN_SHFE_MARKET_BOUNDARY_UPDATE_20261104.md)。本文在线取证保留为当时状态；第4节旧采样路径仅作为可选Trader来源，不再是行情发布的统一前提。
+
 ## 1. 结论
 
 统一合约目录查询入口已发布，SDK 据 Meridian 回执为 0.1.65；SHFE 仍明确未就绪，不能因新增目录接口就解锁期货下单。Meridian 主数据标准继续是唯一跨系统标的标准，Relay 不自建代码规范。

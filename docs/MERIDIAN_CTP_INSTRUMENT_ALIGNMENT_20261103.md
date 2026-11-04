@@ -2,6 +2,8 @@
 
 日期：2026-11-03，Asia/Shanghai。背景：OC 开始普通期货交易接入，首批测评为 SHFE；Relay 需要复用 Meridian 标准，不另建合约目录或行情字段。
 
+2026-11-04 用户最新边界：行情开发不以Trader完整快照为前提，Meridian可基于权威交易所资料及现有行情源独立推进SHFE；柜台约束与交易准入由OC/Relay负责。见 [边界修正](MERIDIAN_SHFE_MARKET_BOUNDARY_UPDATE_20261104.md)。
+
 2026-11-04 回执已收到：Meridian 已发布统一 `/v1/futures/instruments` 和 SDK 0.1.65，SHFE 目录及行情仍未发布；本清单保留原始需求，最新取证和下一步见 [目录回执复核](MERIDIAN_CTP_CATALOG_RECEIPT_20261104.md)。不要继续将“目录接口不存在”作为待办，也不要把接口发布当成 SHFE ready。
 
 ## 已确认

@@ -21,7 +21,7 @@
 
 动态限价、夜盘和目录覆盖缺口由 Relay 向 Meridian 跟进。SHFE 仍未发布，不阻断 OC 不依赖在线数据的离线开发，也不因此开放任何期货交易权限。
 
-Meridian v2 只接受真实 exchange_full 请求及对应 IsLast 证明作为生产候选。OC 已报告的显式单合约查询保持诊断用途，不要求为此增加全市场扫描；优先由 Meridian 已有采集器在获授权窗口采样。OC 只需向 Relay 说明现有原始 QueryResult 的字段/范围和可用样例，Relay 决定可用性与适配，不拼接单合约结果冒充完整请求。InstrumentField 静态量边界不等于账户权限证明。
+按用户最新边界，Meridian直接推进SHFE行情，不等待Trader ReqQryInstrument全量样本，见 [边界修正](MERIDIAN_SHFE_MARKET_BOUNDARY_UPDATE_20261104.md)。若未来选择使用Meridian v2 Trader输入，其exchange_full/IsLast规则仍需真实满足；这不是行情目录必须采用的来源。OC显式单合约查询按交易侧需要保留，不要求为行情增加全市场扫描。InstrumentField静态量边界不等于账户权限证明，Relay不拼接单合约结果冒充完整请求。
 
 ## 本轮共享异常样例
 

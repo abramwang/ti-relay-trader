@@ -2,6 +2,8 @@
 
 日期：2026-11-04，Asia/Shanghai。来源：Meridian《Relay-CTP-v2复核整改回签》。接续 [初次复核](MERIDIAN_CTP_V2_REVIEW_20261104.md)，本文为当前状态，初次问题记录保留历史证据。
 
+同日用户后续边界优先：解除SHFE行情对Trader完整样本的依赖，见 [边界修正](MERIDIAN_SHFE_MARKET_BOUNDARY_UPDATE_20261104.md)。本文离线验收结论保持有效，但只约束可选Trader输入；下文旧“M3等待exchange_full”不再是行情开发总前置条件。
+
 ## 结论
 
 V1 类型校验和 V2 每行请求隔离在本轮离线范围内复核通过，可关闭这两项整改待办。M1/M2 接收约定已明确；M3 的授权真实样本、SHFE 目录晋级、实时行情、完整夜盘及结算仍未验收。不能把离线通过升级为生产就绪或账户权限证明。
@@ -51,4 +53,4 @@ Relay 已更新 [给 OC 的回签确认](OC_CTP_DRAFT2_ACCEPTANCE_REVIEW_2026110
 | query_request_gate.h | 9080044b818d9906daccc60a5db5952b925aad2982b703ddc0fe4e74643d8d4a |
 | query_request_gate_test.cpp | 2625898e64d19aece5fb090a267430cab66b9d1098ce87983b6335e662da1cd8 |
 
-下一步由 Relay 协调获授权真实 exchange_full 样本及目录/行情分阶段验收，继续采用 Meridian 标的标准；OC 可以继续不依赖在线行情的离线开发，不必等待上述窗口。
+下一步Meridian独立推进SHFE行情、Relay按实际发布分阶段验收，继续采用Meridian标准。Trader样本只在交易侧或补充来源确需时协调，不阻塞行情开发；OC继续协议和恢复工作，不必等待SHFE在线窗口。
