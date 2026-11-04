@@ -4,6 +4,8 @@
 
 交付状态更新：按用户要求暂不转给OC，先与[查询序列内部验证](CTP_QUERY_SEQUENCE_REVIEW_20261104.md)及后续账本设计收敛成一份最终对接稿；以下“请OC核对”是后续确认事项，不是当前交付指令。
 
+2026-11-05已汇总为 [OC统一送审稿](OC_CTP_UNIFIED_REVIEW_20261105.md)，可只转该文，不必另转本文。候选schema仍未冻结，具体待确认项见统一稿C1-C6。
+
 ## 1. 交付及兼容边界
 
 - 机器契约：[query-page.schema.json](../testdata/ctp/query-page.schema.json)，JSON Schema 2020-12，文档身份 `urn:relay:ctp:query-page:draft:1`；它约束的payload仍是 `ctp.f0.draft.2`，不是发布新的交易wire版本。

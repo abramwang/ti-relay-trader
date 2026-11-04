@@ -196,6 +196,9 @@ class FillLinkageTest(unittest.TestCase):
         row["matched_at"] = None
         self.observe(model, "fill", row)
         self.observe(model, "fill", self.fill)
+        equivalent = copy.deepcopy(self.fill)
+        equivalent["matched_at"] = "2026-11-03T21:01:01.000+08:00"
+        self.observe(model, "fill", equivalent)
         row["matched_at"] = "2026-11-03T21:01:02+08:00"
         with self.assertRaisesRegex(ValueError, "conflicting source time"):
             self.observe(model, "fill", row)

@@ -1,6 +1,7 @@
 """Offline identity/linkage model, not a wire extension or durable ledger."""
 
 import copy
+from datetime import datetime
 from decimal import Decimal
 
 from jsonschema import ValidationError
@@ -18,6 +19,14 @@ def row_validator(kind):
 
 
 VALIDATORS = {kind: row_validator(kind) for kind in ("order", "fill")}
+
+
+def source_instant(value):
+    if value is None:
+        return None
+    # Validated +08:00 timestamps allow nanoseconds; datetime alone truncates them.
+    seconds, _, fraction = value[:-6].partition(".")
+    return datetime.fromisoformat(seconds + value[-6:]), Decimal("0." + fraction) if fraction else Decimal(0)
 
 
 class FillLinkage:
@@ -131,8 +140,8 @@ class FillLinkage:
         record = self.fills.get(key)
         if record:
             require(record["core"] == core, "same TradeID has conflicting execution facts")
-            known_times = {r["matched_at"] for r in record["observations"] if r["matched_at"] is not None}
-            require(row["matched_at"] is None or not known_times or row["matched_at"] in known_times,
+            known_times = {source_instant(r["matched_at"]) for r in record["observations"] if r["matched_at"] is not None}
+            require(row["matched_at"] is None or not known_times or source_instant(row["matched_at"]) in known_times,
                     "same TradeID has conflicting source time")
             record["observations"].append(copy.deepcopy(row))
         else:
