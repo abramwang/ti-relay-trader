@@ -1,0 +1,15 @@
+{
+  "scenario_version":"ctp.recovery.expectations.v1",
+  "synthetic_only":true,
+  "cases":[
+    {"name":"before_intent","intent":false,"dispatch_started":false,"result":false,"outbox":false,"published":false,"acked":false,"expected":"not_started","ack_safe":false},
+    {"name":"intent_before_dispatch","intent":true,"dispatch_started":false,"result":false,"outbox":false,"published":false,"acked":false,"expected":"proven_not_submitted","ack_safe":false},
+    {"name":"dispatch_marker_before_sdk","intent":true,"dispatch_started":true,"result":false,"outbox":false,"published":false,"acked":false,"expected":"outcome_unknown","ack_safe":false},
+    {"name":"sdk_called_before_result","intent":true,"dispatch_started":true,"result":false,"outbox":false,"published":false,"acked":false,"expected":"outcome_unknown","ack_safe":false},
+    {"name":"result_before_outbox","intent":true,"dispatch_started":true,"result":true,"outbox":false,"published":false,"acked":false,"expected":"restore_output","ack_safe":false},
+    {"name":"outbox_before_publish","intent":true,"dispatch_started":true,"result":true,"outbox":true,"published":false,"acked":false,"expected":"republish_same_output","ack_safe":false},
+    {"name":"publish_succeeded_but_confirmation_lost","intent":true,"dispatch_started":true,"result":true,"outbox":true,"published":false,"acked":false,"expected":"republish_same_output","ack_safe":false},
+    {"name":"publish_confirmed_before_ack","intent":true,"dispatch_started":true,"result":true,"outbox":true,"published":true,"acked":false,"expected":"ack_original","ack_safe":true},
+    {"name":"ack_succeeded_then_restart","intent":true,"dispatch_started":true,"result":true,"outbox":true,"published":true,"acked":true,"expected":"already_complete","ack_safe":true}
+  ]
+}

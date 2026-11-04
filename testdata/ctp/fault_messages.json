@@ -1,0 +1,26 @@
+{
+  "contract_version": "ctp.f0.draft.2",
+  "synthetic_only": true,
+  "cases": [
+    {"name":"cancel_rejected","stream_suffix":"event","body":{
+      "protocol":"relay.stream.v1","message_type":"event","message_id":"fixture-cancel-rejected-event","event_type":"order.cancel.event","event_name":"order.cancel.rejected","action":"order.cancel","origin_message_id":"fixture-cancel-1","produced_at":"2026-11-03T21:02:01+08:00",
+      "routing":{"env":"test","broker_id":"ctp_4900","gateway_id":"990000000001","account_id":"990000000001"},
+      "payload":{"product_type":"futures","schema_version":"ctp.f0.draft.2","account_id":"990000000001","gateway_order_id":"fixture-order-1","trade_date":"20261104","counter_session_id":"ctpproc-fixture-1","cancel_status":"rejected","code":"BROKER_CANCEL_REJECTED","message":"synthetic cancel rejection","order_state_changed":false,"retry_safe":false,"reconciliation_required":true,"occurred_at":"2026-11-03T21:02:01+08:00"}
+    }},
+    {"name":"cancel_unknown","stream_suffix":"reply","body":{
+      "protocol":"relay.stream.v1","message_type":"reply","message_id":"fixture-cancel-unknown-reply","action":"order.cancel","status":"failed","code":"COMMAND_OUTCOME_UNKNOWN","origin_message_id":"fixture-cancel-1","produced_at":"2026-11-03T21:02:01+08:00",
+      "routing":{"env":"test","broker_id":"ctp_4900","gateway_id":"990000000001","account_id":"990000000001"},
+      "payload":{"product_type":"futures","schema_version":"ctp.f0.draft.2","account_id":"990000000001","gateway_order_id":"fixture-order-1","trade_date":"20261104","counter_session_id":"ctpproc-fixture-1","order_state_changed":false,"retry_safe":false,"reconciliation_required":true}
+    }},
+    {"name":"submit_unknown","stream_suffix":"reply","body":{
+      "protocol":"relay.stream.v1","message_type":"reply","message_id":"fixture-submit-unknown-reply","action":"order.submit","status":"failed","code":"COMMAND_OUTCOME_UNKNOWN","origin_message_id":"fixture-submit-1","produced_at":"2026-11-03T21:01:01+08:00",
+      "routing":{"env":"test","broker_id":"ctp_4900","gateway_id":"990000000001","account_id":"990000000001"},
+      "payload":{"product_type":"futures","schema_version":"ctp.f0.draft.2","account_id":"990000000001","gateway_order_id":"fixture-order-1","trade_date":"20261104","retry_safe":false,"reconciliation_required":true}
+    }},
+    {"name":"batch_partial","stream_suffix":"reply","body":{
+      "protocol":"relay.stream.v1","message_type":"reply","message_id":"fixture-batch-partial-reply","action":"order.batch.submit","status":"accepted","code":"OK","result_type":"order_action_receipt","origin_message_id":"fixture-batch-1","produced_at":"2026-11-03T21:01:01+08:00",
+      "routing":{"env":"test","broker_id":"ctp_4900","gateway_id":"990000000001","account_id":"990000000001"},
+      "payload":{"product_type":"futures","schema_version":"ctp.f0.draft.2","account_id":"990000000001","trade_date":"20261104","accepted_count":1,"failed_count":1,"failed_orders":[{"index":1,"gateway_order_id":"fixture-batch-child-2","code":"ORDER_SUBMIT_REJECTED","message":"synthetic explicit rejection, no SDK execution for this child"}]}
+    }}
+  ]
+}
