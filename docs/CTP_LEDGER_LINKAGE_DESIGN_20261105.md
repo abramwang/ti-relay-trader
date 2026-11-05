@@ -55,7 +55,27 @@ Relay并行进入F1隔离模型起步：新增 `internal/futures/snapshot.go`，
 
 复现：`RELAY_TEST_PG_BIN=/path/to/postgresql/bin scripts/test-futures-postgres.sh`。脚本自行创建并销毁临时集群，仅Unix socket，不接现有数据库；服务器二进制路径显式指定，不执行安装/启动系统服务。直接Go集成测试只认专用`RELAY_FUTURES_TEST_DATABASE_URL`，每项使用独立schema，应仅传一次性测试库。七个Go包回归、vet及83项Python协议测试通过，原共享JSON未变。
 
-下一步：订单/成交严格Go模型、原生身份/独立执行事实与待关联持久化；随后接可信请求登记、恢复扫描、消费位点/ACK和发布状态展示。生产迁移、服务接线、联合验收及授权发布仍待，不能以本轮存储通过替代F0冻结或F1整体完成。
+上述查询存储之后已推进下节订单/成交持久实现。生产迁移、服务接线、联合验收及授权发布仍待，不能以隔离存储通过替代F0冻结或F1整体完成。
+
+### 订单与成交持久增量
+
+新增`trade.go/trade_projection.go/trade_store.go`及迁移000034，延用既有draft.2字段，不改共享JSON，不另造Meridian标的标准。实际落表为`futures_trade_scopes/observations/order_states/execution_facts`；本轮为隔离行级实现，尚未接真实event/reply、HTTP/SDK、Redis消费位点/ACK或生产迁移。
+
+- `DecodeOrder/DecodeFill`严格校验完整行、显式null/整数/金额/价格、原生BrokerID与InvestorID、逻辑账户、TradingDay及外部ID哈希。编号保持字符串及前导零，symbol/exchange保持原码。普通十进制价格不经float且在去尾零前检查uint64边界；经济比较用标准库big.Rat。自然时间允许明确null、保留+08:00纳秒，不用采集时间代填。fill禁止native sdk_request_id，即使显式null也不接受。
+- `TradeScope`由未来可信分发层给定，包含路由、TradingDay及授权原生券商/投资者。订单/成交自身counter_session_id是历史来源事实，不要求等于当前查询会话。严格行解码仍要求wire gateway_order_id；本地未见真实订单时可以pending，不表示允许OC发送缺gateway的wire。下文早期Python缺gateway用例仅内部参考，未升级公开协议。
+- 成交唯一身份沿用环境/路由券商/逻辑账户/gateway/TradingDay/交易所/TradeID的七段长度框定哈希，与本地order是否已存在或后续关联无关。同TradeID经济字段/原生OrderSysID/已知成交时间矛盾则保留原执行事实及全部原文并阻断，不能改量价、再计一笔或通过费用变动覆盖事实。
+- 先到成交直接写独立execution，link_status=pending、linked_gateway=NULL，无需造order。真实订单到达后，只在唯一原生SysID、合约/方向/开平/套保及gateway提示一致时建立外键关联。提示可为该真实本地gateway或按既有规则生成的external别名，不因本地查不到就猜外部所有权。缺SysID的订单可在后续证据补齐后关联。
+- 两个真实gateway争用同一原生身份时，均保留订单证据但阻断，并撤销相关可用成交关联，不让先到者默认为正确。同一订单唯一成交总量超过原委托量时保留所有执行事实并标冲突，不截断数量，不用较旧cum_filled_qty删除成交。关联状态与作用域总Blocked一起提供，不代表完整账户/费用/资金质量。
+- 订单状态按已有保守证据规则收敛，非按最后到达覆盖：终态不回退，矛盾终态、数量回退或不可比较的状态/累计量明确阻断。已知实际委托时间可以补充原null；两个不同已知时间不可互覆盖。报告保留最后无争议状态，不把未终态伪装为cancelled。
+- `ExecutionRecord.Fill.Fee`只是首次有效回包中的费用值；`FeeEvidence`保留每个独立来源的fee/null和fee_complete及审计观察ID，不自动挑最新为最终费用、不相加。未知实际成交时间可由后续真实值补齐；原始快照仍在BYTEA审计中。fee_complete不是券商最终清算标志。
+- `TradeStore.Observe`的输入是已经核实来源的单行原文及稳定source_id（原Stream/entry/行号身份，不能用gateway或TradeID替代）。原始完整envelope和查询完成证明仍属未来消费层责任。它只接受order/fill，未知动作不在此擅自兼容；错误行可持久审计并返回Blocked，调用成功仅表示事务提交，不等于交易质量通过或可ACK。
+- 每个路由+交易日作用域行锁串行化审计、订单投影、独立执行事实、nullable关联和质量报告，同事务提交；使用共享同步提交事务入口。相同来源/类型/原字节重投不新增事实，不同来源的同执行仅增加证据。来源身份同号异体保留双方且阻断，未知内容不替换先前事实。改变已登记原生授权绑定直接拒绝，不悄悄跨投资者重建。
+- 原始观察可在新store实例重放恢复pending并重新关联，报告具有SHA256完整性校验；这不是OC请求重发或当前交易readiness。冲突目前不会自动消除，无人工更正接口；需要后续明确证据更正方案，不能静默清标。
+- 本地原型仍限制每作用域日1024条独立行证据、32MiB原文、单行8MiB；达到限制返回error，不ACK、不截断、不清理。事务内有界重放和全投影更新尚未通过大账户生产规模性能验收，后续应做增量化/全局配额与保留期，不把该原型容量宣告为线上交易容量。订单/成交查询仍未接入QueryBatch，不能按资产快照清空重建订单表。
+
+验证新增10项Go模型/状态测试和9项真实临时PostgreSQL集成测试，包括24种订单到达排列、成交先到/订单补齐、未知时间补全、原生别名争用、执行事实/源时间冲突、超量、费用更新不重复、重建store恢复、16路重复及独立证据并发、失败回滚、终态不回退、跨日/环境隔离、坏原文/校验和及迁移up/down。合计57项Go测试（21项真实PG集成）在同一临时库脚本中以race通过，七包回归/vet及原83项Python通过；fuzz仅短时烟测，不声称充分覆盖。临时库自动停止，无生产库、A股流程、环境或权限变更。
+
+下一步：完整事件/订单成交查询回包校验与可信作用域分发、查询完成批次到事实入库的事务责任；再接恢复扫描、消费位点/ACK、HTTP/SDK和运行态可观测性。配合OC真实分页/事件样例只核新增差异，现阶段无需再次原则回签；F0/F1/F2整体保持未完成。
 
 按用户要求，本文与11月4日查询字段/序列文档暂不转给OC。Relay先收敛为统一对接稿，再由双方确认字段与差异；不要求OC运行Relay程序或提供二进制。Meridian标的定义继续作为行情唯一标准，交易事实采集不等待SHFE行情上线。
 

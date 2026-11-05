@@ -52,7 +52,11 @@ func queryScope(c QueryContext) string {
 }
 
 func (s *QueryStore) transaction(ctx context.Context) (*sql.Tx, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	return beginFuturesTransaction(ctx, s.db)
+}
+
+func beginFuturesTransaction(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, err
 	}
