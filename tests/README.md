@@ -11,6 +11,7 @@
 
 ## 当前状态
 
+- 期货查询隔离存储：`scripts/test-futures-postgres.sh`自行启动并销毁本机临时PostgreSQL（Unix socket、WAL/fsync默认开启），不读应用配置/现有DSN。设置`RELAY_TEST_PG_BIN`为含initdb/pg_ctl的服务端二进制目录；12项数据库集成+26项Go测试以race运行，验证原子发布、并发重投、连接终止回滚、旧进程隔离、历史恢复及迁移up/down。直接运行时只认`RELAY_FUTURES_TEST_DATABASE_URL`且须指向一次性测试库；无此变量集成测试会skip，不能声称验证落库。详见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`。
 - 已创建测试目录骨架。
 - 已增加 Go 配置加载、结构化日志、HTTP envelope 和 API 健康检查骨架的单元测试。
 - 已增加统一交易 schema 的基础校验和状态机单元测试。
