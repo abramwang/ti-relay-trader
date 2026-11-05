@@ -1,0 +1,301 @@
+{
+  "contract_version": "ctp.f0.draft.2",
+  "material_version": "relay.ctp.query.edges.v1",
+  "synthetic_only": true,
+  "cases": [
+    {
+      "name": "before_login",
+      "stream_suffix": "reply",
+      "body": {
+        "protocol": "relay.stream.v1",
+        "message_type": "reply",
+        "message_id": "fixture-before_login",
+        "origin_message_id": "fixture-query-before_login",
+        "produced_at": "2026-11-03T21:03:00+08:00",
+        "routing": {
+          "env": "test",
+          "broker_id": "ctp_4900",
+          "gateway_id": "990000000001",
+          "account_id": "990000000001"
+        },
+        "action": "order.list.query",
+        "status": "failed",
+        "code": "QUERY_FAILED",
+        "result_type": "order_page",
+        "payload": {
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2"
+        },
+        "adapter_context": {
+          "query_evidence": {
+            "ticket": null,
+            "sdk_request_id": null,
+            "sdk_return_code": null,
+            "callback_error_id": null,
+            "connection_generation": null,
+            "counter_session_id": "ctpproc-fixture-1",
+            "snapshot_applied": false,
+            "failure_stage": "before_enqueue"
+          }
+        },
+        "message": "synthetic broker login not ready before enqueue"
+      }
+    },
+    {
+      "name": "queue_full",
+      "stream_suffix": "reply",
+      "body": {
+        "protocol": "relay.stream.v1",
+        "message_type": "reply",
+        "message_id": "fixture-queue_full",
+        "origin_message_id": "fixture-query-queue_full",
+        "produced_at": "2026-11-03T21:03:00+08:00",
+        "routing": {
+          "env": "test",
+          "broker_id": "ctp_4900",
+          "gateway_id": "990000000001",
+          "account_id": "990000000001"
+        },
+        "action": "order.list.query",
+        "status": "failed",
+        "code": "QUERY_FAILED",
+        "result_type": "order_page",
+        "payload": {
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "adapter_context": {
+          "query_evidence": {
+            "ticket": null,
+            "sdk_request_id": null,
+            "sdk_return_code": null,
+            "callback_error_id": null,
+            "connection_generation": 1,
+            "counter_session_id": "ctpproc-fixture-1",
+            "snapshot_applied": false,
+            "failure_stage": "before_enqueue"
+          }
+        },
+        "message": "synthetic queue full before ticket allocation"
+      }
+    },
+    {
+      "name": "unsupported_order_state",
+      "stream_suffix": "reply",
+      "body": {
+        "protocol": "relay.stream.v1",
+        "message_type": "reply",
+        "message_id": "fixture-unsupported_order_state",
+        "origin_message_id": "fixture-query-unsupported_order_state",
+        "produced_at": "2026-11-03T21:03:00+08:00",
+        "routing": {
+          "env": "test",
+          "broker_id": "ctp_4900",
+          "gateway_id": "990000000001",
+          "account_id": "990000000001"
+        },
+        "action": "order.list.query",
+        "status": "failed",
+        "code": "QUERY_FAILED",
+        "result_type": "order_page",
+        "payload": {
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "adapter_context": {
+          "query_evidence": {
+            "ticket": "fixture-ticket-4",
+            "sdk_request_id": 13,
+            "sdk_return_code": 0,
+            "callback_error_id": 0,
+            "connection_generation": 1,
+            "counter_session_id": "ctpproc-fixture-1",
+            "snapshot_applied": false,
+            "failure_stage": "standard_projection"
+          },
+          "standard_validation": {
+            "raw_completed": true,
+            "reason": "unsupported_native_order_status",
+            "raw_order_status": "a"
+          }
+        },
+        "message": "synthetic raw query completed but order state has no validated projection"
+      }
+    }
+  ],
+  "recovery": {
+    "original_context": {
+      "routing": {
+        "env": "test",
+        "broker_id": "ctp_4900",
+        "gateway_id": "990000000001",
+        "account_id": "990000000001"
+      },
+      "action": "order.list.query",
+      "origin_message_id": "fixture-query-orders",
+      "ticket": "fixture-ticket-4",
+      "counter_session_id": "ctpproc-fixture-1",
+      "connection_generation": 1,
+      "sdk_request_id": 13,
+      "trade_date": "20261104"
+    },
+    "complete_saved_bodies": [
+      {
+        "protocol": "relay.stream.v1",
+        "message_type": "reply",
+        "message_id": "fixture-recovered-page-0",
+        "origin_message_id": "fixture-query-orders",
+        "produced_at": "2026-11-03T21:03:00+08:00",
+        "routing": {
+          "env": "test",
+          "broker_id": "ctp_4900",
+          "gateway_id": "990000000001",
+          "account_id": "990000000001"
+        },
+        "action": "order.list.query",
+        "status": "partial",
+        "code": "OK",
+        "result_type": "order_page",
+        "chunk": {
+          "index": 0,
+          "is_last": false
+        },
+        "payload": {
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104",
+          "items": [
+            {
+              "account_id": "990000000001",
+              "gateway_order_id": "fixture-order-1",
+              "counter_session_id": "ctpproc-fixture-1",
+              "trade_date": "20261104",
+              "symbol": "rb2612",
+              "exchange": "SHFE",
+              "business_type": "F",
+              "trade_side": "B",
+              "offset_type": "O",
+              "hedge_type": "speculation",
+              "order_qty": 1,
+              "cum_filled_qty": 0,
+              "leaves_qty": 1,
+              "limit_price": "3600",
+              "gateway_status": "working",
+              "submitted_at": "2026-11-03T21:01:00+08:00",
+              "captured_at": "2026-11-03T21:02:59+08:00",
+              "native_ids": {
+                "broker_id": "4900",
+                "investor_id": "FIXTURE_INV",
+                "user_id": "FIXTURE_USER",
+                "order_ref": "000000000001",
+                "order_sys_id": "00001234",
+                "front_id": 1,
+                "session_id": 2,
+                "sdk_request_id": 3
+              }
+            }
+          ]
+        },
+        "adapter_context": {
+          "query_evidence": {
+            "ticket": "fixture-ticket-4",
+            "sdk_request_id": 13,
+            "sdk_return_code": 0,
+            "callback_error_id": 0,
+            "connection_generation": 1,
+            "counter_session_id": "ctpproc-fixture-1",
+            "snapshot_applied": true
+          }
+        }
+      },
+      {
+        "protocol": "relay.stream.v1",
+        "message_type": "reply",
+        "message_id": "fixture-recovered-page-1",
+        "origin_message_id": "fixture-query-orders",
+        "produced_at": "2026-11-03T21:03:00+08:00",
+        "routing": {
+          "env": "test",
+          "broker_id": "ctp_4900",
+          "gateway_id": "990000000001",
+          "account_id": "990000000001"
+        },
+        "action": "order.list.query",
+        "status": "completed",
+        "code": "OK",
+        "result_type": "order_page",
+        "chunk": {
+          "index": 1,
+          "is_last": true
+        },
+        "payload": {
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104",
+          "items": [
+            {
+              "account_id": "990000000001",
+              "gateway_order_id": "fixture-order-2",
+              "counter_session_id": "ctpproc-fixture-1",
+              "trade_date": "20261104",
+              "symbol": "rb2612",
+              "exchange": "SHFE",
+              "business_type": "F",
+              "trade_side": "B",
+              "offset_type": "O",
+              "hedge_type": "speculation",
+              "order_qty": 1,
+              "cum_filled_qty": 0,
+              "leaves_qty": 1,
+              "limit_price": "3600",
+              "gateway_status": "working",
+              "submitted_at": "2026-11-03T21:01:00+08:00",
+              "captured_at": "2026-11-03T21:02:59+08:00",
+              "native_ids": {
+                "broker_id": "4900",
+                "investor_id": "FIXTURE_INV",
+                "user_id": "FIXTURE_USER",
+                "order_ref": "000000000002",
+                "order_sys_id": "00001235",
+                "front_id": 1,
+                "session_id": 2,
+                "sdk_request_id": 3
+              }
+            }
+          ]
+        },
+        "adapter_context": {
+          "query_evidence": {
+            "ticket": "fixture-ticket-4",
+            "sdk_request_id": 13,
+            "sdk_return_code": 0,
+            "callback_error_id": 0,
+            "connection_generation": 1,
+            "counter_session_id": "ctpproc-fixture-1",
+            "snapshot_applied": true
+          }
+        }
+      }
+    ],
+    "new_context": {
+      "routing": {
+        "env": "test",
+        "broker_id": "ctp_4900",
+        "gateway_id": "990000000001",
+        "account_id": "990000000001"
+      },
+      "action": "order.list.query",
+      "origin_message_id": "fixture-query-orders-new",
+      "ticket": "fixture-ticket-new",
+      "counter_session_id": "ctpproc-fixture-2",
+      "connection_generation": 2,
+      "sdk_request_id": 23,
+      "trade_date": "20261104"
+    },
+    "expected_historical_recovery": true,
+    "expected_current_readiness": false,
+    "expected_old_partial_in_new_query": false
+  }
+}

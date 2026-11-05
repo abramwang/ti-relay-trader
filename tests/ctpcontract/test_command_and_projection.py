@@ -5,7 +5,7 @@ import unittest
 
 from jsonschema import ValidationError
 
-from command_contract import validate_command
+from command_contract import canonical_price, validate_command
 from fill_linkage import source_instant
 from order_projection import OrderProjection
 from query_contract import ROOT, decode_json, fixture_pages
@@ -71,8 +71,10 @@ class CommandContractTest(unittest.TestCase):
             self.validate(body)
 
     def test_strict_price_and_quantity_tokens(self):
+        self.assertEqual(canonical_price("1.00"), canonical_price("1"))
+        self.assertEqual(canonical_price("10.0100"), "10.01")
         for key, values in (("order_qty", (True, 1.0, "1", 0, 2147483648)),
-                            ("limit_price", (3600, "0", "1e3", "1.0000000001", "18446744073709551616"))):
+                            ("limit_price", (3600, "0", "01", "1e3", "1.0000000001", "18446744073709551616", "18446744073709551615.0"))):
             for value in values:
                 body = copy.deepcopy(self.commands["submit"])
                 body["payload"][key] = value

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:relay:ctp:query-page:draft:1",
-  "title": "Offline CTP draft.2 query page candidate; not a deployed API",
+  "$id": "urn:relay:ctp:query-page:draft:2",
+  "title": "Offline CTP draft.2 query page candidate revision 2; not a deployed API",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol", "message_type", "message_id", "origin_message_id", "produced_at", "routing", "action", "status", "code", "result_type", "payload", "adapter_context"],
@@ -53,6 +53,7 @@
        "code": {"const": "OK"}, "payload": {"required": ["trade_date", "items"]},
        "adapter_context": {"properties": {"query_evidence": {"properties": {
          "sdk_request_id": {"type": "integer", "minimum": 1}, "sdk_return_code": {"const": 0},
+         "ticket": {"$ref": "#/$defs/id"}, "connection_generation": {"type": "integer", "minimum": 1},
          "callback_error_id": {"enum": [0, null]}, "snapshot_applied": {"const": true}
        }}}}
      }},
@@ -71,7 +72,7 @@
     "source_time": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
     "count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
     "lots": {"type": "integer", "minimum": 1, "maximum": 2147483647},
-    "money": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$(?![\\s\\S])"},
+    "money": {"type": "string", "maxLength": 343, "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$(?![\\s\\S])"},
     "price": {"type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$(?![\\s\\S])"},
     "native_code": {"type": "string", "minLength": 1, "pattern": "^[!-~]+$(?![\\s\\S])"},
     "routing": {
@@ -85,13 +86,22 @@
       "type": "object", "additionalProperties": false,
       "required": ["ticket", "sdk_request_id", "sdk_return_code", "callback_error_id", "connection_generation", "counter_session_id", "snapshot_applied"],
       "properties": {
-        "ticket": {"$ref": "#/$defs/id"},
+        "ticket": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
         "sdk_request_id": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
         "sdk_return_code": {"type": ["integer", "null"]}, "callback_error_id": {"type": ["integer", "null"]},
-        "connection_generation": {"type": "integer", "minimum": 1}, "counter_session_id": {"$ref": "#/$defs/id"},
+        "connection_generation": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]}, "counter_session_id": {"$ref": "#/$defs/id"},
         "snapshot_applied": {"type": "boolean"}, "failure_stage": {"$ref": "#/$defs/id"}
       },
-      "allOf": [{"if": {"required": ["failure_stage"], "properties": {"failure_stage": {"const": "queue_expired"}}},
+      "allOf": [
+        {"if": {"properties": {"ticket": {"type": "null"}}},
+         "then": {"required": ["failure_stage"], "properties": {
+           "failure_stage": {"const": "before_enqueue"}, "snapshot_applied": {"const": false},
+           "sdk_request_id": {"type": "null"}, "sdk_return_code": {"type": "null"}, "callback_error_id": {"type": "null"}
+         }},
+         "else": {"properties": {"connection_generation": {"type": "integer", "minimum": 1}}}},
+        {"if": {"required": ["failure_stage"], "properties": {"failure_stage": {"const": "before_enqueue"}}},
+         "then": {"properties": {"ticket": {"type": "null"}}}},
+        {"if": {"required": ["failure_stage"], "properties": {"failure_stage": {"const": "queue_expired"}}},
         "then": {"properties": {"sdk_request_id": {"type": "null"}, "sdk_return_code": {"type": "null"}, "callback_error_id": {"type": "null"}, "snapshot_applied": {"const": false}}}}]
     },
     "fund_scope": {
@@ -132,9 +142,9 @@
           "type": "object", "additionalProperties": false,
           "required": ["posi_direction", "hedge_flag", "position_date", "invest_unit_id", "position", "today_position", "yd_position", "long_frozen", "short_frozen", "position_cost", "open_cost", "use_margin"],
           "properties": {
-            "posi_direction": {"$ref": "#/$defs/native_code", "maxLength": 1},
-            "hedge_flag": {"$ref": "#/$defs/native_code", "maxLength": 1},
-            "position_date": {"$ref": "#/$defs/native_code", "maxLength": 1},
+            "posi_direction": {"enum": ["1", "2", "3"]},
+            "hedge_flag": {"enum": ["1", "2", "3", "5", "6", "7"]},
+            "position_date": {"enum": ["1", "2"]},
             "invest_unit_id": {"type": "string", "maxLength": 16, "pattern": "^[!-~]*$(?![\\s\\S])"},
             "position": {"$ref": "#/$defs/count"}, "today_position": {"$ref": "#/$defs/count"}, "yd_position": {"$ref": "#/$defs/count"},
             "long_frozen": {"$ref": "#/$defs/count"}, "short_frozen": {"$ref": "#/$defs/count"},

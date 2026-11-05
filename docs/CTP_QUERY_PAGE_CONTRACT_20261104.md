@@ -6,9 +6,11 @@
 
 2026-11-05已汇总为 [OC统一送审稿](OC_CTP_UNIFIED_REVIEW_20261105.md)，可只转该文，不必另转本文。候选schema仍未冻结，具体待确认项见统一稿C1-C6。
 
+同日收到回签后，当前差异以 [r1回签增量答复](OC_CTP_R1_SIGNOFF_REVIEW_20261105.md) 为准：schema材料版2允许严格before_enqueue失败的ticket/generation为null；金额上限343字节；持仓原生字符枚举按OC头文件回签收紧。以下最初17项验证记录保留为历史，当前83项Python通过；不是部署或wire版本升级。
+
 ## 1. 交付及兼容边界
 
-- 机器契约：[query-page.schema.json](../testdata/ctp/query-page.schema.json)，JSON Schema 2020-12，文档身份 `urn:relay:ctp:query-page:draft:1`；它约束的payload仍是 `ctp.f0.draft.2`，不是发布新的交易wire版本。
+- 机器契约：[query-page.schema.json](../testdata/ctp/query-page.schema.json)，JSON Schema 2020-12，当前文档身份 `urn:relay:ctp:query-page:draft:2`；它约束的payload仍是 `ctp.f0.draft.2`，不是发布新的交易wire版本。
 - 完整订单/成交查询页：[query_pages.json](../testdata/ctp/query_pages.json)。资金、持仓和未发出超时继续复用原 `messages.json`，原六份共享JSON字节未变。
 - Python校验覆盖形状、严格JSON类型和单页语义，Go测试复用现有envelope解码；均离线、合成、无服务依赖。OC无需接收或运行Relay程序，按文档/schema/样例自行实现并反馈差异即可。
 
@@ -38,7 +40,7 @@ query_evidence必含ticket、sdk_request_id、sdk_return_code、callback_error_i
 
 failed的snapshot_applied=false。queue_expired表示未调用SDK，其三项SDK/回调证据必须为null；不能补零。失败阶段字符串仅作审计，不在本轮发明新业务错误枚举。
 
-connection_generation为正整数，来源于真实连接；不能靠常数补齐。原CTP查询候选本就有此字段，不能与Meridian后来新增的导入完成证明混同为新的Redis升级要求。
+已入队/成功查询的connection_generation为真实正整数；严格before_enqueue且从未有连接时才允许null，不用0/常数补齐。未获ticket时同样为null，未获TradingDay时省略payload.trade_date，完整规则及样例见增量答复。原CTP查询候选本就有此字段，不能与Meridian后来新增的导入完成证明混同为新的Redis升级要求。
 
 ## 3. 四类行字段矩阵
 
@@ -63,7 +65,7 @@ scope.trading_day必须等于页trade_date；不同币种/BizType/资金账户/�
 
 | futures字段组 | 类型与规则 |
 | --- | --- |
-| posi_direction / hedge_flag / position_date | 必填单字节原生字符，原值保留；具体SDK枚举合法性仍须OC转换层核对，不能把字符形状通过当枚举已验收 |
+| posi_direction / hedge_flag / position_date | 必填原生字符，按本轮头文件回签分别允许1/2/3、1/2/3/5/6/7、1/2；原值保留，不把非投机持仓改成投机，不代表账户交易权限 |
 | invest_unit_id | 必填字符串，可明确为空；不允许缺失/null。候选限可打印ASCII，最多16字节 |
 | position / today_position / yd_position / long_frozen / short_frozen | 必填非负JSON整数，单位手，不计算position=今日+昨日，不跨方向/今昨/投资单元合并 |
 | position_cost / open_cost / use_margin | 必填有符号普通十进制字符串，不转换为股票平均成本或市值 |
@@ -105,7 +107,7 @@ fill_id按既有七段原生身份重算；以external-ctp-v1-开头的外部gat
 
 本地校验器额外检查路由/页/行账户与交易日、页内重复业务键、数量关系、fill/external ID和fee组合。提供可信expected上下文时，还检查原命令、action、ticket、连接代次、查询会话及SDK请求号；不传expected只证明自洽，不能作为真实准入结论。
 
-价格按既有候选最多9位小数、64字节及未缩放uint64边界核验。金额只确认十进制字符串词法，不加价格九位限制、不舍入；OC serializer哨兵、极端值、负零、最大长度及binary64向量仍待核对。合法字符串不等于可信会计金额。
+价格按既有候选最多9位小数、64字节及未缩放uint64边界核验。金额不加价格九位限制、不舍入；同日回签后已核对金额59项预期并纳入343字节上限，哨兵/负零等编码候选见增量答复。合法字符串仍不等于可信会计金额，也不证明OC运行时已按此编码。
 
 同日后续已补跨页索引连续、请求完成时效、同消息重放/矛盾终态和页间重复的离线参考状态机，见序列内部验证；不是运行时实现。**尚未实现**全快照原子替换、ACK/重启、未关联成交持久暂存。schema通过不意味着可替换账本，更不意味着能下单。
 

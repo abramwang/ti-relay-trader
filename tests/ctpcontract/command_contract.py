@@ -24,10 +24,13 @@ TRADE.update(order_qty=ref("lots"), limit_price=ref("price"))
 ENVELOPE = {"protocol": {"const": "relay.stream.v1"}, "message_type": {"const": "command"},
             **{k: ref("id") for k in ("message_id", "request_id", "correlation_id", "idempotency_key")},
             "sent_at": ref("time")}
+QUERY_ACTIONS = ("account.asset.query", "account.positions.query", "order.list.query", "fill.list.query")
 
 
 def schema_for(action):
-    if action == "order.submit":
+    if action in QUERY_ACTIONS:
+        payload = obj(MARKERS)
+    elif action == "order.submit":
         payload = obj({**MARKERS, **TRADE})
     elif action == "order.batch.submit":
         child = obj({**MARKERS, **TRADE})
@@ -43,10 +46,18 @@ def schema_for(action):
 
 
 VALIDATORS = {action: schema_for(action) for action in (
-    "order.submit", "order.batch.submit", "order.cancel")}
+    "order.submit", "order.batch.submit", "order.cancel", *QUERY_ACTIONS)}
 
 
-def validate_command(body, *, routing, trading_day, max_children=100):
+def canonical_price(price):
+    StrictValidator({"$defs": SCHEMA["$defs"], "$ref": "#/$defs/price"}).validate(price)
+    require(Decimal(price) > 0 and int(price.replace(".", "")) <= 18446744073709551615,
+            "invalid order price")
+    # Check the original unscaled integer BEFORE removing fractional trailing zeros.
+    return price.rstrip("0").rstrip(".") if "." in price else price
+
+
+def validate_command(body, *, routing, trading_day=None, max_children=100):
     """Trusted stream route and accepted TradingDay are supplied independently."""
     StrictValidator({"$defs": SCHEMA["$defs"], "$ref": "#/$defs/routing"}).validate(routing)
     require(type(max_children) is int and max_children > 0, "invalid local batch bound")
@@ -56,6 +67,8 @@ def validate_command(body, *, routing, trading_day, max_children=100):
     VALIDATORS[action].validate(body)
     payload = body["payload"]
     require(payload["account_id"] == routing["account_id"], "stream account mismatch")
+    if action in QUERY_ACTIONS:
+        return copy.deepcopy(payload)
     if action == "order.cancel":
         # Cancel targets an explicit historical order day, not today's new-order day.
         return copy.deepcopy(payload)
@@ -66,9 +79,7 @@ def validate_command(body, *, routing, trading_day, max_children=100):
         require(row["account_id"] == payload["account_id"], "cross-account batch child")
         require(row["trade_date"] == trading_day, "new order TradingDay mismatch")
         require(row["exchange"] == "SHFE", "first-phase exchange not supported")
-        price = row["limit_price"]
-        require(Decimal(price) > 0 and int(price.replace(".", "")) <= 18446744073709551615,
-                "invalid order price")
+        canonical_price(row["limit_price"])
         for key, seen in (("gateway_order_id", gateway_ids), ("client_order_id", client_ids)):
             require(row[key] not in seen, f"duplicate batch {key}")
             seen.add(row[key])

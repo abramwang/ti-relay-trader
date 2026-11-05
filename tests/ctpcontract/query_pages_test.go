@@ -55,3 +55,46 @@ func TestQueryPageEnvelopes(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryFailureEdgeEnvelopes(t *testing.T) {
+	var fixtures struct {
+		messages
+		MaterialVersion string          `json:"material_version"`
+		Recovery        json.RawMessage `json:"recovery"`
+	}
+	readFixture(t, "query_edge_cases.json", &fixtures)
+	if !fixtures.SyntheticOnly || fixtures.ContractVersion != "ctp.f0.draft.2" || fixtures.MaterialVersion != "relay.ctp.query.edges.v1" || len(fixtures.Cases) != 3 {
+		t.Fatal("unexpected failure fixture catalog")
+	}
+	for _, c := range fixtures.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			env, err := redisstream.DecodeEntry(prefix+":"+c.Suffix, "1793710980000-0", map[string]any{"body": string(c.Body)})
+			if err != nil || env.Status != "failed" || env.Routing.AccountID != account {
+				t.Fatalf("failure envelope: %#v, error=%v", env, err)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(c.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			p := object(t, body["payload"])
+			if _, exists := p["items"]; exists {
+				t.Fatal("failure fabricated rows")
+			}
+			if _, exists := body["chunk"]; exists {
+				t.Fatal("failure fabricated a successful chunk")
+			}
+			evidence := object(t, object(t, body["adapter_context"])["query_evidence"])
+			if evidence["snapshot_applied"] != false {
+				t.Fatal("failure claims an applied standard candidate")
+			}
+			if evidence["failure_stage"] == "before_enqueue" {
+				for _, key := range []string{"ticket", "sdk_request_id", "sdk_return_code", "callback_error_id"} {
+					value, exists := evidence[key]
+					if !exists || value != nil {
+						t.Fatalf("missing/null distinction lost for %s", key)
+					}
+				}
+			}
+		})
+	}
+}
