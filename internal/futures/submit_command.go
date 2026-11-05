@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// OC 2026-11-05 command capacity candidate. These outbound guards do not
+// narrow inbound audit retention or claim negotiated production capacity.
+const (
+	maxSubmitCommandBytes = 65536
+	maxSubmitIDBytes      = 128
+	maxSubmitChildren     = 100
+)
+
 // SubmitIntent is pre-send identity evidence, never an actual broker order.
 type SubmitIntent struct {
 	AccountID      string `json:"account_id"`
@@ -35,7 +43,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 	if err := scope.validate(); err != nil {
 		return SubmitCommand{}, err
 	}
-	if len(raw) > maxSnapshotBytes {
+	if len(raw) > maxSubmitCommandBytes {
 		return SubmitCommand{}, ErrAuditCapacity
 	}
 	if _, err := parseReply(raw); err != nil {
@@ -50,7 +58,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 		return bad()
 	}
 	for _, key := range []string{"message_id", "request_id", "correlation_id", "idempotency_key"} {
-		if !validID(textField(obj, key)) || len(textField(obj, key)) > 512 {
+		if !validID(textField(obj, key)) || len(textField(obj, key)) > maxSubmitIDBytes {
 			return bad()
 		}
 	}
@@ -73,7 +81,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 			return bad()
 		}
 	}
-	if len(rows) == 0 || len(rows) > 100 {
+	if len(rows) == 0 || len(rows) > maxSubmitChildren {
 		return bad()
 	}
 	result := SubmitCommand{MessageID: textField(obj, "message_id"), RequestID: textField(obj, "request_id"), CorrelationID: textField(obj, "correlation_id"), IdempotencyKey: textField(obj, "idempotency_key"), Action: action, Raw: bytes.Clone(raw)}
@@ -101,7 +109,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 		if row.AccountID != scope.Route.AccountID || row.TradeDate != scope.TradeDate || row.Exchange != "SHFE" || !native(row.Symbol, 80, false) || row.BusinessType != "F" || !oneOf(row.TradeSide, "B", "S") || !oneOf(row.OffsetType, "O", "C", "CT", "CY") || row.HedgeType != "speculation" || row.OrderQty <= 0 || equalDecimal(string(row.LimitPrice), "0") {
 			return bad()
 		}
-		if !validID(row.GatewayOrderID) || len(row.GatewayOrderID) > 512 || strings.HasPrefix(row.GatewayOrderID, "external-ctp-v1-") || !validID(row.ClientOrderID) || len(row.ClientOrderID) > 512 || gateways[row.GatewayOrderID] || clients[row.ClientOrderID] {
+		if !validID(row.GatewayOrderID) || len(row.GatewayOrderID) > maxSubmitIDBytes || strings.HasPrefix(row.GatewayOrderID, "external-ctp-v1-") || !validID(row.ClientOrderID) || len(row.ClientOrderID) > maxSubmitIDBytes || gateways[row.GatewayOrderID] || clients[row.ClientOrderID] {
 			return bad()
 		}
 		gateways[row.GatewayOrderID] = true

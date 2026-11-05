@@ -3,8 +3,85 @@ package futures
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 )
+
+func TestSubmitOCCommandByteBudget(t *testing.T) {
+	raw := fixtureBody(t, "messages.json", "submit")
+	boundary := append(bytes.Clone(raw), bytes.Repeat([]byte(" "), 65536-len(raw))...)
+	command, err := DecodeSubmitCommand(boundary, tradeScope())
+	if err != nil || !bytes.Equal(command.Raw, boundary) {
+		t.Fatal("64KiB including whitespace", err)
+	}
+	if _, err := DecodeSubmitCommand(append(boundary, ' '), tradeScope()); !errors.Is(err, ErrAuditCapacity) {
+		t.Fatal("over-budget command accepted", err)
+	}
+}
+
+func TestSubmitOCIdentifierByteBudget(t *testing.T) {
+	for _, key := range []string{"message_id", "request_id", "correlation_id", "idempotency_key", "gateway_order_id", "client_order_id"} {
+		for _, value := range []string{strings.Repeat("x", 128), strings.Repeat("\u754c", 42) + "ab", strings.Repeat(":", 128)} {
+			build := func(id string) []byte {
+				return editBody(t, fixtureBody(t, "messages.json", "submit"), func(m map[string]any) {
+					target := m
+					if key == "gateway_order_id" || key == "client_order_id" {
+						target = m["payload"].(map[string]any)
+					}
+					target[key] = id
+				})
+			}
+			if _, err := DecodeSubmitCommand(build(value), tradeScope()); err != nil {
+				t.Fatal(key, err)
+			}
+			if _, err := DecodeSubmitCommand(build(value+"x"), tradeScope()); err == nil {
+				t.Fatal("129-byte ID accepted", key)
+			}
+		}
+	}
+}
+
+func TestSubmitOCBatchCountAndByteBudgets(t *testing.T) {
+	build := func(count int, wide bool) []byte {
+		return editBody(t, fixtureBody(t, "messages.json", "batch"), func(m map[string]any) {
+			parent := m["payload"].(map[string]any)
+			base := parent["orders"].([]any)[0].(map[string]any)
+			rows := []any{}
+			for i := 0; i < count; i++ {
+				row := map[string]any{}
+				for k, v := range base {
+					row[k] = v
+				}
+				row["gateway_order_id"] = fmt.Sprint("g", i)
+				row["client_order_id"] = fmt.Sprint("c", i)
+				if wide {
+					row["gateway_order_id"] = fmt.Sprintf("%0128d", i)
+					row["client_order_id"] = strings.Repeat("\\", 125) + fmt.Sprintf("%03d", i)
+					row["symbol"] = strings.Repeat("r", 80)
+					row["product_type"] = "futures"
+					row["schema_version"] = "ctp.f0.draft.2"
+				}
+				rows = append(rows, row)
+			}
+			parent["orders"] = rows
+		})
+	}
+	if cmd, err := DecodeSubmitCommand(build(100, false), tradeScope()); err != nil || len(cmd.Orders) != 100 {
+		t.Fatal(err)
+	}
+	if _, err := DecodeSubmitCommand(build(101, false), tradeScope()); err == nil {
+		t.Fatal("101 children accepted")
+	}
+	wide := build(100, true)
+	if len(wide) <= 65536 {
+		t.Fatal("test did not exceed total byte limit", len(wide))
+	}
+	if _, err := DecodeSubmitCommand(wide, tradeScope()); !errors.Is(err, ErrAuditCapacity) {
+		t.Fatal("count-only budget bypass", err)
+	}
+}
 
 func TestSubmitCommandSharedFixtures(t *testing.T) {
 	for _, name := range []string{"submit", "batch"} {

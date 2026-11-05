@@ -122,6 +122,31 @@ func TestBatchSharedFixturesAndRawReplay(t *testing.T) {
 	}
 }
 
+// Synthetic Relay boundary check, not the as-yet-undelivered OC output JSON.
+func TestBatchOutputLimitsRemainFailureWithRawCompletion(t *testing.T) {
+	raw := editBody(t, fixtureBody(t, "messages.json", "positions"), func(m map[string]any) {
+		m["status"] = "failed"
+		m["code"] = "QUERY_FAILED"
+		delete(m, "chunk")
+		delete(m["payload"].(map[string]any), "items")
+		evidence(m)["snapshot_applied"] = false
+		evidence(m)["failure_stage"] = "output_limits"
+		m["adapter_context"].(map[string]any)["standard_validation"] = map[string]any{"raw_completed": true}
+	})
+	b := newBatch(t, "positions")
+	if _, err := b.Accept(raw, 0); err != nil {
+		t.Fatal(err)
+	}
+	assertState(t, b, BatchFailed)
+	if len(b.AcceptedMessages()) != 1 || !bytes.Equal(b.AcceptedMessages()[0], raw) {
+		t.Fatal("failure audit not retained")
+	}
+	bad := editBody(t, raw, func(m map[string]any) { m["payload"].(map[string]any)["items"] = []any{} })
+	if _, err := newBatch(t, "positions").Accept(bad, 0); err == nil {
+		t.Fatal("output failure became empty success")
+	}
+}
+
 func TestBatchOutOfOrderAndCrossPageIdentity(t *testing.T) {
 	for _, name := range []string{"asset", "positions"} {
 		for _, duplicate := range []bool{false, true} {

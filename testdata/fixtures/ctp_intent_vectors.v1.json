@@ -1,0 +1,1283 @@
+{
+  "cases": [
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "fixture-client"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.submit1:112:99000000000113:fixture-order14:fixture-client8:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "64ec117fc8b15a30bc975466abaa6e71922cfc2b236e9a10c410f93a33071b34",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "submit",
+      "raw_body": "{\"action\":\"order.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"fixture-client\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "6f5152621bd3fb78c168c0c07e71549a7a55454a01a73fc0a2ed48ff698e379e",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "fixture-client"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.submit1:112:99000000000113:fixture-order14:fixture-client8:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "64ec117fc8b15a30bc975466abaa6e71922cfc2b236e9a10c410f93a33071b34",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "equal_price_trailing_zero",
+      "raw_body": "{\"action\":\"order.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"fixture-client\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "75e855592a8b52af50fc88737b8e32dd629250badde936c9b9441c84ee770ad5",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "fixture-client"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.submit1:112:99000000000113:fixture-order14:fixture-client8:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "64ec117fc8b15a30bc975466abaa6e71922cfc2b236e9a10c410f93a33071b34",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw13:other-message",
+      "message_lookup_sha256": "36dfae34b544f972f39814b6712ce7639b893ca9dc046400c87ac7cc9bb754f9",
+      "name": "same_intent_new_transport",
+      "raw_body": "{\"action\":\"order.submit\",\"correlation_id\":\"other-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"other-message\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"fixture-client\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"other-request\",\"sent_at\":\"2026-11-05T00:05:00+08:00\"}",
+      "raw_body_sha256": "c18a8100dccef3403686792c3e3f2984bf4016a116a74dc5546b23f42679612e",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "id:\"\\#é"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.submit1:112:99000000000113:fixture-order8:id:\"\\#é8:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "c8dd9e5956e44ef40d621ec99af3ee1737463a76dd44e17f01552a8b5055b7fd",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "utf8_byte_length_and_delimiters",
+      "raw_body": "{\"action\":\"order.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"id:\\\"\\\\#é\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "74a7390b03a158bf10e74f932e1034307e287c9238f59a6a41805fe297b05116",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "OTHER_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "fixture-client"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV10:OTHER_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.submit1:112:99000000000113:fixture-order14:fixture-client8:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "f2808478ce392fb25a7c630cf3e11e3984b8e2ffa0ff9e895b336ec1379a24c4",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "same_lookup_changed_native_identity",
+      "raw_body": "{\"action\":\"order.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"fixture-client\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "6f5152621bd3fb78c168c0c07e71549a7a55454a01a73fc0a2ed48ff698e379e",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "OTHER_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.batch.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "2"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "order-0"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "client-0"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        },
+        {
+          "name": "orders[1].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[1].gateway_order_id",
+          "value": "order-1"
+        },
+        {
+          "name": "orders[1].client_order_id",
+          "value": "client-1"
+        },
+        {
+          "name": "orders[1].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[1].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[1].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[1].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[1].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[1].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[1].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[1].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[1].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.218:order.batch.submit1:212:9900000000017:order-08:client-08:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:360012:9900000000017:order-18:client-18:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "30cf45b2c70d2e67532241c7746e7ea5292e0a6fa208e238e209ea9e7e679f90",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "ordered_batch",
+      "raw_body": "{\"action\":\"order.batch.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"orders\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"client-0\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"order-0\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"client-1\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"order-1\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "a93c19cdc29bbcba993c52b3c0ac7543ebd382bbbbcfaa2bdbd4bfcd9672c9c7",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.batch.submit"
+        },
+        {
+          "name": "order_count",
+          "value": "2"
+        },
+        {
+          "name": "orders[0].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[0].gateway_order_id",
+          "value": "order-1"
+        },
+        {
+          "name": "orders[0].client_order_id",
+          "value": "client-1"
+        },
+        {
+          "name": "orders[0].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[0].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[0].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[0].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[0].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[0].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[0].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[0].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[0].limit_price",
+          "value": "3600"
+        },
+        {
+          "name": "orders[1].account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "orders[1].gateway_order_id",
+          "value": "order-0"
+        },
+        {
+          "name": "orders[1].client_order_id",
+          "value": "client-0"
+        },
+        {
+          "name": "orders[1].trade_date",
+          "value": "20261105"
+        },
+        {
+          "name": "orders[1].symbol",
+          "value": "rb2612"
+        },
+        {
+          "name": "orders[1].exchange",
+          "value": "SHFE"
+        },
+        {
+          "name": "orders[1].business_type",
+          "value": "F"
+        },
+        {
+          "name": "orders[1].trade_side",
+          "value": "B"
+        },
+        {
+          "name": "orders[1].offset_type",
+          "value": "O"
+        },
+        {
+          "name": "orders[1].hedge_type",
+          "value": "speculation"
+        },
+        {
+          "name": "orders[1].order_qty",
+          "value": "1"
+        },
+        {
+          "name": "orders[1].limit_price",
+          "value": "3600"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.218:order.batch.submit1:212:9900000000017:order-18:client-18:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:360012:9900000000017:order-08:client-08:202611056:rb26124:SHFE1:F1:B1:O11:speculation1:14:3600",
+      "intent_sha256": "8288f35f072825f137927cd4ab4de994a28afc030ab04f3ec284fe87b8f85669",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "reversed_batch",
+      "raw_body": "{\"action\":\"order.batch.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"orders\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"client-1\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"order-1\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"client_order_id\":\"client-0\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"order-0\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "1a2fc2310e018c477c5856b52869e747670f71ceea13ddcadea246e07f9f9002",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.cancel"
+        },
+        {
+          "name": "gateway_order_id",
+          "value": "fixture-order"
+        },
+        {
+          "name": "trade_date",
+          "value": "20261104"
+        },
+        {
+          "name": "cancel_id",
+          "value": "fixture-cancel"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.212:order.cancel13:fixture-order8:2026110414:fixture-cancel",
+      "intent_sha256": "5c8ff652f3a168e39158418e51642fae39d112bea98d14bf8a024ff14ba89259",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "cancel_target_day",
+      "raw_body": "{\"action\":\"order.cancel\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"cancel_id\":\"fixture-cancel\",\"gateway_order_id\":\"fixture-order\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "db29e789c9bb7b7919a499e4a4caa4daa15f69d247b9e422556b623acdb574dd",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.trade"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "account.asset.query"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.219:account.asset.query",
+      "intent_sha256": "a7ff6438ba86a2235217ab2a91be74db8b2a238c138b6995241db230816a636e",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "account.asset.query",
+      "raw_body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "70d500430998ad6caefff8c22a8acb74345b0229dabc9e629a729e66fd047596",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.query"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "account.positions.query"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.223:account.positions.query",
+      "intent_sha256": "b205af96e310f2b0dbe4f7a32db4e381dcd24e59b42e819bc49474649fbea7be",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "account.positions.query",
+      "raw_body": "{\"action\":\"account.positions.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "b3899123fa417add8abd81ab10896f790e1133815155f092f6a2a2415e798d61",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.query"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "order.list.query"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.216:order.list.query",
+      "intent_sha256": "378030afac6beb070176e96f6731857deaf7a59c5a9a38c5160a1e6ba73395fb",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "order.list.query",
+      "raw_body": "{\"action\":\"order.list.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "bd8320c31e84baa69affed240400e3bf37aafd871b42a276ea649595ba241ff0",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.query"
+    },
+    {
+      "fields": [
+        {
+          "name": "env",
+          "value": "test"
+        },
+        {
+          "name": "broker_id",
+          "value": "ctp_fixture"
+        },
+        {
+          "name": "account_id",
+          "value": "990000000001"
+        },
+        {
+          "name": "gateway_id",
+          "value": "fixture-gw"
+        },
+        {
+          "name": "native_broker_id",
+          "value": "9999"
+        },
+        {
+          "name": "investor_id",
+          "value": "FIXTURE_INV"
+        },
+        {
+          "name": "user_id",
+          "value": "FIXTURE_USER"
+        },
+        {
+          "name": "protocol",
+          "value": "relay.stream.v1"
+        },
+        {
+          "name": "product_type",
+          "value": "futures"
+        },
+        {
+          "name": "schema_version",
+          "value": "ctp.f0.draft.2"
+        },
+        {
+          "name": "action",
+          "value": "fill.list.query"
+        }
+      ],
+      "idempotency_lookup_bytes": "ctp.idempotency.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw12:fixture-idem",
+      "idempotency_lookup_sha256": "507e3ecd99fc86e70213ef75e1be210848467c75b67df7b69be9f9e77309ef8d",
+      "intent_bytes": "ctp.intent.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw4:999911:FIXTURE_INV12:FIXTURE_USER15:relay.stream.v17:futures14:ctp.f0.draft.215:fill.list.query",
+      "intent_sha256": "20f4e5af446cb018712a6647a84312e04597c9131dfda73e314aca4472eb4227",
+      "message_lookup_bytes": "ctp.message.v1/4:test11:ctp_fixture12:99000000000110:fixture-gw14:fixture-submit",
+      "message_lookup_sha256": "c321fdb638d9a49c93c17c4d64b16820c99f307dfef7ee2f92adfcf072162a64",
+      "name": "fill.list.query",
+      "raw_body": "{\"action\":\"fill.list.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000001\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+      "raw_body_sha256": "e75d03beb36c14e2243f0ed6904b15faa4a324c4636427dbf439c89c5a1c949b",
+      "scope": {
+        "account_id": "990000000001",
+        "broker_id": "ctp_fixture",
+        "env": "test",
+        "gateway_id": "fixture-gw",
+        "investor_id": "FIXTURE_INV",
+        "native_broker_id": "9999",
+        "user_id": "FIXTURE_USER"
+      },
+      "stream_suffix": "cmd.query"
+    }
+  ],
+  "not_a_durable_idempotency_implementation": true,
+  "synthetic_only": true,
+  "version": "oc.ctp.intent.candidate.v1"
+}
