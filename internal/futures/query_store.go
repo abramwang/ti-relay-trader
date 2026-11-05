@@ -425,6 +425,14 @@ func decodeStoredSnapshot(id string, raw, digest []byte) (StoredSnapshot, error)
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return StoredSnapshot{}, err
 	}
+	// Optional trade fields preserve older asset/position snapshot encodings.
+	// The verified complete action distinguishes an empty list from no result.
+	if c.Context.Action == "order.list.query" && c.Orders == nil {
+		c.Orders = []OrderRow{}
+	}
+	if c.Context.Action == "fill.list.query" && c.Fills == nil {
+		c.Fills = []FillRow{}
+	}
 	return StoredSnapshot{BatchID: id, Candidate: c}, nil
 }
 
@@ -459,7 +467,7 @@ func (s *QueryStore) Current(ctx context.Context, expected QueryContext) (Stored
 	}
 	for _, actual := range []QueryContext{c, target} {
 		if actual.TradeDate != expected.TradeDate || actual.CounterSessionID != expected.CounterSessionID ||
-			!sameInteger(actual.ConnectionGeneration, expected.ConnectionGeneration) || actual.NativeBrokerID != expected.NativeBrokerID {
+			!sameInteger(actual.ConnectionGeneration, expected.ConnectionGeneration) || actual.NativeBrokerID != expected.NativeBrokerID || actual.NativeInvestorID != expected.NativeInvestorID {
 			return StoredSnapshot{}, ErrNoSnapshot
 		}
 	}

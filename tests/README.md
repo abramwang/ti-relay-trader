@@ -11,6 +11,7 @@
 
 ## 当前状态
 
+- 期货完整查询到事实应用：新增6项查询/事件模型测试及7项真实PG集成，覆盖订单/成交乱序收页、原生授权、空结果、完整事件/源时间、重启补应用、迟到冲突阻断、标记失败整体回滚、16路并发幂等及容量超限。累计70项Go含28项真实数据库测试以race通过，迁移000035仅临时schema执行；83项Python协议测试不变。运行入口仍为`scripts/test-futures-postgres.sh`，事件当前只解码，未接Redis/ACK/生产。
 - 期货订单/成交隔离账本：新增10项Go模型/状态测试和9项真实PG测试，覆盖七段身份、成交先到不造单、终态24种到达排列、跨日/环境、待关联重建恢复、16路并发、费用版本/别名/超量冲突及事务回滚。仍用`scripts/test-futures-postgres.sh`，当前累计57项Go测试含21项数据库集成，以race验证；不连接OC、不改生产账本。迁移000034只在临时schema验证，尚无在线Redis消费或ACK。
 - 期货查询隔离存储：`scripts/test-futures-postgres.sh`自行启动并销毁本机临时PostgreSQL（Unix socket、WAL/fsync默认开启），不读应用配置/现有DSN。设置`RELAY_TEST_PG_BIN`为含initdb/pg_ctl的服务端二进制目录；12项数据库集成+26项Go测试以race运行，验证原子发布、并发重投、连接终止回滚、旧进程隔离、历史恢复及迁移up/down。直接运行时只认`RELAY_FUTURES_TEST_DATABASE_URL`且须指向一次性测试库；无此变量集成测试会skip，不能声称验证落库。详见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`。
 - 已创建测试目录骨架。

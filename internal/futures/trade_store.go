@@ -43,34 +43,56 @@ type TradeIngestResult struct {
 // projections, links and quality. nil error means durable, NOT conflict-free.
 // Unknown gateway ownership is never inferred from a failed local lookup.
 func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, kind string, raw []byte) (TradeIngestResult, error) {
+	tx, err := beginFuturesTransaction(ctx, s.db)
+	if err != nil {
+		return TradeIngestResult{}, err
+	}
+	defer tx.Rollback()
+	result, err := observeTradesTx(ctx, tx, scope, []tradeObservation{{sourceID, kind, raw}})
+	if err != nil {
+		return TradeIngestResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return TradeIngestResult{}, err
+	}
+	return result, nil
+}
+
+type tradeObservation struct {
+	sourceID, kind string
+	raw            []byte
+}
+
+// One replay and one projection per complete batch, in the caller's transaction.
+func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observations []tradeObservation) (TradeIngestResult, error) {
 	if err := scope.validate(); err != nil {
 		return TradeIngestResult{}, err
 	}
-	if !validID(sourceID) || len(sourceID) > 512 || !oneOf(kind, "order", "fill") {
-		return TradeIngestResult{}, fmt.Errorf("invalid observation source/kind")
-	}
-	if len(raw) > maxSnapshotBytes {
+	if len(observations) > maxAuditCount {
 		return TradeIngestResult{}, ErrAuditCapacity
 	}
-	if raw == nil {
-		raw = []byte{}
+	for i, observation := range observations {
+		if !validID(observation.sourceID) || len(observation.sourceID) > 512 || !oneOf(observation.kind, "order", "fill") {
+			return TradeIngestResult{}, fmt.Errorf("invalid observation source/kind")
+		}
+		if len(observation.raw) > maxSnapshotBytes {
+			return TradeIngestResult{}, ErrAuditCapacity
+		}
+		if observation.raw == nil {
+			observations[i].raw = []byte{}
+		}
 	}
 	contextJSON, _ := json.Marshal(scope)
 	if len(contextJSON) > 64*1024 {
 		return TradeIngestResult{}, ErrAuditCapacity
 	}
 	key := tradeScopeKey(scope)
-	tx, err := beginFuturesTransaction(ctx, s.db)
-	if err != nil {
-		return TradeIngestResult{}, err
-	}
-	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_trade_scopes(scope_key,context_json) VALUES($1,$2) ON CONFLICT DO NOTHING`, key, contextJSON); err != nil {
 		return TradeIngestResult{}, err
 	}
 	var count, size int
 	var authorized bool
-	err = tx.QueryRowContext(ctx, `SELECT context_json=$2::jsonb,audit_count,audit_bytes FROM futures_trade_scopes WHERE scope_key=$1 FOR UPDATE`, key, contextJSON).Scan(&authorized, &count, &size)
+	err := tx.QueryRowContext(ctx, `SELECT context_json=$2::jsonb,audit_count,audit_bytes FROM futures_trade_scopes WHERE scope_key=$1 FOR UPDATE`, key, contextJSON).Scan(&authorized, &count, &size)
 	if err != nil {
 		return TradeIngestResult{}, err
 	}
@@ -83,7 +105,7 @@ func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, ki
 		return TradeIngestResult{}, err
 	}
 	seenCount, seenSize := 0, 0
-	replayed, sourceConflict := false, false
+	priorBySource := map[string][]tradeObservation{}
 	for rows.Next() {
 		var id int64
 		var priorSource, priorKind string
@@ -109,13 +131,7 @@ func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, ki
 		} else {
 			p.observe(strconv.FormatInt(id, 10), priorKind, prior)
 		}
-		if priorSource == sourceID {
-			if priorKind == kind && bytes.Equal(prior, raw) {
-				replayed = true
-			} else {
-				sourceConflict = true
-			}
-		}
+		priorBySource[priorSource] = append(priorBySource[priorSource], tradeObservation{priorSource, priorKind, prior})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -125,7 +141,21 @@ func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, ki
 	if count != seenCount || size != seenSize {
 		return TradeIngestResult{}, fmt.Errorf("trade evidence count mismatch")
 	}
-	if !replayed {
+	allReplayed := len(observations) > 0
+	for _, observation := range observations {
+		sourceID, kind, raw := observation.sourceID, observation.kind, observation.raw
+		replayed, sourceConflict := false, false
+		for _, prior := range priorBySource[sourceID] {
+			if prior.kind == kind && bytes.Equal(prior.raw, raw) {
+				replayed = true
+			} else {
+				sourceConflict = true
+			}
+		}
+		if replayed {
+			continue
+		}
+		allReplayed = false
 		if count >= maxAuditCount || len(raw) > maxAuditBytes-size {
 			return TradeIngestResult{}, ErrAuditCapacity
 		}
@@ -143,6 +173,7 @@ func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, ki
 		} else {
 			p.observe(strconv.FormatInt(id, 10), kind, raw)
 		}
+		priorBySource[sourceID] = append(priorBySource[sourceID], observation)
 	}
 	p.reconcile()
 	orders, _ := json.Marshal(p.report.Orders)
@@ -165,10 +196,12 @@ func (s *TradeStore) Observe(ctx context.Context, scope TradeScope, sourceID, ki
 	if _, err := tx.ExecContext(ctx, `UPDATE futures_trade_scopes SET report=$2,report_sha256=$3,audit_count=$4,audit_bytes=$5,updated_at=clock_timestamp() WHERE scope_key=$1`, key, report, digest[:], count, size); err != nil {
 		return TradeIngestResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	var invalidApplication bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_query_trade_applications a
+        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=$1 AND b.state<>'ready')`, key).Scan(&invalidApplication); err != nil {
 		return TradeIngestResult{}, err
 	}
-	return TradeIngestResult{Replayed: replayed, Blocked: p.report.Blocked, PendingCount: p.report.PendingCount}, nil
+	return TradeIngestResult{Replayed: allReplayed, Blocked: p.report.Blocked || invalidApplication, PendingCount: p.report.PendingCount}, nil
 }
 
 // Read exposes quality alongside facts. Blocked reports must never be presented
@@ -178,8 +211,11 @@ func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, e
 		return TradeReport{}, err
 	}
 	contextJSON, _ := json.Marshal(scope)
-	var raw, digest []byte
-	err := s.db.QueryRowContext(ctx, `SELECT report,report_sha256 FROM futures_trade_scopes WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest)
+	var raw, digest, invalid []byte
+	err := s.db.QueryRowContext(ctx, `SELECT report,report_sha256,
+        COALESCE((SELECT jsonb_agg(a.batch_id ORDER BY a.batch_id) FROM futures_query_trade_applications a
+        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=s.scope_key AND b.state<>'ready'),'[]'::jsonb)
+        FROM futures_trade_scopes s WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest, &invalid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TradeReport{}, ErrNoSnapshot
 	}
@@ -193,6 +229,14 @@ func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, e
 	var report TradeReport
 	if err := json.Unmarshal(raw, &report); err != nil {
 		return TradeReport{}, err
+	}
+	var invalidBatches []string
+	if err := json.Unmarshal(invalid, &invalidBatches); err != nil {
+		return TradeReport{}, err
+	}
+	for _, id := range invalidBatches {
+		report.Blocked = true
+		report.Conflicts = append(report.Conflicts, "applied query invalidated: "+id)
 	}
 	return report, nil
 }

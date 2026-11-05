@@ -37,6 +37,7 @@ type QueryContext struct {
 	SDKRequestID         *int64
 	TradeDate            string
 	NativeBrokerID       string
+	NativeInvestorID     string `json:",omitempty"`
 }
 
 type BatchState string
@@ -63,6 +64,8 @@ type SnapshotCandidate struct {
 	Context   QueryContext
 	Assets    []AssetRow
 	Positions []PositionRow
+	Orders    []OrderRow `json:",omitempty"`
+	Fills     []FillRow  `json:",omitempty"`
 }
 
 type queryPage struct {
@@ -74,7 +77,7 @@ type queryPage struct {
 	items     []json.RawMessage
 }
 
-// QueryBatch is a single-owner, in-memory assembler for funds/positions only.
+// QueryBatch is a single-owner, in-memory assembler for four query categories.
 // Callers must durably audit ALL input (including rejected bodies) before ACK.
 // now/deadline are elapsed durations from one monotonic clock, not business time.
 // A transport disconnect must call Interrupt; no reconnection auto-resume exists.
@@ -121,10 +124,13 @@ func copyContext(c QueryContext) QueryContext {
 func NewQueryBatch(c QueryContext, now, deadline time.Duration, limits BatchLimits) (*QueryBatch, error) {
 	r := c.Route
 	if !oneOf(r.Env, "test", "prod") || !routeBrokerPattern.MatchString(r.BrokerID) || !validID(r.GatewayID) ||
-		!accountPattern.MatchString(r.AccountID) || !oneOf(c.Action, "account.asset.query", "account.positions.query") ||
+		!accountPattern.MatchString(r.AccountID) || queryResultType(c.Action) == "" ||
 		!validID(c.OriginMessageID) || !validID(c.CounterSessionID) || !native(c.NativeBrokerID, 10, false) ||
 		(c.Ticket != "" && !validID(c.Ticket)) || (c.TradeDate != "" && !validDay(c.TradeDate)) {
 		return nil, fmt.Errorf("invalid or unsupported query context")
+	}
+	if isTradeQuery(c.Action) && !native(c.NativeInvestorID, 12, false) {
+		return nil, fmt.Errorf("trade query requires configured native investor")
 	}
 	if (c.ConnectionGeneration != nil && *c.ConnectionGeneration <= 0) ||
 		(c.SDKRequestID != nil && *c.SDKRequestID <= 0) ||
@@ -240,10 +246,15 @@ func (b *QueryBatch) Accept(raw []byte, now time.Duration) (replayed bool, err e
 	}
 	candidate := &SnapshotCandidate{Context: copyContext(b.context)}
 	scope := b.scope()
-	if b.context.Action == "account.asset.query" {
+	switch b.context.Action {
+	case "account.asset.query":
 		candidate.Assets, err = DecodeAssets(joined, scope)
-	} else {
+	case "account.positions.query":
 		candidate.Positions, err = DecodePositions(joined, scope)
+	case "order.list.query":
+		candidate.Orders, err = DecodeOrders(joined, b.context.tradeScope())
+	case "fill.list.query":
+		candidate.Fills, err = DecodeFills(joined, b.context.tradeScope())
 	}
 	if err != nil {
 		return false, b.invalidate(fmt.Errorf("invalid complete snapshot: %w", err))
@@ -273,6 +284,18 @@ func (b *QueryBatch) Candidate() (SnapshotCandidate, error) {
 	}
 	if c.Positions != nil {
 		c.Positions = append(make([]PositionRow, 0, len(c.Positions)), c.Positions...)
+	}
+	if c.Orders != nil {
+		c.Orders = append(make([]OrderRow, 0, len(c.Orders)), c.Orders...)
+		for i := range c.Orders {
+			c.Orders[i] = cloneOrder(c.Orders[i])
+		}
+	}
+	if c.Fills != nil {
+		c.Fills = append(make([]FillRow, 0, len(c.Fills)), c.Fills...)
+		for i := range c.Fills {
+			c.Fills[i] = cloneFill(c.Fills[i])
+		}
 	}
 	return c, nil
 }
@@ -380,10 +403,7 @@ func decodeQueryPage(raw []byte, c QueryContext) (queryPage, error) {
 	if msg, ok := obj["message"]; ok && (len(msg) == 0 || bytes.TrimSpace(msg)[0] != '"') {
 		return bad("message must be a string")
 	}
-	resultType := "position_page"
-	if c.Action == "account.asset.query" {
-		resultType = "asset_page"
-	}
+	resultType := queryResultType(c.Action)
 	if textField(obj, "protocol") != "relay.stream.v1" || textField(obj, "message_type") != "reply" ||
 		textField(obj, "action") != c.Action || textField(obj, "result_type") != resultType || !validTime(textField(obj, "produced_at")) {
 		return bad("envelope context")
@@ -455,10 +475,15 @@ func decodeQueryPage(raw []byte, c QueryContext) (queryPage, error) {
 	}
 	p.index, p.last = int(index), status == "completed"
 	scope := SnapshotScope{AccountID: c.Route.AccountID, TradeDate: c.TradeDate, NativeBrokerID: c.NativeBrokerID}
-	if c.Action == "account.asset.query" {
+	switch c.Action {
+	case "account.asset.query":
 		_, err = DecodeAssets(payload["items"], scope)
-	} else {
+	case "account.positions.query":
 		_, err = DecodePositions(payload["items"], scope)
+	case "order.list.query":
+		_, err = DecodeOrders(payload["items"], c.tradeScope())
+	case "fill.list.query":
+		_, err = DecodeFills(payload["items"], c.tradeScope())
 	}
 	if err != nil {
 		return queryPage{}, err
@@ -467,4 +492,25 @@ func decodeQueryPage(raw []byte, c QueryContext) (queryPage, error) {
 		return queryPage{}, err
 	}
 	return p, nil
+}
+
+func isTradeQuery(action string) bool { return oneOf(action, "order.list.query", "fill.list.query") }
+
+func queryResultType(action string) string {
+	switch action {
+	case "account.asset.query":
+		return "asset_page"
+	case "account.positions.query":
+		return "position_page"
+	case "order.list.query":
+		return "order_page"
+	case "fill.list.query":
+		return "fill_page"
+	default:
+		return ""
+	}
+}
+
+func (c QueryContext) tradeScope() TradeScope {
+	return TradeScope{Route: c.Route, NativeBrokerID: c.NativeBrokerID, InvestorID: c.NativeInvestorID, TradeDate: c.TradeDate}
 }

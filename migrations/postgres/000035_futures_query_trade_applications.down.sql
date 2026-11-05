@@ -1,0 +1,1 @@
+DROP TABLE futures_query_trade_applications;
