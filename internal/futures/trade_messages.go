@@ -92,6 +92,9 @@ type EventContext struct {
 type TradeEvent struct {
 	MessageID       string
 	OriginMessageID string
+	RequestID       string
+	CorrelationID   string
+	IdempotencyKey  string
 	ProducedAt      string
 	Order           *OrderRow
 	Fill            *FillRow
@@ -126,7 +129,7 @@ func DecodeTradeEvent(raw []byte, expected EventContext) (TradeEvent, error) {
 		return bad("protocol/type/time")
 	}
 	for _, key := range []string{"message_id", "origin_message_id", "request_id", "correlation_id", "idempotency_key"} {
-		if _, ok := obj[key]; ok && !validID(textField(obj, key)) {
+		if _, ok := obj[key]; ok && (!validID(textField(obj, key)) || len(textField(obj, key)) > 512) {
 			return bad("identifier " + key)
 		}
 	}
@@ -151,7 +154,7 @@ func DecodeTradeEvent(raw []byte, expected EventContext) (TradeEvent, error) {
 	if json.Unmarshal(obj["payload"], &payload) != nil || textField(payload, "product_type") != "futures" || textField(payload, "schema_version") != "ctp.f0.draft.2" {
 		return bad("payload product/schema")
 	}
-	event := TradeEvent{MessageID: textField(obj, "message_id"), OriginMessageID: textField(obj, "origin_message_id"), ProducedAt: textField(obj, "produced_at"), Raw: bytes.Clone(raw), RawPayload: bytes.Clone(obj["payload"])}
+	event := TradeEvent{MessageID: textField(obj, "message_id"), OriginMessageID: textField(obj, "origin_message_id"), RequestID: textField(obj, "request_id"), CorrelationID: textField(obj, "correlation_id"), IdempotencyKey: textField(obj, "idempotency_key"), ProducedAt: textField(obj, "produced_at"), Raw: bytes.Clone(raw), RawPayload: bytes.Clone(obj["payload"])}
 	switch textField(obj, "event_type") {
 	case "order.event":
 		row, err := DecodeOrder(obj["payload"], expected.Scope)

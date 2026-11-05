@@ -14,7 +14,7 @@ import (
 func tradeTestDB(t *testing.T) (*sql.DB, *TradeStore, context.Context) {
 	t.Helper()
 	db, _, ctx := queryTestDB(t)
-	for _, file := range []string{"000034_futures_trade_facts.up.sql", "000035_futures_query_trade_applications.up.sql"} {
+	for _, file := range []string{"000034_futures_trade_facts.up.sql", "000035_futures_query_trade_applications.up.sql", "000036_futures_event_inbox.up.sql"} {
 		raw, err := os.ReadFile("../../migrations/postgres/" + file)
 		if err != nil {
 			t.Fatal(err)
@@ -268,6 +268,13 @@ func TestTradeStoreMalformedAuditIntegrityAndDown(t *testing.T) {
 	}
 	if _, err := s.Observe(ctx, tradeScope(), "good", "fill", tradeFixture(t, "fill")); err == nil {
 		t.Fatal("corrupted audit ignored")
+	}
+	eventDown, err := os.ReadFile("../../migrations/postgres/000036_futures_event_inbox.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, string(eventDown)); err != nil {
+		t.Fatal(err)
 	}
 	applicationDown, err := os.ReadFile("../../migrations/postgres/000035_futures_query_trade_applications.down.sql")
 	if err != nil {

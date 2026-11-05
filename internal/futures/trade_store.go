@@ -198,7 +198,8 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 	}
 	var invalidApplication bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_query_trade_applications a
-        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=$1 AND b.state<>'ready')`, key).Scan(&invalidApplication); err != nil {
+        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=$1 AND b.state<>'ready')
+        OR EXISTS(SELECT 1 FROM futures_event_inbox WHERE scope_key=$1 AND state<>'applied')`, key).Scan(&invalidApplication); err != nil {
 		return TradeIngestResult{}, err
 	}
 	return TradeIngestResult{Replayed: allReplayed, Blocked: p.report.Blocked || invalidApplication, PendingCount: p.report.PendingCount}, nil
@@ -211,11 +212,13 @@ func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, e
 		return TradeReport{}, err
 	}
 	contextJSON, _ := json.Marshal(scope)
-	var raw, digest, invalid []byte
+	var raw, digest, invalid, events []byte
 	err := s.db.QueryRowContext(ctx, `SELECT report,report_sha256,
         COALESCE((SELECT jsonb_agg(a.batch_id ORDER BY a.batch_id) FROM futures_query_trade_applications a
-        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=s.scope_key AND b.state<>'ready'),'[]'::jsonb)
-        FROM futures_trade_scopes s WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest, &invalid)
+        JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=s.scope_key AND b.state<>'ready'),'[]'::jsonb),
+        COALESCE((SELECT jsonb_agg('event '||event_id||': '||state||' '||reason ORDER BY event_id)
+        FROM futures_event_inbox e WHERE e.scope_key=s.scope_key AND e.state<>'applied'),'[]'::jsonb)
+        FROM futures_trade_scopes s WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest, &invalid, &events)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TradeReport{}, ErrNoSnapshot
 	}
@@ -237,6 +240,14 @@ func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, e
 	for _, id := range invalidBatches {
 		report.Blocked = true
 		report.Conflicts = append(report.Conflicts, "applied query invalidated: "+id)
+	}
+	var eventIssues []string
+	if err := json.Unmarshal(events, &eventIssues); err != nil {
+		return TradeReport{}, err
+	}
+	if len(eventIssues) > 0 {
+		report.Blocked = true
+		report.Conflicts = append(report.Conflicts, eventIssues...)
 	}
 	return report, nil
 }

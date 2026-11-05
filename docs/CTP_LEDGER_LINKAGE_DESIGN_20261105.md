@@ -92,7 +92,26 @@ Relay并行进入F1隔离模型起步：新增 `internal/futures/snapshot.go`，
 
 验证新增6项Go模型/消息测试和7项真实临时PG集成：四类候选、订单/成交跨页去重/空结果/授权、事件外壳与原命令/夜盘时间、重启补应用并关联、原始行字节、晚到冲突、标记写失败全回滚、16路并发重投、旧查询不抢当前指针及容量超限。累计70项Go测试（含28项真实PG）以race通过，七包回归/vet与83项Python通过。仅本机临时集群，无生产迁移或运行服务变化。
 
-下一步：可信请求与本地订单持久登记、完整事件原文/处理状态分发，然后接消费者位点/ACK、超时中断扫描及HTTP/SDK。无新增wire差异，无需再让OC原则回签；OC继续已安排的命令校验/意图编码/有限分页。Meridian标准标的定义保持独立权威，本轮不自建security_id、不要求OC去对接行情。
+上述事件解码之后已继续完成下节报单登记与持久收件。无新增wire差异，无需再让OC原则回签；OC继续已安排的命令校验/意图编码/有限分页。Meridian标准标的定义保持独立权威，本轮不自建security_id、不要求OC去对接行情。
+
+### 本地报单登记与事件持久收件
+
+新增`submit_command.go/event_store.go`及迁移000036，继续隔离实现，没有生产导入或部署。新增表为`futures_event_scopes/submit_commands/submit_intents/event_inbox`。原始命令/事件均BYTEA+SHA256，处理记录不是交易命令回执，不增加OC wire动作。
+
+- `RegisterScope`必须来自可信配置/已确认TradingDay，固定环境/路由券商/gateway/逻辑账户与原生BrokerID/InvestorID；绑定既有`relay:{env}:v1:{broker}:{gateway}:event`格式的配置Stream，不从首条事件反向学习。登记初始化空事实报告便于质量可见，但不代表柜台成功空订单快照。相同scope不能改原生身份或来源。
+- `DecodeSubmitCommand`复用既有单笔/批量命令字段候选：严格完整字段、重复JSON键、整数手数、正十进制价格及原始uint64边界；首期SHFE、O/C/CT/CY、投机。批量只有产品/版本缺省可继承，子单gateway/client各自唯一，账户/交易日相同。原生symbol/exchange原样，不补Meridian security_id或宣称行情映射、涨跌停、静态手数、账户权限已通过。
+- `RegisterCommand`由可信本地发送路径在发布前调用，把完整原命令和所有子单身份同事务登记。预登记只存意图，不创建order/fill事实；不执行SDK、不创建Redis消息。message_id/idempotency_key及gateway/client在作用域内不能换绑；仅原字节完全相同允许重登记。换键序/价格尾零即不同原文，不据此发送第二次；这是保守身份登记，不是已完成的业务意图幂等、发布outbox或旧命令自动重发。
+- `Receive`在已登记作用域校验实际Stream，完整原文先单独提交为pending。非法JSON/UTF-8和错误字段也保留原文，后续处理标rejected；未登记/错Stream/资源超限返回error，不能视为已持久收件。原文保存与账本应用分两阶段，处理失败仍有明确持久任务可恢复。
+- 同entry原字节重投复用收件记录；同message_id原字节换entry保留独立接收证据，账本source按作用域+message_id去重。entry或message_id同号异体保留双方并置conflict，已应用事实不物理删除；冲突记录的原消息再换entry也继续冲突，不能通过再次发送原体洗掉标记。
+- `Process`重新校验完整事件和审计指纹。已登记本地gateway必须匹配原message_id及合约/方向/开平/套保，订单量价匹配；可选client/request/correlation/idempotency若出现也须一致。成交允许先于订单，不用成交价冒充委托价，单笔量不能超原委托量。批量子单共用父message_id，但分别核对自己的意图。
+- 未登记的普通gateway进入waiting_identity，不凭本地查不到推断外部。只有已经通过确定性原生ID校验且无origin的external-ctp-v1事件，才按**受信任OC发布者的外部身份声明**接收；这不是Relay独立证明外部所有权。带origin却未有登记的外部提示仍等待核实。来源认证、授权配置加载和真正发单前登记顺序必须在后续运行接线落实，不能将此内部API开放给事件发送者反向登记自己。
+- 应用的原始payload、行事实/关联/质量以及inbox处理状态同事务提交；事务失败回滚账本写入，先前完整原文仍pending。成功Applied仅说明事件处理落库，成交可仍pending关联或存在经济冲突，不等于账户账本完整。后续调用`TradeStore.Read`同时读取查询批次质量和所有非applied事件状态；等待/拒绝/冲突均显式阻断，不能只读底层逐行JSON当质量通过。
+- `Pending(scope,afterID,limit)`按ID游标扫描pending/waiting_identity（每页1..256），避免前部等待身份的记录遮住后续事件；新接收器可恢复，调度/退避由调用方负责。waiting可在独立可信登记补齐后再处理；rejected/conflict不自动清除，尚无人工修正/授权重分类接口。这个扫描不是Redis位点，也不重发柜台指令。
+- 本地限制每作用域日1024条收件/32MiB原文、1024条命令/32MiB命令、1024个子单意图；单命令最多100子项、单体8MiB、登记/事件消息ID最多512字节。沿用有限账本容量，超限明确失败不截断；这些是原型保护而非共同冻结的生产容量。作用域锁先于交易事实锁；没有跨账户原子承诺、自动清理、全局配额或生产吞吐验收。
+
+验证：新增4项命令/绑定模型测试与10项真实临时PG集成，包括单笔/批量原文、字段与继承、身份缺失后恢复、批量第二子单写失败全回滚、事件处理标记写失败账本回滚且收件保留、16路并发重投、同号异体传播、错误原文、来源/原生身份/环境隔离、容量/损坏校验和和迁移回滚。累计84项Go（38项PG）以race通过，七包回归/vet及83项Python通过。所有样本为合成，未连接OC/生产Redis，未测试整机掉电或真实柜台恢复。
+
+下一步仍有明确缺口：四类查询命令/请求身份登记及查询与事件共同准入、撤单身份与回执、真实Stream分发/租约、消费位点和ACK、发布outbox、HTTP/SDK与运行状态。现有`QueryStore.Register/ApplyTradeQuery`及行级`TradeStore.Observe`仍要求调用方已核实来源，不因本轮事件登记完成就宣称所有入口具备统一认证。F0/F1/F2不整体关闭，无新增OC协议需求，不反复回签已对齐原则。
 
 按用户要求，本文与11月4日查询字段/序列文档暂不转给OC。Relay先收敛为统一对接稿，再由双方确认字段与差异；不要求OC运行Relay程序或提供二进制。Meridian标的定义继续作为行情唯一标准，交易事实采集不等待SHFE行情上线。
 
