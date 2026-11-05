@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-05 Asia/Shanghai` 已复核OC r1回签/bbf8f14：金额59项预期及2048有限样本独立通过；查询schema材料版2补入队前null、旧完整结果重投与原生持仓枚举。83项Python/Go四包通过。对外增量答复为`docs/OC_CTP_R1_SIGNOFF_REVIEW_20261105.md`；F0未冻结，持久/运行时未实现，SHFE独立推进 |
+| 最近确认 | `2026-11-05 Asia/Shanghai` OC `2448837`逐ticket/资金持仓候选及材料版2回执无新协议分歧，不再循环原则回签。Relay新增`internal/futures`严格资金/持仓Go解码：12项新测试、race/vet/五包回归及83项Python通过；F1隔离模型已开始，未接生产/DB。下一步双方并行命令分页与批次存储，F0未冻结 |
 | 更新时间 | `2026-11-05` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-05` 已核对 [OC逐ticket查询候选交付](docs/OC_CTP_QUERY_CANDIDATE_DELIVERY_20261105.md)：答复与四JSON指纹一致，OC报告原始应用按ticket固定及资金/持仓标准候选实现；材料缺口解除，不冒称Relay运行OC测试或在线验收。按用户提高协作效率要求，无新阻塞就直接开发，不另出原则回签文档。Relay实际新增`internal/futures`资金/持仓Go类型与完整items解码，详见 [当前实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)：12项测试/race/vet/五包回归通过，83项Python通过。未接业务消费/API/SDK/DB，原协议JSON、环境、交易权限及用户暂存CSV未改。下一步OC继续完整命令/意图编码/有限分页，Relay推进批次/持久层隔离；只反馈实质差异和必要验收证据。
 
 - `2026-11-05` 完成 [OC r1回签答复](docs/OC_CTP_R1_SIGNOFF_REVIEW_20261105.md)，[原文存档](docs/OC_CTP_R1_SIGNOFF_20261105.md)保留OC证据边界；r1 SHA与OC一致且不改原文。独立转录/核对28个金额输入、59项字段/舍入预期，另2048有限值往返通过；不冒称验证OC运行时fenv或厂商哨兵。查询schema材料版2明确未入队ticket/generation可null、失败不填假日期；补原完整输出按旧上下文历史恢复/新请求拒收旧半页、四类账户级当前日查询、原生持仓枚举。总83项Python/Go四包通过。下一步按OC顺序推进逐ticket固定结果、标准转换、完整意图/待关联/持久输出，真实代码证据与容量尚待，不关闭F0；无部署/切环境/DB/权限变更，原六JSON与用户CSV不动。
 
