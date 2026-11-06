@@ -29,8 +29,11 @@ func NewEventStore(db *sql.DB) (*EventStore, error) {
 
 // RegisterScope uses trusted configuration, never routing learned from an event.
 // An empty ledger is initialized for quality reporting, not as a broker snapshot.
-func (s *EventStore) RegisterScope(ctx context.Context, scope TradeScope, eventStream string) (string, error) {
+func (s *EventStore) RegisterScope(ctx context.Context, scope TradeScope, nativeUserID, eventStream string) (string, error) {
 	if err := scope.validate(); err != nil {
+		return "", err
+	}
+	if err := (CommandScope{scope.Route, scope.NativeBrokerID, scope.InvestorID, nativeUserID}).validate(); err != nil {
 		return "", err
 	}
 	expectedStream := fmt.Sprintf("relay:%s:v1:%s:%s:event", scope.Route.Env, scope.Route.BrokerID, scope.Route.GatewayID)
@@ -47,11 +50,11 @@ func (s *EventStore) RegisterScope(ctx context.Context, scope TradeScope, eventS
 		return "", err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_event_scopes(scope_key,context_json,event_stream) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, key, raw, eventStream); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_event_scopes(scope_key,context_json,event_stream,native_user_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, key, raw, eventStream, nativeUserID); err != nil {
 		return "", err
 	}
 	var same bool
-	if err := tx.QueryRowContext(ctx, `SELECT context_json=$2::jsonb AND event_stream=$3 FROM futures_event_scopes WHERE scope_key=$1 FOR UPDATE`, key, raw, eventStream).Scan(&same); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT context_json=$2::jsonb AND event_stream=$3 AND COALESCE(native_user_id,'')=$4 FROM futures_event_scopes WHERE scope_key=$1 FOR UPDATE`, key, raw, eventStream, nativeUserID).Scan(&same); err != nil {
 		return "", err
 	}
 	if !same {
@@ -67,15 +70,15 @@ func (s *EventStore) RegisterScope(ctx context.Context, scope TradeScope, eventS
 }
 
 type eventScope struct {
-	scope                                                           TradeScope
-	stream                                                          string
-	eventCount, eventBytes, commandCount, commandBytes, intentCount int
+	scope                  TradeScope
+	stream, userID         string
+	eventCount, eventBytes int
 }
 
 func lockEventScope(ctx context.Context, tx *sql.Tx, key string) (eventScope, error) {
 	var s eventScope
 	var raw []byte
-	err := tx.QueryRowContext(ctx, `SELECT context_json,event_stream,event_count,event_bytes,command_count,command_bytes,intent_count FROM futures_event_scopes WHERE scope_key=$1 FOR UPDATE`, key).Scan(&raw, &s.stream, &s.eventCount, &s.eventBytes, &s.commandCount, &s.commandBytes, &s.intentCount)
+	err := tx.QueryRowContext(ctx, `SELECT context_json,event_stream,COALESCE(native_user_id,''),event_count,event_bytes FROM futures_event_scopes WHERE scope_key=$1 FOR UPDATE`, key).Scan(&raw, &s.stream, &s.userID, &s.eventCount, &s.eventBytes)
 	if err != nil {
 		return s, err
 	}
@@ -85,72 +88,13 @@ func lockEventScope(ctx context.Context, tx *sql.Tx, key string) (eventScope, er
 	if err := s.scope.validate(); err != nil {
 		return s, err
 	}
+	if err := (CommandScope{s.scope.Route, s.scope.NativeBrokerID, s.scope.InvestorID, s.userID}).validate(); err != nil {
+		return s, err
+	}
 	if tradeScopeKey(s.scope) != key {
 		return s, fmt.Errorf("event scope integrity failure")
 	}
 	return s, nil
-}
-
-// RegisterCommand must precede publication by a trusted local submit path.
-// Only byte-identical re-registration is a replay; this is not a business-level
-// idempotency API, send authorization, outbox or evidence that SDK was invoked.
-func (s *EventStore) RegisterCommand(ctx context.Context, key string, raw []byte) (bool, error) {
-	tx, err := beginFuturesTransaction(ctx, s.db)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	scope, err := lockEventScope(ctx, tx, key)
-	if err != nil {
-		return false, err
-	}
-	command, err := DecodeSubmitCommand(raw, scope.scope)
-	if err != nil {
-		return false, err
-	}
-	var old, digest []byte
-	err = tx.QueryRowContext(ctx, `SELECT body,body_sha256 FROM futures_submit_commands WHERE scope_key=$1 AND (message_id=$2 OR idempotency_key=$3) LIMIT 1`, key, command.MessageID, command.IdempotencyKey).Scan(&old, &digest)
-	if err == nil {
-		hash := sha256.Sum256(old)
-		if !bytes.Equal(hash[:], digest) {
-			return false, fmt.Errorf("command checksum mismatch")
-		}
-		if !bytes.Equal(old, raw) {
-			return false, ErrCommandIdentity
-		}
-		if err := tx.Commit(); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return false, err
-	}
-	if scope.commandCount >= maxAuditCount || len(raw) > maxAuditBytes-scope.commandBytes || len(command.Orders) > maxAuditCount-scope.intentCount {
-		return false, ErrAuditCapacity
-	}
-	for _, order := range command.Orders {
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_submit_intents WHERE scope_key=$1 AND (gateway_order_id=$2 OR client_order_id=$3))`, key, order.GatewayOrderID, order.ClientOrderID).Scan(&exists); err != nil {
-			return false, err
-		}
-		if exists {
-			return false, ErrCommandIdentity
-		}
-	}
-	hash := sha256.Sum256(raw)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_submit_commands(scope_key,message_id,idempotency_key,body,body_sha256) VALUES($1,$2,$3,$4,$5)`, key, command.MessageID, command.IdempotencyKey, raw, hash[:]); err != nil {
-		return false, err
-	}
-	for _, order := range command.Orders {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO futures_submit_intents(scope_key,gateway_order_id,client_order_id,message_id) VALUES($1,$2,$3,$4)`, key, order.GatewayOrderID, order.ClientOrderID, command.MessageID); err != nil {
-			return false, err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE futures_event_scopes SET command_count=command_count+1,command_bytes=command_bytes+$2,intent_count=intent_count+$3 WHERE scope_key=$1`, key, len(raw), len(command.Orders)); err != nil {
-		return false, err
-	}
-	return false, tx.Commit()
 }
 
 type EventReceipt struct {
@@ -280,7 +224,7 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 		result.State = "rejected"
 		result.Reason = decodeErr.Error()
 	} else {
-		state, reason, err := authorizeEvent(ctx, tx, key, scope.scope, event)
+		state, reason, err := authorizeEvent(ctx, tx, scope, event)
 		if err != nil {
 			return EventReceipt{}, err
 		}
@@ -307,15 +251,23 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 	return result, nil
 }
 
-func authorizeEvent(ctx context.Context, tx *sql.Tx, key string, scope TradeScope, event TradeEvent) (string, string, error) {
+func authorizeEvent(ctx context.Context, tx *sql.Tx, registered eventScope, event TradeEvent) (string, string, error) {
+	return authorizeTradeIdentity(ctx, tx, registered.scope, registered.userID, event, true)
+}
+
+// Query rows carry the QUERY origin, not the original order-command origin.
+// Their payload must still match the same local order intention. No synthetic
+// origin is written back to either query audit or broker facts.
+func authorizeTradeIdentity(ctx context.Context, tx *sql.Tx, scope TradeScope, userID string, event TradeEvent, checkOrigin bool) (string, string, error) {
 	gateway := ""
 	if event.Order != nil {
 		gateway = event.Order.GatewayOrderID
 	} else {
 		gateway = event.Fill.GatewayOrderID
 	}
-	var raw, digest []byte
-	err := tx.QueryRowContext(ctx, `SELECT c.body,c.body_sha256 FROM futures_submit_intents i JOIN futures_submit_commands c USING(scope_key,message_id) WHERE i.scope_key=$1 AND i.gateway_order_id=$2`, key, gateway).Scan(&raw, &digest)
+	key := string(commandRouteBytes(scope.Route))
+	var commandID int64
+	err := tx.QueryRowContext(ctx, `SELECT command_id FROM futures_command_reservations WHERE route_key=$1 AND trade_date=$2 AND kind='gateway' AND identity=$3`, key, scope.TradeDate, gateway).Scan(&commandID)
 	if errors.Is(err, sql.ErrNoRows) {
 		if strings.HasPrefix(gateway, "external-ctp-v1-") && event.OriginMessageID == "" {
 			return "applied", "", nil
@@ -325,17 +277,18 @@ func authorizeEvent(ctx context.Context, tx *sql.Tx, key string, scope TradeScop
 	if err != nil {
 		return "", "", err
 	}
-	sum := sha256.Sum256(raw)
-	if !bytes.Equal(sum[:], digest) {
-		return "", "", fmt.Errorf("command checksum mismatch")
-	}
-	command, err := DecodeSubmitCommand(raw, scope)
+	original, err := readRegisteredCommand(ctx, tx, key, commandID)
 	if err != nil {
 		return "", "", err
 	}
+	// Native row UserID is broker-origin audit, not the collector login identity.
+	if original.Scope != (CommandScope{scope.Route, scope.NativeBrokerID, scope.InvestorID, userID}) {
+		return "rejected", "trade scope differs from original native command identity", nil
+	}
+	command := original.Original.SubmitCommand
 	for _, order := range command.Orders {
 		if order.GatewayOrderID == gateway {
-			if !order.matches(event, command) {
+			if !order.matchesPayload(event) || (checkOrigin && !order.matches(event, command)) {
 				return "rejected", "event differs from registered submit origin/intent", nil
 			}
 			return "applied", "", nil

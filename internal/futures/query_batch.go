@@ -37,7 +37,9 @@ type QueryContext struct {
 	SDKRequestID         *int64
 	TradeDate            string
 	NativeBrokerID       string
-	NativeInvestorID     string `json:",omitempty"`
+	NativeInvestorID     string               `json:",omitempty"`
+	NativeUserID         string               `json:",omitempty"`
+	Command              *QueryCommandBinding `json:",omitempty"`
 }
 
 type BatchState string
@@ -110,6 +112,7 @@ func validID(s string) bool {
 }
 
 func copyContext(c QueryContext) QueryContext {
+	c.Command = clonePtr(c.Command)
 	if c.SDKRequestID != nil {
 		v := *c.SDKRequestID
 		c.SDKRequestID = &v
@@ -122,6 +125,9 @@ func copyContext(c QueryContext) QueryContext {
 }
 
 func NewQueryBatch(c QueryContext, now, deadline time.Duration, limits BatchLimits) (*QueryBatch, error) {
+	if c.Command != nil && !validQueryCommandContext(c) {
+		return nil, fmt.Errorf("invalid query command binding")
+	}
 	r := c.Route
 	if !oneOf(r.Env, "test", "prod") || !routeBrokerPattern.MatchString(r.BrokerID) || !validID(r.GatewayID) ||
 		!accountPattern.MatchString(r.AccountID) || queryResultType(c.Action) == "" ||
@@ -398,6 +404,13 @@ func decodeQueryPage(raw []byte, c QueryContext) (queryPage, error) {
 	for _, key := range []string{"message_id", "origin_message_id", "code", "request_id", "correlation_id", "idempotency_key"} {
 		if value, present := obj[key]; present && (!validID(textField(obj, key)) || literal(value, "null")) {
 			return bad("message identifier")
+		}
+	}
+	if c.Command != nil {
+		for key, want := range map[string]string{"request_id": c.Command.RequestID, "correlation_id": c.Command.CorrelationID, "idempotency_key": c.Command.IdempotencyKey} {
+			if textField(obj, key) != want {
+				return bad("original command correlation differs")
+			}
 		}
 	}
 	if msg, ok := obj["message"]; ok && (len(msg) == 0 || bytes.TrimSpace(msg)[0] != '"') {

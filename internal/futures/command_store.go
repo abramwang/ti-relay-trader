@@ -36,12 +36,12 @@ type RegistrationEvidence struct {
 type CommandRegistration struct {
 	Outcome, Reason string
 	CommandID       int64
+	Scope           CommandScope
 	Original        Command
 	Evidence        RegistrationEvidence
 }
 
-// CommandStore keeps a route-wide namespace across days and actions. It is not
-// connected to EventStore/QueryStore or a publisher yet. A registered intention
+// CommandStore keeps a route-wide namespace across days and actions. A registered intention
 // must NEVER be treated as a broker receipt or permission to send/ACK anything.
 type CommandStore struct{ db *sql.DB }
 
@@ -247,5 +247,6 @@ func readRegisteredCommand(ctx context.Context, tx *sql.Tx, key string, id int64
 		return CommandRegistration{}, fmt.Errorf("registered command integrity failure")
 	}
 	out.Original = c
+	out.Scope = scope
 	return out, nil
 }

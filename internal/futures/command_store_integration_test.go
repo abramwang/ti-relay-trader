@@ -14,13 +14,6 @@ import (
 func commandTestDB(t *testing.T) (*sql.DB, *CommandStore, context.Context) {
 	t.Helper()
 	db, _, ctx := queryTestDB(t)
-	raw, err := os.ReadFile("../../migrations/postgres/000037_futures_command_registry.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, string(raw)); err != nil {
-		t.Fatal(err)
-	}
 	s, err := NewCommandStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +262,7 @@ func TestCommandStoreMigrationDown(t *testing.T) {
 	db, s, ctx := commandTestDB(t)
 	v := intentVectors(t)["submit"]
 	registerVector(t, s, ctx, v, registrationEvidence(t, v), "registered")
+	migrateFuturesTest(t, db, ctx, "000038_futures_command_bindings", "down")
 	raw, err := os.ReadFile("../../migrations/postgres/000037_futures_command_registry.down.sql")
 	if err != nil {
 		t.Fatal(err)

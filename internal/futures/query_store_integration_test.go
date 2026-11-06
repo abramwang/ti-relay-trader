@@ -16,6 +16,22 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
+var futuresTestMigrations = []string{
+	"000033_futures_query_storage", "000034_futures_trade_facts", "000035_futures_query_trade_applications",
+	"000036_futures_event_inbox", "000037_futures_command_registry", "000038_futures_command_bindings",
+}
+
+func migrateFuturesTest(t *testing.T, db *sql.DB, ctx context.Context, name, direction string) {
+	t.Helper()
+	raw, err := os.ReadFile("../../migrations/postgres/" + name + "." + direction + ".sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, string(raw)); err != nil {
+		t.Fatal(name, err)
+	}
+}
+
 // Each test uses a fresh schema in an explicitly supplied disposable database.
 // It never reads application config, production DSNs or the stock test DSN.
 func queryTestDB(t *testing.T) (*sql.DB, *QueryStore, context.Context) {
@@ -51,12 +67,8 @@ func queryTestDB(t *testing.T) (*sql.DB, *QueryStore, context.Context) {
 		}
 		admin.Close()
 	})
-	raw, err := os.ReadFile("../../migrations/postgres/000033_futures_query_storage.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(raw)); err != nil {
-		t.Fatal(err)
+	for _, name := range futuresTestMigrations {
+		migrateFuturesTest(t, db, ctx, name, "up")
 	}
 	store, err := NewQueryStore(db)
 	if err != nil {
@@ -67,7 +79,7 @@ func queryTestDB(t *testing.T) (*sql.DB, *QueryStore, context.Context) {
 
 func registerQuery(t *testing.T, s *QueryStore, ctx context.Context, id string, c QueryContext) {
 	t.Helper()
-	if err := s.Register(ctx, id, c, time.Minute, DefaultBatchLimits()); err != nil {
+	if err := s.registerUnbound(ctx, id, c, time.Minute, DefaultBatchLimits()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -470,12 +482,12 @@ func TestQueryStoreIdentityIntegrityAndMigrationDown(t *testing.T) {
 	c := batchContext("positions")
 	registerQuery(t, s, ctx, "batch", c)
 	registerQuery(t, s, ctx, "batch", c)
-	if err := s.Register(ctx, "alias", c, time.Minute, DefaultBatchLimits()); !errors.Is(err, ErrBatchIdentity) {
+	if err := s.registerUnbound(ctx, "alias", c, time.Minute, DefaultBatchLimits()); !errors.Is(err, ErrBatchIdentity) {
 		t.Fatal("command registered twice", err)
 	}
 	other := c
 	other.NativeBrokerID = "4901"
-	if err := s.Register(ctx, "batch", other, time.Minute, DefaultBatchLimits()); !errors.Is(err, ErrBatchIdentity) {
+	if err := s.registerUnbound(ctx, "batch", other, time.Minute, DefaultBatchLimits()); !errors.Is(err, ErrBatchIdentity) {
 		t.Fatal("context changed", err)
 	}
 	raw := fixtureBody(t, "messages.json", "positions")
@@ -494,12 +506,8 @@ func TestQueryStoreIdentityIntegrityAndMigrationDown(t *testing.T) {
 	if _, err := s.Ingest(ctx, "batch", source("1-0"), raw, 0); err == nil {
 		t.Fatal("audit corruption ignored")
 	}
-	down, err := os.ReadFile("../../migrations/postgres/000033_futures_query_storage.down.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(down)); err != nil {
-		t.Fatal(err)
+	for i := len(futuresTestMigrations) - 1; i >= 0; i-- {
+		migrateFuturesTest(t, db, ctx, futuresTestMigrations[i], "down")
 	}
 	var n int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema()`).Scan(&n); err != nil || n != 0 {

@@ -2,11 +2,28 @@
 
 日期：2026-11-05，Asia/Shanghai。状态：Relay 内部设计候选，尚未冻结、部署或迁移。
 
-11-06增量：见 [OC完整命令/意图/有限分页复核](OC_CTP_COMMAND_REVIEW_20261106.md)。12组意图字节已独立复验；单笔/批量报单解码限制改为64KiB、128字节逻辑ID、100子项，取代下文11-05阶段的8MiB/512字节报单保护，入站事件审计不收紧。原日内原字节登记不能替代统一意图登记；后者已独立实现如下，消费整合尚待。分页实际JSON仍待补。
+11-06增量：见 [OC完整命令/意图/有限分页复核](OC_CTP_COMMAND_REVIEW_20261106.md)。12组意图字节已独立复验；单笔/批量报单解码限制改为64KiB、128字节逻辑ID、100子项，取代下文11-05阶段的8MiB/512字节报单保护，入站事件审计不收紧。统一命令已连接数据库层查询/事件身份门禁如下，Redis消费整合尚待。分页实际JSON仍待补。
+
+### 11-06 查询与事件统一身份接线
+
+新增`query_command.go`与000038，仍为隔离库内部能力，无新wire字段或线上发布。
+
+- `QueryStore.RegisterCommand`从已提交CommandID读取、重验原命令及完整意图，再绑定调用方独立核实的ticket、SDK请求号、连接代次、OC会话及TradingDay。验证动作/首次origin、路由和BrokerID/InvestorID/UserID全部一致；不从第一条reply学习请求身份，不把配置相等当作柜台登录认证。
+- 新`futures_query_commands`唯一约束使一个CommandID只能对应一个批次，注册批次/发布目标/链接同事务提交。相同请求重试不重选旧目标；新别名只能使用首次原命令，不可新建批次、替换origin或重启旧查询。旧未绑定原型拒绝自动升级；公开的未绑定Register移除，私有`registerUnbound`仅供已有离线模型测试。
+- 内部`QueryContext.Command`保存原request/correlation/idempotency，绑定查询的reply三个字段必须齐全且匹配；原origin继续严格匹配。旧别名origin作为foreign原文保存，不改写为正确origin；同origin错误关联字段使批次invalid。入站Stream必须匹配配置路由的reply Stream及有效entry ID，来源不符返回error且不推进消费责任。
+- 批次重建/处理/快照读取会再次核验数据库链接、原命令完整性及上下文。当前快照还核对采集原生UserID，不能把另一个登录绑定的旧结果当当前结果。完整结果可保留历史，重启后旧半页中断、旧writer退休；重新采样必须新命令/新幂等键，既有重放不是SDK重发授权。
+- `EventStore.RegisterScope`新增显式配置nativeUserID并固定；旧NULL作用域保持未绑定，不能猜值自动迁移。移除旧`EventStore.RegisterCommand`，本地事件直接按四路由+TradingDay+gateway读取统一reservation、原生配置身份、原命令和子单意图。别名不能替换首次origin，缺少登记继续waiting_identity；经济字段/关联不符留证rejected，不造单。
+- 查询订单/成交落事实前复用相同子单身份与经济字段门禁。查询信封origin属于查询命令，不能强要求它等于报单origin，也不伪造报单origin写回查询数据。任一行缺本地身份或冲突时整批不应用，完整原页已留存，仍可通过未应用批次列表发现；身份补全后显式重试应用，不重新查询、不清空旧事实。`BatchReady`仅代表完整类型化查询候选，不等于事实已应用或完整账本。
+- 柜台行的`native_ids.user_id`是原始交易事实，不等同于当前采集登录用户。命令使用配置UserID绑定和冲突检查；不覆盖原始UserID、不仅因原始UserID不同丢合法成交。外部订单继续要求合法原生外部身份及无本地origin的可信OC声明，缺本地登记不自动变成外部单。
+- 旧`futures_submit_commands/intents`及计数列仅保留原型审计，不再由应用读写；无历史数据删除。测试helper统一在临时schema应用33..38，已验证新增链接及既有down顺序。
+
+新增1项模型和12项真实PG测试，累计119项Go含63项PG/race、七包回归/vet和88项Python通过。覆盖四查询类型、全部关联字段缺失/错值、8路并发注册、事务失败、完整/半页恢复、别名及原生配置漂移、事实身份等待/经济冲突、绑定损坏和不自动升级。用于严格关联的查询信封由本地测试显式补充关联字段，不冒充已收到OC缺失的`query_reply_examples.v1.json`或验证真实输出。
+
+下一步先扩展1024条日内事实原型容量以容纳完整10,000行查询，再接可信会话/调度证据、Redis消费/位点/ACK及命令/原输出outbox恢复。低层模型/数据库原语不是对外授权接口；无下单、撤单、查询柜台、登录、部署、生产迁移或环境/权限操作，不标F0/F1整体验收完成。本次无新增协议分歧，无需OC重复原则回签。
 
 ### 11-06 统一命令登记增量
 
-新增`command.go/command_store.go`及迁移000037，只在隔离临时库运行。没有新增wire字段或改共享JSON。
+以下为接线前的阶段记录；其后续任务进展以上一节为准。新增`command.go/command_store.go`及迁移000037，只在隔离临时库运行。没有新增wire字段或改共享JSON。
 
 - `DecodeCommand`严格校验三类交易和四类查询命令，调用方固定可信路由/原生身份及cmd.trade或cmd.query；保留原始字节，按OC `ctp.intent.v1`生成字段列表、UTF-8字节长度框定编码及SHA256。12份OC样例字段、36组字节及48指纹全部一致。价格先验证未缩放范围再去小数尾零；批量保留原顺序，UserID不替代InvestorID。
 - `CommandStore.Register`的message和idempotency命名空间只含环境/券商/逻辑账户/gateway及对应ID，无交易日/action/原生身份分区。数据库保存完整编码而非仅hash，路由行锁串行化并发决策，唯一约束作最后保护；原生身份变化体现在意图冲突，而非另开账户命名空间。

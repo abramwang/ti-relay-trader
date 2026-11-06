@@ -58,6 +58,29 @@ func (s *QueryStore) ApplyTradeQuery(ctx context.Context, id string) (TradeQuery
 	}
 	for page := 0; page <= b.finalIndex; page++ {
 		for index, raw := range b.pages[page].items {
+			if b.context.Command != nil {
+				var event TradeEvent
+				if kind == "order" {
+					row, err := DecodeOrder(raw, b.context.tradeScope())
+					if err != nil {
+						return TradeQueryApplication{}, err
+					}
+					event.Order = &row
+				} else {
+					row, err := DecodeFill(raw, b.context.tradeScope())
+					if err != nil {
+						return TradeQueryApplication{}, err
+					}
+					event.Fill = &row
+				}
+				state, reason, err := authorizeTradeIdentity(ctx, tx, b.context.tradeScope(), b.context.NativeUserID, event, false)
+				if err != nil {
+					return TradeQueryApplication{}, err
+				}
+				if state != "applied" {
+					return TradeQueryApplication{}, fmt.Errorf("query trade identity %s: %s", state, reason)
+				}
+			}
 			source, _ := json.Marshal([]any{id, page, index})
 			digest := sha256.Sum256(source)
 			observations = append(observations, tradeObservation{"ctp-query:" + hex.EncodeToString(digest[:]), kind, raw})

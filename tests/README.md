@@ -11,6 +11,7 @@
 
 ## 当前状态
 
+- 期货命令与查询/事件接线：`query_command_test.go/query_command_integration_test.go`新增1项模型+12项临时PG测试，验证四类查询原命令/Stream绑定、关联ID缺失/错值、别名不能改origin或重采样、ticket/会话/原生身份不变、8路重复登记、链接失败回滚、完整/半页重启、查询事实身份等待及经济冲突、事件原关联/原生绑定、旧原型不自动升级和绑定损坏。累计119项Go（63项PG）/race、88项Python通过；测试schema统一应用33..38并验证down，未接真实OC/Redis/ACK，未部署生产。
 - 期货统一命令登记：`command_test.go/command_store_integration_test.go`新增5项模型及13项临时PG测试，包括12份OC字段/字节/48指纹、跨日重试、七动作同域冲突、原生用户漂移、价格尾零/批量顺序、映射不变、16路同意图与8路冲突并发、别名原关联、原子审计回滚、限额/损坏及up/down。累计106项Go（51项PG）/race、88项Python通过；迁移000037仅临时库执行，未接EventStore/QueryStore、outbox或ACK。
 - OC 11-05交付复核：`test_oc_command_delivery.py`独立从原命令/scope推导12组字段、36份意图/查找字节及48个指纹，5项新增Python测试；报单64KiB/128字节ID/100子项双预算与output_limits失败语义新增4项Go验证。累计88项Go含38项PG/race、88项Python通过。原JSON见`testdata/fixtures/ctp_intent_vectors.v1.json`；分页输出JSON尚缺，其文档中的真实body边界未计入Relay验收。
 - 期货报单登记/事件持久收件：新增4项Go模型及10项真实PG集成，验证单/批命令字段、子单身份和原命令绑定、完整原文持久恢复、身份未知等待、错误/冲突阻断、同号换entry仍冲突、批量登记及事件处理失败整体回滚、16路重投、来源/投资者/环境隔离、游标扫描和容量/校验和。累计84项Go含38项数据库测试以race通过，迁移000036仅临时库执行，83项Python不变；没有真实Redis/OC调用、ACK或生产迁移。

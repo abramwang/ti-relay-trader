@@ -126,6 +126,13 @@ func decodeSubmitSyntax(raw []byte, account, expectedDay string) (SubmitCommand,
 }
 
 func (intent SubmitIntent) matches(event TradeEvent, command SubmitCommand) bool {
+	return intent.matchesPayload(event) && event.OriginMessageID == command.MessageID &&
+		(event.RequestID == "" || event.RequestID == command.RequestID) &&
+		(event.CorrelationID == "" || event.CorrelationID == command.CorrelationID) &&
+		(event.IdempotencyKey == "" || event.IdempotencyKey == command.IdempotencyKey)
+}
+
+func (intent SubmitIntent) matchesPayload(event TradeEvent) bool {
 	var row TradeRow
 	if event.Order != nil {
 		row = event.Order.TradeRow
@@ -141,8 +148,5 @@ func (intent SubmitIntent) matches(event TradeEvent, command SubmitCommand) bool
 	if row.AccountID != intent.AccountID || row.GatewayOrderID != intent.GatewayOrderID || row.TradeDate != intent.TradeDate || row.Symbol != intent.Symbol || row.Exchange != intent.Exchange || row.BusinessType != intent.BusinessType || row.TradeSide != intent.TradeSide || row.OffsetType != intent.OffsetType || row.HedgeType != intent.HedgeType || (row.ClientOrderID != "" && row.ClientOrderID != intent.ClientOrderID) {
 		return false
 	}
-	return event.OriginMessageID == command.MessageID &&
-		(event.RequestID == "" || event.RequestID == command.RequestID) &&
-		(event.CorrelationID == "" || event.CorrelationID == command.CorrelationID) &&
-		(event.IdempotencyKey == "" || event.IdempotencyKey == command.IdempotencyKey)
+	return true
 }

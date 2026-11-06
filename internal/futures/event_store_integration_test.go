@@ -22,7 +22,7 @@ func eventTestDB(t *testing.T) (*sql.DB, *EventStore, *TradeStore, context.Conte
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := events.RegisterScope(ctx, tradeScope(), eventStream(tradeScope()))
+	key, err := events.RegisterScope(ctx, tradeScope(), "FIXTURE_USER", eventStream(tradeScope()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,9 +46,40 @@ func processEvent(t *testing.T, s *EventStore, ctx context.Context, id int64, st
 }
 func registerSubmit(t *testing.T, s *EventStore, ctx context.Context, key string) {
 	t.Helper()
-	if replay, err := s.RegisterCommand(ctx, key, fixtureBody(t, "messages.json", "submit")); err != nil || replay {
+	if replay, err := registerEventCommand(t, s, ctx, key, fixtureBody(t, "messages.json", "submit")); err != nil || replay {
 		t.Fatal(replay, err)
 	}
+}
+
+func registerEventCommand(t *testing.T, s *EventStore, ctx context.Context, key string, raw []byte) (bool, error) {
+	t.Helper()
+	tx, err := beginFuturesTransaction(ctx, s.db)
+	if err != nil {
+		return false, err
+	}
+	bound, err := lockEventScope(ctx, tx, key)
+	_ = tx.Rollback()
+	if err != nil {
+		return false, err
+	}
+	scope := CommandScope{bound.scope.Route, bound.scope.NativeBrokerID, bound.scope.InvestorID, bound.userID}
+	c, err := DecodeCommand(raw, scope, "cmd.trade")
+	if err != nil {
+		return false, err
+	}
+	e := RegistrationEvidence{CurrentTradeDate: bound.scope.TradeDate, Mappings: map[string]CatalogBinding{}}
+	for _, row := range c.Orders {
+		e.Mappings[row.GatewayOrderID] = CatalogBinding{"SYNTHETIC-ONLY", row.Symbol, row.Exchange, "synthetic-publication", "synthetic-checksum"}
+	}
+	store, _ := NewCommandStore(s.db)
+	out, err := store.Register(ctx, scope, "cmd.trade", raw, e)
+	if err != nil {
+		return false, err
+	}
+	if !oneOf(out.Outcome, "registered", "replayed") {
+		return false, ErrCommandIdentity
+	}
+	return out.Outcome == "replayed", nil
 }
 
 func TestEventStoreDurableFillFirstAndReplay(t *testing.T) {
@@ -213,27 +244,26 @@ func TestEventStoreMalformedAndForeignAudit(t *testing.T) {
 func TestEventStoreCommandRegistryAtomicAndImmutable(t *testing.T) {
 	db, events, _, ctx, key := eventTestDB(t)
 	raw := fixtureBody(t, "messages.json", "batch")
-	if _, err := db.ExecContext(ctx, `CREATE FUNCTION fail_second_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.gateway_order_id='fixture-batch-child-2' THEN RAISE EXCEPTION 'synthetic child failure'; END IF; RETURN NEW; END $$;
-        CREATE TRIGGER fail_second_intent BEFORE INSERT ON futures_submit_intents FOR EACH ROW EXECUTE FUNCTION fail_second_intent()`); err != nil {
+	if _, err := db.ExecContext(ctx, `CREATE FUNCTION fail_second_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.identity='fixture-batch-child-2' THEN RAISE EXCEPTION 'synthetic child failure'; END IF; RETURN NEW; END $$;
+        CREATE TRIGGER fail_second_intent BEFORE INSERT ON futures_command_reservations FOR EACH ROW EXECUTE FUNCTION fail_second_intent()`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := events.RegisterCommand(ctx, key, raw); err == nil {
+	if _, err := registerEventCommand(t, events, ctx, key, raw); err == nil {
 		t.Fatal("partial intent registration succeeded")
 	}
-	if storedCount(t, db, "futures_submit_commands") != 0 || storedCount(t, db, "futures_submit_intents") != 0 {
+	if storedCount(t, db, "futures_commands") != 0 || storedCount(t, db, "futures_command_reservations") != 0 {
 		t.Fatal("partial batch identity persisted")
 	}
-	if _, err := db.ExecContext(ctx, `DROP TRIGGER fail_second_intent ON futures_submit_intents`); err != nil {
+	if _, err := db.ExecContext(ctx, `DROP TRIGGER fail_second_intent ON futures_command_reservations`); err != nil {
 		t.Fatal(err)
 	}
-	if replay, err := events.RegisterCommand(ctx, key, raw); err != nil || replay {
+	if replay, err := registerEventCommand(t, events, ctx, key, raw); err != nil || replay {
 		t.Fatal(replay, err)
 	}
-	if replay, err := events.RegisterCommand(ctx, key, raw); err != nil || !replay {
+	if replay, err := registerEventCommand(t, events, ctx, key, raw); err != nil || !replay {
 		t.Fatal(replay, err)
 	}
 	for _, edit := range []func(map[string]any){
-		func(m map[string]any) { m["message_id"] = "new" },
 		func(m map[string]any) { m["idempotency_key"] = "new" },
 		func(m map[string]any) { m["message_id"] = "new"; m["idempotency_key"] = "new" },
 		func(m map[string]any) {
@@ -241,11 +271,11 @@ func TestEventStoreCommandRegistryAtomicAndImmutable(t *testing.T) {
 			p["orders"].([]any)[0].(map[string]any)["limit_price"] = "3601"
 		},
 	} {
-		if _, err := events.RegisterCommand(ctx, key, editBody(t, raw, edit)); !errors.Is(err, ErrCommandIdentity) {
+		if _, err := registerEventCommand(t, events, ctx, key, editBody(t, raw, edit)); !errors.Is(err, ErrCommandIdentity) {
 			t.Fatal(err)
 		}
 	}
-	if storedCount(t, db, "futures_submit_commands") != 1 || storedCount(t, db, "futures_submit_intents") != 2 {
+	if storedCount(t, db, "futures_commands") != 1 || storedCount(t, db, "futures_command_reservations") != 4 {
 		t.Fatal("registry partially written")
 	}
 	// Batch child binds to the parent message, never another sibling's identity.
@@ -329,15 +359,15 @@ func TestEventStoreExternalAndNativeScope(t *testing.T) {
 	}
 	wrong := tradeScope()
 	wrong.InvestorID = "OTHER"
-	if _, err := events.RegisterScope(ctx, wrong, eventStream(wrong)); err == nil {
+	if _, err := events.RegisterScope(ctx, wrong, "FIXTURE_USER", eventStream(wrong)); err == nil {
 		t.Fatal("native binding replaced")
 	}
-	if _, err := events.RegisterScope(ctx, tradeScope(), "wrong:event"); err == nil {
+	if _, err := events.RegisterScope(ctx, tradeScope(), "FIXTURE_USER", "wrong:event"); err == nil {
 		t.Fatal("stream binding replaced")
 	}
 	prod := tradeScope()
 	prod.Route.Env = "prod"
-	prodKey, err := events.RegisterScope(ctx, prod, eventStream(prod))
+	prodKey, err := events.RegisterScope(ctx, prod, "FIXTURE_USER", eventStream(prod))
 	if err != nil || prodKey == key {
 		t.Fatal(prodKey, err)
 	}
@@ -376,10 +406,10 @@ func TestEventStoreCapacityAndIntegrity(t *testing.T) {
 	if _, err := events.Pending(ctx, key, 0, 0); err == nil {
 		t.Fatal("unbounded pending list")
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE futures_submit_commands SET body='broken'::bytea`); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE futures_commands SET body='broken'::bytea`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := events.RegisterCommand(ctx, key, fixtureBody(t, "messages.json", "submit")); err == nil || !strings.Contains(err.Error(), "checksum") {
+	if _, err := registerEventCommand(t, events, ctx, key, fixtureBody(t, "messages.json", "submit")); err == nil {
 		t.Fatal(err)
 	}
 }

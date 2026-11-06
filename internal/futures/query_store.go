@@ -68,10 +68,24 @@ func beginFuturesTransaction(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 	return tx, nil
 }
 
-// Register creates an immutable request and makes it the next publication target.
-// Registration order, not callback arrival time, fences obsolete results. Retrying
-// an existing registration is idempotent and never reselects an older target.
-func (s *QueryStore) Register(ctx context.Context, id string, c QueryContext, timeout time.Duration, limits BatchLimits) error {
+// registerUnbound is retained only for internal assembler/storage model tests.
+// The public registration path requires a durable command via RegisterCommand.
+func (s *QueryStore) registerUnbound(ctx context.Context, id string, c QueryContext, timeout time.Duration, limits BatchLimits) error {
+	if c.Command != nil {
+		return ErrBatchIdentity
+	}
+	tx, err := s.transaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.registerTx(ctx, tx, id, c, timeout, limits); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *QueryStore) registerTx(ctx context.Context, tx *sql.Tx, id string, c QueryContext, timeout time.Duration, limits BatchLimits) error {
 	if !validID(id) || len(id) > 256 {
 		return ErrBatchIdentity
 	}
@@ -84,11 +98,6 @@ func (s *QueryStore) Register(ctx context.Context, id string, c QueryContext, ti
 		return fmt.Errorf("query context exceeds local storage limit")
 	}
 	scope := queryScope(c)
-	tx, err := s.transaction(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_query_heads(scope_key) VALUES($1) ON CONFLICT DO NOTHING`, scope); err != nil {
 		return err
 	}
@@ -120,7 +129,7 @@ func (s *QueryStore) Register(ctx context.Context, id string, c QueryContext, ti
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 type storedBatch struct {
@@ -154,6 +163,9 @@ func (s *QueryStore) load(ctx context.Context, tx *sql.Tx, id string) (*storedBa
 		return nil, err
 	}
 	if err := json.Unmarshal(limitsJSON, &limits); err != nil {
+		return nil, err
+	}
+	if err := verifyQueryCommand(ctx, tx, id, c); err != nil {
 		return nil, err
 	}
 	r.batch, err = NewQueryBatch(c, 0, time.Duration(timeout), limits)
@@ -240,6 +252,9 @@ func (s *QueryStore) Ingest(ctx context.Context, id string, source QuerySource, 
 	}
 	if r.owner != s.owner || r.retired {
 		return IngestResult{}, ErrBatchOwner
+	}
+	if r.batch.context.Command != nil && (source.StreamKey != queryReplyStream(r.batch.context.Route) || !redisEntryPattern.MatchString(source.EntryID)) {
+		return IngestResult{}, fmt.Errorf("query source differs from bound reply stream")
 	}
 	var prior []byte
 	err = tx.QueryRowContext(ctx, `SELECT body FROM futures_query_observations
@@ -413,7 +428,14 @@ func (s *QueryStore) Snapshot(ctx context.Context, id string) (StoredSnapshot, e
 	if err != nil {
 		return StoredSnapshot{}, err
 	}
-	return decodeStoredSnapshot(id, raw, digest)
+	out, err := decodeStoredSnapshot(id, raw, digest)
+	if err != nil {
+		return StoredSnapshot{}, err
+	}
+	if err = s.verifySnapshotCommand(ctx, id, out.Candidate.Context); err != nil {
+		return StoredSnapshot{}, err
+	}
+	return out, nil
 }
 
 func decodeStoredSnapshot(id string, raw, digest []byte) (StoredSnapshot, error) {
@@ -443,13 +465,13 @@ func (s *QueryStore) Current(ctx context.Context, expected QueryContext) (Stored
 	if _, err := NewQueryBatch(expected, 0, time.Minute, DefaultBatchLimits()); err != nil {
 		return StoredSnapshot{}, err
 	}
-	var id string
+	var id, targetID string
 	var raw, digest, targetJSON []byte
-	err := s.db.QueryRowContext(ctx, `SELECT b.batch_id,s.candidate,s.candidate_sha256,target.context_json FROM futures_query_heads h
+	err := s.db.QueryRowContext(ctx, `SELECT b.batch_id,s.candidate,s.candidate_sha256,target.context_json,target.batch_id FROM futures_query_heads h
         JOIN futures_query_batches b ON b.batch_id=h.current_batch
         JOIN futures_query_batches target ON target.batch_id=h.target_batch
         JOIN futures_query_snapshots s ON s.batch_id=b.batch_id
-        WHERE h.scope_key=$1 AND b.state='ready' AND b.owner_id=$2 AND target.owner_id=$2 AND NOT b.retired AND NOT target.retired`, queryScope(expected), s.owner).Scan(&id, &raw, &digest, &targetJSON)
+        WHERE h.scope_key=$1 AND b.state='ready' AND b.owner_id=$2 AND target.owner_id=$2 AND NOT b.retired AND NOT target.retired`, queryScope(expected), s.owner).Scan(&id, &raw, &digest, &targetJSON, &targetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredSnapshot{}, ErrNoSnapshot
 	}
@@ -465,9 +487,15 @@ func (s *QueryStore) Current(ctx context.Context, expected QueryContext) (Stored
 	if err := json.Unmarshal(targetJSON, &target); err != nil {
 		return StoredSnapshot{}, err
 	}
+	if err = s.verifySnapshotCommand(ctx, id, c); err != nil {
+		return StoredSnapshot{}, err
+	}
+	if err = s.verifySnapshotCommand(ctx, targetID, target); err != nil {
+		return StoredSnapshot{}, err
+	}
 	for _, actual := range []QueryContext{c, target} {
 		if actual.TradeDate != expected.TradeDate || actual.CounterSessionID != expected.CounterSessionID ||
-			!sameInteger(actual.ConnectionGeneration, expected.ConnectionGeneration) || actual.NativeBrokerID != expected.NativeBrokerID || actual.NativeInvestorID != expected.NativeInvestorID {
+			!sameInteger(actual.ConnectionGeneration, expected.ConnectionGeneration) || actual.NativeBrokerID != expected.NativeBrokerID || actual.NativeInvestorID != expected.NativeInvestorID || actual.NativeUserID != expected.NativeUserID {
 			return StoredSnapshot{}, ErrNoSnapshot
 		}
 	}
