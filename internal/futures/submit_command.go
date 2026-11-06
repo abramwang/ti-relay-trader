@@ -43,6 +43,12 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 	if err := scope.validate(); err != nil {
 		return SubmitCommand{}, err
 	}
+	return decodeSubmitSyntax(raw, scope.Route.AccountID, scope.TradeDate)
+}
+
+// An empty expectedDay checks syntax only; durable replay must precede the
+// current-day gate. The public day-scoped decoder retains its original gate.
+func decodeSubmitSyntax(raw []byte, account, expectedDay string) (SubmitCommand, error) {
 	if len(raw) > maxSubmitCommandBytes {
 		return SubmitCommand{}, ErrAuditCapacity
 	}
@@ -74,7 +80,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 		if err != nil {
 			return SubmitCommand{}, err
 		}
-		if textField(parent, "account_id") != scope.Route.AccountID || textField(parent, "product_type") != "futures" || textField(parent, "schema_version") != "ctp.f0.draft.2" {
+		if textField(parent, "account_id") != account || textField(parent, "product_type") != "futures" || textField(parent, "schema_version") != "ctp.f0.draft.2" {
 			return bad()
 		}
 		if json.Unmarshal(parent["orders"], &rows) != nil {
@@ -106,7 +112,7 @@ func DecodeSubmitCommand(raw []byte, scope TradeScope) (SubmitCommand, error) {
 		if err := json.Unmarshal(rawRow, &row); err != nil {
 			return SubmitCommand{}, err
 		}
-		if row.AccountID != scope.Route.AccountID || row.TradeDate != scope.TradeDate || row.Exchange != "SHFE" || !native(row.Symbol, 80, false) || row.BusinessType != "F" || !oneOf(row.TradeSide, "B", "S") || !oneOf(row.OffsetType, "O", "C", "CT", "CY") || row.HedgeType != "speculation" || row.OrderQty <= 0 || equalDecimal(string(row.LimitPrice), "0") {
+		if row.AccountID != account || !validDay(row.TradeDate) || (expectedDay != "" && row.TradeDate != expectedDay) || (len(result.Orders) > 0 && row.TradeDate != result.Orders[0].TradeDate) || row.Exchange != "SHFE" || !native(row.Symbol, 80, false) || row.BusinessType != "F" || !oneOf(row.TradeSide, "B", "S") || !oneOf(row.OffsetType, "O", "C", "CT", "CY") || row.HedgeType != "speculation" || row.OrderQty <= 0 || equalDecimal(string(row.LimitPrice), "0") {
 			return bad()
 		}
 		if !validID(row.GatewayOrderID) || len(row.GatewayOrderID) > maxSubmitIDBytes || strings.HasPrefix(row.GatewayOrderID, "external-ctp-v1-") || !validID(row.ClientOrderID) || len(row.ClientOrderID) > maxSubmitIDBytes || gateways[row.GatewayOrderID] || clients[row.ClientOrderID] {

@@ -11,6 +11,7 @@
 
 ## 当前状态
 
+- 期货统一命令登记：`command_test.go/command_store_integration_test.go`新增5项模型及13项临时PG测试，包括12份OC字段/字节/48指纹、跨日重试、七动作同域冲突、原生用户漂移、价格尾零/批量顺序、映射不变、16路同意图与8路冲突并发、别名原关联、原子审计回滚、限额/损坏及up/down。累计106项Go（51项PG）/race、88项Python通过；迁移000037仅临时库执行，未接EventStore/QueryStore、outbox或ACK。
 - OC 11-05交付复核：`test_oc_command_delivery.py`独立从原命令/scope推导12组字段、36份意图/查找字节及48个指纹，5项新增Python测试；报单64KiB/128字节ID/100子项双预算与output_limits失败语义新增4项Go验证。累计88项Go含38项PG/race、88项Python通过。原JSON见`testdata/fixtures/ctp_intent_vectors.v1.json`；分页输出JSON尚缺，其文档中的真实body边界未计入Relay验收。
 - 期货报单登记/事件持久收件：新增4项Go模型及10项真实PG集成，验证单/批命令字段、子单身份和原命令绑定、完整原文持久恢复、身份未知等待、错误/冲突阻断、同号换entry仍冲突、批量登记及事件处理失败整体回滚、16路重投、来源/投资者/环境隔离、游标扫描和容量/校验和。累计84项Go含38项数据库测试以race通过，迁移000036仅临时库执行，83项Python不变；没有真实Redis/OC调用、ACK或生产迁移。
 - 期货完整查询到事实应用：新增6项查询/事件模型测试及7项真实PG集成，覆盖订单/成交乱序收页、原生授权、空结果、完整事件/源时间、重启补应用、迟到冲突阻断、标记失败整体回滚、16路并发幂等及容量超限。累计70项Go含28项真实数据库测试以race通过，迁移000035仅临时schema执行；83项Python协议测试不变。运行入口仍为`scripts/test-futures-postgres.sh`，事件当前只解码，未接Redis/ACK/生产。

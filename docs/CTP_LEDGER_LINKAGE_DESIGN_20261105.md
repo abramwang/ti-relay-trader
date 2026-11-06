@@ -2,7 +2,23 @@
 
 日期：2026-11-05，Asia/Shanghai。状态：Relay 内部设计候选，尚未冻结、部署或迁移。
 
-11-06增量：见 [OC完整命令/意图/有限分页复核](OC_CTP_COMMAND_REVIEW_20261106.md)。12组意图字节已独立复验；单笔/批量报单解码限制改为64KiB、128字节逻辑ID、100子项，取代下文11-05阶段的8MiB/512字节报单保护，入站事件审计不收紧。原日内原字节登记不能替代OC无日期/action分区的命令查找及含UserID的意图，后续须独立实现；分页实际JSON仍待补。
+11-06增量：见 [OC完整命令/意图/有限分页复核](OC_CTP_COMMAND_REVIEW_20261106.md)。12组意图字节已独立复验；单笔/批量报单解码限制改为64KiB、128字节逻辑ID、100子项，取代下文11-05阶段的8MiB/512字节报单保护，入站事件审计不收紧。原日内原字节登记不能替代统一意图登记；后者已独立实现如下，消费整合尚待。分页实际JSON仍待补。
+
+### 11-06 统一命令登记增量
+
+新增`command.go/command_store.go`及迁移000037，只在隔离临时库运行。没有新增wire字段或改共享JSON。
+
+- `DecodeCommand`严格校验三类交易和四类查询命令，调用方固定可信路由/原生身份及cmd.trade或cmd.query；保留原始字节，按OC `ctp.intent.v1`生成字段列表、UTF-8字节长度框定编码及SHA256。12份OC样例字段、36组字节及48指纹全部一致。价格先验证未缩放范围再去小数尾零；批量保留原顺序，UserID不替代InvestorID。
+- `CommandStore.Register`的message和idempotency命名空间只含环境/券商/逻辑账户/gateway及对应ID，无交易日/action/原生身份分区。数据库保存完整编码而非仅hash，路由行锁串行化并发决策，唯一约束作最后保护；原生身份变化体现在意图冲突，而非另开账户命名空间。
+- 相同message必须原字节一致；新message、相同幂等键/意图只登记别名，并返回首次CommandID、原始command及原映射，不覆盖首次message/request/correlation。不同意图、同号异体及映射变更均留证为conflict，不生成新命令。`replayed`仅表示登记重放，当前没有券商原输出可恢复，更不意味着自动再次发送。
+- 先查持久意图，再检查新意图日期：新报单要求调用方已核实TradingDay；撤单要求同路由/原生身份/目标gateway/目标日的独立目标证据，允许历史目标日；查询没有payload日期。旧登记跨日可读，不因日切变成新请求。调用方证据结构匹配不证明登录认证、原生撤单定位或实际发送资格。
+- 新报单必须提供逐子单Meridian显式`security_id/source_instrument_id/exchange_id/publication_snapshot_id/logical_table_checksum`绑定，保存首次映射与校验和，重放可直接使用旧绑定；不拼后缀或硬编码实际合约目录。本轮仅核对结构、原码匹配及绑定不可变，未连接Meridian拉取/时效校验，测试目录值全部明确为synthetic。
+- 新意图的gateway/client按路由+目标交易日唯一，cancel_id另行占用同日撤单尝试身份。整个批次、别名、原文、规范意图、证据、结果审计同事务提交，任一审计失败全部回滚。registered/replayed/conflict/rejected均为本地登记结果，不等于OC accepted/completed或交易终态。
+- 每条路由本地原型最多4096份不同审计及64MiB累计原文+意图+证据；重复同一结果去重。此为逻辑审计字节预算，不是总磁盘/RSS上限，字段列表/索引/别名另占空间；无自动清理、跨日重置或全局容量管理。超限/数据库错误返回error、事务不提交，不丢旧记录、不授权ACK。语法/路由/Stream不合法的输入在事务前拒绝，未来入口需保留这些原文和重试责任，本层不是通用原始收件箱。
+
+验证新增5项Go模型和13项真实PG测试：跨日重放、新message同意图、价格尾零、批量换序/整体原子性、动作/日期/原生身份冲突、历史撤单、四类查询、映射不可变/损坏、16路同意图与8路不同意图并发、事务注入失败、配额及up/down。累计106项Go含51项PG以race通过，七包回归/vet及88项Python通过。测试只使用临时Unix socket数据库，无OC/Redis、上线迁移或生产操作。
+
+**下一步边界**：新登记尚未接`QueryStore.Register`/`EventStore.RegisterCommand`；旧日内登记暂时保留，不能同时当作两个可发送入口。下一步用统一CommandID绑定查询请求证据和本地事件身份，验证别名保持原回报关联，再做outbox、原输出恢复和消费位点/ACK。当前没有发送方法、交易授权/readiness或HTTP/SDK发布，原生目标/目录真实验证和生产规模容量仍待，不标F0/F1整体完成。本增量无协议分歧，无需再让OC原则回签。
 
 同日后续已形成 [OC统一送审稿](OC_CTP_UNIFIED_REVIEW_20261105.md)，对外交接仅用该稿。其第6节选择首期不扩展wire：未知gateway由OC持久暂存，Relay已知gateway但订单未到时保留pending；需OC回签。本文保留为内部设计依据，以下“待汇总”是当时阶段记录。
 
