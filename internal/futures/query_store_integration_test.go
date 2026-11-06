@@ -19,6 +19,7 @@ import (
 var futuresTestMigrations = []string{
 	"000033_futures_query_storage", "000034_futures_trade_facts", "000035_futures_query_trade_applications",
 	"000036_futures_event_inbox", "000037_futures_command_registry", "000038_futures_command_bindings",
+	"000039_futures_trade_capacity",
 }
 
 func migrateFuturesTest(t *testing.T, db *sql.DB, ctx context.Context, name, direction string) {

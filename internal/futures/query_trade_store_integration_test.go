@@ -249,7 +249,7 @@ func TestTradeQueryNativeAuthorizationAndHistoricalFacts(t *testing.T) {
 	}
 }
 
-func TestTradeQueryApplicationCapacityNoPartialCommit(t *testing.T) {
+func TestTradeQueryApplicationExceedsFormerCapacity(t *testing.T) {
 	db, _, ctx := tradeTestDB(t)
 	q, _ := NewQueryStore(db)
 	items := make([][]byte, 0, maxAuditCount+1)
@@ -261,10 +261,10 @@ func TestTradeQueryApplicationCapacityNoPartialCommit(t *testing.T) {
 		}))
 	}
 	readyTradeQuery(t, q, ctx, "too-many", "order", items...)
-	if _, err := q.ApplyTradeQuery(ctx, "too-many"); !errors.Is(err, ErrAuditCapacity) {
+	if result, err := q.ApplyTradeQuery(ctx, "too-many"); err != nil || result.RowCount != 1025 {
 		t.Fatal(err)
 	}
-	if storedCount(t, db, "futures_trade_scopes") != 0 || storedCount(t, db, "futures_query_trade_applications") != 0 {
-		t.Fatal("capacity partially applied")
+	if storedCount(t, db, "futures_trade_observations") != 1025 || storedCount(t, db, "futures_query_trade_applications") != 1 {
+		t.Fatal("complete query not applied")
 	}
 }

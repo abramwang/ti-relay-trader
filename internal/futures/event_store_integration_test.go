@@ -394,7 +394,7 @@ func TestEventStoreCapacityAndIntegrity(t *testing.T) {
 	if _, err := events.Receive(ctx, key, QuerySource{eventStream(tradeScope()), "1-0"}, raw); err == nil {
 		t.Fatal("corrupt raw replay accepted")
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE futures_event_scopes SET event_count=1024 WHERE scope_key=$1`, key); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE futures_event_scopes SET event_count=$2 WHERE scope_key=$1`, key, maxTradeAuditCount); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := events.Receive(ctx, key, QuerySource{eventStream(tradeScope()), "2-0"}, raw); !errors.Is(err, ErrAuditCapacity) {

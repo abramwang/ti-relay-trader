@@ -40,17 +40,26 @@ type TradeReport struct {
 // tradeProjection is rebuilt from durable observations. It is not a live event
 // consumer, does not infer external ownership and never fabricates missing orders.
 type tradeProjection struct {
-	report    TradeReport
-	aliases   map[string]string
-	ambiguous map[string]bool
+	report            TradeReport
+	aliases           map[string]string
+	ambiguous         map[string]bool
+	groups            map[string]map[string]*ExecutionRecord
+	dirtyAliases      map[string]bool
+	dirtyFills        map[string]bool
+	eligible          map[string]string
+	totals            map[string]int64
+	overfilled        map[string]bool
+	conflicts         map[string]bool
+	reconciledRecords int
 }
 
 func newTradeProjection(scope TradeScope) *tradeProjection {
-	return &tradeProjection{report: TradeReport{Scope: scope, Orders: map[string]*OrderRecord{}, Executions: map[string]*ExecutionRecord{}, Conflicts: []string{}}, aliases: map[string]string{}, ambiguous: map[string]bool{}}
+	return &tradeProjection{report: TradeReport{Scope: scope, Orders: map[string]*OrderRecord{}, Executions: map[string]*ExecutionRecord{}, Conflicts: []string{}}, aliases: map[string]string{}, ambiguous: map[string]bool{}, groups: map[string]map[string]*ExecutionRecord{}, dirtyAliases: map[string]bool{}, dirtyFills: map[string]bool{}, eligible: map[string]string{}, totals: map[string]int64{}, overfilled: map[string]bool{}, conflicts: map[string]bool{}}
 }
 
 func (p *tradeProjection) conflict(reason string) {
-	if !oneOf(reason, p.report.Conflicts...) {
+	if !p.conflicts[reason] {
+		p.conflicts[reason] = true
 		p.report.Conflicts = append(p.report.Conflicts, reason)
 	}
 	p.report.Blocked = true
@@ -95,6 +104,11 @@ func terminal(status string) bool { return oneOf(status, "filled", "cancelled", 
 func (p *tradeProjection) order(row OrderRow) {
 	key := row.GatewayOrderID
 	old := p.report.Orders[key]
+	// A sparse order may acquire SysID, or an existing owner may become blocked.
+	p.dirtyAliases[p.alias(row.TradeRow)] = true
+	if old != nil {
+		p.dirtyAliases[p.alias(old.Order.TradeRow)] = true
+	}
 	if old == nil {
 		old = &OrderRecord{Order: row}
 		p.report.Orders[key] = old
@@ -177,11 +191,18 @@ func (p *tradeProjection) fill(id string, row FillRow) {
 	if r == nil {
 		r = &ExecutionRecord{Fill: row, GatewayHints: []string{}, FeeEvidence: []FeeEvidence{}, State: "pending"}
 		p.report.Executions[row.FillID] = r
+		alias := p.alias(row.TradeRow)
+		if p.groups[alias] == nil {
+			p.groups[alias] = map[string]*ExecutionRecord{}
+		}
+		p.groups[alias][row.FillID] = r
+		p.report.PendingCount++
 	} else {
 		a := r.Fill
 		if !economicsEqual(a.TradeRow, row.TradeRow) || p.alias(a.TradeRow) != p.alias(row.TradeRow) || a.Qty != row.Qty || !equalDecimal(string(a.Price), string(row.Price)) ||
 			(a.MatchedAt != nil && row.MatchedAt != nil && !equalInstant(*a.MatchedAt, *row.MatchedAt)) {
 			r.FactConflict = true
+			p.dirtyFills[row.FillID] = true
 			p.conflict("execution facts/source time conflict: " + row.FillID)
 			return
 		}
@@ -189,6 +210,7 @@ func (p *tradeProjection) fill(id string, row FillRow) {
 			r.Fill.MatchedAt = row.MatchedAt
 		}
 	}
+	p.dirtyFills[row.FillID] = true
 	if !oneOf(row.GatewayOrderID, r.GatewayHints...) {
 		r.GatewayHints = append(r.GatewayHints, row.GatewayOrderID)
 	}
@@ -196,51 +218,90 @@ func (p *tradeProjection) fill(id string, row FillRow) {
 }
 
 func (p *tradeProjection) reconcile() {
-	totals := map[string]int64{}
-	for _, r := range p.report.Executions {
-		r.LinkedGateway = ""
-		alias := p.alias(r.Fill.TradeRow)
-		if r.FactConflict || p.ambiguous[alias] {
-			r.State = "conflict"
-			continue
-		}
-		key, ok := p.aliases[alias]
-		if !ok {
-			r.State = "pending"
-			continue
-		}
-		order := p.report.Orders[key]
-		valid := !order.Blocked && economicsEqual(order.Order.TradeRow, r.Fill.TradeRow)
-		for _, hint := range r.GatewayHints {
-			valid = valid && (hint == key || hint == alias)
-		}
-		if !valid {
-			r.State = "conflict"
-			p.conflict("execution/order association conflict: " + r.Fill.FillID)
-			continue
-		}
-		r.State = "linked"
-		r.LinkedGateway = key
-		totals[key] += int64(r.Fill.Qty)
+	affected := map[string]map[string]*ExecutionRecord{}
+	for alias := range p.dirtyAliases {
+		affected[alias] = p.groups[alias]
 	}
-	for key, total := range totals {
-		if total <= int64(p.report.Orders[key].Order.OrderQty) {
+	for id := range p.dirtyFills {
+		r := p.report.Executions[id]
+		alias := p.alias(r.Fill.TradeRow)
+		if p.dirtyAliases[alias] {
 			continue
 		}
-		p.conflict("unique executions exceed order quantity: " + key)
-		for _, r := range p.report.Executions {
-			if r.LinkedGateway == key {
-				r.State = "conflict"
-				r.LinkedGateway = ""
+		if affected[alias] == nil {
+			affected[alias] = map[string]*ExecutionRecord{}
+		}
+		affected[alias][id] = r
+	}
+	for alias, records := range affected {
+		for id, r := range records {
+			p.reconcileExecution(alias, id, r)
+		}
+		key := p.aliases[alias]
+		over := key != "" && p.totals[alias] > int64(p.report.Orders[key].Order.OrderQty)
+		if over {
+			p.conflict("unique executions exceed order quantity: " + key)
+		}
+		// Revisit the whole group only when crossing the quantity boundary. Other
+		// fills remain stable, including the high-volume single-order case.
+		if over != p.overfilled[alias] {
+			records = p.groups[alias]
+		}
+		if over || p.overfilled[alias] {
+			for id, r := range records {
+				p.reconciledRecords++
+				if p.eligible[id] == "" {
+					continue
+				}
+				if over {
+					r.State = "conflict"
+					r.LinkedGateway = ""
+				} else {
+					r.State = "linked"
+					r.LinkedGateway = key
+				}
 			}
 		}
+		p.overfilled[alias] = over
 	}
-	p.report.PendingCount = 0
-	for _, r := range p.report.Executions {
-		if r.State == "pending" {
-			p.report.PendingCount++
-		}
-	}
+	clear(p.dirtyAliases)
+	clear(p.dirtyFills)
 	p.report.Blocked = p.report.PendingCount > 0 || len(p.report.Conflicts) > 0
 	sort.Strings(p.report.Conflicts)
+}
+
+func (p *tradeProjection) reconcileExecution(alias, id string, r *ExecutionRecord) {
+	p.reconciledRecords++
+	if r.State == "pending" {
+		p.report.PendingCount--
+	}
+	if p.eligible[id] != "" {
+		p.totals[alias] -= int64(r.Fill.Qty)
+		delete(p.eligible, id)
+	}
+	r.LinkedGateway = ""
+	if r.FactConflict || p.ambiguous[alias] {
+		r.State = "conflict"
+		return
+	}
+	key, ok := p.aliases[alias]
+	if !ok {
+		r.State = "pending"
+		p.report.PendingCount++
+		return
+	}
+	order := p.report.Orders[key]
+	valid := !order.Blocked && economicsEqual(order.Order.TradeRow, r.Fill.TradeRow)
+	for _, hint := range r.GatewayHints {
+		valid = valid && (hint == key || hint == alias)
+	}
+	if !valid {
+		r.State = "conflict"
+		p.conflict("execution/order association conflict: " + r.Fill.FillID)
+		return
+	}
+	r.State = "linked"
+	r.LinkedGateway = key
+	p.eligible[id] = key
+	p.totals[alias] += int64(r.Fill.Qty)
 }

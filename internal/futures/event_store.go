@@ -146,7 +146,7 @@ func (s *EventStore) Receive(ctx context.Context, key string, source QuerySource
 	if !errors.Is(err, sql.ErrNoRows) {
 		return EventReceipt{}, err
 	}
-	if scope.eventCount >= maxAuditCount || len(raw) > maxAuditBytes-scope.eventBytes {
+	if tradeCapacity(scope.eventCount, scope.eventBytes, 1, len(raw)) != nil {
 		return EventReceipt{}, ErrAuditCapacity
 	}
 	messageID := ""
@@ -259,20 +259,12 @@ func authorizeEvent(ctx context.Context, tx *sql.Tx, registered eventScope, even
 // Their payload must still match the same local order intention. No synthetic
 // origin is written back to either query audit or broker facts.
 func authorizeTradeIdentity(ctx context.Context, tx *sql.Tx, scope TradeScope, userID string, event TradeEvent, checkOrigin bool) (string, string, error) {
-	gateway := ""
-	if event.Order != nil {
-		gateway = event.Order.GatewayOrderID
-	} else {
-		gateway = event.Fill.GatewayOrderID
-	}
+	gateway := tradeEventGateway(event)
 	key := string(commandRouteBytes(scope.Route))
 	var commandID int64
 	err := tx.QueryRowContext(ctx, `SELECT command_id FROM futures_command_reservations WHERE route_key=$1 AND trade_date=$2 AND kind='gateway' AND identity=$3`, key, scope.TradeDate, gateway).Scan(&commandID)
 	if errors.Is(err, sql.ErrNoRows) {
-		if strings.HasPrefix(gateway, "external-ctp-v1-") && event.OriginMessageID == "" {
-			return "applied", "", nil
-		}
-		return "waiting_identity", "local submit identity not registered", nil
+		return authorizeResolvedTrade(scope, userID, event, checkOrigin, nil)
 	}
 	if err != nil {
 		return "", "", err
@@ -280,6 +272,24 @@ func authorizeTradeIdentity(ctx context.Context, tx *sql.Tx, scope TradeScope, u
 	original, err := readRegisteredCommand(ctx, tx, key, commandID)
 	if err != nil {
 		return "", "", err
+	}
+	return authorizeResolvedTrade(scope, userID, event, checkOrigin, &original)
+}
+
+func tradeEventGateway(event TradeEvent) string {
+	if event.Order != nil {
+		return event.Order.GatewayOrderID
+	}
+	return event.Fill.GatewayOrderID
+}
+
+func authorizeResolvedTrade(scope TradeScope, userID string, event TradeEvent, checkOrigin bool, original *CommandRegistration) (string, string, error) {
+	gateway := tradeEventGateway(event)
+	if original == nil {
+		if strings.HasPrefix(gateway, "external-ctp-v1-") && event.OriginMessageID == "" {
+			return "applied", "", nil
+		}
+		return "waiting_identity", "local submit identity not registered", nil
 	}
 	// Native row UserID is broker-origin audit, not the collector login identity.
 	if original.Scope != (CommandScope{scope.Route, scope.NativeBrokerID, scope.InvestorID, userID}) {

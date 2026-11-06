@@ -27,4 +27,4 @@ trap 'exit 143' TERM
 "${RUN[@]}" "$PG_BIN/pg_ctl" -D "$WORK/data" -l "$WORK/server.log" -o "-k $WORK/socket -h '' -p 15432" -w start
 cd "$ROOT"
 RELAY_FUTURES_TEST_DATABASE_URL="host=$WORK/socket port=15432 user=relay_ctp_test dbname=postgres sslmode=disable" \
-  go test -race ./internal/futures -count=1 -v
+  go test -race ./internal/futures -count=1 -v "$@"

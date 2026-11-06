@@ -232,6 +232,71 @@ type IngestResult struct {
 }
 
 func (s *QueryStore) Ingest(ctx context.Context, id string, source QuerySource, raw []byte, elapsed time.Duration) (IngestResult, error) {
+	out, err := s.ingestInputs(ctx, id, []QueryInput{{source, raw, elapsed}})
+	if err != nil {
+		return IngestResult{}, err
+	}
+	return out[0], nil
+}
+
+type QueryInput struct {
+	Source  QuerySource
+	Raw     []byte
+	Elapsed time.Duration
+}
+
+// IngestBatch commits an ordered input chunk atomically, replaying history once.
+// It need not contain the complete query. Only the last result can be Published;
+// earlier States describe assembly progress, not independently committed views.
+// On any storage/source error the entire chunk remains the caller's responsibility.
+func (s *QueryStore) IngestBatch(ctx context.Context, id string, inputs []QueryInput) ([]IngestResult, error) {
+	if len(inputs) == 0 || len(inputs) > 256 {
+		return nil, ErrAuditCapacity
+	}
+	size := 0
+	for _, input := range inputs {
+		if len(input.Raw) > maxSnapshotBytes-size {
+			return nil, ErrAuditCapacity
+		}
+		size += len(input.Raw)
+	}
+	return s.ingestInputs(ctx, id, inputs)
+}
+
+func (s *QueryStore) ingestInputs(ctx context.Context, id string, inputs []QueryInput) ([]IngestResult, error) {
+	tx, err := s.transaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	r, err := s.load(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if r.owner != s.owner || r.retired {
+		return nil, ErrBatchOwner
+	}
+	out := make([]IngestResult, 0, len(inputs))
+	for _, input := range inputs {
+		result, err := s.ingestInputTx(ctx, tx, r, input)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, result)
+	}
+	published, err := s.save(ctx, tx, r)
+	if err != nil {
+		return nil, err
+	}
+	out[len(out)-1].Published = published
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *QueryStore) ingestInputTx(ctx context.Context, tx *sql.Tx, r *storedBatch, input QueryInput) (IngestResult, error) {
+	id, source, raw, elapsed := r.id, input.Source, input.Raw, input.Elapsed
 	if !validID(source.StreamKey) || !validID(source.EntryID) || len(source.StreamKey) > 512 || len(source.EntryID) > 128 || elapsed < 0 {
 		return IngestResult{}, fmt.Errorf("invalid input source or elapsed time")
 	}
@@ -241,23 +306,11 @@ func (s *QueryStore) Ingest(ctx context.Context, id string, source QuerySource, 
 	if raw == nil {
 		raw = []byte{}
 	}
-	tx, err := s.transaction(ctx)
-	if err != nil {
-		return IngestResult{}, err
-	}
-	defer tx.Rollback()
-	r, err := s.load(ctx, tx, id)
-	if err != nil {
-		return IngestResult{}, err
-	}
-	if r.owner != s.owner || r.retired {
-		return IngestResult{}, ErrBatchOwner
-	}
 	if r.batch.context.Command != nil && (source.StreamKey != queryReplyStream(r.batch.context.Route) || !redisEntryPattern.MatchString(source.EntryID)) {
 		return IngestResult{}, fmt.Errorf("query source differs from bound reply stream")
 	}
 	var prior []byte
-	err = tx.QueryRowContext(ctx, `SELECT body FROM futures_query_observations
+	err := tx.QueryRowContext(ctx, `SELECT body FROM futures_query_observations
         WHERE batch_id=$1 AND stream_key=$2 AND entry_id=$3 ORDER BY observation_id LIMIT 1`, id, source.StreamKey, source.EntryID).Scan(&prior)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return IngestResult{}, err
@@ -303,13 +356,6 @@ func (s *QueryStore) Ingest(ctx context.Context, id string, source QuerySource, 
 		r.auditBytes += len(raw)
 	}
 	out.State = r.batch.state
-	out.Published, err = s.save(ctx, tx, r)
-	if err != nil {
-		return IngestResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return IngestResult{}, err
-	}
 	return out, nil
 }
 

@@ -48,10 +48,11 @@ func (s *QueryStore) ApplyTradeQuery(ctx context.Context, id string) (TradeQuery
 	if !errors.Is(err, sql.ErrNoRows) {
 		return TradeQueryApplication{}, err
 	}
-	if b.rowCount > maxAuditCount {
+	if b.rowCount > maxTradeQueryRows {
 		return TradeQueryApplication{}, ErrAuditCapacity
 	}
 	observations := make([]tradeObservation, 0, b.rowCount)
+	events := make([]TradeEvent, 0, b.rowCount)
 	kind := "order"
 	if b.context.Action == "fill.list.query" {
 		kind = "fill"
@@ -73,17 +74,16 @@ func (s *QueryStore) ApplyTradeQuery(ctx context.Context, id string) (TradeQuery
 					}
 					event.Fill = &row
 				}
-				state, reason, err := authorizeTradeIdentity(ctx, tx, b.context.tradeScope(), b.context.NativeUserID, event, false)
-				if err != nil {
-					return TradeQueryApplication{}, err
-				}
-				if state != "applied" {
-					return TradeQueryApplication{}, fmt.Errorf("query trade identity %s: %s", state, reason)
-				}
+				events = append(events, event)
 			}
 			source, _ := json.Marshal([]any{id, page, index})
 			digest := sha256.Sum256(source)
 			observations = append(observations, tradeObservation{"ctp-query:" + hex.EncodeToString(digest[:]), kind, raw})
+		}
+	}
+	if b.context.Command != nil {
+		if err := authorizeTradeQuery(ctx, tx, b.context, events); err != nil {
+			return TradeQueryApplication{}, err
 		}
 	}
 	if _, err := observeTradesTx(ctx, tx, b.context.tradeScope(), observations); err != nil {
@@ -97,6 +97,61 @@ func (s *QueryStore) ApplyTradeQuery(ctx context.Context, id string) (TradeQuery
 		return TradeQueryApplication{}, err
 	}
 	return result, nil
+}
+
+// Batch-local cache only: a new transaction rechecks registrations and hashes.
+// Missing local identities never become external merely because lookup is empty.
+func authorizeTradeQuery(ctx context.Context, tx *sql.Tx, c QueryContext, events []TradeEvent) error {
+	gateways := make([]string, 0, len(events))
+	seen := map[string]bool{}
+	for _, event := range events {
+		g := tradeEventGateway(event)
+		if !seen[g] {
+			gateways = append(gateways, g)
+			seen[g] = true
+		}
+	}
+	key := string(commandRouteBytes(c.Route))
+	rows, err := tx.QueryContext(ctx, `SELECT identity,command_id FROM futures_command_reservations WHERE route_key=$1 AND trade_date=$2 AND kind='gateway' AND identity=ANY($3::text[])`, key, c.TradeDate, gateways)
+	if err != nil {
+		return err
+	}
+	ids := map[string]int64{}
+	for rows.Next() {
+		var gateway string
+		var id int64
+		if err = rows.Scan(&gateway, &id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids[gateway] = id
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	commands := map[int64]*CommandRegistration{}
+	for _, id := range ids {
+		if commands[id] != nil {
+			continue
+		}
+		command, err := readRegisteredCommand(ctx, tx, key, id)
+		if err != nil {
+			return err
+		}
+		commands[id] = &command
+	}
+	for _, event := range events {
+		state, reason, err := authorizeResolvedTrade(c.tradeScope(), c.NativeUserID, event, false, commands[ids[tradeEventGateway(event)]])
+		if err != nil {
+			return err
+		}
+		if state != "applied" {
+			return fmt.Errorf("query trade identity %s: %s", state, reason)
+		}
+	}
+	return nil
 }
 
 // ListUnappliedTradeQueries supports restart between durable assembly and

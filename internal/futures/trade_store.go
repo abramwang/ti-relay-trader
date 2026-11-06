@@ -9,8 +9,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 )
+
+const maxTradeQueryRows = 10000
+const maxTradeAuditCount = 50000
+const maxTradeAuditBytes = 64 * 1024 * 1024
+const tradeInsertChunk = 256
+
+func tradeCapacity(count, size, addedCount, addedSize int) error {
+	if count < 0 || size < 0 || addedCount < 0 || addedSize < 0 || count > maxTradeAuditCount || size > maxTradeAuditBytes || addedCount > maxTradeAuditCount-count || addedSize > maxTradeAuditBytes-size {
+		return ErrAuditCapacity
+	}
+	return nil
+}
 
 // TradeStore stores caller-verified ROW evidence, not arbitrary envelopes/pages.
 // SourceID must identify the original stream/entry/row, not a gateway or TradeID.
@@ -68,7 +81,7 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 	if err := scope.validate(); err != nil {
 		return TradeIngestResult{}, err
 	}
-	if len(observations) > maxAuditCount {
+	if len(observations) > maxTradeAuditCount {
 		return TradeIngestResult{}, ErrAuditCapacity
 	}
 	for i, observation := range observations {
@@ -122,7 +135,7 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 		}
 		seenCount++
 		seenSize += len(prior)
-		if seenCount > maxAuditCount || seenSize > maxAuditBytes {
+		if tradeCapacity(seenCount, seenSize, 0, 0) != nil {
 			rows.Close()
 			return TradeIngestResult{}, ErrAuditCapacity
 		}
@@ -142,6 +155,7 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 		return TradeIngestResult{}, fmt.Errorf("trade evidence count mismatch")
 	}
 	allReplayed := len(observations) > 0
+	newRows := make([]pendingTradeObservation, 0, len(observations))
 	for _, observation := range observations {
 		sourceID, kind, raw := observation.sourceID, observation.kind, observation.raw
 		replayed, sourceConflict := false, false
@@ -156,24 +170,19 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 			continue
 		}
 		allReplayed = false
-		if count >= maxAuditCount || len(raw) > maxAuditBytes-size {
+		if tradeCapacity(count, size, 1, len(raw)) != nil {
 			return TradeIngestResult{}, ErrAuditCapacity
-		}
-		digest := sha256.Sum256(raw)
-		var id int64
-		err = tx.QueryRowContext(ctx, `INSERT INTO futures_trade_observations(scope_key,source_id,kind,body,body_sha256,source_conflict)
-            VALUES($1,$2,$3,$4,$5,$6) RETURNING observation_id`, key, sourceID, kind, raw, digest[:], sourceConflict).Scan(&id)
-		if err != nil {
-			return TradeIngestResult{}, err
 		}
 		count++
 		size += len(raw)
-		if sourceConflict {
-			p.conflict("source identity conflict: " + sourceID)
-		} else {
-			p.observe(strconv.FormatInt(id, 10), kind, raw)
-		}
+		newRows = append(newRows, pendingTradeObservation{tradeObservation: observation, conflict: sourceConflict})
 		priorBySource[sourceID] = append(priorBySource[sourceID], observation)
+	}
+	for start := 0; start < len(newRows); start += tradeInsertChunk {
+		end := min(start+tradeInsertChunk, len(newRows))
+		if err := insertTradeObservations(ctx, tx, key, newRows[start:end], p); err != nil {
+			return TradeIngestResult{}, err
+		}
 	}
 	p.reconcile()
 	orders, _ := json.Marshal(p.report.Orders)
@@ -203,6 +212,63 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 		return TradeIngestResult{}, err
 	}
 	return TradeIngestResult{Replayed: allReplayed, Blocked: p.report.Blocked || invalidApplication, PendingCount: p.report.PendingCount}, nil
+}
+
+type pendingTradeObservation struct {
+	tradeObservation
+	conflict bool
+}
+
+// Bound parameter batches avoid one network round trip per row. Ordinality
+// preserves the original journal order; generated IDs remain the audit identity.
+func insertTradeObservations(ctx context.Context, tx *sql.Tx, key string, items []pendingTradeObservation, p *tradeProjection) error {
+	sources, kinds := []string{}, []string{}
+	bodies, hashes := [][]byte{}, [][]byte{}
+	conflicts := []bool{}
+	for _, item := range items {
+		sum := sha256.Sum256(item.raw)
+		sources = append(sources, item.sourceID)
+		kinds = append(kinds, item.kind)
+		bodies = append(bodies, item.raw)
+		hashes = append(hashes, sum[:])
+		conflicts = append(conflicts, item.conflict)
+	}
+	rows, err := tx.QueryContext(ctx, `INSERT INTO futures_trade_observations(scope_key,source_id,kind,body,body_sha256,source_conflict)
+        SELECT $1,s,k,b,h,c FROM unnest($2::text[],$3::text[],$4::bytea[],$5::bytea[],$6::boolean[]) WITH ORDINALITY AS x(s,k,b,h,c,n) ORDER BY n
+        RETURNING observation_id,source_id,kind,body,source_conflict`, key, sources, kinds, bodies, hashes, conflicts)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type inserted struct {
+		id           int64
+		source, kind string
+		raw          []byte
+		conflict     bool
+	}
+	insertedRows := []inserted{}
+	for rows.Next() {
+		var row inserted
+		if err = rows.Scan(&row.id, &row.source, &row.kind, &row.raw, &row.conflict); err != nil {
+			return err
+		}
+		insertedRows = append(insertedRows, row)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if len(insertedRows) != len(items) {
+		return fmt.Errorf("incomplete trade audit insert")
+	}
+	sort.Slice(insertedRows, func(i, j int) bool { return insertedRows[i].id < insertedRows[j].id })
+	for _, row := range insertedRows {
+		if row.conflict {
+			p.conflict("source identity conflict: " + row.source)
+		} else {
+			p.observe(strconv.FormatInt(row.id, 10), row.kind, row.raw)
+		}
+	}
+	return nil
 }
 
 // Read exposes quality alongside facts. Blocked reports must never be presented

@@ -57,7 +57,7 @@ const (
 type BatchLimits struct{ Pages, Rows, Bytes int }
 
 func DefaultBatchLimits() BatchLimits {
-	return BatchLimits{Pages: 256, Rows: maxSnapshotRows, Bytes: maxSnapshotBytes}
+	return BatchLimits{Pages: 256, Rows: maxTradeQueryRows, Bytes: maxSnapshotBytes}
 }
 
 // SnapshotCandidate is a complete query result, NOT a publication/ACK permit.

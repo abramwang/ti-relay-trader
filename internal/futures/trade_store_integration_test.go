@@ -260,6 +260,7 @@ func TestTradeStoreMalformedAuditIntegrityAndDown(t *testing.T) {
 	if _, err := s.Observe(ctx, tradeScope(), "good", "fill", tradeFixture(t, "fill")); err == nil {
 		t.Fatal("corrupted audit ignored")
 	}
+	migrateFuturesTest(t, db, ctx, "000039_futures_trade_capacity", "down")
 	migrateFuturesTest(t, db, ctx, "000038_futures_command_bindings", "down")
 	migrateFuturesTest(t, db, ctx, "000037_futures_command_registry", "down")
 	eventDown, err := os.ReadFile("../../migrations/postgres/000036_futures_event_inbox.down.sql")
