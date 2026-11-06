@@ -11,6 +11,9 @@
 
 ## 当前状态
 
+11-06最新全量结果：129项Go（68项临时PG）/race、92项Python通过；大容量恢复测试仍纳入本轮回归。无真实柜台或业务Redis调用。
+
+- OC 11-06订单/成交交付：`oc_delivery_test.go/oc_delivery_integration_test.go`新增2项模型+1项PG测试（24个子场景），用包内27条实际原body验证严格解码、正逆序/重投、原生ID/夜盘源时间/未知费用、真实PG原字节持久/恢复、身份缺失后补登记及重复应用；定向race通过。`test_oc_trade_delivery.py`新增4项指纹/schema/失败语义/容量记录检查，Python全量92项通过。样例均合成，场景按独立命令空间隔离；OC C++执行、文件崩溃/SDK/Redis/ACK未验证，容量摘要不是原始分页输出。见`docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md`。
 - 期货完整查询容量：`trade_capacity_test.go/trade_capacity_integration_test.go`新增3项模型和4项临时PG测试，累计126项Go（67项PG）/race通过。10,000成交先到再10,000订单、恢复不重复入账、513行跨SQL块最后标记失败全回滚、批量来源错误/冲突不发布、迁移降级不丢证据；100x40步与原全扫描算法逐步对照，另验单订单10,000成交线性关联。迁移33..39只在临时库；88项Python通过。脚本支持追加Go测试参数，如`-run TestTradeCapacityTenThousandOrdersAndFills -race=false`，默认仍race全包。没有真实OC/Redis、ACK、生产迁移或吞吐SLA结论。
 - 期货命令与查询/事件接线：`query_command_test.go/query_command_integration_test.go`新增1项模型+12项临时PG测试，验证四类查询原命令/Stream绑定、关联ID缺失/错值、别名不能改origin或重采样、ticket/会话/原生身份不变、8路重复登记、链接失败回滚、完整/半页重启、查询事实身份等待及经济冲突、事件原关联/原生绑定、旧原型不自动升级和绑定损坏。累计119项Go（63项PG）/race、88项Python通过；测试schema统一应用33..38并验证down，未接真实OC/Redis/ACK，未部署生产。
 - 期货统一命令登记：`command_test.go/command_store_integration_test.go`新增5项模型及13项临时PG测试，包括12份OC字段/字节/48指纹、跨日重试、七动作同域冲突、原生用户漂移、价格尾零/批量顺序、映射不变、16路同意图与8路冲突并发、别名原关联、原子审计回滚、限额/损坏及up/down。累计106项Go（51项PG）/race、88项Python通过；迁移000037仅临时库执行，未接EventStore/QueryStore、outbox或ACK。

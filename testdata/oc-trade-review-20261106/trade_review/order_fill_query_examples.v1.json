@@ -1,0 +1,90 @@
+{
+  "cases": [
+    {
+      "name": "fill_first_pending",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":10,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"110\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"persisted_fill_association_pending\",\"message_id\":\"ctp-query-v1-1efbda97bc89ffd839e83b6d17500358e69e1de96bc1c2f4bc05b7714f778d10\",\"message_type\":\"reply\",\"origin_message_id\":\"query-110\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-110\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "empty_query_cannot_hide_pending",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":11,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"111\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"persisted_fill_association_pending\",\"message_id\":\"ctp-query-v1-de34870da5a1bdf5e46c65d89809c9a0a5b41b0200031411e2485734b654670f\",\"message_type\":\"reply\",\"origin_message_id\":\"query-111\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-111\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "order_after_restart",
+      "raw_bodies": [
+        "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"sdk_request_id\":12,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"112\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"ctp-query-v1-b22e13095ab91e387caf4f5fdb8a6316d3356a1d9442440beea077105f79dfdc\",\"message_type\":\"reply\",\"origin_message_id\":\"query-112\",\"payload\":{\"items\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"captured_at\":\"2026-11-05T09:01:00+08:00\",\"client_order_id\":\"fixture-client\",\"counter_session_id\":\"ctpproc-restart-fixture\",\"cum_filled_qty\":4,\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"gateway_status\":\"working\",\"hedge_type\":\"speculation\",\"leaves_qty\":6,\"limit_price\":\"3600\",\"native_ids\":{\"broker_id\":\"9999\",\"front_id\":7,\"investor_id\":\"FIXTURE_INV\",\"order_ref\":\"000001\",\"order_sys_id\":\"00001234\",\"sdk_request_id\":11,\"session_id\":9,\"user_id\":\"FIXTURE_USER\"},\"offset_type\":\"O\",\"order_qty\":10,\"submitted_at\":\"2026-11-04T21:01:00+08:00\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-112\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}"
+      ],
+      "successful": true
+    },
+    {
+      "name": "fill_after_restart",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"sdk_request_id\":13,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"113\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"ctp-query-v1-b79124c9674bca48aef3f4a4ea3113a03f6e057e756fb2501fe511fc470d700a\",\"message_type\":\"reply\",\"origin_message_id\":\"query-113\",\"payload\":{\"items\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"captured_at\":\"2026-11-05T09:01:01+08:00\",\"client_order_id\":\"fixture-client\",\"counter_session_id\":\"ctpproc-restart-fixture\",\"exchange\":\"SHFE\",\"fee\":null,\"fee_complete\":false,\"fill_id\":\"ctp-fill-v1-c79f64c48b57da24cdcc5e0ae7e414bb99f4fcebb966aed47f5f6c8a4e240872\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"matched_at\":\"2026-11-04T21:01:02+08:00\",\"native_ids\":{\"broker_id\":\"9999\",\"investor_id\":\"FIXTURE_INV\",\"order_ref\":\"000001\",\"order_sys_id\":\"00001234\",\"trade_id\":\"000005678\",\"user_id\":\"FIXTURE_USER\"},\"offset_type\":\"O\",\"price\":\"3599.2\",\"qty\":4,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-113\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}"
+      ],
+      "successful": true
+    },
+    {
+      "name": "duplicate_fill_rows_rejected",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":14,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"114\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"duplicate_business_key\",\"message_id\":\"ctp-query-v1-e323a828537280e3181b7ee088d336d434b542156872fc528967aca31d39112d\",\"message_type\":\"reply\",\"origin_message_id\":\"query-114\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-114\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "unknown_order_state_retained",
+      "raw_bodies": [
+        "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":15,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"115\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"unsupported_order_state\",\"message_id\":\"ctp-query-v1-059e2ed391f70eb7f69553d115accd03b0f247995312751904fb7fc4a5d5f3ae\",\"message_type\":\"reply\",\"origin_message_id\":\"query-115\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-115\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "cancelled_remainder",
+      "raw_bodies": [
+        "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"sdk_request_id\":16,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"116\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"ctp-query-v1-dbeed5e708a266a92446cbef38926ccd7457e15496a0a946a084d8507cf683c6\",\"message_type\":\"reply\",\"origin_message_id\":\"query-116\",\"payload\":{\"items\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"captured_at\":\"2026-11-05T09:01:00+08:00\",\"client_order_id\":\"fixture-client\",\"counter_session_id\":\"ctpproc-restart-fixture\",\"cum_filled_qty\":4,\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"gateway_status\":\"cancelled\",\"hedge_type\":\"speculation\",\"leaves_qty\":6,\"limit_price\":\"3600\",\"native_ids\":{\"broker_id\":\"9999\",\"front_id\":7,\"investor_id\":\"FIXTURE_INV\",\"order_ref\":\"000001\",\"order_sys_id\":\"00001234\",\"sdk_request_id\":11,\"session_id\":9,\"user_id\":\"FIXTURE_USER\"},\"offset_type\":\"O\",\"order_qty\":10,\"submitted_at\":\"2026-11-04T21:01:00+08:00\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-116\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}"
+      ],
+      "successful": true
+    },
+    {
+      "name": "same_fill_conflict",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":19,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"119\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"persisted_fill_conflict\",\"message_id\":\"ctp-query-v1-4390bdd0b6c70e0f9a9be2895615f449be5b1a36eb38f99212d6cc77992ed3f9\",\"message_type\":\"reply\",\"origin_message_id\":\"query-119\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-119\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "unknown_is_not_external",
+      "raw_bodies": [
+        "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":20,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"120\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"order_association_pending\",\"message_id\":\"ctp-query-v1-8fc16395e129f05decdbec2e4c54872fb254c12b796dcdbff34234df1a44cfe8\",\"message_type\":\"reply\",\"origin_message_id\":\"query-120\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-120\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    },
+    {
+      "name": "verified_external_order",
+      "raw_bodies": [
+        "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"sdk_request_id\":21,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"121\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"ctp-query-v1-19adfe14b589ee17dff6ec1e6433fc3c7cbba7f1be1ba81506d54a0937fc97a9\",\"message_type\":\"reply\",\"origin_message_id\":\"query-121\",\"payload\":{\"items\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"captured_at\":\"2026-11-05T09:01:00+08:00\",\"counter_session_id\":\"ctpproc-restart-fixture\",\"cum_filled_qty\":4,\"exchange\":\"SHFE\",\"gateway_order_id\":\"external-ctp-v1-a4edb22298e1fa5a8be9e52608cb568281261169c1c4d57ecf2344bbee7a662c\",\"gateway_status\":\"working\",\"hedge_type\":\"speculation\",\"leaves_qty\":6,\"limit_price\":\"3600\",\"native_ids\":{\"broker_id\":\"9999\",\"front_id\":7,\"investor_id\":\"FIXTURE_INV\",\"order_ref\":\"000001\",\"order_sys_id\":\"00001234\",\"sdk_request_id\":11,\"session_id\":9,\"user_id\":\"FIXTURE_USER\"},\"offset_type\":\"O\",\"order_qty\":10,\"submitted_at\":\"2026-11-04T21:01:00+08:00\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-121\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}"
+      ],
+      "successful": true
+    },
+    {
+      "name": "verified_external_fill",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"sdk_request_id\":22,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"122\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"ctp-query-v1-3044623cddc1f3b35f08fb672570bd9427e70dc3a5a50b4b283230cbb02b9132\",\"message_type\":\"reply\",\"origin_message_id\":\"query-122\",\"payload\":{\"items\":[{\"account_id\":\"990000000001\",\"business_type\":\"F\",\"captured_at\":\"2026-11-05T09:01:01+08:00\",\"counter_session_id\":\"ctpproc-restart-fixture\",\"exchange\":\"SHFE\",\"fee\":null,\"fee_complete\":false,\"fill_id\":\"ctp-fill-v1-c79f64c48b57da24cdcc5e0ae7e414bb99f4fcebb966aed47f5f6c8a4e240872\",\"gateway_order_id\":\"external-ctp-v1-a4edb22298e1fa5a8be9e52608cb568281261169c1c4d57ecf2344bbee7a662c\",\"hedge_type\":\"speculation\",\"matched_at\":\"2026-11-04T21:01:02+08:00\",\"native_ids\":{\"broker_id\":\"9999\",\"investor_id\":\"FIXTURE_INV\",\"order_ref\":\"000001\",\"order_sys_id\":\"00001234\",\"trade_id\":\"000005678\",\"user_id\":\"FIXTURE_USER\"},\"offset_type\":\"O\",\"price\":\"3599.2\",\"qty\":4,\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-122\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}"
+      ],
+      "successful": true
+    },
+    {
+      "name": "missing_id_raw_evidence_retained",
+      "raw_bodies": [
+        "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":2,\"counter_session_id\":\"ctpproc-restart-fixture\",\"failure_stage\":\"standard_projection\",\"sdk_request_id\":23,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"123\"},\"standard_validation\":{\"raw_completed\":true}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message\":\"missing_source_field\",\"message_id\":\"ctp-query-v1-5fe5b78e7eaa35542c337c5231dba2c8b22f1563518ea420bca0cb8a7b133b16\",\"message_type\":\"reply\",\"origin_message_id\":\"query-123\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261105\"},\"produced_at\":\"2026-11-06T09:00:00+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"request-123\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}"
+      ],
+      "successful": false
+    }
+  ],
+  "synthetic_only": true,
+  "version": "oc.ctp.trade.identity.candidate.v1"
+}
