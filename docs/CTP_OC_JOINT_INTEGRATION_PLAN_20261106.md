@@ -4,7 +4,7 @@
 
 ## 本轮进度
 
-最新收到 OC `0759873` TEST Redis 传输/恢复交付：报告 27 项 CTest、20 个崩溃窗口及 17 个安全/查询重投场景通过，SDK 全部为模拟，主程序仍未开放在线。见 [复核与下一步](OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md)。说明与现有协议无冲突，可继续运行时接线；`redis_review` 原 JSON/日志/指纹尚待提供，暂不标 Relay 独立验收。ACK 成功但本地确认丢失的窗口仍为 `OC_ACK_UNCERTAIN` 保守阻断，不冒称自动闭环。
+11-07已复核OC `0759873`的`testdata/redis_review`：8项指纹（正文按既有归档补齐相对路径）、三组37场景记录、27项CTest/2项sanitizer日志一致；原查询页0,1,1,2通过Relay解码和临时PG恢复，见 [复核与下一步](OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md)。不是重跑OC测试或在线验收，SDK全为模拟、主程序仍未在线。安全场景仅含错误摘要，跨日别名缺逐输入原文；原样例输入流按虚构账户命名、未附输出物理键，两端联合测试须对齐规范gateway路由。ACK成功但本地确认丢失仍为`OC_ACK_UNCERTAIN`保守阻断，无新wire需求。
 
 用户已将计划反馈OC，并追加授权直接使用现有TEST Redis开发。Relay已在随机CTP开发键上完成真实Redis8.2.2与临时PG的定向恢复验证，并修复重复body被普通Stream map解析覆盖的问题，详见 [实现与证据边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。阶段1的可信会话/分发、统一准入及资源控制尚未完成；不宣称OC只读链路已可用。下表中“隔离Redis”现在包含共享TEST Redis上的独立开发键，不授权重启共享服务或操作账户业务Stream。
 
@@ -36,7 +36,7 @@
 沿用 [订单/成交交付复核](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)，不重复原则回签，不要求源码或二进制交换：
 
 1. 当前实现版本、TEST主程序能否进入运行态、支持的命令与未完成项。已有离线通过不替代在线入口可用。
-2. 已收到真实Redis+模拟SDK的九窗和附加场景摘要，不要求重做或重复原则回签；补`redis_review`原JSON/CTest日志/SHA256SUMS供离线核对即可。真实SDK及两端联合消费仍待，不把`OC_ACK_UNCERTAIN`窗口标为自动恢复成功。未知报撤不自动重试。
+2. `redis_review`原JSON/日志/指纹已核对，原分页输出已通过Relay临时PG复验，不再索要相同材料或重复原则回签。下一轮联合证据附规范输入/输出Stream键；安全拒绝及跨日别名可补逐输入原文/ID/日期和SDK/PEL前后轨迹。真实SDK及两端联合消费仍待，不把`OC_ACK_UNCERTAIN`窗口标为自动恢复成功。未知报撤不自动重试。
 3. 运行时身份恢复、外部来源依据及待关联释放的原JSON和实际测试证据；缺失的容量原body/CTest日志可随同交付，不阻塞独立开发。
 4. 获授权联调时，确认CTP独立TEST环境、逻辑账户/BrokerID/UserID/InvestorID关系、路由、Redis版本与ACL、前置和凭据部署状态、可用窗口。凭据只进入受限配置，不进入本文或Git；不根据华鑫账号推断CTP身份。
 

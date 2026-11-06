@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07 OC Redis材料复验：`test_oc_redis_delivery.py`新增5项检查，核对清单8项SHA、三套37场景记录、原body指纹/重投及CTest日志；`oc_redis_delivery*_test.go`新增2项Go测试，三套原查询页0,1,1,2正逆序组装及临时PG保留4条审计/1份3行快照/恢复不重复发布。97项Python全量、`TestOCReceived|TestOCRedisReceived`共5项Go/race（7.748秒、无跳过）和vet通过。原物理输出键未提供，PG使用显式规范来源前提；不是OC程序或真实Redis联合消费验收。无需Redis环境变量，详见`docs/OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md`；本轮未重跑下方169项全量容量测试。
+
 CTP TEST消费循环增量：`test_consumer_test.go/test_consumer_integration_test.go`新增2项模型及7项临时PG测试，其中4项使用真实TEST Redis开发键。覆盖固定来源/凭据轮换/端点漂移、完整循环、取消/连接关闭/owner接管停止、无输入超时和退避、窗口与上下文门禁、完成历史保留及退休事务失败回滚。沿用下方隔离Redis环境变量，以`-run 'TestTest|TestQueryRetire' -timeout 3m`定向执行；不发OC命令，不证明真实心跳、来源认证或交易许可。完整回归日志为`.runtime/ctp-test-consumer-regression.log`。
 
 交易终端资产回归覆盖盘前 Meridian Level1 尚无最新价的两条路径：快照已有 `pre_close` 时直接估值，快照整体未出现时只对缺失证券回退上一交易日未复权日线收盘，防止总资产退化为纯现金。

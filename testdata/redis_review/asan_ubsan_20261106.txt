@@ -1,0 +1,11 @@
+[HANDLER_OUTPUT] 
+Test project /home/Titian_Cpp/oceanus/src/oc_trader_commander_ctp/build/query-review-sanitize
+
+    Start 1: ctp_redis_decode_test
+1/2 Test #1: ctp_redis_decode_test ............   Passed    0.02 sec
+    Start 2: ctp_command_journal_test
+2/2 Test #2: ctp_command_journal_test .........   Passed    0.33 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.34 sec
