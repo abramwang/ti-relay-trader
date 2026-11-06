@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
-| 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
+| 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
+| 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`，但 OC `HEARTBEAT_MISSING`、报单准入关闭。本轮不主动报撤单，CTP 未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-06 Asia/Shanghai` XREAD持久收件、原子位点、接管隔离及查询/事件交接（000040）已实现；全量141项Go（77项临时PG）/race、92项Python通过。Redis仅客户端替身验证，未接常驻进程/生产；下一步真实隔离Redis恢复、可信分发及统一质量门禁。OC继续dispatch/outbox/命令ACK，F0未冻结 |
+| 最近确认 | `2026-11-06 21:12 Asia/Shanghai` 测试切换成功，独立测试库迁移32-40完成，基础依赖健康，OC缺心跳导致degraded；CTP仍仅隔离组件，真实Redis恢复/可信分发/统一质量门禁待做，见联调计划。生产库/配置未改，生产定时任务未改；下次生产任务前需用户指令切回 |
 | 更新时间 | `2026-11-06` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-06 21:12 Asia/Shanghai` 用户授权切到TEST：已核对测试/生产数据库名称和Redis端点不同，标准脚本重启9092成功；测试API/内嵌worker健康，4条业务Stream lag=0、待处理DLQ=0，但华鑫OC缺心跳，不能据此宣布柜台可用。现有TEST交易配置未改，未主动查询柜台或报撤单。测试库迁移32-40不等于CTP运行接入。[OC联合联调计划](docs/CTP_OC_JOINT_INTEGRATION_PLAN_20261106.md)明确先隔离恢复，再获授权只读，最后受控交易；下一步Relay补真实隔离Redis验证和可信接线，OC继续dispatch/outbox/ACK。生产实时消费暂停，cron保持原配置，恢复生产必须等用户新指令。
 
 - `2026-11-06` 新增`StreamStore/ReadOnce`及000040：原body/待处理责任/位点原子落库，显式接管隔离旧writer，按已登记目标原子移交query/event；未知身份不造单，坏报文保留，旧查询半页不复活。新增3项模型+9项临时PG/race通过，详见 [恢复与运行边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。当前Redis只用客户端替身，无实际Redis服务端测试或常驻进程；接收原文预算是每Stream累计50,000条/64MiB，不每日清空，保留/统一质量门禁未完。下一步真实隔离Redis恢复与可信分发/扫描调度，不上线生产。OC上一轮27条原body已验收，见 [回执](docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)，继续其dispatch/outbox/命令ACK；Relay沿用XREAD，不创建消费组/XACK。无部署、生产迁移、柜台/业务Redis调用或环境/权限变化，用户CSV/附件未改。
 
