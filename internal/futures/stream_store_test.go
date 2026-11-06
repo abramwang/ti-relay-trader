@@ -26,7 +26,7 @@ func TestStreamIDNumericAndCanonical(t *testing.T) {
 
 func TestStreamReadEnvelopeIsLosslessAndBounded(t *testing.T) {
 	raw := []byte{0xff, 0, '{'}
-	streams := []redis.XStream{{Stream: "configured", Messages: []redis.XMessage{{ID: "10-0", Values: map[string]any{"body": raw}}, {ID: "10-1", Values: map[string]any{"body": "not JSON"}}}}}
+	streams := []any{[]any{"configured", []any{[]any{"10-0", []any{"body", raw}}, []any{"10-1", []any{"body", "not JSON"}}}}}
 	out, err := decodeStreamRead("configured", "9-99", 2, streams)
 	if err != nil || len(out) != 2 || !bytes.Equal(out[0].Raw, raw) {
 		t.Fatal(out, err)
@@ -38,17 +38,50 @@ func TestStreamReadEnvelopeIsLosslessAndBounded(t *testing.T) {
 	for _, bad := range []struct {
 		key, cursor string
 		limit       int
-		rows        []redis.XStream
+		rows        any
 	}{
 		{"wrong", "0-0", 2, streams}, {"configured", "10-0", 2, streams}, {"configured", "0-0", 1, streams},
 		{"configured", "0-0", 2, append(streams, streams...)},
-		{"configured", "0-0", 2, []redis.XStream{{Stream: "configured", Messages: []redis.XMessage{{ID: "1-0", Values: map[string]any{"other": "data"}}}}}},
-		{"configured", "0-0", 2, []redis.XStream{{Stream: "configured", Messages: []redis.XMessage{{ID: "1-0", Values: map[string]any{"body": 42}}}}}},
-		{"configured", "0-0", 2, []redis.XStream{{Stream: "configured", Messages: []redis.XMessage{{ID: "1-0", Values: map[string]any{"body": "", "extra": "data"}}}}}},
-		{"configured", "0-0", 2, []redis.XStream{{Stream: "configured", Messages: []redis.XMessage{{ID: "1-0", Values: map[string]any{"body": strings.Repeat("x", maxSnapshotBytes+1)}}}}}},
+		{"configured", "0-0", 2, []any{[]any{"configured", []any{[]any{"1-0", []any{"other", "data"}}}}}},
+		{"configured", "0-0", 2, []any{[]any{"configured", []any{[]any{"1-0", []any{"body", 42}}}}}},
+		{"configured", "0-0", 2, []any{[]any{"configured", []any{[]any{"1-0", []any{"body", "", "extra", "data"}}}}}},
+		{"configured", "0-0", 2, []any{[]any{"configured", []any{[]any{"1-0", []any{"body", strings.Repeat("x", maxSnapshotBytes+1)}}}}}},
 	} {
 		if _, err := decodeStreamRead(bad.key, bad.cursor, bad.limit, bad.rows); err == nil {
 			t.Fatal("invalid read accepted")
+		}
+	}
+}
+
+func TestStreamRawReplyRejectsDuplicateFieldsAndInvalidStructure(t *testing.T) {
+	for _, response := range []any{
+		42, []any{}, map[any]any{"configured": []any{}},
+		[]any{nil}, []any{[]any{"configured"}},
+		[]any{[]any{"configured", 42}}, []any{[]any{"configured", []any{}}},
+		[]any{[]any{"configured", []any{nil}}},
+		[]any{[]any{"configured", []any{[]any{1, []any{"body", "a"}}}}},
+		[]any{[]any{"configured", []any{[]any{"1-0", map[string]any{"body": "a"}}}}},
+		[]any{[]any{"configured", []any{[]any{"1-0", []any{"body", "a", "body", "a"}}}}},
+		[]any{[]any{"configured", []any{[]any{"1-0", []any{"body", "a", "body", "b"}}}}},
+	} {
+		if _, err := decodeStreamRead("configured", "0-0", 10, response); err == nil {
+			t.Fatalf("ambiguous structure accepted: %T", response)
+		}
+	}
+	if out, err := decodeStreamRead("configured", "0-0", 10, nil); err != nil || len(out) != 0 {
+		t.Fatal(out, err)
+	}
+}
+
+func TestStreamRedisReaderRequiresRESP2(t *testing.T) {
+	if _, err := NewRedisStreamReader(nil); err == nil {
+		t.Fatal("nil client accepted")
+	}
+	for _, protocol := range []int{2, 3} {
+		client := redis.NewClient(&redis.Options{Addr: "unused.invalid:0", Protocol: protocol})
+		defer client.Close()
+		if _, err := NewRedisStreamReader(client); (err == nil) != (protocol == 2) {
+			t.Fatal(protocol, err)
 		}
 	}
 }

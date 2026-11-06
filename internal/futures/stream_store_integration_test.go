@@ -359,13 +359,26 @@ func (f *fakeStreamReader) XInfoStream(ctx context.Context, key string) *redis.X
 	}
 	return c
 }
-func (f *fakeStreamReader) XRead(ctx context.Context, a *redis.XReadArgs) *redis.XStreamSliceCmd {
+func (f *fakeStreamReader) ReadStream(ctx context.Context, key, cursor string, limit int) (any, error) {
 	if f.read != nil {
-		f.read(a)
+		f.read(&redis.XReadArgs{Streams: []string{key, cursor}, Count: int64(limit), Block: -1})
 	}
-	c := redis.NewXStreamSliceCmd(ctx)
-	c.SetVal(f.rows)
-	return c
+	if len(f.rows) == 0 {
+		return nil, redis.Nil
+	}
+	var result []any
+	for _, stream := range f.rows {
+		var entries []any
+		for _, message := range stream.Messages {
+			var fields []any
+			for key, value := range message.Values {
+				fields = append(fields, key, value)
+			}
+			entries = append(entries, []any{message.ID, fields})
+		}
+		result = append(result, []any{stream.Stream, entries})
+	}
+	return result, nil
 }
 
 func TestStreamReadOnceFencesInFlightAndLoss(t *testing.T) {

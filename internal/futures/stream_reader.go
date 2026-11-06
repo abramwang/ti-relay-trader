@@ -11,8 +11,33 @@ import (
 
 // Intentionally no XACK/XGROUP/XADD or command publishing capability.
 type StreamReadClient interface {
-	XRead(context.Context, *redis.XReadArgs) *redis.XStreamSliceCmd
+	ReadStream(context.Context, string, string, int) (any, error)
 	XInfoStream(context.Context, string) *redis.XInfoStreamCmd
+}
+
+// RedisStreamReader keeps RESP2 field arrays until validation. The standard
+// XRead decoder collapses duplicate field names into a map before we see them.
+type RedisStreamReader struct{ client *redis.Client }
+
+func NewRedisStreamReader(client *redis.Client) (*RedisStreamReader, error) {
+	if client == nil || client.Options().Protocol != 2 {
+		return nil, fmt.Errorf("futures reader requires a dedicated RESP2 client")
+	}
+	return &RedisStreamReader{client: client}, nil
+}
+
+func (r *RedisStreamReader) XInfoStream(ctx context.Context, key string) *redis.XInfoStreamCmd {
+	return r.client.XInfoStream(ctx, key)
+}
+
+func (r *RedisStreamReader) ReadStream(ctx context.Context, key, cursor string, limit int) (any, error) {
+	if limit < 1 || limit > 256 {
+		return nil, ErrAuditCapacity
+	}
+	if _, err := streamID(cursor); err != nil {
+		return nil, err
+	}
+	return r.client.Do(ctx, "XREAD", "COUNT", limit, "STREAMS", key, cursor).Result()
 }
 
 var ErrStreamHistory = errors.New("futures stream history continuity not established")
@@ -66,7 +91,7 @@ func (s *StreamStore) ReadOnce(ctx context.Context, h StreamHandle, client Strea
 	if err = checkStreamHistory(before, cursor); err != nil {
 		return StreamCapture{}, err
 	}
-	streams, err := client.XRead(ctx, &redis.XReadArgs{Streams: []string{h.stream, cursor}, Count: int64(limit), Block: -1}).Result()
+	streams, err := client.ReadStream(ctx, h.stream, cursor, limit)
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return StreamCapture{}, err
 	}
@@ -105,26 +130,44 @@ func (s *StreamStore) ReadOnce(ctx context.Context, h StreamHandle, client Strea
 	return s.Capture(ctx, h, cursor, inputs)
 }
 
-func decodeStreamRead(key, cursor string, limit int, streams []redis.XStream) ([]StreamInput, error) {
+func decodeStreamRead(key, cursor string, limit int, response any) ([]StreamInput, error) {
 	inputs := []StreamInput{}
-	if len(streams) == 0 {
+	if response == nil {
 		return inputs, nil
 	}
-	if len(streams) != 1 || streams[0].Stream != key || len(streams[0].Messages) > limit {
+	streams, ok := response.([]any)
+	if !ok || len(streams) != 1 {
+		return nil, ErrStreamIdentity
+	}
+	stream, ok := streams[0].([]any)
+	if !ok || len(stream) != 2 || stream[0] != key {
+		return nil, ErrStreamIdentity
+	}
+	messages, ok := stream[1].([]any)
+	if !ok || len(messages) == 0 || len(messages) > limit {
 		return nil, ErrStreamIdentity
 	}
 	total := 0
 	last := cursor
-	for _, message := range streams[0].Messages {
-		cmp, err := compareStreamID(message.ID, last)
+	for _, entry := range messages {
+		message, ok := entry.([]any)
+		if !ok || len(message) != 2 {
+			return nil, ErrStreamIdentity
+		}
+		id, ok := message[0].(string)
+		if !ok {
+			return nil, ErrStreamIdentity
+		}
+		cmp, err := compareStreamID(id, last)
 		if err != nil || cmp <= 0 {
 			return nil, ErrStreamCursor
 		}
-		if len(message.Values) != 1 {
+		fields, ok := message[1].([]any)
+		if !ok || len(fields) != 2 || fields[0] != "body" {
 			return nil, fmt.Errorf("expected sole Redis body field; input not committed")
 		}
 		var raw []byte
-		switch v := message.Values["body"].(type) {
+		switch v := fields[1].(type) {
 		case string:
 			raw = []byte(v)
 		case []byte:
@@ -136,8 +179,8 @@ func decodeStreamRead(key, cursor string, limit int, streams []redis.XStream) ([
 			return nil, ErrAuditCapacity
 		}
 		total += len(raw)
-		inputs = append(inputs, StreamInput{message.ID, raw})
-		last = message.ID
+		inputs = append(inputs, StreamInput{id, raw})
+		last = id
 	}
 	return inputs, nil
 }
