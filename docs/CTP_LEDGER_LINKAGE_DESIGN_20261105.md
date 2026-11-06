@@ -1,10 +1,31 @@
 # CTP 成交关联与隔离账本设计
 
-日期：2026-11-05，更新至2026-11-06，Asia/Shanghai。状态：契约尚未冻结，CTP未接入运行服务；环境切换时TEST库已迁移至40版，生产未执行期货迁移。以下按增量保留实现及验收边界。
+日期：2026-11-05，更新至2026-11-07，Asia/Shanghai。状态：契约尚未冻结，CTP未接入运行服务；环境切换时TEST库已迁移至40版，生产未执行期货迁移。以下按增量保留实现及验收边界。
 
 11-06增量：见 [OC完整命令/意图/有限分页复核](OC_CTP_COMMAND_REVIEW_20261106.md)。12组意图字节已独立复验；单笔/批量报单解码限制改为64KiB、128字节逻辑ID、100子项，取代下文11-05阶段的8MiB/512字节报单保护，入站事件审计不收紧。统一命令已连接数据库层查询/事件身份门禁如下，Redis消费整合尚待。
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
+
+### 11-07 心跳解码与 TEST 会话失效保护
+
+新增`heartbeat.go/test_session.go`，只接既有`messages.json/heartbeat_read_only`的draft.2字段，不修改共享JSON、wire、Meridian或华鑫逻辑。**这是内部消费保护接线，不是实际OC心跳订阅或在线准入验收。**
+
+- `DecodeHeartbeat`复用严格JSON解析，限制64KiB，拒绝重复成员、未知标准字段、缺值/null/字符串布尔、错误来源路由、无时区或非东八区时间。原body独立复制，保留源produced_at与trade_date，夜盘不按接收日期改交易日；adapter_context对象作为审计扩展，不解释其中未知字段。
+- `TestSessionGuard`固定TEST源配置、完整路由/原生身份前提、交易日、counter_session_id及调用方独立提供的连接代次。心跳只校验已有会话/日期，不学习新身份。默认本地MaxAge=30秒、允许未来偏差2秒；这是Relay TEST策略，非OC租约字段或已确认的心跳频率SLA。原最长5分钟运行窗口不变。
+- 已接收消息的produced_at决定剩余有效期，不以重复收到时间刷新。相同entry同原文、相同message同原文换entry均不续期；entry回退/同号异体、message同号异体、新message源时钟不前进、陈旧或过度超前的时间均关闭当前guard。有效小幅未来时间最多给予一份本地MaxAge，不额外延长；真实接收时使用本机单调时钟保存期限。单guard最多512个不同message，超限停止，不驱逐旧身份后继续。
+- 源/会话/交易日变化、redis_ready或broker_ready变false、格式异常、过期或显式Revoke会锁存停止；后续新鲜心跳不能复活原guard。恢复须由调用方重新核实上下文、建立新guard和新查询；不会自动换日、接管或重发。初始化缺心跳保持不可用，不等待第一条回报建立身份。
+- settlement_confirmed、order_snapshot_ready、accepting_trade_commands、accepting_cancel_commands均严格解码并保留，但不是只读消费的必要条件；接收与落库不因报单关闭而停。guard通过只说明本地观察仍有效，绝不是登录、确认结算、发送查询或报撤的授权。
+- `TestConsumer.RunGuarded`校验guard与消费者完整上下文一致，每轮前后检查失效；一个可结束的watcher按剩余期限唤醒，源撤销/过期通过context取消等待和当前step，返回原因而不是吞成泛化错误。退出复用Retire清理，完整历史仍保留，半页中断，最终报告Blocked。watcher退出被等待，不留下后台协程；原Run保留为无心跳的隔离fixture入口，两者均未接运行服务。
+
+边界不能省略：共享heartbeat**没有connection_generation或native登录身份**。构造绑定校验并不能证明其当前真实值；同进程重连且未观察到断开时，不能仅凭相同counter_session_id发现代次变化。后续须结合OC实际运行时/查询证据完成门禁，不能单方新增字段、猜常数或直接上线。
+
+本轮没有heartbeat Redis读取、持久原文收件或跨进程恢复。调用方接入时须先固定来源并保存原文、按约定序列处理失效事件，不能只取最新一条而漏掉中间断开；这不是允许新增一个未经审核的轮询通道。guard是内存状态，重启从缺心跳开始，不恢复旧租约。context取消不撤销已经提交的事实事务，也不是跨Redis/PG的原子会话fence；检查后还可能到达新事实，回调须及时返回、不能作为交易许可。
+
+新增9项模型/并发/计时测试及2项临时PG+真实TEST Redis开发键测试：原共享样例、严格字段、重放不续期、有效续期、未来偏差、时钟/身份/来源反例、容量、并发和watcher到期，缺心跳零消费、部分/完整结果退休保留、过期唤醒以及绑定代次/日期不符拒绝。合成心跳仅注入本地guard；Redis只写测试自己的event/reply开发键，不订阅或发布OC心跳，不发柜台命令。全量回归状态见README和测试索引。
+
+本轮全量182项Go（104项临时PG）/race、97项Python、七包/cmd回归及vet通过，无跳过；包含10,000订单/成交恢复，375.2秒。日志`.runtime/ctp-heartbeat-guard-regression.log`，开发键清理无报错、临时PG销毁；现有API仍为同一TEST进程，未重启或发布CTP服务。
+
+下一步按OC实际运行时心跳/身份样例接持久入口，并对齐双方规范gateway物理路由，做模拟SDK输出经真实Stream进入Relay PG的联合验证；真实CTP账户、登录/认证/结算及交易仍分别授权。本轮不另发原则回签或要求Meridian改动。
 
 ### 11-06 TEST 固定来源与有界消费循环
 

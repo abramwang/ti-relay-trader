@@ -11,9 +11,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
-| 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`，但 OC `HEARTBEAT_MISSING`、报单准入关闭。本轮不主动报撤单，CTP 未接入；切回生产须用户另行明确指令 |
+| 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07只复核API/Redis/DB为ok，未验收实际柜台准入，不能沿用11-06缺心跳观察作当前结论。本轮不主动报撤单，CTP未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-07 Asia/Shanghai` OC Redis原材料复核完成，8项指纹通过，三套原分页在临时PG只发布1份快照；97项Python全量、5项Go/race定向及vet通过。未重跑前轮169项Go容量全量。下一步真实心跳/会话与规范路由隔离联合验证；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
+| 最近确认 | `2026-11-07 Asia/Shanghai` 共享心跳严格解码及TEST会话失效guard已接有界消费；182项Go（104项临时PG）/race、97项Python、七包/cmd及vet通过，无跳过。无真实hb订阅，连接代次仍需独立证据。下一步持久心跳/身份入口与规范路由隔离联合验证；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
 | 更新时间 | `2026-11-07` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-07` 新增`DecodeHeartbeat/TestSessionGuard/RunGuarded`：固定已知会话/日/来源，重复心跳不续期，过期/断开/变更取消当前消费，完成历史保留；仅内部TEST接线，无真实hb读取/审计、服务发布或权限变化。共享hb没有connection_generation/native登录身份，不从其推断重连代次；下一步依据OC运行稿补持久入口及独立身份门禁。[边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)已更新。新增9项模型/2项PG+Redis测试，全量182项Go（104项PG）/race通过，375.2秒、无跳过；97项Python、七包/cmd及vet通过。日志`.runtime/ctp-heartbeat-guard-regression.log`，开发键清理无报错、临时PG销毁；API仍原TEST进程802957，未重启或发OC命令。
 
 - `2026-11-07` [OC Redis交付复核](docs/OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md)：用户补齐`testdata/redis_review`；指纹/三组37场景记录及原分页解码/PG复验完成，材料缺口解除，不等于重跑OC/在线SDK。补齐清单所需的同SHA正文路径，收到的文件未改。安全/别名轨迹粒度和物理路由边界已记录；ACK不确定仍阻断。新增2项Go/5项Python测试，无业务代码/环境/权限/服务/Redis操作。下一步真实心跳、会话与规范隔离路由的两端联合验证，不需要再索要同一材料或Meridian改动。
 

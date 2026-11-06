@@ -95,7 +95,12 @@ func NewTestConsumer(ctx context.Context, source *TestStreamSource, event, reply
 // Run never retries a failed read/application or renews its own session window.
 // Idle/deferred work uses bounded backoff; valid work keeps a nonzero minimum
 // delay. onCycle must return promptly and must not be used as trading authority.
+// Run is the unguarded fixture harness; RunGuarded adds heartbeat invalidation.
 func (c *TestConsumer) Run(ctx context.Context, onCycle func(ConsumerCycle)) (result error) {
+	return c.run(ctx, nil, onCycle)
+}
+
+func (c *TestConsumer) run(ctx context.Context, guard *TestSessionGuard, onCycle func(ConsumerCycle)) (result error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > 5*time.Minute {
 		return fmt.Errorf("TEST consumer requires an explicit window of at most five minutes")
@@ -123,13 +128,26 @@ func (c *TestConsumer) Run(ctx context.Context, onCycle func(ConsumerCycle)) (re
 	delay := c.options.MinDelay
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return context.Cause(ctx)
+		}
+		if guard != nil {
+			if err := guard.Check(); err != nil {
+				return err
+			}
 		}
 		stepCtx, cancel := context.WithTimeout(ctx, c.options.StepTimeout)
 		cycle, err := c.step(stepCtx)
 		cancel()
 		if err != nil {
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			return err
+		}
+		if guard != nil {
+			if err := guard.Check(); err != nil {
+				return err
+			}
 		}
 		delay = consumerDelay(delay, c.options, cycle.Progress)
 		cycle.Delay = delay
@@ -140,7 +158,7 @@ func (c *TestConsumer) Run(ctx context.Context, onCycle func(ConsumerCycle)) (re
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return context.Cause(ctx)
 		case <-timer.C:
 		}
 	}

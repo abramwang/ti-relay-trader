@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07心跳失效保护增量：`heartbeat_test.go/test_session_integration_test.go`新增9项模型及2项临时PG/真实TEST Redis开发键测试。涵盖原共享hb、字段严格校验、重放不续期/有效续期、时钟/来源/会话/日期反例、容量、并发、过期唤醒、缺心跳零读取、停止退休保留完整历史和guard绑定。定向入口沿用下面的Redis双开关，`-run '^TestHeartbeat|^TestTestSession|^TestTestConsumer' -timeout 3m`；心跳为本地合成输入，Redis只访问自己的event/reply键，没有OC心跳订阅或业务命令。全量回归日志`.runtime/ctp-heartbeat-guard-regression.log`。
+
 11-07 OC Redis材料复验：`test_oc_redis_delivery.py`新增5项检查，核对清单8项SHA、三套37场景记录、原body指纹/重投及CTest日志；`oc_redis_delivery*_test.go`新增2项Go测试，三套原查询页0,1,1,2正逆序组装及临时PG保留4条审计/1份3行快照/恢复不重复发布。97项Python全量、`TestOCReceived|TestOCRedisReceived`共5项Go/race（7.748秒、无跳过）和vet通过。原物理输出键未提供，PG使用显式规范来源前提；不是OC程序或真实Redis联合消费验收。无需Redis环境变量，详见`docs/OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md`；本轮未重跑下方169项全量容量测试。
 
 CTP TEST消费循环增量：`test_consumer_test.go/test_consumer_integration_test.go`新增2项模型及7项临时PG测试，其中4项使用真实TEST Redis开发键。覆盖固定来源/凭据轮换/端点漂移、完整循环、取消/连接关闭/owner接管停止、无输入超时和退避、窗口与上下文门禁、完成历史保留及退休事务失败回滚。沿用下方隔离Redis环境变量，以`-run 'TestTest|TestQueryRetire' -timeout 3m`定向执行；不发OC命令，不证明真实心跳、来源认证或交易许可。完整回归日志为`.runtime/ctp-test-consumer-regression.log`。
@@ -31,7 +33,7 @@ RELAY_FUTURES_TEST_REDIS_WRITES=development-keys-only \
 
 测试要求配置的service.environment和redis.env均为test；对随机开发键进行XADD/XREAD/XINFO/裁剪/删除等操作，不能用于生产配置。不在测试日志打印凭据。无Redis配置时真实Redis用例skip，不得把skip报告为在线通过。完整回归去掉`-run TestStream`并延长timeout，含10,000订单/成交场景。
 
-11-06最新全量结果：169项Go（101项临时PG）/race、92项Python通过，无跳过；大容量恢复测试包含在391.0秒全量回归中。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令或账户业务Stream操作。日志`.runtime/ctp-test-consumer-regression.log`，开发键清理无报错，临时PG销毁完成。
+11-07最新全量结果：182项Go（104项临时PG）/race、97项Python通过，无跳过；大容量恢复测试包含在375.2秒全量回归中。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令、OC心跳订阅或账户业务Stream操作。日志`.runtime/ctp-heartbeat-guard-regression.log`，开发键清理无报错，临时PG销毁完成。前轮169项全量日志仍保留在`.runtime/ctp-test-consumer-regression.log`。
 
 - OC 11-06订单/成交交付：`oc_delivery_test.go/oc_delivery_integration_test.go`新增2项模型+1项PG测试（24个子场景），用包内27条实际原body验证严格解码、正逆序/重投、原生ID/夜盘源时间/未知费用、真实PG原字节持久/恢复、身份缺失后补登记及重复应用；定向race通过。`test_oc_trade_delivery.py`新增4项指纹/schema/失败语义/容量记录检查，Python全量92项通过。样例均合成，场景按独立命令空间隔离；OC C++执行、文件崩溃/SDK/Redis/ACK未验证，容量摘要不是原始分页输出。见`docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md`。
 - 期货完整查询容量：`trade_capacity_test.go/trade_capacity_integration_test.go`新增3项模型和4项临时PG测试，累计126项Go（67项PG）/race通过。10,000成交先到再10,000订单、恢复不重复入账、513行跨SQL块最后标记失败全回滚、批量来源错误/冲突不发布、迁移降级不丢证据；100x40步与原全扫描算法逐步对照，另验单订单10,000成交线性关联。迁移33..39只在临时库；88项Python通过。脚本支持追加Go测试参数，如`-run TestTradeCapacityTenThousandOrdersAndFills -race=false`，默认仍race全包。没有真实OC/Redis、ACK、生产迁移或吞吐SLA结论。
