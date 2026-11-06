@@ -108,6 +108,22 @@ type EventReceipt struct {
 // retained; scope/source errors and capacity failures return error, not durability.
 // Matching message IDs must keep exact bytes even across different Stream entries.
 func (s *EventStore) Receive(ctx context.Context, key string, source QuerySource, raw []byte) (EventReceipt, error) {
+	tx, err := beginFuturesTransaction(ctx, s.db)
+	if err != nil {
+		return EventReceipt{}, err
+	}
+	defer tx.Rollback()
+	out, err := receiveEventTx(ctx, tx, key, source, raw)
+	if err != nil {
+		return EventReceipt{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return EventReceipt{}, err
+	}
+	return out, nil
+}
+
+func receiveEventTx(ctx context.Context, tx *sql.Tx, key string, source QuerySource, raw []byte) (EventReceipt, error) {
 	if len(raw) > maxSnapshotBytes {
 		return EventReceipt{}, ErrAuditCapacity
 	}
@@ -117,11 +133,6 @@ func (s *EventStore) Receive(ctx context.Context, key string, source QuerySource
 	if raw == nil {
 		raw = []byte{}
 	}
-	tx, err := beginFuturesTransaction(ctx, s.db)
-	if err != nil {
-		return EventReceipt{}, err
-	}
-	defer tx.Rollback()
 	scope, err := lockEventScope(ctx, tx, key)
 	if err != nil {
 		return EventReceipt{}, err
@@ -138,9 +149,6 @@ func (s *EventStore) Receive(ctx context.Context, key string, source QuerySource
 			return EventReceipt{}, fmt.Errorf("event checksum mismatch")
 		}
 		result.Replayed = true
-		if err := tx.Commit(); err != nil {
-			return EventReceipt{}, err
-		}
 		return result, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -178,9 +186,6 @@ func (s *EventStore) Receive(ctx context.Context, key string, source QuerySource
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE futures_event_scopes SET event_count=event_count+1,event_bytes=event_bytes+$2 WHERE scope_key=$1`, key, len(raw)); err != nil {
-		return EventReceipt{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return EventReceipt{}, err
 	}
 	return result, nil

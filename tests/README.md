@@ -11,7 +11,9 @@
 
 ## 当前状态
 
-11-06最新全量结果：129项Go（68项临时PG）/race、92项Python通过；大容量恢复测试仍纳入本轮回归。无真实柜台或业务Redis调用。
+- CTP读取位点与持久交接：`stream_store_test.go/stream_store_integration_test.go`新增3项模型+9项临时PG/race，包含真实PG断连、16路CAS、接管隔离、输入/交接最后一步失败、原文/坏UTF-8、query/event下游绑定、旧半页不可恢复、隔离及降级保护。新增000040仅临时库；go-redis读取为客户端替身，未启动或访问真实Redis，不验证XACK或OC命令执行。详见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`。
+
+11-06最新全量结果：141项Go（77项临时PG）/race、92项Python通过；大容量恢复测试仍纳入本轮回归，错环境/交易日/原origin的移交断言另定向race通过。无真实柜台或业务Redis调用。
 
 - OC 11-06订单/成交交付：`oc_delivery_test.go/oc_delivery_integration_test.go`新增2项模型+1项PG测试（24个子场景），用包内27条实际原body验证严格解码、正逆序/重投、原生ID/夜盘源时间/未知费用、真实PG原字节持久/恢复、身份缺失后补登记及重复应用；定向race通过。`test_oc_trade_delivery.py`新增4项指纹/schema/失败语义/容量记录检查，Python全量92项通过。样例均合成，场景按独立命令空间隔离；OC C++执行、文件崩溃/SDK/Redis/ACK未验证，容量摘要不是原始分页输出。见`docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md`。
 - 期货完整查询容量：`trade_capacity_test.go/trade_capacity_integration_test.go`新增3项模型和4项临时PG测试，累计126项Go（67项PG）/race通过。10,000成交先到再10,000订单、恢复不重复入账、513行跨SQL块最后标记失败全回滚、批量来源错误/冲突不发布、迁移降级不丢证据；100x40步与原全扫描算法逐步对照，另验单订单10,000成交线性关联。迁移33..39只在临时库；88项Python通过。脚本支持追加Go测试参数，如`-run TestTradeCapacityTenThousandOrdersAndFills -race=false`，默认仍race全包。没有真实OC/Redis、ACK、生产迁移或吞吐SLA结论。

@@ -12,8 +12,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | 生产环境，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立账本同步 worker |
 | 安全状态 | 旧 OC 出口 `117.186.20.114` 已由安全组隔离并清除全部 Redis 连接；四户生产 OC 唯一会话正常，生产下单关闭；后续仍需轮换生产 Redis 凭据 |
-| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；新增 F0 期货契约规划 |
-| 最近确认 | `2026-11-06 Asia/Shanghai` OC订单/成交交付已复核：补齐原分页JSON，27条原body通过Go/schema及24个临时PG子场景；全量129项Go（68项PG）/race、92项Python通过。无wire兼容改动，OC继续dispatch/持久输出/ACK，Relay继续消费恢复；容量边界摘要/OC日志的独立证据仍有限，无生产变更，F0未冻结 |
+| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
+| 最近确认 | `2026-11-06 Asia/Shanghai` XREAD持久收件、原子位点、接管隔离及查询/事件交接（000040）已实现；全量141项Go（77项临时PG）/race、92项Python通过。Redis仅客户端替身验证，未接常驻进程/生产；下一步真实隔离Redis恢复、可信分发及统一质量门禁。OC继续dispatch/outbox/命令ACK，F0未冻结 |
 | 更新时间 | `2026-11-06` |
 
 新线程按以下顺序恢复：
@@ -26,7 +26,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-06` OC `ee58039`交付原材料已归档至`testdata/oc-trade-review-20261106`，四项SHA通过；原分页JSON缺口解除，新订单/成交输出兼容，无生产代码调整。新增3项Go测试（含24个PG子场景）/race及4项Python，Python全量92项通过，见 [给OC的收口回执](docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。下一步OC推进可信身份/dispatch/持久输出/ACK，Relay推进消费恢复/位点/ACK，不重复原则回签。统一命令/查询身份及10,000行容量已在迁移33..39临时库验证；高频重放性能仍待。缺少的OC日志和六项容量原body只作为证据保留项，不阻塞继续开发。无Redis/柜台访问、部署、生产迁移或权限变更；用户原包、金额JSON及暂存CSV不改动。
+- `2026-11-06` 新增`StreamStore/ReadOnce`及000040：原body/待处理责任/位点原子落库，显式接管隔离旧writer，按已登记目标原子移交query/event；未知身份不造单，坏报文保留，旧查询半页不复活。新增3项模型+9项临时PG/race通过，详见 [恢复与运行边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。当前Redis只用客户端替身，无实际Redis服务端测试或常驻进程；接收原文预算是每Stream累计50,000条/64MiB，不每日清空，保留/统一质量门禁未完。下一步真实隔离Redis恢复与可信分发/扫描调度，不上线生产。OC上一轮27条原body已验收，见 [回执](docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)，继续其dispatch/outbox/命令ACK；Relay沿用XREAD，不创建消费组/XACK。无部署、生产迁移、柜台/业务Redis调用或环境/权限变化，用户CSV/附件未改。
 
 - `2026-11-05` 新增`submit_command.go/event_store.go`和迁移000036：单笔/批量命令原字节及子单身份原子登记，不发送命令、不造实际订单；完整事件先持久收件再事务应用，核对原命令及经济字段，未知本地身份等待，错误/冲突留证阻断，游标扫描支持重启补处理。新增4项模型+10项真实PG测试，累计84项Go含38项集成/race、七包回归/vet与83项Python通过，详见 [实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。下一步查询请求登记、查询/事件统一身份门禁，然后消费位点/ACK；当前没有Redis消费者/发布outbox/交易准入，也不把调用方信任替代真实来源认证。Meridian标的定义不变，无生产迁移/发布/环境/权限变更，用户CSV未动。
 
