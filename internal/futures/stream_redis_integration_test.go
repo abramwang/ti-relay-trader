@@ -395,3 +395,37 @@ func TestStreamRedisQueryPagesHandoffAndRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamRedisDispatchRegisteredQueryOnly(t *testing.T) {
+	db, s, h, client, reader, ctx := realStreamRole(t, "reply")
+	q, _ := NewQueryStore(db)
+	c := batchContext("positions")
+	c.Route = h.config.Scope.Route
+	r, c := registeredQueryCommand(t, db, ctx, c)
+	bindQuery(t, q, ctx, "dispatched", r, c)
+	raw := editBody(t, boundReply(t, fixtureBody(t, "messages.json", "positions"), r), func(m map[string]any) {
+		m["routing"].(map[string]any)["broker_id"] = c.Route.BrokerID
+		m["routing"].(map[string]any)["gateway_id"] = c.Route.GatewayID
+	})
+	foreign := editBody(t, raw, func(m map[string]any) { m["routing"].(map[string]any)["env"] = "prod" })
+	appendRealStream(t, ctx, client, h, "2-0", "body", foreign)
+	appendRealStream(t, ctx, client, h, "3-0", "body", raw)
+	if _, err := s.ReadOnce(ctx, h, reader, 10); err != nil {
+		t.Fatal(err)
+	}
+	d, err := NewStreamDispatcher(ctx, s, h, q, nil, []QueryDispatchBinding{{"dispatched", time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := d.Dispatch(ctx, 0, 10)
+	if err != nil || page.Scanned != 3 || page.Delivered != 1 || len(page.Deferred) != 2 || !page.CycleComplete {
+		t.Fatal(page, err)
+	}
+	if storedCount(t, db, "futures_query_observations") != 1 || storedCount(t, db, "futures_query_snapshots") != 1 {
+		t.Fatal("foreign source entered query evidence")
+	}
+	status, err := s.Status(ctx, h)
+	if err != nil || status.Pending != 2 || status.Delivered != 1 {
+		t.Fatal(status, err)
+	}
+}

@@ -11,6 +11,8 @@
 
 ## 当前状态
 
+- CTP受限分发/联合质量：`stream_dispatch_integration_test.go`新增8项临时PG测试，`stream_redis_integration_test.go`新增1项真实TEST Redis查询分发测试，定向race通过。验证显式白名单、前部未知不饿死后部、移交失败重试游标、原请求计时、旧owner拒绝、四类最新快照及交易事实应用、待关联/隔离/旧查询冲突、来源/会话/代次/日/校验和反例。质量检查使用只读repeatable-read事务；不等于OC认证、柜台ready或允许发单。复现时沿用下方环境变量，`-run 'TestStreamDispatch|TestStreamQuality|TestStreamRedisDispatch'`。
+
 - CTP真实Redis增量：`stream_redis_integration_test.go`新增8项TEST Redis + 临时PG测试，`stream_store_test.go`新增2项原始结构/RESP2模型测试。重复body实测复现并修复，覆盖分页/原字节/位点接管、客户端关闭后重连、裁剪/删除/回退/类型错误、读后变化、PG提交失败和两页查询原子交接/旧半页恢复拒绝。只操作随机CTP开发键，TTL一小时并精确清理；不发OC命令、不改业务流/ACL或共享Redis配置。当前实测Redis8.2.2，不冒称最小权限ACL、服务重启或生产吞吐验收。详见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`。
 - CTP读取位点与持久交接原阶段：`stream_store_test.go/stream_store_integration_test.go`新增3项模型+9项临时PG/race，包含真实PG断连、16路CAS、接管隔离、输入/交接最后一步失败、原文/坏UTF-8、query/event下游绑定、旧半页不可恢复、隔离及降级保护。该阶段go-redis读取为客户端替身，不验证XACK或OC命令执行。
 
@@ -25,7 +27,7 @@ RELAY_FUTURES_TEST_REDIS_WRITES=development-keys-only \
 
 测试要求配置的service.environment和redis.env均为test；对随机开发键进行XADD/XREAD/XINFO/裁剪/删除等操作，不能用于生产配置。不在测试日志打印凭据。无Redis配置时真实Redis用例skip，不得把skip报告为在线通过。完整回归去掉`-run TestStream`并延长timeout，含10,000订单/成交场景。
 
-11-06最新全量结果：151项Go（85项临时PG）/race、92项Python通过，无跳过；大容量恢复测试包含在361.6秒全量回归中，客户端建立连接关闭及XREAD后关闭恢复的补充断言另定向race通过。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令或账户业务Stream操作。
+11-06最新全量结果：160项Go（94项临时PG）/race、92项Python通过，无跳过；大容量恢复测试包含在367.6秒全量回归中。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令或账户业务Stream操作。日志`.runtime/ctp-dispatch-quality-regression.log`，开发键清理无报错，临时PG销毁完成。
 
 - OC 11-06订单/成交交付：`oc_delivery_test.go/oc_delivery_integration_test.go`新增2项模型+1项PG测试（24个子场景），用包内27条实际原body验证严格解码、正逆序/重投、原生ID/夜盘源时间/未知费用、真实PG原字节持久/恢复、身份缺失后补登记及重复应用；定向race通过。`test_oc_trade_delivery.py`新增4项指纹/schema/失败语义/容量记录检查，Python全量92项通过。样例均合成，场景按独立命令空间隔离；OC C++执行、文件崩溃/SDK/Redis/ACK未验证，容量摘要不是原始分页输出。见`docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md`。
 - 期货完整查询容量：`trade_capacity_test.go/trade_capacity_integration_test.go`新增3项模型和4项临时PG测试，累计126项Go（67项PG）/race通过。10,000成交先到再10,000订单、恢复不重复入账、513行跨SQL块最后标记失败全回滚、批量来源错误/冲突不发布、迁移降级不丢证据；100x40步与原全扫描算法逐步对照，另验单订单10,000成交线性关联。迁移33..39只在临时库；88项Python通过。脚本支持追加Go测试参数，如`-run TestTradeCapacityTenThousandOrdersAndFills -race=false`，默认仍race全包。没有真实OC/Redis、ACK、生产迁移或吞吐SLA结论。

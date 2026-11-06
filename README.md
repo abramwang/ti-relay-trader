@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`，但 OC `HEARTBEAT_MISSING`、报单准入关闭。本轮不主动报撤单，CTP 未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-06 Asia/Shanghai` 用户已向OC反馈联调计划并授权使用测试Redis；真实Redis8.2.2随机CTP开发键+临时PG恢复验证通过，修复重复body丢失风险。CTP仍未接运行服务；下一步可信分发/统一质量门禁，见联调计划。当前华鑫TEST、生产配置/cron未改；下次生产任务前需用户指令切回 |
+| 最近确认 | `2026-11-06 Asia/Shanghai` 已登记上下文的有界分发与单事务联合质量检查完成；全量160项Go（94项临时PG）/race、92项Python通过。当前华鑫TEST，CTP未接运行服务；下一步可信客户端绑定、生命周期/心跳与退避消费应用循环。无新wire或OC整改要求；下次生产任务前需用户指令切回 |
 | 更新时间 | `2026-11-06` |
 
 新线程按以下顺序恢复：
@@ -26,9 +26,13 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-06` 新增`StreamDispatcher`不可变白名单、1..256条扫描和可重试游标；未知日/会话/origin或坏输入保留pending，不从回报建命令，不饿死后续消息。新增`InspectDeliveryQuality`以同一只读PG快照核对transport、下游事件/成交、旧查询失效，以及同交易日/会话/代次/owner的四类最新完整快照和应用标记；DB错误保持阻断。9项定向PG/race（其中1项真实TEST Redis开发键）通过。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)已更新，质量通过不是交易许可，真实OC来源认证/心跳/循环仍待接线。无新迁移/服务重启/环境或权限变化，用户CSV与OC材料未改；无需OC重复回签。
+
+本轮全量160项Go（94项临时PG）/race、92项Python、七包/cmd回归及vet通过；包含10,000订单/成交恢复，耗时367.6秒，无跳过。测试Redis开发键清理无报错，临时PG已销毁；日志`.runtime/ctp-dispatch-quality-regression.log`。
+
 - `2026-11-06` 按用户授权直接使用TEST Redis8.2.2，新增8项Redis+临时PG及2项模型定向race通过：位点/接管、二进制原文、重复字段、未读裁剪/删除、客户端重建、提交失败及查询两页交接/中断。修复普通XRead将重复body折叠成map的风险，改用专用RESP2数组严格校验；无新wire/OC/Meridian整改要求。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)及[复现命令](tests/README.md)已补。测试仅随机`relay:test:v1:ctp:relay-dev-*`键，结束精确清理并有TTL，不操作账户业务流/共享Redis配置；PG仍临时实例。环境/服务/交易权限未动，CTP常驻消费者未上线。下一步可信客户端/会话/请求分发、统一质量门禁及保留配额。
 
-本轮全量验证：151项Go（85项临时PG）/race、92项Python通过，包含真实TEST Redis和10,000订单/成交恢复；七包/cmd回归及vet通过。开发键清理无报错，临时PG已销毁，不代表OC在线交易已验收。
+前轮传输验证：151项Go（85项临时PG）/race、92项Python通过，包含真实TEST Redis和10,000订单/成交恢复；七包/cmd回归及vet通过。开发键清理无报错，临时PG已销毁，不代表OC在线交易已验收。
 
 - `2026-11-06 21:12 Asia/Shanghai` 用户授权切到TEST：已核对测试/生产数据库名称和Redis端点不同，标准脚本重启9092成功；测试API/内嵌worker健康，4条业务Stream lag=0、待处理DLQ=0，但华鑫OC缺心跳，不能据此宣布柜台可用。现有TEST交易配置未改，未主动查询柜台或报撤单。测试库迁移32-40不等于CTP运行接入。[OC联合联调计划](docs/CTP_OC_JOINT_INTEGRATION_PLAN_20261106.md)明确先隔离恢复，再获授权只读，最后受控交易；下一步Relay补真实隔离Redis验证和可信接线，OC继续dispatch/outbox/ACK。生产实时消费暂停，cron保持原配置，恢复生产必须等用户新指令。
 

@@ -6,6 +6,32 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-06 已登记上下文分发与联合质量检查
+
+新增`stream_dispatch.go/stream_quality.go`，复用既有表结构和原子交接，不新增wire、迁移或后台服务。
+
+`NewStreamDispatcher`构建不可变目标白名单，最多128项。只绑定既有event scope或已关联CommandID的query batch；核对物理Stream、路由、原生投资者/用户和owner，拒绝跨环境、错角色、重复目标及退休查询。事件按显式绑定的TradingDay和counter_session_id选择目标；查询按已登记原命令origin选择目标，不能用第一条回报创建命令、推断交易日或建立新会话。构造参数仍须来自调用方已核实的生命周期/请求事实，**这不是OC来源认证、凭据接线或会话自动发现的实现**。事件wire没有新增连接代次字段。
+
+`Dispatch(afterID,limit)`每次扫描1..256条待处理原文，不创建goroutine，不重发任何柜台命令。坏JSON、错误路由、未知日/会话/origin保持transport pending，返回有界原因列表，不自动隔离、丢弃或改原文。扫描游标跨过这些记录继续处理后项；一轮结束返回`CycleComplete=true/NextAfterID=0`，调用方须退避后重新扫描，避免等待身份的旧项永远漏掉。此游标仅控制本轮扫描，不是Redis读取位点或完成证明。
+
+已匹配目标仍经完整事件/查询校验和原子`ForwardEvent/ForwardQuery`交接；事件不在这里自动Process，交易查询也不自动ApplyTradeQuery。数据库失败、owner变化或绑定失效会返回错误，保留此前已提交结果，返回的游标不会跳过失败项。重建dispatcher需重新绑定可信上下文，不从入站消息恢复信任。查询elapsed从原始本地请求StartedAt计时，不使用回报时间或重建dispatcher时间；StartedAt零值/未来/回退到已记录elapsed之前拒绝。无消息时的超时仍由调用方显式Advance，不能把本组件称为已完成后台调度器。
+
+`InspectDeliveryQuality`在**单个只读、可重复读PG事务**中联合检查：
+
+1. event/reply两个当前handle必须同路由/原生作用域/SourceID，owner和审计计数一致；两条物理Stream全保留期的pending/quarantined都计入阻断，不借换日隐藏未知消息。
+2. 指定交易日事件的pending/waiting_identity/rejected/conflict，以及该日交易投影的缺失、checksum、冲突和未关联成交。delivered不是applied，applied也不代表成交已经关联完整。
+3. 已应用交易查询后续变为非ready仍阻断；新查询成功不会自动清除这类历史证据。
+4. 四类查询均要求latest target=current published、ready、未退休、当前QueryStore owner，以及明确的TradingDay/counter_session_id/connection_generation和原生身份一致。校验原CommandID证据与候选checksum/context；订单/成交查询还须有对应交易日的应用标记。
+5. 最新查询失败/未完时，即使历史快照还能用于页面参考，也不能通过本检查；不修改既有`Current`的历史可读规则。未知/缺失/读取错误一律保持Blocked，不将空存储、旧会话或未应用查询当作成功。
+
+**Blocked=false只代表这次数据库视图中的已收证据通过检查，绝非允许交易。** 尚未采集的Redis尾部、传输错误/裁剪、真实来源认证、心跳时效、柜台权限、动态行情约束、OC执行状态、会话撤销和全局容量仍须在运行层分别判断。检查结束后还可能到达新事实，也不构成资金/持仓跨查询的柜台原子快照。原文逐字节全量复核及高频大账本检查成本也不在此次状态聚合的吞吐承诺内。
+
+定向验证新增9项PG/race用例（其中1项真实TEST Redis开发键），覆盖白名单不学习/不被外部修改、跨环境/退休拒绝、前部未知不阻塞后部、移交失败游标可重试、原请求计时到期、四快照和后续应用门禁、旧错误不因新成功消失、checksum/SourceID/会话/代次/日期反例。真实Redis用例中错误路由及seed留pending，合法页正常落库；未操作OC业务流、报撤单、账户/权限或运行服务。
+
+全量160项Go（94项临时PG）以race通过，367.6秒，无跳过，含10,000订单+10,000成交恢复；92项Python、七包/cmd回归及vet通过。Redis开发键清理无报错，临时PG已销毁，日志`.runtime/ctp-dispatch-quality-regression.log`。这些是合成上下文测试，不是OC在线认证或交易验收。
+
+下一步：可信配置到SourceID/客户端的固定绑定、独立CTP生命周期与心跳撤销、带退避的读/分发/应用/超时循环，再把上述质量结果纳入最终只读readiness。当前仍无常驻CTP消费者、HTTP/SDK或报单入口；OC无需因本轮修改协议，继续其dispatch/outbox/ACK交付。
+
 ### 11-06 真实 TEST Redis 传输验证
 
 用户授权直接使用测试Redis后，新增`stream_redis_integration_test.go`，连接现有TEST Redis（实际版本8.2.2），只写随机的`relay:test:v1:ctp:relay-dev-<128bit随机值>:{event,reply}`。不读取账户业务Stream、不发送OC命令，不创建消费组/ACL用户、不重启共享Redis；每个测试键设置一小时TTL并在结束时按精确键删除。PostgreSQL仍由脚本启动临时Unix socket实例，各测试独立schema，不使用应用数据库。
