@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`，但 OC `HEARTBEAT_MISSING`、报单准入关闭。本轮不主动报撤单，CTP 未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-06 Asia/Shanghai` 已登记上下文的有界分发与单事务联合质量检查完成；全量160项Go（94项临时PG）/race、92项Python通过。当前华鑫TEST，CTP未接运行服务；下一步可信客户端绑定、生命周期/心跳与退避消费应用循环。无新wire或OC整改要求；下次生产任务前需用户指令切回 |
+| 最近确认 | `2026-11-06 Asia/Shanghai` TEST固定来源客户端与有界消费循环完成；169项Go（101项临时PG）/race、92项Python、七包/cmd及vet通过，无跳过。当前华鑫TEST，CTP未接运行服务；下一步真实心跳/会话生命周期与独立只读入口。无新wire或OC整改要求；下次生产任务前需用户指令切回 |
 | 更新时间 | `2026-11-06` |
 
 新线程按以下顺序恢复：
@@ -26,9 +26,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-06` 新增`StreamDispatcher`不可变白名单、1..256条扫描和可重试游标；未知日/会话/origin或坏输入保留pending，不从回报建命令，不饿死后续消息。新增`InspectDeliveryQuality`以同一只读PG快照核对transport、下游事件/成交、旧查询失效，以及同交易日/会话/代次/owner的四类最新完整快照和应用标记；DB错误保持阻断。9项定向PG/race（其中1项真实TEST Redis开发键）通过。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)已更新，质量通过不是交易许可，真实OC来源认证/心跳/循环仍待接线。无新迁移/服务重启/环境或权限变化，用户CSV与OC材料未改；无需OC重复回签。
+- `2026-11-06` 在既有分发/联合质量检查上补`TestStreamSource/TestConsumer`：固定来源配置与专用客户端，单次最长5分钟读取/分发/应用/超时循环及空闲退避；错误停止、不重报命令。新增`QueryStore.Retire`，停止仅中断未完查询，完成历史保留但退出当前快照。9项新增测试（7项PG，其中4项含真实TEST Redis开发键）已通过。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)明确这是TEST内部原型，配置指纹不是服务器认证、窗口不是OC心跳租约；下一步真实心跳/会话撤销和独立只读入口。无新迁移/服务重启/环境或权限变化，用户CSV与OC材料未改；无需OC重复回签。
 
-本轮全量160项Go（94项临时PG）/race、92项Python、七包/cmd回归及vet通过；包含10,000订单/成交恢复，耗时367.6秒，无跳过。测试Redis开发键清理无报错，临时PG已销毁；日志`.runtime/ctp-dispatch-quality-regression.log`。
+本轮169项Go（101项临时PG）/race通过，含10,000订单/成交恢复，391.0秒、无跳过；92项Python、七包/cmd回归及vet通过。日志`.runtime/ctp-test-consumer-regression.log`，测试Redis开发键清理无报错，临时PG已销毁。运行服务复核仍为原TEST进程802957，没有重启或发送OC命令。
 
 - `2026-11-06` 按用户授权直接使用TEST Redis8.2.2，新增8项Redis+临时PG及2项模型定向race通过：位点/接管、二进制原文、重复字段、未读裁剪/删除、客户端重建、提交失败及查询两页交接/中断。修复普通XRead将重复body折叠成map的风险，改用专用RESP2数组严格校验；无新wire/OC/Meridian整改要求。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)及[复现命令](tests/README.md)已补。测试仅随机`relay:test:v1:ctp:relay-dev-*`键，结束精确清理并有TTL，不操作账户业务流/共享Redis配置；PG仍临时实例。环境/服务/交易权限未动，CTP常驻消费者未上线。下一步可信客户端/会话/请求分发、统一质量门禁及保留配额。
 

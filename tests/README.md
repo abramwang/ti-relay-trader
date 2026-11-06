@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+CTP TEST消费循环增量：`test_consumer_test.go/test_consumer_integration_test.go`新增2项模型及7项临时PG测试，其中4项使用真实TEST Redis开发键。覆盖固定来源/凭据轮换/端点漂移、完整循环、取消/连接关闭/owner接管停止、无输入超时和退避、窗口与上下文门禁、完成历史保留及退休事务失败回滚。沿用下方隔离Redis环境变量，以`-run 'TestTest|TestQueryRetire' -timeout 3m`定向执行；不发OC命令，不证明真实心跳、来源认证或交易许可。完整回归日志为`.runtime/ctp-test-consumer-regression.log`。
+
 交易终端资产回归覆盖盘前 Meridian Level1 尚无最新价的两条路径：快照已有 `pre_close` 时直接估值，快照整体未出现时只对缺失证券回退上一交易日未复权日线收盘，防止总资产退化为纯现金。
 
 ## 目录约定
@@ -27,7 +29,7 @@ RELAY_FUTURES_TEST_REDIS_WRITES=development-keys-only \
 
 测试要求配置的service.environment和redis.env均为test；对随机开发键进行XADD/XREAD/XINFO/裁剪/删除等操作，不能用于生产配置。不在测试日志打印凭据。无Redis配置时真实Redis用例skip，不得把skip报告为在线通过。完整回归去掉`-run TestStream`并延长timeout，含10,000订单/成交场景。
 
-11-06最新全量结果：160项Go（94项临时PG）/race、92项Python通过，无跳过；大容量恢复测试包含在367.6秒全量回归中。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令或账户业务Stream操作。日志`.runtime/ctp-dispatch-quality-regression.log`，开发键清理无报错，临时PG销毁完成。
+11-06最新全量结果：169项Go（101项临时PG）/race、92项Python通过，无跳过；大容量恢复测试包含在391.0秒全量回归中。七个相关Go包、三个cmd入口和vet通过；TEST Redis8.2.2仅访问开发键及服务元数据，无真实柜台/OC命令或账户业务Stream操作。日志`.runtime/ctp-test-consumer-regression.log`，开发键清理无报错，临时PG销毁完成。
 
 - OC 11-06订单/成交交付：`oc_delivery_test.go/oc_delivery_integration_test.go`新增2项模型+1项PG测试（24个子场景），用包内27条实际原body验证严格解码、正逆序/重投、原生ID/夜盘源时间/未知费用、真实PG原字节持久/恢复、身份缺失后补登记及重复应用；定向race通过。`test_oc_trade_delivery.py`新增4项指纹/schema/失败语义/容量记录检查，Python全量92项通过。样例均合成，场景按独立命令空间隔离；OC C++执行、文件崩溃/SDK/Redis/ACK未验证，容量摘要不是原始分页输出。见`docs/OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md`。
 - 期货完整查询容量：`trade_capacity_test.go/trade_capacity_integration_test.go`新增3项模型和4项临时PG测试，累计126项Go（67项PG）/race通过。10,000成交先到再10,000订单、恢复不重复入账、513行跨SQL块最后标记失败全回滚、批量来源错误/冲突不发布、迁移降级不丢证据；100x40步与原全扫描算法逐步对照，另验单订单10,000成交线性关联。迁移33..39只在临时库；88项Python通过。脚本支持追加Go测试参数，如`-run TestTradeCapacityTenThousandOrdersAndFills -race=false`，默认仍race全包。没有真实OC/Redis、ACK、生产迁移或吞吐SLA结论。

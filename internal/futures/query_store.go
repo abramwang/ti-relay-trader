@@ -415,6 +415,37 @@ func (s *QueryStore) Recover(ctx context.Context, id string) (BatchState, error)
 	return s.lifecycle(ctx, id, 0, "receiver_restart", true)
 }
 
+// Retire stops this owner's query without invalidating completed history.
+// Unlike Interrupt, only collecting becomes interrupted. The receiver remains
+// retired even if shutdown happens after all pages have been durably collected.
+func (s *QueryStore) Retire(ctx context.Context, id, reason string) (BatchState, error) {
+	if reason == "" || len(reason) > 4096 {
+		return "", ErrBatchIdentity
+	}
+	tx, err := s.transaction(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	r, err := s.load(ctx, tx, id)
+	if err != nil {
+		return "", err
+	}
+	if r.owner != s.owner {
+		return "", ErrBatchOwner
+	}
+	if r.batch.state == BatchCollecting {
+		r.batch.Interrupt(reason)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE futures_query_batches SET state=$2,reason=$3,retired=TRUE,updated_at=clock_timestamp() WHERE batch_id=$1`, id, r.batch.state, r.batch.reason); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return r.batch.state, nil
+}
+
 func (s *QueryStore) lifecycle(ctx context.Context, id string, elapsed time.Duration, reason string, recover bool) (BatchState, error) {
 	if elapsed < 0 {
 		return "", fmt.Errorf("invalid elapsed time")
