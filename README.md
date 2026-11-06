@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`，但 OC `HEARTBEAT_MISSING`、报单准入关闭。本轮不主动报撤单，CTP 未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-06 Asia/Shanghai` TEST固定来源客户端与有界消费循环完成；169项Go（101项临时PG）/race、92项Python、七包/cmd及vet通过，无跳过。当前华鑫TEST，CTP未接运行服务；下一步真实心跳/会话生命周期与独立只读入口。无新wire或OC整改要求；下次生产任务前需用户指令切回 |
+| 最近确认 | `2026-11-06 Asia/Shanghai` 收到OC `0759873`真实TEST Redis/模拟SDK恢复交付，文档无新协议冲突，原JSON/日志待补；3项Relay定向PG/race通过。既有全量169项Go/92项Python通过。下一步双方可信运行时与隔离联合验证；CTP未上线，当前仍华鑫TEST，下次生产任务前需用户指令切回 |
 | 更新时间 | `2026-11-06` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-06` [OC Redis交付复核](docs/OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md)：接受阶段推进，不要求重做九窗；37场景仅为OC报告通过，`redis_review`原JSON/日志/指纹待路径，SDK均模拟。ACK不确定继续保守阻断，不新增业务枚举；CTP主程序仍未在线。本轮仅归档/更新文档及3项定向回归，无环境/权限/服务或柜台操作。下一步Relay接真实心跳/会话与只读入口，OC接启动恢复/账户准入/可信事件输出，先隔离两端验证再授权在线；无需Meridian修改。
 
 - `2026-11-06` 在既有分发/联合质量检查上补`TestStreamSource/TestConsumer`：固定来源配置与专用客户端，单次最长5分钟读取/分发/应用/超时循环及空闲退避；错误停止、不重报命令。新增`QueryStore.Retire`，停止仅中断未完查询，完成历史保留但退出当前快照。9项新增测试（7项PG，其中4项含真实TEST Redis开发键）已通过。[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)明确这是TEST内部原型，配置指纹不是服务器认证、窗口不是OC心跳租约；下一步真实心跳/会话撤销和独立只读入口。无新迁移/服务重启/环境或权限变化，用户CSV与OC材料未改；无需OC重复回签。
 
