@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07 13:19复核：进入13:15 TEST柜台窗口后API为degraded，华鑫网关HEARTBEAT_MISSING、order_entry_ready=false；Redis/DB仍ok，lag=0、pending DLQ=0。CTP改动未部署，不主动报撤单或重启OC；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-07 Asia/Shanghai` 新增 `relay-ctp-capture` TEST持久心跳采集，显式审计写入/目标库校验、只读status、旧owner/cursor CAS续读，不造native身份、不激活业务guard。212项期货Go/race分批覆盖通过（含万笔恢复），另3项CLI及103项Python通过。下一步固定OC隔离路由/窗口做原文落库联测；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
+| 最近确认 | `2026-11-07 Asia/Shanghai` `relay-ctp-capture --audit`已补固定owner/cursor的只读证据导出，默认仅指纹，显式include-raw才输出原字节base64；不接管/推进位点，跨页锚点变化拒绝。17项相关Go/race、3项CLI及103项Python通过。已询问实际OC TEST gateway/account/窗口，尚未获确认，不从历史fixture猜运行路由；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
 | 更新时间 | `2026-11-07` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-07` 为下一轮两端联测补`HeartbeatEvidence`及`relay-ctp-capture --audit`：PG只读repeatable-read分页、显式owner/cursor锚点、元数据/尾部/顺序/SHA复核、跨Stream游标拒绝、8MiB页预算；默认不输出正文，include-raw无损保存坏UTF-8及空body。新增5项PG，扩展实际CLI子进程复验，17项相关Go/race通过（19.226秒、无跳过），3项CLI/race、103项Python、七包/cmd/vet通过；日志`.runtime/ctp-evidence-regression.log`。未重跑上轮万笔容量，无迁移/部署/环境或权限变化。已向用户询问当前OC隔离gateway/account/采集窗口；收到后按[联合验收步骤](docs/CTP_OC_JOINT_INTEGRATION_PLAN_20261106.md#心跳证据比对)实施，不要求新的wire、源码或二进制。
 
 - `2026-11-07` 独立`relay-ctp-capture`接入既有000040，transport-only hb可无native身份留原文；默认零连接，显式写TEST审计，目标数据库名/DSN/实际连接三方一致。新建不抢已有owner，重启须停旧读者并确认旧owner/cursor，行锁CAS防止并发同令牌接管；分页、退出、输出失败保留已提交证据。新增1模型/6PG（3项真实开发键，含实际CLI）/3CLI护栏；最终非万笔211项Go/race通过（81.305秒），万笔订单/成交恢复单项通过（299.39秒），合计212项（125项PG）分批覆盖；103项Python、七包/cmd/vet通过。日志`.runtime/ctp-capture-{final-regression,regression,cli-targeted}.log`，首轮CLI夹具DSN修正后已重验，不将首轮整文件称为通过。临时PG已销毁、开发键清理无报错；无新迁移/运行库写入/服务重启/环境或权限变化。下一步固定OC路由与窗口，做真实hb输出到PG的联合比对，无新wire或Meridian需求。见[用法与边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立持久心跳采集入口)。
 

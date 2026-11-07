@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/url"
@@ -116,6 +117,29 @@ func TestHeartbeatCaptureCLIRealRedisAndDisposableDatabase(t *testing.T) {
 	if first.Records != 1 || first.Cursor != "1-0" {
 		t.Fatal(first)
 	}
+	auditArgs := []string{"--audit", "--audit-owner", first.Owner, "--audit-cursor", first.Cursor}
+	auditRaw, err := call(auditArgs...)
+	if err != nil {
+		t.Fatal("audit failed", err)
+	}
+	var audit HeartbeatEvidencePage
+	if err := json.Unmarshal(auditRaw, &audit); err != nil || len(audit.Records) != 1 || audit.Records[0].BodyBase64 != nil || audit.BusinessAuthorized || audit.Checkpoint != first {
+		t.Fatal("bad audit output", err)
+	}
+	auditRaw, err = call(append(auditArgs, "--include-raw")...)
+	if err != nil {
+		t.Fatal("raw audit failed", err)
+	}
+	if err := json.Unmarshal(auditRaw, &audit); err != nil || audit.Records[0].BodyBase64 == nil {
+		t.Fatal("raw audit missing", err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(*audit.Records[0].BodyBase64)
+	if err != nil || string(decoded) != "synthetic seed" {
+		t.Fatal("raw bytes changed", err)
+	}
+	if current := readStatus(); current != first {
+		t.Fatal("audit altered checkpoint")
+	}
 	if _, err := call("--run", "--persist-test-audit"); err == nil {
 		t.Fatal("implicit takeover accepted")
 	}
@@ -128,6 +152,9 @@ func TestHeartbeatCaptureCLIRealRedisAndDisposableDatabase(t *testing.T) {
 	last := readStatus()
 	if last.Owner == first.Owner || last.Records != first.Records || last.Cursor != first.Cursor {
 		t.Fatal("resume duplicated evidence", last)
+	}
+	if _, err := call(auditArgs...); err == nil {
+		t.Fatal("old audit anchor accepted after takeover")
 	}
 	if storedCount(t, db, "futures_event_inbox") != 0 || storedCount(t, db, "futures_query_batches") != 0 {
 		t.Fatal("CLI entered business processing")

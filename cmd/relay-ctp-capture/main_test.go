@@ -28,6 +28,10 @@ func TestCaptureUnsafeFlagsNeverReadCredentials(t *testing.T) {
 		{"--env", "prod"}, {"--broker", "huaxin"}, {"--database", "relay_trader"}, {"--run"}, {"--persist-test-audit"},
 		{"--status", "--run", "--persist-test-audit"}, {"--resume-cursor", "1-0"}, {"--resume-owner", strings.Repeat("a", 64)},
 		{"--confirm-stopped"}, {"--timeout", "6m"}, {"--pages", "257"}, {"--limit", "0"}, {"--deployment-id", ""}, {"unexpected"},
+		{"--audit"}, {"--include-raw"}, {"--audit-owner", strings.Repeat("a", 64)},
+		{"--audit", "--status"}, {"--audit", "--run", "--persist-test-audit"},
+		{"--audit", "--audit-owner", strings.Repeat("a", 64), "--audit-cursor", "$"},
+		{"--audit", "--audit-owner", strings.Repeat("a", 64), "--audit-cursor", "0-0", "--after-receipt", "-1"},
 	} {
 		var out bytes.Buffer
 		if err := run(context.Background(), append(captureArgs(), extra...), func(string) string { t.Fatal("unsafe flags accessed secrets"); return "" }, &out, &out); err == nil {

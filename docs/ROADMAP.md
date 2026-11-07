@@ -84,7 +84,8 @@
 - [x] 11-07补独立TEST心跳诊断命令`relay-ctp-inspect`：默认零连接，显式run单页只读，原文指纹/恢复状态/东八区时间、空/失败/缺key区分、连续性及脱敏门禁；不写DB、不接管位点、不认证身份或激活业务guard。39项相关Go/race、5项CLI/race（真实开发键）、103项Python及七包/cmd/vet通过，见[用法](CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立只读心跳诊断入口)。
 - [x] 11-07补独立`relay-ctp-capture`：TEST专用端点、显式审计写入开关、数据库名复核、transport-only hb不造native身份、原文/位点事务、只读status、显式旧owner/cursor的CAS续读及页数/时间预算。1项模型/6项PG（3项真实开发键，含实际CLI）及3项CLI离线护栏覆盖；仅临时库验证，未部署，见[运行边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立持久心跳采集入口)。
 - [x] 持久入口回归分批覆盖212项期货Go/race（125项PG）：最终非万笔211项通过、万笔恢复单项通过；另3项CLI/race、103项Python及七包/cmd/vet通过。CLI夹具DSN修正及日志边界见测试索引；临时数据库销毁、随机开发键清理无报错，无OC业务命令或运行环境变化。
-- [ ] 固定规范隔离路由及窗口，完成OC真实输出到Relay原文/位点的两端联测；业务消费另需真实native身份/连接代次核验及transport-only来源的显式绑定审查。当前stage1不造假日期或代次，不将审计入口当作常驻业务服务。
+- [x] 11-07补`relay-ctp-capture --audit`固定owner/cursor的只读分页证据导出：元数据/尾部/顺序/SHA复核、跨页变化拒绝、显式原文base64与8MiB页预算。新增5项PG及实际CLI回归，17项相关Go/race、3项CLI/race、103项Python及七包/cmd/vet通过。只导出已存证据，不接管或推进位点，不认证OC或授权交易。
+- [ ] 固定规范隔离路由及窗口，完成OC真实输出到Relay原文/位点的两端联测；已向用户询问当前gateway/account/时间窗口，尚未确认，不从历史材料猜运行配置。业务消费另需真实native身份/连接代次核验及transport-only来源的显式绑定审查。当前stage1不造假日期或代次，不将审计入口当作常驻业务服务。
 - [x] 11-07 OC runtime-stage1复核：新包/8项SHA、两组48场景材料、规范gateway物理键、安全轨迹、跨日别名意图重算及原分页PG恢复通过；新增TEST未登录恢复心跳审计兼容，null不造值、镜像冲突拒绝、guard仍阻断。28项定向Go/race、103项Python及七包/cmd/vet通过。见[回执与下一步](OC_CTP_RUNTIME_STAGE1_REVIEW_20261107.md)，不等于真实柜台/四查询/生产验收，无新Meridian需求。
 - [ ] 消费运行整合后续：持久hb收件/观察已在内部TEST接线，尚需真实会话/原生身份/连接代次证据、独立CTP只读入口、最终readiness和保留配额。当前stage1的connection_generation为null，不能只凭同session证明重连代次；最小ACL、Redis服务恢复、全局资源及跨进程失效仍待。内部guard通过不等于在线认证或交易许可。
 - [x] TEST消费循环全量169项Go（101项临时PG）/race、92项Python、七包/cmd回归及vet通过，无跳过；含10,000订单/成交恢复，391.0秒。开发键清理及临时PG销毁完成，未重启服务或发送OC命令。

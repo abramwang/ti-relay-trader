@@ -73,6 +73,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 	runCapture := flags.Bool("run", false, "persist TEST heartbeat audit and cursor, not business facts")
 	persist := flags.Bool("persist-test-audit", false, "explicitly authorize writes to the selected TEST audit database")
 	status := flags.Bool("status", false, "read saved checkpoint only; no Redis reads or owner changes")
+	audit := flags.Bool("audit", false, "export one anchored page of persisted heartbeat evidence; no writes")
+	auditOwner := flags.String("audit-owner", "", "fixed owner from --status, retained across all audit pages")
+	auditCursor := flags.String("audit-cursor", "", "fixed Redis cursor from --status, not a skip position")
+	afterReceipt := flags.Int64("after-receipt", 0, "exclusive audit receipt ID from the preceding page")
+	includeRaw := flags.Bool("include-raw", false, "include exact body bytes as base64 in audit output; sensitive data")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -84,11 +89,19 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 	if err != nil || flags.NArg() != 0 || options.MaxPages < 1 || options.MaxPages > 256 || *duration <= 0 || *duration > 5*time.Minute ||
 		*deployment == "" || len(*deployment) > 128 || strings.ContainsAny(*deployment, " \t\r\n") ||
 		!strings.HasSuffix(*database, "_test") || len(*database) > 63 || strings.ContainsAny(*database, " \t\r\n") ||
-		(*status && *runCapture) || (*runCapture != *persist) ||
+		(*status && *runCapture) || (*audit && (*status || *runCapture)) || (*runCapture != *persist) ||
 		(expected.Owner == "" && (expected.Cursor != "0-0" || *stopped)) || (expected.Owner != "" && (len(expected.Owner) != 64 || !*stopped)) {
 		return errors.New("explicit TEST capture scope, database, bounds and takeover confirmation required")
 	}
-	if !*runCapture && !*status {
+	if *audit {
+		anchor := futures.HeartbeatInspectionRequest{Route: route, After: *auditCursor, Limit: options.PageSize}
+		if _, err := anchor.Stream(); err != nil || len(*auditOwner) != 64 || *afterReceipt < 0 || expected.Owner != "" || *stopped {
+			return errors.New("audit requires fixed owner/cursor and a nonnegative receipt cursor; no takeover flags")
+		}
+	} else if *auditOwner != "" || *auditCursor != "" || *afterReceipt != 0 || *includeRaw {
+		return errors.New("audit options require --audit")
+	}
+	if !*runCapture && !*status && !*audit {
 		return json.NewEncoder(output).Encode(map[string]any{"mode": "check_only_no_connections", "stream": stream, "database": *database, "business_authorized": false})
 	}
 	url, dsn := getenv("RELAY_CTP_CAPTURE_REDIS_URL"), getenv("RELAY_CTP_CAPTURE_DATABASE_URL")
@@ -122,6 +135,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 		return safeError(err)
 	}
 	encoder := json.NewEncoder(output)
+	if *audit {
+		page, err := store.HeartbeatEvidence(bounded, source.StreamConfig("hb"), futures.HeartbeatCheckpoint{Owner: *auditOwner, Cursor: *auditCursor}, *afterReceipt, options.PageSize, *includeRaw)
+		if err != nil {
+			return safeError(err)
+		}
+		return encoder.Encode(page)
+	}
 	if *status {
 		checkpoint, err := store.HeartbeatCheckpoint(bounded, source.StreamConfig("hb"))
 		if err != nil {

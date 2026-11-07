@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07证据导出：`heartbeat_evidence_integration_test.go`新增5项PG，CLI子进程集成补audit默认隐藏正文/显式原文/旧锚点拒绝。覆盖只读分页与锚点一致、空body/坏UTF-8无损还原、跨Stream游标、元数据/尾部/SHA/顺序损坏、8MiB页预算、空收件与stage1分类。用下方临时PG脚本及Redis双开关执行`-run 'TestHeartbeatEvidence|TestHeartbeatCapture|TestHeartbeatInspection' -timeout 3m`，17项Go/race通过、19.226秒、无跳过；3项CLI/race、103项Python、七包/cmd/vet通过。日志`.runtime/ctp-evidence-regression.log`；临时PG及随机开发键清理完成，无OC业务流读写或运行库迁移。本轮未重复前轮万笔容量回归。
+
 11-07持久采集入口：新增1项模型、6项PG（3项含真实TEST随机开发hb键，1项构建执行`relay-ctp-capture`子进程），以及`cmd/relay-ctp-capture`的3项离线护栏。覆盖无native的hb限定、禁止业务guard、只读status不写/不连Redis、初建/续读CAS及8路竞争、旧位点/旧owner拒绝、提交失败回滚、完整原文及页预算、输出失败后按真实checkpoint恢复。CLI子进程使用本机临时PG下独立`*_test`数据库，结束删除；不会创建/迁移应用数据库。最终`-skip '^TestTradeCapacityTenThousandOrdersAndFills$' -timeout 3m`的211项Go/race通过，81.305秒、无运行时skip；万笔订单/成交恢复单项在首轮日志中通过（299.39秒），产品代码相同，仅CLI测试夹具修正。合计212项（125项PG）分批覆盖通过，另103项Python、3项CLI/race、七包/cmd及vet通过。临时PG销毁、随机开发键清理无报错。
 
 日志`.runtime/ctp-capture-final-regression.log`为修正后的非万笔套件；`.runtime/ctp-capture-cli-targeted.log`为7项采集定向复验。首轮`.runtime/ctp-capture-regression.log`中的CLI测试曾因夹具修改`pgx.Config.Database`后仍使用保留原DSN的`ConnString()`而被目标库护栏拒绝；已改用结构化URL生成临时目标DSN，最终套件真实CLI通过。这个夹具失败不算产品验收通过，也不能把首轮整文件写成全量通过。复现沿用下方Redis双开关及临时PG脚本；CLI离线用`go test -race ./cmd/relay-ctp-capture -count=1 -v`。用户CSV和收到的OC材料未修改。

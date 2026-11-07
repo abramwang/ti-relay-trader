@@ -6,6 +6,21 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-07 固定锚点的只读证据导出
+
+`relay-ctp-capture --audit`只读取已落库的transport-only TEST hb，不连Redis、不调用Open、不改owner/位点或业务状态。沿用独立端点和目标`*_test`数据库校验；Redis URL仅用于复算来源指纹。无需`--run`或`--persist-test-audit`，混用写入、status或接管参数会拒绝。它与`--status`不同：要求操作者提供固定锚点，不能自动采用最新位点继续分页。
+
+1. 用同一路由、deployment-id与目标库执行`--status`，取checkpoint的owner/cursor。
+2. 在原基础参数上加`--audit --audit-owner <owner> --audit-cursor <cursor> --limit 32`，首请求省略`--after-receipt`（即0）。默认仅给出receipt_id、Stream entry_id、原body SHA256/长度及解码分类。
+3. `more=true`时用响应`next_receipt`作为下一页`--after-receipt`，始终保持原owner/cursor；收件推进或接管后返回明确错误，不拼接新旧结果。需要新导出时重新取status，并从0重来。
+4. 显式加`--include-raw`才输出`body_base64`，空body为显式空字符串，坏UTF-8可原样还原。原文可能含敏感原始字段，应保存于受限目录，不能把原文文件直接提交Git；对外脱敏副本与本地原件分开，不能用脱敏后的SHA冒充原件指纹。
+
+每页使用PG只读repeatable-read事务，核对配置/owner/cursor、实际记录数/字节数及末条entry与位点一致；返回行校验SHA与entry单调顺序，跨Stream/不存在的receipt游标拒绝。单页1..256行，原body合计最多8MiB，超限可减小limit后重读；错误整页不返回可推进游标。元数据复核不等于对尚未翻到的全部原文都已验SHA，也不能发现具有数据库写权限的人同时篡改原件和指纹。
+
+导出起点非0、未翻完、期间锚点变化，均不能宣称完整导出。完成分页也只证明该固定锚点的已存记录，不证明Redis已读尽、OC来源经过认证或可交易；`business_authorized`固定false。每页事务各有一致视图，不声称导出期间锁住采集进程。只读诊断入口可与生产者并存；大段导出若持续遇到锚点变化，先协调暂停独立采集端，不能擅自停止OC或业务服务。
+
+新增5项临时PG测试覆盖逐字节还原/空body/坏UTF-8、空收件、stage1分类、跨页推进/接管/错来源、跨Stream游标、计数/尾部/SHA/顺序损坏和大body页预算。实际CLI测试补默认正文隐藏、显式原文、导出不变更位点与旧锚点拒绝。17项相关Go/race通过（19.226秒，无跳过），3项CLI/race、103项Python与七包/cmd/vet通过；没有新迁移、真实OC采集或协议变更。操作与OC比对口径见[联调步骤](CTP_OC_JOINT_INTEGRATION_PLAN_20261106.md#心跳证据比对)。
+
 ### 11-07 独立持久心跳采集入口
 
 `cmd/relay-ctp-capture`将TEST心跳读取接入既有000040原文/位点事务。它对Redis只读，但**会写所选TEST PostgreSQL的接收器与原文审计表**；不是纯只读命令，不是后台常驻服务，也不创建查询、订单、成交或心跳授权窗口。没有新迁移，未部署或接入9092/cron。
