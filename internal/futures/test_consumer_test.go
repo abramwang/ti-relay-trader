@@ -20,6 +20,20 @@ func TestTestSourceFingerprintAndSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	for _, role := range []string{"event", "reply", "hb"} {
+		cfg := s.StreamConfig(role)
+		key, err := cfg.stream()
+		if err != nil || !strings.HasSuffix(key, ":"+role) || !s.matches(StreamHandle{config: cfg, stream: key}) {
+			t.Fatal("bound source role rejected", role, err)
+		}
+		cfg.SourceID = "foreign-source"
+		if s.matches(StreamHandle{config: cfg, stream: key}) {
+			t.Fatal("foreign source accepted", role)
+		}
+	}
+	if s.matches(StreamHandle{config: s.StreamConfig("cmd.trade")}) {
+		t.Fatal("command stream accepted by read source")
+	}
 	if strings.Contains(s.String(), "secret") || strings.Contains(s.String(), "localhost") {
 		t.Fatal("source identity exposes connection details")
 	}

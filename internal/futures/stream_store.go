@@ -29,7 +29,7 @@ type StreamConfig struct {
 }
 
 func (c StreamConfig) stream() (string, error) {
-	if c.Scope.validate() != nil || !oneOf(c.Role, "event", "reply") || !validID(c.SourceID) || len(c.SourceID) > 128 {
+	if c.Scope.validate() != nil || !oneOf(c.Role, "event", "reply", "hb") || !validID(c.SourceID) || len(c.SourceID) > 128 {
 		return "", ErrStreamIdentity
 	}
 	return strings.TrimSuffix(queryReplyStream(c.Scope.Route), "reply") + c.Role, nil
@@ -327,6 +327,10 @@ func readStreamRecord(ctx context.Context, tx *sql.Tx, h StreamHandle, id int64)
 // Pending is a DB work cursor, not a Redis checkpoint. Start another sweep at
 // zero after reaching the end so waiting identities do not disappear forever.
 func (s *StreamStore) Pending(ctx context.Context, h StreamHandle, after int64, limit int) ([]StreamRecord, error) {
+	return s.streamRecords(ctx, h, after, limit, true)
+}
+
+func (s *StreamStore) streamRecords(ctx context.Context, h StreamHandle, after int64, limit int, pendingOnly bool) ([]StreamRecord, error) {
 	if after < 0 || limit < 1 || limit > 256 {
 		return nil, ErrAuditCapacity
 	}
@@ -338,7 +342,7 @@ func (s *StreamStore) Pending(ctx context.Context, h StreamHandle, after int64, 
 	if _, _, _, err = lockStream(ctx, tx, h); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT receipt_id FROM futures_stream_inbox WHERE stream_key=$1 AND state='pending' AND receipt_id>$2 ORDER BY receipt_id LIMIT $3`, h.stream, after, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT receipt_id FROM futures_stream_inbox WHERE stream_key=$1 AND (NOT $4 OR state='pending') AND receipt_id>$2 ORDER BY receipt_id LIMIT $3`, h.stream, after, limit, pendingOnly)
 	if err != nil {
 		return nil, err
 	}

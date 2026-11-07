@@ -69,7 +69,7 @@ func (s *TestStreamSource) StreamConfig(role string) StreamConfig {
 }
 
 func (s *TestStreamSource) matches(h StreamHandle) bool {
-	return s != nil && h.config.Scope == s.scope && h.config.SourceID == s.sourceID && (h.config.Role == "event" || h.config.Role == "reply")
+	return s != nil && h.config.Scope == s.scope && h.config.SourceID == s.sourceID && oneOf(h.config.Role, "event", "reply", "hb")
 }
 
 func (s *TestStreamSource) ReadOnce(ctx context.Context, store *StreamStore, h StreamHandle, limit int) (StreamCapture, error) {

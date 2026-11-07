@@ -6,6 +6,23 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-07 心跳原文持久收件与历史审计
+
+`StreamStore`及TEST专用来源新增`hb`角色，复用000040原文收件、SHA256、owner隔离、累计预算和位点事务，不增加迁移或wire。物理键仍按既有规范`relay:{env}:v1:{broker_id}:{gateway_id}:hb`生成。本轮只在随机TEST开发键验收，未订阅OC实际心跳、部署消费者或连接柜台。
+
+- `ReadOnce`先完成原body与读取位点的同一PG事务；JSON非法、来源字段不符或心跳标记为断开，不影响原始body留证。外层RESP重复body/结构错误仍整批拒收，不能跳过；未读历史被删除或裁剪时按既有连续性规则停止。
+- `HeartbeatAudit(after,limit)`按receipt顺序分页，最多256条，包含pending和quarantined，不按message去重、不只返回最新一条。每条保留原文、运输状态及解码结果/错误；原produced_at和trade_date不改为接收时间。隔离过的断开心跳仍可见，格式正确不代表当前在线。
+- 审计页在既有owner锁下读取并逐条复核原文SHA。数据库/校验和错误返回整页失败，不返回可误用的半页结果；分页参数不推进Redis位点或改处理状态。其他Stream不能走心跳审计；心跳不能移交订单事件/查询账本，dispatcher显式仅允许event/reply。
+- 重新打开收件器并重建客户端可恢复原读取位点，旧owner失效；历史记录只恢复为审计事实，不调用`Observe`、不重建guard有效期。读取审计之后仍是`ErrTestSessionMissing`，禁止把恢复原文成功当作会话恢复成功。
+
+**本轮没有自动衔接原文收件和RunGuarded。** hb收件仍保持pending，表示持久处理责任未交付，不伪造event_id/batch_id或delivered。该计数不是交易账本的异常订单数；既有`InspectDeliveryQuality`仍只检查event/reply，不能据其结果宣布心跳健康。生产服务未使用这些内部接口，不新增运行告警。
+
+新增5项临时PG集成测试，其中2项使用真实TEST Redis开发hb键。覆盖原文/坏UTF-8/跨账户/断开/重复顺序、隔离后审计可见、分页/独立副本、接管/错角色/校验和损坏、真实客户端续读、数据库位点提交失败全回滚及未读断开消息删除阻断。源范围绑定测试扩展至hb。定向race通过，14.456秒；全量结果见README和测试索引。
+
+全量187项Go（109项临时PG）/race、97项Python、七包/cmd及vet通过，无跳过，385.1秒；包含10,000订单/成交恢复。日志`.runtime/ctp-heartbeat-audit-regression.log`，随机开发键清理无报错、临时PG销毁。现有API仍为华鑫TEST进程802957，未重启；运行服务健康不是CTP或实际柜台在线验收。
+
+下一步实现持久会话观察与新消费窗口的显式边界，再与RunGuarded连接。必须逐条处理失效通知，不能跳过历史断开来选择后面的ready；重启后需独立核实身份/连接代次，并取得新鲜证据，不从原文档案自动恢复授权。共享hb没有native身份/connection_generation，当前步骤不扩协议，也无需OC或Meridian重复原则回签。两端隔离联合验证及独立只读入口仍未完成。
+
 ### 11-07 心跳解码与 TEST 会话失效保护
 
 新增`heartbeat.go/test_session.go`，只接既有`messages.json/heartbeat_read_only`的draft.2字段，不修改共享JSON、wire、Meridian或华鑫逻辑。**这是内部消费保护接线，不是实际OC心跳订阅或在线准入验收。**

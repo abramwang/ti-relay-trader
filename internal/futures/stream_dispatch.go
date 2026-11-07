@@ -31,7 +31,7 @@ type StreamDispatcher struct {
 }
 
 func NewStreamDispatcher(ctx context.Context, store *StreamStore, h StreamHandle, queries *QueryStore, events []EventDispatchBinding, replies []QueryDispatchBinding) (*StreamDispatcher, error) {
-	if store == nil || len(events)+len(replies) == 0 || len(events)+len(replies) > 128 ||
+	if store == nil || !oneOf(h.config.Role, "event", "reply") || len(events)+len(replies) == 0 || len(events)+len(replies) > 128 ||
 		(h.config.Role == "event" && len(replies) != 0) || (h.config.Role == "reply" && len(events) != 0) {
 		return nil, ErrStreamIdentity
 	}

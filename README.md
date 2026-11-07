@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07只复核API/Redis/DB为ok，未验收实际柜台准入，不能沿用11-06缺心跳观察作当前结论。本轮不主动报撤单，CTP未接入；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-07 Asia/Shanghai` 共享心跳严格解码及TEST会话失效guard已接有界消费；182项Go（104项临时PG）/race、97项Python、七包/cmd及vet通过，无跳过。无真实hb订阅，连接代次仍需独立证据。下一步持久心跳/身份入口与规范路由隔离联合验证；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
+| 最近确认 | `2026-11-07 Asia/Shanghai` hb原文/位点持久收件及全序列审计已补；187项Go（109项临时PG）/race、97项Python、七包/cmd及vet通过，无跳过。历史心跳不恢复guard；下一步持久观察与新消费窗口、独立身份/代次核验及规范路由联调。CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
 | 更新时间 | `2026-11-07` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-07` 复用现有StreamStore增加hb原文/位点原子持久收件，新增`HeartbeatAudit`分页保留断开、坏报文、隔离及重复历史，不更新guard或标记delivered。新增5项临时PG测试（2项真实TEST Redis开发hb键）；全量187项Go（109项PG）/race、97项Python、七包/cmd及vet通过，385.1秒、无跳过。日志`.runtime/ctp-heartbeat-audit-regression.log`，开发键清理无报错、临时PG已销毁。下一步连接持久观察与新消费窗口，再接独立身份/连接代次证据，不能把恢复原文当恢复在线权限。无新wire/迁移/部署/OC命令，原API进程802957及TEST配置不变。详见[实现边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。
 
 - `2026-11-07` 新增`DecodeHeartbeat/TestSessionGuard/RunGuarded`：固定已知会话/日/来源，重复心跳不续期，过期/断开/变更取消当前消费，完成历史保留；仅内部TEST接线，无真实hb读取/审计、服务发布或权限变化。共享hb没有connection_generation/native登录身份，不从其推断重连代次；下一步依据OC运行稿补持久入口及独立身份门禁。[边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)已更新。新增9项模型/2项PG+Redis测试，全量182项Go（104项PG）/race通过，375.2秒、无跳过；97项Python、七包/cmd及vet通过。日志`.runtime/ctp-heartbeat-guard-regression.log`，开发键清理无报错、临时PG销毁；API仍原TEST进程802957，未重启或发OC命令。
 
