@@ -91,6 +91,14 @@ scripts/switch-relay-env.sh test
 scripts/switch-relay-env.sh production
 ```
 
+默认切换会先执行目标数据库的全部待办迁移。仅切换环境、不发布尚未上线模块时，先核对目标数据库版本与 API/worker 的实际依赖；确认兼容后可显式保留原 schema：
+
+```bash
+scripts/switch-relay-env.sh production --skip-migrations
+```
+
+此选项不绕过生产下单权限检查。2026-11-07 切回生产时，A股 API/worker 不依赖独立 CTP 模块，生产保留000032，未应用 CTP 000033-000041。后续版本须重新核验，不能将跳过迁移作为默认发布方式。切换后检查域名 `/v1/status`、API/worker、账户权限及迁移状态；非交易日 `off_hours` 不代表柜台在线验证通过。
+
 生产 Redis 的 host、port、auth、db 只写入 `config/relay.prod.yaml` 或进程环境变量，不写入 README、docs、示例配置、脚本或 Git commit。当前收到的生产 Redis 凭据尚未写入仓库。
 
 生产配置必须显式设置：

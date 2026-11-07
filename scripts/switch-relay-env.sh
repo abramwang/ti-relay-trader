@@ -6,6 +6,7 @@ usage() {
 Usage:
   scripts/switch-relay-env.sh test
   scripts/switch-relay-env.sh production
+  scripts/switch-relay-env.sh production --skip-migrations
   scripts/switch-relay-env.sh production --allow-production-trading
 
 Switch the local 9092 relay service between local test and production
@@ -17,6 +18,7 @@ Safety:
   - production uses config/relay.prod.yaml.
   - production configs with trading_enabled=true are rejected by default.
   - the target database is migrated before the current service is stopped.
+  - --skip-migrations preserves the target schema; verify runtime compatibility first.
 USAGE
 }
 
@@ -39,11 +41,15 @@ prepare_relay_env() {
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:-}"
 ALLOW_PROD_TRADING=false
+SKIP_MIGRATIONS=false
 if [[ $# -gt 0 ]]; then
   shift
 fi
 for arg in "$@"; do
   case "$arg" in
+    --skip-migrations)
+      SKIP_MIGRATIONS=true
+      ;;
     --allow-production-trading)
       ALLOW_PROD_TRADING=true
       ;;
@@ -90,7 +96,7 @@ if [[ "$EXPECTED_ENV" == "production" ]]; then
   if ! grep -Eq '^[[:space:]]*environment:[[:space:]]*"?production"?[[:space:]]*(#.*)?$' "$CONFIG"; then
     die "config/relay.prod.yaml must declare service.environment: production"
   fi
-  if grep -Eq '^[[:space:]]*trading_enabled:[[:space:]]*true[[:space:]]*(#.*)?$' "$CONFIG"; then
+  if grep -Eq '^[[:space:]]*(-[[:space:]]+)?trading_enabled:[[:space:]]*true[[:space:]]*(#.*)?$' "$CONFIG"; then
     if [[ "$ALLOW_PROD_TRADING" != "true" ]]; then
       die "production config has trading_enabled=true; rerun with --allow-production-trading only after manual risk check"
     fi
@@ -118,8 +124,12 @@ if [[ "$ALLOW_PROD_TRADING" == "true" ]]; then
   export RELAY_ALLOW_PRODUCTION_TRADING=true
 fi
 prepare_relay_env
-printf 'Applying pending database migrations for %s...\n' "$EXPECTED_ENV"
-go run ./cmd/relayctl migrate up -config "$CONFIG" >/dev/null
+if [[ "$SKIP_MIGRATIONS" == "true" ]]; then
+  printf 'Preserving existing database schema for %s (explicit --skip-migrations).\n' "$EXPECTED_ENV"
+else
+  printf 'Applying pending database migrations for %s...\n' "$EXPECTED_ENV"
+  go run ./cmd/relayctl migrate up -config "$CONFIG" >/dev/null
+fi
 
 "$RUNTIME_SERVICE" stop
 mkdir -p "$ROOT/.runtime"
