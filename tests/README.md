@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07 OC runtime-stage1增量：`oc_runtime_delivery*_test.go`新增3项模型及2项PG测试，核验34条原心跳、TEST/null/镜像/全false门禁、guard不可激活、原文持久恢复及实际reply物理键的0,1,1,2分页去重。`test_oc_runtime_delivery.py`新增6项材料/编码检查（8项SHA、两组48场景、主程序/选取心跳对应、安全轨迹、别名意图重算）。沿用下方Redis双开关及临时PG入口，`-run 'TestHeartbeat|TestTestSession|TestTestConsumer|TestOCRuntime|TestOCRedisReceived' -timeout 3m`：28项Go/race通过，12.531秒、无跳过；103项Python全量及七包/cmd/vet通过。日志`.runtime/ctp-runtime-stage1-review.log`。未运行OC程序，原交付body仅离线/临时PG使用；下方187项容量全量为前轮结果，本轮未重跑。
+
 11-07心跳持久审计增量：`heartbeat_audit_integration_test.go`新增5项PG测试，其中2项使用真实TEST Redis随机开发hb键；`TestTestSourceFingerprintAndSafety`增加hb来源绑定检查。覆盖全序列/隔离/坏原文/跨账户、分页、owner接管、checksum损坏、错角色禁止移交、客户端续读、PG提交失败全回滚和未读断开消息丢失。审计不恢复guard、不标delivered、不接OC业务流。定向`-run 'TestHeartbeat|TestTestSource|TestStream' -timeout 3m`以race通过，14.456秒，无跳过；运行需要下方Redis双开关和临时PG入口。
 
 11-07心跳失效保护增量：`heartbeat_test.go/test_session_integration_test.go`新增9项模型及2项临时PG/真实TEST Redis开发键测试。涵盖原共享hb、字段严格校验、重放不续期/有效续期、时钟/来源/会话/日期反例、容量、并发、过期唤醒、缺心跳零读取、停止退休保留完整历史和guard绑定。定向入口沿用下面的Redis双开关，`-run '^TestHeartbeat|^TestTestSession|^TestTestConsumer' -timeout 3m`；心跳为本地合成输入，Redis只访问自己的event/reply键，没有OC心跳订阅或业务命令。全量回归日志`.runtime/ctp-heartbeat-guard-regression.log`。

@@ -6,6 +6,12 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-07 OC 未登录恢复心跳适配
+
+新交付见[阶段1复核](OC_CTP_RUNTIME_STAGE1_REVIEW_20261107.md)。`DecodeHeartbeat`新增仅TEST的`test_transport_recovery_only`分支，接受其明确null交易日/连接代次、payload状态和一致的顶层镜像，保留原body；任一柜台/结算/快照/报撤就绪为true、未知模式/状态、镜像冲突或伪造日期均拒绝。Recovery对象仅承载恢复诊断，TradeDate空串对应显式null，不发布为标准日期或用于查询身份。原共享样例规则不变，完整未来heartbeat schema仍未冻结。
+
+`TestSessionGuard`在该分支显式锁存停止，不能用transport_recovery_clear推导业务就绪；`HeartbeatAudit`可以保存/解码这些未就绪事实而不激活guard。原文采集不能以broker_ready为前提，后续运行入口须分离审计采集和业务门禁。新增34条原心跳复验、反例与PG原文/实际查询物理键恢复，28项相关Go/race及103项Python通过；未接运行服务，不修改wire或Meridian标的。
+
 ### 11-07 心跳原文持久收件与历史审计
 
 `StreamStore`及TEST专用来源新增`hb`角色，复用000040原文收件、SHA256、owner隔离、累计预算和位点事务，不增加迁移或wire。物理键仍按既有规范`relay:{env}:v1:{broker_id}:{gateway_id}:hb`生成。本轮只在随机TEST开发键验收，未订阅OC实际心跳、部署消费者或连接柜台。

@@ -113,6 +113,9 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 	if err != nil {
 		return g.stop("heartbeat_invalid")
 	}
+	if h.Recovery != nil {
+		return g.stop("heartbeat_transport_recovery_only")
+	}
 	if h.CounterSessionID != g.expected.CounterSessionID || h.TradeDate != g.expected.Scope.TradeDate {
 		return g.stop("heartbeat_session_or_day_changed")
 	}
