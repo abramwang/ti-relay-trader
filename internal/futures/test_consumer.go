@@ -108,6 +108,10 @@ func (c *TestConsumer) run(ctx context.Context, guard *TestSessionGuard, onCycle
 	if !c.used.CompareAndSwap(false, true) {
 		return fmt.Errorf("TEST consumer cannot be restarted")
 	}
+	return c.runStarted(ctx, guard, onCycle, true)
+}
+
+func (c *TestConsumer) runStarted(ctx context.Context, guard *TestSessionGuard, onCycle func(ConsumerCycle), closeSource bool) (result error) {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -116,7 +120,9 @@ func (c *TestConsumer) run(ctx context.Context, guard *TestSessionGuard, onCycle
 				result = errors.Join(result, err)
 			}
 		}
-		_ = c.source.Close()
+		if closeSource {
+			_ = c.source.Close()
+		}
 		if onCycle != nil {
 			stopped := ConsumerCycle{Stopped: true, Quality: DeliveryQuality{Blocked: true}}
 			if result != nil {

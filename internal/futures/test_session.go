@@ -187,6 +187,11 @@ func (g *TestSessionGuard) watch(ctx context.Context, cancel context.CancelCause
 // RunGuarded adds revocation/expiry cancellation to the bounded prototype.
 // It does not read heartbeat Redis, authorize commands or install a daemon.
 func (c *TestConsumer) RunGuarded(ctx context.Context, guard *TestSessionGuard, onCycle func(ConsumerCycle)) error {
+	return c.runGuarded(ctx, guard, onCycle, false)
+}
+
+// A claimed caller owns the single-use bootstrap and the client's final close.
+func (c *TestConsumer) runGuarded(ctx context.Context, guard *TestSessionGuard, onCycle func(ConsumerCycle), claimed bool) error {
 	if guard == nil || guard.scope != c.source.scope || guard.sourceID != c.source.sourceID || guard.expected != c.expected {
 		return ErrStreamIdentity
 	}
@@ -194,5 +199,8 @@ func (c *TestConsumer) RunGuarded(ctx context.Context, guard *TestSessionGuard, 
 	done := make(chan struct{})
 	go func() { defer close(done); guard.watch(window, cancel) }()
 	defer func() { cancel(context.Canceled); <-done }()
+	if claimed {
+		return c.runStarted(window, guard, onCycle, false)
+	}
 	return c.run(window, guard, onCycle)
 }

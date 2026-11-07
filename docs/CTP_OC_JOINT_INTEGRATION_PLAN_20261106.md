@@ -4,6 +4,8 @@
 
 ## 本轮进度
 
+11-07 Relay后续增量：000041及`TestHeartbeatWindow/RunHeartbeatWindow`已实现内部TEST持久观察接线，明确历史边界、逐条失效、提交后更新guard、接管重建以及独立hb轮询和退出回收，见[设计边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。窗口身份仍必须由调用方独立核实；当前OC stage1只用于原文审计，不能拿假交易日/代次让业务guard通过。未部署或运行OC，两端联测仍需固定独立路由和窗口；本轮没有新wire或Meridian需求。
+
 11-07最新：OC规范路由及TEST恢复/心跳入口材料已独立复核，见[阶段1回执](OC_CTP_RUNTIME_STAGE1_REVIEW_20261107.md)。上一轮缺实际输出物理键、安全轨迹和跨日别名原输入的问题已解除；新增共享Redis/私有sanitizer各48场景及主程序三次运行记录。Relay适配未登录心跳null和一致镜像，但业务guard继续拒绝，原始审计可保留；实际双端联合运行尚未做，先约定独立路由/窗口，不重开原则评审。
 
 11-07已复核OC `0759873`的`testdata/redis_review`：8项指纹（正文按既有归档补齐相对路径）、三组37场景记录、27项CTest/2项sanitizer日志一致；原查询页0,1,1,2通过Relay解码和临时PG恢复，见 [复核与下一步](OC_CTP_REDIS_DELIVERY_REVIEW_20261106.md)。不是重跑OC测试或在线验收，SDK全为模拟、主程序仍未在线。安全场景仅含错误摘要，跨日别名缺逐输入原文；原样例输入流按虚构账户命名、未附输出物理键，两端联合测试须对齐规范gateway路由。ACK成功但本地确认丢失仍为`OC_ACK_UNCERTAIN`保守阻断，无新wire需求。
