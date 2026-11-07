@@ -6,6 +6,31 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-07 独立持久心跳采集入口
+
+`cmd/relay-ctp-capture`将TEST心跳读取接入既有000040原文/位点事务。它对Redis只读，但**会写所选TEST PostgreSQL的接收器与原文审计表**；不是纯只读命令，不是后台常驻服务，也不创建查询、订单、成交或心跳授权窗口。没有新迁移，未部署或接入9092/cron。
+
+默认仅检查参数，不读取凭据或连接端点。以下均为虚构配置；目标库须事先独立准备，不由命令建库或迁移：
+
+```bash
+go run ./cmd/relay-ctp-capture \
+  --env test --broker ctp --gateway relay-dev-example --account 990000000001 \
+  --deployment-id reviewed-test-deployment --database relay_ctp_audit_test
+```
+
+实际采集必须同时添加`--run --persist-test-audit`。专用环境变量`RELAY_CTP_CAPTURE_REDIS_URL`与`RELAY_CTP_CAPTURE_DATABASE_URL`由操作者安全注入；不读取活动服务配置，不从华鑫账户推断CTP身份。目标数据库名必须以`_test`结尾，DSN解析值及连接后`current_database()`都必须等于显式`--database`。这些是误操作护栏，不代替操作者核实端点/权限或证明服务器环境。
+
+1. `NewTestHeartbeatSource`只允许TEST CTP路由和全部缺省的native身份；不允许只填一部分或拿假值填充。仅此transport-only模式的hb允许缺native，event/reply、命令和业务guard仍要求既有完整身份。原JSON保持不变，内部缺省scope不是新wire字段。原native-bound接收器不能被此入口自动改绑，后续真实身份接线须单独审查，不能从恢复消息反向授权。
+2. 默认新建仅允许“无已有接收器 + 0-0”。`--status`只读数据库显示已存owner/cursor/count/bytes，不读取Redis、不改owner、不登记新行；仍需Redis URL计算配置指纹。owner是CAS令牌，不证明旧进程已死；计数是审计元数据，不证明业务质量。
+3. 重启续读必须先停旧采集进程，再显式提供`--resume-owner <上次owner> --resume-cursor <上次cursor> --confirm-stopped`。行锁事务同时检查来源配置、owner、cursor，完全匹配后生成新owner；并发以同一旧令牌启动只允许一个成功。默认不抢占，不自动读取最新owner后重试，不允许任意跳过历史。确认标记是操作者声明，不是跨机器进程探测或数据库租约；原内部Open仍须由可信调用方协调使用。
+4. 每页先XINFO/XREAD/连续性检查，后将原body、SHA与读取位点同一PG事务提交，强制同步提交。坏JSON、外账户或重复正文都按原运输记录留证，不因“不可交易”而丢弃；解码/业务责任仍独立。外层歧义、未读裁剪、来源变化、容量或数据库错误停止，不自动重读/重发，不标delivered、不XACK。
+5. `--limit`默认32，`--pages`默认16，均为1..256；`--timeout`默认30秒、最多5分钟，约束网络/数据库操作。读到不足一页即`idle`结束；页数耗尽为`page_budget`，不声称全部读完，也不等待未来消息。累计原文仍受既有50,000条/64MiB预算限制，不删除历史腾容量。同步输出端须及时消费JSONL，阻塞stdout不由网络期限解除。
+6. JSONL包含opened及逐页阶段、东八区时刻、source指纹、owner、cursor、页数和本次落盘数；业务授权始终false。输出失败/中断不能撤销已提交页面，后续用`--status`核对真实位点；注册成功但尚无收件也保留owner。进程退出关闭独立客户端，不把owner清空成“无人运行”，不自动续期或恢复guard。
+
+建议先用`--status`核对，再安排停止旧读者与显式续读。源指纹绑定Redis地址/DB/TLS和操作者deployment-id，不认证OC或物理服务器；恢复/换源不能沿用旧身份。原文保存在审计表，不输出到终端；连接串及底层报错正文不打印，失败不得当作零余额或成功空查询。
+
+本轮新增1项模型、6项临时PG测试（3项含真实随机TEST开发hb键，其中1项实际构建并执行独立CLI），另有3项CLI离线护栏测试。验证原文持久、空状态查询不写、CAS并发/旧位点、接管提交失败回滚、旧writer失效、分页预算、输出失败后显式恢复以及禁止激活业务guard；测试DSN仅本机临时PG。最新结果见README和测试索引。下一步固定OC规范隔离路由与窗口，联合核对真实心跳输出、原文指纹和持久位点；四查询/交易消费仍另等真实native身份及连接代次证据，不新增OC wire或Meridian需求。
+
 ### 11-07 独立只读心跳诊断入口
 
 `cmd/relay-ctp-inspect`先交付无需native登录身份、无需数据库的诊断入口，适用于当前OC stage1；它不是四查询执行器或持久消费者。原有服务和共享客户端不导入此入口，未部署到9092、cron或自动启动脚本。

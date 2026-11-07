@@ -4,6 +4,8 @@
 
 ## 本轮进度
 
+11-07持久入口增量：`relay-ctp-capture`已接入TEST心跳原文/位点事务，支持独立端点、默认不联网、显式PG审计写入、只读status及旧owner/cursor的CAS续读。当前stage1不需虚构native身份即可采集；event/reply/业务guard未放宽。源码和实际CLI仅在随机开发键及临时PG验证，不自动部署。下一步固定OC隔离gateway/account及窗口，对照其实际hb key/entry/body与Relay收件位点；不要求OC重写协议或再做原则回签，详见[运行边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立持久心跳采集入口)。
+
 11-07诊断入口增量：`relay-ctp-inspect`已支持指定TEST路由的单页心跳只读检查，默认零连接，显式run也不调用OC、不写PG/位点、不创建group，详见[用法与边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立只读心跳诊断入口)。当前stage1无需补假native身份即可查看恢复事实，但报告始终不授权业务。真实随机开发键验证通过，实际OC路由联合验收仍待；下一步独立持久采集入口及固定路由/窗口比对，无新增OC协议或Meridian需求，不要求重复原则回签。
 
 11-07 Relay后续增量：000041及`TestHeartbeatWindow/RunHeartbeatWindow`已实现内部TEST持久观察接线，明确历史边界、逐条失效、提交后更新guard、接管重建以及独立hb轮询和退出回收，见[设计边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。窗口身份仍必须由调用方独立核实；当前OC stage1只用于原文审计，不能拿假交易日/代次让业务guard通过。未部署或运行OC，两端联测仍需固定独立路由和窗口；本轮没有新wire或Meridian需求。

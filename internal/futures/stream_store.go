@@ -29,6 +29,12 @@ type StreamConfig struct {
 }
 
 func (c StreamConfig) stream() (string, error) {
+	if c.Role == "hb" && emptyNativeScope(c.Scope) {
+		if !validID(c.SourceID) || len(c.SourceID) > 128 {
+			return "", ErrStreamIdentity
+		}
+		return (HeartbeatInspectionRequest{Route: c.Scope.Route, After: "0-0", Limit: 1}).Stream()
+	}
 	if c.Scope.validate() != nil || !oneOf(c.Role, "event", "reply", "hb") || !validID(c.SourceID) || len(c.SourceID) > 128 {
 		return "", ErrStreamIdentity
 	}
@@ -154,6 +160,10 @@ func compareStreamID(a, b string) (int, error) {
 }
 
 func (s *StreamStore) Open(ctx context.Context, c StreamConfig) (StreamHandle, error) {
+	return s.open(ctx, c, nil)
+}
+
+func (s *StreamStore) open(ctx context.Context, c StreamConfig, expected *HeartbeatCheckpoint) (StreamHandle, error) {
 	key, err := c.stream()
 	if err != nil {
 		return StreamHandle{}, err
@@ -169,15 +179,29 @@ func (s *StreamStore) Open(ctx context.Context, c StreamConfig) (StreamHandle, e
 		return StreamHandle{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO futures_stream_receivers(stream_key,config_json,owner_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, key, raw, h.owner); err != nil {
+	insert, err := tx.ExecContext(ctx, `INSERT INTO futures_stream_receivers(stream_key,config_json,owner_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, key, raw, h.owner)
+	if err != nil {
+		return StreamHandle{}, err
+	}
+	created, err := insert.RowsAffected()
+	if err != nil {
 		return StreamHandle{}, err
 	}
 	var same bool
-	if err = tx.QueryRowContext(ctx, `SELECT config_json=$2::jsonb FROM futures_stream_receivers WHERE stream_key=$1 FOR UPDATE`, key, raw).Scan(&same); err != nil {
+	var owner, cursor string
+	if err = tx.QueryRowContext(ctx, `SELECT config_json=$2::jsonb,owner_id,cursor_id FROM futures_stream_receivers WHERE stream_key=$1 FOR UPDATE`, key, raw).Scan(&same, &owner, &cursor); err != nil {
 		return StreamHandle{}, err
 	}
 	if !same {
 		return StreamHandle{}, ErrStreamIdentity
+	}
+	if expected != nil {
+		if (created == 1 && expected.Owner != "") || (created == 0 && (expected.Owner == "" || expected.Owner != owner)) {
+			return StreamHandle{}, ErrStreamOwner
+		}
+		if expected.Cursor != cursor {
+			return StreamHandle{}, ErrStreamCursor
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_receivers SET owner_id=$2 WHERE stream_key=$1`, key, h.owner); err != nil {
 		return StreamHandle{}, err

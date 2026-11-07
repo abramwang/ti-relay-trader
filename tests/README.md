@@ -2,6 +2,10 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07持久采集入口：新增1项模型、6项PG（3项含真实TEST随机开发hb键，1项构建执行`relay-ctp-capture`子进程），以及`cmd/relay-ctp-capture`的3项离线护栏。覆盖无native的hb限定、禁止业务guard、只读status不写/不连Redis、初建/续读CAS及8路竞争、旧位点/旧owner拒绝、提交失败回滚、完整原文及页预算、输出失败后按真实checkpoint恢复。CLI子进程使用本机临时PG下独立`*_test`数据库，结束删除；不会创建/迁移应用数据库。最终`-skip '^TestTradeCapacityTenThousandOrdersAndFills$' -timeout 3m`的211项Go/race通过，81.305秒、无运行时skip；万笔订单/成交恢复单项在首轮日志中通过（299.39秒），产品代码相同，仅CLI测试夹具修正。合计212项（125项PG）分批覆盖通过，另103项Python、3项CLI/race、七包/cmd及vet通过。临时PG销毁、随机开发键清理无报错。
+
+日志`.runtime/ctp-capture-final-regression.log`为修正后的非万笔套件；`.runtime/ctp-capture-cli-targeted.log`为7项采集定向复验。首轮`.runtime/ctp-capture-regression.log`中的CLI测试曾因夹具修改`pgx.Config.Database`后仍使用保留原DSN的`ConnString()`而被目标库护栏拒绝；已改用结构化URL生成临时目标DSN，最终套件真实CLI通过。这个夹具失败不算产品验收通过，也不能把首轮整文件写成全量通过。复现沿用下方Redis双开关及临时PG脚本；CLI离线用`go test -race ./cmd/relay-ctp-capture -count=1 -v`。用户CSV和收到的OC材料未修改。
+
 11-07只读诊断入口：`heartbeat_inspect_test.go`新增5项模型、`cmd/relay-ctp-inspect`新增5项CLI测试（含真实TEST随机开发hb键；无开关则该项skip）。39项相关Go/race通过，22.216秒，无跳过：临时PG脚本配合`-run 'TestHeartbeat|TestTestSession|TestTestConsumer|TestOCRuntime' -timeout 3m`。CLI使用同一Redis双开关执行`go test -race ./cmd/relay-ctp-inspect -count=1 -v`，5项全过、1.052秒。验证默认不读取凭据或联网、prod/huaxin拒绝、分页/重读不变更Stream/group、旧源时间/null不造值、坏报文保留和错误脱敏。日志`.runtime/ctp-inspection-{regression,cli}.log`；103项Python通过，运行环境为`.runtime/ctp-contract-venv/bin/python`，不是系统Python或浏览器`.venv`。七包/cmd/vet通过；本轮未重跑下方200项容量全量。CLI用法见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`，命令自身无DB、无迁移或生产操作。
 
 11-07持久心跳窗口增量：`heartbeat_window_integration_test.go`新增8项PG测试（2项用真实TEST开发键，含多个子场景）。覆盖显式历史边界、原文/观察双事务、提交失败不续期、顺序断开不跳过、接管重建、源时间/重投、坏SHA/上下文/隔离、stage1拒绝业务准入、慢PG期间过期取消、128窗口预算与非破坏性降级；真实消费覆盖bootstrap积压、运行失效/无心跳、查询退休及完整快照保留。000041只在临时PG执行，不迁移运行库。定向参数`-run 'TestHeartbeatWindow|TestTestSession|TestTestConsumer|TestTradeStoreMalformed|TestQueryStoreIdentity' -timeout 3m`沿用下面Redis双开关；日志`.runtime/ctp-heartbeat-window-targeted.log`。全量日志`.runtime/ctp-heartbeat-window-regression.log`；全量通过后，最终退出顺序和+08:00审计调整另以24项定向race复验，18.388秒、无跳过。

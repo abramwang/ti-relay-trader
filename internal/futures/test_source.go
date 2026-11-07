@@ -34,6 +34,25 @@ func NewTestStreamSource(c TestSourceConfig) (*TestStreamSource, error) {
 		!validID(c.DeploymentID) || len(c.DeploymentID) > 128 {
 		return nil, ErrStreamIdentity
 	}
+	return newTestSource(c)
+}
+
+func emptyNativeScope(s CommandScope) bool {
+	return s.NativeBrokerID == "" && s.InvestorID == "" && s.UserID == ""
+}
+
+// Transport-only hb collection must not invent native login credentials.
+func NewTestHeartbeatSource(c TestSourceConfig) (*TestStreamSource, error) {
+	if !emptyNativeScope(c.Scope) || !validID(c.DeploymentID) || len(c.DeploymentID) > 128 {
+		return nil, ErrStreamIdentity
+	}
+	if _, err := (HeartbeatInspectionRequest{Route: c.Scope.Route, After: "0-0", Limit: 1}).Stream(); err != nil {
+		return nil, err
+	}
+	return newTestSource(c)
+}
+
+func newTestSource(c TestSourceConfig) (*TestStreamSource, error) {
 	options, err := redis.ParseURL(c.RedisURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TEST Redis URL")
@@ -49,6 +68,10 @@ func NewTestStreamSource(c TestSourceConfig) (*TestStreamSource, error) {
 	digest := sha256.Sum256(identity)
 	options.Protocol = 2
 	options.MaxRetries = -1
+	if emptyNativeScope(c.Scope) {
+		options.DialerRetries = 1
+		options.PoolSize, options.MaxActiveConns, options.MinIdleConns, options.MaxIdleConns = 1, 1, 0, 1
+	}
 	options.DialTimeout, options.ReadTimeout, options.WriteTimeout = 2*time.Second, 2*time.Second, 2*time.Second
 	options.ContextTimeoutEnabled = true
 	options.ClientName = "relay-ctp-test-consumer"
@@ -69,7 +92,7 @@ func (s *TestStreamSource) StreamConfig(role string) StreamConfig {
 }
 
 func (s *TestStreamSource) matches(h StreamHandle) bool {
-	return s != nil && h.config.Scope == s.scope && h.config.SourceID == s.sourceID && oneOf(h.config.Role, "event", "reply", "hb")
+	return s != nil && (!emptyNativeScope(s.scope) || h.config.Role == "hb") && h.config.Scope == s.scope && h.config.SourceID == s.sourceID && oneOf(h.config.Role, "event", "reply", "hb")
 }
 
 func (s *TestStreamSource) ReadOnce(ctx context.Context, store *StreamStore, h StreamHandle, limit int) (StreamCapture, error) {
