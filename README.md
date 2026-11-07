@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
 | 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07 13:19复核：进入13:15 TEST柜台窗口后API为degraded，华鑫网关HEARTBEAT_MISSING、order_entry_ready=false；Redis/DB仍ok，lag=0、pending DLQ=0。CTP改动未部署，不主动报撤单或重启OC；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-07 Asia/Shanghai` 持久心跳观察窗口与消费循环已接线，000041仅临时PG；全量200项Go（119项PG）/race通过，最终调整另以24项定向race复验。旧窗口不复活、中间断开不跳过、慢DB不挡过期。下一步独立只读入口/诊断与真实身份代次核验、规范路由联测；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
+| 最近确认 | `2026-11-07 Asia/Shanghai` 新增独立 `relay-ctp-inspect` TEST心跳诊断入口，默认零连接，显式run仅单页只读；不接管位点、不造native身份、不激活业务guard。39项相关Go/race、5项CLI（含真实开发键）及103项Python通过。下一步独立持久采集入口/规范路由联测，业务消费另等真实身份代次；CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
 | 更新时间 | `2026-11-07` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-07` 新增独立 `cmd/relay-ctp-inspect`，默认只检参数，`--run`才用专用环境变量连接TEST Redis读取指定hb单页。展示原文SHA、顺序、恢复状态与+08:00时间；原生身份/代次不猜填，业务授权固定false，不落库、不接管消费者、不发OC命令。39项相关Go/race（22.216秒）、5项CLI/race（1.052秒，含真实随机开发键）、103项Python、七包/cmd/vet通过；日志`.runtime/ctp-inspection-{regression,cli}.log`。未重跑上轮10,000容量全量，未部署/迁移/切环境/改权限。下一步规范隔离路由的持久采集运行入口及两端联测；[用法与边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立只读心跳诊断入口)。
 
 - `2026-11-07` 新增`TestHeartbeatWindow/RunHeartbeatWindow`及000041：显式审计边界、持久逐条观察、提交后更新guard；独立hb读取与时效取消接入业务消费，退出先回收协程再关客户端，完整查询历史保留。新增8项PG测试（2项含真实TEST开发键）；全量200项Go（119项PG）/race通过，398.731秒、无跳过，含10,000订单/成交恢复。最终退出顺序和+08:00审计调整另以24项定向race复验，18.388秒；103项Python、七包/cmd/vet通过。日志`.runtime/ctp-heartbeat-window-{regression,targeted}.log`，临时PG已销毁、开发键清理无报错。仅内部原型，ReviewID/会话/代次须独立核验，当前OC stage1不能用假日期运行业务guard；下一步独立只读入口与规范路由联测。未部署/应用运行库迁移/切环境/改权限，API仍原华鑫TEST进程802957。详见[边界](docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md)。
 

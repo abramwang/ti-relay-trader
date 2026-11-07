@@ -6,6 +6,30 @@
 
 最新材料更新：OC `ee58039`订单/成交标准化、持久身份及待关联交付已收到；补齐旧分页JSON并新增交易输出，27条原body通过Go/schema及24个临时PG子场景复验，见 [收口与分工](OC_CTP_TRADE_DELIVERY_REVIEW_20261106.md)。没有wire或生产代码兼容改动，OC可继续dispatch/持久输出/ACK。下文“分页JSON仍缺”为当时历史状态；六项编码容量摘要和未随包交付的CTest/sanitizer日志仍不冒称独立验证，不影响继续开发。
 
+### 11-07 独立只读心跳诊断入口
+
+`cmd/relay-ctp-inspect`先交付无需native登录身份、无需数据库的诊断入口，适用于当前OC stage1；它不是四查询执行器或持久消费者。原有服务和共享客户端不导入此入口，未部署到9092、cron或自动启动脚本。
+
+默认检查参数，不读取凭据、不创建Redis连接。显式指定逻辑TEST路由；以下为虚构配置示例，不能直接作为真实OC身份：
+
+```bash
+go run ./cmd/relay-ctp-inspect \
+  --env test --broker ctp --gateway relay-dev-example --account 990000000001
+```
+
+实际读取另加`--run`，专用环境变量`RELAY_CTP_INSPECT_REDIS_URL`由操作者安全注入。没有凭据命令行参数，不加载活动服务配置、不扫描账户、不推断原生BrokerID/UserID/InvestorID。只接受`test`及`ctp/ctp_*`路由；这不是对Redis服务器身份的认证，操作者仍须核实端点确属TEST并有读取权限。建议使用受限只读账号，本轮未创建或验收最小ACL。
+
+- 每次只读一页，`--limit`默认32、范围1..256；`--timeout`默认10秒、最多30秒。`--after`默认`0-0`，只接受规范Stream ID，不允许`$`跳过历史。连接使用RESP2、单连接池、单次拨号尝试、不重试失败读；SIGINT/SIGTERM取消，退出关闭独立客户端。
+- 数据操作仅`XINFO STREAM`和非阻塞`XREAD`；连接握手可能包括AUTH/HELLO/SELECT/CLIENT元数据命令。不用XREADGROUP/XACK/XGROUP/XADD，不创建消费者或抢占PG接收owner，不写任何账本、配置或位点，不调用OC或柜台。
+- JSON报告逐条包含entry_id、原body SHA256/长度及分类。`invalid_heartbeat`保留坏报文位置；`transport_recovery_only`保留未登录恢复信息；正常格式只称`decoded_unverified`。断开、重复、坏报文不会过滤成“最新正常一条”。不输出raw正文、凭据或Redis地址；原始证据持久化仍由既有StreamStore承担。
+- `advertised`只是来源自报：会话、交易日、源时间、状态、六个就绪位及恢复字段。stage1交易日保持JSON null，不伪造连接代次。时间显示+08:00，`age_ms`仅为采集时刻与源时刻差，可为负数；不判定心跳新鲜、实时授权或时钟可信。`business_authorized`始终false，任何上报ready都不会激活guard。
+- `next_after`仅诊断分页token，不能当作已审计或已落库边界；`more_at_observed_tail`仅表示末次XINFO观察到的尾部是否超过本页，不是实时同步完成证明。无记录返回空数组；原key不存在报`stream_missing`，不伪装成空Stream。错误有metadata/read/final_metadata阶段及脱敏分类，不新增OC业务错误枚举。
+- 沿用读前/读后历史连续性检查；可观察的裁剪/删除/倒退、外层重复body或非法结构整页失败，不返回可推进的游标。它无法证明Redis恢复/重建未发生，也不认证OC进程。不自动重置游标或跳到最新心跳。
+
+退出0表示参数检查或一页读取完成，**不是业务健康**；报告可能含坏报文、过时心跳和明确未就绪状态。端点/权限/协议/连续性失败退出非0，诊断输出应按敏感运维资料保管。若要原文留证及重启续读，下一步显式配置独立持久采集运行入口；不能把这个临时诊断读取升级为审计完成或替代独立身份核验。
+
+新增5项模型测试覆盖34条OC心跳、顺序/无效/重复、空/分页、裁剪/倒退、TEST/期限门禁、错误脱敏；新增5项CLI测试含真实随机TEST开发hb键，核对分页/重复读取后条数、尾部和group不变。相关39项Go/race通过（22.216秒、无跳过），CLI5项/race通过（1.052秒、无跳过），103项Python及七包/cmd/vet通过。PG只用于既有定向回归的临时实例，诊断入口自身无DB。本轮不重跑前轮200项容量全量、不访问真实OC账户Stream、不改变wire或Meridian定义。
+
 ### 11-07 持久心跳观察窗口与消费接线
 
 新增`heartbeat_window.go`和000041迁移，仅在临时PG验证，现有运行库仍停留原迁移版本，未部署。两个新表分别记录本地观察窗口、按原收件receipt关联的逐条观察结果；`observing`只表示观察过程未关闭，`accepted`只表示当时通过本地校验，均不是当前有效租约或交易许可。

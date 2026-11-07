@@ -2,6 +2,8 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+11-07只读诊断入口：`heartbeat_inspect_test.go`新增5项模型、`cmd/relay-ctp-inspect`新增5项CLI测试（含真实TEST随机开发hb键；无开关则该项skip）。39项相关Go/race通过，22.216秒，无跳过：临时PG脚本配合`-run 'TestHeartbeat|TestTestSession|TestTestConsumer|TestOCRuntime' -timeout 3m`。CLI使用同一Redis双开关执行`go test -race ./cmd/relay-ctp-inspect -count=1 -v`，5项全过、1.052秒。验证默认不读取凭据或联网、prod/huaxin拒绝、分页/重读不变更Stream/group、旧源时间/null不造值、坏报文保留和错误脱敏。日志`.runtime/ctp-inspection-{regression,cli}.log`；103项Python通过，运行环境为`.runtime/ctp-contract-venv/bin/python`，不是系统Python或浏览器`.venv`。七包/cmd/vet通过；本轮未重跑下方200项容量全量。CLI用法见`docs/CTP_LEDGER_LINKAGE_DESIGN_20261105.md`，命令自身无DB、无迁移或生产操作。
+
 11-07持久心跳窗口增量：`heartbeat_window_integration_test.go`新增8项PG测试（2项用真实TEST开发键，含多个子场景）。覆盖显式历史边界、原文/观察双事务、提交失败不续期、顺序断开不跳过、接管重建、源时间/重投、坏SHA/上下文/隔离、stage1拒绝业务准入、慢PG期间过期取消、128窗口预算与非破坏性降级；真实消费覆盖bootstrap积压、运行失效/无心跳、查询退休及完整快照保留。000041只在临时PG执行，不迁移运行库。定向参数`-run 'TestHeartbeatWindow|TestTestSession|TestTestConsumer|TestTradeStoreMalformed|TestQueryStoreIdentity' -timeout 3m`沿用下面Redis双开关；日志`.runtime/ctp-heartbeat-window-targeted.log`。全量日志`.runtime/ctp-heartbeat-window-regression.log`；全量通过后，最终退出顺序和+08:00审计调整另以24项定向race复验，18.388秒、无跳过。
 
 11-07 OC runtime-stage1增量：`oc_runtime_delivery*_test.go`新增3项模型及2项PG测试，核验34条原心跳、TEST/null/镜像/全false门禁、guard不可激活、原文持久恢复及实际reply物理键的0,1,1,2分页去重。`test_oc_runtime_delivery.py`新增6项材料/编码检查（8项SHA、两组48场景、主程序/选取心跳对应、安全轨迹、别名意图重算）。沿用下方Redis双开关及临时PG入口，`-run 'TestHeartbeat|TestTestSession|TestTestConsumer|TestOCRuntime|TestOCRedisReceived' -timeout 3m`：28项Go/race通过，12.531秒、无跳过；103项Python全量及七包/cmd/vet通过。日志`.runtime/ctp-runtime-stage1-review.log`。未运行OC程序，原交付body仅离线/临时PG使用；下方187项容量全量为前轮结果，本轮未重跑。
