@@ -11,7 +11,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | `2026-11-06 21:12 Asia/Shanghai` 按用户授权切至测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前是华鑫 TEST，不是 CTP |
-| 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07只复核API/Redis/DB为ok，未验收实际柜台准入，不能沿用11-06缺心跳观察作当前结论。本轮不主动报撤单，CTP未接入；切回生产须用户另行明确指令 |
+| 安全状态 | 生产配置下单仍关闭，生产 API/独立 worker 已停止；测试沿用 `00030484 trading_enabled=true`。11-07 13:19复核：进入13:15 TEST柜台窗口后API为degraded，华鑫网关HEARTBEAT_MISSING、order_entry_ready=false；Redis/DB仍ok，lag=0、pending DLQ=0。CTP改动未部署，不主动报撤单或重启OC；切回生产须用户另行明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
 | 最近确认 | `2026-11-07 Asia/Shanghai` hb原文/位点持久收件及全序列审计已补；187项Go（109项临时PG）/race、97项Python、七包/cmd及vet通过，无跳过。历史心跳不恢复guard；下一步持久观察与新消费窗口、独立身份/代次核验及规范路由联调。CTP未上线，仍华鑫TEST，切回生产须用户明确指令 |
 | 更新时间 | `2026-11-07` |
