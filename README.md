@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-08 09:11 Asia/Shanghai` 按用户授权切回测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前为华鑫 TEST，不是 CTP |
-| 安全状态 | 测试账户00030484沿用trading_enabled=true，但OC心跳缺失、order_entry_ready=false；生产下单配置仍全部关闭，生产API/独立worker已停止。Redis/DB正常，lag=0、pending DLQ=0。未主动报撤单或重启OC；本次未执行数据库迁移 |
+| 当前环境 | `2026-11-08 22:07 Asia/Shanghai` 按用户授权切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立 worker 正常；不是 CTP |
+| 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。Redis/DB正常，lag=0、pending DLQ=0；非交易日4网关off_hours。未主动报撤单或重启OC，本次未执行迁移或CTP采集 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-08 12:48 Asia/Shanghai` CTP首轮建议路由ctp_joint_test/ctp-joint-20261108/990000000108只读SCAN未占用，未预留或采集；SourceID/epoch及具体T0待OC确认，当前OC不消费新查询。华鑫TEST运行配置不变，09:11观察OC心跳缺失；测试schema000040，CTP业务链路未上线。切回生产须用户明确指令 |
+| 最近确认 | `2026-11-08 22:07 Asia/Shanghai` 域名/v1/status为production/ok，API PID2462754、worker PID2462706。CTP首轮路由仅12:48时点检查未占用，未预留或采集；SourceID/epoch及具体T0待OC确认，CTP业务链路未上线。后续切环境须用户明确指令 |
 | 更新时间 | `2026-11-08` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-08 22:07 Asia/Shanghai` 按用户指令执行`switch-relay-env.sh production --skip-migrations`切回生产，域名/API/独立worker正常；4查询账户、0交易账户，16条stream健康、lag和pending DLQ为0，4网关正常休市。未改账户权限、未执行迁移、未主动报撤单或重启OC；CTP联调仍未启动，原时点路由检查不代表已预留。
 
 - `2026-11-08 12:48 Asia/Shanghai` 接受OC首轮隔离路由，只读完整SCAN空、前后run_id一致，inspect默认零连接参数预检通过；无Redis写入/PG采集/环境或服务变化。已整理[路由与首轮边界确认](docs/OC_CTP_JOINT_ROUTE_CONFIRMATION_20261108.md)：OC仅恢复/未登录心跳，新查询运行入口仍待；先约定SourceID/epoch/consumer/T0，窗口结束后读取保留原文并比对，不能把capture超时视为15秒连续采集。原始检查工具留在本地`.runtime/ctp-joint-preflight-20261108.go`，非运行服务组件。
 
