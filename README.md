@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-08 09:11 Asia/Shanghai` 按用户授权切回测试，`.runtime/active-config.yaml -> config/relay.local.yaml`，API 内嵌账本同步；当前为华鑫 TEST，不是 CTP |
 | 安全状态 | 测试账户00030484沿用trading_enabled=true，但OC心跳缺失、order_entry_ready=false；生产下单配置仍全部关闭，生产API/独立worker已停止。Redis/DB正常，lag=0、pending DLQ=0。未主动报撤单或重启OC；本次未执行数据库迁移 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-08 09:11 Asia/Shanghai` 域名/v1/status确认test，API PID2040733；degraded原因是测试OC HEARTBEAT_MISSING，不代表交易链路已验收。测试schema保留000040，000041未应用；CTP业务链路未上线，实际OC CTP TEST路由/窗口仍待确认。切回生产须用户明确指令 |
+| 最近确认 | `2026-11-08 12:48 Asia/Shanghai` CTP首轮建议路由ctp_joint_test/ctp-joint-20261108/990000000108只读SCAN未占用，未预留或采集；SourceID/epoch及具体T0待OC确认，当前OC不消费新查询。华鑫TEST运行配置不变，09:11观察OC心跳缺失；测试schema000040，CTP业务链路未上线。切回生产须用户明确指令 |
 | 更新时间 | `2026-11-08` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-08 12:48 Asia/Shanghai` 接受OC首轮隔离路由，只读完整SCAN空、前后run_id一致，inspect默认零连接参数预检通过；无Redis写入/PG采集/环境或服务变化。已整理[路由与首轮边界确认](docs/OC_CTP_JOINT_ROUTE_CONFIRMATION_20261108.md)：OC仅恢复/未登录心跳，新查询运行入口仍待；先约定SourceID/epoch/consumer/T0，窗口结束后读取保留原文并比对，不能把capture超时视为15秒连续采集。原始检查工具留在本地`.runtime/ctp-joint-preflight-20261108.go`，非运行服务组件。
 
 - `2026-11-08 09:11 Asia/Shanghai` 按用户指令通过`switch-relay-env.sh test --skip-migrations`切回华鑫测试环境，生产API/worker停止，测试API与内嵌账本同步启动。域名确认test、00030484启用，Redis/DB正常、4条stream健康、lag及pending DLQ为0；OC心跳缺失、报单未就绪，API为degraded。未改账户权限、未发报撤单、未重启OC或执行迁移；测试保留000040，生产下单仍关闭。后续需OC新鲜心跳才能确认测试交易可用。
 

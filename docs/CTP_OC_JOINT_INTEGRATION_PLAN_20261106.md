@@ -4,6 +4,8 @@
 
 ## 本轮进度
 
+11-08最新：已接受OC建议的`ctp_joint_test / ctp-joint-20261108 / 990000000108`隔离路由，12:48只读完整SCAN未发现此前缀键，Redis run_id检查前后一致；尚未预留、建组或采集。见[可转OC的路由确认](OC_CTP_JOINT_ROUTE_CONFIRMATION_20261108.md)。当前OC仅恢复/未登录心跳，不能消费新查询；首轮明确缩为15秒心跳窗口，四查询待独立入口。待OC一次补实际SourceID/epoch位置与值/consumer/具体T0；首轮窗口结束后读取保留的心跳，不把capture超时当持续采集。
+
 11-07证据导出增量：`relay-ctp-capture --audit`可按固定owner/cursor只读分页导出已存心跳的实际Stream entry_id、SHA256/长度及可选原文；跨页位点/owner改变拒绝，不推进或接管。17项相关Go/race与实际CLI验证通过，详见下方[心跳证据比对](#心跳证据比对)。已询问用户当前运行的隔离CTP TEST gateway/account及可采集窗口；尚未收到，不依据归档fixture自动选择实时路由。本轮不要求OC新增协议、重复原则回签或提供二进制。
 
 11-07持久入口增量：`relay-ctp-capture`已接入TEST心跳原文/位点事务，支持独立端点、默认不联网、显式PG审计写入、只读status及旧owner/cursor的CAS续读。当前stage1不需虚构native身份即可采集；event/reply/业务guard未放宽。源码和实际CLI仅在随机开发键及临时PG验证，不自动部署。下一步固定OC隔离gateway/account及窗口，对照其实际hb key/entry/body与Relay收件位点；不要求OC重写协议或再做原则回签，详见[运行边界](CTP_LEDGER_LINKAGE_DESIGN_20261105.md#11-07-独立持久心跳采集入口)。
@@ -83,4 +85,4 @@ CTP登录、认证、结算确认、重启和交易分别确认操作边界；�
 - 行情目录就绪不代表柜台账户具备交易权限；静态价位/手数检查也不替代动态约束与账户准入。首期之外的交易所不自动扩展。
 - 本计划不宣告F0冻结，不引入期货逐日盯市/正式绩效，不启用生产期货或修改华鑫生产行为。
 
-**下一项实际工作：确认OC隔离路由与采集窗口，使用已完成的inspect/capture/audit完成真实心跳原文到PG的两端比对。实际四查询及业务消费仍需独立native身份/连接代次和明确授权，不从stage1恢复状态推断。**
+**下一项实际工作：路由建议已接受且时点未占用检查完成；核对OC实际SourceID/run_id/epoch和具体T0后，先做恢复/未登录心跳到PG的两端比对。OC新查询消费入口仍未交付，不发查询，不从stage1恢复状态推断四查询或业务就绪。**
