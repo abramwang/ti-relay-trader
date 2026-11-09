@@ -176,6 +176,7 @@ type EconomicNAVAssetBasisSummary struct {
 	ReportedDailyPnL                   float64 `json:"reported_daily_pnl"`
 	ReportedDeposit                    float64 `json:"reported_deposit"`
 	ReportedWithdrawal                 float64 `json:"reported_withdrawal"`
+	SameDayETFSettlementCashIncluded   float64 `json:"same_day_etf_settlement_cash_included,omitempty"`
 	OpenOutstandingETFSettlementAsset  float64 `json:"open_outstanding_etf_settlement_asset"`
 	CloseOutstandingETFSettlementAsset float64 `json:"close_outstanding_etf_settlement_asset"`
 	OpenEconomicNAV                    float64 `json:"open_economic_nav"`
@@ -454,6 +455,13 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		result.QualityFlags = appendUnique(result.QualityFlags, "post_close_settlement_included_in_broker_asset_basis")
 	}
 	result.AssetBasis = assetBasis
+	if assetBasis.SameDayETFSettlementCashIncluded > 0 {
+		status = "blocked"
+		result.QualityFlags = appendUnique(result.QualityFlags, "same_day_etf_cash_inclusion_preview_only")
+		if options.Persist {
+			return EconomicNAVResult{}, errors.New("same-day ETF cash inclusion remains preview-only pending continuous settlement review")
+		}
+	}
 	openVisibleCash := 0.0
 	closeVisibleCash := firstPositiveFloat(daily.CashTotal, daily.NetAsset)
 	brokerOpenPositionValue := 0.0
@@ -486,7 +494,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		OpenPositionValue:        contribution.Summary.OpenPositionValue,
 		CloseVisibleCash:         roundMoney(closeVisibleCash),
 		ClosePositionValue:       contribution.Summary.ClosePositionValue,
-		ETFSettlementEstimate:    contribution.Summary.ETFSettlementEstimate,
+		ETFSettlementEstimate:    roundMoney(contribution.Summary.ETFSettlementEstimate - assetBasis.SameDayETFSettlementCashIncluded),
 		BrokerOpenPositionValue:  roundMoney(brokerOpenPositionValue),
 		BrokerClosePositionValue: roundMoney(brokerClosePositionValue),
 		PriceSource:              valuationPriceSource,
@@ -746,7 +754,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"close_visible_cash":          roundMoney(closeVisibleCash),
 				"post_close_settlement_cash":  etfSettlement.PostCloseReceiptAmount,
 				"close_position_value":        contribution.Summary.ClosePositionValue,
-				"etf_settlement_estimate":     contribution.Summary.ETFSettlementEstimate,
+				"etf_settlement_estimate":     result.Valuation.ETFSettlementEstimate,
 				"broker_open_position_value":  roundMoney(brokerOpenPositionValue),
 				"broker_close_position_value": roundMoney(brokerClosePositionValue),
 				"price_source":                valuationPriceSource,
@@ -770,6 +778,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 				"reported_daily_pnl":                     assetBasis.ReportedDailyPnL,
 				"reported_deposit":                       assetBasis.ReportedDeposit,
 				"reported_withdrawal":                    assetBasis.ReportedWithdrawal,
+				"same_day_etf_settlement_cash_included":  assetBasis.SameDayETFSettlementCashIncluded,
 				"open_outstanding_etf_settlement_asset":  assetBasis.OpenOutstandingETFSettlementAsset,
 				"close_outstanding_etf_settlement_asset": assetBasis.CloseOutstandingETFSettlementAsset,
 			},
@@ -1371,9 +1380,13 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		return result, nil, fmt.Errorf("broker daily pnl identity differs by %.6f", reportedIdentityPnL-reportedDailyPnL)
 	}
 	settlementIncrease := roundMoney(closeOutstanding - openOutstanding)
-	expectedSettlementIncrease := roundMoney(currentETFSettlementCarry - releasedETFSettlement)
+	includedCash, err := confirmedSameDayETFCash(observation, currentETFSettlementCarry)
+	if err != nil {
+		return result, nil, err
+	}
+	expectedSettlementIncrease := roundMoney(currentETFSettlementCarry - includedCash - releasedETFSettlement)
 	if math.Abs(settlementIncrease-expectedSettlementIncrease) > 0.01 {
-		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current carry %.6f minus released %.6f", settlementIncrease, currentETFSettlementCarry, releasedETFSettlement)
+		return result, nil, fmt.Errorf("ETF settlement carry increase %.6f does not match current carry %.6f minus included cash %.6f minus released %.6f", settlementIncrease, currentETFSettlementCarry, includedCash, releasedETFSettlement)
 	}
 
 	openCapital := reportedOpen
@@ -1390,6 +1403,7 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		ReportedDailyPnL:                   reportedDailyPnL,
 		ReportedDeposit:                    reportedDeposit,
 		ReportedWithdrawal:                 reportedWithdrawal,
+		SameDayETFSettlementCashIncluded:   includedCash,
 		OpenOutstandingETFSettlementAsset:  openOutstanding,
 		CloseOutstandingETFSettlementAsset: closeOutstanding,
 		OpenEconomicNAV:                    roundMoney(openCapital + openOutstanding),
@@ -1399,6 +1413,9 @@ func confirmedBrokerAssetBasis(observation ledger.AssetPositionObservation, curr
 		"broker_asset_basis_reconciled",
 		"broker_asset_statement_one_time_audit",
 		"partial_counter_visibility_reconciled",
+	}
+	if includedCash > 0 {
+		flags = append(flags, "same_day_etf_cash_included_in_broker_asset_basis")
 	}
 	if math.Abs(openOutstanding) > 0.000001 {
 		flags = append(flags, "outstanding_etf_settlement_carried")
