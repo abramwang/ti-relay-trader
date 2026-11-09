@@ -4579,6 +4579,10 @@
     if (rejectedOrders > 0 && rejectedOrdersWithReason === rejectedOrders) {
       ledgerDetail = formatInt(tradeSummary.orders) + " 笔委托，" + formatInt(rejectedOrders) + " 笔业务拒单均有完整原因";
     }
+    const expiredPartialOrders = Number(tradeSummary.day_end_expired_partial_orders) || 0;
+    if (expiredPartialOrders > 0) {
+      ledgerDetail = formatInt(tradeSummary.orders) + " 笔委托，" + formatInt(expiredPartialOrders) + " 笔部分成交余量已跨日失效，原始回报保留";
+    }
     if (!state.performanceTradeQuality) {
       ledgerStatus = "warning";
       ledgerDetail = "交易质量接口未返回结果";

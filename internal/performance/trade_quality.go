@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	tradeQualityFormulaVersion = "trade_quality.v7"
+	tradeQualityFormulaVersion = "trade_quality.v8"
 	maxTradeQualityPages       = 120
 	maxTradeQualityAnomalies   = 500
 	maxTerminalClockSkew       = 5 * time.Second
@@ -46,6 +46,7 @@ type TradeQualitySummary struct {
 	RejectedOrdersMissingReason int     `json:"rejected_orders_missing_reason"`
 	NonTerminalOrders           int     `json:"non_terminal_orders"`
 	DayEndExpiredOrders         int     `json:"day_end_expired_orders"`
+	DayEndExpiredPartialOrders  int     `json:"day_end_expired_partial_orders"`
 	AbnormalOrders              int     `json:"abnormal_orders"`
 	OrphanFillGroups            int     `json:"orphan_fill_groups"`
 	AnomalyItems                int     `json:"anomaly_items"`
@@ -167,8 +168,13 @@ func (service *Service) CalculateTradeQuality(ctx context.Context, accountID, da
 		} else if executionGroup.quantity > 0 {
 			result.Summary.PartiallyFilledOrders++
 		}
-		dayEndExpired := tradeQualityDayOrderExpired(order, orderDate, result.GeneratedAt)
+		historicalPartialExpired := service.historicalPartialDayOrderExpiry && historicalPartialDayOrderExpired(order, orderDate, group, result.GeneratedAt)
+		dayEndExpired := tradeQualityDayOrderExpired(order, orderDate, result.GeneratedAt) || historicalPartialExpired
 		switch {
+		case historicalPartialExpired:
+			result.Summary.DayEndExpiredOrders++
+			result.Summary.DayEndExpiredPartialOrders++
+			result.QualityFlags = appendUnique(result.QualityFlags, "historical_partial_day_order_expired")
 		case dayEndExpired:
 			result.Summary.CancelledOrders++
 			result.Summary.DayEndExpiredOrders++
@@ -527,6 +533,29 @@ func tradeQualityOrderAnomaly(order trading.Order, tradeDate string, fillGroup q
 		TerminalAt:             order.TerminalAt,
 		LastUpdatedAt:          tradeQualityOrderTime(order),
 	}
+}
+
+// Historical performance projection only: no synthetic cancel or terminal event.
+// The production Huaxin counter ends DAY leaves without a closing callback.
+func historicalPartialDayOrderExpired(order trading.Order, tradeDate string, fills qualityFillGroup, observedAt time.Time) bool {
+	date, err := time.ParseInLocation("2006-01-02", tradeDate, timeutil.Location())
+	if err != nil || !observedAt.In(timeutil.Location()).After(date) ||
+		observedAt.In(timeutil.Location()).Format("2006-01-02") <= tradeDate {
+		return false
+	}
+	if order.BusinessType != trading.BusinessTypeStock || (order.Exchange != trading.ExchangeSH && order.Exchange != trading.ExchangeSZ) ||
+		(order.TradeSide != trading.TradeSideBuy && order.TradeSide != trading.TradeSideSell) ||
+		order.Status != trading.OrderStatusPartiallyFilled || order.GatewayStatus != trading.GatewayStatusWorking ||
+		order.IsTerminal || !order.TerminalAt.IsZero() || order.AdapterStatusCode != -8 ||
+		!strings.EqualFold(strings.TrimSpace(order.AdapterStatusName), "dealt") {
+		return false
+	}
+	if order.CumFilledQty <= 0 || order.CumFilledQty >= order.OrderQty ||
+		order.LeavesQty != order.OrderQty-order.CumFilledQty || order.CancelledQty != 0 || order.InvalidQty != 0 ||
+		fills.quantity != order.CumFilledQty {
+		return false
+	}
+	return len(tradeQualityOrderAnomaly(order, tradeDate, fills, true).Flags) == 0
 }
 
 func tradeQualityDayOrderExpired(order trading.Order, tradeDate string, observedAt time.Time) bool {

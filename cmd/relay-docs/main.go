@@ -479,6 +479,8 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		AutoToleranceBP:     cfg.Performance.AutoToleranceBP,
 		WarningToleranceCNY: cfg.Performance.WarningToleranceCNY,
 		WarningToleranceBP:  cfg.Performance.WarningToleranceBP,
+
+		HistoricalPartialDayOrderExpiry: cfg.Service.Environment == relayconfig.EnvironmentProduction,
 	})
 	if err != nil {
 		cleanup()

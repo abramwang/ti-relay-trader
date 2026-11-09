@@ -91,6 +91,8 @@ type Options struct {
 	AutoToleranceBP     float64
 	WarningToleranceCNY float64
 	WarningToleranceBP  float64
+
+	HistoricalPartialDayOrderExpiry bool
 }
 
 type Service struct {
@@ -106,6 +108,8 @@ type Service struct {
 	warningToleranceBP  float64
 	contributionFlights singleflight.Group
 	ids                 atomic.Uint64
+
+	historicalPartialDayOrderExpiry bool
 }
 
 type EconomicNAVOptions struct {
@@ -297,6 +301,8 @@ func New(options Options) (*Service, error) {
 		autoToleranceBP:     options.AutoToleranceBP,
 		warningToleranceCNY: options.WarningToleranceCNY,
 		warningToleranceBP:  options.WarningToleranceBP,
+
+		historicalPartialDayOrderExpiry: options.HistoricalPartialDayOrderExpiry,
 	}, nil
 }
 
