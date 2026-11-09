@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	positionCostFormulaVersion             = "performance_position_cost.v3.2"
+	positionCostFormulaVersion             = "performance_position_cost.v3.3"
 	meridianPreCloseMarkToMarketCostSource = "meridian_pre_close_mark_to_market"
 )
 
@@ -37,6 +37,9 @@ type CostLedgerSummary struct {
 	T0BuyQuantity         int64   `json:"t0_buy_quantity"`
 	T0RedemptionQuantity  int64   `json:"t0_redemption_quantity"`
 	T0BuyAmount           float64 `json:"t0_buy_amount"`
+	T0ResidualBuckets     int     `json:"t0_residual_buckets"`
+	T0ResidualQuantity    int64   `json:"t0_residual_quantity"`
+	T0ResidualTotalCost   float64 `json:"t0_residual_total_cost"`
 	MissingFeeItems       int     `json:"missing_fee_items"`
 	OpenQuantity          int64   `json:"open_quantity"`
 	OpenTotalCost         float64 `json:"open_total_cost"`
@@ -118,6 +121,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	}
 
 	working := make(map[string]*costWorkingState)
+	residuals := make(map[string]*costWorkingState)
 	openPositions, err := service.listContributionPositions(ctx, accountID, normalizedDate, "open")
 	if err != nil {
 		return CostLedgerResult{}, err
@@ -171,6 +175,11 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			result.QualityFlags = appendUnique(result.QualityFlags, "empty_clean_start_continuation")
 		}
 		needsTrustedReanchor := gap || (len(previous) == 0 && len(openPositions) > 0)
+		if gap && hasOpenT0Residual(previous) {
+			result.Status = "blocked"
+			result.QualityFlags = appendUnique(result.QualityFlags, "previous_cost_state_gap", "t0_residual_reanchor_forbidden")
+			return result, nil
+		}
 		if needsTrustedReanchor && strings.EqualFold(strings.TrimSpace(inception.CostSource), "broker_open_snapshot") {
 			result.OpeningSource = "broker_open_snapshot_cost_reanchor"
 			reanchoredFromBrokerOpen = true
@@ -212,8 +221,13 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 			result.QualityFlags = appendUnique(result.QualityFlags, "empty_clean_start_continuation")
 		} else {
 			for _, previousState := range previous {
-				if previousState.CostBucket != "CORE" || previousState.CloseQuantity == 0 {
+				if previousState.CloseQuantity == 0 {
 					continue
+				}
+				if previousState.CostBucket != "CORE" && !isT0ResidualBucket(previousState.CostBucket) {
+					result.Status = "blocked"
+					result.QualityFlags = appendUnique(result.QualityFlags, "unsupported_open_cost_bucket")
+					return result, nil
 				}
 				key := strings.TrimSpace(previousState.Symbol) + "." + strings.TrimSpace(previousState.Exchange)
 				state := newCostWorkingState(accountID, normalizedDate, previousState.Symbol, previousState.Exchange, result.OpeningSource)
@@ -225,7 +239,16 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 					state.flags = appendUnique(state.flags, "previous_cost_state_blocked")
 					state.item.Status = "blocked"
 				}
-				working[key] = state
+				if isT0ResidualBucket(previousState.CostBucket) {
+					state.item.CostBucket = previousState.CostBucket
+					state.flags = appendUnique(state.flags, "etf_t0_residual_cost_separated")
+					residuals[residualCostKey(key, previousState.CostBucket)] = state
+					if working[key] == nil {
+						working[key] = newCostWorkingState(accountID, normalizedDate, previousState.Symbol, previousState.Exchange, result.OpeningSource)
+					}
+				} else {
+					working[key] = state
+				}
 			}
 		}
 	}
@@ -321,13 +344,19 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
 	t0Buckets := buildT0CostBuckets(accountID, normalizedDate, t0Groups)
+	residualFills := prepareT0Residuals(accountID, normalizedDate, orders, fills, instruments, t0Groups, t0Buckets.consumedFills, residuals)
 	if normalizedDate != inception.InceptionDate && !reanchoredFromBrokerOpen {
 		factors, factorsAvailable, factorFlags := service.loadCorporateActionFactors(ctx, normalizedDate, securityIDs)
 		result.QualityFlags = appendUnique(result.QualityFlags, factorFlags...)
 		for key, state := range working {
 			openPosition := openBySecurity[key]
 			factor, hasFactor := factors[key]
-			applyCorporateActionOpening(state, openPosition.Quantity, factor, hasFactor, factorsAvailable)
+			buckets := residualsForSecurity(residuals, key)
+			if len(buckets) == 0 {
+				applyCorporateActionOpening(state, openPosition.Quantity, factor, hasFactor, factorsAvailable)
+			} else {
+				applyBucketedOpening(state, buckets, openPosition.Quantity, factor, hasFactor, factorsAvailable)
+			}
 		}
 		for key, openPosition := range openBySecurity {
 			if working[key] != nil || openPosition.Quantity == 0 {
@@ -367,6 +396,13 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		}
 		key := contributionSecurityID(fill.Symbol, fill.Exchange)
 		state := working[key]
+		if bucket := residualFills[contributionFillKey(fill)]; bucket != "" {
+			state = residuals[bucket]
+		} else if fill.TradeSide == trading.TradeSideSell && openResidualQuantity(residuals, key) > 0 {
+			// An unassigned sale may reduce core or T0 inventory; do not guess.
+			blockCostState(state, "t0_residual_sale_allocation_required")
+			continue
+		}
 		instrument := instruments[key]
 		fee := contributionFeeForFill(fill, instrument, rules, authoritativeFees, consumedOrderFees)
 		state.item.FeeSource = mergeContributionFeeSource(state.item.FeeSource, fee.source)
@@ -423,7 +459,7 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		}
 		brokerClose := closeBySecurity[key]
 		state.item.BrokerCloseQuantity = brokerClose.Quantity
-		state.item.QuantityResidual = brokerClose.Quantity - state.quantity
+		state.item.QuantityResidual = brokerClose.Quantity - state.quantity - openResidualQuantity(residuals, key)
 		if state.item.QuantityResidual != 0 {
 			state.flags = appendUnique(state.flags, "position_quantity_not_reconciled")
 			state.item.Status = "blocked"
@@ -432,6 +468,10 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		if instrument.HasClose {
 			state.item.ClosePrice = instrument.Close
 			state.item.CloseMarketValue = roundMoney(instrument.Close * float64(brokerClose.Quantity))
+			if len(residualsForSecurity(residuals, key)) > 0 {
+				state.item.CloseMarketValue = roundMoney(instrument.Close * float64(state.quantity))
+				state.flags = appendUnique(state.flags, "aggregate_cost_bucket_quantity_reconciliation")
+			}
 			state.item.UnrealizedPnL = roundMoney(state.item.CloseMarketValue - state.item.CloseTotalCost)
 		} else if brokerClose.Quantity > 0 {
 			state.flags = appendUnique(state.flags, "missing_meridian_close")
@@ -449,8 +489,15 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		state.item.CalculatedAt = result.CalculatedAt
 		result.Positions = append(result.Positions, state.item)
 	}
+	appendT0ResidualResults(&result, residuals, instruments)
+	if len(residuals) > 0 {
+		result.QualityFlags = appendUnique(result.QualityFlags, "t0_residual_preview_only")
+	}
 	finalizeCostLedgerResult(&result)
 	if options.Persist {
+		if len(residuals) > 0 {
+			return result, fmt.Errorf("T0 residual cost preview requires audited allocation and NAV attribution support before persistence")
+		}
 		if inception.Status != "confirmed" {
 			return result, fmt.Errorf("performance inception must be confirmed before cost ledger persistence")
 		}
@@ -522,6 +569,11 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 				result.Summary.T0BlockedBuckets++
 			}
 		}
+		if isT0ResidualBucket(item.CostBucket) {
+			result.Summary.T0ResidualBuckets++
+			result.Summary.T0ResidualQuantity += item.CloseQuantity
+			result.Summary.T0ResidualTotalCost += item.CloseTotalCost
+		}
 		switch item.CorporateActionType {
 		case "price_adjustment":
 			result.Summary.CorporateActions++
@@ -554,6 +606,7 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 	result.Summary.CloseMarketValue = roundMoney(result.Summary.CloseMarketValue)
 	result.Summary.UnrealizedPnL = roundMoney(result.Summary.UnrealizedPnL)
 	result.Summary.T0BuyAmount = roundMoney(result.Summary.T0BuyAmount)
+	result.Summary.T0ResidualTotalCost = roundMoney(result.Summary.T0ResidualTotalCost)
 	if result.Summary.BlockedItems > 0 || result.Summary.QuantityBreaks > 0 {
 		result.Status = "blocked"
 	} else if result.Summary.EstimatedItems > 0 || result.Summary.MissingFeeItems > 0 {

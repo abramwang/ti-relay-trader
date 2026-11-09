@@ -2464,7 +2464,7 @@ func TestCalculateCostLedgerMarksInceptionCostAtMeridianPreClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CalculateCostLedger() error = %v", err)
 	}
-	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.2" || len(result.Positions) != 1 {
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.3" || len(result.Positions) != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 	if result.OpeningSource != "meridian_pre_close_mark_to_market" ||
@@ -3040,7 +3040,7 @@ func TestCalculateCostLedgerSeparatesExplicitETFT0CostFromCorePosition(t *testin
 	if err != nil {
 		t.Fatalf("CalculateCostLedger() error = %v", err)
 	}
-	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.2" {
+	if result.Status != "calculated" || result.FormulaVersion != "performance_position_cost.v3.3" {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(result.Positions) != 2 || result.Summary.T0CostBuckets != 1 || result.Summary.T0BlockedBuckets != 0 {
