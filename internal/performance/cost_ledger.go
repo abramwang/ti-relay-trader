@@ -58,17 +58,18 @@ type CostLedgerSummary struct {
 }
 
 type CostLedgerResult struct {
-	AccountID      string                      `json:"account_id"`
-	TradeDate      string                      `json:"trade_date"`
-	Status         string                      `json:"status"`
-	FormulaVersion string                      `json:"formula_version"`
-	Persisted      bool                        `json:"persisted"`
-	Inception      ledger.PerformanceInception `json:"inception"`
-	OpeningSource  string                      `json:"opening_source"`
-	Summary        CostLedgerSummary           `json:"summary"`
-	Positions      []ledger.PositionCostState  `json:"positions"`
-	QualityFlags   []string                    `json:"quality_flags,omitempty"`
-	CalculatedAt   time.Time                   `json:"calculated_at"`
+	AccountID          string                      `json:"account_id"`
+	TradeDate          string                      `json:"trade_date"`
+	Status             string                      `json:"status"`
+	FormulaVersion     string                      `json:"formula_version"`
+	Persisted          bool                        `json:"persisted"`
+	Inception          ledger.PerformanceInception `json:"inception"`
+	OpeningSource      string                      `json:"opening_source"`
+	Summary            CostLedgerSummary           `json:"summary"`
+	Positions          []ledger.PositionCostState  `json:"positions"`
+	QualityFlags       []string                    `json:"quality_flags,omitempty"`
+	CalculatedAt       time.Time                   `json:"calculated_at"`
+	AttributionLinkIDs []string                    `json:"attribution_link_ids,omitempty"`
 }
 
 type costWorkingState struct {
@@ -87,6 +88,10 @@ func (service *Service) UpsertPerformanceInception(ctx context.Context, item led
 }
 
 func (service *Service) CalculateCostLedger(ctx context.Context, accountID, tradeDate string, options CostLedgerOptions) (CostLedgerResult, error) {
+	return service.calculateCostLedger(ctx, accountID, tradeDate, options, nil)
+}
+
+func (service *Service) calculateCostLedger(ctx context.Context, accountID, tradeDate string, options CostLedgerOptions, allocationSnapshot *[]ledger.T0Allocation) (CostLedgerResult, error) {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {
 		return CostLedgerResult{}, errors.New("account_id is required")
@@ -262,6 +267,19 @@ func (service *Service) CalculateCostLedger(ctx context.Context, accountID, trad
 		return CostLedgerResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	var allocations []ledger.T0Allocation
+	if allocationSnapshot != nil {
+		allocations = *allocationSnapshot
+	} else {
+		allocations, err = service.loadT0Allocations(ctx, accountID, normalizedDate)
+		if err != nil {
+			return CostLedgerResult{}, err
+		}
+	}
+	orders, fills, result.AttributionLinkIDs, err = applyT0Allocations(accountID, normalizedDate, orders, fills, allocations)
+	if err != nil {
+		return CostLedgerResult{}, err
+	}
 	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
 	redemptionTransferFills := redemptionFillsFromComponentTransfers(orders, fills, transfers)
 	componentLinks := buildComponentSaleLinks(orders, fills, transfers)

@@ -28,7 +28,7 @@ const (
 	StrategyETFComponentTransfer = "etf_component_transfer"
 	StrategyUnattributed         = "unattributed"
 
-	contributionFormulaVersion = "performance_contribution.v1.1"
+	contributionFormulaVersion = "performance_contribution.v1.2"
 	contributionPageLimit      = 500
 	maxContributionPages       = 40
 	contributionMarketBatch    = 100
@@ -36,14 +36,15 @@ const (
 )
 
 type ContributionResult struct {
-	AccountID      string                 `json:"account_id"`
-	TradeDate      string                 `json:"trade_date"`
-	FormulaVersion string                 `json:"formula_version"`
-	Summary        ContributionSummary    `json:"summary"`
-	Contributions  []SecurityContribution `json:"contributions"`
-	Strategies     []StrategyContribution `json:"strategies"`
-	QualityFlags   []string               `json:"quality_flags,omitempty"`
-	GeneratedAt    time.Time              `json:"generated_at"`
+	AccountID          string                 `json:"account_id"`
+	TradeDate          string                 `json:"trade_date"`
+	FormulaVersion     string                 `json:"formula_version"`
+	Summary            ContributionSummary    `json:"summary"`
+	Contributions      []SecurityContribution `json:"contributions"`
+	Strategies         []StrategyContribution `json:"strategies"`
+	QualityFlags       []string               `json:"quality_flags,omitempty"`
+	GeneratedAt        time.Time              `json:"generated_at"`
+	AttributionLinkIDs []string               `json:"attribution_link_ids,omitempty"`
 }
 
 type ContributionSummary struct {
@@ -158,13 +159,14 @@ type contributionInstrument struct {
 }
 
 type contributionBucket struct {
-	instrument contributionInstrument
-	open       trading.Position
-	close      trading.Position
-	hasOpen    bool
-	hasClose   bool
-	orders     []trading.Order
-	fills      []trading.Fill
+	residualGroup string
+	instrument    contributionInstrument
+	open          trading.Position
+	close         trading.Position
+	hasOpen       bool
+	hasClose      bool
+	orders        []trading.Order
+	fills         []trading.Fill
 }
 
 type t0RedemptionGroup struct {
@@ -230,6 +232,14 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		return ContributionResult{}, err
 	}
 	fills = dedupeContributionFills(fills)
+	allocations, err := service.loadT0Allocations(ctx, accountID, normalizedDate)
+	if err != nil {
+		return ContributionResult{}, err
+	}
+	orders, fills, attributionIDs, err := applyT0Allocations(accountID, normalizedDate, orders, fills, allocations)
+	if err != nil {
+		return ContributionResult{}, err
+	}
 	feeRecords, err := service.listOrderFeeRecords(ctx, accountID, normalizedDate)
 	if err != nil {
 		return ContributionResult{}, err
@@ -261,10 +271,11 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	closePositions, closePositionFlags := service.supplementClosePositionsFromNextOpen(ctx, accountID, normalizedDate, closePositions)
 
 	result := ContributionResult{
-		AccountID:      accountID,
-		TradeDate:      normalizedDate,
-		FormulaVersion: contributionFormulaVersion,
-		GeneratedAt:    service.now(),
+		AccountID:          accountID,
+		TradeDate:          normalizedDate,
+		FormulaVersion:     contributionFormulaVersion,
+		GeneratedAt:        service.now(),
+		AttributionLinkIDs: attributionIDs,
 	}
 	result.QualityFlags = appendUnique(result.QualityFlags, openPositionFlags...)
 	result.QualityFlags = appendUnique(result.QualityFlags, closePositionFlags...)
@@ -360,6 +371,37 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	}
 
 	hasRedemption := len(t0Groups) > 0
+	var residualCosts []ledger.PositionCostState
+	needsResidualCost := false
+	orderGroups := make(map[string]string, len(orders))
+	for _, order := range orders {
+		orderGroups[order.GatewayOrderID] = order.T0OrderGroupID
+	}
+	for _, fill := range fills {
+		if firstNonBlank(fill.T0OrderGroupID, orderGroups[fill.GatewayOrderID]) != "" && fill.Qty > 0 && !consumedFills[contributionFillKey(fill)] {
+			needsResidualCost = true
+		}
+	}
+	if !needsResidualCost {
+		if _, supported := service.store.(t0AllocationReader); supported {
+			previous, err := service.store.ListPositionCostStates(ctx, ledger.PositionCostStateQuery{AccountID: accountID, BeforeDate: normalizedDate})
+			if err != nil {
+				return ContributionResult{}, err
+			}
+			needsResidualCost = hasOpenT0Residual(previous)
+		}
+	}
+	if needsResidualCost {
+		cost, err := service.calculateCostLedger(ctx, accountID, normalizedDate, CostLedgerOptions{}, &allocations)
+		if err != nil {
+			return ContributionResult{}, err
+		}
+		if cost.Status == "blocked" {
+			return ContributionResult{}, fmt.Errorf("T0 residual contribution requires reconciled costs: %v", cost.QualityFlags)
+		}
+		residualCosts = cost.Positions
+		result.QualityFlags = appendUnique(result.QualityFlags, "t0_residual_preview_only")
+	}
 	for _, securityID := range securityIDs {
 		bucket := buckets[securityID]
 		filteredOrders := filterContributionOrders(bucket.orders, consumedOrders)
@@ -372,6 +414,28 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		}
 		bucket.orders = filteredOrders
 		bucket.fills = filteredFills
+		core, residuals, err := splitResidualContributionBucket(bucket, residualCosts)
+		if err != nil {
+			return ContributionResult{}, err
+		}
+		for _, residual := range residuals {
+			item := calculateOrdinaryContribution(residual, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, false, componentSaleBucketLink{})
+			item.StrategyType = StrategyETFRedemptionT0
+			item.StrategyID = residual.residualGroup
+			item.EstimationMethod = "t0_residual_daily_mark_to_market"
+			item.QualityFlags = appendUnique(item.QualityFlags, "etf_t0_residual_cost_separated", "t0_residual_preview_only")
+			// Each residual uses previous close, not lifetime acquisition cost, for daily PnL.
+			if (item.OpenQuantity > 0 && !residual.instrument.HasPreClose) || (item.CloseQuantity > 0 && !residual.instrument.HasClose) {
+				item.PnLStatus = "missing"
+				item.GrossContribution = nil
+				item.NetContribution = nil
+				item.ContributionBPS = nil
+				item.QualityFlags = appendUnique(item.QualityFlags, "missing_meridian_residual_valuation")
+			}
+			result.Contributions = append(result.Contributions, item)
+			result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)
+		}
+		bucket = core
 		item := calculateOrdinaryContribution(bucket, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, hasRedemption, componentLinks.bucketLink(filteredFills))
 		result.Contributions = append(result.Contributions, item)
 		result.QualityFlags = appendUnique(result.QualityFlags, item.QualityFlags...)

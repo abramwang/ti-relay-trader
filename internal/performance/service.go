@@ -408,6 +408,12 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	if err != nil {
 		return EconomicNAVResult{}, fmt.Errorf("calculate market valuation: %w", err)
 	}
+	if containsStringValue(contribution.QualityFlags, "t0_residual_preview_only") {
+		status = "blocked"
+		if options.Persist {
+			return EconomicNAVResult{}, fmt.Errorf("T0 residual attribution remains preview-only; NAV persistence is disabled")
+		}
+	}
 	for _, flag := range contribution.QualityFlags {
 		if flag == "account_day_pnl_unavailable" || flag == "attribution_residual_exceeds_warning" {
 			continue
@@ -676,6 +682,7 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		CumulativeNAV:        cumulativeNAV,
 		PnLComponents: map[string]any{
 			"securities_and_strategy": map[string]any{
+				"attribution_link_ids":                   contribution.AttributionLinkIDs,
 				"pnl":                                    formalStrategyPnL,
 				"reported_contribution":                  contribution.Summary.NetContribution,
 				"estimated_cash_management_contribution": estimatedCashManagementPnL,
