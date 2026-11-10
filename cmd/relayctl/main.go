@@ -98,6 +98,11 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-broker-funds-audit: %v\n", err)
 			os.Exit(1)
 		}
+	case "performance-broker-basis-20261110":
+		if err := runBrokerBasis20261110(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-broker-basis-20261110: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-recovery-20261027":
 		if err := runPerformanceRecovery20261027(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-recovery-20261027: %v\n", err)
@@ -598,6 +603,7 @@ func usage() {
   performance-gold-compare Compare database NAV gold with economic NAV previews
   performance-broker-statement  Audit a complete broker export and optionally publish confirmed account NAV
   performance-broker-funds-audit  One-time recovery of broker asset bases and external flows
+  performance-broker-basis-20261110  Reviewed broker asset bases only; does not publish economic NAV
   performance-etf-transfer-review  Read-only stored ETF component linkage evidence (no market or OC queries)
   performance-fuying13-recovery-20261019  Audit the reviewed ETF-settlement-free historical segment
   performance-fuying13-carveout-publish  Publish the user-approved April cash/repo carve-out only

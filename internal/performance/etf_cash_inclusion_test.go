@@ -14,6 +14,24 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
+func TestReportedBrokerAssetAuthorityDoesNotAssertSettlementClosure(t *testing.T) {
+	observation := ledger.AssetPositionObservation{
+		NetAsset: 120500,
+		Source:   "broker_historical_funds_statement_one_time_audit_20261110",
+		RawPayload: map[string]any{
+			"broker_asset_base_authoritative":     true,
+			"economic_nav_base_confirmed":         false,
+			"asset_scope":                         "broker_reported_total_asset",
+			"settlement_overlay_status":           "pending_review",
+			"broker_unclassified_asset_component": 500.0,
+		},
+	}
+	basis, flags, err := confirmedBrokerAssetBasis(observation, 100, 0, false)
+	if err != nil || basis.Applied || len(flags) != 0 {
+		t.Fatalf("reported asset authority must not infer zero or duplicate ETF rights: %+v %v %v", basis, flags, err)
+	}
+}
+
 func TestEconomicNAVSameDayCashPreviewCannotPublish(t *testing.T) {
 	obs, _ := cashInclusionObservation(t)
 	at := time.Date(2026, 10, 12, 10, 0, 0, 0, timeutil.Location())
