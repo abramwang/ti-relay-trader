@@ -168,6 +168,10 @@ func recovery20261027Number(row map[string]any, key string) (float64, error) {
 }
 
 func verifyRecovery20261027PCF(components, cash map[string]any) (map[string]int64, error) {
+	return verifyActualSettlementPCF(components, cash, 20261021, 20261022, -652.34)
+}
+
+func verifyActualSettlementPCF(components, cash map[string]any, sourceDate, cashDate int, cashAmount float64) (map[string]int64, error) {
 	rows, ok := components["data"].([]any)
 	if !ok || len(rows) != 100 {
 		return nil, errors.New("expected complete 100-row PCF")
@@ -177,7 +181,7 @@ func verifyRecovery20261027PCF(components, cash map[string]any) (map[string]int6
 	for _, value := range rows {
 		row, ok := value.(map[string]any)
 		date, dateErr := recovery20261027Number(row, "trade_date")
-		if !ok || fmt.Sprint(row["security_id"]) != "159915.SZ" || dateErr != nil || date != 20261021 || fmt.Sprint(row["schema_version"]) != "etf_component.v2" {
+		if !ok || fmt.Sprint(row["security_id"]) != "159915.SZ" || dateErr != nil || date != float64(sourceDate) || fmt.Sprint(row["schema_version"]) != "etf_component.v2" {
 			return nil, errors.New("PCF identity changed")
 		}
 		id := fmt.Sprint(row["component_security_id"])
@@ -207,7 +211,7 @@ func verifyRecovery20261027PCF(components, cash map[string]any) (map[string]int6
 	if !ok || row["security_id"] != "159915.SZ" || row["schema_version"] != "etf_cash_component.v1" {
 		return nil, errors.New("cash component identity mismatch")
 	}
-	for key, want := range map[string]float64{"trade_date": 20261022, "pre_trade_date": 20261021, "unit_subscribe_redeem": 1000000, "cash_component": -652.34} {
+	for key, want := range map[string]float64{"trade_date": float64(cashDate), "pre_trade_date": float64(sourceDate), "unit_subscribe_redeem": 1000000, "cash_component": cashAmount} {
 		got, err := recovery20261027Number(row, key)
 		if err != nil || got != want {
 			return nil, fmt.Errorf("cash component mismatch: %s", key)
@@ -265,8 +269,42 @@ func recovery20261027ExecutionFee(trade recovery20261027Trade, flows []brokerCas
 }
 
 func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, expected map[string]int64) (recovery20261027Plan, error) {
+	return buildActualSettlementPlan(ctx, tx, account, expected, actualSettlementSpec{
+		SourceDate: "20261021", FeeDate: "20261022", CashDate: "20261023", BasisThrough: "20261026",
+		Source: recovery20261027Source, Tag: "20261027", CashComponentCents: -65234, DeferredFeeCents: 1306,
+		Hashes: recovery20261027Hashes,
+		Orders: map[string][2]string{"307000051387": {"12002A620001857", "12002A620002536"}, "307000051388": {"12002A620001972", "12002A620002743"}},
+	})
+}
+
+// Both reviewed recoveries use one full SZ basket, with two zero-exposure PCF rows.
+type actualSettlementSpec struct {
+	SourceDate, FeeDate, CashDate, BasisThrough, Source, Tag string
+	CashComponentCents, DeferredFeeCents                     int64
+	Hashes                                                   map[string][2]string
+	Orders                                                   map[string][2]string
+}
+
+func (s actualSettlementSpec) carry(date string) (float64, float64) {
+	opening, closing := int64(0), int64(0)
+	if date > s.SourceDate && date <= s.CashDate {
+		opening += s.CashComponentCents
+	}
+	if date >= s.SourceDate && date < s.CashDate {
+		closing += s.CashComponentCents
+	}
+	if date > s.SourceDate && date <= s.FeeDate {
+		opening -= s.DeferredFeeCents
+	}
+	if date >= s.SourceDate && date < s.FeeDate {
+		closing -= s.DeferredFeeCents
+	}
+	return centsFloat(opening), centsFloat(closing)
+}
+
+func buildActualSettlementPlan(ctx context.Context, tx *sql.Tx, account string, expected map[string]int64, spec actualSettlementSpec) (recovery20261027Plan, error) {
 	plan := recovery20261027Plan{AccountID: account, Evidence: make(map[string]any)}
-	hashes, ok := recovery20261027Hashes[account]
+	hashes, ok := spec.Hashes[account]
 	if !ok {
 		return plan, errors.New("account outside reviewed scope")
 	}
@@ -313,23 +351,20 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 			return plan, fmt.Errorf("cash/asset bridge fails %s", f.TradeDate)
 		}
 	}
-	var buyID, redeemID string
-	if account == "307000051387" {
-		buyID = "12002A620001857"
-		redeemID = "12002A620002536"
-	} else {
-		buyID = "12002A620001972"
-		redeemID = "12002A620002743"
+	ids, ok := spec.Orders[account]
+	if !ok {
+		return plan, errors.New("reviewed order identities missing")
 	}
+	buyID, redeemID := ids[0], ids[1]
 	gateway := "external-huaxin-" + account + "01-" + redeemID
 	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM orders WHERE account_id=$1 AND trade_date='2026-10-21' AND order_stream_id IN ($2,$3) AND symbol='159915' AND order_qty=1000000 AND cum_filled_qty=1000000 AND status='filled'`, account, buyID, redeemID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM orders WHERE account_id=$1 AND trade_date=$4 AND order_stream_id IN ($2,$3) AND symbol='159915' AND order_qty=1000000 AND cum_filled_qty=1000000 AND status='filled' AND ((order_stream_id=$2 AND trade_side='B') OR (order_stream_id=$3 AND trade_side='R'))`, account, buyID, redeemID, compactToISODate(spec.SourceDate)).Scan(&count); err != nil {
 		return plan, err
 	}
 	if count != 2 {
 		return plan, errors.New("T0 buy/redemption no longer match reviewed terminal orders")
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT component_symbol, sum(component_qty) FROM etf_component_transfers WHERE account_id=$1 AND trade_date='2026-10-21' AND gateway_order_id=$2 AND component_symbol<>'159915' AND NOT cash_substitution AND price=0 GROUP BY component_symbol`, account, gateway)
+	rows, err := tx.QueryContext(ctx, `SELECT component_symbol, sum(component_qty) FROM etf_component_transfers WHERE account_id=$1 AND trade_date=$3 AND gateway_order_id=$2 AND component_symbol<>'159915' AND NOT cash_substitution AND price=0 GROUP BY component_symbol`, account, gateway, compactToISODate(spec.SourceDate))
 	if err != nil {
 		return plan, err
 	}
@@ -356,7 +391,7 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 			return plan, fmt.Errorf("PCF/transfer quantity mismatch %s", code)
 		}
 	}
-	rows, err = tx.QueryContext(ctx, `SELECT symbol, sum(qty), (sum(price*qty)*100)::bigint, count(DISTINCT gateway_order_id) FROM fills WHERE account_id=$1 AND trade_date='2026-10-21' AND (trade_side='S' OR (trade_side='B' AND order_stream_id=$2)) GROUP BY symbol,trade_side ORDER BY symbol,trade_side`, account, buyID)
+	rows, err = tx.QueryContext(ctx, `SELECT symbol, sum(qty), (sum(price*qty)*100)::bigint, count(DISTINCT gateway_order_id) FROM fills WHERE account_id=$1 AND trade_date=$3 AND ((trade_side='S' AND symbol<>'159915') OR (trade_side='B' AND order_stream_id=$2)) GROUP BY symbol,trade_side ORDER BY symbol,trade_side`, account, buyID, compactToISODate(spec.SourceDate))
 	if err != nil {
 		return plan, err
 	}
@@ -385,7 +420,7 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 		}
 		matches := make([]brokerCashFlowRow, 0)
 		for _, f := range flows {
-			if f.TradeDate != "20261021" || f.Code != t.Code {
+			if f.TradeDate != spec.SourceDate || f.Code != t.Code {
 				continue
 			}
 			if buy {
@@ -418,24 +453,28 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 	var feeCents, cashCents int64
 	feeCodes := make(map[string]bool)
 	for _, f := range flows {
-		if f.TradeDate < "20261021" || !strings.Contains(f.Summary, "成交日20261021") {
+		if f.TradeDate < spec.SourceDate || !strings.Contains(f.Summary, "成交日"+spec.SourceDate) {
 			continue
 		}
 		kind := ""
-		if strings.HasPrefix(f.Summary, "深圳ETF赎回159915(") && strings.HasSuffix(f.Summary, "过户费，成交日20261021") {
-			code := strings.TrimSuffix(strings.TrimPrefix(f.Summary, "深圳ETF赎回159915("), ")过户费，成交日20261021")
-			if expected[code] == 0 || feeCodes[code] || f.TradeDate != "20261022" || f.InCents != 0 || f.OutCents <= 0 {
+		if strings.HasPrefix(f.Summary, "深圳ETF赎回159915(") && strings.HasSuffix(f.Summary, "过户费，成交日"+spec.SourceDate) {
+			code := strings.TrimSuffix(strings.TrimPrefix(f.Summary, "深圳ETF赎回159915("), ")过户费，成交日"+spec.SourceDate)
+			if expected[code] == 0 || feeCodes[code] || f.TradeDate != spec.FeeDate || f.InCents != 0 || f.OutCents <= 0 {
 				return plan, errors.New("ambiguous deferred component transfer fee")
 			}
 			feeCodes[code] = true
 			feeCents += f.OutCents
 			kind = "deferred_redemption_transfer_fee"
-		} else if f.Subject == "ETF现金差额划出" && f.Code == "159915" && strings.HasSuffix(f.Summary, redeemID[5:]) {
-			if f.TradeDate != "20261023" || f.InCents != 0 || f.OutCents != 65234 || cashCents != 0 {
+		} else if (f.Subject == "ETF现金差额划出" || f.Subject == "ETF现金差额划入") && f.Code == "159915" && strings.HasSuffix(f.Summary, redeemID[5:]) {
+			amount := f.InCents - f.OutCents
+			if f.TradeDate != spec.CashDate || amount != spec.CashComponentCents || f.InCents < 0 || f.OutCents < 0 || (f.InCents != 0 && f.OutCents != 0) || cashCents != 0 || (amount > 0) != (f.Subject == "ETF现金差额划入") {
 				return plan, errors.New("cash component evidence mismatch")
 			}
-			cashCents = f.OutCents
+			cashCents = amount
 			kind = "cash_component_payment"
+			if amount > 0 {
+				kind = "cash_component_receipt"
+			}
 		} else {
 			return plan, fmt.Errorf("unclassified source-day cash evidence %s", f.FlowID)
 		}
@@ -443,25 +482,29 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 		if err != nil {
 			return plan, err
 		}
-		id := "broker-20261027-" + account + "-" + f.FlowID
-		amount := -centsFloat(f.OutCents)
-		plan.CashEntries = append(plan.CashEntries, ledger.CashLedgerEntry{EntryID: id, AccountID: account, TradeDate: compactToISODate(f.TradeDate), LedgerType: "settlement", FlowClass: "settlement_adjustment", Currency: "CNY", Amount: amount, CashBucket: "broker_total_cash", CounterpartyBucket: "etf_fund_settlement", EffectiveAt: at, Status: "confirmed", IdempotencyKey: id, GatewayOrderID: gateway, Source: recovery20261027Source, CreatedBy: "user_authorized_relay_20261027", Description: f.Summary,
-			RawPayload: map[string]any{"recurring_import": false, "broker_flow_id": f.FlowID, "broker_subject": f.Subject, "statement_sha256": hashes[1], "settlement_kind": "etf_redemption_final_settlement", "source_trade_date": "2026-10-21", "source_accrual_amount": amount, "released_estimate": amount, "source_accrual_scope": "separate_actual_payable_leg", "settlement_leg": kind, "settlement_group_id": "broker-final:" + account + ":20261021:159915.SZ:" + f.FlowID, "receipt_stage": "initial", "confirmation_source": "broker_cash_flow_and_meridian_pcf"}})
+		id := "broker-" + spec.Tag + "-" + account + "-" + f.FlowID
+		amount := centsFloat(f.InCents - f.OutCents)
+		scope := "separate_actual_payable_leg"
+		if amount > 0 {
+			scope = "separate_actual_receivable_leg"
+		}
+		plan.CashEntries = append(plan.CashEntries, ledger.CashLedgerEntry{EntryID: id, AccountID: account, TradeDate: compactToISODate(f.TradeDate), LedgerType: "settlement", FlowClass: "settlement_adjustment", Currency: "CNY", Amount: amount, CashBucket: "broker_total_cash", CounterpartyBucket: "etf_fund_settlement", EffectiveAt: at, Status: "confirmed", IdempotencyKey: id, GatewayOrderID: gateway, Source: spec.Source, CreatedBy: "user_authorized_relay_" + spec.Tag, Description: f.Summary,
+			RawPayload: map[string]any{"recurring_import": false, "broker_flow_id": f.FlowID, "broker_subject": f.Subject, "statement_sha256": hashes[1], "settlement_kind": "etf_redemption_final_settlement", "source_trade_date": compactToISODate(spec.SourceDate), "source_accrual_amount": amount, "released_estimate": amount, "source_accrual_scope": scope, "settlement_leg": kind, "settlement_group_id": "broker-final:" + account + ":" + spec.SourceDate + ":159915.SZ:" + f.FlowID, "receipt_stage": "initial", "confirmation_source": "broker_cash_flow_and_meridian_pcf"}})
 	}
-	if len(feeCodes) != 98 || feeCents != 1306 || cashCents != 65234 {
+	if len(feeCodes) != 98 || feeCents != spec.DeferredFeeCents || cashCents != spec.CashComponentCents {
 		return plan, errors.New("deferred cash coverage incomplete")
 	}
 	sort.Slice(plan.CashEntries, func(i, j int) bool { return plan.CashEntries[i].EntryID < plan.CashEntries[j].EntryID })
-	plan.Finalization = ledger.ETFSettlementFinalization{AccountID: account, SourceTradeDate: "2026-10-21", SecurityID: "159915.SZ", Status: "confirmed", SettlementComplete: true, RedemptionQuantity: 1000000, RedemptionUnit: 1000000, BuyGrossAmount: centsFloat(buyGross), ComponentSaleGrossAmount: centsFloat(sellGross), ActualCashComponent: -centsFloat(cashCents), ActualTotalFee: centsFloat(buyFee + sellFee + feeCents), SourceCloseSettlementCarry: -centsFloat(cashCents + feeCents), GrossContribution: centsFloat(sellGross - buyGross - cashCents), NetContribution: centsFloat(sellGross - buyGross - cashCents - buyFee - sellFee - feeCents), PCFTradeDate: "2026-10-22", PCFSchemaVersion: "etf_cash_component.v1", Source: recovery20261027Source,
+	plan.Finalization = ledger.ETFSettlementFinalization{AccountID: account, SourceTradeDate: compactToISODate(spec.SourceDate), SecurityID: "159915.SZ", Status: "confirmed", SettlementComplete: true, RedemptionQuantity: 1000000, RedemptionUnit: 1000000, BuyGrossAmount: centsFloat(buyGross), ComponentSaleGrossAmount: centsFloat(sellGross), ActualCashComponent: centsFloat(cashCents), ActualTotalFee: centsFloat(buyFee + sellFee + feeCents), SourceCloseSettlementCarry: centsFloat(cashCents - feeCents), GrossContribution: centsFloat(sellGross - buyGross + cashCents), NetContribution: centsFloat(sellGross - buyGross + cashCents - buyFee - sellFee - feeCents), PCFTradeDate: compactToISODate(spec.FeeDate), PCFSchemaVersion: "etf_cash_component.v1", Source: spec.Source,
 		RawPayload: map[string]any{"recurring_import": false, "funds_sha256": hashes[0], "flows_sha256": hashes[1], "redemption_gateway_order_id": gateway, "buy_order_stream_id": buyID, "execution_flow_ids": executionIDs, "component_securities": 98, "zero_exposure_pcf_rows": 2, "fee_breakdown": map[string]any{"buy": centsFloat(buyFee), "component_sales": centsFloat(sellFee), "redemption_transfer": centsFloat(feeCents)}}}
 	for i, f := range funds {
-		if f.TradeDate < "20261021" || f.TradeDate > "20261026" {
+		if f.TradeDate < spec.SourceDate || f.TradeDate > spec.BasisThrough {
 			continue
 		}
 		if i == 0 || f.DepositCents != 0 || f.WithdrawalCents != 0 {
 			return plan, errors.New("unexpected external flow or missing opening basis")
 		}
-		openCarry, closeCarry := recovery20261027Carry(f.TradeDate)
+		openCarry, closeCarry := spec.carry(f.TradeDate)
 		var principal int64
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(qty)*10000,0) FROM fills WHERE account_id=$1 AND trade_date=$2 AND symbol='204001' AND trade_side='S'`, account, compactToISODate(f.TradeDate)).Scan(&principal); err != nil {
 			return plan, err
@@ -472,7 +515,7 @@ func buildRecovery20261027Plan(ctx context.Context, tx *sql.Tx, account string, 
 		}
 		// Date-only broker statement: this is a basis, not a fabricated OC observation.
 		at, _ := time.ParseInLocation("20060102", f.TradeDate, timeutil.Location())
-		plan.Bases = append(plan.Bases, ledger.AssetPositionObservation{AccountID: account, TradeDate: compactToISODate(f.TradeDate), SnapshotType: "reconcile", CashTotal: centsFloat(f.CashCents), CashAvailable: centsFloat(f.CashCents), NetAsset: centsFloat(f.TotalCents), MarketValue: centsFloat(f.MarketCents), ReverseRepoReceivable: centsFloat(principal), Source: recovery20261027Source, CapturedAt: at,
+		plan.Bases = append(plan.Bases, ledger.AssetPositionObservation{AccountID: account, TradeDate: compactToISODate(f.TradeDate), SnapshotType: "reconcile", CashTotal: centsFloat(f.CashCents), CashAvailable: centsFloat(f.CashCents), NetAsset: centsFloat(f.TotalCents), MarketValue: centsFloat(f.MarketCents), ReverseRepoReceivable: centsFloat(principal), Source: spec.Source, CapturedAt: at,
 			RawPayload: map[string]any{"economic_nav_base_confirmed": true, "recurring_import": false, "asset_scope": "broker_reported_total_asset_excluding_fund_occupancy", "statement_path": "reference/" + account + "_资金.csv", "statement_sha256": hashes[0], "statement_row_number": f.RowNumber, "reported_open_total_asset": centsFloat(funds[i-1].TotalCents), "reported_close_total_asset": centsFloat(f.TotalCents), "reported_daily_pnl": centsFloat(f.DailyPnLCents), "reported_deposit": float64(0), "reported_withdrawal": float64(0), "open_outstanding_etf_settlement_asset": openCarry, "close_outstanding_etf_settlement_asset": closeCarry, "broker_other_asset": centsFloat(other), "verified_reverse_repo_principal": centsFloat(principal), "observation_precision": "trade_date_only"}})
 	}
 	if len(plan.Bases) != 4 {
@@ -506,7 +549,7 @@ func (s *recovery20261027Preview) ListETFSettlementFinalizations(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if p, ok := s.plans[account]; ok && date == "2026-10-21" {
+	if p, ok := s.plans[account]; ok && date == p.Finalization.SourceTradeDate {
 		if len(base) != 0 {
 			return nil, errors.New("existing finalization requires duplicate review")
 		}
