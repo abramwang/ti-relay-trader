@@ -94,7 +94,8 @@ type Options struct {
 
 	HistoricalPartialDayOrderExpiry bool
 	// Internal research gate. Never enabled by the API or scheduled workers.
-	ComponentResidualPreview bool
+	ComponentResidualPreview   bool
+	ClosedDayT0PoolPreviewDate string
 }
 
 type Service struct {
@@ -113,6 +114,7 @@ type Service struct {
 
 	historicalPartialDayOrderExpiry bool
 	componentResidualPreview        bool
+	closedDayT0PoolPreviewDate      string
 }
 
 type EconomicNAVOptions struct {
@@ -269,6 +271,13 @@ type repoFillGroup struct {
 }
 
 func New(options Options) (*Service, error) {
+	if options.ClosedDayT0PoolPreviewDate != "" {
+		date, _, err := parseTradeDate(options.ClosedDayT0PoolPreviewDate)
+		if err != nil || !options.ComponentResidualPreview {
+			return nil, errors.New("closed-day T0 pool requires a valid review date and non-persistent component preview mode")
+		}
+		options.ClosedDayT0PoolPreviewDate = date
+	}
 	if options.Store == nil {
 		return nil, errors.New("performance store is required")
 	}
@@ -307,6 +316,7 @@ func New(options Options) (*Service, error) {
 
 		historicalPartialDayOrderExpiry: options.HistoricalPartialDayOrderExpiry,
 		componentResidualPreview:        options.ComponentResidualPreview,
+		closedDayT0PoolPreviewDate:      options.ClosedDayT0PoolPreviewDate,
 	}, nil
 }
 

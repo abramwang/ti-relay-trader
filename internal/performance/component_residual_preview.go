@@ -295,7 +295,12 @@ func applyComponentResidualValuation(items []SecurityContribution, groups []t0Re
 	}
 	for _, g := range groups {
 		var value float64
+		parents := map[string]bool{}
 		for _, r := range g.redemptions {
+			if parents[r.GatewayOrderID] {
+				continue
+			}
+			parents[r.GatewayOrderID] = true
 			value += values[r.GatewayOrderID]
 		}
 		if value == 0 {

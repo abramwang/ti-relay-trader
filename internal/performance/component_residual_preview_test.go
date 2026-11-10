@@ -167,6 +167,8 @@ func TestComponentPreviewParentValuationNoDoubleCount(t *testing.T) {
 		items := []SecurityContribution{{SecurityID: "510310.SH", StrategyID: "round", PnLStatus: "estimated", EstimatedExitValue: floatPointer(10000),
 			LinkedComponentSales: 1000, EstimatedFee: 15, ActualFee: 5, NetContribution: floatPointer(100)}}
 		groups := []t0RedemptionGroup{{securityID: "510310.SH", groupID: "round", redemptions: []trading.Fill{{GatewayOrderID: "redeem"}}}}
+		// Multiple redemption executions do not duplicate the parent's inventory.
+		groups[0].redemptions = append(groups[0].redemptions, trading.Fill{GatewayOrderID: "redeem"})
 		err := applyComponentResidualValuation(items, groups, []ledger.PositionCostState{componentPreviewCost()}, "2026-08-03", links)
 		if unresolved {
 			if err == nil || items[0].ETFSettlementEstimate != nil {

@@ -372,6 +372,12 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
+	if service.closedDayT0PoolPreviewDate == normalizedDate {
+		t0Groups, _, _, err = service.previewClosedDayPools(ctx, accountID, normalizedDate, t0Groups, orders, fills, openPositions, closePositions)
+		if err != nil {
+			return CostLedgerResult{}, err
+		}
+	}
 	t0Buckets := buildT0CostBuckets(accountID, normalizedDate, t0Groups)
 	residualFills := prepareT0Residuals(accountID, normalizedDate, orders, fills, instruments, t0Groups, t0Buckets.consumedFills, residuals)
 	if normalizedDate != inception.InceptionDate && !reanchoredFromBrokerOpen {

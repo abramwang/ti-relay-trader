@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/performance"
@@ -47,6 +49,15 @@ func TestFuying13CostReviewNoWriteMode(t *testing.T) {
 	}
 	if err := runFuying13Review20261110(nil); err == nil {
 		t.Fatal("missing report accepted")
+	}
+}
+
+func TestFuying13DayPoolRequiresReadOnlyPrerequisites(t *testing.T) {
+	for _, extra := range [][]string{nil, {"-component-residual-preview"}, {"-confirmed-split-preview"}} {
+		args := append([]string{"-closed-day-pool-preview", "-output", filepath.Join(t.TempDir(), "review.json"), "-config", "must-not-open-config"}, extra...)
+		if err := runFuying13Review20261110(args); err == nil || !strings.Contains(err.Error(), "requires confirmed-split-preview") {
+			t.Fatalf("prerequisites must fail before config/database access: %v", err)
+		}
 	}
 }
 

@@ -22,6 +22,9 @@ func buildT0CostBuckets(accountID, tradeDate string, groups []t0RedemptionGroup)
 		if group.explicit {
 			openingSource = "explicit_t0_order_group"
 		}
+		if containsStringValue(group.flags, closedDayPoolFlag) {
+			openingSource = "closed_day_t0_cost_pool_preview"
+		}
 		state := newCostWorkingState(accountID, tradeDate, symbol, exchange, openingSource)
 		state.item.CostBucket = "ETF_T0:" + groupID
 		state.item.FeeSource = "included_in_etf_t0_friction"

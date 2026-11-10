@@ -350,6 +350,12 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
+	if service.closedDayT0PoolPreviewDate == normalizedDate {
+		t0Groups, consumedOrders, consumedFills, err = service.previewClosedDayPools(ctx, accountID, normalizedDate, t0Groups, orders, fills, openPositions, closePositions)
+		if err != nil {
+			return ContributionResult{}, err
+		}
+	}
 	t0Items := service.calculateT0Contributions(ctx, normalizedDate, t0Groups, componentLinks, authoritativeFees, result.Summary.OpenEconomicNAV)
 	settlementCoveredOrders := make(map[string]bool)
 	finalizations, finalizationErr := service.store.ListETFSettlementFinalizations(ctx, accountID, normalizedDate)
@@ -1185,6 +1191,9 @@ func (service *Service) calculateT0Contributions(
 				return
 			}
 			componentFills, transferComplete := componentLinks.linkedFills(group.redemptions[0].GatewayOrderID)
+			if containsStringValue(group.flags, closedDayPoolFlag) {
+				componentFills, transferComplete = pooledComponentFills(group, componentLinks)
+			}
 			items[index] = service.calculateT0Contribution(ctx, tradeDate, group, componentFills, transferComplete, authoritativeFees, openNAV)
 		}()
 	}
@@ -1218,6 +1227,15 @@ func (service *Service) calculateT0Contribution(
 		Orders:           len(group.orders) + 1,
 		Fills:            len(group.buyFills) + len(group.redemptions),
 		RedemptionUnit:   group.redemptionUnit,
+	}
+	if containsStringValue(group.flags, closedDayPoolFlag) {
+		parents := map[string]bool{}
+		for _, r := range group.redemptions {
+			parents[r.GatewayOrderID] = true
+		}
+		item.Orders = len(group.orders) + len(parents)
+		item.EstimationMethod = "closed_day_t0_pool_iopv_minus_actual_buys_minus_friction"
+		item.QualityFlags = appendUnique(item.QualityFlags, "iopv_weighted_across_redemptions")
 	}
 	for _, fill := range group.buyFills {
 		item.BuyQuantity += fill.Qty
