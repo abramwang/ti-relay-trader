@@ -29,6 +29,7 @@ func runFuying13Review20261110(args []string) error {
 	allocationReview := flags.Bool("confirmed-split-preview", false, "overlay the user's reviewed October 15 split-buy attribution in memory")
 	componentPreview := flags.Bool("component-residual-preview", false, "research component carry and daily mark attribution; never publish")
 	dayPoolPreview := flags.Bool("closed-day-pool-preview", false, "review October 16 closed T0 strategy-day cost without per-redemption buy allocation")
+	inventoryPreview := flags.Bool("oct23-inventory-preview", false, "review October 23 split buys after the core inventory was fully sold; memory only")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -37,6 +38,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *dayPoolPreview && (!*componentPreview || !*allocationReview) {
 		return errors.New("closed-day pool review requires confirmed-split-preview and component-residual-preview")
+	}
+	if *inventoryPreview && (!*dayPoolPreview || !*componentPreview || !*allocationReview) {
+		return errors.New("October 23 inventory review requires all earlier read-only preview stages")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -86,6 +90,15 @@ func runFuying13Review20261110(args []string) error {
 		}
 		allocationHash = fmt.Sprintf("%x", sha256.Sum256(raw))
 		serviceStore = &fuying13SplitPreview{performancePreviewStore: store, links: links}
+	}
+	var inventoryEvidence *fuying23InventoryEvidence
+	if *inventoryPreview {
+		evidence, err := loadFuying23InventoryReview(ctx, repo)
+		if err != nil {
+			return err
+		}
+		inventoryEvidence = &evidence
+		serviceStore.(*fuying13SplitPreview).inventoryLinks = evidence.Links
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
 	if *componentPreview {
@@ -141,6 +154,7 @@ func runFuying13Review20261110(args []string) error {
 		"split_allocation_fixture_sha256": allocationHash,
 		"component_residual_preview":      *componentPreview,
 		"closed_day_pool_preview":         *dayPoolPreview,
+		"oct23_inventory_evidence":        inventoryEvidence,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
@@ -150,15 +164,23 @@ func runFuying13Review20261110(args []string) error {
 
 type fuying13SplitPreview struct {
 	*performancePreviewStore
-	links []ledger.T0Allocation
+	links          []ledger.T0Allocation
+	inventoryLinks []ledger.T0Allocation
 }
 
 func (s *fuying13SplitPreview) ListT0AllocationHistory(ctx context.Context, account, date string) ([]ledger.T0Allocation, error) {
 	old, err := s.Repository.ListT0AllocationHistory(ctx, account, date)
-	if err != nil || account != fuying13Account || date != "2026-10-15" {
+	if err != nil || account != fuying13Account {
 		return old, err
 	}
-	return mergeFuying13SplitReview(old, s.links)
+	switch date {
+	case "2026-10-15":
+		return mergeFuying13SplitReview(old, s.links)
+	case fuying23Date:
+		return mergeFuying13SplitReview(old, s.inventoryLinks)
+	default:
+		return old, nil
+	}
 }
 
 func mergeFuying13SplitReview(old, links []ledger.T0Allocation) ([]ledger.T0Allocation, error) {
