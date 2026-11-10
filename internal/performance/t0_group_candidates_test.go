@@ -38,6 +38,10 @@ func TestT0CandidateOrderUnits(t *testing.T) {
 			buys: []buy{{"t0", 1_000_000, 1_000_000, ""}}, wantFlag: "missing_meridian_etf_redemption_unit"},
 		{name: "explicit split group preserved", unit: 1_000_000, target: 1_000_000, group: "explicit",
 			buys: []buy{{"split-a", 400_000, 400_000, "explicit"}, {"split-b", 600_000, 600_000, "explicit"}, {"other", 1_000_000, 1_000_000, "other"}}, wantIDs: []string{"split-b", "split-a"}},
+		{name: "confirmed cancelled partial plus replacement", unit: 1_000_000, target: 1_000_000, group: "explicit",
+			buys: []buy{{"cancelled-partial", 1_000_000, 20_200, "explicit"}, {"replacement", 979_800, 979_800, "explicit"}}, wantIDs: []string{"replacement", "cancelled-partial"}},
+		{name: "unconfirmed replacement must not borrow core cost", unit: 1_000_000, target: 1_000_000,
+			buys: []buy{{"cancelled-partial", 1_000_000, 20_200, ""}, {"replacement", 979_800, 979_800, ""}}, wantFlag: "incomplete_t0_order_group"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			at := time.Date(2026, 10, 21, 10, 0, 0, 0, timeutil.Location())

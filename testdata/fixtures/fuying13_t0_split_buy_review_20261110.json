@@ -1,0 +1,53 @@
+[
+  {
+    "link_id": "fu13-20261015-split-buy1-v1",
+    "account_id": "314000045768",
+    "trade_date": "2026-10-15",
+    "gateway_order_id": "external-huaxin-31400004576801-12002A620003971",
+    "security_id": "159869.SZ",
+    "trade_side": "B",
+    "quantity": 20200,
+    "group_id": "user-confirmed-768-20261015-redemption-split",
+    "role": "redemption",
+    "revision": 1,
+    "status": "active",
+    "evidence_type": "user_confirmation",
+    "evidence_ref": "docs/PERFORMANCE_BLOCK_REVIEW_20261109.md#11-10-富盈13号跨日复核与新成本阻断",
+    "confirmed_by": "relay:recorded-user-confirmation",
+    "confirmed_at": "2026-11-10T20:13:30+08:00"
+  },
+  {
+    "link_id": "fu13-20261015-split-buy2-v1",
+    "account_id": "314000045768",
+    "trade_date": "2026-10-15",
+    "gateway_order_id": "external-huaxin-31400004576801-12002A620003974",
+    "security_id": "159869.SZ",
+    "trade_side": "B",
+    "quantity": 979800,
+    "group_id": "user-confirmed-768-20261015-redemption-split",
+    "role": "redemption",
+    "revision": 1,
+    "status": "active",
+    "evidence_type": "user_confirmation",
+    "evidence_ref": "docs/PERFORMANCE_BLOCK_REVIEW_20261109.md#11-10-富盈13号跨日复核与新成本阻断",
+    "confirmed_by": "relay:recorded-user-confirmation",
+    "confirmed_at": "2026-11-10T20:13:30+08:00"
+  },
+  {
+    "link_id": "fu13-20261015-split-redemption-v1",
+    "account_id": "314000045768",
+    "trade_date": "2026-10-15",
+    "gateway_order_id": "external-huaxin-31400004576801-12002A620003985",
+    "security_id": "159869.SZ",
+    "trade_side": "R",
+    "quantity": 1000000,
+    "group_id": "user-confirmed-768-20261015-redemption-split",
+    "role": "redemption",
+    "revision": 1,
+    "status": "active",
+    "evidence_type": "user_confirmation",
+    "evidence_ref": "docs/PERFORMANCE_BLOCK_REVIEW_20261109.md#11-10-富盈13号跨日复核与新成本阻断",
+    "confirmed_by": "relay:recorded-user-confirmation",
+    "confirmed_at": "2026-11-10T20:13:30+08:00"
+  }
+]
