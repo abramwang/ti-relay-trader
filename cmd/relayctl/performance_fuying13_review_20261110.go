@@ -27,6 +27,7 @@ func runFuying13Review20261110(args []string) error {
 	configPath := flags.String("config", "", "production config")
 	output := flags.String("output", "", "new private read-only report")
 	allocationReview := flags.Bool("confirmed-split-preview", false, "overlay the user's reviewed October 15 split-buy attribution in memory")
+	componentPreview := flags.Bool("component-residual-preview", false, "research component carry and daily mark attribution; never publish")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -83,6 +84,11 @@ func runFuying13Review20261110(args []string) error {
 		serviceStore = &fuying13SplitPreview{performancePreviewStore: store, links: links}
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
+	if *componentPreview {
+		service, err = performance.New(performance.Options{Store: serviceStore, Calendar: m, Market: m, FormulaVersion: cfg.Performance.FormulaVersion,
+			ETFT0FrictionRate: cfg.Performance.ETFT0FrictionRate, AutoToleranceCNY: cfg.Performance.AutoToleranceCNY, AutoToleranceBP: cfg.Performance.AutoToleranceBP,
+			WarningToleranceCNY: cfg.Performance.WarningToleranceCNY, WarningToleranceBP: cfg.Performance.WarningToleranceBP, ComponentResidualPreview: true})
+	}
 	if err != nil {
 		return err
 	}
@@ -111,7 +117,7 @@ func runFuying13Review20261110(args []string) error {
 			failure = fmt.Sprintf("cost chain stopped: status=%s flags=%v error=%v", cost.Status, cost.QualityFlags, e)
 			break
 		}
-		if day <= "2026-10-14" {
+		if day <= "2026-10-14" || *componentPreview {
 			c, e := service.CalculateContributions(ctx, fuying13Account, day)
 			if e != nil {
 				return fmt.Errorf("contribution %s: %w", day, e)
@@ -125,6 +131,7 @@ func runFuying13Review20261110(args []string) error {
 		"date_from": "2026-10-12", "date_to": "2026-11-10", "cost_chain_complete": blockedDate == "", "first_cost_blocked_date": blockedDate, "error": failure,
 		"costs": costs, "contributions": contributions, "cash_component_pcf": pcf.Payload, "economic_nav_publishable": false,
 		"split_allocation_fixture_sha256": allocationHash,
+		"component_residual_preview":      *componentPreview,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err

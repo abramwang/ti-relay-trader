@@ -93,6 +93,8 @@ type Options struct {
 	WarningToleranceBP  float64
 
 	HistoricalPartialDayOrderExpiry bool
+	// Internal research gate. Never enabled by the API or scheduled workers.
+	ComponentResidualPreview bool
 }
 
 type Service struct {
@@ -110,6 +112,7 @@ type Service struct {
 	ids                 atomic.Uint64
 
 	historicalPartialDayOrderExpiry bool
+	componentResidualPreview        bool
 }
 
 type EconomicNAVOptions struct {
@@ -303,6 +306,7 @@ func New(options Options) (*Service, error) {
 		warningToleranceBP:  options.WarningToleranceBP,
 
 		historicalPartialDayOrderExpiry: options.HistoricalPartialDayOrderExpiry,
+		componentResidualPreview:        options.ComponentResidualPreview,
 	}, nil
 }
 
@@ -369,6 +373,9 @@ func (service *Service) ListReverseRepoAccruals(ctx context.Context, accountID, 
 }
 
 func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tradeDate string, options EconomicNAVOptions) (EconomicNAVResult, error) {
+	if service.componentResidualPreview && options.Persist {
+		return EconomicNAVResult{}, errors.New("component residual research preview cannot persist NAV")
+	}
 	accountID = strings.TrimSpace(accountID)
 	normalizedDate, parsedDate, err := parseTradeDate(tradeDate)
 	if err != nil {
@@ -397,6 +404,10 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		Status:           status,
 		FormulaVersion:   service.formulaVersion,
 		DailyPerformance: daily,
+	}
+	if service.componentResidualPreview {
+		status = "blocked"
+		result.QualityFlags = appendUnique(result.QualityFlags, componentResidualPreviewFlag)
 	}
 	for _, flag := range daily.QualityFlags {
 		if flag == "overnight_adjustment_unclassified" {

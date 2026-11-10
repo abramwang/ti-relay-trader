@@ -264,6 +264,9 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	if len(openPositions) == 0 {
 		openPositions, openPositionFlags = service.previousClosePositionFallback(ctx, accountID, normalizedDate)
 	}
+	if service.componentResidualPreview {
+		completeUniqueComponentSales(&componentLinks, fills, openPositions)
+	}
 	closePositions, err := service.listContributionPositions(ctx, accountID, normalizedDate, "close")
 	if err != nil {
 		return ContributionResult{}, err
@@ -373,6 +376,18 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	hasRedemption := len(t0Groups) > 0
 	var residualCosts []ledger.PositionCostState
 	needsResidualCost := false
+	if service.componentResidualPreview {
+		for _, g := range componentLinks.groups {
+			if !componentTransferGroupComplete(g) {
+				needsResidualCost = true
+			}
+		}
+		previous, e := service.store.ListPositionCostStates(ctx, ledger.PositionCostStateQuery{AccountID: accountID, BeforeDate: normalizedDate})
+		if e != nil {
+			return ContributionResult{}, e
+		}
+		needsResidualCost = needsResidualCost || hasOpenComponentResidual(previous)
+	}
 	orderGroups := make(map[string]string, len(orders))
 	for _, order := range orders {
 		orderGroups[order.GatewayOrderID] = order.T0OrderGroupID
@@ -401,6 +416,16 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		}
 		residualCosts = cost.Positions
 		result.QualityFlags = appendUnique(result.QualityFlags, "t0_residual_preview_only")
+		if service.componentResidualPreview {
+			if err := applyComponentResidualValuation(result.Contributions, t0Groups, cost.Positions, normalizedDate, componentLinks); err != nil {
+				return ContributionResult{}, err
+			}
+			for _, c := range cost.Positions {
+				if isComponentResidualBucket(c.CostBucket) {
+					result.QualityFlags = appendUnique(result.QualityFlags, componentResidualPreviewFlag)
+				}
+			}
+		}
 	}
 	for _, securityID := range securityIDs {
 		bucket := buckets[securityID]
@@ -414,6 +439,15 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 		}
 		bucket.orders = filteredOrders
 		bucket.fills = filteredFills
+		if service.componentResidualPreview {
+			var componentItems []SecurityContribution
+			bucket, componentItems, err = splitComponentContributionBucket(bucket, residualCosts, componentLinks, result.Summary.OpenEconomicNAV)
+			if err != nil {
+				return ContributionResult{}, err
+			}
+			result.Contributions = append(result.Contributions, componentItems...)
+			filteredFills = bucket.fills
+		}
 		core, residuals, err := splitResidualContributionBucket(bucket, residualCosts)
 		if err != nil {
 			return ContributionResult{}, err

@@ -24,37 +24,40 @@ type CostLedgerOptions struct {
 }
 
 type CostLedgerSummary struct {
-	Securities            int     `json:"securities"`
-	CalculatedItems       int     `json:"calculated_items"`
-	EstimatedItems        int     `json:"estimated_items"`
-	BlockedItems          int     `json:"blocked_items"`
-	QuantityBreaks        int     `json:"quantity_breaks"`
-	CorporateActions      int     `json:"corporate_actions"`
-	QuantityAdjustments   int     `json:"quantity_adjustments"`
-	CorporateActionBreaks int     `json:"corporate_action_breaks"`
-	T0CostBuckets         int     `json:"t0_cost_buckets"`
-	T0BlockedBuckets      int     `json:"t0_blocked_buckets"`
-	T0BuyQuantity         int64   `json:"t0_buy_quantity"`
-	T0RedemptionQuantity  int64   `json:"t0_redemption_quantity"`
-	T0BuyAmount           float64 `json:"t0_buy_amount"`
-	T0ResidualBuckets     int     `json:"t0_residual_buckets"`
-	T0ResidualQuantity    int64   `json:"t0_residual_quantity"`
-	T0ResidualTotalCost   float64 `json:"t0_residual_total_cost"`
-	MissingFeeItems       int     `json:"missing_fee_items"`
-	OpenQuantity          int64   `json:"open_quantity"`
-	OpenTotalCost         float64 `json:"open_total_cost"`
-	BuyQuantity           int64   `json:"buy_quantity"`
-	BuyAmount             float64 `json:"buy_amount"`
-	BuyFee                float64 `json:"buy_fee"`
-	SellQuantity          int64   `json:"sell_quantity"`
-	SellAmount            float64 `json:"sell_amount"`
-	SellFee               float64 `json:"sell_fee"`
-	RealizedPnL           float64 `json:"realized_pnl"`
-	CloseQuantity         int64   `json:"close_quantity"`
-	CloseTotalCost        float64 `json:"close_total_cost"`
-	CloseMarketValue      float64 `json:"close_market_value"`
-	UnrealizedPnL         float64 `json:"unrealized_pnl"`
-	AttributionResidual   float64 `json:"attribution_residual"`
+	Securities             int     `json:"securities"`
+	CalculatedItems        int     `json:"calculated_items"`
+	EstimatedItems         int     `json:"estimated_items"`
+	BlockedItems           int     `json:"blocked_items"`
+	QuantityBreaks         int     `json:"quantity_breaks"`
+	CorporateActions       int     `json:"corporate_actions"`
+	QuantityAdjustments    int     `json:"quantity_adjustments"`
+	CorporateActionBreaks  int     `json:"corporate_action_breaks"`
+	T0CostBuckets          int     `json:"t0_cost_buckets"`
+	T0BlockedBuckets       int     `json:"t0_blocked_buckets"`
+	T0BuyQuantity          int64   `json:"t0_buy_quantity"`
+	T0RedemptionQuantity   int64   `json:"t0_redemption_quantity"`
+	T0BuyAmount            float64 `json:"t0_buy_amount"`
+	T0ResidualBuckets      int     `json:"t0_residual_buckets"`
+	T0ResidualQuantity     int64   `json:"t0_residual_quantity"`
+	T0ResidualTotalCost    float64 `json:"t0_residual_total_cost"`
+	T0ComponentBuckets     int     `json:"t0_component_buckets,omitempty"`
+	T0ComponentQuantity    int64   `json:"t0_component_quantity,omitempty"`
+	T0ComponentMarkedBasis float64 `json:"t0_component_marked_basis,omitempty"`
+	MissingFeeItems        int     `json:"missing_fee_items"`
+	OpenQuantity           int64   `json:"open_quantity"`
+	OpenTotalCost          float64 `json:"open_total_cost"`
+	BuyQuantity            int64   `json:"buy_quantity"`
+	BuyAmount              float64 `json:"buy_amount"`
+	BuyFee                 float64 `json:"buy_fee"`
+	SellQuantity           int64   `json:"sell_quantity"`
+	SellAmount             float64 `json:"sell_amount"`
+	SellFee                float64 `json:"sell_fee"`
+	RealizedPnL            float64 `json:"realized_pnl"`
+	CloseQuantity          int64   `json:"close_quantity"`
+	CloseTotalCost         float64 `json:"close_total_cost"`
+	CloseMarketValue       float64 `json:"close_market_value"`
+	UnrealizedPnL          float64 `json:"unrealized_pnl"`
+	AttributionResidual    float64 `json:"attribution_residual"`
 }
 
 type CostLedgerResult struct {
@@ -180,7 +183,7 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 			result.QualityFlags = appendUnique(result.QualityFlags, "empty_clean_start_continuation")
 		}
 		needsTrustedReanchor := gap || (len(previous) == 0 && len(openPositions) > 0)
-		if gap && hasOpenT0Residual(previous) {
+		if gap && (hasOpenT0Residual(previous) || hasOpenComponentResidual(previous)) {
 			result.Status = "blocked"
 			result.QualityFlags = appendUnique(result.QualityFlags, "previous_cost_state_gap", "t0_residual_reanchor_forbidden")
 			return result, nil
@@ -229,7 +232,7 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 				if previousState.CloseQuantity == 0 {
 					continue
 				}
-				if previousState.CostBucket != "CORE" && !isT0ResidualBucket(previousState.CostBucket) {
+				if previousState.CostBucket != "CORE" && !isT0ResidualBucket(previousState.CostBucket) && !(service.componentResidualPreview && isComponentResidualBucket(previousState.CostBucket)) {
 					result.Status = "blocked"
 					result.QualityFlags = appendUnique(result.QualityFlags, "unsupported_open_cost_bucket")
 					return result, nil
@@ -244,9 +247,15 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 					state.flags = appendUnique(state.flags, "previous_cost_state_blocked")
 					state.item.Status = "blocked"
 				}
-				if isT0ResidualBucket(previousState.CostBucket) {
+				if isT0ResidualBucket(previousState.CostBucket) || isComponentResidualBucket(previousState.CostBucket) {
 					state.item.CostBucket = previousState.CostBucket
 					state.flags = appendUnique(state.flags, "etf_t0_residual_cost_separated")
+					if isComponentResidualBucket(previousState.CostBucket) {
+						if state.item.Status != "blocked" {
+							state.item.Status = "estimated"
+						}
+						state.flags = appendUnique(state.flags, componentResidualPreviewFlag, "component_marked_basis_not_acquisition_cost")
+					}
 					residuals[residualCostKey(key, previousState.CostBucket)] = state
 					if working[key] == nil {
 						working[key] = newCostWorkingState(accountID, normalizedDate, previousState.Symbol, previousState.Exchange, result.OpeningSource)
@@ -283,6 +292,9 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 	transfers, transferErr := service.listContributionComponentTransfers(ctx, accountID, normalizedDate)
 	redemptionTransferFills := redemptionFillsFromComponentTransfers(orders, fills, transfers)
 	componentLinks := buildComponentSaleLinks(orders, fills, transfers)
+	if service.componentResidualPreview {
+		completeUniqueComponentSales(&componentLinks, fills, openPositions)
+	}
 	if transferErr != nil {
 		result.QualityFlags = appendUnique(result.QualityFlags, "etf_redemption_transfer_ledger_unavailable")
 	} else if len(redemptionTransferFills) > 0 {
@@ -352,7 +364,6 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 		result.Status = "blocked"
 		result.QualityFlags = appendUnique(result.QualityFlags, "missing_close_position_snapshot")
 	}
-
 	instruments, marketFlags := service.loadContributionInstruments(ctx, normalizedDate, securityIDs)
 	result.QualityFlags = appendUnique(result.QualityFlags, marketFlags...)
 	if markInceptionAtPreClose {
@@ -407,6 +418,12 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 	}
 	authoritativeFees := authoritativeOrderFees(feeRecords)
 	consumedOrderFees := make(map[string]contributionOrderFeeState)
+	componentRoutes := map[string]string{}
+	if service.componentResidualPreview {
+		componentRoutes = routeCarriedComponentSales(working, residuals, fills, componentLinks)
+		flags := createComponentResidualMarks(accountID, normalizedDate, working, residuals, componentLinks, instruments, fills, closeBySecurity)
+		result.QualityFlags = appendUnique(result.QualityFlags, flags...)
+	}
 
 	for _, fill := range fills {
 		if t0Buckets.consumedFills[contributionFillKey(fill)] {
@@ -415,6 +432,8 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 		key := contributionSecurityID(fill.Symbol, fill.Exchange)
 		state := working[key]
 		if bucket := residualFills[contributionFillKey(fill)]; bucket != "" {
+			state = residuals[bucket]
+		} else if bucket := componentRoutes[contributionFillKey(fill)]; bucket != "" {
 			state = residuals[bucket]
 		} else if fill.TradeSide == trading.TradeSideSell && openResidualQuantity(residuals, key) > 0 {
 			// An unassigned sale may reduce core or T0 inventory; do not guess.
@@ -513,6 +532,9 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 	}
 	finalizeCostLedgerResult(&result)
 	if options.Persist {
+		if service.componentResidualPreview {
+			return result, fmt.Errorf("component residual research preview cannot persist cost states")
+		}
 		if len(residuals) > 0 {
 			return result, fmt.Errorf("T0 residual cost preview requires audited allocation and NAV attribution support before persistence")
 		}
@@ -592,6 +614,11 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 			result.Summary.T0ResidualQuantity += item.CloseQuantity
 			result.Summary.T0ResidualTotalCost += item.CloseTotalCost
 		}
+		if isComponentResidualBucket(item.CostBucket) {
+			result.Summary.T0ComponentBuckets++
+			result.Summary.T0ComponentQuantity += item.CloseQuantity
+			result.Summary.T0ComponentMarkedBasis += item.CloseTotalCost
+		}
 		switch item.CorporateActionType {
 		case "price_adjustment":
 			result.Summary.CorporateActions++
@@ -625,6 +652,7 @@ func finalizeCostLedgerResult(result *CostLedgerResult) {
 	result.Summary.UnrealizedPnL = roundMoney(result.Summary.UnrealizedPnL)
 	result.Summary.T0BuyAmount = roundMoney(result.Summary.T0BuyAmount)
 	result.Summary.T0ResidualTotalCost = roundMoney(result.Summary.T0ResidualTotalCost)
+	result.Summary.T0ComponentMarkedBasis = roundMoney(result.Summary.T0ComponentMarkedBasis)
 	if result.Summary.BlockedItems > 0 || result.Summary.QuantityBreaks > 0 {
 		result.Status = "blocked"
 	} else if result.Summary.EstimatedItems > 0 || result.Summary.MissingFeeItems > 0 {
