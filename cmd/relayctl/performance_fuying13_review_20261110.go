@@ -32,6 +32,7 @@ func runFuying13Review20261110(args []string) error {
 	inventoryPreview := flags.Bool("oct23-inventory-preview", false, "review October 23 split buys after the core inventory was fully sold; memory only")
 	overnightPreview := flags.Bool("nov04-overnight-preview", false, "review confirmed November 3/4 overnight redemption separately; no target-day carry or publication")
 	overnightChain := flags.Bool("overnight-chain-preview", false, "release the reviewed November 4 overnight lot in the memory cost chain; never publish")
+	brokerCash := flags.Bool("broker-cash-preview", false, "verify frozen broker cash and overlay seven missing repo fees in memory only")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -49,6 +50,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *overnightChain && !*overnightPreview {
 		return errors.New("overnight chain requires the November 4 diagnostic and all prior preview stages")
+	}
+	if *brokerCash && !*overnightChain {
+		return errors.New("broker cash preview requires overnight chain and all prior preview stages")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -117,6 +121,17 @@ func runFuying13Review20261110(args []string) error {
 		}
 		overnightHash = hash
 		serviceStore.(*fuying13SplitPreview).overnightLinks = []ledger.T0Allocation{link}
+	}
+	var cashEvidence *fuyingCashReview
+	if *brokerCash {
+		evidence, err := loadFuyingCashReview(ctx, tx, m)
+		if err != nil {
+			return err
+		}
+		cashEvidence = &evidence
+		for _, proof := range evidence.Repo {
+			serviceStore.(*fuying13SplitPreview).repoFees = append(serviceStore.(*fuying13SplitPreview).repoFees, proof.Fee)
+		}
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
 	if *componentPreview {
@@ -187,6 +202,7 @@ func runFuying13Review20261110(args []string) error {
 		"overnight_confirmation_sha256":   overnightHash,
 		"overnight_diagnostic":            overnightEvidence,
 		"overnight_chain_preview":         *overnightChain,
+		"broker_cash_evidence":            cashEvidence,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
@@ -199,6 +215,7 @@ type fuying13SplitPreview struct {
 	links          []ledger.T0Allocation
 	inventoryLinks []ledger.T0Allocation
 	overnightLinks []ledger.T0Allocation
+	repoFees       []ledger.OrderFeeRecord
 }
 
 func (s *fuying13SplitPreview) ListT0AllocationHistory(ctx context.Context, account, date string) ([]ledger.T0Allocation, error) {
