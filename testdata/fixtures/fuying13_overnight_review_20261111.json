@@ -1,0 +1,16 @@
+{
+  "account_id": "314000045768",
+  "security_id": "159915.SZ",
+  "source_date": "2026-11-03",
+  "redemption_date": "2026-11-04",
+  "source_buy_order": "external-huaxin-31400004576801-12002A620003293",
+  "redemption_order": "external-huaxin-31400004576801-12002A620008286",
+  "overnight_quantity": 1000000,
+  "core_buy_order": "external-huaxin-31400004576801-12002A620000014",
+  "core_quantity": 123200,
+  "group_id": "user-confirmed-768-20261103-overnight-159915",
+  "evidence_type": "user_confirmation",
+  "confirmation_date": "2026-11-11",
+  "confirmation": "确认，100万份为隔夜申赎仓，123,200份为底仓",
+  "scope": "ownership_only_not_settlement_confirmation"
+}

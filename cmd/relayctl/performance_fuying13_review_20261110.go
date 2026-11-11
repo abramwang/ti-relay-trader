@@ -30,6 +30,7 @@ func runFuying13Review20261110(args []string) error {
 	componentPreview := flags.Bool("component-residual-preview", false, "research component carry and daily mark attribution; never publish")
 	dayPoolPreview := flags.Bool("closed-day-pool-preview", false, "review October 16 closed T0 strategy-day cost without per-redemption buy allocation")
 	inventoryPreview := flags.Bool("oct23-inventory-preview", false, "review October 23 split buys after the core inventory was fully sold; memory only")
+	overnightPreview := flags.Bool("nov04-overnight-preview", false, "review confirmed November 3/4 overnight redemption separately; no target-day carry or publication")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -41,6 +42,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *inventoryPreview && (!*dayPoolPreview || !*componentPreview || !*allocationReview) {
 		return errors.New("October 23 inventory review requires all earlier read-only preview stages")
+	}
+	if *overnightPreview && !*inventoryPreview {
+		return errors.New("overnight review requires October 23 and all earlier read-only preview stages")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -92,6 +96,8 @@ func runFuying13Review20261110(args []string) error {
 		serviceStore = &fuying13SplitPreview{performancePreviewStore: store, links: links}
 	}
 	var inventoryEvidence *fuying23InventoryEvidence
+	var overnightHash string
+	var overnightEvidence *fuyingOvernightEvidence
 	if *inventoryPreview {
 		evidence, err := loadFuying23InventoryReview(ctx, repo)
 		if err != nil {
@@ -99,6 +105,14 @@ func runFuying13Review20261110(args []string) error {
 		}
 		inventoryEvidence = &evidence
 		serviceStore.(*fuying13SplitPreview).inventoryLinks = evidence.Links
+	}
+	if *overnightPreview {
+		link, hash, err := loadFuyingOvernightConfirmation()
+		if err != nil {
+			return err
+		}
+		overnightHash = hash
+		serviceStore.(*fuying13SplitPreview).overnightLinks = []ledger.T0Allocation{link}
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
 	if *componentPreview {
@@ -131,6 +145,13 @@ func runFuying13Review20261110(args []string) error {
 		if !calendar.IsTradingDay {
 			continue
 		}
+		if *overnightPreview && day == "2026-11-04" {
+			evidence, e := reviewFuyingOvernight(ctx, repo, service, store.costs[fuying13Account]["2026-11-03"])
+			if e != nil {
+				return e
+			}
+			overnightEvidence = &evidence
+		}
 		cost, e := service.CalculateCostLedger(ctx, fuying13Account, day, performance.CostLedgerOptions{})
 		costs = append(costs, cost)
 		if e != nil || !fuying13CostCarryEligible(cost, day) {
@@ -155,6 +176,8 @@ func runFuying13Review20261110(args []string) error {
 		"component_residual_preview":      *componentPreview,
 		"closed_day_pool_preview":         *dayPoolPreview,
 		"oct23_inventory_evidence":        inventoryEvidence,
+		"overnight_confirmation_sha256":   overnightHash,
+		"overnight_diagnostic":            overnightEvidence,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
@@ -166,6 +189,7 @@ type fuying13SplitPreview struct {
 	*performancePreviewStore
 	links          []ledger.T0Allocation
 	inventoryLinks []ledger.T0Allocation
+	overnightLinks []ledger.T0Allocation
 }
 
 func (s *fuying13SplitPreview) ListT0AllocationHistory(ctx context.Context, account, date string) ([]ledger.T0Allocation, error) {
@@ -178,6 +202,8 @@ func (s *fuying13SplitPreview) ListT0AllocationHistory(ctx context.Context, acco
 		return mergeFuying13SplitReview(old, s.links)
 	case fuying23Date:
 		return mergeFuying13SplitReview(old, s.inventoryLinks)
+	case "2026-11-03":
+		return mergeFuying13SplitReview(old, s.overnightLinks)
 	default:
 		return old, nil
 	}
