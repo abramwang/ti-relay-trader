@@ -13,6 +13,12 @@ type t0CostBucketResult struct {
 func buildT0CostBuckets(accountID, tradeDate string, groups []t0RedemptionGroup) t0CostBucketResult {
 	result := t0CostBucketResult{consumedFills: make(map[string]bool)}
 	for index, group := range groups {
+		if group.overnight != nil {
+			for _, fill := range group.redemptions {
+				result.consumedFills[contributionFillKey(fill)] = true
+			}
+			continue
+		}
 		groupID := strings.TrimSpace(group.groupID)
 		if groupID == "" {
 			groupID = fmt.Sprintf("unidentified-%s-%d", strings.ReplaceAll(group.securityID, ".", "-"), index+1)

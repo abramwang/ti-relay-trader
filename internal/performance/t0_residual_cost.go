@@ -62,7 +62,7 @@ func prepareT0Residuals(accountID, tradeDate string, orders []trading.Order, fil
 	}
 	redemptions := make(map[string]bool)
 	for _, group := range groups {
-		if !group.explicit {
+		if !group.explicit || group.overnight != nil {
 			continue
 		}
 		key := residualCostKey(group.securityID, t0ResidualPrefix+group.groupID)

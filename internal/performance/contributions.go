@@ -81,6 +81,7 @@ type ContributionSummary struct {
 }
 
 type SecurityContribution struct {
+	PriorDayFeeCredit      float64    `json:"prior_day_fee_credit,omitempty"`
 	SecurityID             string     `json:"security_id"`
 	Symbol                 string     `json:"symbol"`
 	Exchange               string     `json:"exchange"`
@@ -170,6 +171,7 @@ type contributionBucket struct {
 }
 
 type t0RedemptionGroup struct {
+	overnight      *overnightT0Plan
 	securityID     string
 	groupID        string
 	explicit       bool
@@ -350,6 +352,10 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, consumedOrders, consumedFills := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
+	t0Groups, err = service.attachOvernightT0(ctx, accountID, normalizedDate, t0Groups, orders, fills, transfers)
+	if err != nil {
+		return ContributionResult{}, err
+	}
 	if service.closedDayT0PoolPreviewDate == normalizedDate {
 		t0Groups, consumedOrders, consumedFills, err = service.previewClosedDayPools(ctx, accountID, normalizedDate, t0Groups, orders, fills, openPositions, closePositions)
 		if err != nil {
@@ -459,6 +465,9 @@ func (service *Service) calculateContributions(ctx context.Context, accountID, n
 			return ContributionResult{}, err
 		}
 		for _, residual := range residuals {
+			if overnightResidualConsumed(t0Groups, securityID, residual.residualGroup) {
+				continue
+			}
 			item := calculateOrdinaryContribution(residual, rules, authoritativeFees, consumedOrderFees, result.Summary.OpenEconomicNAV, false, componentSaleBucketLink{})
 			item.StrategyType = StrategyETFRedemptionT0
 			item.StrategyID = residual.residualGroup
@@ -1265,7 +1274,15 @@ func (service *Service) calculateT0Contribution(
 	for _, redemption := range group.redemptions {
 		item.RedemptionQuantity += redemption.Qty
 		item.SellQuantity += redemption.Qty
-		iopv, referenceTime, priceSource, ok := service.loadRedemptionIOPV(ctx, tradeDate, redemption)
+		var iopv float64
+		var referenceTime time.Time
+		var priceSource string
+		var ok bool
+		if p := group.overnight; p != nil {
+			iopv, referenceTime, priceSource, ok = p.quote.IOPV, p.quote.ReferenceTime, p.quote.PriceSource, true
+		} else {
+			iopv, referenceTime, priceSource, ok = service.loadRedemptionIOPV(ctx, tradeDate, redemption)
+		}
 		if !ok {
 			allIOPV = false
 			item.QualityFlags = appendUnique(item.QualityFlags, "missing_redemption_iopv")
@@ -1300,6 +1317,14 @@ func (service *Service) calculateT0Contribution(
 
 	validPCFUnit := item.RedemptionUnit <= 0 || item.RedemptionQuantity%item.RedemptionUnit == 0
 	completeCost := item.BuyQuantity == item.RedemptionQuantity && item.BuyQuantity > 0 && validPCFUnit
+	if p := group.overnight; p != nil {
+		completeCost = item.BuyQuantity == 0 && item.RedemptionQuantity == p.source.CloseQuantity && validPCFUnit
+		item.OpenQuantity = p.source.CloseQuantity
+		item.OpenPrice = floatPointer(p.source.ClosePrice)
+		item.OpenValue = p.source.CloseMarketValue
+		item.PriorDayFeeCredit = p.source.BuyFee
+		item.EstimationMethod = "overnight_redemption_iopv_minus_previous_close_minus_remaining_friction"
+	}
 	if !completeCost {
 		item.QualityFlags = appendUnique(item.QualityFlags, "incomplete_t0_buy_cost")
 	}
@@ -1308,6 +1333,10 @@ func (service *Service) calculateT0Contribution(
 		item.EstimatedFee = roundMoney(exitValue * service.etfT0FrictionRate)
 		item.EffectiveFee = item.EstimatedFee
 		gross := roundMoney(exitValue - item.BuyAmount)
+		if group.overnight != nil {
+			gross = roundMoney(exitValue - item.OpenValue)
+			item.EffectiveFee = roundMoney(item.EstimatedFee - item.PriorDayFeeCredit)
+		}
 		net := roundMoney(gross - item.EffectiveFee)
 		item.GrossContribution = floatPointer(gross)
 		item.NetContribution = floatPointer(net)
@@ -1315,7 +1344,7 @@ func (service *Service) calculateT0Contribution(
 		item.PnLStatus = "estimated"
 		item.QualityFlags = appendUnique(item.QualityFlags, "etf_t0_iopv_estimate", "configured_friction_estimate")
 		if transferComplete {
-			settlementEstimate := roundMoney(exitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee)
+			settlementEstimate := roundMoney(exitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee + item.PriorDayFeeCredit)
 			item.ETFSettlementEstimate = floatPointer(settlementEstimate)
 			item.QualityFlags = appendUnique(item.QualityFlags, "etf_redemption_settlement_estimated")
 			if !executionFeeComplete {

@@ -84,3 +84,10 @@ func TestFuyingOvernightConfirmationAndPrerequisites(t *testing.T) {
 		t.Fatalf("prerequisites bypassed: %v", err)
 	}
 }
+
+func TestFuyingOvernightChainRequiresDiagnostic(t *testing.T) {
+	err := runFuying13Review20261110([]string{"-overnight-chain-preview", "-output", filepath.Join(t.TempDir(), "unused.json"), "-config", "does-not-exist"})
+	if err == nil || !strings.Contains(err.Error(), "requires the November 4 diagnostic") {
+		t.Fatalf("chain bypassed diagnostic: %v", err)
+	}
+}

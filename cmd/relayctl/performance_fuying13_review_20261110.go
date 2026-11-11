@@ -31,6 +31,7 @@ func runFuying13Review20261110(args []string) error {
 	dayPoolPreview := flags.Bool("closed-day-pool-preview", false, "review October 16 closed T0 strategy-day cost without per-redemption buy allocation")
 	inventoryPreview := flags.Bool("oct23-inventory-preview", false, "review October 23 split buys after the core inventory was fully sold; memory only")
 	overnightPreview := flags.Bool("nov04-overnight-preview", false, "review confirmed November 3/4 overnight redemption separately; no target-day carry or publication")
+	overnightChain := flags.Bool("overnight-chain-preview", false, "release the reviewed November 4 overnight lot in the memory cost chain; never publish")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -45,6 +46,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *overnightPreview && !*inventoryPreview {
 		return errors.New("overnight review requires October 23 and all earlier read-only preview stages")
+	}
+	if *overnightChain && !*overnightPreview {
+		return errors.New("overnight chain requires the November 4 diagnostic and all prior preview stages")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -116,13 +120,17 @@ func runFuying13Review20261110(args []string) error {
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
 	if *componentPreview {
+		var overnightAllocations []performance.OvernightT0Allocation
+		if *overnightChain {
+			overnightAllocations = []performance.OvernightT0Allocation{{AccountID: fuying13Account, SourceDate: "2026-11-03", RedemptionDate: "2026-11-04", SecurityID: "159915.SZ", GroupID: fuyingOvernightGroup, SourceBuyOrderID: fuyingOvernightBuy, RedemptionOrderID: fuyingOvernightRedemption, Quantity: 1000000, EvidenceRef: "testdata/fixtures/fuying13_overnight_review_20261111.json"}}
+		}
 		poolDate := ""
 		if *dayPoolPreview {
 			poolDate = "2026-10-16"
 		}
 		service, err = performance.New(performance.Options{Store: serviceStore, Calendar: m, Market: m, FormulaVersion: cfg.Performance.FormulaVersion,
 			ETFT0FrictionRate: cfg.Performance.ETFT0FrictionRate, AutoToleranceCNY: cfg.Performance.AutoToleranceCNY, AutoToleranceBP: cfg.Performance.AutoToleranceBP,
-			WarningToleranceCNY: cfg.Performance.WarningToleranceCNY, WarningToleranceBP: cfg.Performance.WarningToleranceBP, ComponentResidualPreview: true, ClosedDayT0PoolPreviewDate: poolDate})
+			WarningToleranceCNY: cfg.Performance.WarningToleranceCNY, WarningToleranceBP: cfg.Performance.WarningToleranceBP, ComponentResidualPreview: true, ClosedDayT0PoolPreviewDate: poolDate, OvernightT0Allocations: overnightAllocations})
 	}
 	if err != nil {
 		return err
@@ -178,6 +186,7 @@ func runFuying13Review20261110(args []string) error {
 		"oct23_inventory_evidence":        inventoryEvidence,
 		"overnight_confirmation_sha256":   overnightHash,
 		"overnight_diagnostic":            overnightEvidence,
+		"overnight_chain_preview":         *overnightChain,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err

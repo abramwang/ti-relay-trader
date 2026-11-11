@@ -38,7 +38,8 @@ type OvernightT0Preview struct {
 
 // PreviewOvernightT0 accepts one newly acquired, fully carried and fully redeemed
 // lot. Attribution and complete broker quantity evidence are checked by the review
-// caller. It deliberately does not participate in normal calculation or persistence.
+// caller. A separately gated research chain may consume the result; this method
+// itself never creates cost states, cash entries or NAV writes.
 func (service *Service) PreviewOvernightT0(ctx context.Context, source ledger.PositionCostState, order trading.Order, transfer trading.ComponentTransfer) (OvernightT0Preview, error) {
 	if !service.componentResidualPreview {
 		return OvernightT0Preview{}, fmt.Errorf("overnight review requires non-publishing research mode")

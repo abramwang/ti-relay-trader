@@ -326,7 +326,7 @@ func applyComponentResidualValuation(items []SecurityContribution, groups []t0Re
 			if item.EstimatedExitValue == nil || item.PnLStatus != "estimated" {
 				return fmt.Errorf("component inventory requires parent's provisional IOPV valuation")
 			}
-			v := roundMoney(*item.EstimatedExitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee - value)
+			v := roundMoney(*item.EstimatedExitValue - item.LinkedComponentSales - item.EstimatedFee + item.ActualFee + item.PriorDayFeeCredit - value)
 			item.ETFSettlementEstimate = &v
 			item.QualityFlags = appendUnique(item.QualityFlags, componentResidualPreviewFlag, "component_inventory_excluded_from_settlement_estimate", "component_settlement_fee_finality_unverified")
 			found = true

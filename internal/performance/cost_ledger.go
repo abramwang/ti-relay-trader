@@ -61,18 +61,19 @@ type CostLedgerSummary struct {
 }
 
 type CostLedgerResult struct {
-	AccountID          string                      `json:"account_id"`
-	TradeDate          string                      `json:"trade_date"`
-	Status             string                      `json:"status"`
-	FormulaVersion     string                      `json:"formula_version"`
-	Persisted          bool                        `json:"persisted"`
-	Inception          ledger.PerformanceInception `json:"inception"`
-	OpeningSource      string                      `json:"opening_source"`
-	Summary            CostLedgerSummary           `json:"summary"`
-	Positions          []ledger.PositionCostState  `json:"positions"`
-	QualityFlags       []string                    `json:"quality_flags,omitempty"`
-	CalculatedAt       time.Time                   `json:"calculated_at"`
-	AttributionLinkIDs []string                    `json:"attribution_link_ids,omitempty"`
+	OvernightRedemptions []OvernightT0Release        `json:"overnight_redemptions,omitempty"`
+	AccountID            string                      `json:"account_id"`
+	TradeDate            string                      `json:"trade_date"`
+	Status               string                      `json:"status"`
+	FormulaVersion       string                      `json:"formula_version"`
+	Persisted            bool                        `json:"persisted"`
+	Inception            ledger.PerformanceInception `json:"inception"`
+	OpeningSource        string                      `json:"opening_source"`
+	Summary              CostLedgerSummary           `json:"summary"`
+	Positions            []ledger.PositionCostState  `json:"positions"`
+	QualityFlags         []string                    `json:"quality_flags,omitempty"`
+	CalculatedAt         time.Time                   `json:"calculated_at"`
+	AttributionLinkIDs   []string                    `json:"attribution_link_ids,omitempty"`
 }
 
 type costWorkingState struct {
@@ -372,6 +373,10 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 	redemptionUnits, pcfFlags := service.loadPCFRedemptionUnits(ctx, normalizedDate, fills)
 	result.QualityFlags = appendUnique(result.QualityFlags, pcfFlags...)
 	t0Groups, _, _ := service.buildT0Groups(orders, fills, instruments, redemptionUnits)
+	t0Groups, err = service.attachOvernightT0(ctx, accountID, normalizedDate, t0Groups, orders, fills, transfers)
+	if err != nil {
+		return CostLedgerResult{}, err
+	}
 	if service.closedDayT0PoolPreviewDate == normalizedDate {
 		t0Groups, _, _, err = service.previewClosedDayPools(ctx, accountID, normalizedDate, t0Groups, orders, fills, openPositions, closePositions)
 		if err != nil {
@@ -406,6 +411,15 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 			state.item.Status = "blocked"
 			state.flags = appendUnique(state.flags, "opening_position_without_previous_cost")
 			working[key] = state
+		}
+	}
+	if err := releaseOvernightT0Costs(t0Groups, residuals); err != nil {
+		return CostLedgerResult{}, err
+	}
+	for _, g := range t0Groups {
+		if p := g.overnight; p != nil {
+			result.OvernightRedemptions = append(result.OvernightRedemptions, OvernightT0Release{Allocation: p.link, SourceAcquisitionCost: p.source.CloseTotalCost, DailyBridge: p.quote})
+			result.QualityFlags = appendUnique(result.QualityFlags, overnightT0ChainFlag)
 		}
 	}
 	rules, ruleErr := service.store.ListFeeRules(ctx, ledger.FeeRuleQuery{

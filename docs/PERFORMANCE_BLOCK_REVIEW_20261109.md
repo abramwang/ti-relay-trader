@@ -590,6 +590,44 @@ go run ./cmd/relayctl performance-fuying13-review-20261110 -config config/relay.
 
 新增4组定向测试，含27种账户/证据/数量/费用反例、10种研究门禁/日期/行情/既有清算情形，以及涨跌两向收益守恒和无源数据修改。全Go、performance/relayctl race和vet通过。运行API3180711/worker2462706保持生产healthy，交易启用0；未部署/重启/切环境，用户CSV和CTP交付未改。
 
+## 11-11 隔夜赎回接入连续成本与按日贡献
+
+本节接续v10专项诊断，已实现前节列出的跨日释放。仍是只读研究阶段，不是金融落库或生产发布。
+
+### 成本与归因接线
+
+新增内部`OvernightT0Allocation`，只能与`ComponentResidualPreview`一起使用，不提供HTTP/SDK/任务配置入口。配置复制后使用，拒绝重复消费同一来源桶或赎回单。CLI `-overnight-chain-preview`必须同时开启`-nov04-overnight-preview`及此前全部研究阶段。
+
+每次计算核对源日独立`user_confirmation/residual`审计、源买单身份、前一交易日成本桶、完整父赎回划转、终态订单、PCF最小申赎单位及Meridian行情。首期仅支持新买入后完整隔夜、次日全量赎回；部分释放、多来源、当日已选买入、同组重用、缺失/过期/冲突证据均拒绝，不启用自动FIFO。
+
+源日成本和原始买入保持不变。赎回日在盘初总数量及除权检查通过后释放指定余仓桶：买入数量/金额均为0，释放数量100万份，收盘数量/成本为0。成本输出以`overnight_redemptions`保留来源、赎回关联、原成本及两日估值桥；成本行的释放金额采用IOPV，明确标为estimated，不是新增券商卖出成交。原始orders/fills/transfers不修改。
+
+贡献计算保留前收价值作为日初基准，取消同一余仓的第二次普通持仓归因。4日有效暂估费用为3682.35 - 122.60 = 3559.75元；`prior_day_fee_credit`单独表达源日已计费用，`actual_fee`仍只统计本日执行费用。4日实际买入123200份保持CORE，成本296310.8148元；5日只延续CORE，已释放桶不重复结转或抵费。
+
+父篮子暂估为`IOPV退出估值 - 成分卖出金额 - 全轮暂估费用 + 本日实际执行费用 + 源日已计费用 - 仍持有成分市值`。其中源日费用抵减只是让两日模型总费用一致，不创建现金记录；前收价值仅用于日收益分摊，不参与待结余额计算。既有同日申赎默认抵减为0、行为不变。已有实际结算时拒绝用此研究模型覆盖。
+
+### 真实只读回放
+
+报告`outputs/recovery/fuying13_settlement_20261110/cost_chain_overnight_v11.json`，SHA256 `b1a66d134339371ec4d0bd8266fd26b4e883350af055de0b14b3a1d5d900b681`。
+
+- 区间10-12..11-10共22交易日，`cost_chain_complete=true`，无下一成本数量断点；各日贡献`missing_items=0`。
+- 11-04：源桶全量释放，CORE收盘123200份。成本行累计实现暂估-782.35元；按日贡献仍为3日-49122.60、4日+48340.25元，底仓4日+19204.3852元，未将累计收益当成4日收益。
+- 11-04成分卖出关联金额2451499.47元，模型待结暂估1459.528679元。这不是已证明的公募应收或到账款，还需资金流水/清算证据去重和跨日确认，不能直接写现金账。
+- 11-05/06/09/10继续通过成本核验，隔夜释放及费用抵减不重复。
+- `database_writes=0`、`broker_commands=0`、`economic_nav_publishable=false`；API和worker未更新，页面仍保留旧账表结果。
+
+```bash
+go run ./cmd/relayctl performance-fuying13-review-20261110 -config config/relay.prod.yaml -confirmed-split-preview -component-residual-preview -closed-day-pool-preview -oct23-inventory-preview -nov04-overnight-preview -overnight-chain-preview -output outputs/recovery/fuying13_settlement_20261110/new_overnight_chain.json
+```
+
+### 下一步与剩余质量项
+
+成本连续不等于经济资产/净值闭合。本报告没有传播NAV，`account_day_pnl`读取的仍是旧结果：例如10-16仍为-810061.56元，不能据此判断修正后的损益；10-20以后多日带`account_day_pnl_unavailable`，其中数值0不表示当天收益为0。
+
+下一步使用已有券商资产/资金流水及PCF核对每轮已入现金、退款/扣款、待结权益释放，先做经济NAV内存链。10-20、10-21、10-26、10-27、10-30和11-03仍有`missing_repo_fee/order_fee_day_incomplete`，需从已有费用记录与券商流水核验，不能填0消警。部分成分关联/暂估质量标记也继续保留，不凭数量守恒宣布最终清算完成。目前无需重复补归属确认或将人工导出改成常规流程；发现具体清算证据缺口后再列明。
+
+新增4组账表回归及1组CLI前置回归，包含16种证据/数量/PCF/审计/结算反例、默认不放宽、配置独立副本、两日收益守恒、底仓独立、次日不重复释放、无原成交修改、成本/NAV持久化拒绝、成分余仓去重及前收变化不改变模型待结。全Go、performance/relayctl race和vet通过。生产API3180711与worker2462706 healthy、交易启用0；用户CSV、CTP交付和既有387/388已发布结果保持不动。
+
 ## 执行边界
 
 此前完成余仓成本分离/跨日/显式卖出、四条独立归属审计落库及按日收益归因预览，解释768的10-12主要现金桥差额并完成同日已入现金扣减预览。11-10先完成三户29条资产基准与29条金标，随后完成387/388的11-04实际结算及至11-10的连续成本/NAV版本；768最终清算和全区间重建仍未完成。原始OC记录、cron、生产交易权限及运行进程不变，不宣告三户整体绩效重建成功。

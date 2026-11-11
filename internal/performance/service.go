@@ -96,6 +96,7 @@ type Options struct {
 	// Internal research gate. Never enabled by the API or scheduled workers.
 	ComponentResidualPreview   bool
 	ClosedDayT0PoolPreviewDate string
+	OvernightT0Allocations     []OvernightT0Allocation
 }
 
 type Service struct {
@@ -115,6 +116,7 @@ type Service struct {
 	historicalPartialDayOrderExpiry bool
 	componentResidualPreview        bool
 	closedDayT0PoolPreviewDate      string
+	overnightT0Allocations          []OvernightT0Allocation
 }
 
 type EconomicNAVOptions struct {
@@ -271,6 +273,9 @@ type repoFillGroup struct {
 }
 
 func New(options Options) (*Service, error) {
+	if err := validateOvernightT0Allocations(options.OvernightT0Allocations, options.ComponentResidualPreview); err != nil {
+		return nil, err
+	}
 	if options.ClosedDayT0PoolPreviewDate != "" {
 		date, _, err := parseTradeDate(options.ClosedDayT0PoolPreviewDate)
 		if err != nil || !options.ComponentResidualPreview {
@@ -316,6 +321,7 @@ func New(options Options) (*Service, error) {
 
 		historicalPartialDayOrderExpiry: options.HistoricalPartialDayOrderExpiry,
 		componentResidualPreview:        options.ComponentResidualPreview,
+		overnightT0Allocations:          append([]OvernightT0Allocation(nil), options.OvernightT0Allocations...),
 		closedDayT0PoolPreviewDate:      options.ClosedDayT0PoolPreviewDate,
 	}, nil
 }
