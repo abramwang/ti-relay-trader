@@ -33,6 +33,7 @@ func runFuying13Review20261110(args []string) error {
 	overnightPreview := flags.Bool("nov04-overnight-preview", false, "review confirmed November 3/4 overnight redemption separately; no target-day carry or publication")
 	overnightChain := flags.Bool("overnight-chain-preview", false, "release the reviewed November 4 overnight lot in the memory cost chain; never publish")
 	brokerCash := flags.Bool("broker-cash-preview", false, "verify frozen broker cash and overlay seven missing repo fees in memory only")
+	cashNAV := flags.Bool("cash-nav-preview", false, "record native NAV gates and independent conditional cash curves; no NAV propagation or publication")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -53,6 +54,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *brokerCash && !*overnightChain {
 		return errors.New("broker cash preview requires overnight chain and all prior preview stages")
+	}
+	if *cashNAV && !*brokerCash {
+		return errors.New("cash NAV preview requires broker cash and all prior preview stages")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -123,6 +127,7 @@ func runFuying13Review20261110(args []string) error {
 		serviceStore.(*fuying13SplitPreview).overnightLinks = []ledger.T0Allocation{link}
 	}
 	var cashEvidence *fuyingCashReview
+	var navInputs fuyingNAVInputs
 	if *brokerCash {
 		evidence, err := loadFuyingCashReview(ctx, tx, m)
 		if err != nil {
@@ -131,6 +136,12 @@ func runFuying13Review20261110(args []string) error {
 		cashEvidence = &evidence
 		for _, proof := range evidence.Repo {
 			serviceStore.(*fuying13SplitPreview).repoFees = append(serviceStore.(*fuying13SplitPreview).repoFees, proof.Fee)
+		}
+	}
+	if *cashNAV {
+		navInputs, err = loadFuyingNAVInputs(ctx, tx)
+		if err != nil {
+			return err
 		}
 	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
@@ -156,6 +167,7 @@ func runFuying13Review20261110(args []string) error {
 	}
 	var costs []performance.CostLedgerResult
 	var contributions []performance.ContributionResult
+	var nativeNAV []fuyingNativeNAVCheck
 	var blockedDate, failure string
 	start, _ := time.ParseInLocation("20060102", "20261012", timeutil.Location())
 	end, _ := time.ParseInLocation("20060102", "20261110", timeutil.Location())
@@ -190,6 +202,15 @@ func runFuying13Review20261110(args []string) error {
 			contributions = append(contributions, c)
 		}
 		store.costs[fuying13Account][day] = append([]ledger.PositionCostState(nil), cost.Positions...)
+		if *cashNAV && day <= "2026-11-09" {
+			nav, e := service.CalculateEconomicNAV(ctx, fuying13Account, day, performance.EconomicNAVOptions{})
+			check := fuyingNativeNAVCheck{Date: day, Result: nav}
+			if e != nil {
+				check.Error = e.Error()
+			}
+			nativeNAV = append(nativeNAV, check)
+			fmt.Fprintf(os.Stderr, "native NAV diagnostic %s: %s error=%v\n", day, nav.Status, e)
+		}
 		fmt.Fprintf(os.Stderr, "cost preview %s: %s, quantity breaks=%d\n", day, cost.Status, cost.Summary.QuantityBreaks)
 	}
 	report := map[string]any{"account_id": fuying13Account, "generated_at": timeutil.Now(), "database_read_only": true, "database_writes": 0, "broker_commands": 0,
@@ -204,6 +225,18 @@ func runFuying13Review20261110(args []string) error {
 		"overnight_chain_preview":         *overnightChain,
 		"broker_cash_evidence":            cashEvidence,
 		"scope":                           "cost-only memory chain; no NAV propagation or removal of preview-only gates"}
+	if *cashNAV && blockedDate == "" {
+		scenarios, e := previewFuyingCashNAV(navInputs, contributions)
+		if e != nil {
+			return e
+		}
+		report["cash_nav_scenarios"] = scenarios
+		report["native_nav_diagnostics"] = nativeNAV
+		report["native_nav_quality_flags"] = fuyingEngineFlags(nativeNAV)
+		report["cash_matrix_sha256"] = fuyingCashMatrixHash
+		report["cash_nav_date_to"] = "2026-11-09"
+		report["scope"] = "cost memory chain and independent conditional cash curves; native NAV diagnostics are not propagated, confirmed basis unchanged"
+	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
 	}
