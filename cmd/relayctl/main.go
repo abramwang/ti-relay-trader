@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-fuying13-cash-timing-20261113":
+		if err := runFuyingCashTiming(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-cash-timing-20261113: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fuying13-repo-bridge-20261112":
 		if err := runFuyingRepoBridge(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-repo-bridge-20261112: %v\n", err)
@@ -627,6 +632,7 @@ func usage() {
   performance-settlement-20261110  Preview or apply the reviewed November ETF settlement recovery
   performance-fuying13-review-20261110  Read-only cost continuity and cash PCF review; never publishes NAV
   performance-fuying13-cash-review-20261111  Read-only broker cash and overnight ETF cycle evidence
+  performance-fuying13-cash-timing-20261113  Offline verified-source cash bridge; candidates excluded, never publishes NAV
   performance-fuying13-repo-bridge-20261112  Read-only repo interest accrual/receipt bridge; never publishes NAV
   performance-etf-transfer-review  Read-only stored ETF component linkage evidence (no market or OC queries)
   performance-fuying13-recovery-20261019  Audit the reviewed ETF-settlement-free historical segment

@@ -26,6 +26,7 @@ type fuyingMatrixCash struct {
 	FlowID     string            `json:"broker_flow_id"`
 	Amount     string            `json:"actual_amount"`
 	SourceDate string            `json:"resolved_source_trade_date"`
+	Reason     string            `json:"reason"`
 	Raw        map[string]string `json:"raw_fields"`
 }
 
