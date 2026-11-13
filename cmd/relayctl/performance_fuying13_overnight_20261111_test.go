@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +79,10 @@ func TestFuyingOvernightConfirmationAndPrerequisites(t *testing.T) {
 	link, hash, err := loadFuyingOvernightConfirmation()
 	if err != nil || len(hash) != 64 || link.Role != "residual" || link.Quantity != 1000000 || link.GatewayOrderID != fuyingOvernightBuy {
 		t.Fatalf("bad confirmation %+v %s %v", link, hash, err)
+	}
+	again, _, err := loadFuyingOvernightConfirmation()
+	if err != nil || !reflect.DeepEqual(link, again) || !link.ConfirmedAt.IsZero() || link.ConfirmedDate != "2026-11-11" {
+		t.Fatal("confirmation precision or identity changed", again, err)
 	}
 	err = runFuying13Review20261110([]string{"-nov04-overnight-preview", "-output", filepath.Join(t.TempDir(), "unused.json"), "-config", "does-not-exist"})
 	if err == nil || !strings.Contains(err.Error(), "requires October 23") {

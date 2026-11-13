@@ -14,6 +14,7 @@ import (
 )
 
 const t0AllocationSource = "relay.t0_allocation.v1"
+const t0AllocationDateSource = "relay.t0_allocation.v2"
 
 // T0Allocation is an immutable revision, not a replacement for an OC order.
 // Quantity describes the entire executed quantity of the referenced order.
@@ -34,6 +35,27 @@ type T0Allocation struct {
 	EvidenceRef    string    `json:"evidence_ref"`
 	ConfirmedBy    string    `json:"confirmed_by"`
 	ConfirmedAt    time.Time `json:"confirmed_at"`
+	ConfirmedDate  string    `json:"confirmed_date,omitempty"`
+}
+
+// Date-only evidence must not acquire a fabricated midnight/event timestamp.
+func (item T0Allocation) MarshalJSON() ([]byte, error) {
+	type plain T0Allocation
+	var at *time.Time
+	if !item.ConfirmedAt.IsZero() {
+		at = &item.ConfirmedAt
+	}
+	return json.Marshal(struct {
+		*plain
+		ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
+	}{(*plain)(&item), at})
+}
+
+func t0AllocationStorageSource(item T0Allocation) string {
+	if item.ConfirmedDate != "" {
+		return t0AllocationDateSource
+	}
+	return t0AllocationSource
 }
 
 func NormalizeT0Allocation(item T0Allocation) (T0Allocation, error) {
@@ -65,10 +87,20 @@ func NormalizeT0Allocation(item T0Allocation) (T0Allocation, error) {
 		return item, fmt.Errorf("%w: invalid allocation role/side", ErrInvalidLedgerInput)
 	}
 	if (item.Status != "active" && item.Status != "revoked") ||
-		(item.EvidenceType != "user_confirmation" && item.EvidenceType != "inventory_evidence") || item.ConfirmedAt.IsZero() {
+		(item.EvidenceType != "user_confirmation" && item.EvidenceType != "inventory_evidence") {
 		return item, fmt.Errorf("%w: invalid allocation audit", ErrInvalidLedgerInput)
 	}
-	item.ConfirmedAt = item.ConfirmedAt.In(timeutil.Location())
+	if item.ConfirmedDate != "" {
+		d, e := time.ParseInLocation("2006-01-02", item.ConfirmedDate, timeutil.Location())
+		if e != nil || d.Format("2006-01-02") != item.ConfirmedDate || !item.ConfirmedAt.IsZero() {
+			return item, fmt.Errorf("%w: invalid or ambiguous confirmation precision", ErrInvalidLedgerInput)
+		}
+	} else {
+		if item.ConfirmedAt.IsZero() {
+			return item, fmt.Errorf("%w: missing confirmation time/date", ErrInvalidLedgerInput)
+		}
+		item.ConfirmedAt = item.ConfirmedAt.In(timeutil.Location())
+	}
 	return item, nil
 }
 
@@ -86,6 +118,11 @@ func ResolveT0Allocations(history []T0Allocation) ([]T0Allocation, error) {
 		}
 		key := item.AccountID + "\x00" + item.TradeDate + "\x00" + item.GatewayOrderID
 		previous := current[key]
+		// Do not hide a later revision from a running v1-only reader. Precision
+		// changes require a separate migration, not an implicit revision upgrade.
+		if previous.Revision > 0 && t0AllocationStorageSource(previous) != t0AllocationStorageSource(item) {
+			return nil, fmt.Errorf("%w: allocation precision migration required", ErrInvalidLedgerInput)
+		}
 		if seen[item.LinkID] || item.Revision != previous.Revision+1 || item.Supersedes != previous.LinkID {
 			return nil, fmt.Errorf("%w: T0 allocation revision conflict", ErrInvalidLedgerInput)
 		}
@@ -111,21 +148,21 @@ func (repo *Repository) ListT0AllocationHistory(ctx context.Context, accountID, 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT link_id, gateway_order_id, t0_order_group_id, security_id, quantity::bigint, quantity=trunc(quantity), source_payload
-FROM performance_attribution_links WHERE account_id=$1 AND trade_date=$2::date AND source=$3 AND link_type='order'
-ORDER BY attribution_link_pk LIMIT 10001`, accountID, date, t0AllocationSource)
+	rows, err := q.QueryContext(ctx, `SELECT link_id, gateway_order_id, t0_order_group_id, security_id, quantity::bigint, quantity=trunc(quantity), source_payload, source
+FROM performance_attribution_links WHERE account_id=$1 AND trade_date=$2::date AND source IN ($3,$4) AND link_type='order'
+ORDER BY attribution_link_pk LIMIT 10001`, accountID, date, t0AllocationSource, t0AllocationDateSource)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var result []T0Allocation
 	for rows.Next() {
-		var id, order, group, security string
+		var id, order, group, security, source string
 		var quantity int64
 		var integral bool
 		var raw []byte
 		var item T0Allocation
-		if err := rows.Scan(&id, &order, &group, &security, &quantity, &integral, &raw); err != nil {
+		if err := rows.Scan(&id, &order, &group, &security, &quantity, &integral, &raw, &source); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(raw, &item); err != nil {
@@ -135,7 +172,7 @@ ORDER BY attribution_link_pk LIMIT 10001`, accountID, date, t0AllocationSource)
 		if err != nil {
 			return nil, err
 		}
-		if !integral || item.LinkID != id || item.AccountID != accountID || item.TradeDate != date || item.GatewayOrderID != order || item.GroupID != group || item.SecurityID != security || item.Quantity != quantity {
+		if source != t0AllocationStorageSource(item) || !integral || item.LinkID != id || item.AccountID != accountID || item.TradeDate != date || item.GatewayOrderID != order || item.GroupID != group || item.SecurityID != security || item.Quantity != quantity {
 			return nil, fmt.Errorf("T0 allocation envelope/payload mismatch")
 		}
 		result = append(result, item)
@@ -205,6 +242,6 @@ func (repo *Repository) AppendT0Allocation(ctx context.Context, item T0Allocatio
 	_, err = repo.exec.ExecContext(ctx, `INSERT INTO performance_attribution_links
 (link_id,account_id,trade_date,strategy_type,t0_order_group_id,security_id,symbol,exchange,gateway_order_id,link_type,quantity,source,source_payload)
 VALUES ($1,$2,$3::date,'etf_redemption_t0',$4,$5,$6,$7,$8,'order',$9,$10,$11::jsonb)`,
-		item.LinkID, item.AccountID, item.TradeDate, item.GroupID, item.SecurityID, parts[0], parts[1], item.GatewayOrderID, item.Quantity, t0AllocationSource, raw)
+		item.LinkID, item.AccountID, item.TradeDate, item.GroupID, item.SecurityID, parts[0], parts[1], item.GatewayOrderID, item.Quantity, t0AllocationStorageSource(item), raw)
 	return item, err
 }

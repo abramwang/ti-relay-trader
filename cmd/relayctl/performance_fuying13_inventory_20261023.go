@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -93,10 +94,41 @@ func loadFuying23InventoryReview(ctx context.Context, repo *ledger.Repository) (
 	}{{"12002A620003017", "B", 536400}, {"12002A620003020", "B", 463600}, {"12002A620003347", "R", 1000000}} {
 		e.Links = append(e.Links, ledger.T0Allocation{LinkID: "fu13-20261023-inventory-" + pair.id + "-v1", AccountID: fuying13Account, TradeDate: fuying23Date, GatewayOrderID: fuying23Prefix + pair.id,
 			SecurityID: "159869.SZ", TradeSide: pair.side, Quantity: pair.qty, GroupID: "inventory-768-20261023-round2", Role: "redemption", Revision: 1, Status: "active", EvidenceType: "inventory_evidence",
-			EvidenceRef: "docs/PERFORMANCE_BLOCK_REVIEW_20261109.md#11-10-23日底仓清空与补单归属预演", ConfirmedBy: "relay:read-only-inventory-review", ConfirmedAt: timeutil.Now()})
+			EvidenceRef: "docs/PERFORMANCE_BLOCK_REVIEW_20261109.md#11-10-23日底仓清空与补单归属预演", ConfirmedBy: "relay:read-only-inventory-review"})
+	}
+	// Reuse the actual recorded review timestamps from the immutable evidence,
+	// rather than giving the same link a different payload on every invocation.
+	var frozen struct {
+		Inventory fuying23InventoryEvidence `json:"oct23_inventory_evidence"`
+	}
+	if err := readPinnedJSON(fuyingCostChainPath, fuyingCostChainHash, &frozen); err != nil {
+		return e, err
+	}
+	e.Links, err = stableFuyingInventoryLinks(e.Links, frozen.Inventory.Links)
+	if err != nil {
+		return e, err
 	}
 	_, err = ledger.ResolveT0Allocations(e.Links)
 	return e, err
+}
+
+func stableFuyingInventoryLinks(current, frozen []ledger.T0Allocation) ([]ledger.T0Allocation, error) {
+	if len(current) != 3 || len(frozen) != 3 {
+		return nil, fmt.Errorf("inventory audit coverage changed")
+	}
+	result := make([]ledger.T0Allocation, 0, 3)
+	for i, want := range frozen {
+		got := current[i]
+		if want.ConfirmedAt.IsZero() || want.ConfirmedDate != "" {
+			return nil, fmt.Errorf("inventory audit timestamp missing")
+		}
+		got.ConfirmedAt = want.ConfirmedAt
+		if !reflect.DeepEqual(got, want) {
+			return nil, fmt.Errorf("inventory audit payload changed")
+		}
+		result = append(result, want)
+	}
+	return ledger.ResolveT0Allocations(result)
 }
 
 // This is a fixed historical evidence audit, not a production matching rule.

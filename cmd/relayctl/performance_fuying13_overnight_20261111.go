@@ -25,6 +25,9 @@ func loadFuyingOvernightConfirmation() (ledger.T0Allocation, string, error) {
 		return ledger.T0Allocation{}, "", err
 	}
 	var evidence map[string]any
+	if fmt.Sprintf("%x", sha256.Sum256(raw)) != "b7e39c26a0014ca5465e4128cfc174e6a5399c886ab8f1e93554793567109851" {
+		return ledger.T0Allocation{}, "", fmt.Errorf("overnight confirmation fingerprint changed")
+	}
 	if err := json.Unmarshal(raw, &evidence); err != nil {
 		return ledger.T0Allocation{}, "", err
 	}
@@ -39,7 +42,7 @@ func loadFuyingOvernightConfirmation() (ledger.T0Allocation, string, error) {
 	}
 	link := ledger.T0Allocation{LinkID: "fu13-20261103-overnight-buy-v1", AccountID: fuying13Account, TradeDate: "2026-11-03", GatewayOrderID: fuyingOvernightBuy,
 		SecurityID: "159915.SZ", TradeSide: "B", Quantity: 1000000, GroupID: fuyingOvernightGroup, Role: "residual", Revision: 1, Status: "active", EvidenceType: "user_confirmation",
-		EvidenceRef: "testdata/fixtures/fuying13_overnight_review_20261111.json", ConfirmedBy: "relay:recorded-user-confirmation", ConfirmedAt: timeutil.Now()}
+		EvidenceRef: "testdata/fixtures/fuying13_overnight_review_20261111.json", ConfirmedBy: "relay:recorded-user-confirmation", ConfirmedDate: "2026-11-11"}
 	_, err = ledger.ResolveT0Allocations([]ledger.T0Allocation{link})
 	return link, fmt.Sprintf("%x", sha256.Sum256(raw)), err
 }
@@ -65,6 +68,33 @@ type fuyingOvernightEvidence struct {
 }
 
 func reviewFuyingOvernight(ctx context.Context, repo *ledger.Repository, service *performance.Service, previous []ledger.PositionCostState) (fuyingOvernightEvidence, error) {
+	e, err := loadFuyingOvernightEvidence(ctx, repo, previous)
+	if err != nil {
+		return e, err
+	}
+	var redemption trading.Order
+	for _, o := range e.Orders {
+		if o.GatewayOrderID == fuyingOvernightRedemption {
+			redemption = o
+		}
+	}
+	e.Preview, err = service.PreviewOvernightT0(ctx, e.Source, redemption, e.Transfers[0])
+	if err != nil {
+		return e, err
+	}
+	for _, f := range e.Fills {
+		e.CoreBuyAmount += f.Price * float64(f.Qty)
+	}
+	e.CoreBuyFee = e.Fees[0].TotalFee
+	e.CoreCloseCost = e.CoreBuyAmount + e.CoreBuyFee
+	e.CoreCloseQuantity = e.Close[0].Quantity
+	e.CoreCloseMarketValue = float64(e.CoreCloseQuantity) * e.Preview.TargetClosePrice
+	e.CoreDayPnL = e.CoreCloseMarketValue - e.CoreCloseCost
+	e.QuantityResidual = e.Open[0].Quantity + 123200 - e.Transfers[0].Qty - e.Close[0].Quantity
+	return e, nil
+}
+
+func loadFuyingOvernightEvidence(ctx context.Context, repo *ledger.Repository, previous []ledger.PositionCostState) (fuyingOvernightEvidence, error) {
 	var e fuyingOvernightEvidence
 	for _, s := range previous {
 		if s.Symbol != "159915" || s.Exchange != "SZ" {
@@ -112,25 +142,6 @@ func reviewFuyingOvernight(ctx context.Context, repo *ledger.Repository, service
 	if err := validateFuyingOvernightEvidence(e); err != nil {
 		return e, err
 	}
-	var redemption trading.Order
-	for _, o := range e.Orders {
-		if o.GatewayOrderID == fuyingOvernightRedemption {
-			redemption = o
-		}
-	}
-	e.Preview, err = service.PreviewOvernightT0(ctx, e.Source, redemption, e.Transfers[0])
-	if err != nil {
-		return e, err
-	}
-	for _, f := range e.Fills {
-		e.CoreBuyAmount += f.Price * float64(f.Qty)
-	}
-	e.CoreBuyFee = e.Fees[0].TotalFee
-	e.CoreCloseCost = e.CoreBuyAmount + e.CoreBuyFee
-	e.CoreCloseQuantity = e.Close[0].Quantity
-	e.CoreCloseMarketValue = float64(e.CoreCloseQuantity) * e.Preview.TargetClosePrice
-	e.CoreDayPnL = e.CoreCloseMarketValue - e.CoreCloseCost
-	e.QuantityResidual = e.Open[0].Quantity + 123200 - e.Transfers[0].Qty - e.Close[0].Quantity
 	return e, nil
 }
 

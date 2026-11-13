@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"sort"
 	"time"
 
 	"ti-relay-trader/internal/config"
@@ -95,13 +96,49 @@ func fuyingSplitFinancialFingerprints(ctx context.Context, tx *sql.Tx) (map[stri
 	return result, nil
 }
 
-// This command only appends three confirmed attribution links. It cannot publish
-// costs or NAV, modify broker assets, or send commands to a gateway.
+type fuyingAllocationPlan struct {
+	Links    []ledger.T0Allocation
+	Evidence map[string]any
+}
+
+func loadFuyingSplitPlan(ctx context.Context, repo *ledger.Repository) (fuyingAllocationPlan, error) {
+	links, err := loadFuyingSplitAudit(fuyingSplitFixture)
+	if err != nil {
+		return fuyingAllocationPlan{}, err
+	}
+	var orders []trading.Order
+	var fills []trading.Fill
+	for _, link := range links {
+		order, err := repo.GetOrder(ctx, link.AccountID, link.GatewayOrderID)
+		if err != nil {
+			return fuyingAllocationPlan{}, err
+		}
+		if err := validateFuyingSplitOrder(link, order); err != nil {
+			return fuyingAllocationPlan{}, err
+		}
+		orders = append(orders, order)
+		items, err := repo.ListFills(ctx, trading.FillQuery{AccountID: link.AccountID, GatewayOrderID: link.GatewayOrderID, TradeDate: link.TradeDate, Limit: 500})
+		if err != nil {
+			return fuyingAllocationPlan{}, err
+		}
+		if err := validateFuyingSplitFills(link, items); err != nil {
+			return fuyingAllocationPlan{}, err
+		}
+		fills = append(fills, items...)
+	}
+	return fuyingAllocationPlan{links, map[string]any{"orders": orders, "fills": fills, "fixture_sha256": fuyingSplitHash}}, nil
+}
+
 func runFuyingSplitAudit(args []string) error {
-	f := flag.NewFlagSet("performance-fuying13-split-audit-20261113", flag.ContinueOnError)
+	return runFuyingAllocationAudit(args, "performance-fuying13-split-audit-20261113", loadFuyingSplitPlan)
+}
+
+// Only append reviewed attribution links. No costs, NAV, assets or gateway commands.
+func runFuyingAllocationAudit(args []string, command string, load func(context.Context, *ledger.Repository) (fuyingAllocationPlan, error)) error {
+	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	configPath := f.String("config", "", "production config")
 	output := f.String("output", "", "new private evidence report")
-	apply := f.Bool("apply", false, "append the three confirmed allocation links only")
+	apply := f.Bool("apply", false, "append the reviewed allocation links only")
 	backup := f.String("backup", "", "fresh custom PostgreSQL backup required for apply")
 	backupHash := f.String("backup-sha256", "", "verified backup digest")
 	if err := f.Parse(args); err != nil {
@@ -127,10 +164,6 @@ func runFuyingSplitAudit(args []string) error {
 		if err := exec.CommandContext(ctx, "pg_restore", "--list", *backup).Run(); err != nil {
 			return errors.New("invalid backup archive")
 		}
-	}
-	links, err := loadFuyingSplitAudit(fuyingSplitFixture)
-	if err != nil {
-		return err
 	}
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
@@ -163,6 +196,30 @@ func runFuyingSplitAudit(args []string) error {
 	if _, err := tx.ExecContext(ctx, "SET LOCAL lock_timeout = '5s'"); err != nil {
 		return err
 	}
+	repo := ledger.NewRepository(tx)
+	plan, err := load(ctx, repo)
+	if err != nil {
+		return err
+	}
+	links := plan.Links
+	if len(links) == 0 {
+		return errors.New("empty allocation plan")
+	}
+	if _, err := ledger.ResolveT0Allocations(links); err != nil {
+		return err
+	}
+	dateSet := map[string]bool{}
+	for _, l := range links {
+		if l.AccountID != fuying13Account {
+			return errors.New("allocation account scope changed")
+		}
+		dateSet[l.TradeDate] = true
+	}
+	var dates []string
+	for date := range dateSet {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates)
 	if *apply {
 		// Match the repository's per-order lock, in fixture order, before reading
 		// history so concurrent revisions cannot race the batch preflight.
@@ -175,39 +232,26 @@ func runFuyingSplitAudit(args []string) error {
 				return err
 			}
 		}
+		locked, err := load(ctx, repo)
+		if err != nil || !reflect.DeepEqual(locked, plan) {
+			return fmt.Errorf("evidence changed while locking: %v", err)
+		}
 	}
-	repo := ledger.NewRepository(tx)
 	financialBefore, err := fuyingSplitFinancialFingerprints(ctx, tx)
 	if err != nil {
 		return err
 	}
-	old, err := repo.ListT0AllocationHistory(ctx, fuying13Account, "2026-10-15")
-	if err != nil {
-		return err
+	var old []ledger.T0Allocation
+	for _, date := range dates {
+		history, err := repo.ListT0AllocationHistory(ctx, fuying13Account, date)
+		if err != nil {
+			return err
+		}
+		old = append(old, history...)
 	}
 	merged, err := mergeFuying13SplitReview(old, links)
 	if err != nil {
 		return err
-	}
-	var orders []trading.Order
-	var fills []trading.Fill
-	for _, link := range links {
-		order, err := repo.GetOrder(ctx, link.AccountID, link.GatewayOrderID)
-		if err != nil {
-			return err
-		}
-		if err := validateFuyingSplitOrder(link, order); err != nil {
-			return err
-		}
-		orders = append(orders, order)
-		items, err := repo.ListFills(ctx, trading.FillQuery{AccountID: link.AccountID, GatewayOrderID: link.GatewayOrderID, TradeDate: link.TradeDate, Limit: 500})
-		if err != nil {
-			return err
-		}
-		if err := validateFuyingSplitFills(link, items); err != nil {
-			return err
-		}
-		fills = append(fills, items...)
 	}
 	planned, written := len(merged)-len(old), 0
 	if *apply {
@@ -216,9 +260,13 @@ func runFuyingSplitAudit(args []string) error {
 				return err
 			}
 		}
-		after, err := repo.ListT0AllocationHistory(ctx, fuying13Account, "2026-10-15")
-		if err != nil {
-			return err
+		var after []ledger.T0Allocation
+		for _, date := range dates {
+			history, err := repo.ListT0AllocationHistory(ctx, fuying13Account, date)
+			if err != nil {
+				return err
+			}
+			after = append(after, history...)
 		}
 		check, err := mergeFuying13SplitReview(after, links)
 		if err != nil || len(check) != len(after) || len(after) != len(merged) {
@@ -234,19 +282,26 @@ func runFuyingSplitAudit(args []string) error {
 	if *apply {
 		phase = "prepared_not_committed"
 	}
-	if err := writeETFTransferReviewFile(*output, map[string]any{
-		"phase": phase, "generated_at": timeutil.Now(), "account_id": fuying13Account, "trade_date": "2026-10-15",
-		"fixture_sha256": fuyingSplitHash, "backup_sha256": *backupHash, "apply_requested": *apply,
+	report := map[string]any{
+		"phase": phase, "generated_at": timeutil.Now(), "account_id": fuying13Account, "trade_dates": dates,
+		"backup_sha256": *backupHash, "apply_requested": *apply,
 		"financial_fingerprints": financialAfter,
-		"links":                  links, "orders": orders, "fills": fills, "prior_history": old, "planned_new_links": planned, "prepared_new_links": written,
-		"identical_links_skipped": 3 - planned, "nav_writes": 0, "cost_writes": 0, "asset_writes": 0, "original_order_writes": 0,
+		"links":                  links, "prior_history": old, "planned_new_links": planned, "prepared_new_links": written,
+		"identical_links_skipped": len(links) - planned, "nav_writes": 0, "cost_writes": 0, "asset_writes": 0, "original_order_writes": 0,
 		"broker_commands": 0, "economic_nav_publishable": false,
-	}); err != nil {
+	}
+	for k, v := range plan.Evidence {
+		report[k] = v
+	}
+	if len(dates) == 1 {
+		report["trade_date"] = dates[0]
+	}
+	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return writeJSON(map[string]any{"phase": "completed", "apply_requested": *apply, "new_links": written, "planned_new_links": planned,
-		"identical_links_skipped": 3 - planned, "economic_nav_publishable": false, "nav_writes": 0, "cost_writes": 0, "asset_writes": 0})
+		"identical_links_skipped": len(links) - planned, "economic_nav_publishable": false, "nav_writes": 0, "cost_writes": 0, "asset_writes": 0})
 }

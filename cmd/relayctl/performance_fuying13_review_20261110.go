@@ -286,7 +286,7 @@ func mergeFuying13SplitReview(old, links []ledger.T0Allocation) ([]ledger.T0Allo
 		}
 		found := false
 		for _, prior := range old {
-			if prior.GatewayOrderID == link.GatewayOrderID {
+			if prior.AccountID == link.AccountID && prior.TradeDate == link.TradeDate && prior.GatewayOrderID == link.GatewayOrderID {
 				if !reflect.DeepEqual(prior, link) {
 					return nil, errors.New("split-buy audit already exists with a different revision or scope")
 				}

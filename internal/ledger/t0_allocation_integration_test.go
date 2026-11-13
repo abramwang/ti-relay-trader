@@ -125,6 +125,9 @@ func TestT0AllocationPostgresAppendOnly(t *testing.T) {
 		for _, id := range []string{"batch-a", "batch-b", "batch-c"} {
 			item := first
 			item.AccountID, item.LinkID, item.GatewayOrderID = "batch-account", id, id
+			if id == "batch-c" {
+				item.ConfirmedAt, item.ConfirmedDate = time.Time{}, "2026-11-11"
+			}
 			batch = append(batch, item)
 		}
 		for attempt := 0; attempt < 3; attempt++ {
@@ -160,6 +163,43 @@ func TestT0AllocationPostgresAppendOnly(t *testing.T) {
 			if err != nil || len(rows) != want {
 				t.Fatalf("attempt %d: rows=%d want=%d error=%v", attempt, len(rows), want, err)
 			}
+		}
+	})
+	t.Run("date precision storage and legacy isolation", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `INSERT INTO accounts VALUES ('date-account')`); err != nil {
+			t.Fatal(err)
+		}
+		item := first
+		item.AccountID, item.LinkID, item.GatewayOrderID = "date-account", "date-link", "date-order"
+		item.ConfirmedAt, item.ConfirmedDate = time.Time{}, "2026-11-11"
+		for i := 0; i < 2; i++ {
+			if _, err := repo.AppendT0Allocation(ctx, item); err != nil {
+				t.Fatal(err)
+			}
+		}
+		history, err := repo.ListT0AllocationHistory(ctx, item.AccountID, item.TradeDate)
+		if err != nil || len(history) != 1 || history[0].ConfirmedDate != item.ConfirmedDate || !history[0].ConfirmedAt.IsZero() {
+			t.Fatal(history, err)
+		}
+		var source string
+		var hasTime bool
+		if err := db.QueryRowContext(ctx, `SELECT source, source_payload ? 'confirmed_at' FROM performance_attribution_links WHERE link_id=$1`, item.LinkID).Scan(&source, &hasTime); err != nil || source != t0AllocationDateSource || hasTime {
+			t.Fatal(source, hasTime, err)
+		}
+		var legacyRows int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM performance_attribution_links WHERE account_id=$1 AND source=$2`, item.AccountID, t0AllocationSource).Scan(&legacyRows); err != nil || legacyRows != 0 {
+			t.Fatal("legacy reader exposed to date-only rows", legacyRows, err)
+		}
+		changed := item
+		changed.ConfirmedDate = "2026-11-12"
+		if _, err := repo.AppendT0Allocation(ctx, changed); err == nil {
+			t.Fatal("same-id evidence overwritten")
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE performance_attribution_links SET source=$1 WHERE link_id=$2`, t0AllocationSource, item.LinkID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.ListT0AllocationHistory(ctx, item.AccountID, item.TradeDate); err == nil {
+			t.Fatal("precision envelope corruption accepted")
 		}
 	})
 }
