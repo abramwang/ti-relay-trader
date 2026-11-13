@@ -16,7 +16,8 @@ def inputs():
         {"broker_flow_id": fid, "account_id": M.ACCOUNT, "resolved_source_trade_date": None,
          "actual_amount": "-4229.40", "raw_fields": {"股票代码": "510310", "交易日期": "20261019"}}
         for fid in ids], "cash_pcf_review": {"unresolved_candidates": [
-            {"flow_ids": ids, "private_source_verified": False, "included_in_known_carry": False,
+            {"flow_ids": ids, "posted_date": "20261019", "amount": "-12688.20",
+             "private_source_verified": False, "included_in_known_carry": False,
              "pcf_order_multiset_candidates": [{"source_trade_date": "20261015"}]}]}}
     days = [
         {"trade_date": M.DAY, "reported_open_asset": "100000", "reported_close_asset": "100000",
@@ -33,6 +34,39 @@ def inputs():
            "broker_commands": 0, "cash_nav_scenarios": [
                {"name": "explicit_plus_pcf_candidates", "days": days}]}
     return nav, matrix
+
+
+def combined_inputs():
+    nav, matrix = inputs()
+    scope = {"account_id": M.ACCOUNT, "economic_nav_publishable": False,
+             "database_writes": 0, "broker_commands": 0}
+    repo, fees, residual = (copy.deepcopy(scope) for _ in range(3))
+    repo["interest_bridge"] = {"account_id": M.ACCOUNT, "days": []}
+    fees["days"] = []
+    residual["opening_unclassified_asset"] = "0"
+    residual["scenarios"] = [{"name": "explicit_plus_pcf_candidates", "days": []}]
+    nav["contributions"] = []
+    previous_other = M.ZERO
+    for i, row in enumerate(nav["cash_nav_scenarios"][0]["days"]):
+        day = row["trade_date"]
+        other = M.R.number(row["broker_unclassified_asset_preserved"])
+        delta = other - previous_other
+        nav["contributions"].append({"account_id": M.ACCOUNT, "trade_date": day,
+                                     "summary": {"missing_items": 0, "net_contribution": "0"}})
+        repo["interest_bridge"]["days"].append({"trade_date": day,
+            "open_receivable_micros": (i+1)*1000000, "close_receivable_micros": (i+2)*1000000,
+            "accrued_interest_micros": (i+2)*1000000, "received_interest_micros": (i+1)*1000000,
+            "released_receivable_micros": (i+1)*1000000, "settlement_variance_micros": 0,
+            "cash_to_accrual_adjustment_micros": 1000000, "recognized_interest_micros": (i+2)*1000000})
+        fees["days"].append({"trade_date": day, "ordinary_model_fee": "1", "cash_implied_fee": "1.1",
+                             "fee_effect_on_pnl": "-0.1", "remaining_diagnostic_remainder": "0"})
+        residual["scenarios"][0]["days"].append({"trade_date": day,
+            "repo_model_interest": str(i+2), "repo_received_interest": str(i+1),
+            "repo_posting_vs_model_adjustment": "-1", "starting_model_residual": "0",
+            "cash_vs_model_t0_adjustment": str(M.Decimal("1.1")-delta),
+            "unclassified_asset": str(other), "unclassified_asset_change": str(delta)})
+        previous_other = other
+    return nav, matrix, repo, fees, residual
 
 
 class ConfirmedOverlapTest(unittest.TestCase):
@@ -116,6 +150,92 @@ class ConfirmedOverlapTest(unittest.TestCase):
             nav[key] = 1
             with self.assertRaises(ValueError):
                 M.preview(nav, matrix)
+
+
+class CombinedOverlapTest(unittest.TestCase):
+    def test_composes_assets_and_attribution_without_deducting_fees_twice(self):
+        args = combined_inputs()
+        before = copy.deepcopy(args)
+        result = M.compose(*args)
+        a, b = result["combined_days"]
+        self.assertEqual(M.R.number(a["combined_close_asset"]), M.Decimal("100002"))
+        self.assertEqual(a["combined_close_asset"], b["combined_open_asset"])
+        self.assertEqual(M.R.number(b["combined_close_asset"]), M.Decimal("87314.80"))
+        self.assertEqual(M.R.number(result["combined_summary"]["period_pnl"]), 2)
+        self.assertEqual(M.R.number(result["combined_summary"]["period_residual"]), 0)
+        self.assertEqual(args, before)
+        self.assertEqual(result, M.compose(*args))
+
+    def test_old_zero_diagnostic_is_not_reused_as_new_daily_success(self):
+        result = M.compose(*combined_inputs())
+        self.assertFalse(result["combined_summary"]["all_daily_residuals_zero"])
+        self.assertEqual(result["combined_summary"]["nonzero_residual_after_other_change_days"], [M.DAY, M.POSTED])
+        self.assertEqual([M.R.number(d["diagnostic_after_subtracting_other_change"]) for d in result["combined_days"]],
+                         [M.Decimal("12688.20"), M.Decimal("-12688.20")])
+        self.assertFalse(result["economic_nav_publishable"])
+        self.assertIn("signed_overlap_interpretation_not_reconciled", result["remaining_gates"])
+
+    def test_repo_integer_precision_and_each_identity_checked(self):
+        keys = ("open_receivable_micros", "close_receivable_micros", "accrued_interest_micros",
+                "received_interest_micros", "released_receivable_micros", "settlement_variance_micros",
+                "cash_to_accrual_adjustment_micros", "recognized_interest_micros")
+        for key in keys:
+            args = combined_inputs()
+            args[2]["interest_bridge"]["days"][0][key] += 1
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                M.compose(*args)
+        for value in (True, 1.0, "1", 10**18):
+            args = combined_inputs()
+            args[2]["interest_bridge"]["days"][0]["open_receivable_micros"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                M.compose(*args)
+
+    def test_missing_extra_duplicate_and_out_of_order_days_fail(self):
+        for index in (2, 3, 4):
+            for mode in ("missing", "duplicate", "reverse"):
+                args = combined_inputs()
+                rows = (args[2]["interest_bridge"]["days"] if index == 2 else args[3]["days"] if index == 3
+                        else args[4]["scenarios"][0]["days"])
+                if mode == "missing":
+                    rows.pop()
+                elif mode == "duplicate":
+                    rows.append(copy.deepcopy(rows[-1]))
+                else:
+                    rows.reverse()
+                with self.subTest(index=index, mode=mode), self.assertRaises(ValueError):
+                    M.compose(*args)
+
+    def test_wrong_accounts_and_writes_fail(self):
+        for index in (2, 3, 4):
+            for key, value in (("account_id", "307000051388"), ("economic_nav_publishable", True),
+                               ("database_writes", 1), ("broker_commands", 1)):
+                args = combined_inputs()
+                args[index][key] = value
+                with self.subTest(index=index, key=key), self.assertRaises(ValueError):
+                    M.compose(*args)
+
+    def test_changed_fees_not_silently_absorbed(self):
+        for key in ("ordinary_model_fee", "cash_implied_fee", "fee_effect_on_pnl", "remaining_diagnostic_remainder"):
+            args = combined_inputs()
+            args[3]["days"][0][key] = "9"
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                M.compose(*args)
+
+    def test_incomplete_or_changed_model_fails(self):
+        for key, value in (("missing_items", 1), ("net_contribution", "1")):
+            args = combined_inputs()
+            args[0]["contributions"][0]["summary"][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                M.compose(*args)
+
+    def test_nonzero_residual_not_clipped_or_assigned_to_profit(self):
+        args = combined_inputs()
+        d = args[4]["scenarios"][0]["days"][0]
+        d["cash_vs_model_t0_adjustment"] = str(M.R.number(d["cash_vs_model_t0_adjustment"])-M.Decimal("0.000001"))
+        args[3]["days"][0]["remaining_diagnostic_remainder"] = "0.000001"
+        result = M.compose(*args)
+        self.assertEqual(M.R.number(result["combined_summary"]["period_residual"]), M.Decimal("0.000001"))
+        self.assertFalse(result["economic_nav_publishable"])
 
 
 if __name__ == "__main__":

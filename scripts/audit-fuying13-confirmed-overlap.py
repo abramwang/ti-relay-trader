@@ -20,6 +20,11 @@ DAY = "2026-10-16"
 POSTED = "2026-10-19"
 FLOW_IDS = {"2740045451", "2740045450", "2740045444"}
 ZERO = Decimal(0)
+COMBINED_HASHES = {
+    "repo": "c58f563374abc8c4d74209687226ec7ce8aadac2f323770ef2b33ee932f9d05f",
+    "fees": "daa6a2d47e1abd22f20f87c27f6e37a339d83358dcbee275a2bb18f53e211369",
+    "residual": "2f83c667ddcbe944554611d2e559e5f18311012741fe3a733ca6f6537e0dcf5d",
+}
 
 
 def cash_legs(matrix):
@@ -123,19 +128,175 @@ def preview(nav, matrix):
             "economic_nav_publishable": False, "database_writes": 0, "broker_commands": 0}
 
 
+def dated(rows):
+    result = {}
+    last = ""
+    for row in rows:
+        day = row["trade_date"]
+        if R.iso(day.replace("-", "")) != day or day <= last:
+            raise ValueError("duplicate/unordered reconciliation day")
+        result[day] = row
+        last = day
+    return result
+
+
+def micro(row, key):
+    value = row[key]
+    if type(value) is not int or abs(value) >= 10**18:
+        raise ValueError("invalid repo micro amount")
+    return Decimal(value) / 1000000
+
+
+def compose(nav, matrix, repo, fees, residual):
+    result = preview(nav, matrix)
+    for report in (repo, fees, residual):
+        if (report["account_id"] != ACCOUNT or report["economic_nav_publishable"]
+                or report["database_writes"] != 0 or report["broker_commands"] != 0):
+            raise ValueError("unexpected combined evidence scope")
+    if repo["interest_bridge"]["account_id"] != ACCOUNT:
+        raise ValueError("wrong repo bridge account")
+    models = dated(nav["contributions"])
+    fdays = dated(fees["days"])
+    rdays = dated(repo["interest_bridge"]["days"])
+    candidates = [s for s in residual["scenarios"] if s["name"] == "explicit_plus_pcf_candidates"]
+    if len(candidates) != 1:
+        raise ValueError("missing/ambiguous residual scenario")
+    ddays = dated(candidates[0]["days"])
+    cash = dated(next(s for s in nav["cash_nav_scenarios"]
+                      if s["name"] == "explicit_plus_pcf_candidates")["days"])
+    dates = [r["trade_date"] for r in result["days"]]
+    if any(list(mapping) != dates for mapping in (fdays, rdays, ddays, cash)):
+        raise ValueError("combined day coverage differs")
+    # The frozen model has one extra cost-chain day; never use it as a NAV day.
+    if any(day not in models for day in dates):
+        raise ValueError("missing model day")
+    combined, previous_close = [], None
+    previous_repo, previous_other = None, R.number(residual["opening_unclassified_asset"])
+    total_pnl, total_attributed = ZERO, ZERO
+    for o in result["days"]:
+        day = o["trade_date"]
+        b, f, d, c, model = rdays[day], fdays[day], ddays[day], cash[day], models[day]
+        if model["account_id"] != ACCOUNT or model["summary"]["missing_items"] != 0:
+            raise ValueError("incomplete/wrong account contribution")
+        op, cl = micro(b, "open_receivable_micros"), micro(b, "close_receivable_micros")
+        accrued = micro(b, "accrued_interest_micros")
+        received = micro(b, "received_interest_micros")
+        released = micro(b, "released_receivable_micros")
+        variance = micro(b, "settlement_variance_micros")
+        adjustment = micro(b, "cash_to_accrual_adjustment_micros")
+        if (min(op, cl, accrued, received, released) < 0 or cl != op + accrued - released
+                or variance != received - released or adjustment != cl - op
+                or micro(b, "recognized_interest_micros") != accrued + variance
+                or previous_repo is not None and previous_repo != op
+                or accrued != R.number(d["repo_model_interest"])
+                or received != R.number(d["repo_received_interest"])
+                or received - accrued != R.number(d["repo_posting_vs_model_adjustment"])):
+            raise ValueError("repo bridge identity/continuity failed")
+        fee_delta = R.number(f["ordinary_model_fee"]) - R.number(f["cash_implied_fee"])
+        if (min(R.number(f["ordinary_model_fee"]), R.number(f["cash_implied_fee"])) < 0
+                or fee_delta != R.number(f["fee_effect_on_pnl"])):
+            raise ValueError("fee delta inconsistent")
+        base_model = R.number(model["summary"]["net_contribution"])
+        t0_delta = R.number(d["cash_vs_model_t0_adjustment"])
+        base_pnl = R.number(c["conditional_day_pnl"])
+        other = R.number(c["broker_unclassified_asset_preserved"])
+        if (base_pnl - base_model != R.number(d["starting_model_residual"])
+                or other != R.number(d["unclassified_asset"])
+                or other - previous_other != R.number(d["unclassified_asset_change"])):
+            raise ValueError("original residual evidence changed")
+        # Fees are already in broker cash. Correct the attribution comparison,
+        # never deduct these fees again from the asset-based curve.
+        corrected_model = base_model + t0_delta + fee_delta + variance
+        new_open = R.number(o["after_open"]) + op
+        new_close = R.number(o["after_close"]) + cl
+        pnl = new_close - new_open
+        if (new_open <= 0 or new_close <= 0
+                or previous_close is not None and previous_close != new_open
+                or pnl != base_pnl + adjustment + R.number(o["pnl_change"])):
+            raise ValueError("combined asset continuity failed")
+        before_residual = base_pnl + adjustment - corrected_model
+        after_residual = pnl - corrected_model
+        old_remainder = (base_pnl - base_model - t0_delta
+                         - (received - accrued) - (other - previous_other) - fee_delta)
+        if (old_remainder != R.number(f["remaining_diagnostic_remainder"])
+                or after_residual - before_residual != R.number(o["pnl_change"])):
+            raise ValueError("combined reconciliation identity failed")
+        combined.append({"trade_date": day, "combined_open_asset": str(new_open),
+            "combined_close_asset": str(new_close), "combined_conditional_pnl": str(pnl),
+            "original_cash_pnl": str(base_pnl), "repo_asset_adjustment": str(adjustment),
+            "confirmed_overlap_pnl_change": o["pnl_change"],
+            "original_model_contribution": str(base_model), "cash_vs_model_t0_adjustment": str(t0_delta),
+            "fee_attribution_adjustment": str(fee_delta), "repo_settlement_variance": str(variance),
+            "corrected_model_contribution": str(corrected_model),
+            "broker_other_asset": str(other), "broker_other_asset_change": str(other-previous_other),
+            "residual_before_overlap": str(before_residual), "residual_after_overlap": str(after_residual),
+            "diagnostic_after_subtracting_other_change": str(after_residual-other+previous_other),
+            "has_arithmetic_residual": after_residual != 0, "economic_nav_publishable": False})
+        previous_close, previous_repo, previous_other = new_close, cl, other
+        total_pnl += pnl
+        total_attributed += corrected_model
+    if total_pnl != R.number(combined[-1]["combined_close_asset"]) - R.number(combined[0]["combined_open_asset"]):
+        raise ValueError("combined period identity failed")
+    result["schema"] = "fuying13_combined_inclusion_preview.v1"
+    result["combined_days"] = combined
+    result["combined_summary"] = {
+        "days": len(combined), "period_pnl": str(total_pnl),
+        "period_attributed_pnl": str(total_attributed), "period_residual": str(total_pnl-total_attributed),
+        "nonzero_residual_days": [r["trade_date"] for r in combined if r["has_arithmetic_residual"]],
+        "nonzero_residual_after_other_change_days": [r["trade_date"] for r in combined
+            if R.number(r["diagnostic_after_subtracting_other_change"]) != 0],
+        "all_daily_residuals_zero": all(not r["has_arithmetic_residual"] for r in combined)}
+    result["remaining_gates"] = [
+        "signed_overlap_interpretation_not_reconciled" if result["combined_summary"]["nonzero_residual_after_other_change_days"]
+        else "signed_overlap_interpretation_requires_independent_evidence",
+        "other_snapshot_asset_scope_unconfirmed", "private_cash_source_dates_unconfirmed",
+        "repo_interest_inclusion_unconfirmed", "complete_private_settlement_coverage_unverified"]
+    result["asset_scope_review"] = [
+        {"trade_date": r["trade_date"], "reported_component": r["broker_other_asset"],
+         "business_inclusion_confirmed": r["trade_date"] == DAY,
+         "accounting_sign_independently_verified": False}
+        for r in combined if R.number(r["broker_other_asset"]) != 0]
+    result["source_date_review"] = [
+        {"flow_ids": list(g["flow_ids"]), "posted_date": g["posted_date"],
+         "amount": g["amount"], "candidates": g["pcf_order_multiset_candidates"],
+         "source_verified": False,
+         "business_inclusion_confirmed_snapshot": DAY if set(g["flow_ids"]) == FLOW_IDS else None}
+        for g in matrix["cash_pcf_review"]["unresolved_candidates"]]
+    result["assumptions"].extend([
+        "repo gross interest assumed outside reported assets; no principal added",
+        "cash-implied fees correct attribution only; not a second cash deduction",
+        "zero period residual does not prove daily NAV; no residual assigned to income"])
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", type=Path,
                         default=Path("outputs/recovery/fuying13_cash_matrix_20261112"))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--combined", action="store_true", help="compose repo bridge and cash fee evidence offline")
     args = parser.parse_args()
     paths = {"matrix": args.evidence_dir / "matrix_verified.json",
              "nav": args.evidence_dir / "nav_scenarios_v1.json"}
+    expected = dict(R.HASHES)
+    if args.combined:
+        paths.update({"repo": args.evidence_dir / "repo_bridge_v1.json",
+                      "fees": args.evidence_dir / "execution_fees_verified_v2.json",
+                      "residual": args.evidence_dir / "residual_verified_v2.json"})
+        expected.update(COMBINED_HASHES)
     raw = {key: path.read_bytes() for key, path in paths.items()}
     hashes = {key: hashlib.sha256(value).hexdigest() for key, value in raw.items()}
-    if hashes != R.HASHES:
+    if hashes != expected:
         raise ValueError("frozen input changed")
-    report = preview(json.loads(raw["nav"]), json.loads(raw["matrix"]))
+    evidence = {key: json.loads(value) for key, value in raw.items()}
+    if args.combined:
+        suffixes = {"funds": "资金", "cash_flows": "资金流水", "settlements": "历史交割单", "executions": "历史成交"}
+        for key, suffix in suffixes.items():
+            path = Path("reference") / f"{ACCOUNT}_{suffix}.csv"
+            if hashlib.sha256(path.read_bytes()).hexdigest() != evidence["matrix"]["source_sha256"][key]:
+                raise ValueError(f"broker source changed: {key}")
+    report = (compose(evidence["nav"], evidence["matrix"], evidence["repo"], evidence["fees"], evidence["residual"])
+              if args.combined else preview(evidence["nav"], evidence["matrix"]))
     report["source_sha256"] = hashes
     report["generated_at"] = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
     args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -147,6 +308,7 @@ def main():
         os.fsync(f.fileno())
     print(json.dumps({"changed_days": [r for r in report["days"] if R.number(r["pnl_change"])],
                       "period_pnl_change": report["period_pnl_change"],
+                      "combined_summary": report.get("combined_summary"),
                       "economic_nav_publishable": False}, ensure_ascii=False))
 
 
