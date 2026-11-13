@@ -69,6 +69,19 @@ def combined_inputs():
     return nav, matrix, repo, fees, residual
 
 
+def component_inputs():
+    args = combined_inputs()
+    combined = M.compose(*args)
+    funds = []
+    for i, row in enumerate(args[0]["cash_nav_scenarios"][0]["days"]):
+        row["repo_principal_already_in_reported_asset"] = "0"
+        total = M.R.number(row["reported_close_asset"])
+        component = M.R.number(row["broker_unclassified_asset_preserved"])
+        funds.append((i+2, {"客户号": M.ACCOUNT, "交易日": row["trade_date"].replace("-", ""),
+                           "总资产": str(total), "市值": "0", "客户资金": str(total-component)}))
+    return args[0], combined, funds
+
+
 class ConfirmedOverlapTest(unittest.TestCase):
     def test_signed_overlay_removed_only_once_and_cash_preserved(self):
         nav, matrix = inputs()
@@ -236,6 +249,88 @@ class CombinedOverlapTest(unittest.TestCase):
         result = M.compose(*args)
         self.assertEqual(M.R.number(result["combined_summary"]["period_residual"]), M.Decimal("0.000001"))
         self.assertFalse(result["economic_nav_publishable"])
+
+
+class ComponentBasisTest(unittest.TestCase):
+    def test_display_sign_separate_from_cash_sign(self):
+        args = component_inputs()
+        before = copy.deepcopy(args)
+        result = M.component_basis_preview(*args)
+        scenario = result["scenarios"][0]
+        a, b = scenario["days"]
+        self.assertEqual(M.R.number(a["removed_display_component"]), M.Decimal("12688.20"))
+        self.assertEqual(M.R.number(a["pnl_change_from_cash_repo_curve"]), M.Decimal("-12688.20"))
+        self.assertEqual(M.R.number(b["pnl_change_from_cash_repo_curve"]), M.Decimal("12688.20"))
+        self.assertEqual(a["conditional_close_asset"], b["conditional_open_asset"])
+        self.assertEqual(M.R.number(scenario["period_residual"]), 0)
+        self.assertTrue(scenario["all_daily_residuals_zero"])
+        self.assertFalse(result["economic_nav_publishable"])
+        self.assertFalse(result["display_component_removal_authorized"])
+        self.assertFalse(scenario["economic_nav_publishable"])
+        self.assertEqual(before, args)
+        self.assertEqual(result, M.component_basis_preview(*args))
+
+    def test_candidate_does_not_upgrade_other_day_confirmation(self):
+        nav, combined, funds = component_inputs()
+        # Add a separately unconfirmed positive display component on posting day.
+        cash_row = nav["cash_nav_scenarios"][0]["days"][1]
+        cash_row["reported_close_asset"] = "87321.80"
+        combined["combined_days"][1]["broker_other_asset"] = "10"
+        combined["combined_days"][1]["combined_close_asset"] = "87324.80"
+        combined["combined_days"][1]["original_cash_pnl"] = "10"
+        funds[1][1]["总资产"] = "87321.80"
+        result = M.component_basis_preview(nav, combined, funds)
+        self.assertEqual(M.R.number(result["scenarios"][0]["days"][1]["removed_display_component"]), 0)
+        self.assertEqual(M.R.number(result["scenarios"][0]["period_residual"]), 10)
+        self.assertEqual(M.R.number(result["scenarios"][1]["period_residual"]), 0)
+        self.assertFalse(result["display_component_removal_authorized"])
+
+    def test_wrong_identity_duplicate_or_missing_funds_rejected(self):
+        for mode in ("wrong", "duplicate", "missing"):
+            nav, combined, funds = component_inputs()
+            if mode == "wrong":
+                funds[0][1]["客户号"] = "307000051388"
+            elif mode == "duplicate":
+                funds.append(copy.deepcopy(funds[0]))
+            else:
+                funds.pop()
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                M.component_basis_preview(nav, combined, funds)
+
+    def test_component_requires_cash_market_repo_identity(self):
+        for key in ("总资产", "客户资金", "市值"):
+            args = component_inputs()
+            args[2][0][1][key] = "1"
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                M.component_basis_preview(*args)
+
+    def test_nonzero_opening_component_not_silently_zeroed(self):
+        args = component_inputs()
+        args[1]["combined_days"][0]["broker_other_asset_change"] = "0"
+        with self.assertRaises(ValueError):
+            M.component_basis_preview(*args)
+
+    def test_missing_or_reordered_days_rejected(self):
+        for reverse in (True, False):
+            args = component_inputs()
+            if reverse:
+                args[1]["combined_days"].reverse()
+            else:
+                args[1]["combined_days"].pop()
+            with self.assertRaises(ValueError):
+                M.component_basis_preview(*args)
+
+    def test_comparison_scope_and_asset_changes_rejected(self):
+        for key, value in (("account_id", "307000051388"), ("economic_nav_publishable", True),
+                           ("database_writes", 1), ("broker_commands", 1)):
+            args = component_inputs()
+            args[1][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                M.component_basis_preview(*args)
+        args = component_inputs()
+        args[1]["combined_days"][0]["combined_close_asset"] = "100003"
+        with self.assertRaises(ValueError):
+            M.component_basis_preview(*args)
 
 
 if __name__ == "__main__":

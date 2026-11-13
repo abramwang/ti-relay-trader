@@ -269,6 +269,92 @@ def compose(nav, matrix, repo, fees, residual):
     return result
 
 
+def component_basis_preview(nav, combined, funds_rows):
+    """Separate broker presentation from cash-based valuation, without publishing."""
+    for report in (nav, combined):
+        if (report["account_id"] != ACCOUNT or report["economic_nav_publishable"]
+                or report["database_writes"] != 0 or report["broker_commands"] != 0):
+            raise ValueError("unexpected component comparison scope")
+    cash = dated(next(s for s in nav["cash_nav_scenarios"]
+                      if s["name"] == "explicit_plus_pcf_candidates")["days"])
+    overlap_days = dated(combined["days"])
+    funds = {}
+    for row_number, row in funds_rows:
+        day = R.iso(row["交易日"])
+        if row["客户号"] != ACCOUNT or day in funds:
+            raise ValueError("wrong/duplicate broker funds identity")
+        funds[day] = (row_number, row)
+    rows = combined["combined_days"]
+    if not rows or list(cash) != [r["trade_date"] for r in rows] or list(overlap_days) != list(cash):
+        raise ValueError("component basis day coverage differs")
+    verified = []
+    for row in rows:
+        day = row["trade_date"]
+        if day not in funds:
+            raise ValueError("missing broker funds date")
+        number, f = funds[day]
+        c = cash[day]
+        cash_total, market, total = (R.number(f[k]) for k in ("客户资金", "市值", "总资产"))
+        principal = R.number(c["repo_principal_already_in_reported_asset"])
+        component = R.number(row["broker_other_asset"])
+        if (principal < 0 or total != R.number(c["reported_close_asset"])
+                or component != total-cash_total-market-principal):
+            raise ValueError("broker component decomposition failed")
+        verified.append({"trade_date": day, "funds_row": number, "cash_total": str(cash_total),
+                         "market_value": str(market), "repo_principal": str(principal),
+                         "reported_total": str(total), "display_component": str(component),
+                         "cash_market_repo_basis": str(cash_total+market+principal)})
+    # This review has a zero-component opening anchor. Do not silently extend
+    # it to another period with an unreviewed opening component.
+    first = rows[0]
+    opening_component = R.number(first["broker_other_asset"])-R.number(first["broker_other_asset_change"])
+    if opening_component != 0:
+        raise ValueError("opening component requires separate evidence")
+    scenarios = []
+    for all_components in (False, True):
+        name = "confirmed_snapshot_display_component_only" if not all_components else "all_display_components_sensitivity_only"
+        previous_removed, previous_close = ZERO, None
+        days, total_pnl, total_residual = [], ZERO, ZERO
+        for original, anchor in zip(rows, verified):
+            day = original["trade_date"]
+            display = R.number(anchor["display_component"])
+            removed = display if all_components or day == DAY else ZERO
+            # Undo the quarantined signed-debit assumption, then subtract only
+            # the displayed component once. Signed pending cash stays intact.
+            old = overlap_days[day]
+            old_close_delta = R.number(old["after_close"])-R.number(old["before_close"])
+            old_open_delta = R.number(old["after_open"])-R.number(old["before_open"])
+            baseline_open = R.number(original["combined_open_asset"])-old_open_delta
+            baseline_close = R.number(original["combined_close_asset"])-old_close_delta
+            if baseline_close-baseline_open != R.number(original["original_cash_pnl"])+R.number(original["repo_asset_adjustment"]):
+                raise ValueError("comparison baseline does not reconcile")
+            op, cl = baseline_open-previous_removed, baseline_close-removed
+            if min(op, cl) <= 0 or previous_close is not None and op != previous_close:
+                raise ValueError("component basis continuity failed")
+            pnl = cl-op
+            residual = pnl-R.number(original["corrected_model_contribution"])
+            days.append({"trade_date": day, "conditional_open_asset": str(op),
+                         "conditional_close_asset": str(cl), "conditional_pnl": str(pnl),
+                         "removed_display_component": str(removed), "residual": str(residual),
+                         "pnl_change_from_cash_repo_curve": str(previous_removed-removed),
+                         "economic_nav_publishable": False})
+            previous_removed, previous_close = removed, cl
+            total_pnl += pnl
+            total_residual += residual
+        scenarios.append({"name": name, "days": days, "period_pnl": str(total_pnl),
+                          "period_residual": str(total_residual),
+                          "nonzero_residual_days": [d["trade_date"] for d in days if R.number(d["residual"]) != 0],
+                          "all_daily_residuals_zero": all(R.number(d["residual"]) == 0 for d in days),
+                          "economic_nav_publishable": False})
+    return {"verified_broker_decomposition": verified, "scenarios": scenarios,
+            "source_dates_verified": False, "display_component_removal_authorized": False,
+            "broker_reported_totals_modified": False, "economic_nav_publishable": False,
+            "assumptions": ["cash, market and repo used as a separate comparison basis, not an overwrite of broker totals",
+                            "signed pending cash remains in both scenarios; candidate sources are unchanged",
+                            "all-component scenario is sensitivity only, not inferred confirmation",
+                            "business linkage does not independently authorize excluding the displayed component"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", type=Path,
@@ -297,6 +383,15 @@ def main():
                 raise ValueError(f"broker source changed: {key}")
     report = (compose(evidence["nav"], evidence["matrix"], evidence["repo"], evidence["fees"], evidence["residual"])
               if args.combined else preview(evidence["nav"], evidence["matrix"]))
+    if args.combined:
+        report["component_basis_preview"] = component_basis_preview(evidence["nav"], report,
+            list(R.M.B.rows(Path("reference") / f"{ACCOUNT}_资金.csv", "funds")))
+        # Recheck after parsing; a concurrent export must not mix old report
+        # hashes with new rows in the comparison basis.
+        for key, suffix in suffixes.items():
+            path = Path("reference") / f"{ACCOUNT}_{suffix}.csv"
+            if hashlib.sha256(path.read_bytes()).hexdigest() != evidence["matrix"]["source_sha256"][key]:
+                raise ValueError(f"broker source changed during review: {key}")
     report["source_sha256"] = hashes
     report["generated_at"] = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
     args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -309,6 +404,9 @@ def main():
     print(json.dumps({"changed_days": [r for r in report["days"] if R.number(r["pnl_change"])],
                       "period_pnl_change": report["period_pnl_change"],
                       "combined_summary": report.get("combined_summary"),
+                      "component_basis_summary": [
+                          {k: s[k] for k in ("name", "nonzero_residual_days", "all_daily_residuals_zero")}
+                          for s in report.get("component_basis_preview", {}).get("scenarios", [])],
                       "economic_nav_publishable": False}, ensure_ascii=False))
 
 
