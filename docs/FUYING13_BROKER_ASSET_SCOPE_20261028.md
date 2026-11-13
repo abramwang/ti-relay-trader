@@ -255,3 +255,40 @@ go test -race ./internal/performance ./cmd/relayctl -run 'Test(ETFCashTiming|Fuy
 这些金额仅属于已核实现金腿，不是整个账户的完整应收应付余额。新增9项Go顶层测试及子用例覆盖正负抵消、负应付、同日收付款、期初承接、错账户、重复/候选/日期缺口、溢出与上限、空结果不证明结清、重复调用不累加。相关两包全量及定向race通过。
 
 证据：`outputs/recovery/fuying13_cash_matrix_20261112/native_cash_timing_20261113.json`，SHA256 `2d12fa68f630482f128367dfee63a6eb22fe4a5f189283a45335cd4b51495936`。本轮没有把观察现金自动写成最终清算，没有改正式净值或启用上述对照口径。等待券商说明期间，已确认的现金链可作为后续重建输入，不再重复审计或推定10笔候选来源。
+
+## 10月15日已确认补单归属独立修复
+
+2026-11-13将归属事实与资产范围拆开处理。用户已确认159869.SZ的以下两笔买入共同供给同一笔赎回，不应混入ETF底仓：
+
+| 柜台委托编号 | 类型 | 委托数量 | 成交数量 | 原始终态 |
+| --- | --- | ---: | ---: | --- |
+| 12002A620003971 | 买入 | 1,000,000 | 20,200 | cancelled |
+| 12002A620003974 | 补买 | 979,800 | 979,800 | filled |
+| 12002A620003985 | 赎回 | 1,000,000 | 1,000,000 | filled |
+
+生产只读预检确认三笔订单与12条普通成交一致，两买单分别4条/8条成交。赎回无普通fill，继续保留既有划转口径，不补造普通成交。10-15原无此类归属审计，已追加3条`relay.t0_allocation.v1`，组ID为`user-confirmed-768-20261015-redemption-split`，证据沿用用户11-10确认，不把本次执行时刻冒充确认时间。
+
+一次性入口`performance-fuying13-split-audit-20261113`默认只读：
+
+```bash
+go run ./cmd/relayctl performance-fuying13-split-audit-20261113 \
+  -config config/relay.prod.yaml \
+  -output outputs/recovery/fuying13_split_20261113/new_preflight.json
+```
+
+`-apply`还必须提供两小时内完整PostgreSQL自定义备份及SHA256；校验账户/日期/证券/数量/终态/成交/原分组，逐单锁定后同一事务追加三条，冲突即失败，重复相同记录跳过。既有确认fixture固定SHA256 `fd473ff6b2207e6d14672ec758bcce20837a90f5b344a32bf474d2eaad00d37f`。时区表示归一后比较，既有相同时刻不因固定+08:00与Asia/Shanghai表示差异误报冲突。
+
+预检`outputs/recovery/fuying13_split_20261113/preflight_v3.json`记录原始订单、成交及10-12..11-10四张历史金融表的行内容指纹。全项目Go测试、定向race、vet和独立PostgreSQL回归通过；独立PG新增第三条失败整批回滚、三条原子提交及重复提交不增行验证，测试不连接生产数据库。
+
+执行结果：完整备份`outputs/backups/relay_trader_20261113T184748+0800.dump`，398,097,338字节，SHA256 `8d25ae56050cb730a95286a7acc643b294fa4005d583a272baabccb37584dbf9`。`-apply`事务已提交3条；新连接只读回查3条完全相同，重复`-apply`新增0条。预检/写入/回读的四张历史金融表指纹及原订单、成交内容完全一致。API/worker进程未替换，仍为production且`trading_enabled=0`。
+
+本地证据目录`outputs/recovery/fuying13_split_20261113/`，文件权限0600：
+
+| 文件 | SHA256 | 含义 |
+| --- | --- | --- |
+| preflight_v3.json | 28cc43952746f8b5a82dce3ead03bdd0c7cd98a9f619f6c6829c70cb101ee81c | 写前只读预检，3条待追加 |
+| apply.json | c0b5764163898bfe3da0e9e1f2298630e973e00161334ebf96fc204be63302ac | 提交前准备证据；提交结果另由回读证明 |
+| readback.json | bf7c4c0a44965b0e27ecb1f6b0c8892170951cf5a002bc67c6662439455be814 | 新事务读取已落库3条，待追加0 |
+| replay.json | 7ef19f45e6be0cb885c3b95646fd11e605afe0d50d08fe0cebedddc324332c18 | 重复写入全部跳过，新增0 |
+
+边界：只追加归属审计，不写成本状态、NAV、资产或现金，不改原OC订单/成交，不触发柜台命令或重启。正式NAV的资产范围阻断不解除；后续成分余仓、日内成本池与隔夜链的持久化仍需独立验证，不能据此标记连续绩效修复完成。

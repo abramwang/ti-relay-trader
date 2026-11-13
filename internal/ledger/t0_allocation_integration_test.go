@@ -117,4 +117,49 @@ func TestT0AllocationPostgresAppendOnly(t *testing.T) {
 	if _, err = repo.ListT0AllocationHistory(ctx, first.AccountID, first.TradeDate); err == nil {
 		t.Fatal("accepted fractional/tampered envelope")
 	}
+	t.Run("atomic batch and replay", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `INSERT INTO accounts VALUES ('batch-account')`); err != nil {
+			t.Fatal(err)
+		}
+		var batch []T0Allocation
+		for _, id := range []string{"batch-a", "batch-b", "batch-c"} {
+			item := first
+			item.AccountID, item.LinkID, item.GatewayOrderID = "batch-account", id, id
+			batch = append(batch, item)
+		}
+		for attempt := 0; attempt < 3; attempt++ {
+			tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			for i, item := range batch {
+				if attempt == 0 && i == 2 {
+					item.Quantity = 0
+				}
+				_, err := NewRepository(tx).AppendT0Allocation(ctx, item)
+				if attempt == 0 && i == 2 {
+					if err == nil {
+						t.Fatal("invalid third row accepted")
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 3
+			if attempt == 0 {
+				want = 0
+				err = tx.Rollback()
+			} else {
+				err = tx.Commit()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, err := repo.ListT0AllocationHistory(ctx, "batch-account", first.TradeDate)
+			if err != nil || len(rows) != want {
+				t.Fatalf("attempt %d: rows=%d want=%d error=%v", attempt, len(rows), want, err)
+			}
+		}
+	})
 }

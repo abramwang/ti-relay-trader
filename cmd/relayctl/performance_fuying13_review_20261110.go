@@ -269,8 +269,21 @@ func (s *fuying13SplitPreview) ListT0AllocationHistory(ctx context.Context, acco
 }
 
 func mergeFuying13SplitReview(old, links []ledger.T0Allocation) ([]ledger.T0Allocation, error) {
+	old = append([]ledger.T0Allocation(nil), old...)
+	for i := range old {
+		var err error
+		old[i], err = ledger.NormalizeT0Allocation(old[i])
+		if err != nil {
+			return nil, err
+		}
+	}
 	result := append([]ledger.T0Allocation(nil), old...)
 	for _, link := range links {
+		var err error
+		link, err = ledger.NormalizeT0Allocation(link)
+		if err != nil {
+			return nil, err
+		}
 		found := false
 		for _, prior := range old {
 			if prior.GatewayOrderID == link.GatewayOrderID {
