@@ -374,3 +374,37 @@ go test -race ./internal/performance ./cmd/relayctl -run 'CostContinuity|CostRev
 | cost_continuity.json | 56a8d0826101100302a6c3b74463e15ce39cd9d2902071094c886f378bda8f9d | 归属缺失0，成本/NAV仍禁止发布 |
 
 下一步不再重复补这4条：完成成分估值基数/日内池/隔夜释放的成本版本化存储、读取及回滚验收，再受控部署新读取链。继续以券商总资产为基准等待分项说明；不通过成本审计解除资金桥阻断或删除资产差额。
+
+## 研究成本版本存储与回读验收
+
+日期：2026-11-14，Asia/Shanghai。本轮完成代码及临时数据库验收，**不是生产成本发布或资金桥修复完成**。
+
+### 存储与读取边界
+
+- 新迁移`000042_research_cost_versions`创建`performance_research_cost_versions`，按`account_id + version_id`隔离，完整成本链一次写入一个不可变版本。当前生产库尚未执行此迁移。
+- 版本正文保存期初锚点、完整交易日序列、逐日`CostLedgerResult`、活动归属审计快照、输入文件SHA256及结构复核。正文为原字节TEXT，避免JSONB重排影响指纹；上限16MiB，单次写入无半条成本链。
+- 同身份相同正文幂等；正文、日期范围或指纹不同拒绝。数据库触发器拒绝UPDATE/DELETE；新增版本保留旧版。迁移down仅为拆除研究表，不可作为线上财务回滚方式。
+- `Prepare/SaveResearchCostVersion`重新计算结构复核；`Load/DecodeResearchCostVersion`再次检查正文SHA、账户/版本/日期、结构复核和归属引用。保留日期级确认，不补午夜时刻；活动审计是当时的证据快照，不自动代表之后仍有效。
+- 研究调用方必须显式指定版本，没有latest/current回退。回退研究结果是重新指定旧版本，不改原始订单、现金、资产、正式成本或NAV。普通绩效查询和每日任务没有接入这个表。
+- 结构核验不验证外部文件真实性或重新查询订单，也不替代正式导入时的实时审计版本比对。`research_only=true`、`economic_nav_publishable=false`；成分估值基数不改称买入成本，申赎成本转出不当亏损。
+
+### 验收证据
+
+通过`scripts/test-research-cost-postgres.sh`启动独立Unix socket PostgreSQL，只创建账户占位表和本研究表，不读取生产配置、不访问Redis/柜台。设置`RELAY_RESEARCH_COST_FROZEN_REPLAY=1`时，额外用本地私有冻结报告复验；默认CI只运行合成用例。
+
+实际冻结输入：
+
+| 输入 | SHA256 |
+| --- | --- |
+| `outputs/recovery/fuying13_settlement_20261110/cost_chain_cash_v12.json` | `aacd65f5560e0ca503d8410d06497494901b7f0d44e5dd6f5179978218dcf2ad` |
+| `outputs/recovery/fuying13_remaining_20261113/cost_continuity.json` | `56a8d0826101100302a6c3b74463e15ce39cd9d2902071094c886f378bda8f9d` |
+
+临时版本`fuying13-cost-research-20261114-v1`覆盖10-12..11-10，锚点10-09；22日/972行、605次承接、25项基数转移、1项0.000001元尾差。正文999221字节，SHA256为`d565651ae60c6172b4838003a65ca5f5534c5207b80130eea90dbedd9f1e4169`。另一个数据库连接读取的完整成本和复核结果与输入一致；重复提交无新增。临时库退出即销毁，该版本**未写入生产**。
+
+测试覆盖并发同ID异正文只允许一个成功、未提交版本不可见、事务回滚后不存在、保留旧版本可回读、跨账户隔离、禁止更新/删除、伪造存储指纹/错误schema、审计缺失/撤销/跨日/重复、正文或复核被改写。全量Go及定向race、vet通过；独立PG含实际冻结链复验日志：`.runtime/research-cost-version-20261114.log`。
+
+首轮测试中的日期精度断言误扫到了成本结果内原有的inception零时间；已改为仅检查归属审计对象，再完整重跑通过，未修改实际审计时间或成本输入。
+
+### 下一步
+
+补受控研究导入/检查入口，执行时必须验证备份、目标库、冻结输入、当前归属审计和金融表前后指纹；另一个连接回读完成后才报告提交成功。生产schema仍有独立的待验CTP迁移，不能为研究表直接跑全量升级；先明确迁移隔离方式，再受控上线研究读取。正式成本/NAV消费另行验收，不因归档通过解除券商资产范围阻断。

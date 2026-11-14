@@ -1,0 +1,2 @@
+DROP TABLE performance_research_cost_versions;
+DROP FUNCTION reject_research_cost_version_mutation();
