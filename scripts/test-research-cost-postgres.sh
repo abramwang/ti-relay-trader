@@ -25,3 +25,5 @@ trap 'exit 143' TERM
 cd "$ROOT"
 RELAY_RESEARCH_COST_TEST_DATABASE_URL="host=$WORK/socket port=15433 user=relay_research_test dbname=postgres sslmode=disable" \
   go test -race ./internal/performance -run TestResearchCostVersion -count=1 -v
+RELAY_RESEARCH_COST_TEST_DATABASE_URL="host=$WORK/socket port=15433 user=relay_research_test dbname=postgres sslmode=disable" \
+  go test -race ./cmd/relayctl -run TestFuyingResearch -count=1 -v

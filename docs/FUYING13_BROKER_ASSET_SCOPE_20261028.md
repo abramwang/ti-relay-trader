@@ -377,11 +377,11 @@ go test -race ./internal/performance ./cmd/relayctl -run 'CostContinuity|CostRev
 
 ## 研究成本版本存储与回读验收
 
-日期：2026-11-14，Asia/Shanghai。本轮完成代码及临时数据库验收，**不是生产成本发布或资金桥修复完成**。
+日期：2026-11-14，Asia/Shanghai。第一步完成代码及临时数据库验收，**不是生产成本发布或资金桥修复完成**；后续受控导入见下节。
 
 ### 存储与读取边界
 
-- 新迁移`000042_research_cost_versions`创建`performance_research_cost_versions`，按`account_id + version_id`隔离，完整成本链一次写入一个不可变版本。当前生产库尚未执行此迁移。
+- 新迁移`000042_research_cost_versions`创建`performance_research_cost_versions`，按`account_id + version_id`隔离，完整成本链一次写入一个不可变版本。第一步开发验收时未执行生产迁移。
 - 版本正文保存期初锚点、完整交易日序列、逐日`CostLedgerResult`、活动归属审计快照、输入文件SHA256及结构复核。正文为原字节TEXT，避免JSONB重排影响指纹；上限16MiB，单次写入无半条成本链。
 - 同身份相同正文幂等；正文、日期范围或指纹不同拒绝。数据库触发器拒绝UPDATE/DELETE；新增版本保留旧版。迁移down仅为拆除研究表，不可作为线上财务回滚方式。
 - `Prepare/SaveResearchCostVersion`重新计算结构复核；`Load/DecodeResearchCostVersion`再次检查正文SHA、账户/版本/日期、结构复核和归属引用。保留日期级确认，不补午夜时刻；活动审计是当时的证据快照，不自动代表之后仍有效。
@@ -399,7 +399,7 @@ go test -race ./internal/performance ./cmd/relayctl -run 'CostContinuity|CostRev
 | `outputs/recovery/fuying13_settlement_20261110/cost_chain_cash_v12.json` | `aacd65f5560e0ca503d8410d06497494901b7f0d44e5dd6f5179978218dcf2ad` |
 | `outputs/recovery/fuying13_remaining_20261113/cost_continuity.json` | `56a8d0826101100302a6c3b74463e15ce39cd9d2902071094c886f378bda8f9d` |
 
-临时版本`fuying13-cost-research-20261114-v1`覆盖10-12..11-10，锚点10-09；22日/972行、605次承接、25项基数转移、1项0.000001元尾差。正文999221字节，SHA256为`d565651ae60c6172b4838003a65ca5f5534c5207b80130eea90dbedd9f1e4169`。另一个数据库连接读取的完整成本和复核结果与输入一致；重复提交无新增。临时库退出即销毁，该版本**未写入生产**。
+临时版本`fuying13-cost-research-20261114-v1`覆盖10-12..11-10，锚点10-09；22日/972行、605次承接、25项基数转移、1项0.000001元尾差。正文999221字节，SHA256为`d565651ae60c6172b4838003a65ca5f5534c5207b80130eea90dbedd9f1e4169`。另一个数据库连接读取的完整成本和复核结果与输入一致；重复提交无新增。临时库退出即销毁，**这一步验收未写入生产**。
 
 测试覆盖并发同ID异正文只允许一个成功、未提交版本不可见、事务回滚后不存在、保留旧版本可回读、跨账户隔离、禁止更新/删除、伪造存储指纹/错误schema、审计缺失/撤销/跨日/重复、正文或复核被改写。全量Go及定向race、vet通过；独立PG含实际冻结链复验日志：`.runtime/research-cost-version-20261114.log`。
 
@@ -408,3 +408,63 @@ go test -race ./internal/performance ./cmd/relayctl -run 'CostContinuity|CostRev
 ### 下一步
 
 补受控研究导入/检查入口，执行时必须验证备份、目标库、冻结输入、当前归属审计和金融表前后指纹；另一个连接回读完成后才报告提交成功。生产schema仍有独立的待验CTP迁移，不能为研究表直接跑全量升级；先明确迁移隔离方式，再受控上线研究读取。正式成本/NAV消费另行验收，不因归档通过解除券商资产范围阻断。
+
+## 研究成本受控导入入口
+
+日期：2026-11-14，Asia/Shanghai。新增`relayctl performance-fuying13-cost-import-20261114`，只处理上述固定账户、版本、输入文件及正文SHA；不是通用补数或净值发布入口。
+
+### 默认检查与写入门禁
+
+默认使用只读repeatable-read事务，检查生产配置、DSN数据库名和实际数据库均为`relay_trader`；不调用会自动建表的通用迁移状态函数。逐一检查已执行迁移，允许完整`1..32`及可选的`42`，其他状态需重新评审。直接核对锚点完整行和11条活动归属审计完整payload，不能只以link ID存在为准；新修订、撤销、新增、日期精度或成本变化均拒绝。
+
+```bash
+go run ./cmd/relayctl performance-fuying13-cost-import-20261114 \
+  --config config/relay.prod.yaml \
+  --output outputs/recovery/fuying13_cost_import_20261114/check-new.json
+```
+
+只有显式`--apply`才能写研究表，还须提供：
+
+- `--expected-payload-sha256 d565651ae60c6172b4838003a65ca5f5534c5207b80130eea90dbedd9f1e4169`。
+- `--backup`及`--backup-sha256`：由既有备份脚本生成的完整custom dump与相邻manifest，文件/清单SHA、字节数、库名和时间匹配，文件及采集时间均不超过2小时，`pg_restore --list`可读；不把可读目录当作已经实机恢复。
+- 首次表缺失还须`--allow-research-migration`，仅允许正文SHA为`3865626724c81ae629c923d7fa77798a6751c12d130dbe08e20458b444ff35b2`的000042；没有通用跳迁移参数。
+
+应用事务持有迁移注册表锁和成本/归属表的短期SHARE锁，防止读后新增归属修订；锁等待上限5秒，语句30秒。只创建研究表、触发器和42号登记，连同完整研究版本一起提交；任何失败整体回滚，不登记33..41，不改正式成本/NAV。不能用普通全量`migrate up`替代此入口。
+
+### 提交与恢复
+
+输出路径及其`.prepared.json`伴随文件都必须不存在，权限0600。先同步准备报告到磁盘，再提交。提交结果不明时保留`prepared_not_committed`，不能仅凭该文件判断已写入。
+
+提交后新建连接池及独立只读事务，读取完整正文、重算结构复核、复查迁移集合和当前锚点/归属。正式成本、NAV、资产快照、现金、订单、成交和ETF划转七张表在10-09..11-10的内容指纹必须与写前一致。全部通过才生成`committed_and_verified`报告；提交后核验/报告失败明确返回“已提交但未核验”等状态，不盲目删除或重写金融历史。
+
+重复执行默认检查可判断版本是否存在；相同版本再次`--apply`也需有效备份，但只幂等回读，不新增版本。研究层回退只使用旧版显式ID，不执行迁移down，不把旧净值回滚成研究结果。
+
+### 离线与隔离验收
+
+在独立临时PG实际应用1..32基础迁移并装入冻结锚点/审计，测试只读检查、缺迁移授权拒绝、42号DDL与版本一起回滚、完整提交、新连接回读及幂等。同时覆盖变化的归属/成本/迁移集合/DDL、触发器被禁用、错误备份范围/摘要/字节大小/东八区时间边界。临时库验证无`futures_*`表，普通迁移状态仍将33..41逐项列为未执行。
+
+测试入口仍为`scripts/test-research-cost-postgres.sh`，`RELAY_RESEARCH_COST_FROZEN_REPLAY=1`才读取本地私有证据并运行完整导入测试；不连接真实柜台。结果日志：`.runtime/research-cost-import-20261114.log`。备份、导入与检查均不切环境、不重启API/worker/OC、不开放交易。
+
+### 生产独立归档执行结果
+
+2026-11-14 09:33（Asia/Shanghai）执行完成。完整备份`outputs/backups/relay_trader_20261114T092728+0800.dump`，398097879字节，SHA256 `94168cafcdec6cd986ef98607f056e4585ded24b33dbaba01793a7c4b78ed0eb`；配套manifest及dump目录验证通过。
+
+- 写入前：生产已执行1..32，研究表不存在；锚点和11条活动归属与冻结输入完整一致。
+- 单事务只应用000042及版本`fuying13-cost-research-20261114-v1`，正文SHA/999221字节与隔离库验收相同，覆盖10-12..11-10的22日/972行。没有将33..41标记为已执行。
+- 提交后独立连接重新检查全部正文/结构、锚点/归属、迁移集合及七表历史指纹。`committed_and_verified`、`independent_readback=true`；另一次只读检查及再次显式apply通过，重放新增0。
+- 预检、应用、回读及重放四轮的金融/交易历史指纹完全相同。成分估值基数、25项成本转移和1微元舍入差原样保留，`economic_nav_publishable=false`。
+- API仍PID3180711、worker仍PID2462706，生产下单关闭，Redis/DB及进程健康。新CLI可读取日期精度v2；没有替换运行服务或将研究版接进现有每日任务。
+
+证据目录`outputs/recovery/fuying13_cost_import_20261114/`：
+
+| 文件 | SHA256 | 含义 |
+| --- | --- | --- |
+| preflight.json | 2f40335ff63fdb94d28b19cd4807734f36b53d9a876602503b0db713956e2658 | 生产只读，表/版本均未创建 |
+| apply.json.prepared.json | dc484716e5ddcb7ab6f1e48f4f59437888deb51280c85d0e644c11966ee21bd8 | 事务已准备，不能单独证明提交 |
+| apply.json | e1c650a312a3d0234d6a2aa96d9ead0c546b5c2ab76d29be5be5eda432425a77 | 提交后新连接核验成功，新增1版 |
+| readback.json | c58ddaf0c3b10880fdbf1b0052674a4685afecdeba440b3c8b428152dfa39986 | 后续独立调用默认只读检查，版本一致 |
+| replay.json | 4ab191afac544d420140f0827a9958487ed6a487ec6d59524c1201914f807eaa | 再次apply，新增0且新连接核验成功 |
+
+默认检查报告`independent_readback=false`仅表示该次命令未执行“写事务提交后再建连接”的步骤，不表示查不到已存版本；看`version_exists`和`phase`区分。生产迁移集合现在为**1..32、42**，`MAX(version)=42`不代表1..42连续升级。后续运维应看逐项状态，环境切换仍保留`--skip-migrations`边界，不能因此顺带运行未验CTP迁移。
+
+本轮归档不需要新增券商文件或OC改动。下一步提供显式版本的只读日级成本对照，检查后续审计修订是否使旧研究版本失效；正式成本/NAV消费仍须独立验收，不能删除券商资产分项差额或解除资金桥阻断。
