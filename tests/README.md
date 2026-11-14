@@ -134,6 +134,8 @@ python3 scripts/check-readonly-release.py \
 
 ## 研究成本只读页面
 
+2026-11-14实际输入采集：`go test ./cmd/relayctl -run TestFuyingResearchCapture`覆盖请求/返回值修改不污染记录、错误保留、序号/字节/SHA、0600与禁止覆盖、并发记录、容量失败及金融写入拒绝。设置`RELAY_RESEARCH_COST_FROZEN_REPLAY=1`后同一测试集额外核对本机冻结22日/972行、拒绝不完整链及识别0.000001成本差异。实际生产只读复算证据与限制见[采集记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#实际输入采集与成本复算)；这不是从封存输入离线运行完整引擎的验收，也不证明原柜台历史查询完整。
+
 2026-11-14新增：
 
 ```bash

@@ -628,3 +628,49 @@ go run ./cmd/relayctl performance-research-source-check \
 ```
 
 输出必须是新路径，0600权限，不覆盖历史证据；没有apply开关。全Go测试、相关race、vet及独立临时PG通过，包含真实冻结22日链、只读/隔离级别、同一快照屏蔽并发写入、下轮新增/1微元修订/删除检测、报告回读及禁止覆盖。生产服务未重启，API仍PID1972284、worker仍PID2462706，全部生产下单关闭，迁移仍1..32+42。
+
+## 实际输入采集与成本复算
+
+日期：2026-11-14，Asia/Shanghai。接上节，用当前可读事实重新计算，而非把今日指纹补写为旧研究版的原始输入。
+
+### 实现范围
+
+`performance-fuying13-review-20261110 --capture-inputs <新目录>`仅允许完整成本预览组合，不允许同时启用cash NAV。读取前核验固定研究版本、期初与活动归属；整个数据库读取使用只读repeatable-read事务。采集模式取消旧fixture对归属的内存覆盖，改用已落库的11条活动审计；已验证的七笔逆回购费用仍按既有研究逻辑仅在内存投影，费用来源保存在helper结果中。成分余仓估值基数、日内池及隔夜成本预览边界不变。
+
+采集器记录计算引擎实际消费的类型化请求、返回值、错误与东八区采集时间。覆盖订单/成交/持仓/费用/成本/归属及市场日历、主数据、复权、bars、snapshots、PCF接口。请求在调用前序列化，响应在交回调用方前序列化，避免后续内存修改污染证据。辅助查询保留已核验结果，不声称所有helper SQL原始行均有逐调用记录；市场响应是客户端类型化结果，不是HTTP原字节。
+
+固定计算时钟，另记录相关源码、go.mod/go.sum及实际运行可执行文件SHA256。输入目录0700、文件0600，只能新建，不覆盖；上限10000条、单条16MiB、合计256MiB。失败保留已写证据，manifest不标完整。只有完整链、记录及fsync成功，manifest才可为complete；应同时检查命令退出结果、manifest和文件SHA，不能只看成本计算摘要。金融写方法全部明确拒绝，且数据库只读双重保护。无新研究DB版本、正式成本或NAV写入。
+
+### 本轮结果
+
+实际运行时间15:40:10至15:42:35（+08:00），约145秒。22个交易日2026-10-12..11-10，972条成本记录，数量连续性无断点；对照`fuying13-cost-research-20261114-v1`，业务差异0，972条仅created_at/updated_at/calculated_at类时间元数据不同。比较不是正式账本验收，双方均是研究结果。
+
+输入共1234条、133845868字节，序号连续，manifest complete=true，文件SHA吻合。417次市场接口读取无返回错误；22次`EffectiveRepoFeeRule`为`sql: no rows in result set`，表示未配置逆回购费率规则，现有引擎允许并优先使用订单费用证据，不能把它说成已核验费率合同。除此之外没有记录到调用错误。36次资产/持仓观察读取成功，只证明本次类型化结果可读，尚不能代替历史柜台查询末页及全量范围证明。
+
+证据目录`outputs/recovery/fuying13_engine_capture_20261114/`，未提交账户原始内容到git：
+
+| 文件 | SHA256 |
+| --- | --- |
+| run-1/inputs.jsonl | `18915395b9340868c63f6259d838c025ceeb7ca58bb7d0cf0d914e0920d053f1` |
+| run-1/manifest.json | `4ec75068cb6eee1d7880aea68508eae7f7380242258217904925d827219bb095` |
+| run-1-result.json | `44770cd720b96bb3fc8345b1548ce9fec8b7356835a1e7add7bfb03185f21eef` |
+
+复验须从项目根目录运行并使用新的输出路径；以下run-1已存在，不能原路径重跑：
+
+```bash
+go run ./cmd/relayctl performance-fuying13-review-20261110 \
+  --config config/relay.prod.yaml \
+  --confirmed-split-preview --component-residual-preview \
+  --closed-day-pool-preview --oct23-inventory-preview \
+  --nov04-overnight-preview --overnight-chain-preview --broker-cash-preview \
+  --capture-inputs outputs/recovery/fuying13_engine_capture_20261114/run-1 \
+  --output outputs/recovery/fuying13_engine_capture_20261114/run-1-result.json
+```
+
+全Go、相关race/vet、带本机冻结材料的采集测试通过。生产API PID1972284、worker PID2462706健康，全部下单关闭；本轮无服务重启、OC查询、环境切换或迁移。
+
+### 下一步及未闭合项
+
+先用封存输入实现不访问生产库/网络的离线引擎重放，验证请求参数、错误分支、输入耗尽及输出稳定性；再逐日核对查询完成证据和源修订依赖范围。本轮仅证明当前数据能复现原研究成本，不是原v1历史输入从未变化的证明，也不是全部柜台数据完整或经济资产范围正确的证明。
+
+研究成本正式发布仍需独立审查preview-only规则。正式净值继续以用户指定的券商总资产为基准，等待未解释分项及源日证据，不因成本数值一致消除资金桥阻断，不要求用户重复导出已有普通CSV。

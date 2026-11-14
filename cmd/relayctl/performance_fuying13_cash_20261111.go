@@ -116,7 +116,7 @@ func proveFuyingRepoFee(order trading.Order, fills []trading.Fill, flows []broke
 	return p, nil
 }
 
-func loadFuyingCashReview(ctx context.Context, tx *sql.Tx, client *market.MeridianClient) (fuyingCashReview, error) {
+func loadFuyingCashReview(ctx context.Context, tx *sql.Tx, client researchMarket) (fuyingCashReview, error) {
 	r := fuyingCashReview{AccountID: fuying13Account, GeneratedAt: timeutil.Now(), DatabaseReadOnly: true}
 	spec := brokerBasis20261110Specs[0]
 	fundsCSV, fh, err := readBrokerCSV("reference/" + fuying13Account + "_资金.csv")

@@ -22,7 +22,7 @@ import (
 
 // Cost continuity is reviewed separately from NAV eligibility. No NAV is carried
 // across a blocked date and this entry point has no write mode.
-func runFuying13Review20261110(args []string) error {
+func runFuying13Review20261110(args []string) (runErr error) {
 	flags := flag.NewFlagSet("performance-fuying13-review-20261110", flag.ContinueOnError)
 	configPath := flags.String("config", "", "production config")
 	output := flags.String("output", "", "new private read-only report")
@@ -34,6 +34,7 @@ func runFuying13Review20261110(args []string) error {
 	overnightChain := flags.Bool("overnight-chain-preview", false, "release the reviewed November 4 overnight lot in the memory cost chain; never publish")
 	brokerCash := flags.Bool("broker-cash-preview", false, "verify frozen broker cash and overlay seven missing repo fees in memory only")
 	cashNAV := flags.Bool("cash-nav-preview", false, "record native NAV gates and independent conditional cash curves; no NAV propagation or publication")
+	captureDir := flags.String("capture-inputs", "", "new private directory for typed engine inputs; requires full cost-only preview")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -57,6 +58,9 @@ func runFuying13Review20261110(args []string) error {
 	}
 	if *cashNAV && !*brokerCash {
 		return errors.New("cash NAV preview requires broker cash and all prior preview stages")
+	}
+	if *captureDir != "" && (!*brokerCash || *cashNAV) {
+		return errors.New("input capture requires all cost preview stages and excludes cash NAV")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -85,10 +89,49 @@ func runFuying13Review20261110(args []string) error {
 		return errors.New("unexpected database")
 	}
 	repo := ledger.NewRepository(tx)
+	var capture *researchInputCapture
+	var archived ledger.ResearchCostVersion
+	var bundle performance.ResearchCostBundle
+	if *captureDir != "" {
+		comparison, e := performance.ReadResearchCostComparison(ctx, tx, fuying13Account, fuyingResearchVersion)
+		if e != nil || !comparison.AnchorAndAllocationsMatch || comparison.PayloadSHA256 != fuyingResearchPayloadHash {
+			return fmt.Errorf("research input anchor/audits changed: %v", e)
+		}
+		archived, err = repo.GetResearchCostVersion(ctx, fuying13Account, fuyingResearchVersion)
+		if err != nil {
+			return err
+		}
+		bundle, err = performance.DecodeResearchCostVersion(archived)
+		if err != nil {
+			return err
+		}
+		capture, err = newResearchInputCapture(*captureDir)
+		if err != nil {
+			return err
+		}
+		defer func() { runErr = errors.Join(runErr, capture.close(runErr)) }()
+		if err = capture.record("scope", nil, map[string]any{"baseline": bundle, "performance_config": cfg.Performance, "fixed_calculation_time": capture.started, "component_residual_preview": true, "closed_day_pool": "2026-10-16", "overnight_chain": true, "broker_cash_overlay": true, "attribution_source": "persisted_audits_not_fixture_overlay"}, nil); err != nil {
+			return err
+		}
+		if err = captureResearchCode(capture); err != nil {
+			return err
+		}
+		observation, e := performance.ReadResearchSourceObservation(ctx, tx, performance.ResearchSourceObservation{Environment: string(cfg.Service.Environment), Database: name, AccountID: fuying13Account, VersionID: archived.VersionID, PayloadSHA256: archived.PayloadSHA256, DateFrom: archived.AnchorDate, DateTo: archived.DateTo})
+		if e != nil {
+			return e
+		}
+		if err = capture.record("source_observation", nil, observation, nil); err != nil {
+			return err
+		}
+	}
 	store := &performancePreviewStore{Repository: repo, costs: map[string]map[string][]ledger.PositionCostState{fuying13Account: {}}, navs: map[string]map[string]ledger.PerformanceNAV{}}
-	m, err := market.NewMeridianClient(cfg.Market)
+	client, err := market.NewMeridianClient(cfg.Market)
 	if err != nil {
 		return err
+	}
+	var m researchMarket = client
+	if capture != nil {
+		m = &capturedResearchMarket{base: client, capture: capture}
 	}
 	var serviceStore performance.Store = store
 	var allocationHash string
@@ -144,6 +187,14 @@ func runFuying13Review20261110(args []string) error {
 			return err
 		}
 	}
+	if capture != nil {
+		preview := serviceStore.(*fuying13SplitPreview)
+		preview.links, preview.inventoryLinks, preview.overnightLinks = nil, nil, nil
+		if err = capture.record("verified_helper_results", nil, map[string]any{"inventory": inventoryEvidence, "broker_cash": cashEvidence, "split_fixture_sha256": allocationHash, "overnight_fixture_sha256": overnightHash}, nil); err != nil {
+			return err
+		}
+		serviceStore = &capturedResearchStore{base: serviceStore, capture: capture}
+	}
 	service, err := settlement20261110Service(cfg, serviceStore, m)
 	if *componentPreview {
 		var overnightAllocations []performance.OvernightT0Allocation
@@ -154,7 +205,11 @@ func runFuying13Review20261110(args []string) error {
 		if *dayPoolPreview {
 			poolDate = "2026-10-16"
 		}
-		service, err = performance.New(performance.Options{Store: serviceStore, Calendar: m, Market: m, FormulaVersion: cfg.Performance.FormulaVersion,
+		var fixedNow func() time.Time
+		if capture != nil {
+			fixedNow = func() time.Time { return capture.started }
+		}
+		service, err = performance.New(performance.Options{Store: serviceStore, Calendar: m, Market: m, Now: fixedNow, FormulaVersion: cfg.Performance.FormulaVersion,
 			ETFT0FrictionRate: cfg.Performance.ETFT0FrictionRate, AutoToleranceCNY: cfg.Performance.AutoToleranceCNY, AutoToleranceBP: cfg.Performance.AutoToleranceBP,
 			WarningToleranceCNY: cfg.Performance.WarningToleranceCNY, WarningToleranceBP: cfg.Performance.WarningToleranceBP, ComponentResidualPreview: true, ClosedDayT0PoolPreviewDate: poolDate, OvernightT0Allocations: overnightAllocations})
 	}
@@ -237,8 +292,25 @@ func runFuying13Review20261110(args []string) error {
 		report["cash_nav_date_to"] = "2026-11-09"
 		report["scope"] = "cost memory chain and independent conditional cash curves; native NAV diagnostics are not propagated, confirmed basis unchanged"
 	}
+	if capture != nil {
+		if blockedDate == "" {
+			diff, e := compareCapturedCosts(archived, bundle, costs)
+			if e != nil {
+				return e
+			}
+			report["baseline_cost_comparison"] = diff
+		}
+		report["input_capture_directory"] = capture.directory
+		report["attribution_source"] = "persisted_audits_not_fixture_overlay"
+		if err = capture.record("cost_chain_output", nil, report, nil); err != nil {
+			return err
+		}
+	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
+	}
+	if capture != nil {
+		capture.complete = blockedDate == ""
 	}
 	return writeJSON(map[string]any{"database_writes": 0, "cost_days": len(costs), "cost_chain_complete": blockedDate == "", "first_cost_blocked_date": blockedDate, "economic_nav_publishable": false})
 }

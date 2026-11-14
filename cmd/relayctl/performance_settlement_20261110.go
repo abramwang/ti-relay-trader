@@ -104,7 +104,7 @@ func buildSettlement20261110(ctx context.Context, tx *sql.Tx, account string, pc
 	return p, nil
 }
 
-func settlement20261110Service(cfg *config.Config, store performance.Store, client *market.MeridianClient) (*performance.Service, error) {
+func settlement20261110Service(cfg *config.Config, store performance.Store, client researchMarket) (*performance.Service, error) {
 	return performance.New(performance.Options{Store: store, Calendar: client, Market: client, FormulaVersion: cfg.Performance.FormulaVersion,
 		ETFT0FrictionRate: cfg.Performance.ETFT0FrictionRate, AutoToleranceCNY: cfg.Performance.AutoToleranceCNY, AutoToleranceBP: cfg.Performance.AutoToleranceBP,
 		WarningToleranceCNY: cfg.Performance.WarningToleranceCNY, WarningToleranceBP: cfg.Performance.WarningToleranceBP})
