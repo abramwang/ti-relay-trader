@@ -138,6 +138,8 @@ python3 scripts/check-readonly-release.py \
 
 2026-11-14后续基线修复：`TestPositionBaselineSeparateCashAndBatchClocks`、`TestPositionBaselineCashClockSkewUsesReceiveWindow`、`TestPositionBaselineRecoveryPublication`覆盖双时间证据、数据库六位精度、OC/Relay时钟微差、本机接收窗口、错误账户/代次/金额/数量、缺回包、失败/试算/不完整修复拒绝，且不能覆盖已有无效常规发布。`bash scripts/test-position-baseline-postgres.sh`启动仅Unix socket的临时PG，用TEMP表验证10001行分页、reconciliation_runs关联、失败发布和旧游标拒绝；无生产凭据、迁移或金融写入。本机服务器程序解包于`.runtime/futures-pg/server/usr/lib/postgresql/17/bin`，运行前用`RELAY_TEST_PG_BIN`显式指定该路径。在线GET验收沿用`sdk_position_baseline_live_smoke.py`，新审计字段保留在SDK的`baseline.raw`中。
 
+2026-11-14订单/成交覆盖：`go test ./cmd/relayctl -run 'TestResearch(Book|Request|TradePage)'`覆盖双向多重集合、501/2001/10001行、不吞重复、微元差、日期/账户隔离、命令sent_at及筛选检查、普通成交与划转分离、坏整页的逐条诊断仍保留失败。`DecodeTradeQueryRecords`复用原入库解析，无writer/Redis/写库或合成成交副作用。`RELAY_TEST_PG_BIN=... bash scripts/test-book-coverage-postgres.sh`在专用Unix socket空PG运行前32个迁移，验证501行跨页、跨账户/日过滤、repeatable-read、存储来源提取及只读事务拒绝写入；不读生产配置，也不在生产执行迁移。私有核验报告不进入git。
+
 2026-11-14封存输入离线重放：`go test ./cmd/relayctl -run TestResearchReplay`覆盖请求不匹配后不可恢复、输入耗尽、未支持错误失败、`sql.ErrNoRows`身份、并发快照按参数匹配且不跨查询边界、证券集合顺序/日期/重复数量、JSON大整数和微元精度、新算跨日成本不一致拒绝、金融写入/实时回退禁止、manifest和字节篡改拒绝。`RELAY_RESEARCH_INPUT_REPLAY=1`额外启用私有1234条输入的完整22日引擎验证，可用`-count=3`检查并发重复运行；它不调用DB或Meridian。详见[离线验收](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#封存输入离线重放验收)。
 
 2026-11-14实际输入采集：`go test ./cmd/relayctl -run TestFuyingResearchCapture`覆盖请求/返回值修改不污染记录、错误保留、序号/字节/SHA、0600与禁止覆盖、并发记录、容量失败及金融写入拒绝。设置`RELAY_RESEARCH_COST_FROZEN_REPLAY=1`后同一测试集额外核对本机冻结22日/972行、拒绝不完整链及识别0.000001成本差异。实际生产只读复算证据与限制见[采集记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#实际输入采集与成本复算)；这不是从封存输入离线运行完整引擎的验收，也不证明原柜台历史查询完整。

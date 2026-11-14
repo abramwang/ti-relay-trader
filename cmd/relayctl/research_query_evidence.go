@@ -41,18 +41,19 @@ type researchQueryAccount struct {
 }
 
 type researchQueryProof struct {
-	Step            string          `json:"step"`
-	MessageID       string          `json:"message_id"`
-	ReportedReplies int             `json:"reported_replies"`
-	ArchivedReplies int             `json:"archived_replies"`
-	Items           int             `json:"items"`
-	Finals          int             `json:"finals"`
-	ArchiveSHA      string          `json:"archive_sha256,omitempty"`
-	AssetReply      json.RawMessage `json:"asset_reply,omitempty"`
-	State           string          `json:"state"`
-	Flags           []string        `json:"flags"`
-	FirstReply      *time.Time      `json:"first_reply,omitempty"`
-	LastReply       *time.Time      `json:"last_reply,omitempty"`
+	Step            string                `json:"step"`
+	MessageID       string                `json:"message_id"`
+	ReportedReplies int                   `json:"reported_replies"`
+	ArchivedReplies int                   `json:"archived_replies"`
+	Items           int                   `json:"items"`
+	Finals          int                   `json:"finals"`
+	ArchiveSHA      string                `json:"archive_sha256,omitempty"`
+	AssetReply      json.RawMessage       `json:"asset_reply,omitempty"`
+	State           string                `json:"state"`
+	Flags           []string              `json:"flags"`
+	FirstReply      *time.Time            `json:"first_reply,omitempty"`
+	LastReply       *time.Time            `json:"last_reply,omitempty"`
+	BookCoverage    *researchBookCoverage `json:"book_coverage,omitempty"`
 }
 
 type researchQueryAttempt struct {
@@ -201,10 +202,14 @@ func reviewResearchQuery(step, action, result, environment, date string, route c
 }
 
 func readResearchReplies(ctx context.Context, tx *sql.Tx, account, message string) ([]researchArchivedReply, error) {
+	return readResearchArchiveRole(ctx, tx, account, message, "reply")
+}
+
+func readResearchArchiveRole(ctx context.Context, tx *sql.Tx, account, message, role string) ([]researchArchivedReply, error) {
 	if message == "" {
 		return nil, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT body,stream_key,COALESCE(parse_error,''),received_at FROM raw_stream_messages WHERE account_id=$1 AND origin_message_id=$2 AND stream_role='reply' ORDER BY received_at,raw_message_pk LIMIT 25001`, account, message)
+	rows, err := tx.QueryContext(ctx, `SELECT body,stream_key,COALESCE(parse_error,''),received_at FROM raw_stream_messages WHERE account_id=$1 AND origin_message_id=$2 AND stream_role=$3 ORDER BY received_at,raw_message_pk LIMIT 25001`, account, message, role)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +230,7 @@ func readResearchReplies(ctx context.Context, tx *sql.Tx, account, message strin
 	return result, rows.Err()
 }
 
-func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route config.AccountRouteConfig, date string) (researchQueryDay, error) {
+func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route config.AccountRouteConfig, date string, bookCoverage bool) (researchQueryDay, error) {
 	d := researchQueryDay{Date: date, Attempts: []researchQueryAttempt{}, MissingJobs: []string{}}
 	page, err := ledger.NewRepository(tx).GetPositionBaseline(ctx, ledger.PositionBaselineQuery{Environment: env, AccountID: route.AccountID, BrokerID: route.BrokerID, GatewayID: route.GatewayID, TradeDate: date, SnapshotType: "close", Limit: 1})
 	if err != nil {
@@ -277,6 +282,13 @@ func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route con
 		return d, errors.New("too many daily task attempts")
 	}
 	seenJobs := map[string]bool{}
+	var books researchDailyBooks
+	if bookCoverage {
+		books, err = readResearchDailyBooks(ctx, tx, route.AccountID, date)
+		if err != nil {
+			return d, err
+		}
+	}
 	for _, j := range jobs {
 		var accounts []researchQueryAccount
 		if len(j.accounts) > 0 {
@@ -300,7 +312,14 @@ func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route con
 				if err != nil {
 					return d, err
 				}
-				attempt.Queries = append(attempt.Queries, reviewResearchQuery(kind.Step, kind.Action, kind.Result, env, date, route, terminal, a.Freshness.StartedAt, j.finished.Time, raw))
+				proof := reviewResearchQuery(kind.Step, kind.Action, kind.Result, env, date, route, terminal, a.Freshness.StartedAt, j.finished.Time, raw)
+				if bookCoverage && j.name == "post_close_capture" && (kind.Step == "orders" || kind.Step == "fills") {
+					proof.BookCoverage, err = readResearchBookCoverage(ctx, tx, env, date, kind.Action, route, proof, raw, books)
+					if err != nil {
+						return d, err
+					}
+				}
+				attempt.Queries = append(attempt.Queries, proof)
 			}
 			d.Attempts = append(d.Attempts, attempt)
 		}
@@ -369,6 +388,7 @@ func runResearchQueryEvidence(args []string) error {
 	account := f.String("account", "", "explicit account")
 	version := f.String("version", "", "archived research version")
 	output := f.String("output", "", "new private evidence report")
+	bookCoverage := f.Bool("book-coverage", false, "also compare archived close query scope and core book rows; read-only")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -430,7 +450,7 @@ func runResearchQueryEvidence(args []string) error {
 	var days []researchQueryDay
 	counts := map[string]int{}
 	for _, date := range dates {
-		d, err := readResearchQueryDay(ctx, tx, string(cfg.Service.Environment), route, date)
+		d, err := readResearchQueryDay(ctx, tx, string(cfg.Service.Environment), route, date, *bookCoverage)
 		if err != nil {
 			return err
 		}
@@ -440,6 +460,26 @@ func runResearchQueryEvidence(args []string) error {
 		for _, a := range d.Attempts {
 			for _, q := range a.Queries {
 				counts[a.Job+":"+q.State]++
+				if q.BookCoverage != nil {
+					counts["request:"+q.BookCoverage.RequestState]++
+					counts["book:"+q.Step+":"+q.BookCoverage.Rows.State]++
+					counts["book:"+q.Step+":parsed_rows"] += q.BookCoverage.Rows.QueryRows
+					counts["book:"+q.Step+":ledger_rows"] += q.BookCoverage.Rows.BookRows
+					counts["book:"+q.Step+":matched_rows"] += q.BookCoverage.Rows.Matched
+					counts["book:"+q.Step+":invalid_records"] += len(q.BookCoverage.DecodeIssues)
+					for _, diff := range q.BookCoverage.Rows.Differences {
+						counts["book:"+q.Step+":"+diff.Kind]++
+					}
+					if q.BookCoverage.Transfers != nil {
+						counts["book:transfers:"+q.BookCoverage.Transfers.State]++
+						counts["book:transfers:parsed_rows"] += q.BookCoverage.Transfers.QueryRows
+						counts["book:transfers:ledger_rows"] += q.BookCoverage.Transfers.BookRows
+						counts["book:transfers:matched_rows"] += q.BookCoverage.Transfers.Matched
+						for _, diff := range q.BookCoverage.Transfers.Differences {
+							counts["book:transfers:"+diff.Kind]++
+						}
+					}
+				}
 			}
 		}
 		for _, missing := range d.MissingJobs {
@@ -451,6 +491,10 @@ func runResearchQueryEvidence(args []string) error {
 		return err
 	}
 	report := map[string]any{"schema": "relay.research_query_evidence.v1", "account_id": *account, "version_id": *version, "payload_sha256": v.PayloadSHA256, "environment": string(cfg.Service.Environment), "database": name, "observed_at": timeutil.Now(), "days": days, "summary": counts, "database_writes": 0, "broker_commands": 0, "cost_publishable": false, "economic_nav_publishable": false, "scope": "anchor and cost dates; task terminal/archive consistency and existing close position baseline; not order/fill book-row equality, next-day opening dependencies, or economic asset scope"}
+	if *bookCoverage {
+		report["book_coverage_requested"] = true
+		report["scope"] = "anchor and cost dates; archive completion and close-query versus current book core projections, including component transfers; not proof of broker-wide completeness, historical fees, next-day dependencies or economic asset scope"
+	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
 	}
