@@ -1040,3 +1040,43 @@ python3 scripts/audit-fuying13-component-cash.py \
 本轮已解释这9条记录的现金性质，不再将其视为待补的9份股票。下一步将本报告与10条无代码现金解释、封存复算、归属和成本语义共同绑定新候选；仅对精确身份与证据内容生效，源修订时失效，不改历史raw或按代码整批豁免。正式成本及经济NAV仍未发布，用户要求的券商总资产基准和资产分项待说明边界不变，不要求重复导出这些已有CSV。
 
 本轮新增6组测试（含23种身份/金额/时间/持仓反例及完整审计边界），全富盈Python159项与全Go测试通过。生产只读源观察`component-cash-source-check.json`显示六表27892行、当前锚点/归属未变。API2264828、worker2462706及交易关闭保持不变，无部署、迁移、柜台命令或金融写入，用户CSV/CTP材料未改。
+
+## 线上资金桥阻断的实际发布断点
+
+2026-11-14用户反馈“资产快照与资金桥从10月19日起阻断”，本轮通过本地API和正式域名只读核对，不进行重算落库或部署。
+
+### 日期和发布事实
+
+- 10-19实际有当前已发布记录：`performance_nav_pk=1317`、`broker_reconstructed_economic_nav.v1`、`status=provisional`，10-20 13:50:55+08创建，历史导出截止日为10-19。这是旧版历史账户净值，不是近几轮成本研究已发布；本轮没有重新确认该旧版经济口径完全正确。
+- `economic-nav?date_from=20261020&date_to=20261113`返回0条；正式域名的同期series将19个交易日标为blocked，首日10-20、末日11-13。因而准确边界是“19日之后尚无已发布账户NAV”，不是19日的资金查询失败。
+- `overlayPerformanceNAVSeries`在找不到正式NAV时，将旧日终快照转为`legacy_cash_snapshot_diagnostic`，附加`official_performance_nav_unavailable`、`cash_only_snapshot_not_performance_nav`、`excluded_from_official_performance_series`；净资产/收益显示值清零以防把柜台现金当净值。这些0不是数据库里的真实资产被清空。
+- 页面`performanceQualityChecks`把选中日blocked或区间缺失正式净值归入“资产快照与资金桥”。这个标签范围过宽，不能单凭它判断缺的是快照、现金还是未完成发布；本轮只定位，不改页面或遮盖阻断。
+
+### 10月20日线上只读预览
+
+| 检查项 | 实际返回 |
+| --- | --- |
+| 日初快照 | 09:01:38+08存在，现金34,528,567.38元、市值4,005,806.20元 |
+| 收盘快照 | 15:01:24+08存在，现金30,171,019.206791元、市值8,259,812.00元，32项持仓 |
+| 行情来源 | `meridian_1d_pre_close_and_close`，不是缺行情阻断 |
+| 券商资产基准 | `asset_basis.applied=false` |
+| 实际清算接口读数 | `receipt_count=0`、`receipt_amount=0`、`released_estimate=0` |
+| 模型待结资产 | 1,350,870.126734元，仍为估算 |
+| 收益归因残差 | 1,270,276.025元 |
+| 阻断标记 | `nav_contribution_residual_exceeds_warning`，`status=blocked` |
+
+这是当前正式服务代码对旧源数据的未发布预览，不是有效盈利结果。`service.go`在未应用已确认券商经济资产基准且归因残差超阈值时设blocked。`reconciliation.residual=0`只是同日临时对账字段，不能掩盖证券/策略归因的1,270,276.025元残差。
+
+预览同时有`order_fee_day_incomplete`、`missing_repo_fee`和`etf_settlement_pending`等标记。此前11-10资产导入明确只确认券商原始总额，保留`economic_nav_base_confirmed=false`及`settlement_overlay_status=pending_review`；通用计算不会自动把研究报告中的现金解释和待结释放当成已确认记账。近期9条成分现金及10条特殊现金的解释、成本连续性、离线复算也都尚未接入正式NAV。因此不是“这批修复已经生效但页面没刷新”，而是**证据核验与正式账户净值发布之间尚有缺口**。
+
+不能把上述135万元估算直接全部删除，也不能用残差补造资金流；现金在晚间入账不等于15:01已包含该款，仍须按实际时点和日终券商基准衔接。继续保留券商总资产，未解释分项和源日/记账日关系独立核验。后续优先建立10-20起账户层正式候选与10-19旧历史版本的交界复核，而不是无限延伸成本研究后再把它误称资金桥已经修复。成本分桶及逐证券归因另行验收；不直接改确认标记、不批量rebuild。
+
+### 留存证据
+
+目录`outputs/recovery/fuying13_nav_block_20261114/`，文件0600：
+
+- `nav-1019.json`、`nav-range.json`：旧记录及19日后的发布空集；后者SHA `ced36394c868e5fd0df1a41688bd15193d6dd42e54947481554ee1c89f4dced6`。
+- `series.json`、`domain-series.json`：本地及域名的日级状态；域名报告SHA `8bcf007efd7f24e6edcb757c3a1d10283b27ac6514c5b234cfde173fe006abf7`。
+- `daily-1020.json`、`preview-1020.json`、`reconcile-1019.json`、`reconcile-1020.json`：快照、模型和已发布对账记录；preview SHA `a0703149bc1118c6d2492446dbd85cd619d914da445d8017b197693ceceb9878`，`persisted=false`。已发布对账查询为空，不把预览中的临时ID当已落库对账。
+
+本轮仅GET接口核验、代码阅读和恢复文档更新，没有代码行为变更，因此未重跑测试或发布服务；生产进程及交易关闭状态不变。
