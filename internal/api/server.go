@@ -38,6 +38,7 @@ type Dependencies struct {
 	Settlements     SettlementStore
 	Accounts        AccountAliasStore
 	Performance     PerformanceService
+	ResearchCosts   ResearchCostService
 	Operations      OperationsService
 	CredentialAdmin CredentialAdminService
 	CredentialToken string
@@ -214,6 +215,7 @@ type Server struct {
 	settles         SettlementStore
 	aliases         AccountAliasStore
 	perf            PerformanceService
+	researchCosts   ResearchCostService
 	ops             OperationsService
 	credentialAdmin CredentialAdminService
 	credentialToken string
@@ -255,6 +257,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 		settles:         deps.Settlements,
 		aliases:         deps.Accounts,
 		perf:            deps.Performance,
+		researchCosts:   deps.ResearchCosts,
 		ops:             deps.Operations,
 		credentialAdmin: deps.CredentialAdmin,
 		credentialToken: strings.TrimSpace(deps.CredentialToken),
@@ -1729,6 +1732,16 @@ func (s *Server) handleAccountPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch parts[2] {
+		case "research-cost-versions", "research-cost-comparison":
+			if len(parts) != 3 {
+				httpx.WriteNotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodGet {
+				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
+				return
+			}
+			s.handleResearchCosts(w, r, accountID, parts[2] == "research-cost-versions")
 		case "contributions":
 			if len(parts) != 3 || r.Method != http.MethodGet {
 				httpx.WriteMethodNotAllowed(w, r, http.MethodGet)

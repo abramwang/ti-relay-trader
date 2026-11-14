@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -142,6 +143,10 @@ func TestFuyingResearchImportPostgres(t *testing.T) {
 	base := append([]dbmigrations.Migration(nil), all[:32]...)
 	if _, err := dbmigrations.NewRunner(db).Up(ctx, base); err != nil {
 		t.Fatal(err)
+	}
+	reader := &performance.ResearchCostReader{DB: db}
+	if _, err := reader.ListVersions(ctx, b.AccountID); !errors.Is(err, performance.ErrResearchCostUnavailable) {
+		t.Fatal("missing research schema must not migrate", err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO accounts(account_id,broker_id) VALUES($1,'huaxin')`, fuying13Account); err != nil {
 		t.Fatal(err)
@@ -282,12 +287,29 @@ func TestFuyingResearchImportPostgres(t *testing.T) {
 		}
 	}
 	t.Run("read-only comparison and stale evidence", func(t *testing.T) {
+		versions, err := reader.ListVersions(ctx, b.AccountID)
+		if err != nil || len(versions) != 1 || versions[0].VersionID != b.VersionID || versions[0].PayloadSHA256 != v.PayloadSHA256 {
+			t.Fatal("version listing", versions, err)
+		}
+		if empty, err := reader.ListVersions(ctx, "other-account"); err != nil || len(empty) != 0 || empty == nil {
+			t.Fatal("account-isolated listing", empty, err)
+		}
+		if _, err := reader.Compare(ctx, "other-account", b.VersionID); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatal("cross-account comparison", err)
+		}
+		if _, err := reader.Compare(ctx, b.AccountID, ""); err == nil {
+			t.Fatal("implicit version accepted")
+		}
+		webComparison, err := reader.Compare(ctx, b.AccountID, b.VersionID)
+		if err != nil || webComparison.Counts.ResearchOnly != 972 || !webComparison.AnchorAndAllocationsMatch || webComparison.NAVPublishable {
+			t.Fatal("read-only web comparison", webComparison.Counts, err)
+		}
 		tx := begin(false)
 		if _, err := readResearchCostComparison(ctx, tx, b.AccountID, b.VersionID); err == nil {
 			t.Fatal("write transaction accepted")
 		}
 		tx.Rollback()
-		tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelReadCommitted})
+		tx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelReadCommitted})
 		if err != nil {
 			t.Fatal(err)
 		}

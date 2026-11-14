@@ -167,3 +167,16 @@ Go 侧只负责 `embed` 打包、`/trade` 路由和 `/assets/` 静态资源暴�
 1. 在 Meridian 提供更完整证券主数据搜索能力后，增强代码输入的名称/拼音补全。
 2. 增加订单详情里的前置原始 reply/event 链路查看。
 3. 在现有页面和绩效 Playwright 冒烟测试上继续扩展账户切换、异常接口和写权限护栏场景。
+
+## 独立研究成本视图
+
+2026-11-14新增 `/trade#research`，位于侧栏“分析 / 研究成本”，不替代正式绩效。选择账户后只读取版本目录，必须显式选择版本并查询，无默认latest。支持交易日、状态、成本类别、代码/成本桶筛选，日期/代码/数量/成本排序，以及20/50/100条分页。
+
+详情保留研究和正式成本的全部字段，缺失显示`--`；申赎成本转出不称作亏损，成分股估值基数不称作买入成本。CSV导出当前筛选的全部行而非当前页，包含账户/版本/SHA、审计一致性、双方期末数量/成本及整数微元差额，缺失为空。切换账户、版本、离开视图、请求失败都会撤销旧请求并清空结果，避免跨账户残留。
+
+只读接口：
+
+- `GET /v1/accounts/{account_id}/performance/research-cost-versions`
+- `GET /v1/accounts/{account_id}/performance/research-cost-comparison?version_id=...`
+
+账户必须存在配置路由，版本归属由数据库查询限定；所有结果`Cache-Control: no-store`。无写入接口，无在线迁移，无行情请求或正式计算依赖。`anchor_and_allocations_match`只验证期初成本及活动分配审计，不代表所有订单/成交/行情和清算事实已复核；`economic_nav_publishable=false`保持不变。完整边界与复验见[研究成本终端验收](FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本终端与只读接口)。

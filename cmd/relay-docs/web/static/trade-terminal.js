@@ -1067,6 +1067,7 @@
     if (viewToken === "performance") {
       return "performance";
     }
+    if (viewToken === "research") return "research";
     if (viewToken === "snapshots") {
       return "snapshots";
     }
@@ -1101,7 +1102,7 @@
   }
 
   function setActiveView(view) {
-    if (!["trade", "batch", "orders", "asset", "performance", "snapshots", "logs", "performance-settings"].includes(view)) {
+    if (!["trade", "batch", "orders", "asset", "performance", "research", "snapshots", "logs", "performance-settings"].includes(view)) {
       view = "trade";
     }
     if (view === "logs") {
@@ -1120,6 +1121,8 @@
     els.shell.classList.toggle("view-snapshots", view === "snapshots");
     els.shell.classList.toggle("view-logs", view === "logs");
     els.shell.classList.toggle("view-performance-settings", view === "performance-settings");
+    els.shell.classList.toggle("view-research", view === "research");
+    notifyResearchContext();
     for (const link of els.viewLinks) {
       link.classList.toggle("active", link.dataset.viewLink === view);
     }
@@ -2514,7 +2517,16 @@
     }
   }
 
+  function notifyResearchContext() {
+    const account = state.accounts.find((item) => item.account_id === state.activeAccount);
+    window.dispatchEvent(new CustomEvent("relay:research-context", {detail: {
+      active: state.activeView === "research", accountID: state.activeAccount || "",
+      label: account ? accountLabel(account) : ""
+    }}));
+  }
+
   function renderAccounts() {
+    notifyResearchContext();
     els.accountTabs.innerHTML = "";
     els.orderAccount.innerHTML = "";
     els.batchAccount.innerHTML = "";
@@ -7598,7 +7610,7 @@
         await loadQuoteForInput();
       }
       ensurePerformanceDefaults();
-      await loadAccountData();
+      if (state.activeView !== "research") await loadAccountData();
       state.initialized = true;
       if (state.activeView === "performance" || state.activeView === "snapshots") {
         await loadPerformance();

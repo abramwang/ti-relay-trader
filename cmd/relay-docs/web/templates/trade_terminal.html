@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
   <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261020-retained-capital-overlay">
+  <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
   <div class="terminal-shell view-trade" id="terminalShell">
@@ -56,6 +57,7 @@
         <a href="/trade#asset" data-view-link="asset"><span>▥</span>资金持仓</a>
         <span class="terminal-nav-label">分析</span>
         <a href="/trade#performance" data-view-link="performance"><span>▦</span>绩效分析</a>
+        <a href="/trade#research" data-view-link="research"><span>◫</span>研究成本</a>
         <a href="/trade#snapshots" data-view-link="snapshots"><span>◫</span>日终快照</a>
         <a href="/trade#logs" data-view-link="logs"><span>≡</span>交易日志</a>
         <span class="terminal-nav-label">相关入口</span>
@@ -72,6 +74,28 @@
     </aside>
 
     <main class="terminal-main">
+      <section class="research-cost-panel" id="researchCostPanel" aria-label="研究成本对照">
+        <header class="research-heading"><div><h2>研究成本对照 <span class="research-badge">只读 · 非正式净值</span></h2><div id="researchAccount">--</div></div><a href="/trade#performance" data-view-link="performance">正式绩效 →</a></header>
+        <form id="researchForm" class="research-controls">
+          <label class="research-version-label">研究版本<select id="researchVersion" required disabled><option value="">尚未读取版本</option></select></label>
+          <button id="researchLoad" type="submit" disabled>查询对照</button>
+          <button id="researchExport" type="button" disabled>导出 CSV</button>
+        </form>
+        <div class="research-status" id="researchStatus" role="status" aria-live="polite">等待读取账户</div>
+        <div class="research-summary" id="researchSummary"></div>
+        <div class="research-evidence" id="researchEvidence"></div>
+        <div class="research-filters">
+          <label>交易日<select id="researchDate"><option value="">全部日期</option></select></label>
+          <label>对照状态<select id="researchOutcome"><option value="">全部状态</option><option value="research_only">仅研究记录</option><option value="stored_only">仅正式记录</option><option value="changed">数值 / 口径变化</option><option value="metadata_only">仅元数据变化</option><option value="equal">完全一致</option></select></label>
+          <label>成本类别<select id="researchBasis"><option value="">全部类别</option><option value="core_cost">普通底仓成本</option><option value="redemption_cost_release_not_loss">申赎成本转出</option><option value="t0_residual_cost">T0 余仓成本</option><option value="component_marked_basis_not_acquisition_cost">成分股估值基数</option></select></label>
+          <label>证券 / 成本桶<input id="researchSearch" type="search" placeholder="代码或订单编号" autocomplete="off"></label>
+        </div>
+        <div class="research-table-wrap" tabindex="0" aria-label="成本对照明细">
+          <table class="research-table"><thead><tr><th><button type="button" data-research-sort="trade_date">交易日 ↕</button></th><th><button type="button" data-research-sort="security_id">证券代码 ↕</button></th><th>成本类别</th><th>对照状态</th><th><button type="button" data-research-sort="quantity">期末数量 ↕</button></th><th><button type="button" data-research-sort="cost">研究期末成本 ↕</button></th><th>正式期末成本</th><th>成本差额</th><th>详情</th></tr></thead><tbody id="researchRows"><tr><td colspan="9" class="research-empty">尚未选择版本</td></tr></tbody></table>
+        </div>
+        <div class="research-pagination"><span id="researchCount">0 条</span><label>每页<select id="researchPageSize"><option>20</option><option selected>50</option><option>100</option></select></label><button type="button" id="researchPrev" title="上一页" aria-label="上一页" disabled>‹</button><span id="researchPage">0 / 0</span><button type="button" id="researchNext" title="下一页" aria-label="下一页" disabled>›</button></div>
+        <details class="research-movements"><summary id="researchMovementCount">成本转移与舍入</summary><div id="researchMovements"></div></details>
+      </section>
       <section class="trade-panel market-panel" id="marketPanel" aria-label="行情与下单">
         <div class="quote-head">
           <div>
@@ -873,6 +897,7 @@
     window.RELAY_PUBLIC_URL = "{{.PublicURL}}";
   </script>
   <script defer src="/assets/echarts.min.js"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261109-day-order-expiry"></script>
+  <script defer src="/assets/research-costs.js?v=20261114-1"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261114-research-costs"></script>
 </body>
 </html>

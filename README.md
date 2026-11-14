@@ -11,9 +11,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | `2026-11-08 22:07 Asia/Shanghai` 按用户授权切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立 worker 正常；不是 CTP |
-| 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。API/worker及Redis/DB健康；11-14仅执行研究表000042，已执行集合为1..32+42，33..41仍未执行。未主动报撤单、重启服务或采集CTP |
+| 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。11-14仅发布API/研究页面，worker与OC未重启；迁移集合仍为1..32+42，33..41未执行，无主动报撤单或CTP采集 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-14 Asia/Shanghai` 768已存研究版本完成逐日只读对照及CSV导出：22日/972行均为research_only，对应正式成本尚未写入，不是972处计算错误；锚点/11条归属未变化。未改页面/服务/金融表，正式NAV与资金桥阻断不变，迁移仍为1..32+42 |
+| 最近确认 | `2026-11-14 Asia/Shanghai` 已发布 `/trade#research` 独立研究成本页及两个GET接口，显式选择版本、筛选/排序/分页/详情/CSV。768的22日/972行均仅研究记录，不是972处错误；正式成本/NAV未写入，券商资产范围与资金桥阻断不变 |
 | 更新时间 | `2026-11-14` |
 
 新线程按以下顺序恢复：
@@ -26,7 +26,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-14` 已实现`performance-research-cost-compare --account ... --version ...`：只读repeatable-read回读完整版本、当前锚点/活动审计和逐日正式成本，区分数值/口径变化、元数据差异、单侧缺失；新增/修订/撤销审计使旧版明确标记不匹配，不覆盖旧版。768结果941条CORE、23条申赎释放、4条T0余仓、4条成分估值均无正式对应行，缺失不按0算差额；3次实读结果一致，175..224ms。JSON/CSV在`outputs/recovery/fuying13_cost_compare_20261114/final.{json,csv}`，全Go/race/vet及临时PG通过。下一步接终端独立只读研究对照视图，不接正式NAV；[明细与边界](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#逐日研究成本只读对照)。
+- `2026-11-14` 独立[研究成本页](http://relay-trader.quantstage.com/trade#research)已发布：账户/版本必须显式选择，不默认latest；日期/证券/成本类别/状态筛选、排序、分页和当前筛选全量CSV，缺失不补零，审计变化单列。API与CLI复用只读repeatable-read读取，不调用正式计算或行情。全Go/race/vet、隔离PG及桌面/手机Playwright通过，生产验收证据`outputs/recovery/research_cost_web_20261114/production/`；仅API更新为PID1972284，worker仍PID2462706。新API可解码日期精度v2，但研究版未接正式任务，preview-only持久化保护保留。下一步补研究版本源事实新鲜度与正式成本发布预检；券商总资产基准不改，资产分项未说明前不发布768正式NAV。详见[页面与部署边界](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本终端与只读接口)。
+
+- `2026-11-14` CLI `performance-research-cost-compare --account ... --version ...`已验：22日/972行的研究/正式成本对照、当前期初与活动归属校验，3次实读一致、175..224ms。缺失不按0计算差额，研究正文不覆盖；JSON/CSV在`outputs/recovery/fuying13_cost_compare_20261114/final.{json,csv}`，现已由上述独立页面复用。[明细与边界](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#逐日研究成本只读对照)。
 
 - `2026-11-14` 受控研究导入已执行：`performance-fuying13-cost-import-20261114`默认只读，显式apply检查备份/数据库/固定正文与迁移SHA/完整锚点及11条归属payload。生产只新增000042及版本`fuying13-cost-research-20261114-v1`，22日/972行回读一致，重复apply0新增，1..32+42之外无登记；API/worker未重启，旧在线v1读取不变。备份`outputs/backups/relay_trader_20261114T092728+0800.dump`，证据`outputs/recovery/fuying13_cost_import_20261114/`；[执行记录](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#生产独立归档执行结果)。下一步接显式版本的只读成本对照与修订失效提示，不能自动喂给正式NAV；资产分项仍待券商说明。
 

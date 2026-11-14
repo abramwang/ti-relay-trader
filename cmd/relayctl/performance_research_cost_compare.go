@@ -12,56 +12,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/performance"
 	"ti-relay-trader/internal/timeutil"
 )
 
 func readResearchCostComparison(ctx context.Context, tx *sql.Tx, account, version string) (performance.ResearchCostComparison, error) {
-	for _, s := range []string{`SET LOCAL search_path TO public`, `SET LOCAL statement_timeout='30s'`, `SET LOCAL lock_timeout='5s'`} {
-		if _, err := tx.ExecContext(ctx, s); err != nil {
-			return performance.ResearchCostComparison{}, err
-		}
-	}
-	var readOnly, isolation string
-	if err := tx.QueryRowContext(ctx, `SELECT current_setting('transaction_read_only'),current_setting('transaction_isolation')`).Scan(&readOnly, &isolation); err != nil || readOnly != "on" || isolation != "repeatable read" {
-		return performance.ResearchCostComparison{}, errors.New("comparison requires read-only repeatable-read transaction")
-	}
-	repo := ledger.NewRepository(tx)
-	v, err := repo.GetResearchCostVersion(ctx, account, version)
-	if err != nil {
-		return performance.ResearchCostComparison{}, err
-	}
-	b, err := performance.DecodeResearchCostVersion(v)
-	if err != nil {
-		return performance.ResearchCostComparison{}, err
-	}
-	opening, err := repo.ListPositionCostStates(ctx, ledger.PositionCostStateQuery{AccountID: account, BeforeDate: b.Dates[0]})
-	if err != nil {
-		return performance.ResearchCostComparison{}, err
-	}
-	var active []ledger.T0Allocation
-	var stored []ledger.PositionCostState
-	for _, date := range b.Dates {
-		history, err := repo.ListT0AllocationHistory(ctx, account, date)
-		if err != nil {
-			return performance.ResearchCostComparison{}, err
-		}
-		items, err := ledger.ResolveT0Allocations(history)
-		if err != nil {
-			return performance.ResearchCostComparison{}, err
-		}
-		active = append(active, items...)
-		rows, err := repo.ListPositionCostStates(ctx, ledger.PositionCostStateQuery{AccountID: account, TradeDate: date})
-		if err != nil {
-			return performance.ResearchCostComparison{}, err
-		}
-		stored = append(stored, rows...)
-		if len(stored) > 100000 || len(active) > 10000 {
-			return performance.ResearchCostComparison{}, errors.New("comparison read budget exceeded")
-		}
-	}
-	return performance.CompareResearchCostVersion(v, opening, active, stored)
+	return performance.ReadResearchCostComparison(ctx, tx, account, version)
 }
 
 func runResearchCostCompare(args []string) error {

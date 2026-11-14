@@ -132,6 +132,21 @@ python3 scripts/check-readonly-release.py \
 
 脚本默认禁用系统 HTTP 代理，避免本机 `127.0.0.1:9092` 被代理环境误转发；也可以通过 `--base-url http://relay-trader.quantstage.com` 对最终服务口径做同样检查。
 
+## 研究成本只读页面
+
+2026-11-14新增：
+
+```bash
+go test ./internal/api -run TestResearchCostRoutes
+RELAY_TEST_PG_BIN="$PWD/.runtime/futures-pg/server/usr/lib/postgresql/17/bin" \
+  RELAY_RESEARCH_COST_FROZEN_REPLAY=1 bash scripts/test-research-cost-postgres.sh
+.venv/bin/python tests/integration/research_cost_visual_smoke.py \
+  --base-url http://relay-trader.quantstage.com \
+  --output outputs/recovery/research_cost_web_check
+```
+
+PG脚本仅用临时Unix socket数据库，完整回放需要本地冻结证据。页面测试显式读取768的`fuying13-cost-research-20261114-v1`，检查22日/972行、筛选/排序/分页/CSV、桌面/手机、空账户版本目录及跨账户取消。浏览器拦截所有非GET/HEAD请求；审计变化、微元差和错误响应使用合成GET替身，不改变生产账表。报告区分实际数据读取和合成边界测试，无正式NAV发布验收含义。
+
 ## 后续计划
 
 2026-10-27绩效修复：`go test ./internal/performance ./cmd/relayctl ./internal/api ./internal/ledger` 覆盖PCF整倍委托、底仓排除、显式分组、真实歧义、连续内存预览与源资金时间门禁。`TestBrokerCashTimestampReadOnly` 使用单独的 `RELAY_CASH_TIME_READONLY_DATABASE_URL` 显式启用，只读事务验证CTE及两条2026-10生产历史样本；不得使用会建表写入的其他集成测试开关替代。详见 `docs/PERFORMANCE_REPAIR_PREVIEW_20261027.md`。
