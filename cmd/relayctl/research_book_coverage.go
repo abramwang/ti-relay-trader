@@ -58,11 +58,61 @@ type researchBookCoverage struct {
 }
 
 type researchDecodeIssue struct {
-	MessageID  string          `json:"message_id"`
-	Collection string          `json:"collection"`
-	Index      int             `json:"index"`
-	Error      string          `json:"error"`
-	Raw        json.RawMessage `json:"raw"`
+	MessageID  string                 `json:"message_id"`
+	Collection string                 `json:"collection"`
+	Index      int                    `json:"index"`
+	Error      string                 `json:"error"`
+	Raw        json.RawMessage        `json:"raw"`
+	Parent     *researchSpecialParent `json:"parent_order_review,omitempty"`
+}
+
+type researchSpecialParent struct {
+	State string           `json:"state"`
+	Order *researchBookRow `json:"order,omitempty"`
+}
+
+// The parent explains identity only. Never repair the failed fill or infer cash.
+func reviewResearchSpecialParent(issue researchDecodeIssue, account, date string, orders []researchBookRow) *researchSpecialParent {
+	p := &researchSpecialParent{State: "unproven"}
+	var raw struct {
+		Account  string  `json:"account_id"`
+		Date     string  `json:"trade_date"`
+		Gateway  string  `json:"gateway_order_id"`
+		Stream   string  `json:"order_stream_id"`
+		OrderID  int64   `json:"order_id"`
+		Symbol   string  `json:"symbol"`
+		Exchange string  `json:"exchange"`
+		Side     string  `json:"trade_side"`
+		Business string  `json:"business_type"`
+		Qty      int64   `json:"qty"`
+		Price    float64 `json:"price"`
+		Basket   string  `json:"basket_id"`
+	}
+	if json.Unmarshal(issue.Raw, &raw) != nil || issue.Collection != "items" || (raw.Account != account && raw.Account != account+"01") || raw.Gateway == "" || raw.Stream == "" || raw.OrderID <= 0 || raw.Symbol != "" || raw.Exchange != "SH" || raw.Side != "R" || raw.Business != "E" || raw.Qty != 1 || raw.Price <= 0 {
+		return p
+	}
+	key := researchBookKey(account, raw.Date, raw.Gateway, "")
+	if key != researchBookKey(account, date, raw.Gateway, "") {
+		return p
+	}
+	count := 0
+	for _, o := range orders {
+		if o.Key != key {
+			continue
+		}
+		count++
+		p.Order = &researchBookRow{Key: o.Key, Fields: o.Fields}
+	}
+	if count != 1 {
+		p.Order = nil
+		return p
+	}
+	f := p.Order.Fields
+	if fmt.Sprint(f["order_id"]) != strconv.FormatInt(raw.OrderID, 10) || f["order_stream_id"] != raw.Stream || fmt.Sprint(f["exchange"]) != raw.Exchange || fmt.Sprint(f["trade_side"]) != raw.Side || fmt.Sprint(f["business_type"]) != raw.Business || fmt.Sprint(f["status"]) != "filled" || f["is_terminal"] != true || raw.Basket != "etfarb#"+fmt.Sprint(f["symbol"]) {
+		return p
+	}
+	p.State = "unique_redemption_parent_identity"
+	return p
 }
 
 type researchDailyBooks struct {
@@ -298,7 +348,7 @@ func inspectResearchTradePage(e redisstream.EntryEnvelope) ([]trading.Order, []t
 			copy.Payload, _ = json.Marshal(map[string]any{"items": []json.RawMessage{}, "component_transfers": []json.RawMessage{}, collection: []json.RawMessage{item}})
 			o, f, t, err := redisstream.DecodeTradeQueryRecords(copy)
 			if err != nil {
-				issues = append(issues, researchDecodeIssue{e.MessageID, collection, index, err.Error(), item})
+				issues = append(issues, researchDecodeIssue{MessageID: e.MessageID, Collection: collection, Index: index, Error: err.Error(), Raw: item})
 				continue
 			}
 			orders, fills, transfers = append(orders, o...), append(fills, f...), append(transfers, t...)
@@ -355,6 +405,11 @@ func readResearchBookCoverage(ctx context.Context, tx *sql.Tx, env, date, action
 		var key []string
 		if json.Unmarshal([]byte(row.Key), &key) != nil || len(key) != 4 || key[0] != route.AccountID || key[1] != date || key[2] == "" {
 			c.Flags = append(c.Flags, "record_scope_unproven")
+		}
+	}
+	if route.BrokerID == "huaxin" && action == redisstream.ActionFillList {
+		for i := range c.DecodeIssues {
+			c.DecodeIssues[i].Parent = reviewResearchSpecialParent(c.DecodeIssues[i], route.AccountID, date, books.Orders)
 		}
 	}
 	if action == redisstream.ActionOrderList {
