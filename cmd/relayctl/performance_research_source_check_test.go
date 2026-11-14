@@ -14,7 +14,7 @@ import (
 )
 
 func TestFuyingResearchSourceArgumentGuards(t *testing.T) {
-	for _, args := range [][]string{nil, {"--apply"}, {"--config", "missing", "--account", "a", "--version", " v", "--output", "x"}, {"--config", "missing", "--account", "a", "--version", "v", "--output", "x", "extra"}} {
+	for _, args := range [][]string{nil, {"--apply"}, {"--publication-review", "--apply"}, {"--publication-review", "--persist"}, {"--config", "missing", "--account", "a", "--version", " v", "--output", "x"}, {"--config", "missing", "--account", "a", "--version", "v", "--output", "x", "extra"}} {
 		if err := runResearchSourceCheck(args); err == nil {
 			t.Fatal("unsafe args accepted")
 		}
@@ -61,6 +61,21 @@ func checkResearchSourcePostgres(t *testing.T, db *sql.DB, b performance.Researc
 	before, err := fuyingResearchFingerprints(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	sourceReview, err := performance.ReviewResearchSources(first, nil, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publication, err := performance.ReviewResearchCostPublication(v, c, sourceReview)
+	if err != nil || publication.CostPublishable || publication.NAVPublishable || publication.DatabaseWrites != 0 || publication.BrokerCommands != 0 || publication.Structure.Rows != b.Review.Rows {
+		t.Fatal("publication inventory", err)
+	}
+	publicationPath := filepath.Join(t.TempDir(), "publication-review.json")
+	if err := writeETFTransferReviewFile(publicationPath, publication); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readResearchSourceBaseline(publicationPath); err == nil {
+		t.Fatal("publication inventory mistaken for source observation")
 	}
 	// The historical source rows are initially empty; empty is not proof of
 	// a complete broker response or evidence that the product was flat.

@@ -49,6 +49,7 @@ func runResearchSourceCheck(args []string) error {
 	version := f.String("version", "", "explicit archived research version")
 	output := f.String("output", "", "new private source preflight JSON")
 	baseline := f.String("baseline", "", "optional previous observation JSON; not an original calculation manifest")
+	publication := f.Bool("publication-review", false, "include read-only cost semantics and publication gates; never publish")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -114,11 +115,20 @@ func runResearchSourceCheck(args []string) error {
 	if err != nil {
 		return err
 	}
+	var result any = report
+	summary := report.Summary()
+	if *publication {
+		review, err := performance.ReviewResearchCostPublication(archived, comparison, report)
+		if err != nil {
+			return err
+		}
+		result, summary = review, review.Summary()
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if err := writeETFTransferReviewFile(*output, report); err != nil {
+	if err := writeETFTransferReviewFile(*output, result); err != nil {
 		return err
 	}
-	return writeJSON(report.Summary())
+	return writeJSON(summary)
 }
