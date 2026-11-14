@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestDecodePositionQueryRecordsReadOnly(t *testing.T) {
+	e := EntryEnvelope{Protocol: "relay.stream.v1", MessageType: "reply", Action: ActionAccountPositions, ResultType: "position_page", Status: "completed", Routing: Routing{AccountID: "a"}, Payload: json.RawMessage(`{"items":[{"account_id":"a01","symbol":"600000","exchange":"SH","quantity":100,"sellable_qty":0}]}`)}
+	before := string(e.Payload)
+	ps, err := DecodePositionQueryRecords(e)
+	if err != nil || len(ps) != 1 || ps[0].AccountID != "a" || ps[0].Quantity != 100 || string(e.Payload) != before {
+		t.Fatal(ps, err)
+	}
+	for _, mutate := range []func(*EntryEnvelope){func(e *EntryEnvelope) { e.Status = "failed" }, func(e *EntryEnvelope) { e.Action = ActionOrderList }, func(e *EntryEnvelope) { e.ResultType = "fill_page" }, func(e *EntryEnvelope) { e.MessageType = "event" }, func(e *EntryEnvelope) { e.Payload = json.RawMessage(`{"items":[{}]}`) }} {
+		bad := e
+		mutate(&bad)
+		if _, err := DecodePositionQueryRecords(bad); err == nil {
+			t.Fatal("invalid page")
+		}
+	}
+}
+
 func TestDecodeTradeQueryRecordsReadOnly(t *testing.T) {
 	e := EntryEnvelope{Protocol: "relay.stream.v1", MessageType: "reply", Status: "completed", Action: ActionOrderList, ResultType: "order_page", Payload: json.RawMessage(`{"items":[]}`)}
 	o, f, tr, err := DecodeTradeQueryRecords(e)

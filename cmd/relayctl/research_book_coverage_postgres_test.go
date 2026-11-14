@@ -70,6 +70,10 @@ func TestResearchBookCoveragePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
+	baseline, positions, err := readResearchOpeningBaseline(ctx, tx, "production", config.AccountRouteConfig{AccountID: "a", BrokerID: "huaxin", GatewayID: "g"}, "2026-10-12")
+	if err != nil || baseline.Completeness == "complete" || baseline.MissingSecurityMeansZero || len(positions) != 0 {
+		t.Fatal("missing opening dependency must not prove empty", baseline, err)
+	}
 	day := researchQueryDay{Date: "2026-10-12", Attempts: []researchQueryAttempt{{Queries: []researchQueryProof{{Step: "fills", BookCoverage: &researchBookCoverage{Rows: researchBookComparison{Differences: []researchBookDifference{diff}}}}}}}}
 	if err := attachResearchEventEvidence(ctx, tx, "production", config.AccountRouteConfig{AccountID: "a", BrokerID: "huaxin", GatewayID: "g"}, &day); err != nil {
 		t.Fatal(err)

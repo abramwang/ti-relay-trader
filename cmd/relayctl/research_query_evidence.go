@@ -396,6 +396,7 @@ func runResearchQueryEvidence(args []string) error {
 	output := f.String("output", "", "new private evidence report")
 	bookCoverage := f.Bool("book-coverage", false, "also compare archived close query scope and core book rows; read-only")
 	eventCoverage := f.Bool("event-coverage", false, "link book-only records to independent event archives and inspect repo cash timing; requires book-coverage")
+	openingCoverage := f.Bool("opening-coverage", false, "compare prior complete close, archived pre-open positions and research opening quantities; production Huaxin only")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -415,6 +416,9 @@ func runResearchQueryEvidence(args []string) error {
 	route, ok := cfg.AccountRoute(*account)
 	if !ok {
 		return errors.New("account route not configured")
+	}
+	if *openingCoverage && (cfg.Service.Environment != config.EnvironmentProduction || route.BrokerID != "huaxin") {
+		return errors.New("opening review is limited to production Huaxin A-share evidence")
 	}
 	parsed, err := pgconn.ParseConfig(cfg.Database.DSN)
 	if err != nil || cfg.Database.ExpectedName == "" || parsed.Database != cfg.Database.ExpectedName {
@@ -503,6 +507,16 @@ func runResearchQueryEvidence(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "query evidence %s: baseline=%s attempts=%d\n", date, d.Baseline.Completeness, len(d.Attempts))
 	}
+	var openings []researchOpeningReview
+	if *openingCoverage {
+		openings, err = readResearchOpeningEvidence(ctx, tx, string(cfg.Service.Environment), route, b, days)
+		if err != nil {
+			return err
+		}
+		for _, r := range openings {
+			counts["opening:"+r.State]++
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -514,6 +528,13 @@ func runResearchQueryEvidence(args []string) error {
 	if *eventCoverage {
 		report["event_coverage_requested"] = true
 		report["scope"] = "historical query/core book projections; independent event evidence for book-only orders/fills and cash timing for matched query-external repos; no economic cash scope or cost/NAV publication approval"
+	}
+	if *openingCoverage {
+		report["opening_coverage_requested"] = true
+		report["opening_reviews"] = openings
+		report["research_cost_structural_review"] = b.Review
+		report["scope"] = "historical query evidence with complete prior close, pre-auction position quantities and research opening buckets; optional book/event checks retain their own scope; no financial publication approval"
+		report["opening_scope"] = "adjacent dates in the frozen research chain; original complete pre-auction query quantities versus complete prior close and summed research opening buckets; no broker-cost, cash, current open publication, corporate-action or NAV approval"
 	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err

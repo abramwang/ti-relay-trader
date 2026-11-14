@@ -144,6 +144,8 @@ python3 scripts/check-readonly-release.py \
 
 2026-11-14特殊申赎解释：`TestResearchSpecialParent`核对独立父单身份及Go类型化枚举，不回写坏回报。`python3 -m unittest discover -s tests/unit -p 'test_fuying13_special_records.py'`验证现金拆分多重集合、零数量现金腿、错误身份/日期/金额/时间、缺项/重复/借用、资金桥和原始报告SHA，越出成交/交割导出范围明确标记未覆盖。全部富盈Python回归153项通过；新脚本仅一次性离线证据审计，不修改解析器、账表或NAV门禁。
 
+2026-11-14次日开盘承接：`TestResearchOpening*`及`TestDecodePositionQueryRecordsReadOnly`覆盖完整空集合/缺失、原始时间/末页/字段、跨账户与身份、集合竞价边界、重复持仓、T+1可用量变化、CORE/T0分桶汇总、数量冲突及公司行为/NaN/溢出拒绝。隔离PG脚本纳入Opening并验证缺收盘快照不被认作可信空仓。只读CLI通过`--opening-coverage`显式启用，报告默认仍不批准正式成本或NAV，不修改API的close-only基线契约。
+
 2026-11-14封存输入离线重放：`go test ./cmd/relayctl -run TestResearchReplay`覆盖请求不匹配后不可恢复、输入耗尽、未支持错误失败、`sql.ErrNoRows`身份、并发快照按参数匹配且不跨查询边界、证券集合顺序/日期/重复数量、JSON大整数和微元精度、新算跨日成本不一致拒绝、金融写入/实时回退禁止、manifest和字节篡改拒绝。`RELAY_RESEARCH_INPUT_REPLAY=1`额外启用私有1234条输入的完整22日引擎验证，可用`-count=3`检查并发重复运行；它不调用DB或Meridian。详见[离线验收](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#封存输入离线重放验收)。
 
 2026-11-14实际输入采集：`go test ./cmd/relayctl -run TestFuyingResearchCapture`覆盖请求/返回值修改不污染记录、错误保留、序号/字节/SHA、0600与禁止覆盖、并发记录、容量失败及金融写入拒绝。设置`RELAY_RESEARCH_COST_FROZEN_REPLAY=1`后同一测试集额外核对本机冻结22日/972行、拒绝不完整链及识别0.000001成本差异。实际生产只读复算证据与限制见[采集记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#实际输入采集与成本复算)；这不是从封存输入离线运行完整引擎的验收，也不证明原柜台历史查询完整。

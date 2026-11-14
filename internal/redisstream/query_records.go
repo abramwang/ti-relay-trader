@@ -6,6 +6,16 @@ import (
 	"ti-relay-trader/internal/trading"
 )
 
+// DecodePositionQueryRecords reuses the current ingestion projection without
+// applying a snapshot or interpreting an absent page as an empty position set.
+func DecodePositionQueryRecords(e EntryEnvelope) ([]trading.Position, error) {
+	if e.Protocol != "relay.stream.v1" || e.MessageType != "reply" || e.Action != ActionAccountPositions || e.ResultType != "position_page" || (e.Status != "partial" && e.Status != "completed") {
+		return nil, errors.New("not a successful position query page")
+	}
+	positions, _, err := positionsFromReplyEnvelope(e)
+	return positions, err
+}
+
 // DecodeTradeQueryRecords reuses ingestion normalization without a writer,
 // Redis client, summary-fill synthesis or any persistence side effects.
 // The caller must independently validate query scope and page completeness.
