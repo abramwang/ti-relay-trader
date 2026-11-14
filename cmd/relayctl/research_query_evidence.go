@@ -73,6 +73,7 @@ type researchQueryDay struct {
 	MissingJobs   []string                `json:"missing_jobs"`
 	SnapshotTimes []json.RawMessage       `json:"snapshot_times"`
 	TimingReview  map[string]any          `json:"timing_review"`
+	RepoTiming    map[string]any          `json:"reviewed_repo_cash_timing,omitempty"`
 }
 
 type researchArchivedReply struct {
@@ -230,7 +231,7 @@ func readResearchArchiveRole(ctx context.Context, tx *sql.Tx, account, message, 
 	return result, rows.Err()
 }
 
-func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route config.AccountRouteConfig, date string, bookCoverage bool) (researchQueryDay, error) {
+func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route config.AccountRouteConfig, date string, bookCoverage, eventCoverage bool) (researchQueryDay, error) {
 	d := researchQueryDay{Date: date, Attempts: []researchQueryAttempt{}, MissingJobs: []string{}}
 	page, err := ledger.NewRepository(tx).GetPositionBaseline(ctx, ledger.PositionBaselineQuery{Environment: env, AccountID: route.AccountID, BrokerID: route.BrokerID, GatewayID: route.GatewayID, TradeDate: date, SnapshotType: "close", Limit: 1})
 	if err != nil {
@@ -329,6 +330,11 @@ func readResearchQueryDay(ctx context.Context, tx *sql.Tx, env string, route con
 			d.MissingJobs = append(d.MissingJobs, name)
 		}
 	}
+	if eventCoverage {
+		if err := attachResearchEventEvidence(ctx, tx, env, route, &d); err != nil {
+			return d, err
+		}
+	}
 	return d, nil
 }
 
@@ -389,11 +395,15 @@ func runResearchQueryEvidence(args []string) error {
 	version := f.String("version", "", "archived research version")
 	output := f.String("output", "", "new private evidence report")
 	bookCoverage := f.Bool("book-coverage", false, "also compare archived close query scope and core book rows; read-only")
+	eventCoverage := f.Bool("event-coverage", false, "link book-only records to independent event archives and inspect repo cash timing; requires book-coverage")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 || *configPath == "" || *output == "" || strings.TrimSpace(*account) == "" || strings.TrimSpace(*version) == "" {
 		return errors.New("config, account, version and output required")
+	}
+	if *eventCoverage && !*bookCoverage {
+		return errors.New("event-coverage requires book-coverage")
 	}
 	if _, err := os.Lstat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -450,13 +460,16 @@ func runResearchQueryEvidence(args []string) error {
 	var days []researchQueryDay
 	counts := map[string]int{}
 	for _, date := range dates {
-		d, err := readResearchQueryDay(ctx, tx, string(cfg.Service.Environment), route, date, *bookCoverage)
+		d, err := readResearchQueryDay(ctx, tx, string(cfg.Service.Environment), route, date, *bookCoverage, *eventCoverage)
 		if err != nil {
 			return err
 		}
 		days = append(days, d)
 		counts["baseline:"+d.Baseline.Completeness]++
 		counts["timing:"+fmt.Sprint(d.TimingReview["state"])]++
+		if d.RepoTiming != nil {
+			counts["repo_timing:"+fmt.Sprint(d.RepoTiming["state"])]++
+		}
 		for _, a := range d.Attempts {
 			for _, q := range a.Queries {
 				counts[a.Job+":"+q.State]++
@@ -469,6 +482,9 @@ func runResearchQueryEvidence(args []string) error {
 					counts["book:"+q.Step+":invalid_records"] += len(q.BookCoverage.DecodeIssues)
 					for _, diff := range q.BookCoverage.Rows.Differences {
 						counts["book:"+q.Step+":"+diff.Kind]++
+						if diff.EventEvidence != nil {
+							counts["event:"+q.Step+":"+diff.EventEvidence.State]++
+						}
 					}
 					if q.BookCoverage.Transfers != nil {
 						counts["book:transfers:"+q.BookCoverage.Transfers.State]++
@@ -494,6 +510,10 @@ func runResearchQueryEvidence(args []string) error {
 	if *bookCoverage {
 		report["book_coverage_requested"] = true
 		report["scope"] = "anchor and cost dates; archive completion and close-query versus current book core projections, including component transfers; not proof of broker-wide completeness, historical fees, next-day dependencies or economic asset scope"
+	}
+	if *eventCoverage {
+		report["event_coverage_requested"] = true
+		report["scope"] = "historical query/core book projections; independent event evidence for book-only orders/fills and cash timing for matched query-external repos; no economic cash scope or cost/NAV publication approval"
 	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err

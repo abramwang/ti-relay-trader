@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"ti-relay-trader/internal/config"
 	dbmigrations "ti-relay-trader/internal/db/migrations"
 )
 
@@ -58,11 +59,25 @@ func TestResearchBookCoveragePostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	raw, diff, _ := researchEventFixture(t, "fills")
+	for _, scope := range []struct{ account, day, streamID string }{{"a", "2026-10-12T10:00:02+08:00", "1-0"}, {"other", "2026-10-12T10:00:02+08:00", "2-0"}, {"a", "2026-10-13T10:00:02+08:00", "3-0"}} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO raw_stream_messages(stream_key,stream_id,direction,stream_role,account_id,gateway_order_id,body,received_at) VALUES($1,$2,'in','event',$3,'g1',$4,$5)`, raw.Stream, scope.streamID, scope.account, string(raw.Body), scope.day); err != nil {
+			t.Fatal(err)
+		}
+	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
+	day := researchQueryDay{Date: "2026-10-12", Attempts: []researchQueryAttempt{{Queries: []researchQueryProof{{Step: "fills", BookCoverage: &researchBookCoverage{Rows: researchBookComparison{Differences: []researchBookDifference{diff}}}}}}}}
+	if err := attachResearchEventEvidence(ctx, tx, "production", config.AccountRouteConfig{AccountID: "a", BrokerID: "huaxin", GatewayID: "g"}, &day); err != nil {
+		t.Fatal(err)
+	}
+	proof := day.Attempts[0].Queries[0].BookCoverage.Rows.Differences[0].EventEvidence
+	if proof == nil || proof.State != "matching_full_event_found" || proof.Candidates != 1 || proof.Matches[0].StreamID != "1-0" {
+		t.Fatalf("event SQL scope: %+v", proof)
+	}
 	first, err := readResearchDailyBooks(ctx, tx, "a", "2026-10-12")
 	if err != nil || len(first.Orders) != 501 || len(first.Fills) != 501 || len(first.Transfers) != 1 {
 		t.Fatal("pagination/scope", err, len(first.Orders), len(first.Fills), len(first.Transfers))

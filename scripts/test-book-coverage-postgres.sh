@@ -23,4 +23,4 @@ trap 'exit 143' TERM
 "${RUN[@]}" "$PG_BIN/pg_ctl" -D "$WORK/data" -l "$WORK/server.log" -o "-k $WORK/socket -h '' -p 15433" -w start
 cd "$ROOT"
 RELAY_BOOK_COVERAGE_TEST_DATABASE_URL="host=$WORK/socket port=15433 user=relay_book_test dbname=postgres sslmode=disable" \
-  go test -race ./cmd/relayctl -run 'TestResearch(Book|Request|TradePage)' -count=1 -v
+  go test -race ./cmd/relayctl -run 'TestResearch(Book|Request|TradePage|Event|RepoCash)' -count=1 -v

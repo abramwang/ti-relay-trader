@@ -27,12 +27,13 @@ type researchBookRow struct {
 }
 
 type researchBookDifference struct {
-	Key          string          `json:"key"`
-	Kind         string          `json:"kind"`
-	Query        map[string]any  `json:"query,omitempty"`
-	Book         map[string]any  `json:"book,omitempty"`
-	Fields       []string        `json:"fields,omitempty"`
-	BookEvidence json.RawMessage `json:"stored_book_evidence,omitempty"`
+	Key           string              `json:"key"`
+	Kind          string              `json:"kind"`
+	Query         map[string]any      `json:"query,omitempty"`
+	Book          map[string]any      `json:"book,omitempty"`
+	Fields        []string            `json:"fields,omitempty"`
+	BookEvidence  json.RawMessage     `json:"stored_book_evidence,omitempty"`
+	EventEvidence *researchEventProof `json:"event_evidence,omitempty"`
 }
 
 type researchBookComparison struct {
