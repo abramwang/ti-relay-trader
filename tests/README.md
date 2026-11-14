@@ -165,6 +165,8 @@ PG脚本仅用临时Unix socket数据库，完整回放需要本地冻结证据�
 
 ## 后续计划
 
+2026-11-14成分现金解释：`python3 -m unittest discover -s tests/unit -p 'test_fuying13_component_cash.py' -v`覆盖原父单/现金委托身份、日期/方向/金额/时区、物理持仓或普通成交冲突、重复流水、封存序号/SHA/重复页变化/缺末页、查询投影指纹、完整持仓证据和旧导出范围；保留原查询失败及禁止发布标记。全富盈Python159项通过，两次实际离线报告除生成时刻外一致，不调用数据库、OC或Meridian。[执行与证据](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#四日成分划转与替代现金核验)。
+
 2026-11-14正式成本分项预检：`go test ./internal/performance -run TestResearchCostPublication`覆盖逐日分桶/语义定位、稳定输出、未知规则、部分正式目标、源修订及锚点变化，拒绝缺行/跨账户/错版本/SHA/发布或写入标记。`performance-research-source-check --publication-review`没有apply/persist入口，使用原有只读repeatable-read事务；上述隔离PG脚本验证真实22日冻结链的预检不改变金融表指纹，报告不能冒充源观察基准。独立证据绑定与原子发布尚未实现，不把数量通过当净值通过。
 
 2026-11-14源账表预检：`go test ./internal/performance -run TestResearchCostVersionSource`覆盖首次观察/稳定复读/新增删除/同条数修订、锚点变化、跨环境/账户/版本/数据库/未来时间、缺日/重复日/无效SHA/超预算拒绝。上述隔离PG脚本额外运行源表读取、并发写入后的repeatable-read稳定性、下轮识别1微元修订和删除、只读/隔离级别门禁、私有报告读取及禁止覆盖。实际生产命令和证据见[源账表预检](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本源账表观察与发布缺项)，不是正式净值验收。
