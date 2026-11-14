@@ -38,11 +38,16 @@ func reviewFuyingObservedCash(m fuyingCashMatrix, dates []string) (performance.E
 func runFuyingCashTiming(args []string) error {
 	flags := flag.NewFlagSet("performance-fuying13-cash-timing-20261113", flag.ContinueOnError)
 	output := flags.String("output", "", "new private observed cash timing report; offline only")
+	boundaryPath := flags.String("published-boundary", "", "optional saved economic-nav API response; adds account-level bridge review")
+	boundarySHA := flags.String("published-boundary-sha256", "", "required SHA256 for the saved published boundary")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *output == "" {
 		return errors.New("new output required")
+	}
+	if (*boundaryPath == "") != (*boundarySHA == "") {
+		return errors.New("published boundary path and SHA256 must be supplied together")
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
@@ -84,6 +89,13 @@ func runFuyingCashTiming(args []string) error {
 		"observed_timing_matches_frozen_python_review": true, "complete_settlement": false,
 		"economic_nav_publishable": false, "database_writes": 0, "broker_commands": 0,
 		"scope": "explicit-source observed cash only; positive and negative carries separate; candidates excluded; not a final settlement"}
+	if *boundaryPath != "" {
+		accountBridge, err := loadFuyingAccountBridge(matrix, *boundaryPath, *boundarySHA)
+		if err != nil {
+			return err
+		}
+		report["account_nav_bridge"] = accountBridge
+	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
 	}
