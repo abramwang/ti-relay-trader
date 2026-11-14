@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-research-cost-compare":
+		if err := runResearchCostCompare(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-research-cost-compare: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fuying13-cost-import-20261114":
 		if err := runFuyingResearchImport(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-fuying13-cost-import-20261114: %v\n", err)
@@ -656,6 +661,7 @@ func usage() {
   performance-fuying13-split-audit-20261113  Preflight or append three confirmed October 15 allocation links; never publishes NAV
   performance-fuying13-cost-continuity-20261113  Read-only cost carry and basis movement checks against the stored opening anchor
   performance-fuying13-cost-import-20261114  Preflight or archive the pinned research cost chain; isolated migration 42, never NAV
+  performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-fuying13-remaining-audit-20261113  Review or append October 23 and November 3 ownership audits; no NAV writes
   performance-fuying13-repo-bridge-20261112  Read-only repo interest accrual/receipt bridge; never publishes NAV
   performance-etf-transfer-review  Read-only stored ETF component linkage evidence (no market or OC queries)

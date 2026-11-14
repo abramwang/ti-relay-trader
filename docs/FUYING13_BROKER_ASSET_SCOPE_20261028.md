@@ -468,3 +468,56 @@ go run ./cmd/relayctl performance-fuying13-cost-import-20261114 \
 默认检查报告`independent_readback=false`仅表示该次命令未执行“写事务提交后再建连接”的步骤，不表示查不到已存版本；看`version_exists`和`phase`区分。生产迁移集合现在为**1..32、42**，`MAX(version)=42`不代表1..42连续升级。后续运维应看逐项状态，环境切换仍保留`--skip-migrations`边界，不能因此顺带运行未验CTP迁移。
 
 本轮归档不需要新增券商文件或OC改动。下一步提供显式版本的只读日级成本对照，检查后续审计修订是否使旧研究版本失效；正式成本/NAV消费仍须独立验收，不能删除券商资产分项差额或解除资金桥阻断。
+
+## 逐日研究成本只读对照
+
+日期：2026-11-14，Asia/Shanghai。新增纯比较函数`performance.CompareResearchCostVersion`和CLI `performance-research-cost-compare`。没有新HTTP接口或终端页面变更，不重启服务，不修改任何账表或迁移。
+
+### 比较口径
+
+显式账户及版本ID是必填项，没有latest回退；从数据库读取正文并校验SHA和结构后，在同一个只读repeatable-read事务内读取当前期初锚点、各日活动归属和正式成本。缺研究表/版本或查询失败直接报错，不回退到内存试算；市场行情、原始订单/成交的新增修订以及资金最终清算不在本次新鲜度检查范围内。
+
+- `equal`：业务字段及元数据完全一致；相同时刻的UTC/+08:00表示不算差异。
+- `metadata_only`：只有created_at/updated_at/calculated_at变化。
+- `changed`：数量、金额、状态、公式版本、来源、质量标记等业务字段有变化，列出具体字段。
+- `research_only` / `stored_only`：仅一侧存在，另一侧输出null/CSV空白，不补零，不计算两侧差额。整日正式成本缺失另标`stored_day_missing=true`。
+- 双侧同时存在时，数量及期初成本/期末成本/已实现盈亏的差额方向固定为“研究值减正式存储值”；金额差额为整数微元，不做分级容差。超过六位精度或核验范围时差额为null并注明原因，不静默取整。
+- CORE普通成本、申赎成本释放（不是亏损）、T0余仓成本、成分股估值基数（不是买入成本）分开标识；不将不同基数的差额汇总成收益。已有成本转移和舍入差逐日保留。
+
+当前锚点/活动审计与冻结版本逐字段比较；新增、修订、撤销或日期精度变化输出`evidence_changes`，`anchor_and_allocations_match=false`。旧版仍可做历史排查，但不会自动沿用或重算。该标志只覆盖`opening_anchor_and_active_allocations_only`，不等于所有行情、交易和经济资产已重新核验；`economic_nav_publishable`始终false。
+
+### 实际结果
+
+768版本`fuying13-cost-research-20261114-v1`的10-12..11-10共22日、972行，当前正式成本表在这22个日期没有对应行，因此全部为research_only，而不是972项计算错误。期初10-09锚点及11条归属审计未变，`evidence_changes=0`。
+
+| 成本类别 | 跨日期记录数 |
+| --- | ---: |
+| CORE普通底仓成本 | 941 |
+| 申赎成本转出 | 23 |
+| T0余仓/隔夜成本 | 4 |
+| 成分股估值基数 | 4 |
+
+这些是跨日期成本行数，不是证券只数或成交笔数。正式对应行缺失符合此前preview-only保护及研究表独立归档的边界；不能因本次发现缺行就把全部研究结果覆盖进正式成本。
+
+三轮实际只读查询结果一致，报告记录的数据库读取及比较耗时分别201/224/175ms（不含`go run`编译启动），未请求Meridian或OC。最终文件：
+
+| 文件 | SHA256 |
+| --- | --- |
+| `outputs/recovery/fuying13_cost_compare_20261114/final.json` | `4154bffc9cdb2b048614e0f84851ff2fcdb85fd53eaac87ef477c6f196c07f54` |
+| `outputs/recovery/fuying13_cost_compare_20261114/final.csv` | `9b109b24ec033d2b3c4737f5c4d7a11fbd43cf07a4d9e255f12821984d58e131` |
+
+CSV每行列出证券、成本桶/基数语义、对照状态、双方期初/期末数量与成本、已实现盈亏、微元差额、不可比较原因及变化字段。空白不能解释为零；CSV用0600新文件，避免覆盖历史报告，并对文本公式前缀转义。JSON保留完整双方成本行，真实时间统一显示东八区。
+
+复现时输出路径需全新：
+
+```bash
+go run ./cmd/relayctl performance-research-cost-compare \
+  --config config/relay.prod.yaml --account 314000045768 \
+  --version fuying13-cost-research-20261114-v1 \
+  --output outputs/recovery/fuying13_cost_compare_20261114/check-new.json \
+  --csv outputs/recovery/fuying13_cost_compare_20261114/check-new.csv
+```
+
+全项目Go测试、相关race/vet及隔离PG通过。覆盖五种对照状态、微元差额方向、超精度不舍入、缺失不补零、同一时刻跨时区比较、当前归属新增/修订/撤销、锚点变化、跨账户/日期/重复行拒绝、CSV空白/转义/权限/禁止覆盖；实际冻结链在临时PG验证全部缺正式成本、部分正式基线及撤销审计后的失配提示，研究正文不变。日志`.runtime/research-cost-comparison-20261114.log`。
+
+下一步是终端独立研究视图及只读接线，不能与正式绩效结果混用。券商总资产基准、待补资产分项说明、资金桥阻断、旧在线读取和生产下单关闭均保持不变。

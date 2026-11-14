@@ -281,6 +281,73 @@ func TestFuyingResearchImportPostgres(t *testing.T) {
 			t.Fatal("gap marked applied", s)
 		}
 	}
+	t.Run("read-only comparison and stale evidence", func(t *testing.T) {
+		tx := begin(false)
+		if _, err := readResearchCostComparison(ctx, tx, b.AccountID, b.VersionID); err == nil {
+			t.Fatal("write transaction accepted")
+		}
+		tx.Rollback()
+		tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelReadCommitted})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readResearchCostComparison(ctx, tx, b.AccountID, b.VersionID); err == nil {
+			t.Fatal("non-snapshot transaction accepted")
+		}
+		tx.Rollback()
+		tx = begin(true)
+		before, err := fuyingResearchFingerprints(ctx, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		comparison, err := readResearchCostComparison(ctx, tx, b.AccountID, b.VersionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := fuyingResearchFingerprints(ctx, tx)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatal("comparison changed financial history", err)
+		}
+		tx.Rollback()
+		if !comparison.AnchorAndAllocationsMatch || comparison.Counts.ResearchOnly != 972 || comparison.NAVPublishable || len(comparison.Days) != 22 {
+			t.Fatal("missing stored baseline", comparison.Counts)
+		}
+		for _, day := range comparison.Days {
+			if !day.StoredDayMissing {
+				t.Fatal("invented stored day")
+			}
+			for _, row := range day.Rows {
+				if row.Delta != nil || row.Stored != nil {
+					t.Fatal("missing cost treated as zero")
+				}
+			}
+		}
+		p := b.Costs[0].Positions[0]
+		if _, err := repo.UpsertPositionCostState(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+		a := b.Audits[0]
+		a.Supersedes = a.LinkID
+		a.LinkID = "comparison-revocation"
+		a.Revision++
+		a.Status = "revoked"
+		if _, err := repo.AppendT0Allocation(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+		tx = begin(true)
+		comparison, err = readResearchCostComparison(ctx, tx, b.AccountID, b.VersionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx.Rollback()
+		if comparison.AnchorAndAllocationsMatch || len(comparison.EvidenceChanges) != 1 || comparison.Counts.ResearchOnly != 971 || comparison.Days[0].StoredDayMissing || comparison.NAVPublishable {
+			t.Fatal("stale version hidden", comparison.Counts, comparison.EvidenceChanges)
+		}
+		saved, err := repo.GetResearchCostVersion(ctx, b.AccountID, b.VersionID)
+		if err != nil || saved.PayloadSHA256 != v.PayloadSHA256 {
+			t.Fatal("comparison modified archive", err)
+		}
+	})
 	if _, err := db.ExecContext(ctx, `ALTER TABLE performance_research_cost_versions DISABLE TRIGGER research_cost_version_immutable`); err != nil {
 		t.Fatal(err)
 	}
