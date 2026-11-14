@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-08 22:07 Asia/Shanghai` 按用户授权切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立 worker 正常；不是 CTP |
 | 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。11-14仅发布API/研究页面，worker与OC未重启；迁移集合仍为1..32+42，33..41未执行，无主动报撤单或CTP采集 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-14 Asia/Shanghai` 768查询证据核验：期初+22日共207次计划查询/7608回包均与任务终态一致，盘前不查费用的23项不是缺数。11日基线partial源于现金观察/整批完成时间差；10-26另需关联已找到的历史修复回执。下一步修正证据关联，不改资产基数或NAV；本轮无部署/迁移/金融写入 |
+| 最近确认 | `2026-11-14 Asia/Shanghai` 持仓基线证据修复已API-only发布，PID2264828；worker仍2462706。768期初+22日全部complete，原11日partial消除，23日数量内容SHA不变；其他账户/真实空仓及SDK分页通过。下一步核对订单/成交查询条目落库覆盖；资产基数/NAV阻断不变，无迁移/金融修复写入 |
 | 更新时间 | `2026-11-14` |
 
 新线程按以下顺序恢复：
@@ -26,7 +26,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-14` 新增只读`performance-research-query-evidence`：在同一repeatable-read快照复用持仓基线，回查任务命令ID、原始归档/末页/计数/路由/时间，摘要只保留首尾回包不误判缺失。23日盘后115次、盘前92次通过，归档7608条；盘前费用23项按实际refresh计划标not_scheduled。12日现有基线complete，11日partial均能追到原始现金时刻与整批完成时刻不同；10-26还缺常规任务关联，但已找到`close_cash_time_20261028/apply_2.json`成功55条持仓的修复回执。证据`outputs/recovery/fuying13_query_evidence_20261114/inspection-3.json`；全Go/race/vet通过，无部署/写库/柜台查询。下一步修复基线的双时间证据与历史修复发布关联，之后核对订单/成交查询条目落库覆盖；不能直接清除经济NAV阻断。[核验详情](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#历史查询证据与基线时间差)。
+- `2026-11-14` 查询证据与基线修复完成：207次查询/7608条归档一致，盘前费用23项为not_scheduled；现金观察与批次完成时间分别核验，历史修复用已持久化reconciliation_runs关联。768全部23日complete，数量摘要不变；报告`outputs/recovery/fuying13_query_evidence_20261114/baseline-fixed-final.json`。全Go/race/vet、隔离PG、SDK分页与其他账户线上GET通过，API-only发布、worker不变；无迁移、柜台命令或金融修复写入。下一步核对订单/成交查询条目落库覆盖及正式成本发布语义，不能解除缺券商资产分项证据的NAV阻断。旧封存输入仍绑定原源码版本，不改旧manifest。[修复验收](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#基线双时间与独立发布证据修复)。
 
 - `2026-11-14` 新增`performance-research-input-replay`：显式输入目录/SHA，仅使用封存记录和本地源码，无配置/DB/行情客户端。核验完整manifest、SHA/序号/次数、83份引擎依赖源码，固定时钟运行22日成本与归因，972行及隔夜预览输出一致；67次承接使用新计算成本，不能用旧响应掩盖差异。并发快照仅在连续批次内按完整参数匹配，主数据批量代码仅规范集合顺序，日期/分页/重复数量不放宽。证据`outputs/recovery/fuying13_engine_capture_20261114/offline-replay-1.json`，详见[离线验收](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#封存输入离线重放验收)。下一步逐日查询完成覆盖和preview-only正式成本语义审查；辅助原始SQL未独立重放，资产范围/NAV限制不解除。生产环境/进程/权限不变。
 

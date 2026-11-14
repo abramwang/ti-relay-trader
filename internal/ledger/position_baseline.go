@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -52,6 +53,7 @@ type PositionBaseline struct {
 	ContentSHA256            string          `json:"content_sha256"`
 	DigestFormat             string          `json:"digest_format"`
 	SourceRunID              string          `json:"source_run_id,omitempty"`
+	ClosePublicationSource   string          `json:"close_publication_source,omitempty"`
 	CaptureRunID             string          `json:"capture_run_id,omitempty"`
 	PositionQueryMessageID   string          `json:"position_query_message_id,omitempty"`
 	AssetQueryMessageID      string          `json:"asset_query_message_id,omitempty"`
@@ -60,6 +62,7 @@ type PositionBaseline struct {
 	CollectionStartedAt      string          `json:"collection_started_at,omitempty"`
 	CollectionCompletedAt    string          `json:"collection_completed_at,omitempty"`
 	BusinessAsOf             string          `json:"business_as_of,omitempty"`
+	CashObservedAt           string          `json:"cash_observed_at,omitempty"`
 	GeneratedAt              string          `json:"generated_at,omitempty"`
 	Proof                    map[string]bool `json:"proof"`
 	QualityFlags             []string        `json:"quality_flags"`
@@ -89,23 +92,37 @@ type baselineSnapshot struct {
 	Exists     bool
 	CapturedAt time.Time
 	Raw        struct {
-		RunID             string `json:"run_id"`
-		InputSnapshotType string `json:"input_snapshot_type"`
+		RunID             string         `json:"run_id"`
+		InputSnapshotType string         `json:"input_snapshot_type"`
+		Source            string         `json:"source"`
+		Asset             *trading.Asset `json:"asset"`
+		BrokerAsset       *trading.Asset `json:"broker_asset"`
+		ReverseRepo       struct {
+			CashObservedAt time.Time `json:"cash_observed_at"`
+		} `json:"reverse_repo"`
 	}
 	Rows []baselineSnapshotRow
 }
 
 type baselineSnapshotResult struct {
-	RunID             string `json:"run_id"`
-	SnapshotType      string `json:"snapshot_type"`
-	InputSnapshotType string `json:"input_snapshot_type"`
-	CompletedAt       string `json:"completed_at"`
+	RunID             string   `json:"run_id"`
+	SnapshotType      string   `json:"snapshot_type"`
+	InputSnapshotType string   `json:"input_snapshot_type"`
+	CompletedAt       string   `json:"completed_at"`
+	TradeDate         string   `json:"trade_date"`
+	Source            string   `json:"source"`
+	Status            string   `json:"status"`
+	DryRun            *bool    `json:"dry_run"`
+	SnapshotOnly      *bool    `json:"snapshot_only"`
+	Errors            []string `json:"errors"`
+	AccountErrors     *int     `json:"account_error_count"`
 	Accounts          []struct {
-		AccountID    string   `json:"account_id"`
-		AssetWritten bool     `json:"asset_snapshot_written"`
-		Count        *int     `json:"positions_count"`
-		Written      *int     `json:"position_snapshots_written"`
-		Errors       []string `json:"errors"`
+		AccountID    string         `json:"account_id"`
+		Asset        *trading.Asset `json:"asset"`
+		AssetWritten bool           `json:"asset_snapshot_written"`
+		Count        *int           `json:"positions_count"`
+		Written      *int           `json:"position_snapshots_written"`
+		Errors       []string       `json:"errors"`
 	} `json:"accounts"`
 }
 
@@ -121,7 +138,8 @@ type baselineQueryTerminal struct {
 }
 
 type baselineJobReport struct {
-	Settlement struct {
+	RecoveryPublication *baselineSnapshotResult `json:"-"`
+	Settlement          struct {
 		OK     bool                   `json:"ok"`
 		Result baselineSnapshotResult `json:"result"`
 	} `json:"settlement_snapshot"`
@@ -221,6 +239,12 @@ func (repo *Repository) readPositionBaseline(ctx context.Context, query Position
 	closeJob, err := loadBaselineJob(ctx, q, query.TradeDate, "settlement_snapshot", closeSnapshot.Raw.RunID)
 	if err != nil {
 		return PositionBaselinePage{}, err
+	}
+	if closeJob.Settlement.Result.RunID == "" && closeSnapshot.Raw.RunID != "" {
+		closeJob.RecoveryPublication, err = loadBaselineRecoveryPublication(ctx, q, query, closeSnapshot)
+		if err != nil {
+			return PositionBaselinePage{}, err
+		}
 	}
 	captureJob, err := loadBaselineJob(ctx, q, query.TradeDate, "broker_close_snapshot", brokerSnapshot.Raw.RunID)
 	if err != nil {
@@ -343,6 +367,74 @@ func loadBaselineReplies(ctx context.Context, q Queryer, accountID, messageID st
 	return out, rows.Err()
 }
 
+// Snapshot publication also occurs through the settlement API outside cron.
+// Reuse its persisted completion record, never synthesize a successful job.
+func loadBaselineRecoveryPublication(ctx context.Context, q Queryer, query PositionBaselineQuery, snapshot baselineSnapshot) (*baselineSnapshotResult, error) {
+	rows, err := q.QueryContext(ctx, `SELECT summary,source,completed_at FROM reconciliation_runs WHERE run_id=$1 AND trade_date=$2::date AND status='completed' AND completed_at IS NOT NULL AND COALESCE(error_message,'')=''`, snapshot.Raw.RunID, query.TradeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result *baselineSnapshotResult
+	for rows.Next() {
+		if result != nil {
+			return nil, fmt.Errorf("duplicate snapshot publication")
+		}
+		var raw []byte
+		var source string
+		var completed time.Time
+		if err := rows.Scan(&raw, &source, &completed); err != nil {
+			return nil, err
+		}
+		var candidate baselineSnapshotResult
+		if err := json.Unmarshal(raw, &candidate); err != nil {
+			return nil, err
+		}
+		if !validBaselineRecoveryPublication(query, snapshot, candidate, source, completed) {
+			return nil, nil
+		}
+		candidate.CompletedAt = baselineTime(completed)
+		result = &candidate
+	}
+	return result, rows.Err()
+}
+
+func validBaselineRecoveryPublication(query PositionBaselineQuery, snapshot baselineSnapshot, r baselineSnapshotResult, source string, completed time.Time) bool {
+	if !snapshot.Exists || r.RunID == "" || r.RunID != snapshot.Raw.RunID || r.TradeDate != query.TradeDate || source == "" || source != snapshot.Raw.Source || r.Source != source || r.Status != "completed" || r.SnapshotType != "close" || r.InputSnapshotType != "broker_close" || r.DryRun == nil || *r.DryRun || r.SnapshotOnly == nil || *r.SnapshotOnly || r.AccountErrors == nil || *r.AccountErrors != 0 || len(r.Errors) != 0 || completed.IsZero() || completed.Before(snapshot.CapturedAt) {
+		return false
+	}
+	matched := 0
+	for _, a := range r.Accounts {
+		if a.AccountID != query.AccountID {
+			continue
+		}
+		matched++
+		if !a.AssetWritten || len(a.Errors) != 0 || a.Count == nil || a.Written == nil || *a.Count != len(snapshot.Rows) || *a.Written != len(snapshot.Rows) || a.Asset == nil || a.Asset.AccountID != query.AccountID || !baselineAssetFactEqual(a.Asset, snapshot.Raw.Asset) {
+			return false
+		}
+	}
+	return matched == 1
+}
+
+// Compare the original cash projection, not the derived close valuation. The
+// archive projection uses routing.account_id and produced_at just as ingestion.
+func baselineAssetFactEqual(a, b *trading.Asset) bool {
+	return a != nil && b != nil && a.AccountID != "" && a.AccountID == b.AccountID && !a.UpdatedAt.IsZero() && a.UpdatedAt.Equal(b.UpdatedAt) &&
+		a.CashAvailable == b.CashAvailable && a.CashTotal == b.CashTotal && a.NetAsset == b.NetAsset && a.MarketValue == b.MarketValue && a.StockValue == b.StockValue && a.FundValue == b.FundValue && a.ReverseRepoReceivable == b.ReverseRepoReceivable && a.Commission == b.Commission && a.Credit == b.Credit
+}
+
+func baselineCashObservationLinked(query PositionBaselineQuery, close, broker baselineSnapshot, archived *trading.Asset, started time.Time) bool {
+	source := broker.Raw.Asset
+	if source == nil {
+		source = broker.Raw.BrokerAsset
+	}
+	if !close.Exists || !broker.Exists || close.Raw.InputSnapshotType != "broker_close" || source == nil || source.AccountID != query.AccountID || !baselineAssetFactEqual(source, close.Raw.BrokerAsset) || !baselineAssetFactEqual(source, archived) || close.Raw.Asset == nil || close.Raw.Asset.AccountID != query.AccountID || !close.Raw.Asset.UpdatedAt.Equal(source.UpdatedAt) || !close.CapturedAt.Equal(source.UpdatedAt) || !close.Raw.ReverseRepo.CashObservedAt.Equal(source.UpdatedAt) || started.IsZero() || source.UpdatedAt.After(broker.CapturedAt) {
+		return false
+	}
+	at := source.UpdatedAt.In(timeutil.Location())
+	return at.Format("2006-01-02") == query.TradeDate && (query.Environment != "production" || at.Hour() >= 15)
+}
+
 func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker baselineSnapshot, closeJob, captureJob baselineJobReport, replies, assetReplies []baselineRawReply) (PositionBaselinePage, error) {
 	if len(closeSnapshot.Rows) > PositionBaselineMaxRows || len(broker.Rows) > PositionBaselineMaxRows || len(replies) > positionBaselineMaxReplies {
 		return PositionBaselinePage{}, ErrPositionBaselineTooLarge
@@ -366,9 +458,6 @@ func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker
 			fail("historical_close_business_time_unproven")
 		}
 	}
-	if closeSnapshot.Raw.InputSnapshotType != "broker_close" || !closeSnapshot.CapturedAt.Equal(broker.CapturedAt) {
-		fail("snapshot_source_generation_mismatch")
-	}
 	checkPublished := func(result baselineSnapshotResult, snapshot baselineSnapshot, kind string) bool {
 		completedAt, timeErr := time.Parse(time.RFC3339Nano, result.CompletedAt)
 		if result.RunID == "" || result.RunID != snapshot.Raw.RunID || result.SnapshotType != kind || timeErr != nil || completedAt.Before(snapshot.CapturedAt) {
@@ -382,11 +471,24 @@ func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker
 		return false
 	}
 	meta.Proof["close_snapshot_published"] = checkPublished(closeJob.Settlement.Result, closeSnapshot, "close") && closeJob.Settlement.Result.InputSnapshotType == "broker_close"
+	publication := closeJob.Settlement.Result
+	if meta.Proof["close_snapshot_published"] {
+		meta.ClosePublicationSource = "job_run"
+	}
+	if closeJob.Settlement.Result.RunID == "" && closeJob.RecoveryPublication != nil {
+		r := *closeJob.RecoveryPublication
+		completed, _ := time.Parse(time.RFC3339Nano, r.CompletedAt)
+		if validBaselineRecoveryPublication(query, closeSnapshot, r, closeSnapshot.Raw.Source, completed) && checkPublished(r, closeSnapshot, "close") {
+			meta.Proof["close_snapshot_published"] = true
+			meta.ClosePublicationSource = "reconciliation_run"
+			publication = r
+		}
+	}
 	meta.Proof["broker_snapshot_published"] = checkPublished(captureJob.Capture.Result, broker, "broker_close")
 	if !meta.Proof["close_snapshot_published"] || !meta.Proof["broker_snapshot_published"] {
 		fail("snapshot_publication_unproven")
 	}
-	meta.GeneratedAt = closeJob.Settlement.Result.CompletedAt
+	meta.GeneratedAt = publication.CompletedAt
 	var positionsTerminal baselineQueryTerminal
 	var assetTerminal baselineQueryTerminal
 	for _, account := range captureJob.Accounts {
@@ -480,6 +582,7 @@ func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker
 		fail("query_archive_incomplete_or_inconsistent")
 	}
 	assetArchiveValid := len(assetReplies) == 1 && assetTerminal.ReplyCount == 1
+	var archivedAsset *trading.Asset
 	for _, raw := range assetReplies {
 		var reply baselineReplyEnvelope
 		if raw.ParseError != "" || json.Unmarshal(raw.Body, &reply) != nil {
@@ -491,6 +594,16 @@ func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker
 		}
 		if reply.Payload.Account != nil {
 			meta.SourceBrokerAccountID = reply.Payload.Account.AccountID
+			projection := *reply.Payload.Account
+			projection.AccountID = reply.Route.AccountID
+			projection.UpdatedAt = reply.ProducedAt
+			projection.ReverseRepoReceivable = 0
+			// Ledger monetary columns are NUMERIC(20,6). OC's binary-double
+			// serialization can carry extra tail digits; compare at stored precision.
+			for _, value := range []*float64{&projection.CashAvailable, &projection.CashTotal, &projection.NetAsset, &projection.MarketValue, &projection.StockValue, &projection.FundValue, &projection.Commission, &projection.Credit} {
+				*value = math.Round(*value*1_000_000) / 1_000_000
+			}
+			archivedAsset = &projection
 		}
 		if assetArchiveValid {
 			completed, _ := time.Parse(time.RFC3339Nano, meta.CollectionCompletedAt)
@@ -518,6 +631,15 @@ func assemblePositionBaseline(query PositionBaselineQuery, closeSnapshot, broker
 	meta.Proof["asset_archive_closed"] = assetArchiveValid
 	if !assetArchiveValid {
 		fail("asset_query_archive_incomplete_or_inconsistent")
+	}
+	cashLinked := assetArchiveValid && baselineCashObservationLinked(query, closeSnapshot, broker, archivedAsset, startedAt)
+	meta.Proof["cash_observation_time_linked"] = cashLinked
+	meta.Proof["source_generation_verified"] = closeSnapshot.Raw.InputSnapshotType == "broker_close" && (closeSnapshot.CapturedAt.Equal(broker.CapturedAt) || cashLinked)
+	if cashLinked {
+		meta.CashObservedAt = baselineTime(closeSnapshot.CapturedAt)
+	}
+	if !meta.Proof["source_generation_verified"] {
+		fail("snapshot_source_generation_mismatch")
 	}
 	matchSnapshot := func(snapshot baselineSnapshot) bool {
 		if len(snapshot.Rows) != len(expected) {

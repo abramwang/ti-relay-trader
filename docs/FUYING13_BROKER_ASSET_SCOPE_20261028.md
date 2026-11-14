@@ -749,3 +749,20 @@ go run ./cmd/relayctl performance-research-query-evidence \
 报告只能新建；上述路径已存在。全Go、cmd/ledger/performance race及vet通过。生产API/worker不重启、下单关闭、迁移不变。
 
 下一步优先修复基线证明链：区分现金观察和批量完成两个时间，继续核验当前代次、原始回包、账户和持仓数量；历史修复通过独立审计证据证明发布，不伪造cron任务，不修改金融值。本轮**只定位并解释，未修改共享基线判定或在线API**，报告保留原partial及`baseline_override=false`。随后完成订单/成交条目落库覆盖与正式成本语义审查。无需用户重复导出文件、无需OC补历史接口；券商总资产分项和经济NAV阻断仍独立保留。
+
+## 基线双时间与独立发布证据修复
+
+2026-11-14后续实现，仅修复只读历史持仓基线的证据关联，不改资产、持仓、订单、成交、成本或NAV。上节诊断保留为修复前记录。
+
+1. 旧同批时间路径保留。现金观察时间不同于broker_close批次时间时，核对close原始broker_asset、broker_close原始asset、close的cash_observed_at及归档资产回包；资金逻辑账户按routing、观察时刻按produced_at，遵循既有入库投影。金额比较按NUMERIC(20,6)精度，原始浮点尾数不改写。
+2. 查询origin、路由、唯一末页、回包计数、本机接收时间窗、持仓全量集合/数量/行代次仍须通过。OC时钟可与本机存在毫秒级差异，不要求produced_at严格晚于本机请求起点；不能仅凭时间相近通过关联。
+3. 10-26修复发布其实已保存在reconciliation_runs。无匹配常规job发布时，读取同run_id和交易日、completed且无错误的记录，再核验source、账户、显式dry_run=false/snapshot_only=false、零错误、数量及资产投影。不会导入本地回执，不新增假任务；已有但不合格的常规发布不得被替换。
+4. API增加close_publication_source和cash_observed_at；source_generation_verified为完整性证明，cash_observation_time_linked为可选审计。代际摘要覆盖证据，新旧游标不混用；客户端收到409须从首页重读。业务数量摘要格式不变，历史基线不授权交易。
+
+最终只读报告：`outputs/recovery/fuying13_query_evidence_20261114/baseline-fixed-final.json`，SHA256 `6e45d45d0952e289ba1c60b451416befbc80e80849e359a7345e21bcc5ea0902`。期初10-09及10-12..11-10共23日全部complete，之前11日partial消除；23日content_sha256与修复前逐日一致。22日发布来自job_run，10-26来自reconciliation_run。207次计划查询/7608条归档及23次盘前费用not_scheduled结论未变；报告新增保留原始资产回包，仅写私有证据文件。
+
+全Go、相关race/vet及隔离PG回归通过。隔离SQL验证10001行、多页内容一致、修复发布成功/失败、重建拒绝旧游标；缺失/失败/错误账户/代次/金额/数量等反例保持partial，不把未查询等同空仓。
+
+既有封存引擎输入绑定完整源码指纹，本次共享ledger代码变化会改变指纹。旧封存应在其记录的原代码版本重放；不改写旧manifest、不放宽源文件校验，也不把本次23日基线通过描述为正式成本/NAV发布验收。下一步核对订单/成交查询条目落库覆盖，再审查研究成本发布语义；券商总资产仍为基准，缺资产分项说明的经济阻断保留。
+
+发布与线上验收：仅调用`relay-docs-service.sh restart`，API PID2264828，生产`trading_enabled=0`；worker仍PID2462706（11-08启动），OC未操作。实际域名GET复核23日完整性/内容SHA一致；另核对债享5号、388、387的10-09基线分别13/7/1行，以及停用389的09-18真实空仓。SDK GET-only烟测10-26的55行分6页、重复读取/摘要一致、缺历史日期保持unavailable；SDK基线6项单测通过。无迁移、研究/正式成本或NAV发布，不触发柜台刷新。

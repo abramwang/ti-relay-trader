@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ti-relay-trader/internal/timeutil"
+	"ti-relay-trader/internal/trading"
 )
 
 type baselineFixture struct {
@@ -218,6 +219,7 @@ func TestPositionBaselineIsolatedSQLLargeAndRebuild(t *testing.T) {
 		`CREATE TEMP TABLE asset_snapshots(account_id text,trade_date date,snapshot_type text,captured_at timestamptz,raw_payload jsonb)`,
 		`CREATE TEMP TABLE position_snapshots(account_id text,trade_date date,snapshot_type text,symbol text,exchange text,quantity bigint,sellable_qty bigint,captured_at timestamptz,raw_payload jsonb)`,
 		`CREATE TEMP TABLE job_runs(trade_date date,job_name text,finished_at timestamptz,updated_at timestamptz,report_json jsonb)`,
+		`CREATE TEMP TABLE reconciliation_runs(run_id text,trade_date date,status text,source text,completed_at timestamptz,summary jsonb,error_message text)`,
 		`CREATE TEMP TABLE raw_stream_messages(raw_message_pk bigint,account_id text,origin_message_id text,stream_role text,body text,parse_error text,received_at timestamptz)`,
 	} {
 		if _, err := conn.ExecContext(ctx, ddl); err != nil {
@@ -274,6 +276,45 @@ func TestPositionBaselineIsolatedSQLLargeAndRebuild(t *testing.T) {
 	}
 	if len(all) != 10001 || PositionBaselineRowsDigest(all) != first.Baseline.ContentSHA256 {
 		t.Fatal("SQL baseline silently truncated or mixed rows")
+	}
+	// A real API recovery publishes to reconciliation_runs, not job_runs. Keep
+	// the original capture job and archive as independent source evidence.
+	f.close.Raw.Source = "historical-repair"
+	f.close.Raw.Asset = &trading.Asset{AccountID: "a", CashTotal: 100, UpdatedAt: f.close.CapturedAt}
+	r := f.closeJob.Settlement.Result
+	r.TradeDate = f.query.TradeDate
+	r.Source = f.close.Raw.Source
+	r.Status = "completed"
+	no := false
+	zero := 0
+	r.DryRun = &no
+	r.SnapshotOnly = &no
+	r.AccountErrors = &zero
+	r.Accounts[0].Asset = f.close.Raw.Asset
+	rawClose, _ := json.Marshal(f.close.Raw)
+	summary, _ := json.Marshal(r)
+	if _, err := conn.ExecContext(ctx, `UPDATE pg_temp.asset_snapshots SET raw_payload=$1 WHERE snapshot_type='close'`, string(rawClose)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, `DELETE FROM pg_temp.job_runs WHERE job_name='post_close_settlement'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO pg_temp.reconciliation_runs VALUES('close-run','2026-10-09','completed','historical-repair',$1,$2,NULL)`, f.close.CapturedAt.Add(time.Second), string(summary)); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := repo.GetPositionBaseline(ctx, f.query)
+	if err != nil || recovered.Baseline.Completeness != "complete" || recovered.Baseline.ClosePublicationSource != "reconciliation_run" {
+		t.Fatal(recovered.Baseline, err)
+	}
+	if _, err := conn.ExecContext(ctx, `UPDATE pg_temp.reconciliation_runs SET status='failed'`); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := repo.GetPositionBaseline(ctx, f.query)
+	if err != nil || failed.Baseline.Completeness == "complete" {
+		t.Fatal("failed recovery accepted", failed.Baseline, err)
+	}
+	if _, err := conn.ExecContext(ctx, `UPDATE pg_temp.reconciliation_runs SET status='completed'`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := conn.ExecContext(ctx, `UPDATE pg_temp.position_snapshots SET quantity=quantity+1 WHERE snapshot_type='close' AND symbol='000000'`); err != nil {
 		t.Fatal(err)

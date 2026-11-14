@@ -58,7 +58,7 @@ GET /v1/schema -> capabilities: positions.close_baseline.v1
 
 ## 完整性来源
 
-以下八项必须全部 true，且 `quality_flags=[]`：
+以下九项必须全部 true，且 `quality_flags=[]`：
 
 1. `close_snapshot_published`：目标账户 close 资产和全部持仓写入计数匹配，来源 broker_close，发布完成。
 2. `broker_snapshot_published`：独立捕获运行的资产及全部持仓写入完成。
@@ -68,6 +68,11 @@ GET /v1/schema -> capabilities: positions.close_baseline.v1
 6. `asset_archive_closed`：真实资产成功末页存在，且对应正确范围、原命令及采集时间窗口。
 7. `snapshot_matches_full_query`：close 和 broker_close 的证券集合、数量、可卖量、运行及捕获时间均与完整 OC 查询一致。
 8. `stale_rows_excluded`：完整 OC 集合与两个快照逐项核对，无额外旧行或遗漏证券。
+9. `source_generation_verified`（2026-11-14新增）：来源为 broker_close，且为原同批时间，或现金观察与整批采集完成两种时间已有完整证据关联。
+
+2026-11-14补充：`cash_observed_at` 仅在原始现金回包、逻辑账户、资金投影、现金观察时刻及两类快照关联成功时返回；`business_as_of/collection_completed_at` 仍表示持仓批次，不能混作现金时刻。`cash_observation_time_linked` 为审计项，旧同批时间记录可为false，不单独要求它为true。金额比较按既有数据库六位小数精度，不改写原报文；请求身份与本机接收时间窗证明关联，不假设OC与Relay绝对时钟同步。
+
+`close_publication_source` 区分 `job_run` 与 `reconciliation_run`。后者仅在无对应常规发布记录时使用已持久化的成功历史修复记录，严格核对账户/日期/run_id/source、非dry-run、非snapshot-only、无错误、写入数量及资产投影。原始捕获任务、查询归档与全量数量校验仍不可缺少，不虚构cron任务，不把失败查询当成空仓。
 
 其他账户失败不使本账户自动失败。仅资金写入、部分页成功、任务摘要正常、当前表清理或重复 GET 相同，都不足以证明完整。
 

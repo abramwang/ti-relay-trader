@@ -41,17 +41,18 @@ type researchQueryAccount struct {
 }
 
 type researchQueryProof struct {
-	Step            string     `json:"step"`
-	MessageID       string     `json:"message_id"`
-	ReportedReplies int        `json:"reported_replies"`
-	ArchivedReplies int        `json:"archived_replies"`
-	Items           int        `json:"items"`
-	Finals          int        `json:"finals"`
-	ArchiveSHA      string     `json:"archive_sha256,omitempty"`
-	State           string     `json:"state"`
-	Flags           []string   `json:"flags"`
-	FirstReply      *time.Time `json:"first_reply,omitempty"`
-	LastReply       *time.Time `json:"last_reply,omitempty"`
+	Step            string          `json:"step"`
+	MessageID       string          `json:"message_id"`
+	ReportedReplies int             `json:"reported_replies"`
+	ArchivedReplies int             `json:"archived_replies"`
+	Items           int             `json:"items"`
+	Finals          int             `json:"finals"`
+	ArchiveSHA      string          `json:"archive_sha256,omitempty"`
+	AssetReply      json.RawMessage `json:"asset_reply,omitempty"`
+	State           string          `json:"state"`
+	Flags           []string        `json:"flags"`
+	FirstReply      *time.Time      `json:"first_reply,omitempty"`
+	LastReply       *time.Time      `json:"last_reply,omitempty"`
 }
 
 type researchQueryAttempt struct {
@@ -176,6 +177,7 @@ func reviewResearchQuery(step, action, result, environment, date string, route c
 			flag("failed_or_invalid_page")
 		}
 		if action == "account.asset.query" {
+			p.AssetReply = append(json.RawMessage(nil), raw.Body...)
 			var account map[string]json.RawMessage
 			if len(e.Payload.Account) == 0 || json.Unmarshal(e.Payload.Account, &account) != nil || len(account) == 0 {
 				flag("asset_payload_missing")
