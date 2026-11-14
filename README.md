@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-08 22:07 Asia/Shanghai` 按用户授权切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立 worker 正常；不是 CTP |
 | 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。11-14仅发布API/研究页面，worker与OC未重启；迁移集合仍为1..32+42，33..41未执行，无主动报撤单或CTP采集 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-14 Asia/Shanghai` 已发布 `/trade#research` 独立研究成本页及两个GET接口，显式选择版本、筛选/排序/分页/详情/CSV。768的22日/972行均仅研究记录，不是972处错误；正式成本/NAV未写入，券商资产范围与资金桥阻断不变 |
+| 最近确认 | `2026-11-14 Asia/Shanghai` 768新增源账表只读预检CLI，两次取样覆盖10-09..11-10六表/27892行、198个表日指纹均未变化；不能倒推证明旧计算输入。研究页保持已发布版本，正式成本/NAV和资产范围阻断不变；本轮无部署/迁移/金融写入 |
 | 更新时间 | `2026-11-14` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-14` 新增`performance-research-source-check`：显式账户/研究版，读库只读repeatable-read，按表/日保留完整行多重集合SHA与条数，基准绑定环境/数据库/正文指纹；新增、删除、同条数修订可定位最早复核日。768两轮六表27892行一致，期初/活动归属也未变；证据`outputs/recovery/fuying13_source_preflight_20261114/observation-{1,2}.json`。旧版只存计算/连续性报告指纹，缺当时完整订单/成交/持仓/行情输入清单，今日观察不能补造历史证明。全Go/race/vet/隔离PG通过，无服务或金融写入。下一步在现有数据上只读重放并归档完整输入及Meridian响应、核对查询完成证据，再比较新旧研究成本；不要求用户重复导出CSV，不跳过券商总资产分项门禁。[预检细节](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本源账表观察与发布缺项)。
 
 - `2026-11-14` 独立[研究成本页](http://relay-trader.quantstage.com/trade#research)已发布：账户/版本必须显式选择，不默认latest；日期/证券/成本类别/状态筛选、排序、分页和当前筛选全量CSV，缺失不补零，审计变化单列。API与CLI复用只读repeatable-read读取，不调用正式计算或行情。全Go/race/vet、隔离PG及桌面/手机Playwright通过，生产验收证据`outputs/recovery/research_cost_web_20261114/production/`；仅API更新为PID1972284，worker仍PID2462706。新API可解码日期精度v2，但研究版未接正式任务，preview-only持久化保护保留。下一步补研究版本源事实新鲜度与正式成本发布预检；券商总资产基准不改，资产分项未说明前不发布768正式NAV。详见[页面与部署边界](docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本终端与只读接口)。
 

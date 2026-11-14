@@ -564,3 +564,67 @@ Playwright先在独立本地29092端口验收，再对正式域名复验；全�
 仅通过`relay-docs-service.sh restart`更新API/页面，API PID1972284；独立worker仍PID2462706、启动时间仍11-08 22:07，未重启OC。临时29092服务已停止，生产环境及全部下单关闭不变，Redis/DB健康。新API二进制包含既有日期精度v2读取，preview-only禁止正式持久化门禁未撤销；研究版没有接每日任务或正式NAV。迁移集合仍1..32+42，33..41未执行。
 
 下一步补源订单/成交/持仓/行情修订与版本失效范围的只读预检，再独立评审正式成本消费；不因研究页可用就宣告资金桥或正式净值修复。用户指定的券商总资产基准继续保留，资产分项说明仍是正式经济NAV的缺口。
+
+## 研究成本源账表观察与发布缺项
+
+日期：2026-11-14，Asia/Shanghai。新增CLI `performance-research-source-check`，仅生成私有JSON，无HTTP/页面发布、数据库迁移或金融写入。
+
+### 发现与边界
+
+已存`fuying13-cost-research-20261114-v1`的`evidence_sha256`只包含`cost_chain`与`continuity_review`两个报告指纹。报告保存了成本输出、期初、归属审计及部分贡献诊断，但没有原计算时完整源订单/成交/持仓/费用和Meridian响应的独立清单。因此：
+
+1. 不能把今日源表指纹写回旧版，宣称原输入从未变化。
+2. 可以从本次起建立变化观察基准，并检查后续新增、删除或修订；这不是历史数据完整性证明。
+3. 正式发布前应只读重放并固定实际消费的源输入、市场请求参数/响应/采集时间，再与旧研究结果逐日对照。仍需验证查询完成证据；零行不等于当日空仓或柜台查询完整。
+4. 这一工程证据缺口不要求重复导出普通CSV，也不意味着需要OC补历史能力。券商总资产分项说明仍是独立的经济NAV缺口。
+
+### 读取和比较
+
+六表为`orders`、`fills`、`position_snapshots`、`asset_snapshots`、`etf_component_transfers`、`order_fee_records`。观察包含期初锚点日至研究末日的全部自然日，不按交易日过滤潜在异常行；各类快照均保留。完整行包括原始payload和元数据，在PG统一UTC/ISO表示后逐行SHA256，再排序行摘要并计算表日多重集合摘要，保留重复数量，不做浮点解码或摘要成交替代。
+
+完整行任意变更都会触发复核，包括仅更新时间、重采样或重建主键；因此它是**保守变更信号，不自动认定经济错误**。零行有独立空集合摘要；删行、增行和同条数金额修订均可识别。输出仅保存表日数量/摘要，不复制账户敏感原始行。
+
+读取使用独立只读repeatable-read事务；配置数据库名与实际连接核验，表名固定白名单，账户和日期参数化。总10万行、累计256MiB、单行1MiB、日期窗口最多366自然日，单语句30秒、锁等待5秒、CLI总期限3分钟，超限/失败不生成成功或空结果。观察时间来自事务开始时间并输出+08:00；各表都在同一PG快照内，不声称与柜台/行情构成原子快照。
+
+基准文件检查schema、观察SHA、完整表日覆盖、环境/数据库/账户/版本/研究正文SHA/日期及前后时间；SHA仅为本地完整性检查，不是第三方认证或业务权威证明。旧报告结论不会作为本次授权使用。
+
+状态分别为：
+
+- `observation_started_not_historical_verification`：首次建立观察，未与原始计算输入比较。
+- `unchanged_since_observation_not_historical_verification`：相较指定观察无源行变化，不代表旧计算已重新核验。
+- `source_rows_changed_requires_review`：源行变化，列出表、日期、前后条数和摘要；`recheck_from`为最早受影响日。期初或活动归属改变时保守回到锚点日；这只是建议复核起点，不自动重算后续净值。
+
+固定保留五项未核验：原计算完整源清单、Meridian原始输入与当前修订、查询完成覆盖、preview-only成本语义的发布审查、券商资产范围/经济NAV。`cost_publishable=false`、`economic_nav_publishable=false`始终不变，单纯稳定重复读取不会清除这些缺项。
+
+### 实际观察
+
+768范围2026-10-09..2026-11-10，共33自然日、198个表日，两轮读取一致：
+
+| 表 | 行数 |
+| --- | ---: |
+| orders | 5128 |
+| fills | 13613 |
+| position_snapshots | 1878 |
+| asset_snapshots | 114 |
+| etf_component_transfers | 2610 |
+| order_fee_records | 4549 |
+| 合计 | 27892 |
+
+第二轮`anchor_and_allocations_match=true`、变更表日0。计数包括期初锚点和完整源行，不与22日成本972行直接比较，也不代表全部源查询已完整。
+
+证据`outputs/recovery/fuying13_source_preflight_20261114/`：第一轮`observation-1.json`的观察正文SHA为`d3e38aab5b1deb97734fb295487fb8c6ef46f78f4cfbe4efe1296f650e797599`，第二轮为`86eba777a31db133efcb3f9fd57cb26a1a29bba9205f704d38d7332d911276a1`。观察摘要包含采集时刻，因此两轮摘要不同；逐表日的源内容摘要全部相同。第二轮观察时间为2026-11-14 13:45:47.066624+08:00。
+
+```bash
+go run ./cmd/relayctl performance-research-source-check \
+  --config config/relay.prod.yaml --account 314000045768 \
+  --version fuying13-cost-research-20261114-v1 \
+  --output outputs/recovery/source-check-first.json
+
+go run ./cmd/relayctl performance-research-source-check \
+  --config config/relay.prod.yaml --account 314000045768 \
+  --version fuying13-cost-research-20261114-v1 \
+  --baseline outputs/recovery/source-check-first.json \
+  --output outputs/recovery/source-check-second.json
+```
+
+输出必须是新路径，0600权限，不覆盖历史证据；没有apply开关。全Go测试、相关race、vet及独立临时PG通过，包含真实冻结22日链、只读/隔离级别、同一快照屏蔽并发写入、下轮新增/1微元修订/删除检测、报告回读及禁止覆盖。生产服务未重启，API仍PID1972284、worker仍PID2462706，全部生产下单关闭，迁移仍1..32+42。

@@ -149,6 +149,8 @@ PG脚本仅用临时Unix socket数据库，完整回放需要本地冻结证据�
 
 ## 后续计划
 
+2026-11-14源账表预检：`go test ./internal/performance -run TestResearchCostVersionSource`覆盖首次观察/稳定复读/新增删除/同条数修订、锚点变化、跨环境/账户/版本/数据库/未来时间、缺日/重复日/无效SHA/超预算拒绝。上述隔离PG脚本额外运行源表读取、并发写入后的repeatable-read稳定性、下轮识别1微元修订和删除、只读/隔离级别门禁、私有报告读取及禁止覆盖。实际生产命令和证据见[源账表预检](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#研究成本源账表观察与发布缺项)，不是正式净值验收。
+
 2026-10-27绩效修复：`go test ./internal/performance ./cmd/relayctl ./internal/api ./internal/ledger` 覆盖PCF整倍委托、底仓排除、显式分组、真实歧义、连续内存预览与源资金时间门禁。`TestBrokerCashTimestampReadOnly` 使用单独的 `RELAY_CASH_TIME_READONLY_DATABASE_URL` 显式启用，只读事务验证CTE及两条2026-10生产历史样本；不得使用会建表写入的其他集成测试开关替代。详见 `docs/PERFORMANCE_REPAIR_PREVIEW_20261027.md`。
 
 1. 将现有临时 PostgreSQL migration/repository 集成脚本接入外部 CI。

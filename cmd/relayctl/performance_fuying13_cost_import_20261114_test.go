@@ -286,6 +286,9 @@ func TestFuyingResearchImportPostgres(t *testing.T) {
 			t.Fatal("gap marked applied", s)
 		}
 	}
+	t.Run("source observation and change detection", func(t *testing.T) {
+		checkResearchSourcePostgres(t, db, b, v)
+	})
 	t.Run("read-only comparison and stale evidence", func(t *testing.T) {
 		versions, err := reader.ListVersions(ctx, b.AccountID)
 		if err != nil || len(versions) != 1 || versions[0].VersionID != b.VersionID || versions[0].PayloadSHA256 != v.PayloadSHA256 {
