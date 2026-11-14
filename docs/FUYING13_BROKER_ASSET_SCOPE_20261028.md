@@ -705,3 +705,47 @@ go run ./cmd/relayctl performance-research-input-replay \
 上述报告已存在，重跑需新输出路径。命令本身不创建DB/网络客户端；测试还验证缺输入不会调用底层实时回退。本机`unshare -n`不可用（Operation not permitted），因此不声称完成内核断网沙箱验收或系统调用抓包。
 
 本轮不更改生产服务、权限、迁移或正式账表，也不替换已发布研究v1。下一步逐日核验订单/成交/资金/持仓的历史查询完成覆盖，再审查preview-only成本规则的正式发布语义及源修订依赖范围。计算可复现不代表经济资产已闭合；券商总资产分项仍待解释，资金桥/正式NAV限制保留。
+
+## 历史查询证据与基线时间差
+
+日期：2026-11-14，Asia/Shanghai。本轮新增`performance-research-query-evidence`，只读数据库，不调用OC、Meridian或重算/发布金融账表。范围来自显式研究版：10-09期初锚点及10-12..11-10的22个成本日期，共23日。
+
+### 核验方式
+
+在只读repeatable-read事务中校验数据库身份，业务时区+08:00；每条SQL上限30秒，整体5分钟。最多64日期、每日期100次任务尝试、每命令25000回包/64MiB，超限报错而非截断通过。保留每次任务尝试和它是否关联当前broker_close，不拼接多次尝试冒充一次成功。
+
+复用现有`GetPositionBaseline`检查收盘/柜台快照、发布记录和资金持仓归档；另从盘前/盘后任务内取账户对应的原命令ID，回查原始reply归档。核对成功终态、唯一末页、完整归档条数、协议/账户/环境/券商/网关/Stream、回包唯一ID、采集时间窗及items/account存在性，并为归档内容计算独立SHA。报告中的`replies`可能只有首尾摘要，以`reply_count`对照实际归档总数，不能把摘要截短当缺页。显式空items有效，缺items无效。
+
+这些证明只代表该次查询的任务终态与归档一致，不等于订单/成交条目已经逐字段核对到当前账本；原发出命令的筛选范围、次日开盘依赖和所有经济范围还需分别核验。费用查询完成也不代表券商最终交割费率或ETF清算完成。
+
+### 实际结果
+
+| 检查 | 结果 |
+| --- | --- |
+| 盘后资金/持仓/订单/成交/费用 | 23日 x 5 = 115次，终态与归档一致 |
+| 盘前资金/持仓/订单/成交 | 23日 x 4 = 92次，终态与归档一致 |
+| 盘前费用 | 23项not_scheduled；实际refresh计划不含费用，不算缺数 |
+| 计划查询归档 | 共7608条，无本轮检查出的解析/路由/条数/末页异常 |
+| 当前盘后任务与broker_close关联 | 23日均匹配 |
+| 现有收盘持仓基线 | 12日complete，11日partial；全部23日`archive_pages_closed`、`asset_archive_closed`和`snapshot_matches_full_query`为true |
+
+11个partial日期为10-26、10-28、10-29、10-30、11-02、11-03、11-04、11-05、11-06、11-09、11-10。均有`snapshot_source_generation_mismatch`，但原始close.broker_asset与broker_close.asset的账户、现金时刻和资金值能对应，close.captured_at及cash_observed_at使用的是现金观察时刻，不是整批完成时刻。
+
+例如10-28现金观察为15:01:01.427，broker_close整批captured_at为15:01:23.314955，close为15:01:01.427。来源是此前为防止逆回购本金重复计入而保留真实现金时刻的修正；旧`assemblePositionBaseline`直接要求close/broker_close的captured_at相同，将这类合法时间语义差异标成代次不一致。不能通过改回整批时间修复，否则可能重新引入逆回购重复计入。
+
+10-26还带`snapshot_publication_unproven`：当前close的run_id是`close-cash-time-20261028-314000045768-2026-10-26`，不是常规post_close_settlement任务。已找到`outputs/recovery/close_cash_time_20261028/apply_2.json`，请求/响应run_id、账户/日期一致，响应completed、asset_snapshot_written=true、55条持仓全部写入。历史`after.json` SHA仍为`9542417018cb3437e5695f192b97b1c066ae3b3e6be7180b42efc6a657ddc0b3`，与[历史收盘现金时刻修复](CLOSE_CASH_TIME_RECOVERY_20261028.md)记录一致。发布证据在私有修复回执中，不在当前基线仅查询的job_runs常规任务中。
+
+### 证据及下一步
+
+最终诊断：`outputs/recovery/fuying13_query_evidence_20261114/inspection-3.json`，SHA256 `6f8c90af4d6f9a8e31330f24906852dc1f9747fe157da6dff96cc395a72713ba`。inspection-1/2为中间排查保留，最终版已区分盘前未计划费用并增加双时间诊断，所有时间按东八区输出。原始账户数据不提交git。
+
+```bash
+go run ./cmd/relayctl performance-research-query-evidence \
+  --config config/relay.prod.yaml --account 314000045768 \
+  --version fuying13-cost-research-20261114-v1 \
+  --output outputs/recovery/fuying13_query_evidence_20261114/inspection-3.json
+```
+
+报告只能新建；上述路径已存在。全Go、cmd/ledger/performance race及vet通过。生产API/worker不重启、下单关闭、迁移不变。
+
+下一步优先修复基线证明链：区分现金观察和批量完成两个时间，继续核验当前代次、原始回包、账户和持仓数量；历史修复通过独立审计证据证明发布，不伪造cron任务，不修改金融值。本轮**只定位并解释，未修改共享基线判定或在线API**，报告保留原partial及`baseline_override=false`。随后完成订单/成交条目落库覆盖与正式成本语义审查。无需用户重复导出文件、无需OC补历史接口；券商总资产分项和经济NAV阻断仍独立保留。

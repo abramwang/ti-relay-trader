@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-research-query-evidence":
+		if err := runResearchQueryEvidence(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-research-query-evidence: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-research-input-replay":
 		if err := runResearchInputReplay(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-research-input-replay: %v\n", err)
@@ -674,6 +679,7 @@ func usage() {
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-research-source-check  Observe source row changes without granting cost or NAV publication
   performance-research-input-replay  Offline replay of sealed research inputs; no database or network access
+  performance-research-query-evidence  Read-only historical task/terminal/archive evidence; no publication
   performance-fuying13-remaining-audit-20261113  Review or append October 23 and November 3 ownership audits; no NAV writes
   performance-fuying13-repo-bridge-20261112  Read-only repo interest accrual/receipt bridge; never publishes NAV
   performance-etf-transfer-review  Read-only stored ETF component linkage evidence (no market or OC queries)
