@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-cost-continue":
+		if err := runCostContinuation(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-cost-continue: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-fuying13-transfer-preview-20261115":
 		if err := runFuyingTransferPreview(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl transfer preview: %v\n", err)
@@ -682,6 +687,7 @@ func usage() {
   performance-fuying13-cost-continuity-20261113  Read-only cost carry and basis movement checks against the stored opening anchor
   performance-fuying13-cost-import-20261114  Preflight or archive the pinned research cost chain; isolated migration 42, never NAV
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
+  performance-cost-continue  Continue a stored clean cost anchor using PG and Meridian only; read-only, no CSV or NAV publication
   performance-fuying13-transfer-preview-20261115  Read-only account outflow scenario; never publishes product NAV
   performance-research-source-check  Observe source row changes without granting cost or NAV publication
   performance-research-input-replay  Offline replay of sealed research inputs; no database or network access
