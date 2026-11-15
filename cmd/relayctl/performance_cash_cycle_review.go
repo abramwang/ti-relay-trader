@@ -85,7 +85,7 @@ func compareCashCyclePublication(p provisionalRecoveryPlan, cycles performance.E
 	return result, nil
 }
 
-func runFuyingCashCycleReview(path, digest, output string) error {
+func runFuyingCashCycleReview(path, digest, output string, includeProfit bool) error {
 	var p provisionalRecoveryPlan
 	if err := readProvisionalPlan(path, digest, &p); err != nil {
 		return err
@@ -152,6 +152,13 @@ func runFuyingCashCycleReview(path, digest, output string) error {
 		"publication_plan_sha256": digest, "source_sha256": p.InputSHA,
 		"scope":                    "observed cash timing cohorts, not full T0 profit or proof of complete private settlement; no fee or cash counted twice",
 		"economic_nav_publishable": false, "database_writes": 0, "broker_commands": 0}
+	if includeProfit {
+		profit, err := loadFuyingCycleProfit(cycles)
+		if err != nil {
+			return err
+		}
+		report["cycle_profit_review"] = profit
+	}
 	if err := writeETFTransferReviewFile(output, report); err != nil {
 		return err
 	}
