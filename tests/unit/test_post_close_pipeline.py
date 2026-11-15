@@ -14,7 +14,7 @@ PIPELINE = ROOT / "scripts" / "run-post-close-pipeline.sh"
 
 
 class PostClosePipelineTest(unittest.TestCase):
-    def run_pipeline(self, capture_state: str, settlement_state: str = "ready") -> tuple[subprocess.CompletedProcess[str], str]:
+    def run_pipeline(self, capture_state: str, settlement_state: str = "ready", accounts: str = "acct-1,acct-2") -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
             fake_python = temp / "python"
@@ -75,12 +75,21 @@ class PostClosePipelineTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+            fake_relayctl = temp / "relayctl"
+            fake_relayctl.write_text(
+                '#!/bin/sh\nprintf "relayctl %s\\n" "$*" >> "$PIPELINE_CALLS"\nprintf "{}\\n"\n',
+                encoding="utf-8",
+            )
+            fake_relayctl.chmod(fake_relayctl.stat().st_mode | stat.S_IXUSR)
+            # Never let the integration harness build or run the real financial publisher.
+            os.utime(fake_relayctl, (4102444800, 4102444800))
             env = {
                 **os.environ,
                 "RELAY_PYTHON_BIN": str(fake_python),
                 "RELAY_JOB_REPORT_DIR": str(temp / "reports"),
                 "RELAY_PERFORMANCE_LOCK": str(temp / "performance.lock"),
-                "RELAY_PERFORMANCE_ACCOUNT_IDS": "acct-1,acct-2",
+                "RELAY_PERFORMANCE_ACCOUNT_IDS": accounts,
+                "RELAYCTL_BIN": str(fake_relayctl),
                 "PIPELINE_CALLS": str(calls),
                 "PIPELINE_CAPTURE_STATE": capture_state,
                 "PIPELINE_SETTLEMENT_STATE": settlement_state,
@@ -108,6 +117,16 @@ class PostClosePipelineTest(unittest.TestCase):
         self.assertIn("--trigger post_close_capture_success", calls)
         self.assertIn("--skip-refresh", calls)
         self.assertIn("--account-id acct-1 --account-id acct-2", calls)
+        self.assertIn("relayctl performance-rebuild", calls)
+        self.assertIn("-accounts acct-1,acct-2", calls)
+
+    def test_only_captured_configured_accounts_are_published(self) -> None:
+        result, calls = self.run_pipeline("ready", accounts="acct-2,not-captured")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        publisher = next(line for line in calls.splitlines() if line.startswith("relayctl "))
+        self.assertIn("-accounts acct-2 ", publisher)
+        self.assertNotIn("acct-1", publisher)
+        self.assertNotIn("not-captured", publisher)
 
     def test_does_not_run_settlement_after_failed_capture(self) -> None:
         result, calls = self.run_pipeline("failed")

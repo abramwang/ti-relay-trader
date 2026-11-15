@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKER_BEGIN="# RELAY_TRADER_CRON_BEGIN"
 MARKER_END="# RELAY_TRADER_CRON_END"
 CRON_LOG_DIR="${RELAY_CRON_LOG_DIR:-/var/log/relay}"
-PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-307000051387,307000051388,314000046830}"
+PERFORMANCE_ACCOUNT_IDS="${RELAY_PERFORMANCE_ACCOUNT_IDS:-307000051387,307000051388,314000046830,314000045768}"
 
 current_crontab() {
   crontab -l 2>/dev/null || true
@@ -15,11 +15,13 @@ without_managed_block() {
   current_crontab | sed "/^${MARKER_BEGIN}$/,/^${MARKER_END}$/d"
 }
 
-install_cron() {
+install_cron() (
+  local staging
+  staging="$(mktemp -d)"
+  trap 'rm -rf "$staging"' EXIT
   mkdir -p "$CRON_LOG_DIR/reports"
-  {
-    without_managed_block
-    cat <<EOF
+  current_crontab > "$staging/current"
+  cat > "$staging/block" <<EOF
 $MARKER_BEGIN
 CRON_TZ=Asia/Shanghai
 TZ=Asia/Shanghai
@@ -45,9 +47,30 @@ RELAY_TRANSIENT_QUERY_RETRY_SECONDS=5
 0,10 19 * * 1-5 cd \$RELAY_HOME && flock -n /tmp/relay-performance-canonical.lock \$RELAY_HOME/scripts/run-canonical-performance.sh >> $CRON_LOG_DIR/performance_canonical.log 2>&1
 $MARKER_END
 EOF
-  } | crontab -
+  # Keep the block in place: moving cron environment assignments can alter
+  # unrelated jobs below the original block.
+  awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" -v block="$staging/block" '
+    function emit(line) {
+      while ((getline line < block) > 0) print line
+      close(block)
+    }
+    $0 == begin {
+      if (seen || inside) { invalid=1; exit }
+      seen=1; inside=1; emit(); next
+    }
+    $0 == end {
+      if (!inside) { invalid=1; exit }
+      inside=0; next
+    }
+    !inside { print }
+    END {
+      if (inside || invalid) exit 1
+      if (!seen) emit()
+    }
+  ' "$staging/current" > "$staging/merged"
+  crontab "$staging/merged"
   echo "relay trading jobs cron installed"
-}
+)
 
 uninstall_cron() {
   without_managed_block | crontab -

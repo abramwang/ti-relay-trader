@@ -408,7 +408,7 @@ RELAY_BASE_URL=http://relay-trader.quantstage.com
 1 9 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-pre-open-init.lock python3 -m relay.jobs.pre_open_init --persist --trigger cron --output /var/log/relay/reports/pre_open_init.json >> /var/log/relay/pre_open_init.log 2>&1
 
 # A 股生产环境盘后流水线，15:01 先独立捕获券商数据，再结算和计算绩效。
-RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830
+RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830,314000045768
 1 15 * * 1-5 root cd $RELAY_HOME && flock -n /tmp/relay-post-close-pipeline.lock $RELAY_HOME/scripts/run-post-close-pipeline.sh >> /var/log/relay/post_close_pipeline.log 2>&1
 
 # Meridian 16:30 启动、16:40/16:50 校准复验、17:05 状态机截止；Relay 17:10 首查，每 10 分钟重试至 19:10。
@@ -460,11 +460,11 @@ PYTHONPATH=src:sdk/python python3 -m relay.jobs.performance_daily \
   --base-url http://relay-trader.quantstage.com \
   --account-id 307000051387 \
   --account-id 307000051388 \
-  --account-id 307000051389 \
+  --account-id 314000045768 \
   --account-id 314000046830 \
   --output outputs/jobs/performance_daily.json
 
-RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830 \
+RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830,314000045768 \
   scripts/run-canonical-performance.sh
 ```
 

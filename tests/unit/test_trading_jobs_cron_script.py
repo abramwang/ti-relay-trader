@@ -28,7 +28,12 @@ class TradingJobsCronScriptTest(unittest.TestCase):
                       [[ -f "$FAKE_CRONTAB_FILE" ]] && cat "$FAKE_CRONTAB_FILE"
                       exit 0
                     fi
-                    cat > "$FAKE_CRONTAB_FILE"
+                    if [[ -n "${1:-}" ]]; then
+                      cat "$1" > "$FAKE_CRONTAB_FILE.next"
+                    else
+                      cat > "$FAKE_CRONTAB_FILE.next"
+                    fi
+                    mv "$FAKE_CRONTAB_FILE.next" "$FAKE_CRONTAB_FILE"
                     """
                 ),
                 encoding="utf-8",
@@ -40,6 +45,9 @@ class TradingJobsCronScriptTest(unittest.TestCase):
                 "FAKE_CRONTAB_FILE": str(crontab_file),
                 "RELAY_CRON_LOG_DIR": str(temp / "logs"),
             }
+            env.pop("RELAY_PERFORMANCE_ACCOUNT_IDS", None)
+            unrelated = "# unrelated job\n5 2 * * * /bin/true\n"
+            crontab_file.write_text(unrelated, encoding="utf-8")
 
             result = subprocess.run(
                 [str(SCRIPT), "install"],
@@ -56,10 +64,37 @@ class TradingJobsCronScriptTest(unittest.TestCase):
             self.assertIn("*/10 18 * * 1-5", installed)
             self.assertIn("0,10 19 * * 1-5", installed)
             self.assertIn(
-                "RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830",
+                "RELAY_PERFORMANCE_ACCOUNT_IDS=307000051387,307000051388,314000046830,314000045768\n",
                 installed,
             )
             self.assertNotIn("40,50 16 * * 1-5", installed)
+            self.assertTrue(installed.startswith(unrelated))
+            self.assertIn("1 9 * * 1-5", installed)
+            self.assertIn("1 15 * * 1-5", installed)
+            self.assertNotIn("501000114077", installed)
+            self.assertNotIn("307000051389", installed)
+
+            following = "TZ=UTC\n17 2 * * * /bin/true\n"
+            installed += following
+            crontab_file.write_text(installed, encoding="utf-8")
+
+            repeated = subprocess.run([str(SCRIPT), "install"], cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(crontab_file.read_text(encoding="utf-8"), installed)
+            env["RELAY_PERFORMANCE_ACCOUNT_IDS"] = "custom-account"
+            overridden = subprocess.run([str(SCRIPT), "install"], cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(overridden.returncode, 0, overridden.stderr)
+            updated = crontab_file.read_text(encoding="utf-8")
+            self.assertTrue(updated.startswith(unrelated))
+            self.assertIn("RELAY_PERFORMANCE_ACCOUNT_IDS=custom-account\n", updated)
+            self.assertNotIn("314000045768", updated)
+            self.assertTrue(updated.endswith(following))
+
+            invalid = updated + "# RELAY_TRADER_CRON_BEGIN\n"
+            crontab_file.write_text(invalid, encoding="utf-8")
+            refused = subprocess.run([str(SCRIPT), "install"], cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertEqual(crontab_file.read_text(encoding="utf-8"), invalid)
 
 
 if __name__ == "__main__":

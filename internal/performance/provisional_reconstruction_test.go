@@ -94,3 +94,38 @@ func TestProvisionalInferredSourceRelease(t *testing.T) {
 		t.Fatal("inferred payment promoted to known")
 	}
 }
+
+func TestProvisionalReconstructionWeekendContinuation(t *testing.T) {
+	for _, date := range []string{"2026-11-13", "2026-11-12"} {
+		t.Run(date, func(t *testing.T) {
+			store := &fakePerformanceStore{navs: []ledger.PerformanceNAV{{
+				AccountID: "a", TradeDate: date, Status: "provisional",
+				FormulaVersion: ProvisionalReconstructionFormula, CumulativeNAV: 1.25, CloseEconomicNAV: 1000,
+			}}}
+			s, err := New(Options{Store: store, Calendar: weekdayCalendar{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous, _, flags, err := s.previousNAVContext(context.Background(), "a", "2026-11-16")
+			if err != nil || previous.TradeDate != date || previous.CumulativeNAV != 1.25 {
+				t.Fatalf("unexpected previous NAV: %+v %v", previous, err)
+			}
+			gap := date != "2026-11-13"
+			if containsStringValue(flags, "previous_economic_nav_gap") != gap {
+				t.Fatalf("trading-day gap incorrect: %v", flags)
+			}
+			for _, flag := range []string{"provisional_reconstruction_anchor", "etf_asset_inclusion_unverified", "private_settlement_coverage_unverified"} {
+				if !containsStringValue(flags, flag) {
+					t.Fatalf("lost provisional boundary %s: %v", flag, flags)
+				}
+			}
+			costGap, actual, expected := s.previousCostStateGap(context.Background(), "2026-11-16", []ledger.PositionCostState{{TradeDate: date}})
+			if costGap != gap || actual != date || expected != "2026-11-13" {
+				t.Fatalf("cost gap incorrect: %v %s %s", costGap, actual, expected)
+			}
+			if len(store.navUpserts) != 0 {
+				t.Fatal("continuation check wrote financial data")
+			}
+		})
+	}
+}
