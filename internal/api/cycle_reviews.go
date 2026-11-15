@@ -82,5 +82,25 @@ func (s *Server) handleCycleReviews(w http.ResponseWriter, r *http.Request, acco
 			rows = append(rows, row)
 		}
 	}
-	httpx.WriteOK(w, r, 200, map[string]any{"account_id": account, "available": true, "version_id": v.VersionID, "published_at": v.CreatedAt, "payload_sha256": v.PayloadSHA256, "source_sha256": d.SourceSHA256, "coverage_from": d.DateFrom, "observed_through": d.ObservedThrough, "date_from": from, "date_to": to, "date_basis": "source_trade_date", "account_nav_publishable": false, "final_settlement": false, "cycles": rows, "version_cycle_count": len(d.Rows)})
+	var daily *performance.CycleDailyReview
+	dailyFrom := ""
+	if d.Daily != nil {
+		dailyFrom = d.Daily.Days[0].Timing.TradeDate
+		daily = &performance.CycleDailyReview{OpeningDate: d.Daily.OpeningDate, Days: []performance.CycleDailyReviewDay{}, InferredLegs: []performance.ETFCycleCashLeg{}}
+		ids := map[string]bool{}
+		for _, day := range d.Daily.Days {
+			if day.Timing.TradeDate >= from && day.Timing.TradeDate <= to {
+				daily.Days = append(daily.Days, day)
+				for _, id := range day.InferredFlowIDs {
+					ids[id] = true
+				}
+			}
+		}
+		for _, leg := range d.Daily.InferredLegs {
+			if ids[leg.FlowID] {
+				daily.InferredLegs = append(daily.InferredLegs, leg)
+			}
+		}
+	}
+	httpx.WriteOK(w, r, 200, map[string]any{"account_id": account, "available": true, "version_id": v.VersionID, "published_at": v.CreatedAt, "payload_sha256": v.PayloadSHA256, "source_sha256": d.SourceSHA256, "coverage_from": d.DateFrom, "observed_through": d.ObservedThrough, "date_from": from, "date_to": to, "date_basis": "source_trade_date", "account_nav_publishable": false, "final_settlement": false, "cycles": rows, "version_cycle_count": len(d.Rows), "daily_review": daily, "daily_date_basis": "trade_date", "daily_coverage_from": dailyFrom})
 }

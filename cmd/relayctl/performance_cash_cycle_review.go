@@ -8,16 +8,7 @@ import (
 	"ti-relay-trader/internal/performance"
 )
 
-type cashCycleAccountDay struct {
-	TradeDate               string   `json:"trade_date"`
-	BrokerPnLCents          int64    `json:"broker_basis_pnl_cents"`
-	PublishedPnLCents       int64    `json:"published_pnl_cents"`
-	TimingAdjustmentCents   int64    `json:"conditional_timing_adjustment_cents"`
-	OtherOpeningCents       int64    `json:"unclassified_open_component_cents"`
-	OtherClosingCents       int64    `json:"unclassified_close_component_cents"`
-	NoObservedTimingOrOther bool     `json:"no_observed_timing_or_component_exposure"`
-	OriginalFlags           []string `json:"published_quality_flags_preserved"`
-}
+type cashCycleAccountDay = performance.CycleAccountDay
 
 func fuyingCycleLegs(m fuyingCashMatrix) ([]performance.ETFCycleCashLeg, error) {
 	if m.AccountID != fuying13Account || m.Publishable || m.Overlap || m.AllClosed || m.Writes != 0 || m.Commands != 0 {
@@ -147,7 +138,8 @@ func runFuyingCashCycleReview(path, digest, output string, includeProfit bool) e
 		}
 	}
 	report := map[string]any{"schema": "relay.etf_cash_cycle_comparison.v1", "account_id": p.Account,
-		"cycles": cycles, "account_days": days, "no_observed_timing_or_component_exposure_dates": unaffected,
+		"cash_legs": legs,
+		"cycles":    cycles, "account_days": days, "no_observed_timing_or_component_exposure_dates": unaffected,
 		"broker_period_pnl_cents": brokerPnL, "published_period_pnl_cents": publishedPnL,
 		"publication_plan_sha256": digest, "source_sha256": p.InputSHA,
 		"scope":                    "observed cash timing cohorts, not full T0 profit or proof of complete private settlement; no fee or cash counted twice",

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261115-cycle-cash">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261115-cycle-daily-r2">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
@@ -502,6 +502,17 @@
           <div class="cycle-review-footer"><span id="cycleReviewScope">周期收益不等于当日账户盈亏 · 非最终清算</span><div><button id="cycleReviewPrev" type="button" title="上一页" aria-label="周期上一页" disabled>‹</button><span id="cycleReviewPage">0 / 0</span><button id="cycleReviewNext" type="button" title="下一页" aria-label="周期下一页" disabled>›</button></div></div>
         </section>
 
+        <section class="performance-section cycle-daily-section" aria-label="现金时序与每日盈亏">
+          <div class="section-toolbar cycle-daily-toolbar">
+            <div><h2>现金时序与每日盈亏</h2><span id="cycleDailyMeta">尚无逐日核对版本</span></div>
+            <strong id="cycleDailyStatus">未读取</strong>
+          </div>
+          <div class="cycle-daily-scroll">
+            <table class="cycle-review-table"><thead><tr><th>交易日</th><th>券商资产口径盈亏</th><th>已知源日调整</th><th>推定源日调整</th><th>已发布暂定盈亏</th><th>未核验分项 · 期初 / 期末</th><th>影响范围 / 核对明细</th></tr></thead><tbody id="cycleDailyRows"><tr><td colspan="7" class="empty-state">尚无逐日核对版本</td></tr></tbody></table>
+          </div>
+          <div class="cycle-daily-footer"><span>金额：元 · 时序调整已计入暂定盈亏，不是新增收益 · 非最终清算</span><div><button id="cycleDailyPrev" type="button" title="上一页" aria-label="逐日核对上一页" disabled>‹</button><span id="cycleDailyPage">0 / 0</span><button id="cycleDailyNext" type="button" title="下一页" aria-label="逐日核对下一页" disabled>›</button></div></div>
+        </section>
+
         <div class="performance-body">
           <section class="performance-section series-section">
             <div class="section-toolbar series-toolbar">
@@ -914,6 +925,6 @@
   </script>
   <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261115-cycle-cash"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261115-cycle-daily"></script>
 </body>
 </html>

@@ -62,3 +62,49 @@ func TestCycleReviewRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestCycleDailyReviewRouteFiltering(t *testing.T) {
+	leg := performance.ETFCycleCashLeg{SecurityID: "510310.SH", ObservedETFCashLeg: performance.ObservedETFCashLeg{AccountID: "a", FlowID: "flow", SourceDate: "2026-10-12", PostedDate: "2026-10-13", AmountCents: 100, SourceEvidence: performance.InferredETFCashSource, EvidenceRef: "synthetic"}}
+	cash, err := performance.ReviewETFCashCycles("a", "2026-10-09", []string{"2026-10-12", "2026-10-13", "2026-10-14"}, []performance.ETFCycleCashLeg{leg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := performance.CycleReviewSource{AccountID: "a", Cycles: cash, CashLegs: []performance.ETFCycleCashLeg{leg}}
+	s.Profit.Profits, err = performance.CalculateETFCycleProfits(cash, []performance.ETFCycleTradingEvidence{{AccountID: "a", CycleID: "2026-10-12/510310.SH", AcquisitionDate: "2026-10-12", AcquisitionQuantity: 100, RedemptionQuantity: 100, AcquisitionGrossCents: 1000, ComponentSaleCents: 1000, FeeScope: "ordinary_buys_and_component_sales_only", FeeBasis: "broker_cash_reconciled", EvidenceRefs: []string{"synthetic"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, day := range cash.Days {
+		s.AccountDays = append(s.AccountDays, performance.CycleAccountDay{TradeDate: day.TradeDate, PublishedPnLCents: day.AdjustmentCents, TimingAdjustmentCents: day.AdjustmentCents, NoObservedTimingOrOther: len(day.ActiveCycleIDs) == 0})
+	}
+	v, err := performance.BuildCycleReviewVersion(s, "v4", strings.Repeat("b", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		date        string
+		days, flows int
+	}{{"20261013", 1, 1}, {"20261014", 1, 0}, {"20261015", 0, 0}} {
+		cfg := config.Default()
+		cfg.Accounts = []config.AccountRouteConfig{{AccountID: "a"}}
+		h := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{CycleReviews: &fakeCycleReviews{value: v}})
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/accounts/a/performance/cycle-reviews?date_from="+tc.date+"&date_to="+tc.date, nil))
+		var reply struct {
+			Data struct {
+				Cycles []performance.CycleReviewRow  `json:"cycles"`
+				Daily  *performance.CycleDailyReview `json:"daily_review"`
+				Basis  string                        `json:"daily_date_basis"`
+			}
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != 200 || len(reply.Data.Cycles) != 0 || reply.Data.Daily == nil || len(reply.Data.Daily.Days) != tc.days || len(reply.Data.Daily.InferredLegs) != tc.flows || reply.Data.Basis != "trade_date" {
+			t.Fatal(rec.Code, rec.Body.String())
+		}
+		if tc.date == "20261013" && reply.Data.Daily.Days[0].Timing.Inferred.OpenReceivableCents != 100 {
+			t.Fatal("date filtering lost opening exposure")
+		}
+	}
+}

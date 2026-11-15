@@ -151,4 +151,26 @@ func TestCycleReviewPostgres(t *testing.T) {
 	if _, err := repo.AppendCycleReviewVersion(ctx, latest); err == nil {
 		t.Fatal("corrupt hash accepted")
 	}
+	daily, err := BuildCycleReviewVersion(dailyCycleFixture(t), "v4", strings.Repeat("d", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.AppendCycleReviewVersion(ctx, daily); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := repo.GetCycleReviewVersion(ctx, "a", "v4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc CycleReviewDocument
+	if err = json.Unmarshal(saved.Payload, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateCycleReview(doc); err != nil || doc.Daily == nil || len(doc.Daily.Days) != 5 {
+		t.Fatal("daily round trip", err)
+	}
+	old, err := repo.GetCycleReviewVersion(ctx, "a", "v1")
+	if err != nil || string(old.Payload) != string(v.Payload) {
+		t.Fatal("old publication changed", err)
+	}
 }

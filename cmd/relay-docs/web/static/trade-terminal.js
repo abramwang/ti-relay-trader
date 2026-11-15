@@ -48,6 +48,7 @@
     performanceCycleError: "",
     performanceCycleLoading: false,
     performanceCyclePage: 0,
+	performanceCycleDailyPage: 0,
     performanceDaily: null,
     performanceContribution: null,
     performanceTradeQuality: null,
@@ -272,6 +273,12 @@
     cycleReviewPrev: byID("cycleReviewPrev"),
     cycleReviewNext: byID("cycleReviewNext"),
     cycleReviewPage: byID("cycleReviewPage"),
+    cycleDailyMeta: byID("cycleDailyMeta"),
+    cycleDailyStatus: byID("cycleDailyStatus"),
+    cycleDailyRows: byID("cycleDailyRows"),
+    cycleDailyPrev: byID("cycleDailyPrev"),
+    cycleDailyNext: byID("cycleDailyNext"),
+    cycleDailyPage: byID("cycleDailyPage"),
     performanceQualityDate: byID("performanceQualityDate"),
     performanceQualityStatus: byID("performanceQualityStatus"),
     performanceQualityPassed: byID("performanceQualityPassed"),
@@ -3794,6 +3801,7 @@
     state.performanceCycleError = "";
     state.performanceCycleLoading = true;
     state.performanceCyclePage = 0;
+    state.performanceCycleDailyPage = 0;
     renderCycleReview();
     const accountID = encodeURIComponent(state.activeAccount);
     const isCurrentLoad = () => loadSeq === state.performanceLoadSeq && accountID === encodeURIComponent(state.activeAccount);
@@ -4763,7 +4771,42 @@
     return checks;
   }
 
+  function renderCycleDailyReview() {
+    if (!els.cycleDailyRows) return;
+    const data = state.performanceCycleReview?.account_id === state.activeAccount ? state.performanceCycleReview : null;
+    const daily = data?.daily_review;
+    const rows = daily?.days || [];
+    const money = (value) => Number.isFinite(value) ? formatNumber(value / 100) : "--";
+    const exposed = (t) => t.open_receivable_cents || t.open_payable_cents || t.close_receivable_cents || t.close_payable_cents;
+    const inferred = rows.filter((r) => exposed(r.cash_timing.inferred_source)).length;
+    const clear = rows.filter((r) => r.account_basis.no_observed_timing_or_component_exposure).length;
+    const empty = state.performanceCycleLoading ? "读取中" : state.performanceCycleError ? "读取失败，未清除原质量标记" : daily ? "所选日期超出逐日核对范围" : "尚无逐日核对版本";
+    els.cycleDailyStatus.textContent = rows.length ? rows.length + " 日 · " + inferred + " 日有推定时序暴露" : empty;
+    els.cycleDailyMeta.textContent = daily ? displayDate(data.daily_coverage_from) + " 至 " + displayDate(data.observed_through) + " · 所选区间 " + clear + " 日无已观察时序及分项暴露 · 策略归因未核验" : "未发布不代表无异常";
+    const pages = Math.ceil(rows.length / 10);
+    state.performanceCycleDailyPage = Math.max(0, Math.min(state.performanceCycleDailyPage, pages - 1));
+    els.cycleDailyPage.textContent = (pages ? state.performanceCycleDailyPage + 1 : 0) + " / " + pages;
+    els.cycleDailyPrev.disabled = state.performanceCycleDailyPage === 0;
+    els.cycleDailyNext.disabled = !pages || state.performanceCycleDailyPage + 1 >= pages;
+    const legs = new Map((daily?.inferred_cash_legs || []).map((l) => [l.flow_id, l]));
+    els.cycleDailyRows.innerHTML = rows.length ? rows.slice(state.performanceCycleDailyPage * 10, (state.performanceCycleDailyPage + 1) * 10).map((r) => {
+      const a = r.account_basis, t = r.cash_timing, k = t.known_source, i = t.inferred_source;
+      const scopes = [];
+      if (exposed(k)) scopes.push("已知源日现金时序");
+      if (exposed(i)) scopes.push("推定源日现金时序");
+      if (a.unclassified_open_component_cents || a.unclassified_close_component_cents) scopes.push("资产分项未核验");
+      const details = (r.inferred_exposed_flow_ids || []).map((id) => {
+        const l = legs.get(id);
+        return l ? `<p>流水 ${escapeHTML(id)} · ${escapeHTML(l.security_id)}<br>推定源日 ${escapeHTML(displayDate(l.source_date))} · 实际记账日 ${escapeHTML(displayDate(l.posted_date))} · ${escapeHTML(money(l.amount_cents))} 元</p>` : "";
+      }).join("");
+      return `<tr data-cash-day="${escapeHTML(t.trade_date)}"><td>${escapeHTML(displayDate(t.trade_date))}</td><td>${escapeHTML(money(a.broker_basis_pnl_cents))}</td><td>${escapeHTML(money(k.net_carry_adjustment_cents))}</td><td>${escapeHTML(money(i.net_carry_adjustment_cents))}</td><td>${escapeHTML(money(a.published_pnl_cents))}</td><td>${escapeHTML(money(a.unclassified_open_component_cents))} / ${escapeHTML(money(a.unclassified_close_component_cents))}</td><td><details><summary>${escapeHTML(scopes.join(" · ") || "该范围无已观察暴露")}</summary>
+        <p>推定应收：期初 ${escapeHTML(money(i.open_receivable_cents))} / 期末 ${escapeHTML(money(i.close_receivable_cents))}</p><p>推定应付：期初 ${escapeHTML(money(i.open_payable_cents))} / 期末 ${escapeHTML(money(i.close_payable_cents))}</p><p>推定集合实际收付 ${escapeHTML(money(i.posted_cash_cents))} · 按源日归属 ${escapeHTML(money(i.source_cash_cents))}</p>
+        ${details}<p>原发布质量标记保留 ${escapeHTML(String((a.published_quality_flags_preserved || []).length))} 项 · 不代表全部清算已确认</p></details></td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="empty-state">${escapeHTML(empty)}</td></tr>`;
+  }
+
   function renderCycleReview() {
+    renderCycleDailyReview();
     if (!els.cycleReviewRows) return;
     const data = state.performanceCycleReview?.account_id === state.activeAccount ? state.performanceCycleReview : null;
     const rows = data && Array.isArray(data.cycles) ? data.cycles : [];
@@ -7639,6 +7682,8 @@
     els.downloadPerformanceButton.addEventListener("click", downloadPerformanceCSV);
     els.cycleReviewPrev?.addEventListener("click", () => { state.performanceCyclePage--; renderCycleReview(); });
     els.cycleReviewNext?.addEventListener("click", () => { state.performanceCyclePage++; renderCycleReview(); });
+    els.cycleDailyPrev?.addEventListener("click", () => { state.performanceCycleDailyPage--; renderCycleDailyReview(); });
+    els.cycleDailyNext?.addEventListener("click", () => { state.performanceCycleDailyPage++; renderCycleDailyReview(); });
     if (els.performanceCapitalReferenceToggle) {
       els.performanceCapitalReferenceToggle.addEventListener("change", () => {
         const zoom = state.performanceChart?.getOption().dataZoom?.[0];

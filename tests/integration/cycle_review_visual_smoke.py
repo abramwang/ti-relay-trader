@@ -44,6 +44,33 @@ def main():
         load("20261012", "20261113")
         expect(page.locator("#cycleReviewStatus")).to_have_text("14 组 · 清算未确认", timeout=60000)
         expect(page.locator("#cycleReviewRows tr")).to_have_count(14)
+        expect(page.locator("#cycleDailyStatus")).to_have_text("25 日 · 9 日有推定时序暴露")
+        expect(page.locator("#cycleDailyRows tr")).to_have_count(10)
+        day19 = page.locator('[data-cash-day="2026-10-19"]')
+        expect(day19.locator("td").nth(3)).to_have_text("12,688.20")
+        day19.locator("summary").click()
+        expect(day19).to_contain_text("推定源日")
+        expect(day19).to_contain_text("实际记账日")
+        assert page.locator(".cycle-daily-scroll").evaluate("e => e.scrollHeight <= e.clientHeight + 1")
+        assert page.locator(".cycle-daily-section").evaluate("e => e.scrollHeight <= e.clientHeight + 1")
+        day19.scroll_into_view_if_needed()
+        page.wait_for_timeout(4000)
+        page.screenshot(path=str(output / "daily-desktop.png"))
+        page.locator(".cycle-daily-footer").scroll_into_view_if_needed()
+        rect = page.locator(".cycle-daily-footer").bounding_box()
+        assert 94 <= rect["y"] and rect["y"] + rect["height"] <= 1022, rect
+        page.screenshot(path=str(output / "daily-footer.png"))
+        page.set_viewport_size({"width": 390, "height": 844})
+        day19.locator("details").scroll_into_view_if_needed()
+        page.screenshot(path=str(output / "daily-mobile.png"))
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.set_viewport_size({"width": 1600, "height": 1050})
+        day19.locator("summary").click()
+        page.locator("#cycleDailyNext").click()
+        expect(page.locator("#cycleDailyPage")).to_have_text("2 / 3")
+        expect(page.locator('[data-cash-day="2026-10-29"]')).to_contain_text("该范围无已观察暴露")
+        page.locator("#cycleDailyNext").click()
+        expect(page.locator("#cycleDailyRows tr")).to_have_count(5)
         expect(page.locator("#cycleFeeState")).to_have_text("14 / 14 组已核对")
         expect(page.locator("#cycleReviewRows tr").first.locator("td").nth(6)).to_have_text("-7,702.84")
         carried = page.locator('[data-cycle-id="2026-10-15/510310.SH"]')
@@ -93,6 +120,7 @@ def main():
         expect(page.locator("#cycleReviewRows td").nth(6)).to_have_text("1,134.73")
         load("20261105", "20261113")
         expect(page.locator("#cycleReviewStatus")).to_have_text("区间内无核对记录", timeout=60000)
+        expect(page.locator("#cycleDailyStatus")).to_have_text("7 日 · 0 日有推定时序暴露")
 
         raw = page.request.get(args.base_url + path + "?date_from=20261012&date_to=20261113").json()
         assert raw["data"]["account_nav_publishable"] is False
@@ -105,6 +133,15 @@ def main():
         assert len(cash) == len({g["broker_flow_id"] for g in cash}) == 9
         assert sum(g["amount_cents"] for g in cash) == 115123050
         assert all(g["already_included"] for g in cash)
+        days = raw["data"]["daily_review"]["days"]
+        assert len(days) == 25
+        assert len(raw["data"]["daily_review"]["inferred_cash_legs"]) == 10
+        assert sum(d["cash_timing"]["inferred_source"]["net_carry_adjustment_cents"] != 0 for d in days) == 7
+        assert sum(d["cash_timing"]["inferred_source"]["net_carry_adjustment_cents"] for d in days) == 0
+        assert sum(d["account_basis"]["no_observed_timing_or_component_exposure"] for d in days) == 9
+        for d in days:
+            a, t = d["account_basis"], d["cash_timing"]
+            assert a["published_pnl_cents"] == a["broker_basis_pnl_cents"] + t["conditional_timing_adjustment_cents"]
         fixture = copy.deepcopy(raw)
         fixture["data"]["cycles"] = fixture["data"]["cycles"] * 2
         page.route("**" + path + "?*", lambda route: route.fulfill(json=fixture))
@@ -118,15 +155,17 @@ def main():
         page.route("**" + path + "?*", lambda route: route.fulfill(status=503, json={"error": {"message": "cycle review unavailable"}}))
         load("20261012", "20261113")
         expect(page.locator("#cycleReviewStatus")).to_have_text("读取失败", timeout=60000)
+        expect(page.locator("#cycleDailyRows")).not_to_contain_text("12,688.20")
         expect(page.locator("#cycleReviewRows")).not_to_contain_text("-7,702.84")
         expect(page.locator("#cycleAccountState")).to_have_text("连续暂定净值")
         page.unroute("**" + path + "?*")
         page.locator('#accountTabs button[title*="307000051388"]').click()
         expect(page.locator("#cycleReviewStatus")).to_have_text("尚无核对版本", timeout=60000)
         expect(page.locator("#cycleFeeState")).to_have_text("--")
+        expect(page.locator("#cycleDailyStatus")).to_have_text("尚无逐日核对版本")
         assert not errors, errors
         assert not writes, writes
-        report = {"passed": True, "cycles": 14, "checks": ["published-values", "component-gaps", "later-sales-already-included", "immutable-old-version", "date-filter", "empty-range", "account-isolation", "pagination-fixture", "error-isolation", "desktop", "mobile"], "page_errors": errors, "writes": writes}
+        report = {"passed": True, "cycles": 14, "checks": ["published-values", "component-gaps", "later-sales-already-included", "immutable-old-version", "daily-timing-identity", "gross-exposure", "daily-pagination", "daily-unclipped-footer", "date-filter", "empty-range", "account-isolation", "pagination-fixture", "error-isolation", "desktop", "mobile"], "page_errors": errors, "writes": writes}
         (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         print(json.dumps(report, ensure_ascii=False))
         browser.close()

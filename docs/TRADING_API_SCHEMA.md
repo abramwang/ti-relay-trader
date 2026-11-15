@@ -531,6 +531,12 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 
 逐父单匹配已封存券商现金证据的差额可另含`cash_explanation`：`transfer_fill_id`、`broker_flow_id`、`amount_cents`、`posted_at`（东八区）、`evidence_sha256`及`already_included=true`。它仅解释已经进入原周期现金的记录，不是新的现金腿、收入或应收；不得再次叠加。该流水必须属于同一账户/源日/周期且只能解释一项差额；不能与后续实物卖出解释共存。旧v1/v2无此字段不等于现金不存在，不得按证券代码推广成通用分类，也不改变原始划转报文或最终性。
 
+核对版本v4新增可选`daily_review`（旧版本返回null）：`opening_date`为整份证据的开端，`days[]`按实际`trade_date`筛选，区别于周期的赎回源日；`daily_coverage_from/observed_through`为完整核对范围。日期筛选在完整版本校验之后进行，不以筛选起点将期初应收应付归零。
+
+每个逐日记录包含`account_basis`（券商基准盈亏、原发布暂定盈亏、期初/期末未核验资产分项及原质量标记）、`cash_timing`（已知/推定源日两套收付/应收/应付/调整）及`inferred_exposed_flow_ids`。`inferred_cash_legs`仅返回所选日期引用的推定现金事实，包含原流水、金额、推定源日、实际记账日、关联依据及证据引用。金额全部为分。校验恒等式为`published_pnl = broker_basis_pnl + known_adjustment + inferred_adjustment`，其中调整已包含在原发布盈亏中，不是可再次记账的收益。
+
+暴露按应收/应付毛额及期初/期末判断，不按净额是否为0判断；释放日仍有期初暴露。“无已观察时序及分项暴露”仅适用于本批已观察事实，不改变NAV原质量标记，不表示私有清算全部完成或每日策略归因已通过。接口仅读PG不可变版本，不增加CSV、OC或行情在线依赖。
+
 经济净值输入层由 `000009_performance_accounting` 提供：
 
 - `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。
