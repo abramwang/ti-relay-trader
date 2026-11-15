@@ -49,7 +49,9 @@ type fuyingCashMatrix struct {
 			Verified bool     `json:"private_source_verified"`
 			Included bool     `json:"included_in_known_carry"`
 			Matches  []struct {
-				SourceDate string `json:"source_trade_date"`
+				SourceDate string   `json:"source_trade_date"`
+				SecurityID string   `json:"security_id"`
+				OrderIDs   []string `json:"gateway_order_ids"`
 			} `json:"pcf_order_multiset_candidates"`
 		} `json:"unresolved_candidates"`
 	} `json:"cash_pcf_review"`

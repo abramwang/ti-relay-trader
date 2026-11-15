@@ -2693,6 +2693,13 @@ func authoritativePerformanceNAVSource(nav ledger.PerformanceNAV, canonicalRunSu
 	if nav.FormulaVersion == "broker_reconstructed_economic_nav.v1" && nav.PnLComponents["account_ledger_verified"] == true {
 		return "broker_reconstructed_economic_nav", true
 	}
+	if nav.FormulaVersion == relayperformance.ProvisionalReconstructionFormula && nav.Status == "provisional" && nav.PnLComponents["continuity_verified"] == true {
+		authorization, _ := nav.PnLComponents["authorization"].(map[string]any)
+		if authorization["approved"] == true && authorization["scope"] == "provisional_only" {
+			return "user_authorized_provisional_reconstruction", true
+		}
+		return "", false
+	}
 	flags := make(map[string]bool, len(nav.QualityFlags))
 	for _, flag := range nav.QualityFlags {
 		flags[flag] = true
@@ -3641,7 +3648,7 @@ func mergePerformanceNAVDates(series []ledger.DailyPerformance, navs []ledger.Pe
 }
 
 func isOfficialPerformanceNAVFormula(value string) bool {
-	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1" || value == "broker_cash_repo_carveout.v1" || value == "broker_reconstructed_economic_nav.v1"
+	return strings.HasPrefix(value, "performance_economic_nav.v2") || value == "broker_statement_nav.v1" || value == "broker_cash_repo_carveout.v1" || value == "broker_reconstructed_economic_nav.v1" || value == relayperformance.ProvisionalReconstructionFormula
 }
 
 func validatePerformanceNAVScope(navs []ledger.PerformanceNAV) error {

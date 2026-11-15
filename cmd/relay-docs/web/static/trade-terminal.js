@@ -3898,7 +3898,7 @@
           if (!isCurrentLoad()) return;
           const nav = (published.navs || []).find((item) => item.is_current === true &&
             item.account_id === state.activeAccount && compactDate(item.trade_date) === dailyDate &&
-            (String(item.formula_version || "").startsWith("performance_economic_nav.v2") || item.formula_version === "broker_statement_nav.v1" || item.formula_version === "broker_cash_repo_carveout.v1" || item.formula_version === "broker_reconstructed_economic_nav.v1"));
+            (String(item.formula_version || "").startsWith("performance_economic_nav.v2") || item.formula_version === "broker_statement_nav.v1" || item.formula_version === "broker_cash_repo_carveout.v1" || item.formula_version === "broker_reconstructed_economic_nav.v1" || item.formula_version === "broker_reconstructed_provisional_nav.v1"));
           if (nav) {
             state.performanceEconomicNAV = publishedPerformanceEconomicView(nav);
             updateReconciliation();
@@ -3915,7 +3915,7 @@
           }
         }
       };
-      const publishedCarveout = state.performanceDaily && ["broker_cash_repo_carveout.v1", "broker_reconstructed_economic_nav.v1"].includes(state.performanceDaily.formula_version);
+      const publishedCarveout = state.performanceDaily && ["broker_cash_repo_carveout.v1", "broker_reconstructed_economic_nav.v1", "broker_reconstructed_provisional_nav.v1"].includes(state.performanceDaily.formula_version);
       const detailRequests = [
         loadDetail("/v1/performance/settings", (result) => {
           state.performanceSettings = result;
@@ -4518,6 +4518,20 @@
         .concat(Array.isArray(nav.quality_flags) ? nav.quality_flags : [])
     ));
     const publication = performancePublicationCheck(series, daily, economic, notApplicable);
+    if (daily.formula_version === "broker_reconstructed_provisional_nav.v1") {
+      const components = nav.pnl_components || {};
+      const authorization = components.authorization || {};
+      const reconstruction = components.reconstruction || {};
+      const approved = authorization.approved === true && authorization.scope === "provisional_only" && components.continuity_verified === true && nav.status === "provisional";
+      return [
+        publication,
+        { label: "资产快照与资金桥", status: approved ? "warning" : "blocked", detail: approved ? "按确认口径连续发布暂定净值；保留券商原始总资产，权益包含关系尚未核实" : "未取得完整的暂定重建授权或连续性证据" },
+        { label: "ETF待结权益与实际收付", status: "warning", detail: "已知待收 " + formatSigned(reconstruction.known_receivable || 0) + " 元，待付 " + formatSigned(reconstruction.known_payable || 0) + " 元；推定源日待收/待付 " + formatSigned(reconstruction.inferred_receivable || 0) + "/" + formatSigned(reconstruction.inferred_payable || 0) + " 元；实际收付日释放，非最终结清" },
+        { label: "未核验项目", status: "warning", detail: "未命名资产分项 " + formatSigned(reconstruction.unclassified_broker_component || 0) + " 元；当天 " + formatInt((reconstruction.unresolved_cash_source_ids || []).length) + " 笔现金源日为同ETF历史申赎及PCF推定，保留实际记账日" },
+        { label: "证券与策略归因", status: "warning", detail: "账户暂定净值与策略归因分开；历史成本、隔夜申赎及逐证券贡献仍有未验收项" },
+        { label: "Meridian 基准行情", status: Number(summary.benchmark_observation_days) === series.length ? "passed" : "warning", detail: formatInt(summary.benchmark_observation_days) + "/" + formatInt(series.length) + " 个日期" }
+      ];
+    }
     if (daily.formula_version === "broker_reconstructed_economic_nav.v1") {
       const verified = (nav.pnl_components || {}).account_ledger_verified === true && nav.status !== "blocked";
       const matching = (nav.pnl_components || {}).ledger_matching || {};
@@ -5177,8 +5191,9 @@
     const officialSeriesItem = series.find((item) => compactDate(item.trade_date) === selectedDate) || {};
     const cashRepoCarveout = officialSeriesItem.formula_version === "broker_cash_repo_carveout.v1";
     const reconstructedHistory = officialSeriesItem.formula_version === "broker_reconstructed_economic_nav.v1";
+    const provisionalReconstruction = officialSeriesItem.formula_version === "broker_reconstructed_provisional_nav.v1";
     const officialPublished = (String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
-      || officialSeriesItem.formula_version === "broker_statement_nav.v1" || cashRepoCarveout || reconstructedHistory)
+      || officialSeriesItem.formula_version === "broker_statement_nav.v1" || cashRepoCarveout || reconstructedHistory || provisionalReconstruction)
       && officialSeriesItem.performance_status !== "blocked";
     const notApplicable = performanceAccountNotApplicable(
       daily,
@@ -5200,6 +5215,7 @@
       summary.benchmark_security_id ? "基准 " + summary.benchmark_security_id : "",
       cashRepoCarveout ? "剔除债券 · 现金及逆回购 · 结息按实收" : "",
       reconstructedHistory ? "历史经济资产双账复原 · 债券策略已剔除" : "",
+      provisionalReconstruction ? "连续暂定净值 · 未核验项保留 · 非最终清算" : "",
       "Asia/Shanghai"
     ].filter(Boolean).join(" · ");
     els.performanceFocus.dataset.status = calculationState.status;
@@ -5219,6 +5235,7 @@
     ].filter(Boolean).join(" · ");
     if (cashRepoCarveout) els.perfOpenEconomicBreakdown.textContent = "现金及实际逆回购本金 · 独立历史口径";
     if (reconstructedHistory) els.perfOpenEconomicBreakdown.textContent = "承接上日经济资产 · 真实资本流单列";
+    if (provisionalReconstruction) els.perfOpenEconomicBreakdown.textContent = "承接上日暂定经济资产 · 保留跨日未核验项";
     els.perfCloseEconomicNav.textContent = formatNumber(nav.close_economic_nav);
     const etfSettlementEstimate = numericOrNull(valuation.etf_settlement_estimate) || 0;
     els.perfCloseEconomicBreakdown.textContent = [
@@ -5234,6 +5251,10 @@
       "券商其他 " + formatNumber(valuation.broker_reported_other_asset),
       "清算净权益 " + formatSigned(valuation.etf_settlement_actual_net_receivable)
     ].join(" · ");
+    if (provisionalReconstruction) {
+      const rebuilt = (nav.pnl_components || {}).reconstruction || {};
+      els.perfCloseEconomicBreakdown.textContent = "原始资产 " + formatNumber(rebuilt.reported_close_preserved) + " · 待结收付按源日衔接";
+    }
     els.perfCloseEconomicBreakdown.title = els.perfCloseEconomicBreakdown.textContent;
     els.perfAccountDayPnl.textContent = formatSigned(nav.account_day_pnl);
     els.perfAccountDayPnl.className = classForNumber(nav.account_day_pnl);
@@ -5246,13 +5267,14 @@
     ].filter(Boolean).join(" · ");
     if (cashRepoCarveout) els.perfPnlBreakdown.textContent = "收付口径 · 债券资本转移不计收益";
     if (reconstructedHistory) els.perfPnlBreakdown.textContent = "经济资产变动扣除真实资本流 · 含跨日实收实付归属调整";
+    if (provisionalReconstruction) els.perfPnlBreakdown.textContent = "连续暂定资产差额 · 逐证券收益归因未重建";
     els.perfAccountDailyReturn.textContent = formatPercent(nav.daily_return, cashRepoCarveout ? 4 : 2);
     els.perfAccountDailyReturn.className = classForNumber(nav.daily_return);
     els.perfReturnDenominator.textContent = "收益分母 " + formatNumber(nav.return_denominator);
     els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
     els.perfExternalFlow.className = classForNumber(cashFlows.external_net_flow);
     els.perfOperatingTurnover.textContent = formatNumber(turnover);
-    els.perfActualFee.textContent = formatNumber(actualFee);
+    els.perfActualFee.textContent = provisionalReconstruction ? "未拆分" : formatNumber(actualFee);
     els.perfQuantityBridge.textContent = costLedger.status
       ? formatInt(costSummary.securities) + " 证券 · " + formatInt(costSummary.quantity_breaks) + " 差异"
       : "--";
@@ -5277,7 +5299,7 @@
     els.perfUnrealizedPnl.className = numericOrNull(costSummary.unrealized_pnl) !== null ? classForNumber(costSummary.unrealized_pnl) : "";
     els.perfFills.textContent = formatInt(tradingObservation.fills_count ?? daily.fills_count);
     els.perfTurnover.textContent = formatNumber(turnover);
-    els.perfFee.textContent = formatNumber(actualFee);
+    els.perfFee.textContent = provisionalReconstruction ? "未拆分" : formatNumber(actualFee);
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
     renderNAVReconciliation(reconciliation, nav);
     renderPerformanceContributions();

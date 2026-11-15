@@ -44,6 +44,19 @@ function base() {
 const missing = (date) => ({ trade_date: date, performance_status: "blocked", quality_flags: ["official_performance_nav_unavailable"] });
 const card = (rows, label) => rows.find((row) => row.label === label);
 
+test("authorized provisional reconstruction keeps unknown facts visible", () => {
+  const state = base();
+  state.performanceDaily.formula_version = "broker_reconstructed_provisional_nav.v1";
+  state.performanceEconomicNAV.nav.pnl_components = { continuity_verified: true, authorization: { approved: true, scope: "provisional_only" }, reconstruction: { known_receivable: 825442.19, known_payable: 869.85, unclassified_broker_component: 7423.35 } };
+  const rows = checks(state);
+  assert.equal(rows[0].status, "passed");
+  assert.equal(card(rows, "资产快照与资金桥").status, "warning");
+  assert.match(card(rows, "资产快照与资金桥").detail, /尚未核实/);
+  assert.match(card(rows, "ETF待结权益与实际收付").detail, /825,442.19/);
+  state.performanceEconomicNAV.nav.pnl_components.authorization.approved = false;
+  assert.equal(card(checks(state), "资产快照与资金桥").status, "blocked");
+});
+
 test("missing publication counts unique dates without inventing missing snapshots", () => {
   const state = base();
   state.performanceSeries.push(missing("2026-10-20"), missing("2026-10-21"), missing("20261020"));

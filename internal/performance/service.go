@@ -400,6 +400,15 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 	if accountID == "" {
 		return EconomicNAVResult{}, errors.New("account_id is required")
 	}
+	if options.Persist {
+		current, found, err := service.currentEconomicNAV(ctx, accountID, normalizedDate)
+		if err != nil {
+			return EconomicNAVResult{}, err
+		}
+		if found && current.FormulaVersion == ProvisionalReconstructionFormula {
+			return EconomicNAVResult{}, errors.New("reviewed provisional reconstruction requires explicit revision; routine rebuild cannot replace it")
+		}
+	}
 	status := strings.TrimSpace(options.Status)
 	if status == "" {
 		status = "provisional"
@@ -687,6 +696,9 @@ func (service *Service) CalculateEconomicNAV(ctx context.Context, accountID, tra
 		result.QualityFlags = appendUnique(result.QualityFlags, flag)
 		if flag == "previous_economic_nav_gap" && !confirmedInceptionDay {
 			status = "blocked"
+		}
+		if flag == "provisional_reconstruction_anchor" && status == "finalized" {
+			status = "provisional"
 		}
 	}
 	previousCumulative := 1.0
@@ -979,6 +991,9 @@ func (service *Service) ReviewNAVReconciliation(ctx context.Context, accountID, 
 	}
 	if !found || nav.PerformanceNAVPK <= 0 {
 		return NAVReconciliationReviewResult{}, fmt.Errorf("%w: current economic nav %s/%s", sql.ErrNoRows, accountID, normalizedDate)
+	}
+	if action == "confirm" && (nav.FormulaVersion == ProvisionalReconstructionFormula || containsStringValue(nav.QualityFlags, "provisional_reconstruction_anchor")) {
+		return NAVReconciliationReviewResult{}, fmt.Errorf("%w: provisional reconstruction needs a separately verified asset revision, not force confirmation", ledger.ErrInvalidLedgerInput)
 	}
 	reconciliation, found, err := service.currentNAVReconciliation(ctx, accountID, normalizedDate, nav.PerformanceNAVPK, options.ReconciliationID)
 	if err != nil {
@@ -1711,11 +1726,14 @@ func (service *Service) previousNAVContext(ctx context.Context, accountID, trade
 			}
 		}
 	}
+	if previous.FormulaVersion == ProvisionalReconstructionFormula || containsStringValue(previous.QualityFlags, "provisional_reconstruction_anchor") {
+		flags = appendUnique(flags, "provisional_reconstruction_anchor", "etf_asset_inclusion_unverified", "private_settlement_coverage_unverified")
+	}
 	return previous, sameDateVersion, flags, nil
 }
 
 func performanceNAVSupportsContinuity(formulaVersion, currentFormulaVersion string) bool {
-	return formulaVersion == currentFormulaVersion || formulaVersion == "broker_statement_nav.v1" || formulaVersion == "broker_reconstructed_economic_nav.v1"
+	return formulaVersion == currentFormulaVersion || formulaVersion == "broker_statement_nav.v1" || formulaVersion == "broker_reconstructed_economic_nav.v1" || formulaVersion == ProvisionalReconstructionFormula
 }
 
 func (service *Service) currentEconomicNAV(ctx context.Context, accountID, tradeDate string) (ledger.PerformanceNAV, bool, error) {

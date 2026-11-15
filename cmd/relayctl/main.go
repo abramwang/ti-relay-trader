@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-provisional-recovery-20261115":
+		if err := runProvisionalRecovery(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-provisional-recovery-20261115: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-core-cost-publish":
 		if err := runCoreCostPublish(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-core-cost-publish: %v\n", err)
@@ -694,6 +699,7 @@ func usage() {
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-cost-continue  Continue a stored clean cost anchor using PG and Meridian only; read-only, no CSV or NAV publication
   performance-core-cost-publish  Reverify and atomically publish a zero-origin cost-only recovery; explicit apply and backup required
+  performance-provisional-recovery-20261115  Reconstruct the authorized Fuying13 provisional NAV through November 12; explicit reviewed apply
   performance-fuying13-transfer-preview-20261115  Read-only account outflow scenario; never publishes product NAV
   performance-research-source-check  Observe source row changes without granting cost or NAV publication
   performance-research-input-replay  Offline replay of sealed research inputs; no database or network access
