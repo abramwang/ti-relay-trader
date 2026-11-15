@@ -46,6 +46,10 @@ type ETFCashTimingReview struct {
 // legs only. Zero final carry proves those legs were paid, not that every fund
 // settlement item has been observed. No dates or payments are inferred.
 func ReviewETFCashTiming(account, opening string, dates []string, legs []ObservedETFCashLeg) (ETFCashTimingReview, error) {
+	return reviewETFCashTiming(account, opening, dates, legs, false)
+}
+
+func reviewETFCashTiming(account, opening string, dates []string, legs []ObservedETFCashLeg, allowInferred bool) (ETFCashTimingReview, error) {
 	fail := func() (ETFCashTimingReview, error) {
 		return ETFCashTimingReview{}, errors.New("invalid ETF observed cash timing evidence")
 	}
@@ -83,6 +87,10 @@ func ReviewETFCashTiming(account, opening string, dates []string, legs []Observe
 		}
 		switch leg.SourceEvidence {
 		case "explicit_source", "explicit_source_and_order", "unique_order_reference_in_reviewed_coverage":
+		case "same_etf_prior_redemption_and_unique_pcf_match":
+			if !allowInferred {
+				return fail()
+			}
 		default:
 			return fail()
 		}
@@ -120,6 +128,9 @@ func ReviewETFCashTiming(account, opening string, dates []string, legs []Observe
 	}
 	result := ETFCashTimingReview{AccountID: account, OpeningDate: opening, ObservedThrough: end, LegCount: len(legs),
 		QualityFlags: []string{"observed_etf_cash_only", "settlement_coverage_unverified", "asset_inclusion_requires_separate_evidence"}}
+	if allowInferred {
+		result.QualityFlags = append(result.QualityFlags, "cash_source_date_inferred")
+	}
 	for _, date := range dates {
 		e := events[date]
 		d := ETFCashTimingDay{TradeDate: date, OpenReceivableCents: receivable, OpenPayableCents: payable,

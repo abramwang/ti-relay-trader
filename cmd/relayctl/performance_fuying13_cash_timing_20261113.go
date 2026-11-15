@@ -40,6 +40,8 @@ func runFuyingCashTiming(args []string) error {
 	output := flags.String("output", "", "new private observed cash timing report; offline only")
 	boundaryPath := flags.String("published-boundary", "", "optional saved economic-nav API response; adds account-level bridge review")
 	boundarySHA := flags.String("published-boundary-sha256", "", "required SHA256 for the saved published boundary")
+	cyclePlan := flags.String("cycle-plan", "", "optional reviewed publication plan for offline cycle/day impact comparison")
+	cycleSHA := flags.String("cycle-plan-sha256", "", "required SHA256 of cycle publication plan")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -51,6 +53,12 @@ func runFuyingCashTiming(args []string) error {
 	}
 	if _, err := os.Stat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
+	}
+	if (*cyclePlan == "") != (*cycleSHA == "") || (*cyclePlan != "" && *boundaryPath != "") {
+		return errors.New("cycle plan requires SHA256 and cannot combine with boundary review")
+	}
+	if *cyclePlan != "" {
+		return runFuyingCashCycleReview(*cyclePlan, *cycleSHA, *output)
 	}
 	var matrix fuyingCashMatrix
 	if err := readPinnedJSON(fuyingCashMatrixPath, fuyingCashMatrixHash, &matrix); err != nil {

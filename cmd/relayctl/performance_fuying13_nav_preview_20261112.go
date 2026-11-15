@@ -23,6 +23,7 @@ const fuyingCashMatrixHash = "7550662d6ef5f8addff9a07fc796c01c4e560fb13f1ea4d30f
 
 type fuyingMatrixCash struct {
 	AccountID  string            `json:"account_id"`
+	SecurityID string            `json:"security_id"`
 	FlowID     string            `json:"broker_flow_id"`
 	Amount     string            `json:"actual_amount"`
 	SourceDate string            `json:"resolved_source_trade_date"`
