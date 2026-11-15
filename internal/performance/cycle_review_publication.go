@@ -24,6 +24,7 @@ type CycleReviewSource struct {
 	Cycles      ETFCashCycleReview `json:"cycles"`
 	CashLegs    []ETFCycleCashLeg  `json:"cash_legs,omitempty"`
 	AccountDays []CycleAccountDay  `json:"account_days,omitempty"`
+	Attribution *AttributionReview `json:"attribution_review,omitempty"`
 	Profit      struct {
 		Profits     []ETFCycleProfit       `json:"profits"`
 		Publishable bool                   `json:"economic_nav_publishable"`
@@ -40,16 +41,17 @@ type CycleReviewRow struct {
 	Components   *CycleComponentReview `json:"component_review,omitempty"`
 }
 type CycleReviewDocument struct {
-	Schema          string            `json:"schema"`
-	AccountID       string            `json:"account_id"`
-	VersionID       string            `json:"version_id"`
-	DateFrom        string            `json:"date_from"`
-	ObservedThrough string            `json:"observed_through"`
-	SourceSHA256    string            `json:"source_sha256"`
-	NAVPublishable  bool              `json:"account_nav_publishable"`
-	FinalSettlement bool              `json:"final_settlement"`
-	Rows            []CycleReviewRow  `json:"cycles"`
-	Daily           *CycleDailyReview `json:"daily_review,omitempty"`
+	Schema          string             `json:"schema"`
+	AccountID       string             `json:"account_id"`
+	VersionID       string             `json:"version_id"`
+	DateFrom        string             `json:"date_from"`
+	ObservedThrough string             `json:"observed_through"`
+	SourceSHA256    string             `json:"source_sha256"`
+	NAVPublishable  bool               `json:"account_nav_publishable"`
+	FinalSettlement bool               `json:"final_settlement"`
+	Rows            []CycleReviewRow   `json:"cycles"`
+	Daily           *CycleDailyReview  `json:"daily_review,omitempty"`
+	Attribution     *AttributionReview `json:"attribution_review,omitempty"`
 }
 
 // A separate immutable publication, never an update to daily NAV or fills.
@@ -103,6 +105,7 @@ func BuildCycleReviewVersion(source CycleReviewSource, version, sourceSHA string
 		}
 	}
 	d.Daily, err = buildCycleDailyReview(source)
+	d.Attribution = source.Attribution
 	if err != nil {
 		return ledger.CycleReviewVersion{}, err
 	}
@@ -177,5 +180,8 @@ func ValidateCycleReview(d CycleReviewDocument) error {
 	if d.DateFrom != d.Rows[0].SourceDate {
 		return fail()
 	}
-	return validateCycleDailyReview(d)
+	if err := validateCycleDailyReview(d); err != nil {
+		return err
+	}
+	return validateAttributionReview(d)
 }

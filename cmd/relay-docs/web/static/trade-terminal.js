@@ -49,6 +49,7 @@
     performanceCycleLoading: false,
     performanceCyclePage: 0,
 	performanceCycleDailyPage: 0,
+	attributionReviewPage: 0,
     performanceDaily: null,
     performanceContribution: null,
     performanceTradeQuality: null,
@@ -279,6 +280,12 @@
     cycleDailyPrev: byID("cycleDailyPrev"),
     cycleDailyNext: byID("cycleDailyNext"),
     cycleDailyPage: byID("cycleDailyPage"),
+    attributionReviewMeta: byID("attributionReviewMeta"),
+    attributionReviewStatus: byID("attributionReviewStatus"),
+    attributionReviewRows: byID("attributionReviewRows"),
+    attributionReviewPrev: byID("attributionReviewPrev"),
+    attributionReviewNext: byID("attributionReviewNext"),
+    attributionReviewPage: byID("attributionReviewPage"),
     performanceQualityDate: byID("performanceQualityDate"),
     performanceQualityStatus: byID("performanceQualityStatus"),
     performanceQualityPassed: byID("performanceQualityPassed"),
@@ -3802,6 +3809,7 @@
     state.performanceCycleLoading = true;
     state.performanceCyclePage = 0;
     state.performanceCycleDailyPage = 0;
+    state.attributionReviewPage = 0;
     renderCycleReview();
     const accountID = encodeURIComponent(state.activeAccount);
     const isCurrentLoad = () => loadSeq === state.performanceLoadSeq && accountID === encodeURIComponent(state.activeAccount);
@@ -4771,6 +4779,32 @@
     return checks;
   }
 
+  function renderAttributionReview() {
+    if (!els.attributionReviewRows) return;
+    const data = state.performanceCycleReview?.account_id === state.activeAccount ? state.performanceCycleReview : null;
+    const review = data?.attribution_review;
+    const rows = review?.days || [];
+    const statements = new Map((review?.statement_daily_comparison?.days || []).map((d) => [d.trade_date, d]));
+    const money = (value, digits = 2) => value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value)) ? formatNumber(Number(value), digits) : "--";
+    const empty = state.performanceCycleLoading ? "读取中" : state.performanceCycleError ? "读取失败，原质量标记保留" : review ? "所选日期超出策略核对范围" : "尚无策略核对版本";
+    els.attributionReviewStatus.textContent = rows.length ? rows.length + " 日 · 条件性归因" : empty;
+    els.attributionReviewMeta.textContent = review ? data.version_id + " · " + displayDate(data.daily_coverage_from) + " 至 " + displayDate(data.observed_through) : "未发布不代表无异常";
+    const pages = Math.ceil(rows.length / 10);
+    state.attributionReviewPage = Math.max(0, Math.min(state.attributionReviewPage, pages - 1));
+    els.attributionReviewPage.textContent = (pages ? state.attributionReviewPage + 1 : 0) + " / " + pages;
+    els.attributionReviewPrev.disabled = state.attributionReviewPage === 0;
+    els.attributionReviewNext.disabled = !pages || state.attributionReviewPage + 1 >= pages;
+    els.attributionReviewRows.innerHTML = rows.length ? rows.slice(state.attributionReviewPage * 10, (state.attributionReviewPage + 1) * 10).map((r) => {
+      const s = r.conditional_strategies || {}, check = statements.get(r.trade_date);
+      const label = check ? Number(check.statement_pnl_difference) === 0 ? "券商独立验算一致" : "券商独立验算有差异" : Number(r.other_asset_component_change) !== 0 ? "资产分项待核验" : "条件性核对";
+      const details = `<p>原模型合计 ${escapeHTML(money(r.model_net))} · 申赎修正 ${escapeHTML(money(r.t0_correction))}</p><p>逆回购利息时序 ${escapeHTML(money(r.repo_timing_correction))} · 费用补证影响 ${escapeHTML(money(r.repo_fee_correction ?? "0"))}</p><p>未核验资产分项变动 ${escapeHTML(money(r.other_asset_component_change))} · 比较后差额 ${escapeHTML(money(r.residual_after_asset_component_comparison, 6))}</p>`;
+      const statement = check ? `<p>券商验算盈亏 ${escapeHTML(money(check.statement_based_pnl))} · 与账户差额 ${escapeHTML(money(check.statement_pnl_difference, 6))}</p><p>费用金额影响 ${escapeHTML(money(check.fee_amount_effect, 6))} · 成交金额影响 ${escapeHTML(money(check.turnover_precision_effect, 6))} · 估值精度影响 ${escapeHTML(money(check.valuation_precision_effect, 6))}</p><p>尚未解释差额 ${escapeHTML(money(check.unexplained_model_difference, 6))}</p>` : "<p>本日无独立券商整日验算记录</p>";
+      const parts = (r.t0_daily_parts || []).map((p) => `<p>${escapeHTML(p.cycle_id)} · ${escapeHTML(money(p.net))}</p>`).join("");
+      const flags = r.original_quality_flags || [];
+      return `<tr data-attribution-day="${escapeHTML(r.trade_date)}"><td>${escapeHTML(displayDate(r.trade_date))}</td><td>${escapeHTML(money(r.published_pnl))}</td><td>${escapeHTML(money(s.stock_cross_section ?? "0"))}</td><td>${escapeHTML(money(s.etf_cross_section ?? "0"))}</td><td>${escapeHTML(money(s.etf_redemption_t0 ?? "0"))}</td><td>${escapeHTML(money(s.cash_management ?? "0"))}</td><td>${escapeHTML(money(r.corrected_net))}</td><td>${escapeHTML(money(r.remaining_residual, 6))}</td><td><details><summary>${escapeHTML(label)}</summary>${details}${statement}${parts}<p>原质量标记 ${flags.length} 项：${escapeHTML(flags.join(" · ") || "无")}</p><p>原模型与账户净值保留 · 不确认资产包含范围或最终清算</p></details></td></tr>`;
+    }).join("") : `<tr><td colspan="9" class="empty-state">${escapeHTML(empty)}</td></tr>`;
+  }
+
   function renderCycleDailyReview() {
     if (!els.cycleDailyRows) return;
     const data = state.performanceCycleReview?.account_id === state.activeAccount ? state.performanceCycleReview : null;
@@ -4782,7 +4816,7 @@
     const clear = rows.filter((r) => r.account_basis.no_observed_timing_or_component_exposure).length;
     const empty = state.performanceCycleLoading ? "读取中" : state.performanceCycleError ? "读取失败，未清除原质量标记" : daily ? "所选日期超出逐日核对范围" : "尚无逐日核对版本";
     els.cycleDailyStatus.textContent = rows.length ? rows.length + " 日 · " + inferred + " 日有推定时序暴露" : empty;
-    els.cycleDailyMeta.textContent = daily ? displayDate(data.daily_coverage_from) + " 至 " + displayDate(data.observed_through) + " · 所选区间 " + clear + " 日无已观察时序及分项暴露 · 策略归因未核验" : "未发布不代表无异常";
+    els.cycleDailyMeta.textContent = daily ? displayDate(data.daily_coverage_from) + " 至 " + displayDate(data.observed_through) + " · 所选区间 " + clear + " 日无已观察时序及分项暴露" + (data.attribution_review ? " · 另有条件性策略核对" : " · 策略归因未核验") : "未发布不代表无异常";
     const pages = Math.ceil(rows.length / 10);
     state.performanceCycleDailyPage = Math.max(0, Math.min(state.performanceCycleDailyPage, pages - 1));
     els.cycleDailyPage.textContent = (pages ? state.performanceCycleDailyPage + 1 : 0) + " / " + pages;
@@ -4806,6 +4840,7 @@
   }
 
   function renderCycleReview() {
+    renderAttributionReview();
     renderCycleDailyReview();
     if (!els.cycleReviewRows) return;
     const data = state.performanceCycleReview?.account_id === state.activeAccount ? state.performanceCycleReview : null;
@@ -4813,7 +4848,7 @@
     const nav = state.performanceEconomicNAV?.nav || state.performanceDaily;
     const scopedNav = nav && (!nav.account_id || nav.account_id === state.activeAccount) && state.performanceLoaded;
     els.cycleAccountState.textContent = !scopedNav ? "未读取" : nav.status === "blocked" ? "待核对" : nav.status === "provisional" ? "连续暂定净值" : "按已发布版本";
-    els.cycleDailyState.textContent = state.performanceDetailsLoading ? "读取中" : scopedNav && nav.formula_version === "broker_reconstructed_provisional_nav.v1" ? "账户收益已发布 · 策略归因未核验" : state.performanceContribution ? "见每日证券贡献" : "尚无每日归因";
+    els.cycleDailyState.textContent = state.performanceDetailsLoading ? "读取中" : data?.attribution_review?.days?.length ? "条件性逐日核对 · 非最终清算" : scopedNav && nav.formula_version === "broker_reconstructed_provisional_nav.v1" ? "账户收益已发布 · 策略归因未核验" : state.performanceContribution ? "见每日证券贡献" : "尚无每日归因";
     const feeCount = rows.filter((r) => r.profit?.trading?.fee_basis === "broker_cash_reconciled").length;
     els.cycleFeeState.textContent = rows.length ? feeCount + " / " + rows.length + " 组已核对" : "--";
     els.cycleReviewStatus.textContent = state.performanceCycleLoading ? "读取中" : state.performanceCycleError ? "读取失败" : rows.length ? rows.length + " 组 · 清算未确认" : data?.available ? "区间内无核对记录" : "尚无核对版本";
@@ -7684,6 +7719,8 @@
     els.cycleReviewNext?.addEventListener("click", () => { state.performanceCyclePage++; renderCycleReview(); });
     els.cycleDailyPrev?.addEventListener("click", () => { state.performanceCycleDailyPage--; renderCycleDailyReview(); });
     els.cycleDailyNext?.addEventListener("click", () => { state.performanceCycleDailyPage++; renderCycleDailyReview(); });
+    els.attributionReviewPrev?.addEventListener("click", () => { state.attributionReviewPage--; renderAttributionReview(); });
+    els.attributionReviewNext?.addEventListener("click", () => { state.attributionReviewPage++; renderAttributionReview(); });
     if (els.performanceCapitalReferenceToggle) {
       els.performanceCapitalReferenceToggle.addEventListener("change", () => {
         const zoom = state.performanceChart?.getOption().dataZoom?.[0];

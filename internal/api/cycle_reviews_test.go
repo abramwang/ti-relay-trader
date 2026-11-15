@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"ti-relay-trader/internal/config"
@@ -20,6 +21,70 @@ import (
 type fakeCycleReviews struct {
 	value ledger.CycleReviewVersion
 	err   error
+}
+
+func TestAttributionReviewReadOnlyFiltering(t *testing.T) {
+	b, err := os.ReadFile("../../outputs/recovery/fuying13_cycle_review_20261115/profit-v13.json")
+	if os.IsNotExist(err) {
+		t.Skip("private evidence absent")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s performance.CycleReviewSource
+	_ = json.Unmarshal(b, &s)
+	b, err = os.ReadFile("../../outputs/recovery/fuying13_daily_attribution_20261115/review-v6.json")
+	if os.IsNotExist(err) {
+		t.Skip("private evidence absent")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a performance.AttributionReview
+	_ = json.Unmarshal(b, &a)
+	a.SourceSHA = strings.Repeat("a", 64)
+	s.Attribution = &a
+	v, err := performance.BuildCycleReviewVersion(s, "v5", strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Accounts = []config.AccountRouteConfig{{AccountID: s.AccountID}}
+	h := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{CycleReviews: &fakeCycleReviews{value: v}})
+	for _, date := range []string{"20261103", "20261113", "20261114"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/accounts/"+s.AccountID+"/performance/cycle-reviews?date_from="+date+"&date_to="+date, nil))
+		if rec.Code != 200 {
+			t.Fatal(rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Data struct {
+				Attribution *performance.AttributionReview `json:"attribution_review"`
+			}
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		x := response.Data.Attribution
+		if x == nil || x.Publishable || x.Final {
+			t.Fatal("lost scope")
+		}
+		want := 1
+		if date == "20261114" {
+			want = 0
+		}
+		if len(x.Days) != want {
+			t.Fatal("date filter", len(x.Days))
+		}
+		for _, p := range x.Parts {
+			if strings.ReplaceAll(p.Date, "-", "") != date {
+				t.Fatal("part leaked across dates")
+			}
+		}
+		if date == "20261113" && len(x.Statements.Days) != 1 {
+			t.Fatal("statement not filtered")
+		}
+	}
 }
 
 func (f *fakeCycleReviews) GetCycleReviewVersion(context.Context, string, string) (ledger.CycleReviewVersion, error) {

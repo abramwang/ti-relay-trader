@@ -27,6 +27,8 @@ func runCycleReviewPublish(args []string) error {
 	migrate := f.Bool("allow-cycle-migration", false, "allow only migration 43")
 	backup := f.String("backup", "", "fresh full backup")
 	backupSHA := f.String("backup-sha256", "", "backup digest")
+	attribution := f.String("attribution", "", "optional sealed daily attribution review")
+	attributionSHA := f.String("attribution-sha256", "", "daily attribution digest")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -41,6 +43,20 @@ func runCycleReviewPublish(args []string) error {
 	var source performance.CycleReviewSource
 	if err := readPinnedJSON(*input, *sha, &source); err != nil {
 		return err
+	}
+	if (*attribution == "") != (*attributionSHA == "") {
+		return errors.New("attribution path and digest required together")
+	}
+	if *attribution != "" {
+		if source.Attribution != nil {
+			return errors.New("duplicate attribution source")
+		}
+		var a performance.AttributionReview
+		if err := readPinnedJSON(*attribution, *attributionSHA, &a); err != nil {
+			return err
+		}
+		a.SourceSHA = *attributionSHA
+		source.Attribution = &a
 	}
 	v, err := performance.BuildCycleReviewVersion(source, *version, *sha)
 	if err != nil {
@@ -117,6 +133,10 @@ func runCycleReviewPublish(args []string) error {
 		}
 	}
 	report := map[string]any{"account_id": v.AccountID, "version_id": v.VersionID, "environment": *env, "database": name, "source_sha256": *sha, "payload_sha256": v.PayloadSHA256, "migration_needed": !exists, "cycles": len(source.Profit.Profits), "applied": false, "nav_writes": 0, "broker_commands": 0}
+	if source.Attribution != nil {
+		report["attribution_sha256"] = source.Attribution.SourceSHA
+		report["attribution_days"] = len(source.Attribution.Days)
+	}
 	if err := writeETFTransferReviewFile(*output, report); err != nil {
 		return err
 	}

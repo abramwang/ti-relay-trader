@@ -112,6 +112,15 @@ func TestFuyingResearchCorePublishPostgres(t *testing.T) {
 		t.Fatal("rollback failed", err, count)
 	}
 	tx = begin(false)
+	if _, err := insertCoreRecoveryRows(ctx, tx, "a", sha, []performance.CostLedgerResult{c}, false); err != nil {
+		t.Fatal(err)
+	}
+	var openingSource string
+	if err := tx.QueryRowContext(ctx, `SELECT opening_source FROM performance_position_cost_states WHERE account_id='a'`).Scan(&openingSource); err != nil || openingSource != "relay_previous_close_cost" {
+		t.Fatal("continuation mislabeled as zero-origin", openingSource, err)
+	}
+	tx.Rollback()
+	tx = begin(false)
 	if _, err := insertCoreRecovery(ctx, tx, "a", sha, []performance.CostLedgerResult{c}); err != nil {
 		t.Fatal(err)
 	}

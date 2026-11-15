@@ -173,4 +173,25 @@ func TestCycleReviewPostgres(t *testing.T) {
 	if err != nil || string(old.Payload) != string(v.Payload) {
 		t.Fatal("old publication changed", err)
 	}
+	attribution, err := BuildCycleReviewVersion(attributionFixture(t), "v5", strings.Repeat("e", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.AppendCycleReviewVersion(ctx, attribution); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = repo.GetCycleReviewVersion(ctx, "a", "v5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(saved.Payload, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateCycleReview(doc); err != nil || doc.Attribution == nil || len(doc.Attribution.Days) != 5 {
+		t.Fatal("attribution round trip", err)
+	}
+	old, err = repo.GetCycleReviewVersion(ctx, "a", "v4")
+	if err != nil || string(old.Payload) != string(daily.Payload) {
+		t.Fatal("daily publication changed", err)
+	}
 }

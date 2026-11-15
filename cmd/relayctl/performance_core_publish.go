@@ -49,6 +49,10 @@ func normalizedCoreRows(rows []ledger.PositionCostState) []ledger.PositionCostSt
 // Existing rows are never overwritten, including partial prior recoveries.
 // Lock before checking the full target set, and leave commit/rollback to caller.
 func insertCoreRecovery(ctx context.Context, tx *sql.Tx, account, proofSHA string, costs []performance.CostLedgerResult) (int, error) {
+	return insertCoreRecoveryRows(ctx, tx, account, proofSHA, costs, true)
+}
+
+func insertCoreRecoveryRows(ctx context.Context, tx *sql.Tx, account, proofSHA string, costs []performance.CostLedgerResult, zeroOrigin bool) (int, error) {
 	if len(proofSHA) != 64 || len(costs) == 0 {
 		return 0, errors.New("missing recovery proof or costs")
 	}
@@ -87,7 +91,7 @@ func insertCoreRecovery(ctx context.Context, tx *sql.Tx, account, proofSHA strin
 	for i, c := range costs {
 		for _, row := range c.Positions {
 			row.Source = "relay.core_cost_recovery:" + proofSHA
-			if i == 0 {
+			if i == 0 && zeroOrigin {
 				row.OpeningSource = "verified_zero_origin_replay"
 			}
 			saved, err := repo.UpsertPositionCostState(ctx, row)

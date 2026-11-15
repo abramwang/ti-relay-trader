@@ -513,6 +513,17 @@
           <div class="cycle-daily-footer"><span>金额：元 · 时序调整已计入暂定盈亏，不是新增收益 · 非最终清算</span><div><button id="cycleDailyPrev" type="button" title="上一页" aria-label="逐日核对上一页" disabled>‹</button><span id="cycleDailyPage">0 / 0</span><button id="cycleDailyNext" type="button" title="下一页" aria-label="逐日核对下一页" disabled>›</button></div></div>
         </section>
 
+        <section class="performance-section cycle-daily-section" aria-label="每日策略核对">
+          <div class="section-toolbar cycle-daily-toolbar">
+            <div><h2>每日策略核对</h2><span id="attributionReviewMeta">尚无核对版本</span></div>
+            <strong id="attributionReviewStatus">未读取</strong>
+          </div>
+          <div class="cycle-daily-scroll">
+            <table class="cycle-review-table"><thead><tr><th>交易日</th><th>账户暂定盈亏</th><th>股票截面</th><th>ETF截面</th><th>申赎 / 隔夜</th><th>逆回购</th><th>策略合计</th><th>未归类差额</th><th>核对明细</th></tr></thead><tbody id="attributionReviewRows"><tr><td colspan="9" class="empty-state">尚无核对版本</td></tr></tbody></table>
+          </div>
+          <div class="cycle-daily-footer"><span>金额：元 · 条件性归因 · 未归类差额不计入策略 · 非最终清算</span><div><button id="attributionReviewPrev" type="button" title="上一页" aria-label="策略核对上一页" disabled>‹</button><span id="attributionReviewPage">0 / 0</span><button id="attributionReviewNext" type="button" title="下一页" aria-label="策略核对下一页" disabled>›</button></div></div>
+        </section>
+
         <div class="performance-body">
           <section class="performance-section series-section">
             <div class="section-toolbar series-toolbar">

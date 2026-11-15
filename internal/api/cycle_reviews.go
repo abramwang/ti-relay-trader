@@ -83,6 +83,29 @@ func (s *Server) handleCycleReviews(w http.ResponseWriter, r *http.Request, acco
 		}
 	}
 	var daily *performance.CycleDailyReview
+	var attribution *performance.AttributionReview
+	if d.Attribution != nil {
+		copy := *d.Attribution
+		copy.Days = []performance.AttributionDay{}
+		copy.Parts = []performance.AttributionPart{}
+		copy.Statements.Days = []performance.AttributionStatementDay{}
+		for _, day := range d.Attribution.Days {
+			if day.Date >= from && day.Date <= to {
+				copy.Days = append(copy.Days, day)
+			}
+		}
+		for _, part := range d.Attribution.Parts {
+			if part.Date >= from && part.Date <= to {
+				copy.Parts = append(copy.Parts, part)
+			}
+		}
+		for _, day := range d.Attribution.Statements.Days {
+			if day.Date >= from && day.Date <= to {
+				copy.Statements.Days = append(copy.Statements.Days, day)
+			}
+		}
+		attribution = &copy
+	}
 	dailyFrom := ""
 	if d.Daily != nil {
 		dailyFrom = d.Daily.Days[0].Timing.TradeDate
@@ -102,5 +125,5 @@ func (s *Server) handleCycleReviews(w http.ResponseWriter, r *http.Request, acco
 			}
 		}
 	}
-	httpx.WriteOK(w, r, 200, map[string]any{"account_id": account, "available": true, "version_id": v.VersionID, "published_at": v.CreatedAt, "payload_sha256": v.PayloadSHA256, "source_sha256": d.SourceSHA256, "coverage_from": d.DateFrom, "observed_through": d.ObservedThrough, "date_from": from, "date_to": to, "date_basis": "source_trade_date", "account_nav_publishable": false, "final_settlement": false, "cycles": rows, "version_cycle_count": len(d.Rows), "daily_review": daily, "daily_date_basis": "trade_date", "daily_coverage_from": dailyFrom})
+	httpx.WriteOK(w, r, 200, map[string]any{"account_id": account, "available": true, "version_id": v.VersionID, "published_at": v.CreatedAt, "payload_sha256": v.PayloadSHA256, "source_sha256": d.SourceSHA256, "coverage_from": d.DateFrom, "observed_through": d.ObservedThrough, "date_from": from, "date_to": to, "date_basis": "source_trade_date", "account_nav_publishable": false, "final_settlement": false, "cycles": rows, "version_cycle_count": len(d.Rows), "daily_review": daily, "daily_date_basis": "trade_date", "daily_coverage_from": dailyFrom, "attribution_review": attribution})
 }
