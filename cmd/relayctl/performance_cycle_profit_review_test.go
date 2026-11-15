@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"ti-relay-trader/internal/performance"
@@ -85,8 +86,13 @@ func TestCycleProfitReviewedEvidence(t *testing.T) {
 				t.Fatal("5900 residual mixed into redemption")
 			}
 		case "2026-10-15/510310.SH":
-			if p.Trading.LaterComponentSales != 1566600 || p.Status != "estimated" {
+			if p.Trading.LaterComponentSales != 1566600 || p.Status != "estimated" || p.NetCyclePnLCents != 55909 {
 				t.Fatal("overnight components lost or fees invented")
+			}
+			for _, flag := range p.QualityFlags {
+				if flag == "later_component_sale_fee_allocation_unverified" {
+					t.Fatal("matched fee still marked unverified")
+				}
 			}
 		case "2026-10-16/159915.SZ":
 			if p.Trading.AcquisitionQuantity != 6000000 || p.Trading.AcquisitionGrossCents != 1687600000 {
@@ -100,5 +106,67 @@ func TestCycleProfitReviewedEvidence(t *testing.T) {
 	}
 	if known != 1 {
 		t.Fatal("unverified groups promoted")
+	}
+}
+
+func TestCycleLaterFeeAssociation(t *testing.T) {
+	fee := int64(383)
+	newInputs := func() ([]performance.ETFCycleTradingEvidence, cycleCostEvidence, map[string]string, cycleExecutionFeeEvidence) {
+		trades := []performance.ETFCycleTradingEvidence{{AccountID: "a", CycleID: "2026-10-15/510310.SH", OrdinaryFeeCents: 100, LaterComponentSales: 621600, QualityFlags: []string{"later_component_sale_fee_allocation_unverified", "historical_t0_order_group_inferred"}, EvidenceRefs: []string{"old"}}}
+		cost := cycleCostEvidence{Account: "a", Contributions: []performance.ContributionResult{{AccountID: "a", TradeDate: "2026-10-16", Contributions: []performance.SecurityContribution{{SecurityID: "600026.SH", StrategyID: "ETF_T0_COMPONENT:2026-10-15:parent", SellQuantity: 300, OpenQuantity: 300, SellAmount: 6216}}}}}
+		parents := map[string]string{"2026-10-15/parent": "2026-10-15/510310.SH"}
+		var evidence cycleExecutionFeeEvidence
+		evidence.Schema, evidence.Account = "relay.broker_execution_fee_association.v1", "a"
+		evidence.OC.Orders = []cycleExecutionFeeOrder{{Date: "2026-10-16", Order: "order", Security: "600026.SH", Side: "S", Quantity: 300, Gross: 6216000000, Fee: &fee, Status: "matched"}}
+		return trades, cost, parents, evidence
+	}
+	t.Run("matched preserves other boundaries and input", func(t *testing.T) {
+		trades, cost, parents, evidence := newInputs()
+		result, err := applyCycleLaterExecutionFees(trades, cost, parents, evidence)
+		if err != nil || result[0].OrdinaryFeeCents != 483 || !reflect.DeepEqual(result[0].QualityFlags, []string{"historical_t0_order_group_inferred"}) || result[0].FeeBasis != trades[0].FeeBasis {
+			t.Fatal(result, err)
+		}
+		if trades[0].OrdinaryFeeCents != 100 || len(trades[0].QualityFlags) != 2 || len(trades[0].EvidenceRefs) != 1 {
+			t.Fatal("input mutated")
+		}
+		if _, err := applyCycleLaterExecutionFees(result, cost, parents, evidence); err == nil {
+			t.Fatal("fee applied twice")
+		}
+	})
+	for _, name := range []string{"scope", "quantity", "gross", "fee_missing", "gross_mismatch", "wrong_side", "missing", "duplicate", "shared", "partial", "already_charged", "cycle_total", "wrong_parent"} {
+		t.Run(name, func(t *testing.T) {
+			trades, cost, parents, evidence := newInputs()
+			switch name {
+			case "scope":
+				evidence.Account = "other"
+			case "quantity":
+				evidence.OC.Orders[0].Quantity++
+			case "gross":
+				evidence.OC.Orders[0].Gross++
+			case "fee_missing":
+				evidence.OC.Orders[0].Fee = nil
+			case "gross_mismatch":
+				evidence.OC.Orders[0].Status = "gross_mismatch"
+			case "wrong_side":
+				evidence.OC.Orders[0].Side = "B"
+			case "missing":
+				evidence.OC.Orders = nil
+			case "duplicate":
+				evidence.OC.Orders = append(evidence.OC.Orders, evidence.OC.Orders[0])
+			case "shared":
+				cost.Contributions[0].Contributions = append(cost.Contributions[0].Contributions, cost.Contributions[0].Contributions[0])
+			case "partial":
+				cost.Contributions[0].Contributions[0].CloseQuantity = 1
+			case "already_charged":
+				cost.Contributions[0].Contributions[0].ActualFee = 3.83
+			case "cycle_total":
+				trades[0].LaterComponentSales++
+			case "wrong_parent":
+				delete(parents, "2026-10-15/parent")
+			}
+			if _, err := applyCycleLaterExecutionFees(trades, cost, parents, evidence); err == nil {
+				t.Fatal("invalid later fee association accepted")
+			}
+		})
 	}
 }

@@ -13,6 +13,119 @@ const cycleCostEvidencePath = "outputs/recovery/fuying13_engine_capture_20261114
 const cycleCostEvidenceSHA = "44770cd720b96bb3fc8345b1548ce9fec8b7356835a1e7add7bfb03185f21eef"
 const cycleParentFeePath = "outputs/recovery/fuying13_cash_matrix_20261112/redemption_fees.json"
 const cycleParentFeeSHA = "4491e548459307e452b2f5e5c0132c5865bf07efda2da4fdb4f5072fd81c5d46"
+const cycleExecutionFeePath = "outputs/recovery/fuying13_cycle_review_20261115/fees-invariant-v2/audit.json"
+const cycleExecutionFeeSHA = "300c54615ab38cad5f8b6746fd6805d3462bb9d10ebb180adf43b231fb0ab68f"
+
+type cycleExecutionFeeOrder struct {
+	Date     string `json:"trade_date"`
+	Order    string `json:"gateway_order_id"`
+	Security string `json:"security_id"`
+	Side     string `json:"side"`
+	Quantity int64  `json:"quantity"`
+	Gross    int64  `json:"oc_gross_micros"`
+	Fee      *int64 `json:"fee_cents"`
+	Status   string `json:"status"`
+}
+
+type cycleExecutionFeeEvidence struct {
+	Schema   string `json:"schema"`
+	Account  string `json:"account_id"`
+	Writes   int    `json:"database_writes"`
+	Commands int    `json:"broker_commands"`
+	OC       struct {
+		Orders []cycleExecutionFeeOrder `json:"orders"`
+	} `json:"oc_comparison"`
+}
+
+func applyCycleLaterExecutionFees(trades []performance.ETFCycleTradingEvidence, cost cycleCostEvidence, parents map[string]string, evidence cycleExecutionFeeEvidence) ([]performance.ETFCycleTradingEvidence, error) {
+	if evidence.Schema != "relay.broker_execution_fee_association.v1" || evidence.Account != cost.Account || evidence.Writes != 0 || evidence.Commands != 0 || len(evidence.OC.Orders) == 0 || len(evidence.OC.Orders) > 100000 {
+		return nil, errors.New("invalid cycle execution fee evidence")
+	}
+	bySecurity := map[string][]cycleExecutionFeeOrder{}
+	seen := map[string]bool{}
+	for _, o := range evidence.OC.Orders {
+		key := o.Date + "/" + o.Order
+		if o.Order == "" || seen[key] {
+			return nil, errors.New("duplicate/missing cycle execution order")
+		}
+		seen[key] = true
+		if o.Side == "S" {
+			bySecurity[o.Date+"/"+o.Security] = append(bySecurity[o.Date+"/"+o.Security], o)
+		}
+	}
+	sales, fees, refs := map[string]int64{}, map[string]int64{}, map[string][]string{}
+	used := map[string]bool{}
+	for _, d := range cost.Contributions {
+		if d.AccountID != cost.Account {
+			return nil, errors.New("cross-account component fees")
+		}
+		for _, x := range d.Contributions {
+			if !strings.HasPrefix(x.StrategyID, "ETF_T0_COMPONENT:") || x.SellQuantity == 0 {
+				continue
+			}
+			parts := strings.SplitN(strings.TrimPrefix(x.StrategyID, "ETF_T0_COMPONENT:"), ":", 2)
+			if len(parts) != 2 || x.ActualFee != 0 || x.CloseQuantity != 0 || x.BuyQuantity != 0 || x.SellQuantity != x.OpenQuantity {
+				return nil, errors.New("component fee already included or liquidation incomplete")
+			}
+			cycle := parents[parts[0]+"/"+parts[1]]
+			key := d.TradeDate + "/" + x.SecurityID
+			// Only an entire independently matched security/day sell bucket can
+			// be assigned here. Shared baskets require explicit allocation instead.
+			if cycle == "" || d.TradeDate <= parts[0] || used[key] || len(bySecurity[key]) == 0 {
+				return nil, errors.New("missing/ambiguous later component fee scope")
+			}
+			used[key] = true
+			var qty, gross int64
+			for _, o := range bySecurity[key] {
+				if o.Status != "matched" || o.Fee == nil || *o.Fee < 0 || *o.Fee > 100000000000 || o.Quantity <= 0 || o.Quantity > 1000000000 || o.Gross <= 0 || o.Gross > 100000000000000 {
+					return nil, errors.New("later component fee/money not independently matched")
+				}
+				qty += o.Quantity
+				if gross > 100000000000000000-o.Gross {
+					return nil, errors.New("later component gross exceeds review bound")
+				}
+				gross += o.Gross
+				fees[cycle] += *o.Fee
+				refs[cycle] = append(refs[cycle], "sha256:"+cycleExecutionFeeSHA+"#"+o.Date+"/"+o.Order)
+			}
+			amount, err := cycleMoney(x.SellAmount)
+			if err != nil || qty != x.SellQuantity || gross != amount*10000 {
+				return nil, errors.New("later component sell quantity/gross disagrees")
+			}
+			sales[cycle] += amount
+		}
+	}
+	result := append([]performance.ETFCycleTradingEvidence(nil), trades...)
+	for i := range result {
+		g := &result[i]
+		if g.AccountID != cost.Account || g.LaterComponentSales != sales[g.CycleID] {
+			return nil, errors.New("later component cycle coverage disagrees")
+		}
+		if g.LaterComponentSales == 0 {
+			continue
+		}
+		flags := []string{}
+		removed := false
+		for _, flag := range g.QualityFlags {
+			if flag == "later_component_sale_fee_allocation_unverified" {
+				removed = true
+			} else {
+				flags = append(flags, flag)
+			}
+		}
+		if !removed {
+			return nil, errors.New("later fee previously applied or scope not declared")
+		}
+		g.OrdinaryFeeCents += fees[g.CycleID]
+		g.QualityFlags = flags
+		g.EvidenceRefs = append(append([]string(nil), g.EvidenceRefs...), refs[g.CycleID]...)
+		delete(sales, g.CycleID)
+	}
+	if len(sales) != 0 {
+		return nil, errors.New("unconsumed later fee cohort")
+	}
+	return result, nil
+}
 
 type cycleCostEvidence struct {
 	Account       string                           `json:"account_id"`
@@ -243,6 +356,14 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
+	var executionFees cycleExecutionFeeEvidence
+	if err := readPinnedJSON(cycleExecutionFeePath, cycleExecutionFeeSHA, &executionFees); err != nil {
+		return nil, err
+	}
+	trades, err = applyCycleLaterExecutionFees(trades, cost, parents, executionFees)
+	if err != nil {
+		return nil, err
+	}
 	profits, err := performance.CalculateETFCycleProfits(cash, trades)
 	if err != nil {
 		return nil, err
@@ -252,5 +373,5 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 			return nil, fmt.Errorf("independent overnight cash proof differs: %d", p.NetCyclePnLCents)
 		}
 	}
-	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; ordinary OC fees and component allocation gaps remain explicit; not account NAV", "economic_nav_publishable": false}, nil
+	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA, "execution_fees": cycleExecutionFeeSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; later component fees broker-matched, other OC fees/allocation gaps remain explicit; not account NAV", "economic_nav_publishable": false}, nil
 }
