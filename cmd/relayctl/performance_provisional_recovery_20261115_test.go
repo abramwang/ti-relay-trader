@@ -187,4 +187,37 @@ func TestFuyingResearchProvisionalRecoveryPostgres(t *testing.T) {
 			t.Fatal("false finality")
 		}
 	}
+	// A new broker revision retains every preceding version and appends Nov 13.
+	p.Before = current
+	p.Dates = append(p.Dates, "2026-11-13")
+	d, err := refreshedBrokerAsset("2026-11-13", performance.ReconstructionAssetDay{}, refreshFixture(), strings.Repeat("b", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Assets = append(p.Assets, d)
+	p.NAVs, err = performance.BuildProvisionalReconstruction(p.Anchor, p.Dates, p.Assets, p.Authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx = begin(false)
+	if count, err := insertProvisionalRecovery(ctx, tx, p, strings.Repeat("b", 64)); err != nil || count != 25 {
+		t.Fatal(count, err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := repo.ListPerformanceNAVs(ctx, p.Account, "2026-10-12", "2026-11-13")
+	if err != nil || len(rows) != 25 {
+		t.Fatal(len(rows), err)
+	}
+	for i, n := range rows {
+		expected := p.NAVs[i]
+		expected.Source = "relay.provisional_reconstruction:" + strings.Repeat("b", 64)
+		if !sameProvisionalNAV(n, expected) {
+			t.Fatal("revision readback differs", i)
+		}
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER(WHERE NOT is_current) FROM performance_nav_versions`).Scan(&total, &retired); err != nil || total != 56 || retired != 30 {
+		t.Fatal("revision history lost", total, retired, err)
+	}
 }

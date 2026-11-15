@@ -264,14 +264,21 @@ func readProvisionalRecovery(ctx context.Context, tx *sql.Tx, cfg *config.Config
 }
 
 func insertProvisionalRecovery(ctx context.Context, tx *sql.Tx, p provisionalRecoveryPlan, planSHA string) (int, error) {
-	if len(planSHA) != 64 || p.Account != fuying13Account || len(p.NAVs) != 24 {
+	if len(planSHA) != 64 || p.Account != fuying13Account || (len(p.NAVs) != 24 && len(p.NAVs) != 25) || len(p.Dates) != len(p.NAVs) {
 		return 0, errors.New("invalid recovery scope")
+	}
+	end := "2026-11-12"
+	if len(p.NAVs) == 25 {
+		end = "2026-11-13"
+	}
+	if p.Dates[0] != "2026-10-12" || p.Dates[len(p.Dates)-1] != end {
+		return 0, errors.New("invalid recovery dates")
 	}
 	if _, err := tx.ExecContext(ctx, `LOCK TABLE performance_nav_versions IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 		return 0, err
 	}
 	repo := ledger.NewRepository(tx)
-	current, err := repo.ListPerformanceNAVs(ctx, p.Account, "2026-10-09", "2026-11-12")
+	current, err := repo.ListPerformanceNAVs(ctx, p.Account, "2026-10-09", end)
 	if err != nil {
 		return 0, err
 	}
@@ -303,11 +310,16 @@ func runProvisionalRecovery(args []string) error {
 	planSHA := f.String("plan-sha256", "", "reviewed SHA256")
 	backup := f.String("backup", "", "fresh full backup")
 	backupSHA := f.String("backup-sha256", "", "backup digest")
+	refresh := f.String("broker-refresh", "", "optional new broker audit; extends the reviewed chain through November 13")
+	refreshSHA := f.String("broker-refresh-sha256", "", "broker audit digest")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 || *configPath == "" || *output == "" || (*apply && (*planPath == "" || len(*planSHA) != 64 || *backup == "" || len(*backupSHA) != 64)) {
 		return errors.New("config/output and pinned plan/backup for apply required")
+	}
+	if (*refresh == "") != (*refreshSHA == "") {
+		return errors.New("broker refresh path and hash required together")
 	}
 	for _, path := range []string{*output, *output + ".commit.json"} {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
@@ -345,7 +357,12 @@ func runProvisionalRecovery(args []string) error {
 	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='5s'`); err != nil {
 		return err
 	}
-	p, err := readProvisionalRecovery(ctx, tx, cfg)
+	var p provisionalRecoveryPlan
+	if *refresh != "" {
+		p, err = readBrokerRefresh20261115(ctx, tx, *refresh, *refreshSHA)
+	} else {
+		p, err = readProvisionalRecovery(ctx, tx, cfg)
+	}
 	if err != nil {
 		return err
 	}
@@ -370,8 +387,8 @@ func runProvisionalRecovery(args []string) error {
 		return err
 	}
 	if *apply {
-		rows, e := ledger.NewRepository(db).ListPerformanceNAVs(ctx, p.Account, "2026-10-12", "2026-11-12")
-		if e != nil || len(rows) != 24 {
+		rows, e := ledger.NewRepository(db).ListPerformanceNAVs(ctx, p.Account, "2026-10-12", p.Dates[len(p.Dates)-1])
+		if e != nil || len(rows) != len(p.NAVs) {
 			return errors.New("commit succeeded; readback failed")
 		}
 		for i, n := range rows {
@@ -382,7 +399,7 @@ func runProvisionalRecovery(args []string) error {
 			}
 		}
 	}
-	r := map[string]any{"committed": true, "applied": *apply, "nav_rows_written": written, "cash_rows_written": 0, "cost_rows_written": 0, "broker_commands": 0, "status": "provisional", "final_settlement_verified": false, "date_to": "2026-11-12", "account_id": p.Account, "plan_sha256": *planSHA, "backup_sha256": *backupSHA, "completed_at": timeutil.Now()}
+	r := map[string]any{"committed": true, "applied": *apply, "nav_rows_written": written, "cash_rows_written": 0, "cost_rows_written": 0, "broker_commands": 0, "status": "provisional", "final_settlement_verified": false, "date_to": p.Dates[len(p.Dates)-1], "account_id": p.Account, "plan_sha256": *planSHA, "backup_sha256": *backupSHA, "completed_at": timeutil.Now()}
 	if err := writeETFTransferReviewFile(*output+".commit.json", r); err != nil {
 		return fmt.Errorf("commit succeeded: %w", err)
 	}

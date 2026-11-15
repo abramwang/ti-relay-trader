@@ -699,8 +699,8 @@ func usage() {
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-cost-continue  Continue a stored clean cost anchor using PG and Meridian only; read-only, no CSV or NAV publication
   performance-core-cost-publish  Reverify and atomically publish a zero-origin cost-only recovery; explicit apply and backup required
-  performance-provisional-recovery-20261115  Reconstruct the authorized Fuying13 provisional NAV through November 12; explicit reviewed apply
-  performance-fuying13-transfer-preview-20261115  Read-only account outflow scenario; never publishes product NAV
+  performance-provisional-recovery-20261115  Authorized provisional NAV; optional reviewed broker refresh through November 13
+  performance-fuying13-transfer-preview-20261115  Superseded: November 13 transfer failed; refuses the old outflow scenario
   performance-research-source-check  Observe source row changes without granting cost or NAV publication
   performance-research-input-replay  Offline replay of sealed research inputs; no database or network access
   performance-research-query-evidence  Read-only historical task/terminal/archive evidence; no publication

@@ -25,6 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-quality-status", default="")
     parser.add_argument("--expect-quality-detail", default="")
     parser.add_argument("--expect-quality-items", type=int, default=8)
+    parser.add_argument("--expect-fee", default="")
+    parser.add_argument("--expect-fee-label", default="")
     parser.add_argument("--max-details-ms", type=float, default=10_000)
     return parser.parse_args()
 
@@ -205,6 +207,8 @@ def main() -> int:
                     ).map((item) => item.textContent || ""),
                     actualFee:
                         document.querySelector("#perfActualFee")?.textContent || "",
+                    feeLabel:
+                        document.querySelector("#perfActualFeeLabel")?.textContent || "",
                     chartElapsedMs: timings.chartElapsedMs,
                     detailsElapsedMs: timings.detailsElapsedMs,
                 };
@@ -228,6 +232,10 @@ def main() -> int:
         raise AssertionError(f"performance details loaded too slowly: {diagnostics}")
     if diagnostics["qualityItems"] != args.expect_quality_items:
         raise AssertionError(f"quality checks are incomplete: {diagnostics}")
+    if args.expect_fee and diagnostics["actualFee"] != args.expect_fee:
+        raise AssertionError(f"unexpected disclosed fee: {diagnostics}")
+    if args.expect_fee_label and diagnostics["feeLabel"] != args.expect_fee_label:
+        raise AssertionError(f"fee scope label is missing: {diagnostics}")
     if diagnostics["horizontalOverflow"]:
         raise AssertionError(f"page has horizontal overflow: {diagnostics}")
     if diagnostics["selectedDateFrom"] != args.date_from or diagnostics["selectedDateTo"] != args.date_to:

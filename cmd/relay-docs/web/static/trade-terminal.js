@@ -244,6 +244,7 @@
     perfExternalFlow: byID("perfExternalFlow"),
     perfOperatingTurnover: byID("perfOperatingTurnover"),
     perfActualFee: byID("perfActualFee"),
+    perfActualFeeLabel: byID("perfActualFeeLabel"),
     perfQuantityBridge: byID("perfQuantityBridge"),
     perfFormulaVersion: byID("perfFormulaVersion"),
     perfValuationSource: byID("perfValuationSource"),
@@ -5192,6 +5193,8 @@
     const cashRepoCarveout = officialSeriesItem.formula_version === "broker_cash_repo_carveout.v1";
     const reconstructedHistory = officialSeriesItem.formula_version === "broker_reconstructed_economic_nav.v1";
     const provisionalReconstruction = officialSeriesItem.formula_version === "broker_reconstructed_provisional_nav.v1";
+    const statementFees = pnlComponents.broker_statement_fees || {};
+    const statementFee = statementFees.date_basis === "broker_statement_display_date" ? numericOrNull(statementFees.total) : null;
     const officialPublished = (String(officialSeriesItem.formula_version || "").startsWith("performance_economic_nav.v2")
       || officialSeriesItem.formula_version === "broker_statement_nav.v1" || cashRepoCarveout || reconstructedHistory || provisionalReconstruction)
       && officialSeriesItem.performance_status !== "blocked";
@@ -5274,7 +5277,9 @@
     els.perfExternalFlow.textContent = formatSigned(cashFlows.external_net_flow);
     els.perfExternalFlow.className = classForNumber(cashFlows.external_net_flow);
     els.perfOperatingTurnover.textContent = formatNumber(turnover);
-    els.perfActualFee.textContent = provisionalReconstruction ? "未拆分" : formatNumber(actualFee);
+    els.perfActualFee.textContent = provisionalReconstruction ? (statementFee === null ? "未拆分" : formatNumber(statementFee)) : formatNumber(actualFee);
+    if (els.perfActualFeeLabel) els.perfActualFeeLabel.textContent = provisionalReconstruction && statementFee !== null ? "交割单列示费用" : "实际交易费用";
+    els.perfActualFee.title = provisionalReconstruction && statementFee !== null ? "按交割单列示日期汇总；已含在资产中，不重复扣费，不代表逐委托最终费用已关联" : "";
     els.perfQuantityBridge.textContent = costLedger.status
       ? formatInt(costSummary.securities) + " 证券 · " + formatInt(costSummary.quantity_breaks) + " 差异"
       : "--";
@@ -5284,6 +5289,7 @@
     els.perfFeeCoverage.textContent = feeRequired > 0
       ? formatInt(feeCovered) + " / " + formatInt(feeRequired) + " 笔" + (securityPnL.fee_coverage_complete ? " · 完整" : " · 待补")
       : (securityPnL.fee_coverage_complete === true ? "无需费用 · 完整" : "--");
+    if (provisionalReconstruction && statementFee !== null) els.perfFeeCoverage.textContent = "交割单汇总 · 逐委托关联待核";
     els.perfTotalReturn.textContent = formatPercent(summary.total_return);
     els.perfTotalReturn.className = classForNumber(summary.total_return);
     els.perfMaxDrawdown.textContent = formatPercent(summary.max_drawdown, cashRepoCarveout ? 4 : 2);
@@ -5299,7 +5305,7 @@
     els.perfUnrealizedPnl.className = numericOrNull(costSummary.unrealized_pnl) !== null ? classForNumber(costSummary.unrealized_pnl) : "";
     els.perfFills.textContent = formatInt(tradingObservation.fills_count ?? daily.fills_count);
     els.perfTurnover.textContent = formatNumber(turnover);
-    els.perfFee.textContent = provisionalReconstruction ? "未拆分" : formatNumber(actualFee);
+    els.perfFee.textContent = els.perfActualFee.textContent;
     els.perfCapturedAt.textContent = "captured_at " + (daily.captured_at || "--");
     renderNAVReconciliation(reconciliation, nav);
     renderPerformanceContributions();

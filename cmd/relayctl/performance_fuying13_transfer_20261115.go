@@ -83,6 +83,9 @@ func runFuyingTransferPreview(args []string) error {
 	if f.NArg() != 0 || *configPath == "" || *output == "" {
 		return errors.New("explicit config and new output required")
 	}
+	if fuyingTransferCurrentState == "failed_not_withdrawn" {
+		return errors.New("superseded: user confirmed November 13 transfer failed; do not inject a 5 million outflow")
+	}
 	if _, err := os.Lstat(*output); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("output must not exist")
 	}

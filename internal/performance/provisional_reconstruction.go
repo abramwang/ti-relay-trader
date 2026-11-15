@@ -80,6 +80,9 @@ func BuildProvisionalReconstruction(anchor ledger.PerformanceNAV, dates []string
 				"market_valuation": map[string]any{"price_source": d.Source, "broker_cost_usage": "excluded"},
 			},
 		})
+		if fees, ok := d.Evidence["broker_statement_fees"]; ok {
+			result[len(result)-1].PnLComponents["broker_statement_fees"] = fees
+		}
 		previous, previousDate = close, d.Date
 	}
 	return result, nil
