@@ -465,37 +465,7 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 		state.item.FeeSource = mergeContributionFeeSource(state.item.FeeSource, fee.source)
 		state.flags = appendUnique(state.flags, fee.flags...)
 		amount := contributionFillAmount(fill)
-		switch fill.TradeSide {
-		case trading.TradeSideBuy:
-			state.item.BuyQuantity += fill.Qty
-			state.item.BuyAmount += amount
-			state.item.BuyFee += fee.effective
-			state.quantity += fill.Qty
-			state.cost += amount + fee.effective
-		case trading.TradeSideSell:
-			state.item.SellQuantity += fill.Qty
-			state.item.SellAmount += amount
-			state.item.SellFee += fee.effective
-			if fill.Qty > state.quantity {
-				state.flags = appendUnique(state.flags, "sell_quantity_exceeds_cost_position")
-				state.item.Status = "blocked"
-				continue
-			}
-			averageCost := 0.0
-			if state.quantity > 0 {
-				averageCost = state.cost / float64(state.quantity)
-			}
-			settledCost := averageCost * float64(fill.Qty)
-			state.item.RealizedPnL += amount - fee.effective - settledCost
-			state.quantity -= fill.Qty
-			state.cost -= settledCost
-			if state.quantity == 0 || math.Abs(state.cost) < 0.000001 {
-				state.cost = 0
-			}
-		case trading.TradeSidePurchase, trading.TradeSideRedemption:
-			state.flags = appendUnique(state.flags, "etf_subscription_redemption_requires_separate_cost_bucket")
-			state.item.Status = "blocked"
-		}
+		applyCostFill(state, fill, amount, fee.effective)
 	}
 	for _, state := range t0Buckets.states {
 		state.item.CalculatedAt = result.CalculatedAt
@@ -571,6 +541,40 @@ func (service *Service) calculateCostLedger(ctx context.Context, accountID, trad
 		result.Persisted = true
 	}
 	return result, nil
+}
+
+func applyCostFill(state *costWorkingState, fill trading.Fill, amount, fee float64) {
+	switch fill.TradeSide {
+	case trading.TradeSideBuy:
+		state.item.BuyQuantity += fill.Qty
+		state.item.BuyAmount += amount
+		state.item.BuyFee += fee
+		state.quantity += fill.Qty
+		state.cost += amount + fee
+	case trading.TradeSideSell:
+		state.item.SellQuantity += fill.Qty
+		state.item.SellAmount += amount
+		state.item.SellFee += fee
+		if fill.Qty > state.quantity {
+			state.flags = appendUnique(state.flags, "sell_quantity_exceeds_cost_position")
+			state.item.Status = "blocked"
+			return
+		}
+		averageCost := 0.0
+		if state.quantity > 0 {
+			averageCost = state.cost / float64(state.quantity)
+		}
+		settledCost := averageCost * float64(fill.Qty)
+		state.item.RealizedPnL += amount - fee - settledCost
+		state.quantity -= fill.Qty
+		state.cost -= settledCost
+		if state.quantity == 0 || math.Abs(state.cost) < 0.000001 {
+			state.cost = 0
+		}
+	case trading.TradeSidePurchase, trading.TradeSideRedemption:
+		state.flags = appendUnique(state.flags, "etf_subscription_redemption_requires_separate_cost_bucket")
+		state.item.Status = "blocked"
+	}
 }
 
 func positionCostStatesAreFlat(states []ledger.PositionCostState) bool {

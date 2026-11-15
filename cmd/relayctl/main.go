@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-core-cost-publish":
+		if err := runCoreCostPublish(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-core-cost-publish: %v\n", err)
+			os.Exit(1)
+		}
 	case "performance-cost-continue":
 		if err := runCostContinuation(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "relayctl performance-cost-continue: %v\n", err)
@@ -688,6 +693,7 @@ func usage() {
   performance-fuying13-cost-import-20261114  Preflight or archive the pinned research cost chain; isolated migration 42, never NAV
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-cost-continue  Continue a stored clean cost anchor using PG and Meridian only; read-only, no CSV or NAV publication
+  performance-core-cost-publish  Reverify and atomically publish a zero-origin cost-only recovery; explicit apply and backup required
   performance-fuying13-transfer-preview-20261115  Read-only account outflow scenario; never publishes product NAV
   performance-research-source-check  Observe source row changes without granting cost or NAV publication
   performance-research-input-replay  Offline replay of sealed research inputs; no database or network access

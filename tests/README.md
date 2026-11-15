@@ -166,6 +166,10 @@ PG脚本仅用临时Unix socket数据库，完整回放需要本地冻结证据�
 
 ## 后续计划
 
+2026-11-15独立CORE恢复：`go test -race ./internal/performance ./cmd/relayctl`覆盖从完整空仓起点逐日重放普通成交、按订单只计一次费用、超卖/歧义顺序/跨账户/缺费用拒绝，以及原始订单成交查询覆盖门禁。`RELAY_TEST_PG_BIN=... bash scripts/test-research-cost-postgres.sh`包含`TestFuyingResearchCorePublishPostgres`：只读拒写、回滚、独立回读、已有/部分目标拒绝覆盖及并发写入串行化。PG为临时Unix socket实例；默认跳过需要私有冻结历史文件的旧用例，不依赖用户更新CSV。
+
+受控入口`performance-core-cost-publish`默认只读；显式`--apply`要求已审核计划SHA、两小时内完整备份及SHA。仅本次768的11-10..12，重新核验PG原始证据与正常引擎结果后单事务插入成本，禁止覆盖已有日期，不写资金/NAV。提交前报告不冒充成功，成功后另写`.commit.json`并独立回读；失败不得通过删除已有记录强行重跑。详见[恢复记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#普通持仓成本的独立恢复)。
+
 2026-11-14成分现金解释：`python3 -m unittest discover -s tests/unit -p 'test_fuying13_component_cash.py' -v`覆盖原父单/现金委托身份、日期/方向/金额/时区、物理持仓或普通成交冲突、重复流水、封存序号/SHA/重复页变化/缺末页、查询投影指纹、完整持仓证据和旧导出范围；保留原查询失败及禁止发布标记。全富盈Python159项通过，两次实际离线报告除生成时刻外一致，不调用数据库、OC或Meridian。[执行与证据](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#四日成分划转与替代现金核验)。
 
 2026-11-14正式成本分项预检：`go test ./internal/performance -run TestResearchCostPublication`覆盖逐日分桶/语义定位、稳定输出、未知规则、部分正式目标、源修订及锚点变化，拒绝缺行/跨账户/错版本/SHA/发布或写入标记。`performance-research-source-check --publication-review`没有apply/persist入口，使用原有只读repeatable-read事务；上述隔离PG脚本验证真实22日冻结链的预检不改变金融表指纹，报告不能冒充源观察基准。独立证据绑定与原子发布尚未实现，不把数量通过当净值通过。

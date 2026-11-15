@@ -53,6 +53,7 @@ func runCostContinuation(args []string) error {
 	version := f.String("version", "", "stored research version, no latest fallback")
 	through := f.String("through", "", "last date YYYYMMDD, at most 31 days after stored anchor")
 	output := f.String("output", "", "new private JSON report, no apply option")
+	zeroOrigin := f.Bool("verify-zero-origin", false, "independently replay the stored endpoint from complete zero-holding evidence")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -107,6 +108,13 @@ func runCostContinuation(args []string) error {
 	}
 	if !comparison.AnchorAndAllocationsMatch {
 		return errors.New("stored anchor or active attribution audits changed")
+	}
+	var origin *coreOriginReview
+	if *zeroOrigin {
+		origin, err = readCoreOriginReview(ctx, tx, cfg, b)
+		if err != nil {
+			return err
+		}
 	}
 	last := b.Costs[len(b.Costs)-1]
 	if err := cleanContinuationCost(last, *account, v.DateTo); err != nil {
@@ -178,7 +186,8 @@ func runCostContinuation(args []string) error {
 	report := map[string]any{"schema": "relay.stored_cost_continuation.v1", "account_id": *account,
 		"generated_at": timeutil.Now(), "environment": cfg.Service.Environment, "database": dbName,
 		"anchor_version": v.VersionID, "anchor_sha256": v.PayloadSHA256, "anchor_date": v.DateTo,
-		"date_to": end.Format("2006-01-02"), "days": days, "continuity": continuity,
+		"zero_origin_review": origin,
+		"date_to":            end.Format("2006-01-02"), "days": days, "continuity": continuity,
 		"database_read_only": true, "database_writes": 0, "broker_commands": 0, "csv_reads": 0,
 		"economic_nav_publishable": false, "cost_publishable": false,
 		"scope": "PG stored research anchor plus current OC ledger and Meridian; clean CORE continuation only; historical source freshness and formal publication remain separate reviews; no NAV propagation"}

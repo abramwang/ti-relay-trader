@@ -1217,3 +1217,23 @@ go run ./cmd/relayctl performance-fuying13-cash-timing-20261113 \
 两天86行、56项承接，成本恒等式与结构连续性通过，无成本基数移动或舍入差；资金归因残差分别-73.12和-84.30元仍保留，逆回购利息不猜记收益。这些当日数字仍不是正式连续绩效；历史资产分项与旧NAV缺口没有被本轮解除。既有常规performance/worker代码没有CSV读取依赖，本轮新增的是脱离历史修复CLI的续算入口，不声称修改了生产任务协议。
 
 证据`outputs/recovery/fuying13_through_20261112/pg-continuation-1.json`；另从`/tmp`以绝对配置路径运行同一CLI，结果`pg-continuation-outside-repo.json`，用于验证不依赖仓库工作目录的reference文件。未修改原研究版本，没有金融写入/服务发布/OC命令。下一步是正式成本受控发布和次日读取、逐段账户净值接续，而非再次索要旧CSV或仅删除质量标记。
+
+## 普通持仓成本的独立恢复
+
+2026-11-15继续处理，不再把整个研究版本通过视为发布充分条件。11-10的41条CORE记录都可追到11-03或之后最近一次完整空仓起点；从PG保留的开盘/前收盘/当前收盘查询、普通成交及完整关联订单费用独立重放，共92条逐证券逐日记录，覆盖11-03、04、05、06、09、10。
+
+原始查询必须未筛选且完整，订单/成交投影无歧义；账本额外记录仅在有匹配完整事件证明时接受，缺页/坏解析/重复/字段差异不能放行。完整持仓证明缺席证券为零，研究版的零数量本身不是空仓证据。重放复用正常成本的移动平均和费用逻辑，不读取柜台平均成本或CSV、不沿用10月申赎成本假设；同刻相反方向、超卖、缺费用及公司行为需要另行审核。
+
+逐项获取成本与原研究行六位精度一致。用独立11-09种子运行正常引擎重建11-10，41行通过；再正常承接11-11的40行、11-12的46行，合计127行。费用完整仅指当前OC证据，不代表券商最终清算。11-11/12的资金桥及累计净值缺口仍是另一项检查，成本恢复不构成正式连续净值发布。
+
+计划`outputs/recovery/fuying13_core_origin_20261115/review-2.json`，SHA256 `c02d92692a74f8442978fd548e5237c23403ec75c47b736fd6b20f3d2bace504`。`performance-cost-continue --verify-zero-origin`生成独立证据；`performance-core-cost-publish`默认只读，apply需绑定计划与新鲜完整PG备份。写前再次读PG证据SHA、活动归属及正常计算结果，Serializable事务锁定成本表、先核对所有目标日期不存在再写，已有/部分已有均拒绝，保留旧研究版本不改。
+
+新增来源`relay.core_cost_recovery:<planSHA>`只用于这次审核成本；首日注明`verified_zero_origin_replay`。只操作成本表，资金、经济净值、交易账本及生产权限均不变。提交前报告`committed=false`，最终以独立回读和`.commit.json`为准，不凭预检报告声称写入完成。临时PG已验证回滚、拒绝覆盖、并发冲突；全Go、定向race及vet通过。
+
+实际执行于2026-11-15 12:32:23+08:00提交成功，独立回读127行。全库备份`outputs/backups/relay_trader_20261115T122531+0800.dump`（398166728字节），SHA256 `a775def0d5385c7543aa45f172537be58059e0fad6b235e6528286e5a0815b87`，manifest/目录校验通过，未声称本次全量恢复演练。回执`outputs/recovery/fuying13_core_origin_20261115/publish-apply.json.commit.json`标记applied/committed=true、成本写入/回读均127、NAV及资金写入均0。研究正文与原始账本保留。
+
+正式GET `cost-ledger/preview?trade_date=2026-11-12`写入前为blocked/previous_cost_state_gap，写入后为calculated，46行、数量差/缺费/阻断均0；11-11同样40行calculated。preview本身persisted=false，表示该次重算未写库，不否认已有正式成本。11-10作为独立锚点已落库，本轮没有发布11-09成本，直接重新计算锚点日不等同于读取已审核锚点。
+
+独立研究/正式比较报告`formal-comparison.json`确认11-10已有41行；差异仅opening_source/source与时间审计字段，金融值不变，旧22日研究版其余931行未自动发布。此处比较器将来源差异也归入changed，不能据changed=41误称成本金额不一致。11-12经济NAV仍blocked/previous_economic_nav_gap，账户当日诊断+9846.063256元、归因残差-84.30元未改；逆回购利息仍不猜记。下一步继续历史资金桥和可证明的账户净值接续，不要求更新CSV，不把成本验收替代资金权益说明。
+
+API PID2749324、worker PID2462706保持不变，生产4账户查询/全部下单关闭，无迁移/OC命令。此次工具写入已由在用API正常读取，无需为了读取数据重启服务。
