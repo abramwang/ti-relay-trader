@@ -525,6 +525,10 @@ ETF 申赎 T0 单独返回 `strategy_type=etf_redemption_t0`。同一赎回订�
 
 `GET /v1/accounts/{account_id}/performance/series.csv?date_from=YYYYMMDD&date_to=YYYYMMDD&benchmark_security_id=000001.SH` 复用同一绩效序列口径，返回 CSV 文件，便于研究侧脚本、表格工具或验收脚本直接下载。CSV 当前包含账户、交易日、净资产、上一 close 净资产、日初资产、隔夜调整、日内盈亏、日内收益率、close-to-close 收益、累计收益、回撤、基准标的、基准 close、基准收益、基准回撤、超额收益、已实现 PnL、总持仓浮盈、当日持仓浮盈、总/净 PnL、成交额、费用和快照时间等列。
 
+`GET /v1/accounts/{account_id}/performance/cycle-reviews?date_from=YYYYMMDD&date_to=YYYYMMDD`读取独立核对版本，也接受ISO日期。日期按赎回源日筛选而非退款记账日；可选`version_id`精确读取旧版，不存在时404，不回落最新版。未发布账户返回`available=false, cycles=[]`，存储/证据校验失败返回503，不影响账户净值接口。
+
+每个`cycles[]`保留`profit`、已知/推定现金来源笔数，新增可选`component_review`。其中`same_day_gaps[]`逐赎回委托/证券记录划转量、当日关联卖出量、未关联量和账户开收盘数量；经已有成本链独立核对的后续卖出另含`later_sale_date/quantity/cents`。金额字段单位为分，数量不跨证券求和；后续卖出已包含在`profit.trading.later_component_sale_cents`，不得再次相加。空差额数组只证明已观察划转与当日关联卖出数量匹配，不证明清算完整；旧版本没有此字段时代表未发布明细，不等于零差额。原质量标记保留，账户日盈亏、净值和最终性不由这些明细改写。
+
 经济净值输入层由 `000009_performance_accounting` 提供：
 
 - `performance_fee_rules` 记录账户级、生效区间、版本化费用规则。柜台成交实际费用优先；实际费用缺失时使用生效费率估算；ETF 申赎 T0 的 15bp 摩擦成本通过 `estimated_friction_rate` 单独维护。

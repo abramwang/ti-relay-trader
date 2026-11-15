@@ -107,7 +107,12 @@ func collectCycleFeeMembers(account, date string, groups []performance.T0FeeMemb
 	return members, nil
 }
 
-func reviewFuyingCycleFeeMembers(trades []performance.ETFCycleTradingEvidence) ([]cycleFeeMember, error) {
+type cycleMembershipReview struct {
+	Members    []cycleFeeMember
+	Components []performance.CycleComponentReview
+}
+
+func reviewFuyingCycleFeeMembers(trades []performance.ETFCycleTradingEvidence) (*cycleMembershipReview, error) {
 	r, err := loadResearchInputReplay("outputs/recovery/fuying13_engine_capture_20261114/run-1", cycleMembershipInputSHA)
 	if err != nil {
 		return nil, err
@@ -144,6 +149,7 @@ func reviewFuyingCycleFeeMembers(trades []performance.ETFCycleTradingEvidence) (
 	}
 	seen := map[string]bool{}
 	var members []cycleFeeMember
+	components := map[string]*performance.CycleComponentReview{}
 	for _, t := range trades {
 		day := strings.SplitN(t.CycleID, "/", 2)[0]
 		if seen[day] {
@@ -162,11 +168,27 @@ func reviewFuyingCycleFeeMembers(trades []performance.ETFCycleTradingEvidence) (
 			return nil, err
 		}
 		members = append(members, m...)
+		for _, g := range groups {
+			key := day + "/" + g.SecurityID
+			if components[key] == nil {
+				components[key] = &performance.CycleComponentReview{CycleID: key, InputSHA256: cycleMembershipInputSHA, CostSHA256: cycleCostEvidenceSHA, Gaps: []performance.CycleComponentGap{}}
+			}
+			components[key].Groups++
+			components[key].Gaps = append(components[key].Gaps, g.ComponentGaps...)
+		}
 	}
 	if err := verifyFrozenFeeFills(lookup, members); err != nil {
 		return nil, err
 	}
-	return members, nil
+	result := &cycleMembershipReview{Members: members}
+	for _, c := range components {
+		sort.Slice(c.Gaps, func(i, j int) bool {
+			return c.Gaps[i].ParentID+"/"+c.Gaps[i].SecurityID < c.Gaps[j].ParentID+"/"+c.Gaps[j].SecurityID
+		})
+		result.Components = append(result.Components, *c)
+	}
+	sort.Slice(result.Components, func(i, j int) bool { return result.Components[i].CycleID < result.Components[j].CycleID })
+	return result, nil
 }
 
 func verifyFrozenFeeFills(lookup *researchEvidenceLookup, members []cycleFeeMember) error {

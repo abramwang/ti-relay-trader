@@ -4793,14 +4793,21 @@
       const p = row.profit, t = p.trading;
       const money = (value) => Number.isFinite(value) ? formatNumber(value / 100) : "--";
       const flags = (p.quality_flags || []).filter((x) => x !== "observed_cycle_profit_not_account_daily_pnl");
-      return `<tr><td><strong>${escapeHTML(displayDate(row.source_date))}</strong><small>${escapeHTML(row.security_id)}</small></td>
+      const gaps = row.component_review?.same_day_gaps;
+      const componentLabel = Array.isArray(gaps) && gaps.length && gaps.every((g) => g.later_sale_date) ? "源日成分余仓，后续卖出已核对" : "成分划转与卖出关联待核验";
+      const componentDetail = Array.isArray(gaps) ? gaps.length ? gaps.map((g) => `<p class="cycle-component-gap"><strong>${escapeHTML(g.security_id)} · 源日未关联卖出 ${escapeHTML(formatInt(g.unlinked_quantity))}</strong>
+        <small>划转 ${escapeHTML(formatInt(g.transfer_quantity))} · 当日已关联卖出 ${escapeHTML(formatInt(g.linked_sale_quantity))} · 账户收盘 ${escapeHTML(formatInt(g.account_close_quantity))}</small>
+        <small>${g.later_sale_date ? escapeHTML(displayDate(g.later_sale_date)) + " 已关联卖出 " + escapeHTML(formatInt(g.later_sale_quantity)) + " · " + escapeHTML(money(g.later_sale_cents)) + " 元（已计入周期）" : "划转性质或去向待核验，未补造卖出/清算款"}</small>
+        <small>赎回委托 ${escapeHTML(g.redemption_order_id)}</small></p>`).join("") : "<p>已观察的成分划转与当日关联卖出数量匹配</p>" : "";
+      return `<tr data-cycle-id="${escapeHTML(p.cycle_id)}"><td><strong>${escapeHTML(displayDate(row.source_date))}</strong><small>${escapeHTML(row.security_id)}</small></td>
         <td>${escapeHTML(formatInt(t.redemption_quantity))}</td><td>${escapeHTML(money(t.acquisition_gross_cents))}</td>
         <td>${escapeHTML(money(t.component_sale_cents + t.later_component_sale_cents))}</td><td>${escapeHTML(money(p.observed_net_cash_cents))}</td>
         <td>${escapeHTML(money(t.ordinary_execution_fee_cents))}</td><td class="${p.net_cycle_pnl_cents > 0 ? "up" : p.net_cycle_pnl_cents < 0 ? "down" : ""}">${escapeHTML(money(p.net_cycle_pnl_cents))}</td>
-        <td><details><summary>${p.status === "observed_cash_reconciled" ? "已观察现金核对" : "条件估算"} · ${flags.length}项待核验</summary>
+        <td><details><summary>${p.status === "observed_cash_reconciled" ? "已观察现金核对" : "条件估算"} · ${flags.length}项标记</summary>
           <p>买入日 ${escapeHTML(displayDate(t.acquisition_date))} · 最近收付 ${escapeHTML(displayDate(row.last_observed_posting))}</p>
           <p>${t.fee_basis === "broker_cash_reconciled" ? "普通费用已核对" : "普通费用待核验"} · 父单扣费已在收付款中计入</p>
-          ${flags.map((flag) => `<p>${escapeHTML(labels[flag] || performanceQualityFlagLabel(flag))}</p>`).join("")}</details></td></tr>`;
+          <p>现金来源日：${escapeHTML(formatInt(row.known_source_legs))} 笔已知 · ${escapeHTML(formatInt(row.inferred_source_legs))} 笔推定</p>
+          ${flags.map((flag) => `<p>${escapeHTML(flag === "component_transfer_sell_quantity_mismatch" ? componentLabel : labels[flag] || performanceQualityFlagLabel(flag))}</p>`).join("")}${componentDetail}</details></td></tr>`;
     }).join("") : '<tr><td colspan="8" class="empty-state">' + escapeHTML(state.performanceCycleLoading ? "正在读取核对记录..." : state.performanceCycleError ? "核对记录暂不可用，账户净值保持独立显示" : data?.available ? "该版本在所选源日范围内没有核对记录" : "该账户尚无已发布的申赎周期核对记录") + '</td></tr>';
   }
 

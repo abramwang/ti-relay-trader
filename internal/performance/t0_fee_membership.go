@@ -15,6 +15,7 @@ type T0FeeMembership struct {
 	GroupID        string
 	BuyFills       []trading.Fill
 	ComponentFills []trading.Fill
+	ComponentGaps  []CycleComponentGap
 }
 
 // ReviewT0FeeMembership reuses the contribution engine's ownership rules. The
@@ -103,7 +104,11 @@ func (s *Service) ReviewT0FeeMembership(ctx context.Context, account, date strin
 				}
 			}
 		}
-		result = append(result, T0FeeMembership{SecurityID: g.securityID, GroupID: g.groupID, BuyFills: buys, ComponentFills: component})
+		gaps, err := componentQuantityGaps(g.redemptions, links, open, close)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, T0FeeMembership{SecurityID: g.securityID, GroupID: g.groupID, BuyFills: buys, ComponentFills: component, ComponentGaps: gaps})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].SecurityID+"/"+result[i].GroupID < result[j].SecurityID+"/"+result[j].GroupID

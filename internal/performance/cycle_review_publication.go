@@ -14,6 +14,8 @@ import (
 
 const CycleReviewSchema = "relay.etf_cycle_review.v1"
 
+var cycleEvidenceHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 type CycleReviewSource struct {
 	AccountID   string             `json:"account_id"`
 	Writes      int                `json:"database_writes"`
@@ -21,17 +23,19 @@ type CycleReviewSource struct {
 	Publishable bool               `json:"economic_nav_publishable"`
 	Cycles      ETFCashCycleReview `json:"cycles"`
 	Profit      struct {
-		Profits     []ETFCycleProfit `json:"profits"`
-		Publishable bool             `json:"economic_nav_publishable"`
+		Profits     []ETFCycleProfit       `json:"profits"`
+		Publishable bool                   `json:"economic_nav_publishable"`
+		Components  []CycleComponentReview `json:"component_reviews,omitempty"`
 	} `json:"cycle_profit_review"`
 }
 type CycleReviewRow struct {
-	SourceDate   string         `json:"source_date"`
-	SecurityID   string         `json:"security_id"`
-	LastPosting  string         `json:"last_observed_posting"`
-	KnownLegs    int            `json:"known_source_legs"`
-	InferredLegs int            `json:"inferred_source_legs"`
-	Profit       ETFCycleProfit `json:"profit"`
+	SourceDate   string                `json:"source_date"`
+	SecurityID   string                `json:"security_id"`
+	LastPosting  string                `json:"last_observed_posting"`
+	KnownLegs    int                   `json:"known_source_legs"`
+	InferredLegs int                   `json:"inferred_source_legs"`
+	Profit       ETFCycleProfit        `json:"profit"`
+	Components   *CycleComponentReview `json:"component_review,omitempty"`
 }
 type CycleReviewDocument struct {
 	Schema          string           `json:"schema"`
@@ -70,6 +74,15 @@ func BuildCycleReviewVersion(source CycleReviewSource, version, sourceSHA string
 					d.DateFrom = c.SourceDate
 				}
 			}
+		}
+	}
+	if len(source.Profit.Components) != 0 {
+		if len(source.Profit.Components) != len(d.Rows) {
+			return ledger.CycleReviewVersion{}, errors.New("component review coverage mismatch")
+		}
+		for i := range d.Rows {
+			c := source.Profit.Components[i]
+			d.Rows[i].Components = &c
 		}
 	}
 	if err := ValidateCycleReview(d); err != nil {
@@ -124,6 +137,11 @@ func ValidateCycleReview(d CycleReviewDocument) error {
 			return fail()
 		}
 		previous = p.CycleID
+		if r.Components != nil {
+			if err := validateCycleComponentReview(*r.Components, r, d.ObservedThrough); err != nil {
+				return err
+			}
+		}
 	}
 	if d.DateFrom != d.Rows[0].SourceDate {
 		return fail()

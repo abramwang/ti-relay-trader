@@ -44,6 +44,8 @@
 .cycle-review-table details { width: 250px; white-space: normal; overflow-wrap: anywhere; }
 .cycle-review-table summary { cursor: pointer; color: var(--warning); }
 .cycle-review-table details p { color: var(--muted-soft); line-height: 1.6; margin: 8px 0 0; }
+.cycle-review-table .cycle-component-gap { border-top: 1px solid var(--line); padding-top: 8px; }
+.cycle-review-table .cycle-component-gap strong { font-size: 12px; font-weight: 500; }
 .cycle-review-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px; color: var(--muted-soft); font-size: 12px; }
 .cycle-review-footer > div { display: flex; gap: 12px; align-items: center; }
 .cycle-review-footer button { width: 30px; height: 30px; padding: 0; font-size: 20px; }

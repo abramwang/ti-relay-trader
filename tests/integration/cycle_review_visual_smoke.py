@@ -46,6 +46,22 @@ def main():
         expect(page.locator("#cycleReviewRows tr")).to_have_count(14)
         expect(page.locator("#cycleFeeState")).to_have_text("14 / 14 组已核对")
         expect(page.locator("#cycleReviewRows tr").first.locator("td").nth(6)).to_have_text("-7,702.84")
+        carried = page.locator('[data-cycle-id="2026-10-15/510310.SH"]')
+        carried.locator("summary").click()
+        expect(carried).to_contain_text("600026.SH")
+        expect(carried).to_contain_text("601872.SH")
+        expect(carried).to_contain_text("后续卖出已核对")
+        expect(carried).to_contain_text("6,216.00 元（已计入周期）")
+        expect(carried).to_contain_text("9,450.00 元（已计入周期）")
+        carried.locator("details").scroll_into_view_if_needed()
+        page.wait_for_timeout(4000)
+        page.screenshot(path=str(output / "carried-components.png"))
+        carried.locator("summary").click()
+        unknown = page.locator('[data-cycle-id="2026-10-14/159869.SZ"]')
+        unknown.locator("summary").click()
+        expect(unknown).to_contain_text("159900.SZ")
+        expect(unknown).to_contain_text("划转性质或去向待核验")
+        unknown.locator("summary").click()
         page.locator("#cycleReviewRows summary").first.click()
         assert page.locator(".cycle-review-scroll").evaluate("e => e.scrollHeight <= e.clientHeight + 1")
         assert page.locator(".cycle-review-section").evaluate("e => e.scrollHeight <= e.clientHeight + 1")
@@ -61,6 +77,11 @@ def main():
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         rect = page.locator(".cycle-review-scroll").bounding_box()
         assert rect["x"] >= 0 and rect["x"] + rect["width"] <= 391, rect
+        carried.locator("summary").click()
+        carried.locator(".cycle-component-gap").last.scroll_into_view_if_needed()
+        page.screenshot(path=str(output / "mobile-components.png"))
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        carried.locator("summary").click()
         page.set_viewport_size({"width": 1600, "height": 1050})
         load("20261104", "20261104")
         expect(page.locator("#cycleReviewStatus")).to_have_text("1 组 · 清算未确认", timeout=60000)
@@ -71,6 +92,10 @@ def main():
         raw = page.request.get(args.base_url + path + "?date_from=20261012&date_to=20261113").json()
         assert raw["data"]["account_nav_publishable"] is False
         assert raw["data"]["final_settlement"] is False
+        old = page.request.get(args.base_url + path + "?date_from=20261012&date_to=20261113&version_id=fuying13-cycle-20261115-v1").json()["data"]
+        assert old["version_id"] == "fuying13-cycle-20261115-v1"
+        assert [r["profit"] for r in old["cycles"]] == [r["profit"] for r in raw["data"]["cycles"]]
+        assert sum(len(r["component_review"]["same_day_gaps"]) for r in raw["data"]["cycles"]) == 11
         fixture = copy.deepcopy(raw)
         fixture["data"]["cycles"] = fixture["data"]["cycles"] * 2
         page.route("**" + path + "?*", lambda route: route.fulfill(json=fixture))
@@ -92,7 +117,7 @@ def main():
         expect(page.locator("#cycleFeeState")).to_have_text("--")
         assert not errors, errors
         assert not writes, writes
-        report = {"passed": True, "cycles": 14, "checks": ["published-values", "date-filter", "empty-range", "account-isolation", "pagination-fixture", "error-isolation", "desktop", "mobile"], "page_errors": errors, "writes": writes}
+        report = {"passed": True, "cycles": 14, "checks": ["published-values", "component-gaps", "later-sales-already-included", "immutable-old-version", "date-filter", "empty-range", "account-isolation", "pagination-fixture", "error-isolation", "desktop", "mobile"], "page_errors": errors, "writes": writes}
         (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         print(json.dumps(report, ensure_ascii=False))
         browser.close()

@@ -360,8 +360,12 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 	if err := readPinnedJSON(cycleExecutionFeePath, cycleExecutionFeeSHA, &executionFees); err != nil {
 		return nil, err
 	}
-	members, err := reviewFuyingCycleFeeMembers(trades)
+	membership, err := reviewFuyingCycleFeeMembers(trades)
 	if err != nil {
+		return nil, err
+	}
+	members := membership.Members
+	if err := attachCycleLaterSales(membership.Components, cost); err != nil {
 		return nil, err
 	}
 	trades, feeReview, err := applyCycleOrdinaryFees(trades, members, executionFees)
@@ -381,5 +385,47 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 			return nil, fmt.Errorf("independent overnight cash proof differs: %d", p.NetCyclePnLCents)
 		}
 	}
-	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "ordinary_fee_review": feeReview, "ordinary_fee_members": members, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA, "execution_fees": cycleExecutionFeeSHA, "membership_inputs": cycleMembershipInputSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; exact whole-order broker fees where membership closes, unresolved allocations retained; not account NAV", "economic_nav_publishable": false}, nil
+	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "component_reviews": membership.Components, "ordinary_fee_review": feeReview, "ordinary_fee_members": members, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA, "execution_fees": cycleExecutionFeeSHA, "membership_inputs": cycleMembershipInputSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; exact whole-order broker fees where membership closes, unresolved allocations retained; not account NAV", "economic_nav_publishable": false}, nil
+}
+
+func attachCycleLaterSales(reviews []performance.CycleComponentReview, cost cycleCostEvidence) error {
+	for _, day := range cost.Contributions {
+		if day.AccountID != cost.Account {
+			return errors.New("component continuation account mismatch")
+		}
+		for _, x := range day.Contributions {
+			if !strings.HasPrefix(x.StrategyID, "ETF_T0_COMPONENT:") || x.SellQuantity == 0 {
+				continue
+			}
+			parts := strings.SplitN(strings.TrimPrefix(x.StrategyID, "ETF_T0_COMPONENT:"), ":", 2)
+			if len(parts) != 2 || day.TradeDate <= parts[0] || x.CloseQuantity != 0 || x.BuyQuantity != 0 || x.SellQuantity != x.OpenQuantity {
+				return errors.New("incomplete later component sale")
+			}
+			matches := 0
+			for i := range reviews {
+				if !strings.HasPrefix(reviews[i].CycleID, parts[0]+"/") {
+					continue
+				}
+				for j := range reviews[i].Gaps {
+					g := &reviews[i].Gaps[j]
+					if g.ParentID != parts[1] || g.SecurityID != x.SecurityID {
+						continue
+					}
+					if g.LaterSaleDate != "" || g.OpenQty != 0 || g.CloseQty != g.RemainingQty || g.RemainingQty != x.SellQuantity {
+						return errors.New("ambiguous later component quantity")
+					}
+					amount, err := cycleMoney(x.SellAmount)
+					if err != nil || amount <= 0 {
+						return errors.New("invalid later component amount")
+					}
+					g.LaterSaleDate, g.LaterSaleQty, g.LaterSaleCents = day.TradeDate, x.SellQuantity, amount
+					matches++
+				}
+			}
+			if matches != 1 {
+				return errors.New("later component has no unique source gap")
+			}
+		}
+	}
+	return nil
 }
