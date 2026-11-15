@@ -86,7 +86,7 @@ func TestCycleProfitReviewedEvidence(t *testing.T) {
 				t.Fatal("5900 residual mixed into redemption")
 			}
 		case "2026-10-15/510310.SH":
-			if p.Trading.LaterComponentSales != 1566600 || p.Status != "estimated" || p.NetCyclePnLCents != 55909 {
+			if p.Trading.LaterComponentSales != 1566600 || p.Status != "estimated" || p.NetCyclePnLCents != 55902 {
 				t.Fatal("overnight components lost or fees invented")
 			}
 			for _, flag := range p.QualityFlags {
@@ -102,6 +102,18 @@ func TestCycleProfitReviewedEvidence(t *testing.T) {
 			if p.Trading.AcquisitionDate != "2026-11-03" || p.Trading.AcquisitionGrossCents != 245200000 || p.NetCyclePnLCents != 113473 || p.Trading.OrdinaryFeeCents != 160828 {
 				t.Fatal("overnight acquisition/fees wrong")
 			}
+		}
+		if p.Trading.FeeBasis != "broker_cash_reconciled" {
+			t.Fatal("matched ordinary order fees not applied")
+		}
+	}
+	review := r["ordinary_fee_review"].([]cycleOrdinaryFeeReview)
+	if len(review) != 14 {
+		t.Fatal("missing fee cohorts")
+	}
+	for _, item := range review {
+		if !item.Applied || len(item.Unresolved) != 0 {
+			t.Fatal("unresolved fees", item)
 		}
 	}
 	if known != 1 {

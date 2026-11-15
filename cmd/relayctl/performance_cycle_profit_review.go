@@ -360,6 +360,14 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 	if err := readPinnedJSON(cycleExecutionFeePath, cycleExecutionFeeSHA, &executionFees); err != nil {
 		return nil, err
 	}
+	members, err := reviewFuyingCycleFeeMembers(trades)
+	if err != nil {
+		return nil, err
+	}
+	trades, feeReview, err := applyCycleOrdinaryFees(trades, members, executionFees)
+	if err != nil {
+		return nil, err
+	}
 	trades, err = applyCycleLaterExecutionFees(trades, cost, parents, executionFees)
 	if err != nil {
 		return nil, err
@@ -373,5 +381,5 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 			return nil, fmt.Errorf("independent overnight cash proof differs: %d", p.NetCyclePnLCents)
 		}
 	}
-	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA, "execution_fees": cycleExecutionFeeSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; later component fees broker-matched, other OC fees/allocation gaps remain explicit; not account NAV", "economic_nav_publishable": false}, nil
+	return map[string]any{"schema": "relay.etf_cycle_profit_review.v1", "profits": profits, "ordinary_fee_review": feeReview, "ordinary_fee_members": members, "source_sha256": map[string]string{"cost_review": cycleCostEvidenceSHA, "parent_fees": cycleParentFeeSHA, "execution_fees": cycleExecutionFeeSHA, "membership_inputs": cycleMembershipInputSHA}, "parent_fee_removed_micros": fees, "scope": "conditional cohort cash PnL; exact whole-order broker fees where membership closes, unresolved allocations retained; not account NAV", "economic_nav_publishable": false}, nil
 }

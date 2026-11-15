@@ -28,6 +28,7 @@ import (
 // HTTP bodies. No headers, database credentials or production writes are used.
 type researchInputCapture struct {
 	replay    *researchInputReplay
+	lookup    *researchEvidenceLookup
 	mu        sync.Mutex
 	file      *os.File
 	directory string
@@ -157,6 +158,11 @@ func (c *researchInputCapture) close(runErr error) error {
 }
 
 func captureCall[T any](c *researchInputCapture, method string, request any, call func() (T, error)) (T, error) {
+	if c.lookup != nil {
+		var value T
+		err := c.lookup.read(method, request, &value)
+		return value, err
+	}
 	if c.replay != nil {
 		var value T
 		err := c.replay.read(method, request, &value)
