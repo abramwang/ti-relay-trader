@@ -4794,10 +4794,11 @@
       const money = (value) => Number.isFinite(value) ? formatNumber(value / 100) : "--";
       const flags = (p.quality_flags || []).filter((x) => x !== "observed_cycle_profit_not_account_daily_pnl");
       const gaps = row.component_review?.same_day_gaps;
-      const componentLabel = Array.isArray(gaps) && gaps.length && gaps.every((g) => g.later_sale_date) ? "源日成分余仓，后续卖出已核对" : "成分划转与卖出关联待核验";
+      const componentLabel = Array.isArray(gaps) && gaps.length && gaps.every((g) => g.later_sale_date || g.cash_explanation) ? "源日差额已解释，保留原始数量标记" : "成分划转与卖出关联待核验";
       const componentDetail = Array.isArray(gaps) ? gaps.length ? gaps.map((g) => `<p class="cycle-component-gap"><strong>${escapeHTML(g.security_id)} · 源日未关联卖出 ${escapeHTML(formatInt(g.unlinked_quantity))}</strong>
         <small>划转 ${escapeHTML(formatInt(g.transfer_quantity))} · 当日已关联卖出 ${escapeHTML(formatInt(g.linked_sale_quantity))} · 账户收盘 ${escapeHTML(formatInt(g.account_close_quantity))}</small>
-        <small>${g.later_sale_date ? escapeHTML(displayDate(g.later_sale_date)) + " 已关联卖出 " + escapeHTML(formatInt(g.later_sale_quantity)) + " · " + escapeHTML(money(g.later_sale_cents)) + " 元（已计入周期）" : "划转性质或去向待核验，未补造卖出/清算款"}</small>
+        <small>${g.cash_explanation ? "已匹配券商替代现金 · " + escapeHTML(money(g.cash_explanation.amount_cents)) + " 元（已计入周期，不重复增加）" : g.later_sale_date ? escapeHTML(displayDate(g.later_sale_date)) + " 后续卖出已核对 · " + escapeHTML(formatInt(g.later_sale_quantity)) + " · " + escapeHTML(money(g.later_sale_cents)) + " 元（已计入周期）" : "划转性质或去向待核验，未补造卖出/清算款"}</small>
+        ${g.cash_explanation ? `<small>实际入账 ${escapeHTML(g.cash_explanation.posted_at.replace("T", " "))} · 流水 ${escapeHTML(g.cash_explanation.broker_flow_id)}</small>` : ""}
         <small>赎回委托 ${escapeHTML(g.redemption_order_id)}</small></p>`).join("") : "<p>已观察的成分划转与当日关联卖出数量匹配</p>" : "";
       return `<tr data-cycle-id="${escapeHTML(p.cycle_id)}"><td><strong>${escapeHTML(displayDate(row.source_date))}</strong><small>${escapeHTML(row.security_id)}</small></td>
         <td>${escapeHTML(formatInt(t.redemption_quantity))}</td><td>${escapeHTML(money(t.acquisition_gross_cents))}</td>

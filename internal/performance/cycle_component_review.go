@@ -12,16 +12,27 @@ import (
 // Quantities describe the existing linker's evidence, not a new allocation or
 // security classification. A matching account position is not ownership proof.
 type CycleComponentGap struct {
-	ParentID       string `json:"redemption_order_id"`
-	SecurityID     string `json:"security_id"`
-	TransferQty    int64  `json:"transfer_quantity"`
-	LinkedQty      int64  `json:"linked_sale_quantity"`
-	RemainingQty   int64  `json:"unlinked_quantity"`
-	OpenQty        int64  `json:"account_open_quantity"`
-	CloseQty       int64  `json:"account_close_quantity"`
-	LaterSaleDate  string `json:"later_sale_date,omitempty"`
-	LaterSaleQty   int64  `json:"later_sale_quantity,omitempty"`
-	LaterSaleCents int64  `json:"later_sale_cents,omitempty"`
+	ParentID       string              `json:"redemption_order_id"`
+	SecurityID     string              `json:"security_id"`
+	TransferQty    int64               `json:"transfer_quantity"`
+	LinkedQty      int64               `json:"linked_sale_quantity"`
+	RemainingQty   int64               `json:"unlinked_quantity"`
+	OpenQty        int64               `json:"account_open_quantity"`
+	CloseQty       int64               `json:"account_close_quantity"`
+	LaterSaleDate  string              `json:"later_sale_date,omitempty"`
+	LaterSaleQty   int64               `json:"later_sale_quantity,omitempty"`
+	LaterSaleCents int64               `json:"later_sale_cents,omitempty"`
+	Cash           *CycleComponentCash `json:"cash_explanation,omitempty"`
+}
+
+// An explanation of cash already included in the cycle, never an additive leg.
+type CycleComponentCash struct {
+	TransferFillID  string `json:"transfer_fill_id"`
+	FlowID          string `json:"broker_flow_id"`
+	AmountCents     int64  `json:"amount_cents"`
+	PostedAt        string `json:"posted_at"`
+	EvidenceSHA256  string `json:"evidence_sha256"`
+	AlreadyIncluded bool   `json:"already_included"`
 }
 
 type CycleComponentReview struct {
@@ -91,6 +102,13 @@ func validateCycleComponentReview(c CycleComponentReview, row CycleReviewRow, th
 			}
 		}
 		later += g.LaterSaleCents
+		if x := g.Cash; x != nil {
+			posted, err := time.Parse(time.RFC3339, x.PostedAt)
+			_, offset := posted.Zone()
+			if err != nil || offset != 8*3600 || posted.Format("2006-01-02") < row.SourceDate || posted.Format("2006-01-02") > through || strings.TrimSpace(x.FlowID) == "" || strings.TrimSpace(x.TransferFillID) == "" || !cycleEvidenceHash.MatchString(x.EvidenceSHA256) || x.AmountCents <= 0 || x.AmountCents > 100000000000000 || !x.AlreadyIncluded || g.LaterSaleDate != "" || g.LinkedQty != 0 || g.OpenQty != 0 || g.CloseQty != 0 {
+				return bad()
+			}
+		}
 		previous = key
 	}
 	if later != row.Profit.Trading.LaterComponentSales || (len(c.Gaps) > 0) != containsStringValue(row.Profit.Trading.QualityFlags, "component_transfer_sell_quantity_mismatch") {

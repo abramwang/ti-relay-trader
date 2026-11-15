@@ -119,6 +119,23 @@ func TestCycleProfitReviewedEvidence(t *testing.T) {
 	if known != 1 {
 		t.Fatal("unverified groups promoted")
 	}
+	var explained, later, unresolved int
+	var cents int64
+	for _, c := range r["component_reviews"].([]performance.CycleComponentReview) {
+		for _, g := range c.Gaps {
+			if g.Cash != nil {
+				explained++
+				cents += g.Cash.AmountCents
+			} else if g.LaterSaleDate != "" {
+				later++
+			} else {
+				unresolved++
+			}
+		}
+	}
+	if explained != 9 || cents != 115123050 || later != 2 || unresolved != 0 {
+		t.Fatalf("cash=%d/%d later=%d unresolved=%d", explained, cents, later, unresolved)
+	}
 }
 
 func TestCycleLaterFeeAssociation(t *testing.T) {

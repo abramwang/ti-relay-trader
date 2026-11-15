@@ -83,6 +83,20 @@ func BuildCycleReviewVersion(source CycleReviewSource, version, sourceSHA string
 		for i := range d.Rows {
 			c := source.Profit.Components[i]
 			d.Rows[i].Components = &c
+			for _, gap := range c.Gaps {
+				if gap.Cash == nil {
+					continue
+				}
+				matches := 0
+				for _, cycle := range source.Cycles.Cycles {
+					if cycle.CycleID == c.CycleID && containsStringValue(cycle.FlowIDs, gap.Cash.FlowID) {
+						matches++
+					}
+				}
+				if matches != 1 {
+					return ledger.CycleReviewVersion{}, errors.New("component cash absent from source cycle")
+				}
+			}
 		}
 	}
 	if err := ValidateCycleReview(d); err != nil {
@@ -110,6 +124,7 @@ func ValidateCycleReview(d CycleReviewDocument) error {
 		return fail()
 	}
 	previous := ""
+	cashFlows, transferFills := map[string]bool{}, map[string]bool{}
 	for _, r := range d.Rows {
 		p, t := r.Profit, r.Profit.Trading
 		for _, s := range []string{r.SourceDate, r.LastPosting, t.AcquisitionDate} {
@@ -140,6 +155,15 @@ func ValidateCycleReview(d CycleReviewDocument) error {
 		if r.Components != nil {
 			if err := validateCycleComponentReview(*r.Components, r, d.ObservedThrough); err != nil {
 				return err
+			}
+			for _, gap := range r.Components.Gaps {
+				if x := gap.Cash; x != nil {
+					key := r.SourceDate + "/" + x.TransferFillID
+					if cashFlows[x.FlowID] || transferFills[key] {
+						return fail()
+					}
+					cashFlows[x.FlowID], transferFills[key] = true, true
+				}
 			}
 		}
 	}

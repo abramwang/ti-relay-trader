@@ -60,7 +60,12 @@ def main():
         unknown = page.locator('[data-cycle-id="2026-10-14/159869.SZ"]')
         unknown.locator("summary").click()
         expect(unknown).to_contain_text("159900.SZ")
-        expect(unknown).to_contain_text("划转性质或去向待核验")
+        expect(unknown).to_contain_text("已匹配券商替代现金")
+        expect(unknown).to_contain_text("116,112.60 元（已计入周期，不重复增加）")
+        expect(unknown).to_contain_text("2026-10-14 18:52:08+08:00")
+        expect(unknown).to_contain_text("2734197192")
+        unknown.locator(".cycle-component-gap").scroll_into_view_if_needed()
+        page.screenshot(path=str(output / "cash-explanation.png"))
         unknown.locator("summary").click()
         page.locator("#cycleReviewRows summary").first.click()
         assert page.locator(".cycle-review-scroll").evaluate("e => e.scrollHeight <= e.clientHeight + 1")
@@ -96,6 +101,10 @@ def main():
         assert old["version_id"] == "fuying13-cycle-20261115-v1"
         assert [r["profit"] for r in old["cycles"]] == [r["profit"] for r in raw["data"]["cycles"]]
         assert sum(len(r["component_review"]["same_day_gaps"]) for r in raw["data"]["cycles"]) == 11
+        cash = [g["cash_explanation"] for r in raw["data"]["cycles"] for g in r["component_review"]["same_day_gaps"] if g.get("cash_explanation")]
+        assert len(cash) == len({g["broker_flow_id"] for g in cash}) == 9
+        assert sum(g["amount_cents"] for g in cash) == 115123050
+        assert all(g["already_included"] for g in cash)
         fixture = copy.deepcopy(raw)
         fixture["data"]["cycles"] = fixture["data"]["cycles"] * 2
         page.route("**" + path + "?*", lambda route: route.fulfill(json=fixture))

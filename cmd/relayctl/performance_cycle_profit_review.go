@@ -368,6 +368,9 @@ func loadFuyingCycleProfit(cash performance.ETFCashCycleReview) (map[string]any,
 	if err := attachCycleLaterSales(membership.Components, cost); err != nil {
 		return nil, err
 	}
+	if err := loadCycleComponentCash(membership.Components, cash); err != nil {
+		return nil, err
+	}
 	trades, feeReview, err := applyCycleOrdinaryFees(trades, members, executionFees)
 	if err != nil {
 		return nil, err
