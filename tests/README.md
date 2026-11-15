@@ -91,7 +91,8 @@ RELAY_FUTURES_TEST_REDIS_WRITES=development-keys-only \
 - `test_fuying13_carveout.py` 覆盖债券剔除子组合的真实收付、策略资本/银证分离、两种日度计权、观察锚点、交接连续性、非正分母和未知业务门禁；全部结果仅为有条件的收付预览，不发布产品净值。
 - `test_fuying13_etf_origins.py` 的10项测试覆盖实际ETF流水源日与历史委托原标识精确关联、编号复用/不匹配/未来日期失败关闭、显式冲突、全历史已发布/缺失区段、响应截断和账户隔离；审计只读、不发布NAV、不把全部原始行匹配视为唯一会计门槛。
 - `test_fuying13_continuous_nav.py` 的9项测试覆盖ETF实付金额多重集合、源日/记账日分流、成分过户费不二次调整、无父单现金差额、补款与佣金隔离、真实银行计权、未拆分资产保留及非正分母失败；Go CLI测试覆盖375点资产/资金/净值链、非有限值及指纹门禁，API/绩效服务验证统一历史公式、默认区间与未来NAV承接。全区间375点API/CSV及只读桌面Playwright已验收。
-- `cmd/relayctl/performance_fuying13_carveout_test.go` 覆盖正式发布器的固定输入指纹、显式确认、65点逐分桥、净值连乘和幂等防覆盖；`internal/api/performance_carveout_test.go` 覆盖历史段查询、跨口径409、不误用另一范围昨日资产及Meridian可选基准503不阻断已发布净值。历史现金段页面可用 `performance_visual_smoke.py --expect-quality-items 5` 验证，其余账户默认七项检查不变。
+- `cmd/relayctl/performance_fuying13_carveout_test.go` 覆盖正式发布器的固定输入指纹、显式确认、65点逐分桥、净值连乘和幂等防覆盖；`internal/api/performance_carveout_test.go` 覆盖历史段查询、跨口径409、不误用另一范围昨日资产及Meridian可选基准503不阻断已发布净值。历史现金段页面可用 `performance_visual_smoke.py --expect-quality-items 6` 验证，其余账户默认八项检查，均含独立区间发布状态。
+- `node --test tests/unit/performance_quality.test.cjs` 验证净值未发布/试算/快照缺失/归因残差分别显示，历史专用分支不能跳过区间缺口。浏览器脚本仅允许GET；`--local-assets`可在不部署的情况下验证工作区JS/CSS。
 - 已保留可选 PostgreSQL repository 集成测试，设置 `RELAY_LEDGER_TEST_DATABASE_URL` 后运行真实 migration/写库验证。
 - 9092 文档门户可通过 `/tests` 查看本索引和测试目录树。
 

@@ -20,10 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=1280)
     parser.add_argument("--output", default="/tmp/relay-performance-smoke.png")
     parser.add_argument("--account-id", default="")
+    parser.add_argument("--local-assets", action="store_true", help="preview local terminal JS/CSS without deploying")
     parser.add_argument("--expect-calculation-status", default="")
     parser.add_argument("--expect-quality-status", default="")
     parser.add_argument("--expect-quality-detail", default="")
-    parser.add_argument("--expect-quality-items", type=int, default=7)
+    parser.add_argument("--expect-quality-items", type=int, default=8)
     parser.add_argument("--max-details-ms", type=float, default=10_000)
     return parser.parse_args()
 
@@ -42,6 +43,27 @@ def main() -> int:
             viewport={"width": args.width, "height": args.height},
             device_scale_factor=1,
         )
+        def read_only_route(route):
+            if route.request.method != "GET":
+                raise AssertionError(f"non-GET request in read-only smoke: {route.request.method}")
+            name = route.request.url.split("?", 1)[0].rsplit("/", 1)[-1]
+            if args.account_id and route.request.url.split("?", 1)[0].endswith("/v1/accounts"):
+                # Select the requested account before boot queries the first
+                # account, which may be disabled and have no recent snapshot.
+                response = route.fetch()
+                body = response.json()
+                accounts = body.get("data", {}).get("accounts", [])
+                if not any(a["account_id"] == args.account_id for a in accounts):
+                    raise AssertionError("requested account is absent")
+                accounts.sort(key=lambda a: a["account_id"] != args.account_id)
+                route.fulfill(response=response, json=body)
+            elif args.local_assets and name in ("trade-terminal.js", "trade-terminal.css"):
+                asset = Path(__file__).resolve().parents[2] / "cmd/relay-docs/web/static" / name
+                route.fulfill(path=str(asset), content_type="text/javascript" if name.endswith(".js") else "text/css")
+            else:
+                route.continue_()
+
+        page.route("**/*", read_only_route)
         page.on(
             "console",
             lambda message: console_errors.append(message.text)
@@ -193,6 +215,7 @@ def main() -> int:
             },
         )
         page.screenshot(path=str(output), full_page=False)
+        page.locator("#performanceQualityPanel").screenshot(path=str(output.with_name(output.stem + "-quality.png")))
         browser.close()
 
     if diagnostics["chartWidth"] < min(500, args.width - 70) or diagnostics["chartHeight"] < 250:

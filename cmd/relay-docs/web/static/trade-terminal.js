@@ -4353,7 +4353,7 @@
       strategy_capital_transfer_time_date_only: "策略间资本转移仅有日期精度",
       interest_ownership_confirmed_accrual_cutoff_unverified: "结息归属已确认，未追溯应计期间",
       excluded_from_official_performance_series: "未纳入正式绩效曲线",
-      official_performance_nav_unavailable: "缺少正式 v2 净值",
+      official_performance_nav_unavailable: "正式净值尚未发布",
       cash_only_snapshot_not_performance_nav: "现金快照不作为绩效净值",
       position_quantity_not_reconciled: "持仓数量未闭合",
       position_quantity_bridge_incomplete: "持仓数量桥不完整",
@@ -4466,6 +4466,39 @@
     return { status: "attention", label: "需要关注" };
   }
 
+  function performancePublicationCheck(series, daily, economic, notApplicable) {
+    const nav = economic.nav || {};
+    const missingDates = Array.from(new Set(series.concat([daily])
+      .filter((item) => item && Array.isArray(item.quality_flags)
+        && item.quality_flags.includes("official_performance_nav_unavailable"))
+      .map((item) => compactDate(item.trade_date)).filter(Boolean))).sort();
+    const blockedDates = Array.from(new Set(series
+      .filter((item) => item && item.performance_status === "blocked")
+      .map((item) => compactDate(item.trade_date)).filter(Boolean))).sort();
+    const dateRange = (dates) => dates.length === 1 ? displayDate(dates[0])
+      : displayDate(dates[0]) + " 至 " + displayDate(dates[dates.length - 1]);
+    if (missingDates.length) {
+      return { label: "区间净值发布", status: "blocked",
+        detail: formatInt(missingDates.length) + " 个交易日尚未发布（" + dateRange(missingDates)
+          + "）；不等同于资金或持仓快照缺失" };
+    }
+    if (blockedDates.length) {
+      return { label: "区间净值发布", status: "blocked",
+        detail: formatInt(blockedDates.length) + " 个交易日净值阻断（" + dateRange(blockedDates) + "）" };
+    }
+    if (notApplicable) {
+      return { label: "区间净值发布", status: "passed", detail: "当日可信空账户，净值发布不适用" };
+    }
+    if (economic.persisted === true && nav.status) {
+      return { label: "区间净值发布", status: nav.status === "blocked" ? "blocked" : "passed",
+        detail: nav.status === "blocked" ? "当日已保存版本仍为阻断"
+          : "当日净值已发布" + (nav.status === "provisional" ? "（暂定，非最终清算）" : "") };
+    }
+    return { label: "区间净值发布", status: nav.status === "blocked" ? "blocked" : "warning",
+      detail: nav.status ? "当日仅有" + (nav.status === "blocked" ? "阻断" : "只读") + "试算，尚未发布"
+        : "当日未取得已发布净值，不能据此判断快照缺失" };
+  }
+
   function performanceQualityChecks() {
     const series = state.performanceSeries || [];
     const summary = state.performanceSummary || {};
@@ -4484,28 +4517,30 @@
         .concat(Array.isArray(economic.quality_flags) ? economic.quality_flags : [])
         .concat(Array.isArray(nav.quality_flags) ? nav.quality_flags : [])
     ));
+    const publication = performancePublicationCheck(series, daily, economic, notApplicable);
     if (daily.formula_version === "broker_reconstructed_economic_nav.v1") {
-      const verified = (nav.pnl_components || {}).account_ledger_verified === true;
+      const verified = (nav.pnl_components || {}).account_ledger_verified === true && nav.status !== "blocked";
       const matching = (nav.pnl_components || {}).ledger_matching || {};
       return [
+        publication,
         { label: "账户经济资产与资本桥", status: verified ? "passed" : "blocked", detail: "券商总资产保留未拆分项目，结合Meridian估值、公司行为和真实资本流逐日复原" },
-        { label: "ETF源日与记账日双账", status: verified ? "passed" : "blocked", detail: formatInt(matching.matched_actual_rows) + " 条实收实付按证券、金额及重复次数闭合；不要求虚构父单编号" },
+        { label: "ETF源日与记账日双账", status: verified ? "passed" : "blocked", detail: "导出内 " + formatInt(matching.matched_actual_rows) + " 条实收实付匹配；不能证明导出后的权益已结清" },
         { label: "证券与策略归因", status: "warning", detail: "账户净值已复原；历史成本和逐证券贡献另行核对，不使用受申赎污染的柜台成本" },
         { label: "资产范围与清算截止", status: "warning", detail: "截至 " + (matching.export_cutoff || "--") + " 的实际导出事实；券商未拆分资产不擅自归类，未宣称私有最终清算完备" },
         { label: "Meridian 基准行情", status: Number(summary.benchmark_observation_days) === series.length ? "passed" : "warning", detail: summary.benchmark_error ? "历史基准暂不可用，未补造超额收益" : formatInt(summary.benchmark_observation_days) + "/" + formatInt(series.length) + " 个日期" }
       ];
     }
     if (daily.formula_version === "broker_cash_repo_carveout.v1") {
-      const blockedDays = series.filter((item) => item.performance_status === "blocked").length;
       return [
-        { label: "历史资产与资本桥", status: nav.status === "finalized" && !blockedDays ? "passed" : "blocked", detail: blockedDays ? formatInt(blockedDays) + " 日缺少已发布净值" : "逐日现金、逆回购及资本流闭合；按确认口径发布" },
+        publication,
+        { label: "历史资产与资本桥", status: nav.status === "finalized" ? "passed" : "blocked", detail: nav.status === "finalized" ? "当日现金、逆回购及资本流闭合；按确认口径发布" : "当日历史净值未定稿" },
         { label: "策略与现金归属", status: "passed", detail: "初始现金及整笔56.93元结息归属已确认；债券收付作为策略资本" },
         { label: "收益确认与计权", status: "warning", detail: "结息按到账日确认，采用日末净流量约定；不是完整权责或精确盘中计权" },
         { label: "历史订单边界", status: "warning", detail: "本次发布不证明未成交、撤单、废单历史完整，也不放开7月8日后的ETF清算门槛" },
         { label: "Meridian 基准行情", status: Number(summary.benchmark_observation_days) === series.length ? "passed" : "warning", detail: summary.benchmark_error ? "Meridian历史基准暂不可用；未补造行情或超额收益，不影响已确认净值" : formatInt(summary.benchmark_observation_days) + "/" + formatInt(series.length) + " 个交易日" }
       ];
     }
-    const checks = [];
+    const checks = [publication];
 
     const hasEconomicNAV = numericOrNull(nav.open_economic_nav) !== null && numericOrNull(nav.close_economic_nav) !== null;
     const blockingNAVFlagNames = new Set([
@@ -4513,35 +4548,33 @@
       "missing_positive_economic_nav",
       "open_asset_observation_unavailable",
       "close_asset_observation_unavailable",
-      "performance_nav_blocked"
+      "performance_nav_blocked",
+      "nav_contribution_residual_exceeds_warning",
+      "etf_settlement_receipt_invalid"
     ]);
     const blockingNAVFlags = selectedDateFlags.filter((flag) => blockingNAVFlagNames.has(String(flag)));
-    const blockedRangeDates = series
-      .filter((item) => item && item.performance_status === "blocked")
-      .map((item) => compactDate(item.trade_date))
-      .filter(Boolean)
-      .sort();
-    let snapshotStatus = "passed";
+    let snapshotStatus = hasEconomicNAV || notApplicable ? "passed" : "warning";
     let snapshotDetail = hasEconomicNAV
-      ? "当日经济净值输入完整 · " + performanceValuationSourceLabel((economic.valuation || {}).price_source)
-      : formatInt(series.length) + " 个 close 样本，日初来源 " + (daily.open_snapshot_source || "--");
+      ? "当日已有经济净值计算结果 · " + performanceValuationSourceLabel((economic.valuation || {}).price_source)
+      : "当日计算明细未取得，不能仅凭区间样本判断资金桥正常";
     if (notApplicable) {
       snapshotDetail = "可信空账户：当日零资金、零持仓、零委托成交，资金桥不适用";
     } else if (nav.status === "blocked" || blockingNAVFlags.length > 0) {
       snapshotStatus = "blocked";
-      snapshotDetail = blockingNAVFlags.slice(0, 2).map(performanceQualityFlagLabel).join(" / ") || "经济净值已阻断";
-    } else if (blockedRangeDates.length > 0) {
-      snapshotStatus = "blocked";
-      const blockedRange = blockedRangeDates.length === 1
-        ? displayDate(blockedRangeDates[0])
-        : displayDate(blockedRangeDates[0]) + " 至 " + displayDate(blockedRangeDates[blockedRangeDates.length - 1]);
-      snapshotDetail = "当日资金桥正常；区间 " + formatInt(blockedRangeDates.length) + " 个交易日未纳入正式净值（" + blockedRange + "）";
+      snapshotDetail = blockingNAVFlags.map(performanceQualityFlagLabel).join(" / ") || "当日计算已阻断，接口未提供具体原因";
+      const residual = numericOrNull(((nav.pnl_components || {}).unattributed || {}).pnl);
+      if (selectedDateFlags.includes("nav_contribution_residual_exceeds_warning") && residual !== null) {
+        snapshotDetail += " · 归因残差 " + formatSigned(residual) + " 元";
+      }
+      if (economic.asset_basis && economic.asset_basis.applied === false) {
+        snapshotDetail += " · 券商经济资产基准未应用";
+      }
     } else if (!hasEconomicNAV && series.length === 0) {
       snapshotStatus = "blocked";
       snapshotDetail = "所选交易日没有可用经济净值或 close 资产快照";
     }
     checks.push({
-      label: "资产快照与资金桥",
+      label: "当日资产与资金桥",
       detail: snapshotDetail,
       status: snapshotStatus
     });
@@ -4640,7 +4673,9 @@
       navDetail = navReconciliationStatusInfo(reconciliationStatus).label + " · 残差 " + formatSigned(reconciliation.residual);
     } else if (reconciliationStatus === "blocked") {
       navStatus = "blocked";
-      navDetail = "经济净值已阻断 · 残差 " + formatSigned(reconciliation.residual);
+      const cashResidual = numericOrNull(reconciliation.residual);
+      navDetail = "资金对账阻断 · 资金残差 " + (cashResidual === null ? "未提供" : formatSigned(cashResidual))
+        + "；不代表净值归因已闭合";
     } else if (reconciliationStatus === "review_required") {
       navDetail = "待人工确认 · 残差 " + formatSigned(reconciliation.residual);
     } else if (nav.status === "finalized") {

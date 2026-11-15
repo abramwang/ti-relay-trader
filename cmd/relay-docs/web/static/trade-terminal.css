@@ -1805,6 +1805,8 @@ tr.flash {
   margin-top: 1px;
   color: var(--muted);
   font-size: 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .performance-quality-item > b {
@@ -3890,4 +3892,52 @@ tr.selected,
   .batch-context-controls {
     grid-template-columns: 170px 250px 36px;
   }
+}
+
+@media (max-width: 900px) {
+  .terminal-shell.view-performance {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 56px 40px 44px minmax(0, 1fr) 28px;
+  }
+  .view-performance .terminal-topbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; }
+  .view-performance .terminal-brand { width: auto; min-width: 0; }
+  .view-performance .terminal-global-nav,
+  .view-performance .terminal-header-right #apiStatus,
+  .view-performance .header-help,
+  .view-performance .status-strip,
+  .view-performance .clock-block,
+  .view-performance .terminal-local-title,
+  .view-performance .sidebar-footer,
+  .view-performance .terminal-nav-label { display: none; }
+  .view-performance .terminal-context { grid-template-columns: minmax(0, 1fr); }
+  .view-performance .account-tabs { justify-content: flex-start; overflow-x: auto; }
+  .view-performance .terminal-sidebar { grid-column: 1; grid-row: 3; padding: 0; overflow: auto; }
+  .view-performance .terminal-nav { display: flex; width: max-content; padding: 0; }
+  .view-performance .terminal-nav a { flex: none; min-height: 42px; padding: 0 12px; }
+  .terminal-shell.view-performance .terminal-main { grid-column: 1; grid-row: 4; display: block; overflow: auto; }
+  .terminal-shell.view-performance .performance-panel { display: block; overflow: visible; }
+  .view-performance .performance-toolbar,
+  .view-performance .performance-focus-head { flex-wrap: wrap; gap: 8px; }
+  .view-performance .performance-actions { flex-wrap: wrap; }
+  .view-performance .performance-toolbar > div { min-width: 0; max-width: 100%; }
+  .view-performance .performance-toolbar span { overflow-wrap: anywhere; }
+  .view-performance .performance-primary-metrics,
+  .view-performance .performance-operating-metrics,
+  .view-performance .performance-method-strip,
+  .view-performance .performance-range-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .view-performance .performance-primary-metrics strong { font-size: 18px; }
+  .view-performance .performance-method-strip strong { overflow-wrap: anywhere; white-space: normal; }
+  .view-performance .performance-overview { display: flex; flex-direction: column; }
+  .view-performance .performance-quality-section { order: -1; }
+  .view-performance .performance-quality-toolbar > div:first-child { flex-wrap: wrap; gap: 2px 8px; }
+  .view-performance .performance-quality-list { overflow: visible; }
+  .view-performance .performance-chart-section { grid-template-rows: auto auto 330px; }
+  .view-performance .performance-chart { min-height: 320px; }
+  .view-performance .performance-body { grid-template-columns: minmax(0, 1fr); }
+  .view-performance .series-section { min-height: 400px; }
+  .view-performance .performance-table-tabs { overflow-x: auto; }
+  .view-performance .section-toolbar { flex-wrap: wrap; }
+  .view-performance .terminal-footer { grid-row: 5; padding: 0 10px; gap: 8px; overflow: hidden; }
+  .view-performance .terminal-footer > :nth-child(n+3) { display: none; }
 }
