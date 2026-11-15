@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "performance-fuying13-daily-review":
+		if err := runFuyingDailyReview(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "performance-cycle-review-publish":
 		if err := runCycleReviewPublish(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -703,6 +708,7 @@ func usage() {
   performance-fuying13-cost-import-20261114  Preflight or archive the pinned research cost chain; isolated migration 42, never NAV
   performance-research-cost-compare  Read-only daily comparison of an explicit research version with stored costs and current audits
   performance-cost-continue  Continue a stored clean cost anchor using PG and Meridian only; read-only, no CSV or NAV publication
+  performance-fuying13-daily-review  Read-only formal cost and daily attribution verification for November 10-13
   performance-core-cost-publish  Reverify and atomically publish a zero-origin cost-only recovery; explicit apply and backup required
   performance-cycle-review-publish  Publish immutable cycle review evidence, never daily NAV; apply requires backup
   performance-provisional-recovery-20261115  Authorized provisional NAV; optional reviewed broker refresh through November 13

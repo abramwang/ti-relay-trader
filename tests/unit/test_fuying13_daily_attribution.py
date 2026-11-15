@@ -110,6 +110,108 @@ class DailyAttributionTest(unittest.TestCase):
             elif kind=="final":changed[0]["economic_nav_publishable"]=True
             with self.subTest(kind=kind),self.assertRaises(ValueError):M.build_report(*changed)
 
+    def continuation_fixture(self):
+        date, source = "2026-11-10", "2026-11-09"
+        extension = {"schema":"relay.formal_daily_review.v1","account_id":M.ACCOUNT,"database_writes":0,"broker_commands":0,
+                     "environment":"production","database_read_only":True,"cost_chain_complete":True,"error":"",
+                     "cost_evidence":{"2026-11-10":"stored_zero_origin_anchor","2026-11-11":"replay_matches_formal_cost","2026-11-12":"replay_matches_formal_cost","2026-11-13":"read_only_replay_from_formal_previous_day_not_persisted"},
+                     "contributions":[{"trade_date":d} for d in M.EXTENSION_DATES[1:]],"orders":[],"fills":[]}
+        cash = {"account_id":M.ACCOUNT,"database_writes":0,"broker_commands":0,"new_cash_rows":[]}
+        fees = {"orders":[]}
+        for n, d in enumerate([source]+M.EXTENSION_DATES):
+            order = str(n).zfill(10)
+            extension["orders"].append({"account_id":M.ACCOUNT,"trade_date":d,"gateway_order_id":order,"order_stream_id":"11001"+order,
+                                        "symbol":"204001","exchange":"SH","trade_side":"S","business_type":"S","is_terminal":True,"status":"filled","cum_filled_qty":100})
+            extension["fills"].append({"account_id":M.ACCOUNT,"trade_date":d,"gateway_order_id":order,"fill_id":"f"+order,"symbol":"204001","exchange":"SH","trade_side":"S","business_type":"S","qty":100})
+            fees["orders"].append({"account_id":M.ACCOUNT,"trade_date":d.replace("-", ""),"broker_order_id":order,"security_id":"204001.SH","side":"融券","fee_amount_resolved":True,"unresolved_groups":[],"quantity":10,"gross_cents":1000000,"fee_cents":10})
+            if n<4:
+                posted=M.EXTENSION_DATES[n]
+                raw={"交易日期":posted.replace("-", ""),"业务科目":"回购融券购回资金划入","操作摘要":"融券购回204001:成交日期"+d.replace("-", "")+"，申报委托号"+order,
+                     "投资者":M.ACCOUNT,"流水号":"r"+order,"股票代码":"204001","入金":"10001.25","出金":"0"}
+                cash["new_cash_rows"].append({"account_id":M.ACCOUNT,"broker_flow_id":"r"+order,"actual_amount":"10001.25","raw_fields":raw})
+        return {"contributions":[{"trade_date":date}]},{"repo_receipt_evidence":[]},extension,cash,fees
+
+    def test_continuation_receipts_use_identity_quantity_and_principal(self):
+        args=self.continuation_fixture()
+        before=copy.deepcopy(args)
+        cost,receipts,fees,linked=M.continuation_evidence(*args)
+        self.assertEqual(args,before)
+        self.assertEqual(len(cost["contributions"]),4)
+        self.assertEqual(len(receipts["repo_receipt_evidence"]),4)
+        self.assertEqual(sum(r["received_interest"] for r in linked),Decimal(5))
+        self.assertEqual(sum(fees.values()),Decimal("0.4"))
+
+    def test_continuation_rejects_corrupt_or_ambiguous_evidence(self):
+        mutations={
+            "account":lambda a:a[2].update(account_id="other"),
+            "write":lambda a:a[2].update(database_writes=1),
+            "test":lambda a:a[2].update(environment="test"),
+            "incomplete":lambda a:a[2].update(cost_chain_complete=False),
+            "false-finality":lambda a:a[3].update(final_settlement_verified=True),
+            "overlap":lambda a:a[0]["contributions"].append({"trade_date":"2026-11-11"}),
+            "scope":lambda a:a[2]["cost_evidence"].update({"2026-11-13":"replay_matches_formal_cost"}),
+            "missing-day":lambda a:a[2]["contributions"].pop(),
+            "duplicate-fill":lambda a:a[2]["fills"].append(copy.deepcopy(a[2]["fills"][0])),
+            "fill-quantity":lambda a:a[2]["fills"][0].update(qty=99),
+            "duplicate-order":lambda a:a[2]["orders"].append(copy.deepcopy(a[2]["orders"][0])),
+            "missing-order":lambda a:a[2]["orders"].pop(),
+            "partial-order":lambda a:a[2]["orders"][0].update(status="working"),
+            "statement-principal":lambda a:a[4]["orders"][0].update(gross_cents=999999),
+            "statement-lots":lambda a:a[4]["orders"][0].update(quantity=11),
+            "unresolved-fee":lambda a:a[4]["orders"][0].update(fee_amount_resolved=False),
+            "duplicate-receipt":lambda a:a[3]["new_cash_rows"].append(copy.deepcopy(a[3]["new_cash_rows"][0])),
+            "missing-receipt":lambda a:a[3]["new_cash_rows"].pop(),
+            "receipt-amount":lambda a:a[3]["new_cash_rows"][0].update(actual_amount="10002"),
+            "summary":lambda a:a[3]["new_cash_rows"][0]["raw_fields"].update({"操作摘要":"unknown"}),
+            "receipt-account":lambda a:a[3]["new_cash_rows"][0]["raw_fields"].update({"投资者":"other"}),
+        }
+        for name,change in mutations.items():
+            args=self.continuation_fixture()
+            change(args)
+            with self.subTest(name=name),self.assertRaises(ValueError):M.continuation_evidence(*args)
+
+    def test_extended_private_evidence(self):
+        files={**M.INPUTS,**M.EXTENSION_INPUTS}
+        if not all((ROOT/p).exists() for p,_ in files.values()):
+            self.skipTest("private evidence not in repository")
+        s={k:M.checked_input(ROOT/p,h) for k,(p,h) in files.items()}
+        args=[s[k] for k in ("cycles","cost","fees","receipts")]
+        original=M.build_report(*args)
+        extended=M.build_report(*args,s["formal_extension"],s["cash_extension"])
+        self.assertEqual(extended["days"][:21],original["days"][:21])
+        self.assertEqual(extended["daily_cycle_parts"],original["daily_cycle_parts"])
+        self.assertEqual(extended["summary"]["bridged_days"],25)
+        self.assertEqual(extended["summary"]["uncovered_dates"],[])
+        self.assertEqual(extended["summary"]["max_absolute_remaining_comparison"],Decimal("0.047621"))
+        self.assertEqual(extended["days"][-1]["repo_fee_correction"],Decimal("-113.17"))
+        self.assertEqual(extended["days"][-1]["remaining_residual"],Decimal("0.040450"))
+        self.assertIn("missing_repo_fee",extended["days"][-1]["original_quality_flags"])
+        self.assertFalse(extended["economic_nav_publishable"])
+        for d in extended["days"]:
+            self.assertEqual(sum(d["conditional_strategies"].values()),d["corrected_net"])
+        comparison=extended["statement_daily_comparison"]
+        self.assertEqual(comparison["matched_orders"],341)
+        self.assertEqual(comparison["matched_fills"],3211)
+        self.assertEqual([d["statement_pnl_difference"] for d in comparison["days"]],[Decimal(0)]*4)
+        self.assertEqual([d["unexplained_model_difference"] for d in comparison["days"]],[Decimal(0)]*4)
+        self.assertEqual([d["statement_gross_minus_fill_gross"] for d in comparison["gross_differences"]],[Decimal("0.002"),Decimal("-0.004")])
+        merged,_,_,_=M.continuation_evidence(s["cost"],s["receipts"],s["formal_extension"],s["cash_extension"],s["fees"])
+        for kind in ("fill-quantity","duplicate-fill","missing-order","fee","external-flow","pnl"):
+            ext,cash,fee=copy.deepcopy([s["formal_extension"],s["cash_extension"],s["fees"]])
+            if kind=="fill-quantity":next(f for f in ext["fills"] if f["trade_date"]=="2026-11-13")["qty"]+=1
+            elif kind=="duplicate-fill":ext["fills"].append(copy.deepcopy(next(f for f in ext["fills"] if f["trade_date"]=="2026-11-13")))
+            elif kind=="missing-order":ext["orders"]=[o for o in ext["orders"] if o["trade_date"]!="2026-11-13"]
+            elif kind=="fee":next(o for o in fee["orders"] if o["trade_date"]=="20261113")["fee_cents"]+=1
+            elif kind=="external-flow":cash["days"]["20261113"]["funds"]["出金"]="5000000"
+            elif kind=="pnl":cash["days"]["20261113"]["funds"]["当日盈亏"]="1"
+            with self.subTest(kind=kind),self.assertRaises(ValueError):
+                M.statement_daily_comparison(extended["days"],merged["contributions"],ext,cash,fee)
+        changed=copy.deepcopy(s["cash_extension"])
+        changed["days"]["20261113"]["funds"]["市值"]="20262745.00"
+        drift=M.statement_daily_comparison(extended["days"],merged["contributions"],s["formal_extension"],changed,s["fees"])
+        self.assertEqual(drift["days"][-1]["statement_pnl_difference"],Decimal(-1))
+        self.assertEqual(drift["days"][-1]["unexplained_model_difference"],Decimal(-1))
+
 
 if __name__ == "__main__":
     unittest.main()
