@@ -63,24 +63,33 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 if report.get("skipped"):
     print("skipped")
     print("")
-elif report.get("ok") is not True:
+elif report.get("ok") is not True or report.get("errors") or report.get("dry_run"):
     print("failed")
     print("")
 else:
     snapshot = report.get("broker_close_snapshot") or {}
     result = snapshot.get("result") or {}
+    target_date = str((report.get("trading_day") or {}).get("target_trade_date") or "").replace("-", "")
+    snapshot_date = str(result.get("trade_date") or "").replace("-", "")
     successful_accounts = [
         str(item.get("account_id"))
         for item in result.get("accounts", [])
-        if item.get("asset_snapshot_written") is True and not item.get("errors")
+        if isinstance(item.get("account_id"), str) and item["account_id"] and item.get("asset_snapshot_written") is True and not item.get("errors")
+        and type(item.get("positions_count")) is int
+        and item["positions_count"] >= 0
+        and type(item.get("position_snapshots_written")) is int
+        and item["position_snapshots_written"] == item["positions_count"]
     ]
-    if snapshot.get("ok") is not True or snapshot.get("error") or result.get("status") != "completed" or not successful_accounts:
+    account_ids = [item.get("account_id") for item in result.get("accounts", [])]
+    if (snapshot.get("ok") is not True or snapshot.get("error") or result.get("errors")
+            or result.get("status") != "completed" or result.get("snapshot_type") != "broker_close"
+            or result.get("dry_run") or not target_date or snapshot_date != target_date
+            or not successful_accounts or len(set(account_ids)) != len(account_ids)):
         print("failed")
         print("")
     else:
-        trading_day = report.get("trading_day") or {}
         print("ready")
-        print(str(trading_day.get("target_trade_date") or ""))
+        print(target_date)
         for account_id in successful_accounts:
             print(account_id)
 PY
@@ -129,7 +138,7 @@ if ! "$PYTHON_BIN" -m relay.jobs.post_close_settlement \
   exit 1
 fi
 
-readarray -t settlement_state < <("$PYTHON_BIN" - "$post_report" <<'PY'
+readarray -t settlement_state < <("$PYTHON_BIN" - "$post_report" "$trade_date" <<'PY'
 import json
 import sys
 
@@ -137,8 +146,31 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     report = json.load(handle)
 snapshot = report.get("settlement_snapshot") or {}
 result = snapshot.get("result") or {}
-if report.get("ok") is True and not report.get("skipped") and snapshot.get("ok") is True and result.get("status") == "completed" and not result.get("account_error_count", 0):
+target_date = sys.argv[2]
+reported_date = str((report.get("trading_day") or {}).get("target_trade_date") or "").replace("-", "")
+snapshot_date = str(result.get("trade_date") or "").replace("-", "")
+accounts = result.get("accounts") or []
+identities = [item.get("account_id") for item in accounts]
+successful = [
+    item["account_id"] for item in accounts
+    if isinstance(item.get("account_id"), str) and item["account_id"]
+    and item.get("asset_snapshot_written") is True and not item.get("errors")
+    and type(item.get("positions_count")) is int and item["positions_count"] >= 0
+    and type(item.get("position_snapshots_written")) is int
+    and item["position_snapshots_written"] == item["positions_count"]
+]
+if (report.get("ok") is True and not report.get("skipped") and not report.get("errors") and not report.get("dry_run")
+        and snapshot.get("ok") is True and not snapshot.get("error") and not result.get("errors")
+        and result.get("status") == "completed" and result.get("snapshot_type") == "close"
+        and result.get("input_snapshot_type") == "broker_close" and not result.get("dry_run") and not result.get("snapshot_only")
+        and reported_date == target_date and snapshot_date == target_date
+        and len(set(identities)) == len(identities) and successful):
     print("ready")
+    for account_id in successful:
+        print(account_id)
+    excluded = [str(account_id) for account_id in identities if account_id not in successful]
+    if excluded:
+        print("relay post-close pipeline: settlement incomplete for accounts: " + ",".join(excluded), file=sys.stderr)
 else:
     print("failed")
 PY
@@ -157,21 +189,31 @@ fi
 performance_args=()
 performance_account_ids=()
 declare -A captured_accounts=()
+declare -A settled_accounts=()
+declare -A selected_accounts=()
 for account_id in "${capture_state[@]:2}"; do
   if [[ -n "$account_id" ]]; then
     captured_accounts["$account_id"]=1
   fi
 done
+for account_id in "${settlement_state[@]:1}"; do
+  if [[ -n "$account_id" ]]; then
+    settled_accounts["$account_id"]=1
+  fi
+done
 IFS=',' read -r -a configured_accounts <<< "$PERFORMANCE_ACCOUNT_IDS"
 for account_id in "${configured_accounts[@]}"; do
   account_id="${account_id//[[:space:]]/}"
-  if [[ -n "$account_id" && -n "${captured_accounts[$account_id]:-}" ]]; then
+  if [[ -n "$account_id" && -n "${captured_accounts[$account_id]:-}" && -n "${settled_accounts[$account_id]:-}" && -z "${selected_accounts[$account_id]:-}" ]]; then
     performance_args+=(--account-id "$account_id")
     performance_account_ids+=("$account_id")
+    selected_accounts["$account_id"]=1
+  elif [[ -n "$account_id" && -z "${selected_accounts[$account_id]:-}" ]]; then
+    echo "relay post-close pipeline: performance deferred for $account_id; complete capture and settlement required" >&2
   fi
 done
 if [[ ${#performance_args[@]} -eq 0 ]]; then
-  echo "relay post-close pipeline: no configured performance account has a successful broker close snapshot" >&2
+  echo "relay post-close pipeline: no configured performance account has complete broker and settlement snapshots" >&2
   exit 2
 fi
 
@@ -205,4 +247,4 @@ if ! flock -n "$PERFORMANCE_LOCK" "$PYTHON_BIN" -m relay.jobs.performance_daily 
   exit 1
 fi
 
-echo "relay post-close pipeline: completed for $trade_date"
+echo "relay post-close pipeline: completed for $trade_date; performance accounts=$performance_accounts_csv"
