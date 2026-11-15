@@ -557,6 +557,7 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		Accounts:        repo,
 		Performance:     perf,
 		ResearchCosts:   &relayperformance.ResearchCostReader{DB: db},
+		CycleReviews:    repo,
 		Operations:      runtimeOperations,
 		CredentialAdmin: credentialAdmin,
 		CredentialToken: credentialAdminToken,

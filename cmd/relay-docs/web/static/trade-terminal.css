@@ -23,6 +23,36 @@
   --shadow: none;
 }
 
+.performance-section.cycle-review-section { display: block; min-width: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.section-toolbar.cycle-review-toolbar { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 14px 12px; }
+.section-toolbar.cycle-review-toolbar > div { display: block; min-width: 0; }
+.cycle-review-toolbar h2 { margin: 0 0 6px; font-size: 15px; }
+.cycle-review-toolbar > strong { color: var(--warning); font-size: 12px; white-space: nowrap; }
+.cycle-review-toolbar span { display: block; overflow-wrap: anywhere; font-size: 12px; }
+.cycle-review-layers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--line); }
+.cycle-review-layers > div { padding: 12px; min-width: 0; }
+.cycle-review-layers span, .cycle-review-table small { display: block; color: var(--muted-soft); font-size: 12px; margin-bottom: 5px; }
+.cycle-review-layers strong { font-size: 13px; overflow-wrap: anywhere; }
+.cycle-review-scroll { overflow-x: auto; max-width: 100%; }
+.cycle-review-table { width: 100%; min-width: 1100px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
+.cycle-review-table th, .cycle-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; white-space: nowrap; }
+.cycle-review-table th { color: var(--muted-soft); font-weight: 500; }
+.cycle-review-table th:first-child, .cycle-review-table td:first-child, .cycle-review-table th:last-child, .cycle-review-table td:last-child { text-align: left; }
+.cycle-review-table small { margin: 5px 0 0; }
+.cycle-review-table td.up { color: var(--buy); }
+.cycle-review-table td.down { color: var(--sell); }
+.cycle-review-table details { width: 250px; white-space: normal; overflow-wrap: anywhere; }
+.cycle-review-table summary { cursor: pointer; color: var(--warning); }
+.cycle-review-table details p { color: var(--muted-soft); line-height: 1.6; margin: 8px 0 0; }
+.cycle-review-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px; color: var(--muted-soft); font-size: 12px; }
+.cycle-review-footer > div { display: flex; gap: 12px; align-items: center; }
+.cycle-review-footer button { width: 30px; height: 30px; padding: 0; font-size: 20px; }
+@media (max-width: 700px) {
+  .cycle-review-layers { grid-template-columns: 1fr; }
+  .cycle-review-layers > div { display: flex; justify-content: space-between; gap: 16px; }
+  .cycle-review-toolbar { flex-wrap: wrap; }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -422,7 +452,7 @@ button {
 
 .performance-panel {
   display: none;
-  grid-template-rows: 68px auto minmax(340px, 0.9fr) minmax(400px, 1.1fr);
+  grid-template-rows: 68px auto minmax(340px, 0.9fr) max-content minmax(400px, 1.1fr);
   align-content: start;
   overflow-y: auto;
 }

@@ -149,7 +149,7 @@ func fuyingResearchFingerprints(ctx context.Context, tx *sql.Tx) (map[string]str
 	return result, nil
 }
 
-// This recovery allows the reviewed 1..32 base plus independent migration 42.
+// Allow the reviewed 1..32 base and independent research/cycle migrations 42/43.
 // It neither advances a high-water mark nor marks the pending CTP gap applied.
 func researchMigrationState(ctx context.Context, tx *sql.Tx, local []dbmigrations.Migration) ([]int64, bool, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT version,name FROM public.relay_schema_migrations ORDER BY version`)
@@ -165,7 +165,7 @@ func researchMigrationState(ctx context.Context, tx *sql.Tx, local []dbmigration
 			return nil, false, err
 		}
 		m, ok := dbmigrations.FindByVersion(local, version)
-		if !ok || m.Name != name || (version > 32 && version != 42) {
+		if !ok || m.Name != name || (version > 32 && version != 42 && version != 43) {
 			rows.Close()
 			return nil, false, errors.New("unexpected migration set; review required")
 		}
@@ -176,7 +176,7 @@ func researchMigrationState(ctx context.Context, tx *sql.Tx, local []dbmigration
 	if err != nil {
 		return nil, false, err
 	}
-	if len(versions) != 32 && len(versions) != 33 {
+	if len(versions) < 32 || len(versions) > 34 {
 		return nil, false, errors.New("expected complete 1..32 base and optional research migration")
 	}
 	for i := 0; i < 32; i++ {
@@ -184,7 +184,7 @@ func researchMigrationState(ctx context.Context, tx *sql.Tx, local []dbmigration
 			return nil, false, errors.New("base migration gap")
 		}
 	}
-	present := len(versions) == 33 && versions[32] == 42
+	present := len(versions) >= 33 && versions[32] == 42
 	var table, fn bool
 	if err := tx.QueryRowContext(ctx, `SELECT to_regclass('public.performance_research_cost_versions') IS NOT NULL, to_regprocedure('public.reject_research_cost_version_mutation()') IS NOT NULL`).Scan(&table, &fn); err != nil {
 		return nil, false, err

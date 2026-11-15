@@ -412,6 +412,7 @@ SDK 0.1.41 可从 `CommandStatus.raw["cancel_attempts"]` 读取，不需要升�
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav/preview` | `trade_date/status` query | `EconomicNAVResult` | 已实现，按当前账本试算经济净值，不写库 |
 | `POST` | `/v1/accounts/{account_id}/performance/economic-nav/rebuild` | `{trade_date,status}` | `EconomicNAVResult` | 已实现，重建并落库当前 economic NAV 版本和对账记录；默认写入关闭 |
 | `GET` | `/v1/accounts/{account_id}/performance/economic-nav` | `trade_date` 或 `date_from/date_to` query | `[]PerformanceNAV` | 已实现，查询当前版本化经济净值结果 |
+| `GET` | `/v1/accounts/{account_id}/performance/cycle-reviews` | 必填`date_from/date_to`，可选`version_id` | 独立版本元数据及`cycles` | 已实现，按申赎源日筛选，不改账户净值、不代表最终清算 |
 | `GET` | `/v1/accounts/{account_id}/performance/nav-reconciliations` | `trade_date` 或 `date_from/date_to` query | `[]NAVReconciliation` | 已实现，查询经济净值对账结果 |
 | `POST` | `/v1/accounts/{account_id}/positions/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |
 | `POST` | `/v1/accounts/{account_id}/orders/refresh` | - | `RefreshQueryResult` | 已实现，返回 `202 Accepted` |

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261115-performance-quality">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261115-cycle-review-3">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
@@ -486,6 +486,22 @@
           </section>
         </div>
 
+        <section class="performance-section cycle-review-section" aria-label="申赎周期核对">
+          <div class="section-toolbar cycle-review-toolbar">
+            <div><h2>申赎周期核对</h2><span id="cycleReviewMeta">尚无核对版本</span></div>
+            <strong id="cycleReviewStatus">未读取</strong>
+          </div>
+          <div class="cycle-review-layers">
+            <div><span>账户净值</span><strong id="cycleAccountState">--</strong></div>
+            <div><span>周期交易费用</span><strong id="cycleFeeState">--</strong></div>
+            <div><span>每日策略归因</span><strong id="cycleDailyState">--</strong></div>
+          </div>
+          <div class="cycle-review-scroll">
+            <table class="cycle-review-table"><thead><tr><th>赎回源日 / ETF</th><th>申赎份额</th><th>买入成本</th><th>成分股卖出</th><th>实际收付款净额</th><th>普通交易费用</th><th>周期收益</th><th>核对状态 / 待核验项</th></tr></thead><tbody id="cycleReviewRows"><tr><td colspan="8" class="empty-state">尚无核对版本</td></tr></tbody></table>
+          </div>
+          <div class="cycle-review-footer"><span id="cycleReviewScope">周期收益不等于当日账户盈亏 · 非最终清算</span><div><button id="cycleReviewPrev" type="button" title="上一页" aria-label="周期上一页" disabled>‹</button><span id="cycleReviewPage">0 / 0</span><button id="cycleReviewNext" type="button" title="下一页" aria-label="周期下一页" disabled>›</button></div></div>
+        </section>
+
         <div class="performance-body">
           <section class="performance-section series-section">
             <div class="section-toolbar series-toolbar">
@@ -898,6 +914,6 @@
   </script>
   <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261115-broker-refresh"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261115-cycle-review"></script>
 </body>
 </html>
