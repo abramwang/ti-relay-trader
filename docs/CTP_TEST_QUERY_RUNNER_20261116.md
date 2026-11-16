@@ -76,10 +76,88 @@ Redis测试使用合成心跳与查询，只证明Relay发送机制，不是OC�
 
 验证结果：`go test ./...`、CLI定向race及`go vet`通过。临时PG完整期货race回归通过（385.601秒，包含订单/成交各10,000笔与重放/回滚）；此轮未配置Redis，Redis专属用例按原规则跳过。另一次显式配置TEST Redis的发送/登记/心跳证据定向race回归通过（8.326秒）。本机日志分别为`.runtime/ctp-query-publication-pg-full-20261116.log`与`.runtime/ctp-query-publication-final-20261116.log`，不将本机日志当OC在线业务证据。
 
-## 下一步：结果关联与四查询验收
+## 独立回复入口：已实现
 
-1. 接通独立reply收件与OC原始请求证据，建立ticket/SDK request_id关联，再接既有分页完成证明和快照持久化；不得从首条reply自行取值当“独立预期”。
-2. 发布未知时按原始消息、Stream和OC审计核查；不能因本地缺成功结果自动重发或生成新身份掩盖原责任。
-3. 在已授权白天窗口按资产、持仓、订单、成交逐项验收，严格区分完整空、失败、未完成及成功。不因本CLI已能发送就标真实四查询链路完成。
+新增`cmd/relay-ctp-replies`，独立于9092和A股worker，不发送命令、不创建OC组、不XACK、不确认结算。复用原始Stream收件、分页组装、查询绑定及交易快照入账；没有新增wire字段。
+
+| 模式 | 明确开关 | 结果 |
+| --- | --- | --- |
+| 默认 | 无运行开关 | 只检查身份、目标及可选请求证据；不读取连接凭据、不连接 |
+| 状态 | `--status` | 只读PG owner/cursor/数量，不接管、不连接Redis |
+| 原文采集 | `--capture --persist-test-replies` | XREAD原始reply到独立PG，未绑定项保留pending；不要求OC当前仍ready |
+| 请求收件 | `--receive-reviewed --persist-test-replies` | 核对独立请求证据，检查新鲜只读心跳，接分页、完成快照与订单/成交事实 |
+
+两种写入模式互斥。连接仅来自`RELAY_CTP_REPLY_DATABASE_URL`、`RELAY_CTP_REPLY_REDIS_URL`，不读当前服务配置；库名必须以`_test`结尾且匹配实际连接库。需要既有期货收件/查询迁移及000044、000045，程序不自动迁移。000045只在临时数据库验证，当前业务TEST/生产库均未应用。
+
+### 接管与来源
+
+公用参数沿用查询入口的`--env/--broker/--gateway/--account/--native-broker/--user/--investor/--database/--deployment-id/--target-file`。目标JSON格式与上节一致。
+
+- 首次收件：`--cursor 0-0`，不提供previous-owner。
+- 续读：先停止旧进程，以`--status`取得真实位点，再明确提供`--previous-owner <owner> --cursor <cursor> --confirm-stopped`。CAS在事务内完成，缺旧owner、旧cursor或身份不符均拒绝；失败不改变现有owner。
+- 原文接收绑定SourceID/run_id/epoch/命令组，存入`futures_test_reply_sources`；后续不能用新run_id/epoch配合旧位点续读。恢复/替换实例须另行核对和迁移审计，不删记录绕过。
+- 原文采集前后检查实际Redis来源，观测到变化即停止，已采集原文保留供排查，不继续业务分发。跨Redis/PG不是原子快照，不承诺识别所有未观测到的替换。
+- 原文模式遇空即退出，不是常驻订阅。默认每页32条、最多256轮，可通过`--page-size/--max-pages`在1..256内限制；`--duration`最多5分钟。页面预算结束不表示整个Stream已读完。
+- OC尚未创建reply Stream时，预检失败且不创建收件owner或绑定查询，不会伪造空结果或消耗查询绑定。待首条真实reply出现后再显式启动；本入口不替OC创建Stream，也不是等待空路由的守护进程。
+
+### 独立请求证据
+
+请求收件另需`--review-file`（最多16KiB）及`--evidence-file`（最多256KiB）。后者是经操作者核对、可对应本次原命令的OC请求审计原文，不得包含凭据，不是某条reply复制件。原文、清单及各自SHA256与查询绑定同事务保存在`futures_test_query_reviews`，不能仅存路径或覆盖旧证据。
+
+以下是**Relay内部审核清单**，不是要求OC实现的新协议；`query_context`沿用既有Go持久模型的大写字段名，target沿用上节。尖括号是待核实项，不是可执行配置：
+
+```json
+{
+  "command_id": 123,
+  "batch_id": "<本次独立批次ID>",
+  "review_id": "<请求审计审核引用>",
+  "evidence_sha256": "<独立原文的SHA256>",
+  "target": {
+    "source_id": "<配置指纹>",
+    "server_run_id": "<实际run_id>",
+    "epoch": "<实际epoch>",
+    "group": "<实际查询组>",
+    "counter_session_id": "<实际session>",
+    "trade_date": "<实际TradingDay>",
+    "connection_generation": 1
+  },
+  "query_context": {
+    "Route": {"env":"test","broker_id":"ctp_4900","gateway_id":"<已核对gateway>","account_id":"<逻辑账户>"},
+    "Action": "account.asset.query",
+    "OriginMessageID": "<原登记message_id>",
+    "Ticket": "<OC本次任务ticket>",
+    "CounterSessionID": "<实际session>",
+    "ConnectionGeneration": 1,
+    "SDKRequestID": 123,
+    "TradeDate": "<实际TradingDay>",
+    "NativeBrokerID": "<真实BrokerID>",
+    "NativeInvestorID": "<真实InvestorID>",
+    "NativeUserID": "<真实UserID>"
+  },
+  "timeout_ms": 60000
+}
+```
+
+示例中的数值也不能照抄。SDK未调用时request_id应为null，ticket确实不存在时为空字符串；不得伪造。当前入口要求session、连接代次和TradingDay已独立核实；缺少这些事实只能原文采集。程序校验摘要、路由、原命令、已确认发布目标和字段一致性，**不会把摘要一致当成OC签名或原文语义已自动鉴定**；目前仍需操作者根据OC原始请求审计形成审核清单，不从第一条reply学习“预期值”。
+
+只接受`published`的原始command_id，`attempted`/未知发送不能凭回复自动升级。request/correlation/idempotency由原登记命令绑定，alias不能代替原始message_id。timeout为1..300000毫秒，从PG原发送尝试时刻计时，不在启动接收时重置。审核来不及时先保存raw；超时记录不能靠增加新批次或刷新ID冒充及时完成，后续离线复核路径另行处理。
+
+### 结果与退出
+
+资产、持仓、订单、成交共用原分页契约。保留`ready/failed/invalid/expired/interrupted`，成功空列表与失败严格区分；查询SDK ID不符、矛盾终态不发布有效快照。所有输入先落原始收件，未绑定/格式不合法记录保留pending，不为清零伪造delivered。
+
+每轮再次检查只读心跳及来源，失效即停。完整扫描当前已捕获待处理记录后才报告`query_terminal`；不会忽略同一轮后面的矛盾页。`ready`报告包含历史snapshot，订单/成交进一步进入既有期货事实表；不向股票账本写入，也不授予报撤权限。
+
+正常退出或错误退出都会退役本次查询owner；未完成批次变为interrupted，完整历史保留但不能当当前ready。进程被强杀时没有伪造清理成功：新进程不能直接续接其查询，需核对后显式Recover；raw位点可以按CAS续读。原始收件恢复与柜台请求恢复是两件事。
+
+CLI独立进程真实Redis采集/PG持久/状态只读/续读不重复已验证。四查询、SDK身份错误、失败、缺页、epoch变化、矛盾回报及关闭柜台后的raw采集通过隔离Redis回归；资产用例还经过上一节实际受控发布，再注入合成回复入库。其余场景使用合成发布证据；这些均不是OC实际登录/SDK业务回调，不能标作真实四查询通过。
+
+本轮验证：全量`go test ./...`、三个CLI定向race及四包vet通过；显式TEST Redis+临时PG定向race为38.456秒，含独立CLI跨进程与原心跳CLI回归，无跳过；临时PG期货race回归86.389秒，排除上轮已验证且本轮未改算法的万笔容量用例，未配置Redis的专属用例依规则跳过。日志位于`.runtime/ctp-query-receive-final-20261116.log`、`.runtime/ctp-query-receive-pg-regression-20261116.log`。临时库/开发键已清理，既有17条OC心跳证据、真实路由及9092未动。
+
+## 下一步：真实窗口验收
+
+1. 在已授权白天窗口核实OC真实登录/session/代次/TradingDay、run_id/epoch/组及双方native身份；不复用今晚虚构账户材料。
+2. 依次发布资产、持仓、订单、成交查询，先保留原文，再用OC对应原命令的任务ticket/SDK request_id原始请求证据绑定；及时取得证据后执行受控收件，核对末页/转换/PG快照与OC ACK。
+3. 发布未知、缺独立证据或超时只保留审计，不自动重发。真实柜台认证/四查询/报撤及F0整体仍待验收，不因本轮单边程序通过提前开放交易。
 
 本轮没有新增OC或Meridian协议要求，双方无需再做原则回签；11-17 09:05仍是候选窗口，不是自动登录任务。

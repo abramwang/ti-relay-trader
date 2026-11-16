@@ -164,6 +164,10 @@ func (s *StreamStore) Open(ctx context.Context, c StreamConfig) (StreamHandle, e
 }
 
 func (s *StreamStore) open(ctx context.Context, c StreamConfig, expected *HeartbeatCheckpoint) (StreamHandle, error) {
+	return s.openBound(ctx, c, expected, nil)
+}
+
+func (s *StreamStore) openBound(ctx context.Context, c StreamConfig, expected *HeartbeatCheckpoint, target *TestQueryTarget) (StreamHandle, error) {
 	key, err := c.stream()
 	if err != nil {
 		return StreamHandle{}, err
@@ -201,6 +205,25 @@ func (s *StreamStore) open(ctx context.Context, c StreamConfig, expected *Heartb
 		}
 		if expected.Cursor != cursor {
 			return StreamHandle{}, ErrStreamCursor
+		}
+	}
+	if target != nil {
+		transport, _ := json.Marshal(struct{ SourceID, RunID, Epoch, Group string }{target.SourceID, target.ServerRunID, target.Epoch, target.Group})
+		var prior []byte
+		err = tx.QueryRowContext(ctx, `SELECT transport_json FROM futures_test_reply_sources WHERE stream_key=$1`, key).Scan(&prior)
+		if errors.Is(err, sql.ErrNoRows) {
+			if created != 1 {
+				return StreamHandle{}, ErrStreamIdentity
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO futures_test_reply_sources(stream_key,transport_json) VALUES($1,$2)`, key, transport)
+			if err != nil {
+				return StreamHandle{}, err
+			}
+		} else if err != nil {
+			return StreamHandle{}, err
+		}
+		if err = tx.QueryRowContext(ctx, `SELECT transport_json=$2::jsonb FROM futures_test_reply_sources WHERE stream_key=$1`, key, transport).Scan(&same); err != nil || !same {
+			return StreamHandle{}, ErrStreamIdentity
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_receivers SET owner_id=$2 WHERE stream_key=$1`, key, h.owner); err != nil {

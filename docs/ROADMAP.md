@@ -1,6 +1,6 @@
 # relay 开发路线图
 
-更新时间：`2026-11-13`（Asia/Shanghai）
+更新时间：`2026-11-16`（Asia/Shanghai）
 
 ## 状态口径
 
@@ -52,7 +52,8 @@
 
 - [x] 11-16独立`relay-ctp-query`第一阶段：默认零连接校验四查询、明确native身份、显式独立TEST库持久登记、重放/冲突/原文保留；5项CLI/race含本机PG通过，无新增迁移或实际命令发布。见[说明](CTP_TEST_QUERY_RUNNER_20261116.md)。
 - [x] 11-16独立查询入口受控发送：000044记录发送尝试/结果，显式TEST来源/run_id/epoch/session/代次/TradingDay与新鲜只读心跳绑定；原子检查后发布原登记命令，未知结果及并发不重复发送。真实TEST Redis随机隔离键与临时PG已验证，未向真实账户发命令、未应用业务库迁移。见[运行边界](CTP_TEST_QUERY_RUNNER_20261116.md)。
-- [ ] 独立查询回复运行入口：按OC原始请求证据关联ticket/SDK request_id，接reply持久收件、分页完成与四查询快照；实际东吴登录及四查询仍待白天窗口验收，不把Redis发送成功当柜台完成。
+- [x] 11-16独立`relay-ctp-replies`：默认离线，显式raw采集/请求收件；owner/cursor CAS、run_id/epoch持久绑定、独立OC请求审核原文/SHA与命令/批次原子关联，复用分页及四查询快照。隔离Redis+临时PG与独立CLI重启验证通过；000045未应用业务库，不发送命令、不启用期货交易。见[运行方式与边界](CTP_TEST_QUERY_RUNNER_20261116.md#独立回复入口已实现)。
+- [ ] 东吴真实四查询验收：获授权白天窗口核实登录和独立原始请求证据，按资产/持仓/订单/成交逐项核对ticket、SDK request_id、末页、转换、PG和OC ACK。目前审核清单仍由操作者根据OC审计形成，未实现该审计的自动适配；缺证据或超时仅保留raw，不从reply自行生成可信预期，不标联调已完成。
 
 - [x] 11-16 Redis入场预检与单边预演：目标东吴路由两次完整SCAN空、无心跳，未预留/建组；真实TEST Redis+临时PG的新模式收件/续读/查询分发及失效停止race通过。见[直接执行单](OC_CTP_REDIS_JOINT_RUN_20261116.md)。
 - [x] 首轮双端Redis心跳比对：OC实际transport-only运行17条，Relay保留全部18,745字节并与OC审计/Redis/PG逐条核对；5+12独立进程续读、重复启动不增行、旧owner拒绝及PG重启原文/位点不变通过。独立本机审计库及dump保留、PG停止，未迁移业务库或发命令；见[收口回执](OC_CTP_REDIS_JOINT_RUN_20261116.md#首轮结果实际心跳收件pg及续读通过)。不是实时延迟、登录、四查询或报撤验收。

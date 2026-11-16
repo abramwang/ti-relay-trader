@@ -31,6 +31,10 @@ func (s *StreamStore) HeartbeatCheckpoint(ctx context.Context, c StreamConfig) (
 	if err := validateHeartbeatCapture(c); err != nil {
 		return HeartbeatCheckpoint{}, err
 	}
+	return s.captureCheckpoint(ctx, c)
+}
+
+func (s *StreamStore) captureCheckpoint(ctx context.Context, c StreamConfig) (HeartbeatCheckpoint, error) {
 	key, _ := c.stream()
 	raw, _ := json.Marshal(c)
 	out := HeartbeatCheckpoint{Cursor: "0-0"}
@@ -59,16 +63,27 @@ func (s *StreamStore) OpenHeartbeatCapture(ctx context.Context, c StreamConfig, 
 	if err := validateHeartbeatCapture(c); err != nil {
 		return StreamHandle{}, err
 	}
-	if expected.Owner != "" && (!validID(expected.Owner) || len(expected.Owner) != 64) {
-		return StreamHandle{}, ErrStreamOwner
-	}
-	if _, err := streamID(expected.Cursor); err != nil {
+	return s.openCapture(ctx, c, expected)
+}
+
+func (s *StreamStore) openCapture(ctx context.Context, c StreamConfig, expected HeartbeatCheckpoint) (StreamHandle, error) {
+	if err := validateCaptureCheckpoint(expected); err != nil {
 		return StreamHandle{}, err
 	}
-	if expected.Owner == "" && expected.Cursor != "0-0" {
-		return StreamHandle{}, ErrStreamCursor
-	}
 	return s.open(ctx, c, &expected)
+}
+
+func validateCaptureCheckpoint(expected HeartbeatCheckpoint) error {
+	if expected.Owner != "" && (!validID(expected.Owner) || len(expected.Owner) != 64) {
+		return ErrStreamOwner
+	}
+	if _, err := streamID(expected.Cursor); err != nil {
+		return err
+	}
+	if expected.Owner == "" && expected.Cursor != "0-0" {
+		return ErrStreamCursor
+	}
+	return nil
 }
 
 type HeartbeatCaptureOptions struct{ PageSize, MaxPages int }

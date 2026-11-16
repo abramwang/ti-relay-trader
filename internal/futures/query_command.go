@@ -48,6 +48,14 @@ func (s *QueryStore) RegisterCommand(ctx context.Context, id string, commandID i
 		return err
 	}
 	defer tx.Rollback()
+	if err := s.registerCommandTx(ctx, tx, id, commandID, c, timeout, limits); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *QueryStore) registerCommandTx(ctx context.Context, tx *sql.Tx, id string, commandID int64, c QueryContext, timeout time.Duration, limits BatchLimits) error {
+	var err error
 	key := string(commandRouteBytes(c.Route))
 	var found int64
 	if err = tx.QueryRowContext(ctx, `SELECT command_id FROM futures_commands WHERE route_key=$1 AND command_id=$2 FOR UPDATE`, key, commandID).Scan(&found); err != nil {
@@ -89,7 +97,7 @@ func (s *QueryStore) RegisterCommand(ctx context.Context, id string, commandID i
 	if err = verifyQueryCommand(ctx, tx, id, c); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func verifyQueryCommand(ctx context.Context, tx *sql.Tx, id string, c QueryContext) error {

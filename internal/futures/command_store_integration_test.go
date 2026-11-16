@@ -262,6 +262,7 @@ func TestCommandStoreMigrationDown(t *testing.T) {
 	db, s, ctx := commandTestDB(t)
 	v := intentVectors(t)["submit"]
 	registerVector(t, s, ctx, v, registrationEvidence(t, v), "registered")
+	migrateFuturesTest(t, db, ctx, "000045_futures_query_reviews", "down")
 	migrateFuturesTest(t, db, ctx, "000044_futures_query_publication", "down")
 	migrateFuturesTest(t, db, ctx, "000038_futures_command_bindings", "down")
 	raw, err := os.ReadFile("../../migrations/postgres/000037_futures_command_registry.down.sql")

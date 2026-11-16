@@ -43,16 +43,7 @@ func (p *TestQueryPublisher) prefix() string {
 
 func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, error) {
 	bad := func() (queryPublishProof, error) { return queryPublishProof{}, ErrQueryPublishGate }
-	info, err := p.client.Info(ctx, "server").Result()
-	if err != nil || !strings.Contains(info, "\r\nrun_id:"+p.target.ServerRunID+"\r\n") {
-		return bad()
-	}
-	epoch, err := p.client.Get(ctx, p.prefix()+":cmd.trade:transport-epoch").Result()
-	if err != nil || epoch != p.target.Epoch {
-		return bad()
-	}
-	groups, err := p.client.XInfoGroups(ctx, p.prefix()+":cmd.query").Result()
-	if err != nil || len(groups) != 1 || groups[0].Name != p.target.Group {
+	if err := p.verifyTransport(ctx); err != nil {
 		return bad()
 	}
 	key := p.prefix() + ":hb"
@@ -74,6 +65,22 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 		expires = now.Add(30 * time.Second)
 	}
 	return queryPublishProof{EntryID: rows[0].EntryID, Body: rows[0].Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
+}
+
+func (p *TestQueryPublisher) verifyTransport(ctx context.Context) error {
+	info, err := p.client.Info(ctx, "server").Result()
+	if err != nil || !strings.Contains(info, "\r\nrun_id:"+p.target.ServerRunID+"\r\n") {
+		return ErrQueryPublishGate
+	}
+	epoch, err := p.client.Get(ctx, p.prefix()+":cmd.trade:transport-epoch").Result()
+	if err != nil || epoch != p.target.Epoch {
+		return ErrQueryPublishGate
+	}
+	groups, err := p.client.XInfoGroups(ctx, p.prefix()+":cmd.query").Result()
+	if err != nil || len(groups) != 1 || groups[0].Name != p.target.Group {
+		return ErrQueryPublishGate
+	}
+	return nil
 }
 
 // Recheck the exact latest heartbeat, epoch, run_id, group and age atomically
