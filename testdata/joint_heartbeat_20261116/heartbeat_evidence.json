@@ -1,0 +1,176 @@
+{
+  "started_at": "2026-11-16T21:28:55.983646+08:00",
+  "stopped_at": "2026-11-16T21:29:12.098232+08:00",
+  "process_id": 278609,
+  "exit_code": 0,
+  "process_running": false,
+  "source_head": "c8f4830185ac3b3f6f7b1ca8964c56afe127de72",
+  "binary_sha256": "a8287aff0ba806e9307375cd93052c36e46168233ccb78364bbb35760d11fc03",
+  "source_id": "shared-test-redis",
+  "server_run_id": "94f801dc68e3699cc681feb6dbb48f19e46aef9e",
+  "redis_version": "8.2.2",
+  "endpoint": "192.168.3.100:6379/db0",
+  "prefix": "relay:test:v1:ctp_joint_test:ctp-transport-20261116",
+  "account_id": "990000000116",
+  "epoch": "joint-98ae9473c67f709b2e735aeb31a55da6",
+  "epoch_key": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:cmd.trade:transport-epoch",
+  "group": "oc-ctp-transport-20261116",
+  "consumer": "oc-ctp-transport-20261116-owner1",
+  "counter_session_id": "ctpproc-cd57a6a1810d671fbffaa838936f100e",
+  "connection_generation": null,
+  "trade_date": null,
+  "T0": "2026-11-16T21:28:56.037+08:00",
+  "T0_plus_15_seconds": "2026-11-16T21:29:11.037000+08:00",
+  "last_heartbeat_at": "2026-11-16T21:29:12.036+08:00",
+  "heartbeat_count": 17,
+  "first_entry_id": "1794835736035-0",
+  "last_entry_id": "1794835752035-0",
+  "groups_after": {
+    "cmd.trade": [
+      {
+        "name": "oc-ctp-transport-20261116",
+        "consumers": 1,
+        "pending": 0,
+        "last-delivered-id": "0-0",
+        "entries-read": null,
+        "lag": 0
+      }
+    ],
+    "cmd.query": [
+      {
+        "name": "oc-ctp-transport-20261116",
+        "consumers": 1,
+        "pending": 0,
+        "last-delivered-id": "0-0",
+        "entries-read": null,
+        "lag": 0
+      }
+    ]
+  },
+  "retained_without_trim_or_delete": true,
+  "broker_api_created": false,
+  "offline_fixture_messages_published": false,
+  "real_account_route_touched": false,
+  "relay_pg_verified": false,
+  "records": [
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835736035-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-1\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:28:56.037+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "1e19824b76d9af13e51e1ae83d2dd3f4eca56ea278f7ec516b12ac25376fb480"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835737045-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-2\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:28:57.047+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "2bace36a1dd30dcdf6e00649e5d4260e84f413add36d37b1e0bc5c98d7dae2b8"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835738063-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-3\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:28:58.064+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "f54f6ff5024f91ea826649969b65366ec494c2c9bc6e5e588307b85192251b71"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835739080-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-4\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:28:59.081+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "8e0b6a70abfc3775d2579d308a217269ad4b66e6e8da72692b8613fd5e49f3ae"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835740097-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-5\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:00.099+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "f1c9e70cb6e3bd82d5cd1ad0e859b3314ee65ba4a8c9836103cfce51f09f8173"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835741114-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-6\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:01.115+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "c988b76870a70242dcf9519f229642889ffd1bc7be5c5e9fd84b58e761d971e8"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835742128-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-7\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:02.130+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "2c815ae712a2432236bfa791a7b86bcf5c6d575b1285fd46d4c009ae3ff8add3"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835743144-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-8\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:03.146+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "0313a0e0148dad0254b2482ed8141ef1c4aa9e00b4416d35deb9b3e1268891aa"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835744161-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-9\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:04.163+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1103,
+      "body_sha256": "8916d07cf4e923a50635437ed0e4b76513ab3b1dfeaa5c3eb5712f3666a383fb"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835745176-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-10\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:05.178+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "7ef6f25b4619f5184fd468fbdd6893152bd2ad944d3c96d3aa519ed0334e5a64"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835746192-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-11\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:06.194+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "e46520e724b7b7c837c88959848f732aa19551aae9ccf0cb1b368f9e97d9bdd3"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835747208-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-12\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:07.209+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "b44551c86bcc5323808944dbf29a1a79c1d8ff74ab116340bfbea5096f8756a1"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835748224-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-13\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:08.225+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "d5f4a7540adaa2d37dc6b0aa687af06bb9d662859f7a0f66ede55c3614805925"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835749240-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-14\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:09.241+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "1488a9599f09b1b98bf121d62bdb619bd7a981c3b2adac49774efa87633d3f4f"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835750255-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-15\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:10.257+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "3e9f456173f78bae696c1df0f27d737124759f20b899a61f4c864eea4a6743db"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835751273-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-16\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:11.275+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"broker_disabled\"}",
+      "body_bytes": 1104,
+      "body_sha256": "13982e4f99f00c5192867ce336eaca62d4e238397ef236f377576d58fa241004"
+    },
+    {
+      "stream": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb",
+      "entry_id": "1794835752035-0",
+      "body": "{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"adapter_context\":{\"connection_generation\":null,\"process_id\":278609,\"recovery_issue_count\":0,\"runtime_mode\":\"test_transport_recovery_only\",\"transport_recovery_clear\":true},\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"message_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e-hb-17\",\"message_type\":\"heartbeat\",\"order_snapshot_ready\":false,\"payload\":{\"accepting_cancel_commands\":false,\"accepting_trade_commands\":false,\"broker_ready\":false,\"counter_session_id\":\"ctpproc-cd57a6a1810d671fbffaa838936f100e\",\"order_snapshot_ready\":false,\"product_type\":\"futures\",\"redis_ready\":true,\"schema_version\":\"ctp.f0.draft.2\",\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"stopping\",\"trade_date\":null},\"produced_at\":\"2026-11-16T21:29:12.036+08:00\",\"protocol\":\"relay.stream.v1\",\"redis_ready\":true,\"routing\":{\"account_id\":\"990000000116\",\"broker_id\":\"ctp_joint_test\",\"env\":\"test\",\"gateway_id\":\"ctp-transport-20261116\"},\"settlement_confirmed\":false,\"state\":\"DEGRADED\",\"state_text\":\"stopping\"}",
+      "body_bytes": 1090,
+      "body_sha256": "d86b91083287a1eb0fbe5760613b265e2bfd562101c55befaa11fb2fa641c74a"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "returncode": 0,
+  "stdout": "TEST transport configuration OK; no connections made; broker disabled\n",
+  "stderr": "",
+  "state_directory_empty": true
+}

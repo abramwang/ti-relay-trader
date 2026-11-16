@@ -51,7 +51,7 @@
 状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
 
 - [x] 11-16 Redis入场预检与单边预演：目标东吴路由两次完整SCAN空、无心跳，未预留/建组；真实TEST Redis+临时PG的新模式收件/续读/查询分发及失效停止race通过。见[直接执行单](OC_CTP_REDIS_JOINT_RUN_20261116.md)。
-- [ ] 首轮双端Redis心跳比对：已确认今晚隔离`ctp_joint_test/ctp-transport-20261116/990000000116`，21:27全量SCAN空、run_id与OC一致；T0取OC首心跳，至少15秒后保留消息供Relay比对。待OC实际启动并回来源/session/epoch与首尾entry/body；未启动Relay常驻采集器。11-17 09:05为真实只读候选，无自动登录任务；四查询还需Relay可信命令运行入口，不把单边测试标成联合通过。
+- [x] 首轮双端Redis心跳比对：OC实际transport-only运行17条，Relay保留全部18,745字节并与OC审计/Redis/PG逐条核对；5+12独立进程续读、重复启动不增行、旧owner拒绝及PG重启原文/位点不变通过。独立本机审计库及dump保留、PG停止，未迁移业务库或发命令；见[收口回执](OC_CTP_REDIS_JOINT_RUN_20261116.md#首轮结果实际心跳收件pg及续读通过)。不是实时延迟、登录、四查询或报撤验收。
 
 - [x] 11-16 OC真实只读增量复核：`readonly_review`及交付说明7项SHA通过；25条新模式心跳、7条四查询/失败reply通过Relay解码，新增只读采集的代次/能力撤销和原文审计回归。不把查询ready升级为交易ready；OC真实入口已有实现、未部署或在线验收，样例三类查询为空。见[复核回执](OC_CTP_DONGWU_READONLY_REVIEW_20261116.md)。
 

@@ -2,6 +2,39 @@
 
 2026-11-16，Asia/Shanghai。用户已要求尽快进行一轮双方Redis对接；不再要求原则性回签。先心跳传输与原文审计，再四查询；本轮不发报撤单、不确认结算、不切环境。
 
+## 首轮结果：实际心跳收件、PG及续读通过
+
+OC实现`c8f4830185ac3b3f6f7b1ca8964c56afe127de72`实际运行未登录传输模式，21:28:56.037至21:29:12.036产生17条心跳，正常退出。Relay在进程结束后读取保留消息，21:34完成独立审计库验证，并完成PostgreSQL停止/重启后的原文与位点复核。
+
+**本轮双端Redis心跳传输与Relay持久收件通过，无需OC为此修改协议。** 不代表实时延迟、柜台认证/登录、四查询、报撤或F0整体验收通过；只读业务运行入口仍为下一步。
+
+| 核对项 | Relay实际结果 |
+| --- | --- |
+| OC材料 | `reference/joint_heartbeat_20261116/`，7项SHA256全部匹配；原样归档`testdata/joint_heartbeat_20261116/` |
+| 真实来源 | 与本执行单隔离路由一致；run_id与此前相同，epoch实际为`joint-98ae9473c67f709b2e735aeb31a55da6`，前后未变 |
+| 原文链路 | OC `runtime.audit.jsonl`、OC保留证据、Redis经实际capture入口写入PG，17条entry/body/UTF-8长度/SHA256逐项一致 |
+| 全量范围 | `1794835736035-0`至`1794835752035-0`，共17条、18,745字节，无丢弃窗口外两条 |
+| 15秒窗口 | T0=21:28:56.037，截止21:29:11.037，共15条，窗口末条`1794835750255-0`；后续普通心跳及stopping均保留 |
+| 接收器进程续读 | 第一次独立CLI只收5条，到`1794835740097-0`后退出；第二个CLI明确旧owner/cursor续收剩余12条 |
+| 再次启动 | 第三个CLI从末位点启动，新增0条，总数/字节/末位点不变；owner依正常接管更新 |
+| 陈旧owner | 使用第一轮owner/cursor被拒绝，最终位点和owner未被覆盖 |
+| PostgreSQL重启 | 停止、重新启动本机独立PG后，17条原文与SHA、最终owner/cursor、18,745字节全部保持一致 |
+| 业务安全 | 所有心跳均transport-only；交易日/连接代次null，broker/结算/订单快照/报撤ready均false，末条stopping；所有审计输出business_authorized=false |
+| OC命令组 | cmd.trade和cmd.query均pending=0、lag=0；Relay未新建hb消费组、未XACK或发送命令 |
+
+最终Relay owner：`cffe69bb411fbd11b993988bc6c569f61540449322cd427229e5ef833701b1dc`；cursor：`1794835752035-0`。后续只在明确旧采集器停止且来源/epoch未变化时按此续读，不自动接管。
+
+### 实际持久化位置和边界
+
+- 独立本机PG17.11，数据库`relay_ctp_transport_20261116_test`，仅Unix socket，无TCP监听。数据目录`.runtime/ctp-transport-pg-20261116/data`，仅在这个新库执行33..41表结构；未连接或迁移任何现有业务库。
+- 已停止本轮PG进程，数据目录保留；没有创建后台服务或自动启动任务，也未重启9092/OC。不是已经部署的常驻CTP运行库。
+- 完整证据目录：`outputs/recovery/ctp_transport_joint_20261116/live-verification/`。含三次capture输出、陈旧owner拒绝、status、三页带原文的audit、`verification.json`、`pg-after-restart.json`和`pg-restart-verification.json`。
+- `relay-audit.dump`已保存，SHA256：`f816bc3c3d76824a952456ed429128535653ac064edc1156e738974384fcb6af`。本机执行脚本`.runtime/ctp-live-verify-20261116.go`保留；它是一次性新库核验，不可直接重复初始化已有库。
+- PG的17条原始收件仍为`pending`、delivered=0、quarantined=0。这是尚未转交业务处理的审计责任状态，**不是OC命令PEL积压，不应为清零伪改delivered**。本轮未登记命令、查询批次或交易事件。
+- 新增`TestOCJointLiveHeartbeatEvidence`冻结本次材料的7项SHA、17条解析/原文、窗口和OC审计一致性，仅离线读取历史证据，不重新发布到Redis。
+
+下一步直接接真实只读命令与四查询，沿用11-17 09:05候选窗口并核实实际柜台可用性；不重做此次心跳联测、不自动登录或确认结算。以下21:27及更早小节为执行前记录，未启动/未建库等历史描述以本节更新为准。
+
 ## 21:27 确认：今晚隔离心跳，明早真实只读
 
 OC反馈私有配置及SDK预检已通过、尚未启动；东吴真实路由仍为空，尚无柜台会话/连接代次。Relay接受OC提议的今晚隔离路由，并在21:27:25完成全量SCAN：0键、无hb/命令组/epoch，检查前后run_id仍为`94f801dc68e3699cc681feb6dbb48f19e46aef9e`。原始报告在`outputs/recovery/ctp_transport_joint_20261116/`。这不是路由预留，OC启动前再核对。
