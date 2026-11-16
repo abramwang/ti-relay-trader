@@ -92,12 +92,13 @@ func TestTradeTerminalSupportsFuturesMarketDataWithoutEnablingTrading(t *testing
 	}
 	text := string(script)
 	for _, required := range []string{
-		`/^(IF|IH|IC|IM)\d{0,4}$/`,
+		`/^[A-Z]+\d{4}\.(CFFEX|SHFE)$/`,
+		`/v1/meridian/futures/instruments?`,
 		`/v1/meridian/futures/snapshots?`,
 		`/v1/meridian/futures/bars?`,
 		`/v1/meridian/stream/futures/snapshots?`,
-		`当前 Relay/OC 尚未接入期货交易路由`,
-		`当前仅支持股指期货行情，未发送下单请求`,
+		`期货交易路由尚未接通，不发送委托`,
+		`期货交易未开放，未发送下单请求`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("trade terminal is missing futures market-data guard %q", required)

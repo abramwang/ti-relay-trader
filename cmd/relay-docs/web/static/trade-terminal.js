@@ -30,12 +30,18 @@
     orderSignatures: new Map(),
     changedOrders: new Map(),
     marketSnapshot: null,
+    marketMeta: null,
+    marketError: "",
+    futuresChartManualDate: false,
+    barsSeq: 0,
     symbolSuggestions: [],
     instrumentCache: new Map(),
     instrumentBySecurityID: new Map(),
     instrumentMisses: new Map(),
     activeSuggestion: -1,
     suggestionSeq: 0,
+    symbolSuggestionTimer: 0,
+    quoteInputTimer: 0,
     quoteSeq: 0,
     quoteEventSource: null,
     quoteEventSourceKey: "",
@@ -138,6 +144,12 @@
     footerMarket: byID("footerMarket"),
     orderAccount: byID("orderAccount"),
     orderForm: byID("orderForm"),
+    marketSelector: byID("marketSelector"),
+    futuresOffset: byID("futuresOffset"),
+    futuresBarsScope: byID("futuresBarsScope"),
+    futuresContractFacts: byID("futuresContractFacts"),
+    futuresQuoteStatus: byID("futuresQuoteStatus"),
+    qtyLabel: byID("qtyLabel"),
     symbolInput: byID("symbolInput"),
     symbolSuggest: byID("symbolSuggest"),
     exchangeInput: byID("exchangeInput"),
@@ -672,6 +684,15 @@
         return decimals;
       }
     }
+    if (isFuturesSecurityID(itemSecurityID(item))) {
+      const tick = priceTickForItem(item);
+      if (tick !== null) {
+        for (let digits = 0; digits <= 8; digits += 1) {
+          if (Number(tick.toFixed(digits)) === tick) return digits;
+        }
+      }
+      return 8;
+    }
     return 2;
   }
 
@@ -891,11 +912,15 @@
     if (raw === "CFFEX" || raw === "CCFX") {
       return "CFFEX";
     }
+    if (raw === "SHFE") return "SHFE";
     return inferExchange(symbol || raw);
   }
 
   function inferExchange(symbol) {
     const code = normalizeSymbol(symbol).replace(/\..*$/, "");
+    for (const instrument of state.instrumentBySecurityID.values()) {
+      if (instrument.symbol === code) return instrument.exchange;
+    }
     if (/^(IF|IH|IC|IM)\d{0,4}$/.test(code)) {
       return "CFFEX";
     }
@@ -912,12 +937,124 @@
   }
 
   function isFuturesSecurityID(value) {
-    return /^(IF|IH|IC|IM)\d{4}\.CFFEX$/.test(normalizeSecurityID(value));
+    return /^[A-Z]+\d{4}\.(CFFEX|SHFE)$/.test(String(value || "").trim().toUpperCase());
   }
 
   function futuresDisplayName(item) {
-    const productID = String(item && item.product_id || splitSecurityID(item && item.security_id || "").symbol.slice(0, 2)).toUpperCase();
-    return productID ? productID + " 股指期货" : "股指期货";
+    const instrument = instrumentForSecurityID(item && item.security_id || "");
+    return item && item.instrument_name || instrument && instrument.instrument_name || "期货合约";
+  }
+
+  function futuresMarketSelected() {
+    return ["CFFEX", "SHFE"].includes(els.exchangeInput.value) || isFuturesSecurityID(currentSecurityID());
+  }
+
+  function latestFuturesSnapshot(rows, securityID, previous = null) {
+    let latest = previous && previous.security_id === securityID ? previous : null;
+    for (const row of rows) {
+      if (row.security_id !== securityID) continue;
+      if (!latest || Date.parse(row.received_at || row.exchange_timestamp || "") >= Date.parse(latest.received_at || latest.exchange_timestamp || "")) latest = row;
+    }
+    return latest;
+  }
+
+  function marketErrorMessage(err) {
+    const detail = err.payload && err.payload.error && err.payload.error.detail;
+    const error = detail && detail.error;
+    return error ? [error.code, error.message].filter(Boolean).join(" · ") : err.message;
+  }
+
+  function adoptFuturesChartDate(value) {
+    const date = compactDate(value);
+    if (!date || state.futuresChartManualDate || !futuresMarketSelected()) return;
+    if (els.chartTradeDateInput.value !== date) {
+      els.chartTradeDateInput.value = date;
+      scheduleTradeChartLoad(120);
+    }
+  }
+
+  function renderFuturesContext() {
+    const futures = futuresMarketSelected();
+    const changed = els.shell.classList.contains("market-futures") !== futures;
+    els.shell.classList.toggle("market-futures", futures);
+    els.marketSelector.value = futures ? els.exchangeInput.value : "stock";
+    els.qtyLabel.textContent = futures ? "数量（手）" : "数量（股）";
+    els.qtyInput.step = futures ? "1" : "100";
+    els.qtyInput.min = futures ? "1" : "100";
+    if (changed) els.qtyInput.value = futures ? "1" : "100";
+    els.orderAccount.disabled = futures;
+    for (const option of els.futuresOffset.options) {
+      option.disabled = els.exchangeInput.value === "CFFEX" && ["CT", "CY"].includes(option.value);
+    }
+    if (els.futuresOffset.selectedOptions[0].disabled) els.futuresOffset.value = "O";
+    if (!futures) return;
+    const securityID = currentSecurityID();
+    const instrument = instrumentForSecurityID(securityID) || {};
+    const snapshot = state.marketSnapshot && state.marketSnapshot.security_id === securityID ? state.marketSnapshot : {};
+    const meta = state.marketMeta || {};
+    const stale = meta.stale_data === true || meta.cache_status === "stale";
+    els.futuresQuoteStatus.textContent = state.marketError || (stale ? "陈旧快照 · 非实时" : snapshot.security_id ? "行情已连接" : "等待行情");
+    els.futuresQuoteStatus.classList.toggle("warning", stale || Boolean(state.marketError));
+    const facts = [
+      ["合约", instrument.instrument_name || securityID], ["交易所", instrument.exchange_id || els.exchangeInput.value],
+      ["交易日", snapshot.trading_day ? displayDate(String(snapshot.trading_day)) : "--"],
+      ["行情时间（东八区）", shortDateTime(snapshot.exchange_timestamp)],
+      ["接收时间（东八区）", shortDateTime(snapshot.received_at)],
+      ["最小价位", instrument.price_tick ?? "--"], ["合约乘数", instrument.volume_multiple ?? "--"],
+      ["昨结算", formatPrice(snapshot.pre_settlement, instrument)], ["昨收", formatPrice(snapshot.pre_close, instrument)],
+      ["涨停 / 跌停", formatPrice(snapshot.upper_limit_price, instrument) + " / " + formatPrice(snapshot.lower_limit_price, instrument)],
+      ["成交量（手）", formatInt(snapshot.volume)], ["持仓量（手）", formatInt(snapshot.open_interest)],
+      ["合约状态", instrument.trading_status || "--"], ["目录来源", instrument.source || "--"]
+    ];
+    els.futuresContractFacts.innerHTML = facts.map(([label, value]) => `<div><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(String(value))}</dd></div>`).join("");
+  }
+
+  function clearSelectedMarketData() {
+    state.quoteSeq += 1;
+    state.barsSeq += 1;
+    closeQuoteStream();
+    state.marketSnapshot = null;
+    state.marketMeta = null;
+    state.marketError = "";
+    state.barsRows = [];
+    state.barsMeta = null;
+    state.barsError = "";
+    state.barsLoaded = false;
+    state.chartOrders = [];
+    state.chartFills = [];
+    els.priceInput.value = "";
+    renderQuote();
+    renderDepthBook();
+    renderMinuteChart();
+    updateRisk();
+  }
+
+  async function selectMarket(market) {
+    const futures = market !== "stock";
+    els.exchangeInput.value = futures ? market : "SH";
+    els.symbolInput.value = futures ? "" : "600000";
+    state.futuresChartManualDate = false;
+    els.chartTradeDateInput.value = defaultQueryDate();
+    clearSelectedMarketData();
+    hideSuggestions();
+    if (futures) {
+      try {
+        const rows = await loadFuturesInstruments(market);
+        if (els.exchangeInput.value !== market || els.symbolInput.value) return;
+        state.symbolSuggestions = rows.map(instrumentSuggestion).slice(0, 10);
+        state.activeSuggestion = state.symbolSuggestions.length ? 0 : -1;
+        renderSymbolSuggestions();
+        els.symbolInput.focus();
+      } catch (err) {
+        if (els.exchangeInput.value !== market) return;
+        state.marketError = marketErrorMessage(err);
+        renderQuote();
+        showToast("合约目录读取失败：" + state.marketError, "error");
+      }
+      return;
+    }
+    await loadQuoteForInput();
+    scheduleTradeChartLoad(120);
   }
 
   function currentSecurityID() {
@@ -1360,18 +1497,22 @@
     source.addEventListener("futures_snapshots", (event) => {
       const payload = parseStreamPayload(event);
       const rows = payload && Array.isArray(payload.data) ? payload.data : [];
-      const snapshot = rows.find((row) => normalizeSecurityID(row.security_id) === normalized);
-      if (!snapshot || currentSecurityID() !== normalized) {
+      const snapshot = latestFuturesSnapshot(rows, normalized, state.marketSnapshot);
+      if (!snapshot || snapshot === state.marketSnapshot || currentSecurityID() !== normalized || state.quoteEventSource !== source) {
         return;
       }
       state.marketSnapshot = snapshot;
-      registerInstrument({ ...snapshot, name: futuresDisplayName(snapshot) });
-      maybeAdoptMarketDefaultDate(snapshot.trading_day || snapshot.trade_date, "futures_snapshot");
+      state.marketMeta = payload.meta || { stale_data: false };
+      state.marketError = "";
+      adoptFuturesChartDate(snapshot.trading_day);
       renderQuote();
       renderDepthBook();
       applyQuotePrice();
     });
     source.onerror = () => {
+      if (state.quoteEventSource !== source) return;
+      state.marketError = "行情流断开 · 等待重连";
+      renderQuote();
       const now = Date.now();
       if (now - state.quoteStreamErrorAt > 10000) {
         state.quoteStreamErrorAt = now;
@@ -1640,7 +1781,9 @@
     }
     const securityID = normalizeSecurityID(currentSecurityID());
     const tradeDate = currentChartTradeDate();
-    return Boolean(securityID && tradeDate && isCurrentBusinessDate(tradeDate));
+    return Boolean(securityID && tradeDate && (isFuturesSecurityID(securityID)
+      ? els.futuresBarsScope.value !== "historical" && (!state.futuresChartManualDate || tradeDate === compactDate(state.marketSnapshot && state.marketSnapshot.trading_day))
+      : isCurrentBusinessDate(tradeDate)));
   }
 
   function scheduleChartAutoRefresh(delay = chartAutoRefreshIntervalMs) {
@@ -2296,14 +2439,28 @@
     }
     const seq = ++state.quoteSeq;
     const futures = isFuturesSecurityID(securityID);
+    if (!state.marketSnapshot || state.marketSnapshot.security_id !== securityID) {
+      state.marketSnapshot = null;
+      state.marketMeta = null;
+      state.marketError = "";
+      state.priceEdited = false;
+      els.priceInput.value = "";
+      renderQuote();
+      renderDepthBook();
+    }
+    updateRisk();
+    connectQuoteStream(securityID);
     const params = new URLSearchParams({ security_id: securityID, limit: "1" });
+    if (futures) params.set("allow_stale", "true");
     if (!futures) {
       params.set("market_level", "level1");
       params.set("data_scope", "realtime");
     }
     try {
       const metadataPromise = futures
-        ? Promise.resolve()
+        ? loadFuturesInstruments(splitSecurityID(securityID).exchange).catch((err) => {
+          pushLog("warn", "期货合约目录读取失败", marketErrorMessage(err));
+        })
         : ensureInstrumentsForItems([{ security_id: securityID }]).catch((err) => {
           pushLog("warn", "证券价位元数据刷新失败", err.message);
         });
@@ -2312,19 +2469,24 @@
         signal: options.signal
       });
       await metadataPromise;
-      if (seq !== state.quoteSeq) {
+      if (seq !== state.quoteSeq || securityID !== currentSecurityID()) {
         return;
       }
       if (data.error) {
         throw new Error(data.error.message || data.error.code || "Meridian quote error");
       }
       const items = Array.isArray(data.data) ? data.data : [];
-      state.marketSnapshot = items[0] || null;
-      registerInstrument(futures && state.marketSnapshot
-        ? { ...state.marketSnapshot, name: futuresDisplayName(state.marketSnapshot) }
-        : state.marketSnapshot);
+      const incoming = futures ? latestFuturesSnapshot(items, securityID, state.marketSnapshot) : items.find((item) => item.security_id === securityID) || null;
+      // A delayed HTTP snapshot must not replace a newer SSE observation.
+      if (!state.marketSnapshot || incoming !== state.marketSnapshot || !futures) {
+        state.marketSnapshot = incoming;
+        state.marketMeta = data.meta || null;
+      }
+      state.marketError = "";
+      if (!futures) registerInstrument(state.marketSnapshot);
       const marketDate = state.marketSnapshot && (state.marketSnapshot.trading_day || state.marketSnapshot.trade_date);
-      const adopted = maybeAdoptMarketDefaultDate(marketDate, futures ? "futures_snapshot" : "snapshot");
+      const adopted = futures ? {} : maybeAdoptMarketDefaultDate(marketDate, "snapshot");
+      if (futures) adoptFuturesChartDate(marketDate);
       renderQuote();
       renderDepthBook();
       applyQuotePrice();
@@ -2337,21 +2499,26 @@
       if (err.name === "AbortError") {
         return;
       }
-      pushLog("warn", "行情刷新失败", securityID + " " + err.message);
+      if (seq !== state.quoteSeq || securityID !== currentSecurityID()) return;
+      state.marketError = marketErrorMessage(err);
+      renderQuote();
+      renderDepthBook();
+      pushLog("warn", "行情刷新失败", securityID + " " + state.marketError);
     }
   }
 
   async function loadSymbolSuggestions() {
     const query = normalizeSymbol(els.symbolInput.value).replace(/\..*$/, "");
     const seq = ++state.suggestionSeq;
-    if (/^(I|IF|IH|IC|IM)/.test(query)) {
+    if (futuresMarketSelected() || /^[A-Z]/.test(query)) {
       try {
-        const instruments = await loadFuturesInstruments();
+        const exchange = futuresMarketSelected() ? els.exchangeInput.value : "";
+        const instruments = await loadFuturesInstruments(exchange);
         if (seq !== state.suggestionSeq) {
           return;
         }
         state.symbolSuggestions = instruments
-          .filter((item) => item.symbol.startsWith(query) || item.security_id.startsWith(query))
+          .filter((item) => item.symbol.startsWith(query) || item.security_id.startsWith(query) || item.name.includes(query))
           .map(instrumentSuggestion)
           .slice(0, 10);
         state.activeSuggestion = state.symbolSuggestions.length > 0 ? 0 : -1;
@@ -2361,6 +2528,8 @@
         if (err.name !== "AbortError") {
           pushLog("warn", "期货代码补全失败", err.message);
         }
+        if (seq === state.suggestionSeq) { state.symbolSuggestions = []; renderSymbolSuggestions(); }
+        return;
       }
     }
     if (query.length < 3) {
@@ -2436,28 +2605,34 @@
     return pages;
   }
 
-  async function loadFuturesInstruments() {
-    const cacheKey = "CFFEX:" + currentBusinessDate();
+  async function loadFuturesInstruments(exchange = "") {
+    const cacheKey = "futures:" + exchange + ":" + currentBusinessDate();
     if (state.instrumentCache.has(cacheKey)) {
       return state.instrumentCache.get(cacheKey);
     }
-    const params = new URLSearchParams({
-      product_ids: "IF,IH,IC,IM",
-      allow_stale: "true",
-      limit: "100"
-    });
-    const data = await request("/v1/meridian/futures/snapshots?" + params.toString());
-    if (data.error) {
-      throw new Error(data.error.message || data.error.code || "Meridian futures error");
+    const params = new URLSearchParams({ exchange_ids: exchange || "CFFEX,SHFE", trading_statuses: "active,active_observed", limit: "1000" });
+    const items = [];
+    const cursors = new Set();
+    for (let page = 0; ; page += 1) {
+      if (page >= 20) throw new Error("合约目录超过分页上限");
+      const data = await request("/v1/meridian/futures/instruments?" + params.toString());
+      if (data.error) throw new Error(data.error.message || "Meridian futures catalog error");
+      items.push(...(Array.isArray(data.data) ? data.data : []));
+      const cursor = data.meta && data.meta.next_cursor;
+      if (!cursor) break;
+      if (cursors.has(cursor)) throw new Error("合约目录游标重复");
+      cursors.add(cursor);
+      params.set("cursor", cursor);
     }
-    const rows = (Array.isArray(data.data) ? data.data : []).map((item) => {
+    const rows = items.filter((item) => isFuturesSecurityID(item.security_id)).map((item) => {
       const parsed = splitSecurityID(item.security_id || "");
       const instrument = {
         ...item,
         symbol: parsed.symbol,
         exchange: parsed.exchange,
         name: futuresDisplayName(item),
-        status: item.session_state || "active"
+        instrument_type: "futures",
+        status: item.trading_status || ""
       };
       registerInstrument(instrument);
       return instrument;
@@ -5943,6 +6118,7 @@
   }
 
   async function loadBarsFor(options) {
+    const seq = ++state.barsSeq;
     const securityID = normalizeSecurityID(options.securityID || currentSecurityID());
     const tradeDate = compactDate(options.tradeDate || defaultQueryDate());
     if (!securityID || !tradeDate) {
@@ -5958,8 +6134,12 @@
     });
     if (futures) {
       query.set("series_type", "contract");
-      query.set("data_scope", isCurrentBusinessDate(tradeDate) ? "realtime" : "historical");
+      const quoteDate = compactDate(state.marketSnapshot && state.marketSnapshot.trading_day);
+      const scope = els.futuresBarsScope.value;
+      const realtime = quoteDate ? tradeDate === quoteDate && (!state.marketMeta || state.marketMeta.process_running !== false) : isCurrentBusinessDate(tradeDate);
+      query.set("data_scope", scope !== "auto" ? scope : realtime ? "realtime" : "historical");
       query.set("format", "json");
+      query.set("limit", "1000");
     }
     if (!futures && options.startTime) {
       query.set("start_time", options.startTime);
@@ -5976,17 +6156,31 @@
     try {
       const path = futures ? "/v1/meridian/futures/bars?" : "/v1/meridian/market/bars?";
       const data = await request(path + query.toString());
+      if (seq !== state.barsSeq || (options.source === "trade" && securityID !== currentSecurityID())) return;
       if (data.error) {
         throw new Error(data.error.message || data.error.code || "Meridian bars error");
       }
+      const rows = Array.isArray(data.data) ? data.data.slice() : [];
+      let cursor = futures && data.meta && data.meta.next_cursor;
+      const cursors = new Set();
+      while (cursor) {
+        if (cursors.size >= 20 || cursors.has(cursor)) throw new Error("期货分钟线分页异常，未显示部分结果");
+        cursors.add(cursor);
+        query.set("cursor", cursor);
+        const page = await request(path + query.toString());
+        if (seq !== state.barsSeq || (options.source === "trade" && securityID !== currentSecurityID())) return;
+        if (page.error) throw new Error(page.error.message || "Meridian bars error");
+        rows.push(...(page.data || []));
+        cursor = page.meta && page.meta.next_cursor;
+      }
       state.barsError = "";
-      state.barsRows = Array.isArray(data.data) ? data.data : [];
+      state.barsRows = rows;
       state.barsMeta = data.meta || null;
       state.barsLoaded = true;
       const effectiveTradeDate = effectiveBarsTradeDate(tradeDate);
       state.barsSecurityID = securityID;
       state.barsTradeDate = effectiveTradeDate;
-      const adopted = maybeAdoptMarketDefaultDate(effectiveTradeDate, "bars", tradeDate);
+      const adopted = futures ? {} : maybeAdoptMarketDefaultDate(effectiveTradeDate, "bars", tradeDate);
       syncBarsInputs(securityID, effectiveTradeDate);
       if (adopted.ledgerChanged && state.initialized && state.activeAccount) {
         resetLedgerPages();
@@ -6005,13 +6199,18 @@
         state.chartFills = [];
         pushLog("warn", "图表买卖点读取失败", markerErr.message);
       }
+      if (seq !== state.barsSeq || (options.source === "trade" && securityID !== currentSecurityID())) return;
       renderBars();
       if (!options.silent) {
         showToast("Bars 数据已更新");
       }
     } catch (err) {
+      if (seq !== state.barsSeq || (options.source === "trade" && securityID !== currentSecurityID())) return;
       state.barsLoaded = false;
-      state.barsError = err.message;
+      state.barsRows = [];
+      state.chartOrders = [];
+      state.chartFills = [];
+      state.barsError = marketErrorMessage(err);
       state.barsSecurityID = securityID;
       state.barsTradeDate = tradeDate;
       pushLog("warn", "Bars 查询失败", securityID + " " + err.message);
@@ -6064,7 +6263,7 @@
   }
 
   async function loadChartMarkers(securityID, tradeDate) {
-    if (!state.activeAccount || !securityID || !tradeDate) {
+    if (!state.activeAccount || !securityID || !tradeDate || isFuturesSecurityID(securityID)) {
       state.chartOrders = [];
       state.chartFills = [];
       return;
@@ -6116,14 +6315,15 @@
     }
     if (rows.length === 0) {
       chart.clear();
-      els.minuteChartStatus.textContent = state.barsError ? "分钟线读取失败" : "暂无分钟线";
+      els.minuteChartStatus.textContent = state.barsError ? "分钟线：" + state.barsError : "暂无分钟线";
+      els.minuteChartStatus.title = els.minuteChartStatus.textContent;
       return;
     }
     const chartRows = rows.slice().sort(compareBarRows);
-    const labels = chartRows.map((row) => minuteLabel(row.datetime || row.trade_date));
+    const labels = chartRows.map(barChartLabel);
     const candles = chartRows.map(candleValues);
     const volumes = chartRows.map((row) => ({
-      value: numericOrNull(row.volume) || 0,
+      value: row.volume == null ? null : numericOrNull(row.volume),
       itemStyle: { color: isUpBar(row) ? "rgba(242,54,69,0.48)" : "rgba(8,153,129,0.48)" }
     }));
     const markers = chartMarkers(labels, chartRows);
@@ -6137,6 +6337,7 @@
       "买 " + markers.buy.length,
       "卖 " + markers.sell.length
     ].join(" · ");
+    els.minuteChartStatus.title = els.minuteChartStatus.textContent;
     chart.setOption({
       animation: false,
       color: ["#f23645", "#089981", "#787b86"],
@@ -6382,7 +6583,7 @@
   function minuteTooltip(params, rows) {
     const items = Array.isArray(params) ? params : [params];
     const label = items[0] && items[0].axisValueLabel ? items[0].axisValueLabel : "";
-    const rowIndex = rows.findIndex((row) => minuteLabel(row.datetime || row.trade_date) === label);
+    const rowIndex = rows.findIndex((row) => barChartLabel(row) === label);
     const row = rowIndex >= 0 ? rows[rowIndex] : {};
     const priceItem = row && row.instrument_type ? row : (rows[0] || {});
     const lines = [
@@ -6452,6 +6653,12 @@
 
   function compareBarRows(left, right) {
     return barRowTimeValue(left) - barRowTimeValue(right);
+  }
+
+  function barChartLabel(row) {
+    const value = row.datetime || row.trade_date;
+    return isFuturesSecurityID(row.security_id || state.barsSecurityID)
+      ? shortDateTime(value).slice(5, 16) : minuteLabel(value);
   }
 
   function barRowTimeValue(row) {
@@ -6541,8 +6748,9 @@
   function renderQuote() {
     const snapshot = state.marketSnapshot || {};
     const securityID = snapshot.security_id || currentSecurityID() || "--";
-    const last = Number(snapshot.last);
-    const preClose = Number(snapshot.pre_close ?? snapshot.pre_settlement);
+    const last = snapshot.last == null ? NaN : Number(snapshot.last);
+    const reference = isFuturesSecurityID(securityID) ? snapshot.pre_settlement : snapshot.pre_close;
+    const preClose = reference == null ? NaN : Number(reference);
     const change = Number.isFinite(last) && Number.isFinite(preClose) ? last - preClose : NaN;
     const pct = Number.isFinite(change) && preClose !== 0 ? change / preClose * 100 : NaN;
     els.quoteSymbol.textContent = securityID;
@@ -6554,24 +6762,30 @@
       snapshot.trading_day || snapshot.trade_date,
       snapshot.source_dataset || snapshot.source
     ].filter(Boolean).join(" · ") || "Meridian";
-    if (els.footerMarket) {
-      els.footerMarket.textContent = isFuturesSecurityID(securityID) ? "CFFEX 股指期货" : "上海 / 深圳 A 股";
+    if (isFuturesSecurityID(securityID)) {
+      const stale = state.marketMeta && state.marketMeta.stale_data;
+      els.quoteSource.textContent = ["Meridian CTP", snapshot.trading_day, state.marketError || (stale ? "陈旧快照 · 非实时" : "")].filter(Boolean).join(" · ");
     }
-    applyPriceInputPrecision(snapshot);
-    els.quoteLast.textContent = formatPrice(snapshot.last, snapshot);
+    if (els.footerMarket) {
+      els.footerMarket.textContent = isFuturesSecurityID(securityID) ? splitSecurityID(securityID).exchange + " 期货 · 行情观察" : "上海 / 深圳 A 股";
+    }
+    const priceItem = { ...snapshot, security_id: securityID };
+    applyPriceInputPrecision(priceItem);
+    els.quoteLast.textContent = formatPrice(snapshot.last, priceItem);
     els.quoteChange.textContent = Number.isFinite(change) && Number.isFinite(pct)
       ? formatSignedPrice(change, snapshot) + " / " + formatSigned(pct) + "%"
       : "-- / --";
     els.quotePrice.classList.toggle("down", change < 0);
     els.quotePrice.classList.toggle("flat", !Number.isFinite(change) || change === 0);
+    renderFuturesContext();
   }
 
   function renderDepthBook() {
     const snapshot = state.marketSnapshot || {};
-    const asks = Array.isArray(snapshot.asks) ? snapshot.asks.slice(0, 5).reverse() : [];
-    const bids = Array.isArray(snapshot.bids) ? snapshot.bids.slice(0, 5) : [];
+    const asks = Array.isArray(snapshot.asks) ? snapshot.asks.slice(0, 5).filter((row) => row.available !== false).reverse() : [];
+    const bids = Array.isArray(snapshot.bids) ? snapshot.bids.slice(0, 5).filter((row) => row.available !== false) : [];
     if (asks.length === 0 && bids.length === 0) {
-      els.depthBook.innerHTML = '<div class="empty-state">等待 Meridian 快照...</div>';
+      els.depthBook.innerHTML = '<div class="empty-state">' + escapeHTML(state.marketError || "等待 Meridian 快照...") + '</div>';
       return;
     }
     els.depthBook.innerHTML = asks.map((row, idx) => depthRow(row, "sell", idx === asks.length - 1 ? "best-ask" : "")).join("") +
@@ -6606,7 +6820,11 @@
     if (!item) {
       return;
     }
+    window.clearTimeout(state.symbolSuggestionTimer);
+    window.clearTimeout(state.quoteInputTimer);
     setSymbolFromSecurityID(item.security_id);
+    state.futuresChartManualDate = false;
+    clearSelectedMarketData();
     hideSuggestions();
     state.priceEdited = false;
     applyPriceInputPrecision(item);
@@ -6615,6 +6833,7 @@
   }
 
   function hideSuggestions() {
+    state.suggestionSeq += 1;
     state.symbolSuggestions = [];
     state.activeSuggestion = -1;
     renderSymbolSuggestions();
@@ -7175,12 +7394,15 @@
 
   function updateRisk() {
     updateBatchGuard();
-    if (isFuturesSecurityID(currentSecurityID())) {
+    renderFuturesContext();
+    if (futuresMarketSelected()) {
       els.submitOrderButton.disabled = true;
-      els.submitOrderButton.title = "当前仅提供 CTP 股指期货行情，尚未接入期货交易柜台";
-      els.riskAlert.textContent = "行情观察：当前 Relay/OC 尚未接入期货交易路由，不会发送 CFFEX 下单请求。";
+      els.submitOrderButton.textContent = "期货交易未开放";
+      els.submitOrderButton.title = "期货交易路由尚未接通，不发送委托";
+      els.riskAlert.textContent = "只读行情 · 期货报撤单未开放";
       return;
     }
+    els.submitOrderButton.textContent = state.side === "S" ? "卖出下单" : "买入下单";
     const canTrade = selectedOrderAccountCanTrade();
     els.submitOrderButton.disabled = !canTrade;
     els.submitOrderButton.title = canTrade ? "" : "当前账户未开启交易权限";
@@ -7206,14 +7428,18 @@
   async function submitOrder(event) {
     event.preventDefault();
     const accountID = els.orderAccount.value || state.activeAccount;
-    if (isFuturesSecurityID(currentSecurityID())) {
+    if (futuresMarketSelected()) {
       updateRisk();
-      showToast("当前仅支持股指期货行情，未发送下单请求", "error");
+      showToast("期货交易未开放，未发送下单请求", "error");
       return;
     }
     if (!accountTradingEnabled(accountID)) {
       updateRisk();
       showToast("当前账户为只读，未发送下单请求", "error");
+      return;
+    }
+    if (!/^\d{6}$/.test(els.symbolInput.value.trim()) || !["SH", "SZ", "BJ"].includes(els.exchangeInput.value)) {
+      showToast("请选择有效证券代码；期货交易未开放", "error");
       return;
     }
     const body = {
@@ -7472,8 +7698,6 @@
   }
 
   function bindEvents() {
-    let symbolTimer = 0;
-    let quoteTimer = 0;
     for (const link of els.viewLinks) {
       link.addEventListener("click", (event) => {
         event.preventDefault();
@@ -7603,19 +7827,27 @@
       updateRisk();
     });
     els.qtyInput.addEventListener("input", updateRisk);
+    els.marketSelector.addEventListener("change", () => {
+      selectMarket(els.marketSelector.value).catch((err) => showToast(err.message, "error"));
+    });
+    els.symbolInput.addEventListener("focus", () => {
+      if (futuresMarketSelected()) loadSymbolSuggestions();
+    });
     els.symbolInput.addEventListener("input", () => {
       const normalized = normalizeSymbol(els.symbolInput.value);
       els.symbolInput.value = normalized.replace(/\..*$/, "");
-      if (els.symbolInput.value.length >= 1) {
+      if (normalized.includes(".")) els.exchangeInput.value = splitSecurityID(normalized).exchange;
+      if (els.symbolInput.value.length >= 1 && !normalized.includes(".")) {
         els.exchangeInput.value = inferExchange(els.symbolInput.value);
       }
-      updateRisk();
-      window.clearTimeout(symbolTimer);
-      window.clearTimeout(quoteTimer);
-      symbolTimer = window.setTimeout(loadSymbolSuggestions, 220);
-      if (els.symbolInput.value.length === 6) {
+      state.futuresChartManualDate = false;
+      clearSelectedMarketData();
+      window.clearTimeout(state.symbolSuggestionTimer);
+      window.clearTimeout(state.quoteInputTimer);
+      state.symbolSuggestionTimer = window.setTimeout(loadSymbolSuggestions, 220);
+      if (/^\d{6}$/.test(els.symbolInput.value) || isFuturesSecurityID(currentSecurityID())) {
         state.priceEdited = false;
-        quoteTimer = window.setTimeout(() => {
+        state.quoteInputTimer = window.setTimeout(() => {
           loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
           scheduleTradeChartLoad(120);
         }, 320);
@@ -7654,7 +7886,9 @@
     });
     els.exchangeInput.addEventListener("change", () => {
       state.priceEdited = false;
-      updateRisk();
+      state.futuresChartManualDate = false;
+      clearSelectedMarketData();
+      loadSymbolSuggestions();
       loadQuoteForInput().catch((err) => pushLog("warn", "行情刷新失败", err.message));
       scheduleTradeChartLoad(120);
     });
@@ -7765,6 +7999,15 @@
           .catch((err) => showToast(err.message, "error"))
           .finally(() => scheduleChartAutoRefresh());
       }
+    });
+    els.chartTradeDateInput.addEventListener("input", () => {
+      if (futuresMarketSelected()) {
+        state.futuresChartManualDate = true;
+        state.barsSeq += 1;
+      }
+    });
+    els.futuresBarsScope.addEventListener("change", () => {
+      scheduleTradeChartLoad(0);
     });
     els.chartTradeDateInput.addEventListener("blur", () => {
       const tradeDate = compactDate(els.chartTradeDateInput.value);

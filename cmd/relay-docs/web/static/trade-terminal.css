@@ -478,6 +478,41 @@ button {
   grid-template-rows: 68px 48px 66px 62px minmax(0, 1fr) 60px;
 }
 
+.terminal-shell:not(.market-futures) .futures-only,
+.futures-only,
+.futures-contract-panel,
+.futures-ledger-panel { display: none; }
+.market-selector { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.market-selector select { min-width: 0; flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 6px; }
+.market-futures .order-form .futures-only { display: grid; }
+.market-futures .order-form > * { flex-shrink: 0; }
+.market-futures .order-form > label:not(.stock-order-account):not(.symbol-field) { grid-template-columns: 60px minmax(0, 1fr); align-items: center; }
+.market-futures .quote-head { flex-wrap: wrap; gap: 8px; }
+.market-futures .quote-head > div:first-child { flex: 1 1 100%; min-width: 0; }
+.market-futures .quote-head h1 { font-size: 21px; overflow-wrap: anywhere; }
+.market-futures .quote-price { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
+.market-futures .quote-price strong { font-size: 26px; }
+.market-futures .chart-toolbar .futures-only { display: flex; }
+.market-futures .stock-order-account,
+.market-futures .trade-hints { display: none; }
+.market-futures.view-trade .portfolio-panel,
+.market-futures.view-trade .blotter-panel { display: none; }
+.market-futures.view-trade .futures-contract-panel { display: block; grid-column: 3; grid-row: 1; overflow: auto; min-height: 0; }
+.market-futures.view-trade .futures-ledger-panel { display: block; grid-column: 1 / -1; grid-row: 2; overflow: auto; }
+.market-futures.view-trade .terminal-main { grid-template-columns: 276px minmax(300px, 1fr) minmax(300px, 360px); grid-template-rows: minmax(0, 1fr) 150px; }
+.market-futures.view-trade .chart-panel { grid-template-rows: auto minmax(0, 1fr); }
+.market-futures .chart-toolbar { min-height: 70px; height: auto; flex-wrap: wrap; padding-block: 8px; gap: 8px; }
+.market-futures .chart-toolbar > div:first-child { flex-wrap: wrap; }
+.market-futures .chart-toolbar .toolbar-actions { flex-wrap: wrap; }
+.market-futures .chart-toolbar select { background: var(--panel); color: var(--text); border: 1px solid var(--line); min-height: 28px; }
+.futures-facts { margin: 0; padding: 4px 14px; font-size: 12px; }
+.futures-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.futures-facts dt { color: var(--muted); flex-shrink: 0; }
+.futures-facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.futures-route-status { border-top: 1px solid var(--line); padding: 16px; font-size: 12px; color: var(--muted); }
+.futures-route-status p { margin: 8px 0 0; }
+#futuresQuoteStatus { max-width: 65%; white-space: normal; overflow-wrap: anywhere; font-size: 11px; color: var(--muted); }
+#futuresQuoteStatus.warning { color: #d9ae65; }
 .market-panel {
   display: flex;
   flex-direction: column;
@@ -3982,3 +4017,32 @@ tr.selected,
   .view-performance .terminal-footer { grid-row: 5; padding: 0 10px; gap: 8px; overflow: hidden; }
   .view-performance .terminal-footer > :nth-child(n+3) { display: none; }
 }
+
+@media (max-width: 1100px) {
+  .terminal-shell.view-trade { min-width: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px 44px 42px minmax(0, 1fr) 28px; }
+  .view-trade .terminal-topbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; }
+  .view-trade .terminal-global-nav, .view-trade .header-help, .view-trade .terminal-header-right .status-pill { display: none; }
+  .view-trade .terminal-context { grid-column: 1; grid-row: 2; min-width: 0; padding: 0 8px; }
+  .view-trade .terminal-context .status-strip, .view-trade .clock-block { display: none; }
+  .view-trade .account-tabs { min-width: 0; justify-content: flex-start; }
+  .view-trade .terminal-sidebar { grid-column: 1; grid-row: 3; padding: 0; overflow: auto; }
+  .view-trade .terminal-local-title, .view-trade .terminal-nav-label, .view-trade .sidebar-footer { display: none; }
+  .view-trade .terminal-nav { display: flex; padding: 0; }
+  .view-trade .terminal-nav a { flex: none; min-height: 40px; padding: 0 12px; }
+  .terminal-shell.view-trade .terminal-main { display: flex; flex-direction: column; grid-column: 1; grid-row: 4; overflow: auto; }
+  .view-trade .terminal-main > .trade-panel { flex-shrink: 0; }
+  .view-trade .market-panel { overflow: visible; }
+  .view-trade .order-form { overflow: visible; }
+  .view-trade .chart-panel { min-height: 430px; grid-template-rows: auto 360px; }
+  .view-trade .chart-toolbar { height: auto; min-height: 60px; flex-wrap: wrap; padding: 10px; gap: 8px; }
+  .view-trade .chart-toolbar > div:first-child { flex-wrap: wrap; min-width: 0; }
+  .view-trade .chart-toolbar .toolbar-actions { flex-wrap: wrap; }
+  .view-trade .portfolio-panel { min-height: 450px; }
+  .view-trade .blotter-panel { min-height: 320px; }
+  .view-trade .futures-contract-panel { overflow: visible; }
+  .view-trade .futures-ledger-panel { min-height: 140px; }
+  .view-trade .terminal-footer { grid-column: 1; grid-row: 5; padding: 0 8px; gap: 8px; }
+  .view-trade .terminal-footer > :nth-child(n+3) { display: none; }
+}
+
+.market-futures #minuteChartStatus { display: block; white-space: normal; overflow-wrap: anywhere; font-size: 11px; }

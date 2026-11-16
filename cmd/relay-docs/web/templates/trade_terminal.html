@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261115-cycle-daily-r2">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261116-futures">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
@@ -97,6 +97,7 @@
         <details class="research-movements"><summary id="researchMovementCount">成本转移与舍入</summary><div id="researchMovements"></div></details>
       </section>
       <section class="trade-panel market-panel" id="marketPanel" aria-label="行情与下单">
+        <label class="market-selector"><span>行情市场</span><select id="marketSelector"><option value="stock">股票 / ETF</option><option value="CFFEX">中金所 CFFEX</option><option value="SHFE">上期所 SHFE</option></select></label>
         <div class="quote-head">
           <div>
             <h1 id="quoteSymbol">600000.SH</h1>
@@ -115,10 +116,11 @@
             <button type="button" class="active buy" data-side="B">买入</button>
             <button type="button" class="sell" data-side="S">卖出</button>
           </div>
-          <label>
+          <label class="stock-order-account">
             <span>账户</span>
             <select id="orderAccount"></select>
           </label>
+          <label class="futures-only"><span>期货账户</span><select disabled aria-label="期货账户"><option>交易路由未接通</option></select></label>
           <label class="symbol-field">
             <span>代码</span>
             <input id="symbolInput" value="600000" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="symbolSuggest">
@@ -131,8 +133,10 @@
               <option value="SZ">SZ</option>
               <option value="BJ">BJ</option>
               <option value="CFFEX">CFFEX</option>
+              <option value="SHFE">SHFE</option>
             </select>
           </label>
+          <label class="futures-only"><span>开平</span><select id="futuresOffset"><option value="O">开仓</option><option value="C">平仓</option><option value="CT">平今</option><option value="CY">平昨</option></select></label>
           <label>
             <span>报价类型</span>
             <select id="priceTypeInput">
@@ -147,7 +151,7 @@
               <input id="priceInput" type="number" step="0.01" value="9.67">
             </label>
             <label>
-              <span>数量</span>
+              <span id="qtyLabel">数量（股）</span>
               <input id="qtyInput" type="number" step="100" min="100" value="100">
             </label>
           </div>
@@ -170,6 +174,7 @@
             <span id="minuteChartStatus">等待 Meridian bars</span>
           </div>
           <div class="toolbar-actions">
+            <label class="date-filter futures-only"><span>来源</span><select id="futuresBarsScope"><option value="auto">自动</option><option value="realtime">实时</option><option value="historical">归档</option></select></label>
             <label class="date-filter">
               <span>交易日</span>
               <input id="chartTradeDateInput" inputmode="numeric" placeholder="YYYYMMDD">
@@ -180,6 +185,16 @@
         <div class="minute-chart-shell trade-chart-shell">
           <div id="minuteChart" class="minute-chart"></div>
         </div>
+      </section>
+
+      <section class="trade-panel futures-contract-panel" aria-label="期货合约信息">
+        <div class="section-toolbar"><h2>合约与行情</h2><span id="futuresQuoteStatus" role="status">等待行情</span></div>
+        <dl id="futuresContractFacts" class="futures-facts"></dl>
+        <div class="futures-route-status"><strong>期货交易路由未接通</strong><p>资金、保证金、可平持仓及订单回报尚不可用。</p><p>报单 / 撤单：未开放</p></div>
+      </section>
+      <section class="trade-panel futures-ledger-panel" aria-label="期货订单与持仓">
+        <div class="section-toolbar"><h2>期货账户账本</h2><span>未连接</span></div>
+        <div class="empty-state">暂无已接通的期货账户。证券账户资产与订单不计入此处。</div>
       </section>
 
       <section class="trade-panel portfolio-panel" id="assetPanel" aria-label="资金持仓">
@@ -926,7 +941,6 @@
       <span><i></i>API: <strong id="footerApi">--</strong></span>
       <span><i></i>Redis Latency: <strong id="footerRedis">--</strong></span>
       <span>Market: <strong id="footerMarket">上海 / 深圳 A 股</strong></span>
-      <span>Phase: Trading (Continuous)</span>
       <span>Relay Trader v0.1</span>
       <span>Server Time: <strong id="footerClock">--</strong></span>
     </footer>
@@ -936,6 +950,6 @@
   </script>
   <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261115-cycle-daily"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261116-futures"></script>
 </body>
 </html>

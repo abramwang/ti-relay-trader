@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-16 20:15 Asia/Shanghai` 按用户指令切至华鑫TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092为测试API及内嵌worker，不是CTP；生产API/独立worker已停止 |
 | 安全状态 | TEST仅00030484，沿用原trading_enabled=true但OC准入关闭；生产配置全部下单关闭、停用账户不变。显式skip-migrations，测试库仍1..40，生产仍1..32+42+43。无主动柜台查询/报撤单、凭据投递或OC启停；切回生产需用户明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-16 20:15 Asia/Shanghai` 测试API3859421，域名返回test/degraded，Redis/DB/内嵌worker正常；00030484 readiness=false、HEARTBEAT_STALE，旧心跳报告credential_not_ready。测试配置仍huaxin_7x24_test，明日仿真入场前须核对替换时段，当前未改 |
+| 最近确认 | `2026-11-16 Asia/Shanghai` CFFEX/SHFE行情界面已发布，仍test/degraded，Redis/DB/内嵌worker正常；00030484原OC准入问题未改，期货报撤未开放。测试配置仍huaxin_7x24_test，明日仿真入场前须核对替换时段，当前未改 |
 | 更新时间 | `2026-11-16` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-16` 期货终端行情界面已扩至CFFEX/SHFE：左上市场选择、Meridian合约目录补全、价位/乘数、一档SSE、夜盘TradingDay隔离、OHLC分页及开平/手数表单。期货账户与报撤仍未接通，隐藏证券资产误用、保持交易关闭；无迁移/OC动作，仅重启当前TEST API。13项期货JS、11项绩效JS、全Go及桌面/手机浏览器通过，真实行情只读核对保留盘前陈旧/未就绪状态。见[实现与验证](docs/FUTURES_TERMINAL_MARKET_20261116.md)。下一步仍是独立CTP真实只读接线，不因行情已就绪自动开放交易。
 
 - `2026-11-16 20:15 Asia/Shanghai` 用户明确要求当前切测试，已执行`switch-relay-env.sh test --skip-migrations`，9092及域名均test，API3859421/内嵌账本同步正常，生产API3343326/worker3025910停止；不是已部署并行测试或CTP。测试库只读核实1..40，不应用41..43。OC最新心跳已过期、报单准入false，历史心跳报凭据missing，未主动修凭据或发命令。仍沿用旧7x24测试时段，明日仿真需单独调整；生产cron未改，生产任务不能依赖目前的测试9092完成，切回须用户指令，不能自动切换。此前“不切9092”的并行规划不代表当前实际状态。
 
