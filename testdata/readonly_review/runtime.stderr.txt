@@ -1,0 +1,23 @@
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1116 20:38:47.963532 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:47.963568 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:48.032016 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=3 return_code=0
+I1116 20:38:49.079175 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=4 return_code=0
+I1116 20:38:50.094229 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=5 return_code=0
+I1116 20:38:51.119740 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=6 return_code=0
+W1116 20:38:52.045349 277882 ti_ctp_trader_client.cpp:180] [CTP session] counter_session_id=ctpproc-d5ee2dee036c7233b630f6fff8e582ff generation=1 request_id=1 reason=authenticating_rejected has_callback_error=1 callback_error=7
+I1116 20:38:52.045368 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:52.078831 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:52.078845 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:52.145401 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=3 return_code=0
+I1116 20:38:53.144210 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:53.144228 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:53.215090 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=3 return_code=-3
+I1116 20:38:54.197942 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:54.197955 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:54.264140 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=3 return_code=0
+I1116 20:38:55.298573 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:55.298585 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0
+I1116 20:38:55.368076 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=3 return_code=0
+I1116 20:38:55.416599 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=2 return_code=0
+I1116 20:38:55.416612 277882 ti_ctp_trader_client.cpp:202] [CTP submit] request_id=1 return_code=0

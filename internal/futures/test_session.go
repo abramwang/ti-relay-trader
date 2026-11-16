@@ -37,6 +37,7 @@ type TestSessionGuard struct {
 	producedAt, expiresAt, checkedAt time.Time
 	failure                          error
 	changed                          chan struct{}
+	readOnlyMode                     bool
 }
 
 func NewTestSessionGuard(source *TestStreamSource, expected DeliveryQualityContext, policy TestHeartbeatPolicy) (*TestSessionGuard, error) {
@@ -116,6 +117,17 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 	if h.Recovery != nil {
 		return g.stop("heartbeat_transport_recovery_only")
 	}
+	if !g.producedAt.IsZero() && g.readOnlyMode != (h.ReadOnly != nil) {
+		return g.stop("heartbeat_runtime_mode_changed")
+	}
+	if h.ReadOnly != nil {
+		if !h.ReadOnly.QueryCollectionReady || !h.ReadOnly.TransportRecoveryClear {
+			return g.stop("heartbeat_query_collection_not_ready")
+		}
+		if h.ReadOnly.ConnectionGeneration == nil || *h.ReadOnly.ConnectionGeneration != g.expected.ConnectionGeneration {
+			return g.stop("heartbeat_connection_generation_changed")
+		}
+	}
 	if h.CounterSessionID != g.expected.CounterSessionID || h.TradeDate != g.expected.Scope.TradeDate {
 		return g.stop("heartbeat_session_or_day_changed")
 	}
@@ -149,6 +161,7 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 		return g.stop("heartbeat_window_capacity")
 	}
 	g.seen[h.MessageID] = digest
+	g.readOnlyMode = h.ReadOnly != nil
 	g.lastID, g.lastDigest, g.producedAt = source.EntryID, digest, h.ProducedAt
 	age := now.Sub(h.ProducedAt)
 	if age < 0 {

@@ -135,6 +135,9 @@ func (s *StreamStore) HeartbeatEvidence(ctx context.Context, c StreamConfig, exp
 		item.Classification = "invalid_heartbeat"
 		if h, err := DecodeHeartbeat(body, c.Scope.Route); err == nil {
 			item.Classification = "decoded_unverified"
+			if h.ReadOnly != nil {
+				item.Classification = "test_broker_read_only"
+			}
 			if h.Recovery != nil {
 				item.Classification = "transport_recovery_only"
 			}

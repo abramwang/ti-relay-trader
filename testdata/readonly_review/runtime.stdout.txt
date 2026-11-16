@@ -1,0 +1,1392 @@
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"read_only","stream_id":"1004-0"}
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"read_only","stream_id":"1006-0"}
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"read_only","stream_id":"1008-0"}
+{"counter_session_id":"ctpproc-f4b0899271874186c464326fdaf07351","state_text":"stopping","stream_id":"1010-0"}
+{"counter_session_id":"ctpproc-9443869d56eb437432b9945fb56b97b3","state_text":"recovery_blocked","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-9443869d56eb437432b9945fb56b97b3","state_text":"stopping","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-d5ee2dee036c7233b630f6fff8e582ff","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-d5ee2dee036c7233b630f6fff8e582ff","state_text":"stopping","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4","state_text":"stopping","stream_id":"1004-0"}
+{"counter_session_id":"ctpproc-be5fca6a8116ac9e76008ef9d011cb03","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-be5fca6a8116ac9e76008ef9d011cb03","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-be5fca6a8116ac9e76008ef9d011cb03","state_text":"stopping","stream_id":"1004-0"}
+{"counter_session_id":"ctpproc-85714607db4d008dfbf66c6013567792","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-85714607db4d008dfbf66c6013567792","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-85714607db4d008dfbf66c6013567792","state_text":"stopping","stream_id":"1004-0"}
+{"counter_session_id":"ctpproc-7dd8fa04ce2cb5345721b023dfccc675","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-7dd8fa04ce2cb5345721b023dfccc675","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-7dd8fa04ce2cb5345721b023dfccc675","state_text":"stopping","stream_id":"1003-0"}
+{"counter_session_id":"ctpproc-3ab447a6d80f04cb9cf1949087cfd262","state_text":"broker_not_ready","stream_id":"1001-0"}
+{"counter_session_id":"ctpproc-3ab447a6d80f04cb9cf1949087cfd262","state_text":"read_only","stream_id":"1002-0"}
+{"counter_session_id":"ctpproc-3ab447a6d80f04cb9cf1949087cfd262","state_text":"stopping","stream_id":"1003-0"}
+{
+  "real_sdk_calls": false,
+  "redis_connected": false,
+  "scenarios": [
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:47.944+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:47.965+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 3,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:49.004+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 4,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:50.025+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 5,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:51.040+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 6,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+          "message_id": "ctpproc-f4b0899271874186c464326fdaf07351-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-f4b0899271874186c464326fdaf07351",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:51.972+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-account.asset.query\",\"message_id\":\"msg-account.asset.query\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-account.asset.query\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        },
+        {
+          "body": "{\"action\":\"account.positions.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-account.positions.query\",\"message_id\":\"msg-account.positions.query\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-account.positions.query\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "101-0"
+        },
+        {
+          "body": "{\"action\":\"order.list.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-order.list.query\",\"message_id\":\"msg-order.list.query\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-order.list.query\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "102-0"
+        },
+        {
+          "body": "{\"action\":\"fill.list.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-fill.list.query\",\"message_id\":\"msg-fill.list.query\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-fill.list.query\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "103-0"
+        }
+      ],
+      "outputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-f4b0899271874186c464326fdaf07351\",\"sdk_request_id\":3,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"1\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-account.asset.query\",\"message_id\":\"ctp-query-v1-8a24db7740eafbddb019a911899bd69c46d63b443795d5546754ae6039354632\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-account.asset.query\",\"payload\":{\"items\":[{\"account_id\":\"990000000017\",\"captured_at\":\"2026-11-16T20:38:48.028+08:00\",\"futures\":{\"available\":\"90\",\"balance\":\"100\",\"close_profit\":\"0\",\"commission\":\"0\",\"curr_margin\":\"0\",\"deposit\":\"0\",\"frozen_cash\":\"0\",\"frozen_commission\":\"0\",\"frozen_margin\":\"0\",\"position_profit\":\"0\",\"scope\":{\"account_id\":\"native-fund\",\"biz_type\":\"1\",\"broker_id\":\"4900\",\"currency_id\":\"CNY\",\"settlement_id\":0,\"trading_day\":\"20261117\"},\"scope_verified\":false,\"withdraw\":\"0\"}}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:48.034+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-account.asset.query\",\"result_type\":\"asset_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"completed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1003-0"
+        },
+        {
+          "body": "{\"action\":\"account.positions.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-f4b0899271874186c464326fdaf07351\",\"sdk_request_id\":4,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"2\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-account.positions.query\",\"message_id\":\"ctp-query-v1-0eb2192ae24d6971093df8bc4f50d1f9218c2859f4f49ba9f084400c5f3e1bcd\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-account.positions.query\",\"payload\":{\"items\":[],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:49.080+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-account.positions.query\",\"result_type\":\"position_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"completed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1005-0"
+        },
+        {
+          "body": "{\"action\":\"order.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-f4b0899271874186c464326fdaf07351\",\"sdk_request_id\":5,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"3\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-order.list.query\",\"message_id\":\"ctp-query-v1-018a90f07ba4d65f33d3751fe8741b46ef8178d19120f130322c716bbec6e564\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-order.list.query\",\"payload\":{\"items\":[],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:50.095+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-order.list.query\",\"result_type\":\"order_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"completed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1007-0"
+        },
+        {
+          "body": "{\"action\":\"fill.list.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-f4b0899271874186c464326fdaf07351\",\"sdk_request_id\":6,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"4\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-fill.list.query\",\"message_id\":\"ctp-query-v1-10c661c0df70b99b40643ca570561f8a0ea723d0e0ab44f49168b5f7736a18ba\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-fill.list.query\",\"payload\":{\"items\":[],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:51.121+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-fill.list.query\",\"result_type\":\"fill_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"completed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1009-0"
+        }
+      ],
+      "pending": 0,
+      "scenario": "four_queries",
+      "sdk_query_calls": 4
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-9443869d56eb437432b9945fb56b97b3",
+          "message_id": "ctpproc-9443869d56eb437432b9945fb56b97b3-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-9443869d56eb437432b9945fb56b97b3",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "recovery_blocked",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:52.013+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "recovery_blocked"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-9443869d56eb437432b9945fb56b97b3",
+          "message_id": "ctpproc-9443869d56eb437432b9945fb56b97b3-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-9443869d56eb437432b9945fb56b97b3",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:52.014+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [],
+      "outputs": [],
+      "pending": 0,
+      "scenario": "blocked_recovery",
+      "sdk_query_calls": 0
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff",
+          "message_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:52.043+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": 7,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff",
+          "message_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-d5ee2dee036c7233b630f6fff8e582ff",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:52.047+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [],
+      "outputs": [],
+      "pending": 0,
+      "scenario": "auth_failure",
+      "sdk_query_calls": 0
+    },
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+          "message_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:52.077+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+          "message_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:52.080+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 3,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+          "message_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:53.100+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"msg-one\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        },
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"msg-one\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "101-0"
+        }
+      ],
+      "outputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-9abedcf30e0d5a103e37e8a36b9c62d4\",\"sdk_request_id\":3,\"sdk_return_code\":0,\"snapshot_applied\":true,\"ticket\":\"1\"},\"standard_validation\":{\"raw_completed\":true}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"ctp-query-v1-5e9a812cf05dc5c08cf6685b3f2ef161c5c242c35a401ac543181681b2dc97f4\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"items\":[{\"account_id\":\"990000000017\",\"captured_at\":\"2026-11-16T20:38:52.141+08:00\",\"futures\":{\"available\":\"90\",\"balance\":\"100\",\"close_profit\":\"0\",\"commission\":\"0\",\"curr_margin\":\"0\",\"deposit\":\"0\",\"frozen_cash\":\"0\",\"frozen_commission\":\"0\",\"frozen_margin\":\"0\",\"position_profit\":\"0\",\"scope\":{\"account_id\":\"native-fund\",\"biz_type\":\"1\",\"broker_id\":\"4900\",\"currency_id\":\"CNY\",\"settlement_id\":0,\"trading_day\":\"20261117\"},\"scope_verified\":false,\"withdraw\":\"0\"}}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:52.147+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"asset_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"completed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1003-0"
+        }
+      ],
+      "pending": 0,
+      "scenario": "duplicate",
+      "sdk_query_calls": 1
+    },
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+          "message_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:53.142+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+          "message_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:53.145+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 3,
+            "broker_last_submit_return_code": -3,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+          "message_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-be5fca6a8116ac9e76008ef9d011cb03",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:54.156+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"msg-one\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        }
+      ],
+      "outputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-be5fca6a8116ac9e76008ef9d011cb03\",\"failure_stage\":\"query\",\"sdk_request_id\":3,\"sdk_return_code\":-3,\"snapshot_applied\":false,\"ticket\":\"1\"},\"standard_validation\":{\"raw_completed\":false}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"query_not_complete_success\",\"message_id\":\"ctp-query-v1-0e6dc8ada0d7edd7982dafebcfda9d5a5df3de7620bbd5854d00e5a77ac2dffe\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:53.216+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"asset_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"failed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1003-0"
+        }
+      ],
+      "pending": 0,
+      "scenario": "submit_failure",
+      "sdk_query_calls": 1
+    },
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+          "message_id": "ctpproc-85714607db4d008dfbf66c6013567792-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:54.196+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+          "message_id": "ctpproc-85714607db4d008dfbf66c6013567792-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:54.199+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 3,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+          "message_id": "ctpproc-85714607db4d008dfbf66c6013567792-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-85714607db4d008dfbf66c6013567792",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:55.262+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"msg-one\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        }
+      ],
+      "outputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"adapter_context\":{\"query_evidence\":{\"callback_error_id\":null,\"connection_generation\":1,\"counter_session_id\":\"ctpproc-85714607db4d008dfbf66c6013567792\",\"failure_stage\":\"query\",\"sdk_request_id\":3,\"sdk_return_code\":0,\"snapshot_applied\":false,\"ticket\":\"1\"},\"standard_validation\":{\"raw_completed\":false}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"query_not_complete_success\",\"message_id\":\"ctp-query-v1-23e7ebbc7f29acd9ea2a4eabece4da7e8cfa09fb9557cdd1e5d66bb2a7c7359b\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-16T20:38:55.236+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"asset_page\",\"routing\":{\"account_id\":\"990000000017\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"offline-readonly\"},\"status\":\"failed\"}",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:reply",
+          "stream_id": "1003-0"
+        }
+      ],
+      "pending": 0,
+      "scenario": "partial_shutdown",
+      "sdk_query_calls": 1
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+          "message_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:55.297+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+          "message_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:55.299+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 3,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+          "message_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-7dd8fa04ce2cb5345721b023dfccc675",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:55.382+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"account.asset.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"msg-one\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        }
+      ],
+      "outputs": [],
+      "pending": 1,
+      "scenario": "publication_failure",
+      "sdk_query_calls": 1
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 0,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": null,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+          "message_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-16T20:38:55.415+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "logged_in_read_only",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": true,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+          "message_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "UP",
+            "state_text": "read_only",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:55.417+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "UP",
+          "state_text": "read_only"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "broker_callback_error": null,
+            "broker_failure_reason": "stopped",
+            "broker_last_submit_request_id": 1,
+            "broker_last_submit_return_code": 0,
+            "broker_state": "stopped",
+            "connection_generation": 1,
+            "process_id": 277882,
+            "query_collection_ready": false,
+            "runtime_mode": "test_broker_read_only",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+          "message_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-3ab447a6d80f04cb9cf1949087cfd262",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-16T20:38:55.421+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "990000000017",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "offline-readonly"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "inputs": [
+        {
+          "body": "{\"action\":\"order.submit\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"fixture-idem\",\"message_id\":\"fixture-submit\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"990000000017\",\"business_type\":\"F\",\"client_order_id\":\"fixture-client\",\"exchange\":\"SHFE\",\"gateway_order_id\":\"fixture-order\",\"hedge_type\":\"speculation\",\"limit_price\":\"3600.00\",\"offset_type\":\"O\",\"order_qty\":1,\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"rb2612\",\"trade_date\":\"20261105\",\"trade_side\":\"B\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"fixture-request\",\"sent_at\":\"2026-11-04T21:01:00+08:00\"}",
+          "group": "offline-group",
+          "stream": "relay:test:v1:ctp_4900:offline-readonly:cmd.query",
+          "stream_id": "100-0"
+        }
+      ],
+      "outputs": [],
+      "pending": 1,
+      "scenario": "trade_on_query_stream",
+      "sdk_query_calls": 0
+    }
+  ],
+  "synthetic_only": true
+}

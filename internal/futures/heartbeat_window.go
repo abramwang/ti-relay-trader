@@ -176,7 +176,7 @@ func (w *TestHeartbeatWindow) observe(ctx context.Context, limit int) (caughtUp 
 	g.mu.Lock()
 	candidate := &TestSessionGuard{scope: g.scope, expected: g.expected, sourceID: g.sourceID, stream: g.stream, policy: g.policy,
 		seen: make(map[string][32]byte, len(g.seen)), lastID: g.lastID, lastDigest: g.lastDigest, producedAt: g.producedAt,
-		expiresAt: g.expiresAt, checkedAt: g.checkedAt, changed: make(chan struct{})}
+		expiresAt: g.expiresAt, checkedAt: g.checkedAt, readOnlyMode: g.readOnlyMode, changed: make(chan struct{})}
 	for id, hash := range g.seen {
 		candidate.seen[id] = hash
 	}
@@ -244,6 +244,7 @@ func (w *TestHeartbeatWindow) observe(ctx context.Context, limit int) (caughtUp 
 		close(g.changed)
 	}
 	g.seen, g.lastID, g.lastDigest = candidate.seen, candidate.lastID, candidate.lastDigest
+	g.readOnlyMode = candidate.readOnlyMode
 	g.producedAt, g.expiresAt, g.checkedAt, g.failure = candidate.producedAt, candidate.expiresAt, candidate.checkedAt, candidate.failure
 	if g.failure == nil {
 		g.changed = make(chan struct{})

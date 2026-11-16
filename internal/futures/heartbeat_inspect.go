@@ -51,6 +51,9 @@ type AdvertisedHeartbeat struct {
 	AcceptingCancelCommands bool      `json:"accepting_cancel_commands"`
 	RecoveryClear           *bool     `json:"transport_recovery_clear,omitempty"`
 	RecoveryIssues          *int64    `json:"recovery_issue_count,omitempty"`
+	RuntimeMode             string    `json:"runtime_mode,omitempty"`
+	ConnectionGeneration    *int64    `json:"connection_generation,omitempty"`
+	QueryCollectionReady    *bool     `json:"query_collection_ready,omitempty"`
 }
 
 type InspectedHeartbeat struct {
@@ -156,9 +159,15 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				State: h.State, StateText: h.StateText, RedisReady: h.RedisReady, BrokerReady: h.BrokerReady,
 				SettlementConfirmed: h.SettlementConfirmed, OrderSnapshotReady: h.OrderSnapshotReady,
 				AcceptingTradeCommands: h.AcceptingTradeCommands, AcceptingCancelCommands: h.AcceptingCancelCommands}
-			if h.Recovery == nil {
+			if h.TradeDate != "" {
 				a.TradeDate = &h.TradeDate
-			} else {
+			}
+			if h.ReadOnly != nil {
+				item.Classification = "test_broker_read_only"
+				a.RuntimeMode = "test_broker_read_only"
+				a.ConnectionGeneration, a.QueryCollectionReady = h.ReadOnly.ConnectionGeneration, &h.ReadOnly.QueryCollectionReady
+				a.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
+			} else if h.Recovery != nil {
 				item.Classification = "transport_recovery_only"
 				a.RecoveryClear, a.RecoveryIssues = &h.Recovery.TransportRecoveryClear, &h.Recovery.RecoveryIssueCount
 			}
