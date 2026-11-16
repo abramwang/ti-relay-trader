@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-08 22:07 Asia/Shanghai` 按用户授权切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`，API 与独立 worker 正常；不是 CTP |
-| 安全状态 | 4个生产账户启用查询、全部下单关闭，actions_write_enabled=false；501000114077、307000051389保持停用。11-15新增独立周期核对迁移43，当前1..32+42+43，33..41未执行；本轮只更新API，worker/OC不变，无主动柜台查询/报撤单或CTP采集 |
+| 当前环境 | `2026-11-16 20:15 Asia/Shanghai` 按用户指令切至华鑫TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092为测试API及内嵌worker，不是CTP；生产API/独立worker已停止 |
+| 安全状态 | TEST仅00030484，沿用原trading_enabled=true但OC准入关闭；生产配置全部下单关闭、停用账户不变。显式skip-migrations，测试库仍1..40，生产仍1..32+42+43。无主动柜台查询/报撤单、凭据投递或OC启停；切回生产需用户明确指令 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-16 07:23 Asia/Shanghai` 四户绩效名单已生效；盘后流水线改按账户完整捕获/结算交集推进，不再因单户结算错误挡住其他成功账户。22项定向Python与13日真实报告只读复验通过，今日任务尚未到点。无金融写入/OC命令/进程重启；API3343326、worker3025910，生产下单关闭 |
+| 最近确认 | `2026-11-16 20:15 Asia/Shanghai` 测试API3859421，域名返回test/degraded，Redis/DB/内嵌worker正常；00030484 readiness=false、HEARTBEAT_STALE，旧心跳报告credential_not_ready。测试配置仍huaxin_7x24_test，明日仿真入场前须核对替换时段，当前未改 |
 | 更新时间 | `2026-11-16` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-16 20:15 Asia/Shanghai` 用户明确要求当前切测试，已执行`switch-relay-env.sh test --skip-migrations`，9092及域名均test，API3859421/内嵌账本同步正常，生产API3343326/worker3025910停止；不是已部署并行测试或CTP。测试库只读核实1..40，不应用41..43。OC最新心跳已过期、报单准入false，历史心跳报凭据missing，未主动修凭据或发命令。仍沿用旧7x24测试时段，明日仿真需单独调整；生产cron未改，生产任务不能依赖目前的测试9092完成，切回须用户指令，不能自动切换。此前“不切9092”的并行规划不代表当前实际状态。
 
 - `2026-11-16` OC东吴回签纠正当前状态：SDK及离线组件完成，真实查询/报撤/ready运行入口未完成，不能承诺明日直接部署测评。已整理[确认与推进](docs/OC_CTP_DONGWU_READINESS_RESPONSE_20261116.md)，接受`test/ctp_4900/ctp-dongwu-assessment-20261117/300052141`逻辑路由，native UserID/InvestorID仍单独核实；两个CLI零连接预检通过，未建组/库/登记。OC先真实只读再单笔报撤，Relay同步补独立业务接收/命令入口并协调Meridian；不等待原则回签、不启用旧commander绕过。生产及华鑫不变，早前“只待部署/参数”的描述以本条更正为准。
 
