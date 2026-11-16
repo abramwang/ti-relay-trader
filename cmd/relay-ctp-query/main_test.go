@@ -42,11 +42,33 @@ func TestFourQueriesDefaultOffline(t *testing.T) {
 }
 
 func TestUnsafeQueryFlagsNeverReadCredentials(t *testing.T) {
-	for _, extra := range [][]string{{"--env", "prod"}, {"--broker", "huaxin"}, {"--user", ""}, {"--investor", ""}, {"--database", "relay_trader"}, {"--register"}, {"--persist-test-intent"}, {"--run"}, {"--publish"}, {"unexpected"}} {
+	for _, extra := range [][]string{{"--env", "prod"}, {"--broker", "huaxin"}, {"--user", ""}, {"--investor", ""}, {"--database", "relay_trader"}, {"--register"}, {"--persist-test-intent"}, {"--run"}, {"--publish"}, {"--publish-query"}, {"--allow-test-query-write"}, {"--publish-query", "--allow-test-query-write"}, {"--publish-query", "--allow-test-query-write", "--register", "--persist-test-intent"}, {"--target-file", "missing.json"}, {"--deployment-id", "only-label"}, {"unexpected"}} {
 		var out bytes.Buffer
 		if err := run(context.Background(), append(queryArgs(t, "order.list.query"), extra...), func(string) string { t.Fatal("unsafe flags read credentials"); return "" }, &out, &out); err == nil {
 			t.Fatal("unsafe flags accepted", extra)
 		}
+	}
+}
+
+func TestQueryPublicationTargetOfflineAndBadFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "target.json")
+	raw := `{"source_id":"synthetic-source","server_run_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","epoch":"synthetic-epoch","group":"synthetic-group","counter_session_id":"synthetic-session","trade_date":"20261117","connection_generation":1}`
+	if err := os.WriteFile(file, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := append(queryArgs(t, "order.list.query"), "--target-file", file, "--deployment-id", "synthetic-deployment")
+	var out bytes.Buffer
+	if err := run(context.Background(), args, func(string) string { t.Fatal("offline target accessed credentials"); return "" }, &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"reviewed_target"`) {
+		t.Fatal("target omitted")
+	}
+	if err := os.WriteFile(file, []byte(`{"connection_generation":null}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), args, func(string) string { t.Fatal("bad target accessed credentials"); return "" }, &out, &out); err == nil {
+		t.Fatal("bad target accepted")
 	}
 }
 

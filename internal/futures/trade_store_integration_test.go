@@ -260,6 +260,7 @@ func TestTradeStoreMalformedAuditIntegrityAndDown(t *testing.T) {
 	if _, err := s.Observe(ctx, tradeScope(), "good", "fill", tradeFixture(t, "fill")); err == nil {
 		t.Fatal("corrupted audit ignored")
 	}
+	migrateFuturesTest(t, db, ctx, "000044_futures_query_publication", "down")
 	migrateFuturesTest(t, db, ctx, "000041_futures_heartbeat_windows", "down")
 	migrateFuturesTest(t, db, ctx, "000040_futures_stream_inbox", "down")
 	migrateFuturesTest(t, db, ctx, "000039_futures_trade_capacity", "down")
