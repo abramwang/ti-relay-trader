@@ -1,0 +1,10 @@
+{
+  "collected_at": "2026-11-16T21:28:55.983367+08:00",
+  "prefix": "relay:test:v1:ctp_joint_test:ctp-transport-20261116",
+  "server_run_id": "94f801dc68e3699cc681feb6dbb48f19e46aef9e",
+  "epoch": "joint-98ae9473c67f709b2e735aeb31a55da6",
+  "epoch_key": "relay:test:v1:ctp_joint_test:ctp-transport-20261116:cmd.trade:transport-epoch",
+  "group": "oc-ctp-transport-20261116",
+  "consumer": "oc-ctp-transport-20261116-owner1",
+  "new_namespace_only": true
+}

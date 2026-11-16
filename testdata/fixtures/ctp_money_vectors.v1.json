@@ -1,0 +1,177 @@
+{
+  "vector_version": "oc.ctp.money.candidate.v1",
+  "synthetic_only": true,
+  "producer": "OC; not supplied or validated by Relay",
+  "reference": "Python format .16e then exact Decimal exponent expansion; not broker decimal precision",
+  "max_text_bytes": 343,
+  "cases": [
+    {
+      "name": "positive_zero",
+      "binary64_hex": "0000000000000000",
+      "state": "value",
+      "decimal": "0"
+    },
+    {
+      "name": "negative_zero",
+      "binary64_hex": "8000000000000000",
+      "state": "value",
+      "decimal": "-0"
+    },
+    {
+      "name": "one",
+      "binary64_hex": "3ff0000000000000",
+      "state": "value",
+      "decimal": "1"
+    },
+    {
+      "name": "negative_one",
+      "binary64_hex": "bff0000000000000",
+      "state": "value",
+      "decimal": "-1"
+    },
+    {
+      "name": "one_tenth",
+      "binary64_hex": "3fb999999999999a",
+      "state": "value",
+      "decimal": "0.10000000000000001"
+    },
+    {
+      "name": "negative_one_tenth",
+      "binary64_hex": "bfb999999999999a",
+      "state": "value",
+      "decimal": "-0.10000000000000001"
+    },
+    {
+      "name": "one_cent",
+      "binary64_hex": "3f847ae147ae147b",
+      "state": "value",
+      "decimal": "0.01"
+    },
+    {
+      "name": "fractional_fee_sample",
+      "binary64_hex": "405358a3d70a3d71",
+      "state": "value",
+      "decimal": "77.385000000000005"
+    },
+    {
+      "name": "beyond_price_nine_decimals",
+      "binary64_hex": "3ddb7cdfd9d7bdbb",
+      "state": "value",
+      "decimal": "0.0000000001"
+    },
+    {
+      "name": "next_above_one",
+      "binary64_hex": "3ff0000000000001",
+      "state": "value",
+      "decimal": "1.0000000000000002"
+    },
+    {
+      "name": "next_below_one",
+      "binary64_hex": "3fefffffffffffff",
+      "state": "value",
+      "decimal": "0.99999999999999989"
+    },
+    {
+      "name": "integer_2pow53",
+      "binary64_hex": "4340000000000000",
+      "state": "value",
+      "decimal": "9007199254740992"
+    },
+    {
+      "name": "integer_2pow53_plus2",
+      "binary64_hex": "4340000000000001",
+      "state": "value",
+      "decimal": "9007199254740994"
+    },
+    {
+      "name": "large_exponent",
+      "binary64_hex": "4415af1d78b58c40",
+      "state": "value",
+      "decimal": "100000000000000000000"
+    },
+    {
+      "name": "smallest_normal",
+      "binary64_hex": "0010000000000000",
+      "state": "value",
+      "decimal": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072014"
+    },
+    {
+      "name": "smallest_subnormal",
+      "binary64_hex": "0000000000000001",
+      "state": "value",
+      "decimal": "0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+    },
+    {
+      "name": "negative_smallest_subnormal",
+      "binary64_hex": "8000000000000001",
+      "state": "value",
+      "decimal": "-0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+    },
+    {
+      "name": "largest_subnormal",
+      "binary64_hex": "000fffffffffffff",
+      "state": "value",
+      "decimal": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072009"
+    },
+    {
+      "name": "largest_non_sentinel",
+      "binary64_hex": "7feffffffffffffe",
+      "state": "value",
+      "decimal": "179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "negative_largest_non_sentinel",
+      "binary64_hex": "ffeffffffffffffe",
+      "state": "value",
+      "decimal": "-179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "suspected_max_sentinel",
+      "binary64_hex": "7fefffffffffffff",
+      "state": "suspected_sentinel",
+      "decimal": null
+    },
+    {
+      "name": "suspected_negative_max_sentinel",
+      "binary64_hex": "ffefffffffffffff",
+      "state": "suspected_sentinel",
+      "decimal": null
+    },
+    {
+      "name": "positive_infinity",
+      "binary64_hex": "7ff0000000000000",
+      "state": "non_finite",
+      "decimal": null
+    },
+    {
+      "name": "negative_infinity",
+      "binary64_hex": "fff0000000000000",
+      "state": "non_finite",
+      "decimal": null
+    },
+    {
+      "name": "quiet_nan_payload",
+      "binary64_hex": "7ff8000000000042",
+      "state": "non_finite",
+      "decimal": null
+    },
+    {
+      "name": "signaling_nan_payload",
+      "binary64_hex": "7ff0000000000001",
+      "state": "non_finite",
+      "decimal": null
+    },
+    {
+      "name": "negative_nan_payload",
+      "binary64_hex": "fff8000000000042",
+      "state": "non_finite",
+      "decimal": null
+    },
+    {
+      "name": "explicitly_missing",
+      "binary64_hex": null,
+      "state": "missing",
+      "decimal": null
+    }
+  ]
+}

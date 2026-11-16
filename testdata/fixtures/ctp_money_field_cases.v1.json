@@ -1,0 +1,598 @@
+{
+  "vector_version": "oc.ctp.money.fields.candidate.v1",
+  "synthetic_only": true,
+  "source_vectors_sha256": "7bcf0d259575112ab088e9f81e2eda6abd0d1fe4df483764bc4e314faec8a6ca",
+  "producer": "OC; candidate for Relay independent verification; no runtime business error enums",
+  "cases": [
+    {
+      "name": "positive_zero/required",
+      "binary64_hex": "0000000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0"
+      }
+    },
+    {
+      "name": "positive_zero/optional",
+      "binary64_hex": "0000000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0"
+      }
+    },
+    {
+      "name": "negative_zero/required",
+      "binary64_hex": "8000000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0"
+      }
+    },
+    {
+      "name": "negative_zero/optional",
+      "binary64_hex": "8000000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0"
+      }
+    },
+    {
+      "name": "one/required",
+      "binary64_hex": "3ff0000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "1"
+      }
+    },
+    {
+      "name": "one/optional",
+      "binary64_hex": "3ff0000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "1"
+      }
+    },
+    {
+      "name": "negative_one/required",
+      "binary64_hex": "bff0000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-1"
+      }
+    },
+    {
+      "name": "negative_one/optional",
+      "binary64_hex": "bff0000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-1"
+      }
+    },
+    {
+      "name": "one_tenth/required",
+      "binary64_hex": "3fb999999999999a",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.10000000000000001"
+      }
+    },
+    {
+      "name": "one_tenth/optional",
+      "binary64_hex": "3fb999999999999a",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.10000000000000001"
+      }
+    },
+    {
+      "name": "negative_one_tenth/required",
+      "binary64_hex": "bfb999999999999a",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0.10000000000000001"
+      }
+    },
+    {
+      "name": "negative_one_tenth/optional",
+      "binary64_hex": "bfb999999999999a",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0.10000000000000001"
+      }
+    },
+    {
+      "name": "one_cent/required",
+      "binary64_hex": "3f847ae147ae147b",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.01"
+      }
+    },
+    {
+      "name": "one_cent/optional",
+      "binary64_hex": "3f847ae147ae147b",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.01"
+      }
+    },
+    {
+      "name": "fractional_fee_sample/required",
+      "binary64_hex": "405358a3d70a3d71",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "77.385000000000005"
+      }
+    },
+    {
+      "name": "fractional_fee_sample/optional",
+      "binary64_hex": "405358a3d70a3d71",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "77.385000000000005"
+      }
+    },
+    {
+      "name": "beyond_price_nine_decimals/required",
+      "binary64_hex": "3ddb7cdfd9d7bdbb",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.0000000001"
+      }
+    },
+    {
+      "name": "beyond_price_nine_decimals/optional",
+      "binary64_hex": "3ddb7cdfd9d7bdbb",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.0000000001"
+      }
+    },
+    {
+      "name": "next_above_one/required",
+      "binary64_hex": "3ff0000000000001",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "1.0000000000000002"
+      }
+    },
+    {
+      "name": "next_above_one/optional",
+      "binary64_hex": "3ff0000000000001",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "1.0000000000000002"
+      }
+    },
+    {
+      "name": "next_below_one/required",
+      "binary64_hex": "3fefffffffffffff",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.99999999999999989"
+      }
+    },
+    {
+      "name": "next_below_one/optional",
+      "binary64_hex": "3fefffffffffffff",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.99999999999999989"
+      }
+    },
+    {
+      "name": "integer_2pow53/required",
+      "binary64_hex": "4340000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "9007199254740992"
+      }
+    },
+    {
+      "name": "integer_2pow53/optional",
+      "binary64_hex": "4340000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "9007199254740992"
+      }
+    },
+    {
+      "name": "integer_2pow53_plus2/required",
+      "binary64_hex": "4340000000000001",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "9007199254740994"
+      }
+    },
+    {
+      "name": "integer_2pow53_plus2/optional",
+      "binary64_hex": "4340000000000001",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "9007199254740994"
+      }
+    },
+    {
+      "name": "large_exponent/required",
+      "binary64_hex": "4415af1d78b58c40",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "100000000000000000000"
+      }
+    },
+    {
+      "name": "large_exponent/optional",
+      "binary64_hex": "4415af1d78b58c40",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "100000000000000000000"
+      }
+    },
+    {
+      "name": "smallest_normal/required",
+      "binary64_hex": "0010000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072014"
+      }
+    },
+    {
+      "name": "smallest_normal/optional",
+      "binary64_hex": "0010000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072014"
+      }
+    },
+    {
+      "name": "smallest_subnormal/required",
+      "binary64_hex": "0000000000000001",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+      }
+    },
+    {
+      "name": "smallest_subnormal/optional",
+      "binary64_hex": "0000000000000001",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+      }
+    },
+    {
+      "name": "negative_smallest_subnormal/required",
+      "binary64_hex": "8000000000000001",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+      }
+    },
+    {
+      "name": "negative_smallest_subnormal/optional",
+      "binary64_hex": "8000000000000001",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654"
+      }
+    },
+    {
+      "name": "largest_subnormal/required",
+      "binary64_hex": "000fffffffffffff",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072009"
+      }
+    },
+    {
+      "name": "largest_subnormal/optional",
+      "binary64_hex": "000fffffffffffff",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072009"
+      }
+    },
+    {
+      "name": "largest_non_sentinel/required",
+      "binary64_hex": "7feffffffffffffe",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "largest_non_sentinel/optional",
+      "binary64_hex": "7feffffffffffffe",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "negative_largest_non_sentinel/required",
+      "binary64_hex": "ffeffffffffffffe",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "negative_largest_non_sentinel/optional",
+      "binary64_hex": "ffeffffffffffffe",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": "-179769313486231550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "suspected_max_sentinel/required",
+      "binary64_hex": "7fefffffffffffff",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_suspected_sentinel"
+      }
+    },
+    {
+      "name": "suspected_max_sentinel/optional",
+      "binary64_hex": "7fefffffffffffff",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_suspected_sentinel"
+      }
+    },
+    {
+      "name": "suspected_negative_max_sentinel/required",
+      "binary64_hex": "ffefffffffffffff",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_suspected_sentinel"
+      }
+    },
+    {
+      "name": "suspected_negative_max_sentinel/optional",
+      "binary64_hex": "ffefffffffffffff",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_suspected_sentinel"
+      }
+    },
+    {
+      "name": "positive_infinity/required",
+      "binary64_hex": "7ff0000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "positive_infinity/optional",
+      "binary64_hex": "7ff0000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "negative_infinity/required",
+      "binary64_hex": "fff0000000000000",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "negative_infinity/optional",
+      "binary64_hex": "fff0000000000000",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "quiet_nan_payload/required",
+      "binary64_hex": "7ff8000000000042",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "quiet_nan_payload/optional",
+      "binary64_hex": "7ff8000000000042",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "signaling_nan_payload/required",
+      "binary64_hex": "7ff0000000000001",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "signaling_nan_payload/optional",
+      "binary64_hex": "7ff0000000000001",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "negative_nan_payload/required",
+      "binary64_hex": "fff8000000000042",
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "negative_nan_payload/optional",
+      "binary64_hex": "fff8000000000042",
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_non_finite"
+      }
+    },
+    {
+      "name": "explicitly_missing/required",
+      "binary64_hex": null,
+      "required": true,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_missing"
+      }
+    },
+    {
+      "name": "explicitly_missing/optional",
+      "binary64_hex": null,
+      "required": false,
+      "rounding_mode": "FE_TONEAREST",
+      "expected": {
+        "kind": "value",
+        "json_value": null
+      }
+    },
+    {
+      "name": "one_tenth/FE_UPWARD",
+      "binary64_hex": "3fb999999999999a",
+      "required": true,
+      "rounding_mode": "FE_UPWARD",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_rounding_mode_unsupported"
+      }
+    },
+    {
+      "name": "one_tenth/FE_DOWNWARD",
+      "binary64_hex": "3fb999999999999a",
+      "required": true,
+      "rounding_mode": "FE_DOWNWARD",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_rounding_mode_unsupported"
+      }
+    },
+    {
+      "name": "one_tenth/FE_TOWARDZERO",
+      "binary64_hex": "3fb999999999999a",
+      "required": true,
+      "rounding_mode": "FE_TOWARDZERO",
+      "expected": {
+        "kind": "error",
+        "error_code": "money_rounding_mode_unsupported"
+      }
+    }
+  ]
+}

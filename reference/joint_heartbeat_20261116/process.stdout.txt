@@ -1,0 +1,17 @@
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835736035-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835737045-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835738063-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835739080-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835740097-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835741114-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835742128-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835743144-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835744161-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835745176-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835746192-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835747208-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835748224-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835749240-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835750255-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"broker_disabled","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835751273-0"}
+{"counter_session_id":"ctpproc-cd57a6a1810d671fbffaa838936f100e","state_text":"stopping","stream":"relay:test:v1:ctp_joint_test:ctp-transport-20261116:hb","stream_id":"1794835752035-0"}

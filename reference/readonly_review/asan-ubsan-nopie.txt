@@ -1,0 +1,9 @@
+Test project /home/Titian_Cpp/oceanus/src/oc_trader_commander_ctp/build/readonly-sanitized-nopie
+    Start 1: ctp_readonly_audit_test
+1/2 Test #1: ctp_readonly_audit_test ..........   Passed    0.05 sec
+    Start 2: ctp_readonly_runtime_test
+2/2 Test #2: ctp_readonly_runtime_test ........   Passed    7.65 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   7.70 sec
