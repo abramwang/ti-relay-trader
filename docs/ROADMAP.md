@@ -50,6 +50,9 @@
 
 状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
 
+- [x] 11-16 Redis入场预检与单边预演：目标东吴路由两次完整SCAN空、无心跳，未预留/建组；真实TEST Redis+临时PG的新模式收件/续读/查询分发及失效停止race通过。见[直接执行单](OC_CTP_REDIS_JOINT_RUN_20261116.md)。
+- [ ] 首轮双端Redis心跳比对：OC提供实际启动路由、来源/session/epoch与15秒窗口，Relay核对实际entry/body及审计；夜间仅不登录传输，真实柜台留白天。四查询还需Relay可信命令运行入口，不把单边测试标成联合通过。
+
 - [x] 11-16 OC真实只读增量复核：`readonly_review`及交付说明7项SHA通过；25条新模式心跳、7条四查询/失败reply通过Relay解码，新增只读采集的代次/能力撤销和原文审计回归。不把查询ready升级为交易ready；OC真实入口已有实现、未部署或在线验收，样例三类查询为空。见[复核回执](OC_CTP_DONGWU_READONLY_REVIEW_20261116.md)。
 
 - [x] 11-16期货终端行情阶段：CFFEX/SHFE正式合约目录补全、价位/乘数、SSE快照、跨夜OHLC与分页、交易日隔离、手数/开平表单、陈旧/归档错误状态及桌面/手机验证。当前TEST仅更新API/UI，不启用期货报撤，不混用股票资产；见[实现与验收](FUTURES_TERMINAL_MARKET_20261116.md)。F4真实期货账户/持仓/订单仍待后端接通。
