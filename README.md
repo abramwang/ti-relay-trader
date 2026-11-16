@@ -10,11 +10,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-16 20:15 Asia/Shanghai` 按用户指令切至华鑫TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092为测试API及内嵌worker，不是CTP；生产API/独立worker已停止 |
-| 安全状态 | TEST仅00030484，沿用原trading_enabled=true但OC准入关闭；生产配置全部下单关闭、停用账户不变。显式skip-migrations，测试库仍1..40，生产仍1..32+42+43。无主动柜台查询/报撤单、凭据投递或OC启停；切回生产需用户明确指令 |
+| 当前环境 | `2026-11-17 07:35 Asia/Shanghai` 按用户指令切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`；最终核对生产API PID4143002、独立worker PID4141994各一进程，原TEST API已停止；不是CTP运行实例 |
+| 安全状态 | 生产4户启用、全部trading_enabled=false，501000114077/307000051389仍停用。显式skip-migrations，未将CTP 33..41/44/45迁入生产；既有生产版本记录1..32+42+43保留。本轮无柜台查询/报撤单、凭据投递或OC启停；不得自行切回测试 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-16 Asia/Shanghai` CFFEX/SHFE行情界面已发布，仍test/degraded，Redis/DB/内嵌worker正常；00030484原OC准入问题未改，期货报撤未开放。测试配置仍huaxin_7x24_test，明日仿真入场前须核对替换时段，当前未改 |
-| 更新时间 | `2026-11-16` |
+| 最近确认 | `2026-11-17 07:35 Asia/Shanghai` 本机及域名production/ok；Redis/DB/market/worker正常，16路lag=0；Meridian确认今日交易日。四户OC最新心跳仍为11-16 15:30附近，今日尚未上线，盘前未完成。cron进程正常，09:01盘前、15:01收盘及17:10起权威复算保留；期货交易未开放 |
+| 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
 
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 07:35 Asia/Shanghai` 用户要求先切生产完成盘前采集：已执行`switch-relay-env.sh production --skip-migrations`，本机/域名production/ok、4户启用/0户可交易，独立worker恢复。依赖/交易日/cron已核对；OC四户心跳均停留昨日15:30附近，今日盘前任务记录为空，因此尚不能采集当日资金/持仓，未发无消费者的查询、未以昨日账本生成日初快照。原09:01 cron会按生产配置查询订单/成交/资金/持仓并持久盘前快照；下一步待OC正常上线及任务执行后核验四户结果。不是已完成今日采集，不自动切回测试或开启CTP；服务切换不改变原始账本、历史绩效及数据库迁移。
 
 - `2026-11-16` 已接`relay-ctp-replies`独立TEST回复入口：raw持久收件、显式owner/cursor续读、run_id/epoch固定、独立OC请求审核原文/SHA与ticket/SDK ID绑定、四查询分页/快照及订单成交事实处理。隔离Redis/临时PG、CLI跨进程续读及错误/缺页保护通过；000045仅测试库验证，9092和业务库未改，没有向真实账户发查询。见[运行说明](docs/CTP_TEST_QUERY_RUNNER_20261116.md#独立回复入口已实现)。下一步真实白天窗口登录与四查询；审核上下文仍需由OC原始请求审计核实，不从回复自证，联调与交易权限仍未开放。
 
