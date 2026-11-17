@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 13:01 Asia/Shanghai` **下午窗口已定**：用户转交OC部署`7d83ccd`、12:55:51前缀空/run_id一致/本地状态空；计划13:29复核初始化、13:30启动、**13:35硬截止不延长**。Relay仍等待实际session/代次/TradingDay/截止及新鲜心跳，收到后两初始化查询→一手报撤；不提前发占位查询、不自动登录/定时发单。未独立核验OC部署，不把安排当作已启动；见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。下条新路由参数继续有效。
+
 - `2026-11-17 12:53 Asia/Shanghai` **下午候选已确认**：OC回报旧5查询均已本地ACK、无待发/交易/结算once，属OC本地证据；Relay独立PG仍5查询/0交易、旧位点保留。新gateway=`ctp-dongwu-assessment-pm-20261117`于12:52:48全量SCAN空、run_id相同，新PG命令/receiver均0；assessment=`dongwu-assessment-20261117-pm-01`，epoch=`dongwu-assessment-pm-be85ee43d6c54faa617e394ca36b9e15`。已告知OC开窗前复查后可初始化新绑定，目标13:30起最多300秒；等待实际session/代次/TradingDay/截止，不提前发命令。工具已就绪，终端新观察绑定已更新并重启TEST API，旧查询保留、网页只读、生产未动。见[唯一执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)；替代下条“等待候选”，不取消旧路由丢失记录。
 
 - `2026-11-17 12:45 Asia/Shanghai` **下午开窗前新阻断**：asset-retest前缀全量SCAN再次0键，epoch/命令流/reply/hb全部缺失，run_id未变；独立PG仍5查询/0交易发布。已通知OC核对10:33资金查询journal/outbox/ACK及settlement once，再提供新隔离报撤绑定候选；不能沿旧绑定启动、重建或重放。来源未能逐键确认，本轮开发回归仅写随机relay-dev键，不继续共享实例测试写入。终端`epoch_missing_or_changed`是真实连接状态，历史查询保留；下一步先确定新路由，再按13:30目标窗口执行，不能仅按下条“接线完成”就发单。详见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。
