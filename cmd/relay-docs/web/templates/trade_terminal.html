@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261116-futures">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261117-ctp-readonly-2">
+  <link rel="stylesheet" href="/assets/futures-account.css?v=20261117-2">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
@@ -38,6 +39,7 @@
         <span class="status-pill" id="dbStatus"><i></i>DB: pending</span>
       </div>
       <div class="account-tabs" id="accountTabs"></div>
+      <button type="button" id="futuresAccountEntry" class="futures-account-entry" hidden>期货账户 · 只读</button>
       <div class="clock-block">
         <span id="tradeDate">--</span>
         <strong id="serverClock">--:--:--</strong>
@@ -120,7 +122,7 @@
             <span>账户</span>
             <select id="orderAccount"></select>
           </label>
-          <label class="futures-only"><span>期货账户</span><select disabled aria-label="期货账户"><option>交易路由未接通</option></select></label>
+          <label class="futures-only"><span>期货账户</span><select id="futuresAccount" aria-label="期货账户" disabled><option>未配置账户</option></select></label>
           <label class="symbol-field">
             <span>代码</span>
             <input id="symbolInput" value="600000" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="symbolSuggest">
@@ -190,11 +192,20 @@
       <section class="trade-panel futures-contract-panel" aria-label="期货合约信息">
         <div class="section-toolbar"><h2>合约与行情</h2><span id="futuresQuoteStatus" role="status">等待行情</span></div>
         <dl id="futuresContractFacts" class="futures-facts"></dl>
-        <div class="futures-route-status"><strong>期货交易路由未接通</strong><p>资金、保证金、可平持仓及订单回报尚不可用。</p><p>报单 / 撤单：未开放</p></div>
+        <div class="futures-route-status"><strong id="futuresConnection">期货账户未连接</strong><p id="futuresHeartbeatTime">心跳：--</p><p id="futuresRouteIdentity"></p><p>报单 / 撤单：未开放</p></div>
       </section>
       <section class="trade-panel futures-ledger-panel" aria-label="期货订单与持仓">
-        <div class="section-toolbar"><h2>期货账户账本</h2><span>未连接</span></div>
-        <div class="empty-state">暂无已接通的期货账户。证券账户资产与订单不计入此处。</div>
+        <div class="section-toolbar"><h2 id="futuresAccountTitle">期货账户</h2><span>TEST · 只读查询观察 · 非业务快照</span><button type="button" id="futuresAccountRefresh" title="刷新已收查询与心跳" aria-label="刷新已收查询与心跳">↻</button></div>
+        <div id="futuresQueryTabs" class="futures-query-tabs" role="tablist" aria-label="期货查询类型">
+          <button type="button" data-futures-query="account.asset.query" role="tab">资金</button>
+          <button type="button" data-futures-query="account.positions.query" role="tab" aria-selected="true">持仓</button>
+          <button type="button" data-futures-query="order.list.query" role="tab">委托</button>
+          <button type="button" data-futures-query="fill.list.query" role="tab">成交</button>
+        </div>
+        <div id="futuresQueryStatus" class="futures-query-status" role="status">等待读取</div>
+        <div class="futures-query-table-wrap" tabindex="0" aria-label="期货查询明细"><table id="futuresQueryTable"><thead></thead><tbody></tbody></table></div>
+        <div class="futures-query-pager"><span id="futuresQueryCount">--</span><button type="button" id="futuresQueryPrev" title="上一页" aria-label="上一页">‹</button><span id="futuresQueryPage">--</span><button type="button" id="futuresQueryNext" title="下一页" aria-label="下一页">›</button></div>
+        <details class="futures-query-audit"><summary>查询来源</summary><pre id="futuresQueryAudit"></pre></details>
       </section>
 
       <section class="trade-panel portfolio-panel" id="assetPanel" aria-label="资金持仓">
@@ -950,6 +961,7 @@
   </script>
   <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261116-futures"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261117-ctp-readonly-2"></script>
+  <script defer src="/assets/futures-account.js?v=20261117-2"></script>
 </body>
 </html>

@@ -22,6 +22,7 @@ import (
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/credentials"
 	"ti-relay-trader/internal/events"
+	"ti-relay-trader/internal/futures"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/market"
@@ -33,6 +34,7 @@ import (
 )
 
 type Dependencies struct {
+	FuturesTerminal FuturesTerminalReader
 	Orders          OrderService
 	Jobs            JobRunStore
 	Settlements     SettlementStore
@@ -52,6 +54,10 @@ type Dependencies struct {
 }
 
 type HealthCheckFunc func(context.Context) error
+
+type FuturesTerminalReader interface {
+	Snapshot(context.Context) []futures.TerminalAccount
+}
 
 const (
 	settlementPageLimit          = 500
@@ -208,6 +214,7 @@ func (err *performanceScopeConflict) Error() string {
 func (err *performanceScopeConflict) Unwrap() error { return errPerformanceScopeConflict }
 
 type Server struct {
+	futuresTerminal FuturesTerminalReader
 	cfg             config.Config
 	logger          *slog.Logger
 	started         time.Time
@@ -251,6 +258,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	}
 
 	server := &Server{
+		futuresTerminal: deps.FuturesTerminal,
 		cfg:             cfg,
 		logger:          logger,
 		started:         timeutil.Now(),
@@ -283,6 +291,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/schema", server.handleSchema)
 	mux.HandleFunc("/v1/account-routes", server.handleAccountRoutes)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
+	mux.HandleFunc("/v1/futures/terminal", server.handleFuturesTerminal)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
 	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)

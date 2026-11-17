@@ -6,6 +6,29 @@ import (
 	"time"
 )
 
+func TestFuturesTerminalRequiresSeparateTestDatabase(t *testing.T) {
+	cfg := Default()
+	cfg.Redis.Env = "test"
+	cfg.FuturesTerminal = FuturesTerminalConfig{ManifestFile: "private.json", Database: DatabaseConfig{DSN: "postgres://localhost/ctp_test", ExpectedName: "ctp_test"}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Service.Environment = EnvironmentProduction
+	if cfg.Validate() == nil {
+		t.Fatal("production observation enabled")
+	}
+	cfg.Service.Environment = EnvironmentTest
+	cfg.Database.ExpectedName = "ctp_test"
+	if cfg.Validate() == nil {
+		t.Fatal("business and observation database shared")
+	}
+	cfg.Database.ExpectedName = ""
+	cfg.FuturesTerminal.Database.ExpectedName = "wrong"
+	if cfg.Validate() == nil {
+		t.Fatal("wrong database accepted")
+	}
+}
+
 func TestDecodeAppliesDefaults(t *testing.T) {
 	cfg, err := Decode(strings.NewReader(`service: {}`))
 	if err != nil {

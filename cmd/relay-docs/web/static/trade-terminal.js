@@ -8062,6 +8062,10 @@
   }
 
   async function boot() {
+    window.addEventListener("relay-futures-account-open", () => {
+      setActiveView("trade");
+      selectMarket("SHFE").catch((err) => showToast(err.message, "error"));
+    });
     updateEnvironmentBadge(els.environmentBadge && els.environmentBadge.dataset.environment);
     initializeBatchEditor();
     setActiveView(viewFromLocation());
@@ -8085,7 +8089,7 @@
       } else if (state.activeView === "performance-settings") {
         await loadPerformanceSettings();
       } else if (state.activeView === "trade") {
-        await loadTradeChartBars({ silent: true });
+        if (currentSecurityID()) await loadTradeChartBars({ silent: true });
         scheduleChartAutoRefresh();
       }
       pushLog("info", "交易终端初始化完成");

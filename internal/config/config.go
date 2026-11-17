@@ -27,16 +27,23 @@ const (
 )
 
 type Config struct {
-	Service     ServiceConfig        `yaml:"service"`
-	Database    DatabaseConfig       `yaml:"database"`
-	Redis       RedisConfig          `yaml:"redis"`
-	Market      MarketConfig         `yaml:"market"`
-	Performance PerformanceConfig    `yaml:"performance"`
-	Operations  OperationsConfig     `yaml:"operations"`
-	Worker      WorkerConfig         `yaml:"worker"`
-	AutoRefresh AutoRefreshConfig    `yaml:"auto_refresh"`
-	Accounts    []AccountRouteConfig `yaml:"accounts"`
-	Jobs        map[string]JobConfig `yaml:"jobs"`
+	Service         ServiceConfig         `yaml:"service"`
+	Database        DatabaseConfig        `yaml:"database"`
+	Redis           RedisConfig           `yaml:"redis"`
+	Market          MarketConfig          `yaml:"market"`
+	Performance     PerformanceConfig     `yaml:"performance"`
+	Operations      OperationsConfig      `yaml:"operations"`
+	Worker          WorkerConfig          `yaml:"worker"`
+	AutoRefresh     AutoRefreshConfig     `yaml:"auto_refresh"`
+	Accounts        []AccountRouteConfig  `yaml:"accounts"`
+	Jobs            map[string]JobConfig  `yaml:"jobs"`
+	FuturesTerminal FuturesTerminalConfig `yaml:"futures_terminal"`
+}
+
+// Separate TEST observation storage; never added to securities account routes.
+type FuturesTerminalConfig struct {
+	Database     DatabaseConfig `yaml:"database"`
+	ManifestFile string         `yaml:"manifest_file"`
 }
 
 type ServiceConfig struct {
@@ -296,6 +303,15 @@ func (cfg *Config) ApplyDefaults() {
 }
 
 func (cfg Config) Validate() error {
+	if cfg.FuturesTerminal.ManifestFile != "" {
+		if cfg.Service.Environment != EnvironmentTest || cfg.Redis.Env != "test" {
+			return errors.New("futures_terminal currently requires TEST")
+		}
+		db, err := pgx.ParseConfig(cfg.FuturesTerminal.Database.DSN)
+		if err != nil || cfg.FuturesTerminal.Database.ExpectedName == "" || db.Database != cfg.FuturesTerminal.Database.ExpectedName || db.Database == cfg.Database.ExpectedName {
+			return errors.New("futures_terminal requires a named, separate observation database")
+		}
+	}
 	if !cfg.Service.Mode.Valid() {
 		return fmt.Errorf("invalid service.mode %q", cfg.Service.Mode)
 	}

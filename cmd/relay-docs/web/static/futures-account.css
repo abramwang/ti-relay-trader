@@ -1,0 +1,32 @@
+.futures-account-entry { border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 12px; padding: 8px; border-radius: 4px; cursor: pointer; max-width: 220px; white-space: normal; }
+.futures-account-entry[hidden] { display: none; }
+.market-futures.view-trade .terminal-main { grid-template-rows: minmax(350px, 1fr) minmax(270px, 38%); }
+.market-futures.view-trade .futures-ledger-panel { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.futures-ledger-panel .section-toolbar { flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.futures-ledger-panel .section-toolbar > span { color: var(--muted); font-size: 11px; }
+.futures-ledger-panel button { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.futures-ledger-panel button:disabled { opacity: .4; cursor: default; }
+#futuresAccountRefresh { width: 30px; height: 28px; font-size: 18px; margin-left: auto; }
+.futures-query-tabs { display: flex; gap: 16px; border-bottom: 1px solid var(--line); padding: 0 14px; flex-shrink: 0; }
+.futures-query-tabs button { border: 0; border-radius: 0; padding: 8px 3px; min-width: 72px; font-size: 12px; border-bottom: 2px solid transparent; }
+.futures-query-tabs button[aria-selected="true"] { border-bottom-color: #e5484d; color: #ef777b; }
+.futures-query-status { padding: 7px 14px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; flex-shrink: 0; }
+.futures-query-status[data-failed="true"] { color: #efa66d; }
+.futures-query-table-wrap { overflow: auto; min-height: 80px; flex: 1 0 110px; }
+#futuresQueryTable { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+#futuresQueryTable th, #futuresQueryTable td { padding: 7px 12px; white-space: nowrap; border-bottom: 1px solid var(--line); text-align: right; }
+#futuresQueryTable th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+#futuresQueryTable th:first-child, #futuresQueryTable td:first-child { text-align: left; }
+#futuresQueryTable th button { border: none; font: inherit; }
+#futuresQueryTable .empty-state { text-align: center; white-space: normal; }
+.futures-query-pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 6px 14px; font-size: 12px; flex-shrink: 0; }
+.futures-query-pager button { width: 28px; height: 26px; }
+.futures-query-pager > span:first-child { margin-right: auto; color: var(--muted); }
+.futures-query-audit { padding: 0 14px 8px; font-size: 11px; color: var(--muted); }
+.futures-query-audit pre { max-height: 140px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .market-futures.view-trade .terminal-main { grid-template-rows: auto; }
+  .market-futures.view-trade .futures-ledger-panel { max-height: none; min-height: 310px; }
+  .futures-query-table-wrap { max-height: 310px; }
+  .futures-account-entry { max-width: 180px; }
+}

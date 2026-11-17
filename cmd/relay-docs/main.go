@@ -29,6 +29,7 @@ import (
 	relayconfig "ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/credentials"
 	"ti-relay-trader/internal/events"
+	"ti-relay-trader/internal/futures"
 	"ti-relay-trader/internal/httpx"
 	"ti-relay-trader/internal/ledger"
 	"ti-relay-trader/internal/logging"
@@ -563,6 +564,24 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 		CredentialToken: credentialAdminToken,
 		Market:          marketClient,
 		DatabasePing:    db.PingContext,
+	}
+	if cfg.FuturesTerminal.ManifestFile != "" && cfg.Service.Environment == relayconfig.EnvironmentTest {
+		observationDB, openErr := sql.Open("pgx", cfg.FuturesTerminal.Database.DSN)
+		if openErr != nil {
+			logger.Warn("ctp_terminal_unavailable", "reason", "observation database configuration")
+		} else {
+			observationDB.SetMaxOpenConns(2)
+			observationDB.SetMaxIdleConns(1)
+			terminal, terminalErr := futures.NewTerminalReader(observationDB, cfg.Redis.URL, cfg.FuturesTerminal.ManifestFile)
+			if terminalErr != nil {
+				observationDB.Close()
+				logger.Warn("ctp_terminal_unavailable", "reason", "observation manifest or evidence validation")
+			} else {
+				previousCleanup := cleanup
+				cleanup = func() { terminal.Close(); observationDB.Close(); previousCleanup() }
+				deps.FuturesTerminal = terminal
+			}
+		}
 	}
 	if redisPublisher != nil {
 		deps.RedisPing = redisPublisher.Ping

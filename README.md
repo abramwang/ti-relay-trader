@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-17 09:02 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；API PID4178722使用内嵌账本同步，生产API和独立worker已停止；不是CTP运行实例 |
-| 安全状态 | 保留原权限：华鑫TEST账户00030484配置trading_enabled=true，实际准入须查新鲜心跳；生产4户全部trading_enabled=false，501000114077/307000051389仍停用。切换显式skip-migrations，业务库未应用未上线CTP迁移；CTP仅独立TEST库完成4笔只读查询，无报撤/结算确认，当前会话已结束；不得自行切回生产 |
-| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1 期货隔离模型与持久消费恢复，未上线 |
-| 最近确认 | `2026-11-17 09:07 Asia/Shanghai` TEST凭据已重新发布并认证解密通过，OC自动加载v1/key_id=hx-test-20260918；新鲜心跳仍broker_not_ready/BROKER_DISCONNECTED，订单快照及报单未就绪。生产盘前任务09:01:02开始、09:01:04成功结束；生产cron时间未改，后续生产任务需先按用户指令切回，不能依赖当前TEST的9092；期货交易未开放 |
+| 当前环境 | `2026-11-17 Asia/Shanghai` 仍为用户指定TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092已增加CTP账户只读观察，仍用证券内嵌账本同步；生产API和独立worker停止。当前PID以service status为准，未启动CTP交易服务 |
+| 安全状态 | 保留原权限：华鑫TEST账户00030484配置trading_enabled=true，实际准入须查新鲜心跳；生产4户全部trading_enabled=false，501000114077/307000051389仍停用。业务库未应用未上线CTP迁移；CTP独立TEST库累计5笔只读查询，无报撤/结算确认，10:37:42会话已结束；不得自行切回生产 |
+| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
+| 最近确认 | `2026-11-17` 东吴资金复测仍missing_biz_type，请求31/响应00；12条历史持仓可在终端查看，报撤未开放。共享TEST Redis此前发生路由/凭据丢失，不能依赖旧凭据加载记录判断华鑫ready。生产盘前09:01:02至09:01:04成功；生产cron未改，后续生产任务须按用户指令切回，不依赖当前TEST的9092 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17` 用户批准接入CTP只读终端。`/trade`顶部“东吴期货测评 · 300052141”可进入独立资金/持仓/委托/成交表格、排序/分页及心跳，读取独立PG，未加入华鑫账户路由；旧09:24持仓12行、订单/成交完整空明确为历史采样。新会话`ctpproc-ba1756a547919493859985aa50dbb315`于10:33:09只发1笔资金查询（command_id5），仍missing_biz_type；用户转交OC审计请求31/响应00、末页真实，非请求漏填。原命令/1回复/592心跳Redis-PG逐条一致，两组pending/lag=0；10:37:42窗口停止，未重发/报撤/结算确认。详见[终端、复测、OC下一步及恢复位点](docs/CTP_TERMINAL_READONLY_20261117.md)。私有配置`.runtime/ctp-terminal.test.json`，独立PG仍Unix socket/15434；页面刷新不发柜台命令，不改变raw pending/cursor。Go全包/race、临时PG及桌面手机浏览器通过；当前仍TEST，生产未动。下一步核实柜台BizType语义/必要的显式未知范围契约，不默认00为31，不宣称四查询通过。
 
 - `2026-11-17 10:23 Asia/Shanghai` 用户接受临时共享TEST存储风险继续单笔功能测试。新gateway=`ctp-dongwu-asset-retest-20261117`全量SCAN空、run_id相同；Relay新路由命令/receiver均0，已确认给OC。group同名加oc-前缀，候选epoch=`dongwu-asset-retest-c943bafc0e7a920857d5a4bf34d07cf7`；仍同来源/独立PG，新接收从0-0起，旧证据位点不动。OC声明旧4笔持久ACK已核对，本机未独立核验该journal，不影响已核实原始结果。下一步OC复查后初始化并开300秒只读窗口，回新session/代次/TradingDay/截止，再仅一笔新资金查询。详见[新路由执行确认](docs/OC_CTP_TEST_ROUTE_LOSS_20261117.md#1023用户授权的新路由功能复测)。本轮无Redis写/查询/启停，缺键仍立即停；功能验证不等于持久性或生产验收。
 
