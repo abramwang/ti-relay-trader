@@ -97,6 +97,7 @@ func TestAssessmentLegacyStrict(t *testing.T) {
 
 type ocNextdayCase struct {
 	Scenario   string            `json:"scenario"`
+	Audit      string            `json:"audit_prefix"`
 	Heartbeats []json.RawMessage `json:"heartbeats"`
 	Outputs    []json.RawMessage `json:"outputs"`
 	Inputs     []struct {

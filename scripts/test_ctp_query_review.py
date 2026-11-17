@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -133,6 +134,62 @@ class QueryReviewTests(unittest.TestCase):
         self.entries[-1]["raw"]["sample"] = "a" * 262144
         with self.assertRaises(ValueError):
             self.build()
+
+
+@unittest.skipUnless(os.environ.get("RELAY_OC_CTP_NEXTDAY_REVIEW_DIR"), "private nextday material not supplied")
+class NextdayAuditCandidateTests(unittest.TestCase):
+    def test_original_rejected_synthetic_group_candidate_only(self):
+        path = Path(os.environ["RELAY_OC_CTP_NEXTDAY_REVIEW_DIR"]) / "nextday-recorded.json"
+        original = path.read_bytes()
+        self.assertEqual(builder.digest(original), "f7c6e2dd56b7d13fec08a0e071f8169329290bd48f22bda4a2287138fc1b9ed6")
+        document = builder.decode(original)
+        self.assertIs(document["real_sdk"], False)
+        self.assertIs(document["real_redis"], False)
+        count = 0
+        for case in document["cases"]:
+            audit = case["audit_prefix"].encode()
+            records = [builder.decode(line)["record"] for line in audit.splitlines()]
+            results = [r["entry"] for r in records if r["entry"].get("kind") == "query_result"]
+            # A hypothetical repaired producer, in memory only. Never export this as OC evidence.
+            synthetic, previous = [], ""
+            for original_record in records:
+                record = copy.deepcopy(original_record)
+                if record["entry"].get("kind") == "command_received":
+                    self.assertNotIn("group", record["entry"])
+                    record["entry"]["group"] = "synthetic-candidate-group"
+                record["previous"] = previous
+                previous = builder.digest(builder.canonical(record))
+                synthetic.append(builder.canonical(dict(record=record, sha256=previous)) + b"\n")
+            candidate = b"".join(synthetic)
+            for result in results:
+                count += 1
+                with self.subTest(scenario=case["scenario"], action=result["action"]):
+                    commands = [item["body"].encode() for item in case["inputs"]
+                                if builder.decode(item["body"])["message_id"] == result["origin_message_id"]]
+                    self.assertEqual(len(commands), 1)
+                    scope = builder.decode(records[0]["scope"])
+                    target = dict(source_id="synthetic-only", server_run_id="0" * 40, epoch="synthetic-only",
+                                  group="synthetic-candidate-group", counter_session_id=result["counter_session_id"],
+                                  trade_date=result["trade_date"], connection_generation=result["connection_generation"])
+                    options = SimpleNamespace(command_id=count, batch_id="synthetic-only", review_id="synthetic-only",
+                                              timeout_ms=60000, broker=scope[1], account=scope[2], gateway=scope[3],
+                                              native_broker=scope[4], user=scope[5], investor=scope[6],
+                                              audit_sha256=builder.digest(audit))
+                    with self.assertRaisesRegex(ValueError, "received command transport mismatch"):
+                        builder.build(audit, commands[0], target, options)
+                    options.audit_sha256 = builder.digest(candidate)
+                    review, _, report = builder.build(candidate, commands[0], target, options)
+                    self.assertEqual(review["query_context"]["SDKRequestID"], result["sdk_request_id"])
+                    self.assertEqual(review["query_context"]["Ticket"], str(result["ticket"]))
+                    self.assertEqual(report["raw_state"], result["raw"]["state"])
+                    self.assertEqual(report["raw_application"], result["raw_application"])
+                    self.assertEqual(report["last_seen"], result["raw"]["last_seen"])
+                    self.assertFalse(report["registered_or_published"])
+                    target["group"] = "wrong-group"
+                    with self.assertRaisesRegex(ValueError, "received command transport mismatch"):
+                        builder.build(candidate, commands[0], target, options)
+        self.assertEqual(count, 9)
+        self.assertEqual(path.read_bytes(), original)
 
 
 if __name__ == "__main__":
