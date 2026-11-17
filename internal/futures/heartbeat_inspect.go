@@ -37,23 +37,28 @@ func (r HeartbeatInspectionRequest) Stream() (string, error) {
 }
 
 type AdvertisedHeartbeat struct {
-	SessionID               string    `json:"counter_session_id"`
-	TradeDate               *string   `json:"trade_date"`
-	ProducedAt              time.Time `json:"produced_at"`
-	AgeMilliseconds         int64     `json:"age_ms"`
-	State                   string    `json:"state,omitempty"`
-	StateText               string    `json:"state_text,omitempty"`
-	RedisReady              bool      `json:"redis_ready"`
-	BrokerReady             bool      `json:"broker_ready"`
-	SettlementConfirmed     bool      `json:"settlement_confirmed"`
-	OrderSnapshotReady      bool      `json:"order_snapshot_ready"`
-	AcceptingTradeCommands  bool      `json:"accepting_trade_commands"`
-	AcceptingCancelCommands bool      `json:"accepting_cancel_commands"`
-	RecoveryClear           *bool     `json:"transport_recovery_clear,omitempty"`
-	RecoveryIssues          *int64    `json:"recovery_issue_count,omitempty"`
-	RuntimeMode             string    `json:"runtime_mode,omitempty"`
-	ConnectionGeneration    *int64    `json:"connection_generation,omitempty"`
-	QueryCollectionReady    *bool     `json:"query_collection_ready,omitempty"`
+	SessionID                      string    `json:"counter_session_id"`
+	TradeDate                      *string   `json:"trade_date"`
+	ProducedAt                     time.Time `json:"produced_at"`
+	AgeMilliseconds                int64     `json:"age_ms"`
+	State                          string    `json:"state,omitempty"`
+	StateText                      string    `json:"state_text,omitempty"`
+	RedisReady                     bool      `json:"redis_ready"`
+	BrokerReady                    bool      `json:"broker_ready"`
+	SettlementConfirmed            bool      `json:"settlement_confirmed"`
+	OrderSnapshotReady             bool      `json:"order_snapshot_ready"`
+	AcceptingTradeCommands         bool      `json:"accepting_trade_commands"`
+	AcceptingCancelCommands        bool      `json:"accepting_cancel_commands"`
+	RecoveryClear                  *bool     `json:"transport_recovery_clear,omitempty"`
+	RecoveryIssues                 *int64    `json:"recovery_issue_count,omitempty"`
+	RuntimeMode                    string    `json:"runtime_mode,omitempty"`
+	ConnectionGeneration           *int64    `json:"connection_generation,omitempty"`
+	QueryCollectionReady           *bool     `json:"query_collection_ready,omitempty"`
+	CallbackPolicy                 string    `json:"callback_policy,omitempty"`
+	PendingCallbacks               *int64    `json:"pending_callback_count,omitempty"`
+	DeferredCallbacks              *int64    `json:"deferred_callback_count,omitempty"`
+	BlockingCallbacks              *int64    `json:"blocking_callback_count,omitempty"`
+	CallbackReconciliationComplete *bool     `json:"callback_reconciliation_complete,omitempty"`
 }
 
 type InspectedHeartbeat struct {
@@ -173,6 +178,13 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				g, ready := h.queryCollection()
 				a.ConnectionGeneration, a.QueryCollectionReady = g, &ready
 				a.RecoveryClear = &h.Assessment.TransportRecoveryClear
+				a.PendingCallbacks = &h.Assessment.PendingCallbacks
+				a.CallbackReconciliationComplete = &h.Assessment.CallbackReconciliationComplete
+				if h.Assessment.CallbackPolicy != "" {
+					a.CallbackPolicy = h.Assessment.CallbackPolicy
+					a.DeferredCallbacks = &h.Assessment.DeferredCallbacks
+					a.BlockingCallbacks = &h.Assessment.BlockingCallbacks
+				}
 			} else if h.Recovery != nil {
 				item.Classification = "transport_recovery_only"
 				a.RecoveryClear, a.RecoveryIssues = &h.Recovery.TransportRecoveryClear, &h.Recovery.RecoveryIssueCount

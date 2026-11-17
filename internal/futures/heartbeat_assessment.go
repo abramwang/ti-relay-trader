@@ -16,6 +16,9 @@ type HeartbeatAssessment struct {
 	ExpiresAt                                                                                     time.Time
 	AssetScopeVerified, PositionSnapshotReady, InstrumentUsable, OrderRefReady, NativeLimitsFresh bool
 	SubmitAttempts, CancelAttempts, PendingCallbacks                                              int64
+	CallbackPolicy                                                                                string
+	DeferredCallbacks, BlockingCallbacks                                                          int64
+	CallbackReconciliationComplete                                                                bool
 	NativeDepthRequestID                                                                          *int64
 	Static                                                                                        *AssessmentStatic
 	Limits                                                                                        *AssessmentLimits
@@ -78,6 +81,32 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessme
 	if a.SubmitAttempts > 1 || a.CancelAttempts > 1 {
 		return bad()
 	}
+	policyKeys := []string{"callback_policy", "deferred_callback_count", "blocking_callback_count", "callback_reconciliation_complete"}
+	policyFields := 0
+	for _, key := range policyKeys {
+		if _, present := raw[key]; present {
+			policyFields++
+		}
+	}
+	a.CallbackReconciliationComplete = a.PendingCallbacks == 0
+	if policyFields != 0 {
+		if policyFields != len(policyKeys) || textField(raw, "callback_policy") != "local_assessment_only.v1" {
+			return bad()
+		}
+		a.CallbackPolicy = "local_assessment_only.v1"
+		for key, dst := range map[string]*int64{"deferred_callback_count": &a.DeferredCallbacks, "blocking_callback_count": &a.BlockingCallbacks} {
+			n, e := nullableInteger(raw[key])
+			if e != nil || n == nil || *n < 0 || *n > a.PendingCallbacks {
+				return bad()
+			}
+			*dst = *n
+		}
+		if a.PendingCallbacks-a.DeferredCallbacks != a.BlockingCallbacks ||
+			(!literal(raw["callback_reconciliation_complete"], "true") && !literal(raw["callback_reconciliation_complete"], "false")) ||
+			literal(raw["callback_reconciliation_complete"], "true") != a.CallbackReconciliationComplete {
+			return bad()
+		}
+	}
 	a.NativeDepthRequestID, err = nullableInteger(raw["native_depth_request_id"])
 	if err != nil || (a.NativeDepthRequestID != nil && *a.NativeDepthRequestID < 1) {
 		return bad()
@@ -110,7 +139,7 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessme
 	if (h.BrokerReady && (g == nil || !validDay(h.TradeDate))) || !oneOf(h.StateText, "broker_not_ready", "settlement_not_confirmed", "order_snapshot_not_ready", "trade_constraints_not_ready", "recovery_blocked", "running", "stopping") {
 		return bad()
 	}
-	common := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && h.OrderSnapshotReady && a.PositionSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.PendingCallbacks == 0
+	common := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && h.OrderSnapshotReady && a.PositionSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.callbacksAllowAssessment()
 	if h.AcceptingTradeCommands && (!common || !a.InstrumentUsable || !a.NativeLimitsFresh || a.SubmitAttempts != 0 || a.Static == nil || a.Limits == nil || a.NativeDepthRequestID == nil) {
 		return bad()
 	}
@@ -130,6 +159,12 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessme
 	return a, nil
 }
 
+// Only the explicit TEST assessment profile can defer historical callbacks.
+// Transport/ACK safety remains an independent gate; deferred is not delivered.
+func (a HeartbeatAssessment) callbacksAllowAssessment() bool {
+	return a.PendingCallbacks == 0 || (a.CallbackPolicy == "local_assessment_only.v1" && a.BlockingCallbacks == 0 && a.DeferredCallbacks == a.PendingCallbacks)
+}
+
 // QueryCollection is independent of trading readiness so initialization cannot
 // deadlock on the snapshots that these queries are meant to obtain.
 func (h Heartbeat) queryCollection() (*int64, bool) {
@@ -137,7 +172,7 @@ func (h Heartbeat) queryCollection() (*int64, bool) {
 		return h.ReadOnly.ConnectionGeneration, h.ReadOnly.QueryCollectionReady && h.ReadOnly.TransportRecoveryClear
 	}
 	if a := h.Assessment; a != nil {
-		return a.ConnectionGeneration, h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.PendingCallbacks == 0 && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
+		return a.ConnectionGeneration, h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
 	}
 	return nil, false
 }

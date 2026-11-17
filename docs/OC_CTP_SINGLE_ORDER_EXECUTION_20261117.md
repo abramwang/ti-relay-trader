@@ -2,6 +2,12 @@
 
 日期：2026-11-17，Asia/Shanghai。协调与命令发送：Relay；真实柜台执行：OC。
 
+## 最新：v4离线材料通过，Relay局部测评适配完成
+
+已接收并独立核验`reference/oc_ctp_postclose_review_20261117/`，17条心跳/两页查询/本地订单working至cancelled解析通过；旧50回调与32延后责任不变。Relay已支持严格TEST `local_assessment_only.v1`，修复初始化查询被历史pending挡住的问题；ACK未知、生产及过期窗口仍拒绝。独立CLI已重新构建，未启动发送、重启9092或改变环境。完整结果及**给OC的下一步具体清单**见[收盘后增量回执](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
+
+下一步只需OC提供新只读绑定和旧责任关联方案，再核对来源/空路由及实际窗口；不再重复原则回签或原材料。模拟SDK报撤不算东吴实测，旧13:35窗口及原once授权不自动复用。下方16:10等待材料为历史状态。
+
 ## 16:10收盘后状态已核对，待v4增量验收
 
 OC回执确认无CTP进程、新session或真实迁移，旧13:35配置不可启动。Relay已独立核实TEST Redis在线改善为2GiB/noeviction/AOF everysec，但下午旧绑定仍全缺，PG仍5查询/0交易；缺失消费组PEL/lag不可读，不填0。当前只需取得OC业务5ec0e31的v4运行JSON/log/CTest/SHA及心跳语义，按[收盘后最小清单](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)直接核验，再明确新只读绑定或显式迁移。当前不初始化、不登录、不确认结算、不报撤，旧回调/原文/位点保留；不是新在线窗口授权。

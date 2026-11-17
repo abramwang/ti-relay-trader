@@ -26,6 +26,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 16:29` **TEST Redis留存首测通过**：独立随机开发前缀下string/stream两键跨300秒31次检查，原值/entry/body及PTTL=-1保持，run_id不变、evicted_keys仍12326（增量0）、AOF写ok；结束清理本次两键成功。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。非容量压测/重启验收，不证明历史键已恢复；16:28旧下午route仍0键。共享Redis没有改配置/重启/业务键写入，OOM拒写与持久化重启后续单独验。
+
+- `2026-11-17 收盘后` **OC v4增量核验及Relay接线完成**：`reference/oc_ctp_postclose_review_20261117/`四摘要通过，原50回调/32延期逐条一致；17心跳、两页查询、2个本地订单事件及2个accepted关联通过离线核验。修复历史pending导致初始化查询死锁，仅显式TEST `local_assessment_only.v1`按严格计数允许延期；ACK未知、生产、过期授权仍阻断，诊断保留未完成责任。全Go、专项race/vet及111项Python通过，inspect/query/replies/trade CLI已构建；9092/OC未重启、无业务命令/迁移，环境仍TEST。复验脚本`scripts/audit-ctp-postclose-review.py`；详见[当前OC回执与下一步](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。下一步等待OC具体新只读绑定/旧回调关联方案，不再重传材料或原则回签，不重建旧路由；旧13:35授权不复用。生产17:10权威复算仍须用户确认切回。下条“待材料”为历史状态。
+
 - `2026-11-17 16:10` **OC收盘后增量回执已接收**：报告业务5ec0e31已补运行v2/测评回放隔离/缺文件锁持续拒绝及50回调离线运行回归；无真实进程、新session、迁移或结算，v4增量材料仍待本机接收，不冒称独立验收。Relay16:09:28核实TEST Redis2GiB/noeviction/AOF everysec、写状态ok、累计evicted12326/expired307，run_id不变，下午前缀仍0键（组缺失PEL/lag不可读，不填0）。独立PG仍5查询/0交易/0成交，旧原包摘要及审计链复验一致。证据`outputs/recovery/ctp_dongwu_assessment_pm_20261117/preflight-20261117T080928.414206400Z.json`。已请求只传v4 JSON/log/CTest及SHA、新心跳说明；下一步直接核验延期责任/实际输出/ACK未知保护，然后明确新只读绑定或显式迁移，不重做原则审阅、不重建旧路由、不复用13:35配置。见[收盘后回执与最小清单](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。生产17:10任务仍需用户切回。
 
 - `2026-11-17 15:16` **按用户新指令恢复TEST联调环境**：`switch-relay-env.sh test --skip-migrations`成功，域名API返回test，生产API/worker停止、生产权限未改。华鑫00030484新session=`hxproc-531c8a3d45079d77`，心跳新鲜但broker_ready=false/BROKER_DISCONNECTED。东吴下午route在15:16:31再次全量SCAN0键，run_id不变，未重建epoch/组或发命令；独立PG5查询/0交易/0成交不变。检查证据`outputs/recovery/ctp_dongwu_assessment_pm_20261117/preflight-20261117T071631.918433093Z.json`，已通过用户请OC回最新运行修复/当前进程/本地journal与once责任；下一步只读核验及修复联调，不能收盘后沿旧会话报撤。17:10生产权威复算仍需生产API，已提醒用户，未自动切回或修改cron。下条生产运行状态为切换前历史。

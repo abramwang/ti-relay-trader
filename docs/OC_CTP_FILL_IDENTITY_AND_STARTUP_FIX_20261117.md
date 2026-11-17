@@ -2,6 +2,36 @@
 
 日期：2026-11-17，Asia/Shanghai。Relay给OC的具体修正提案；不是新登录或交易窗口授权。
 
+## 收盘后增量已核验：可推进新绑定准备
+
+用户已上传`reference/oc_ctp_postclose_review_20261117/`。本节替代下方16:10“尚待材料”的状态，不改变历史失败记录。**接受本轮离线交付，无需再讨论成交编码或重传材料；下一步是具体的新只读绑定/状态关联方案。** 不是已经完成真实报撤、实际旧状态迁移或持久性验收。
+
+### 独立核验与Relay改动
+
+- 四项清单摘要通过；v4 JSON SHA256为`26a57a0b701798a6ba3503b5b472888815aa4993939a017d219cbcb5932be665`。原50条回调、24条身份观察、8条审计链重新核验通过；新迁移摘要的50行、10个v2候选及4组旧键拆分与前次材料完全一致。
+- 32项延后记录逐条对应原pending callback ID及原证据摘要，`business_processed=false`；18条audit_only不变。正常场景64 pending由原32与模拟再次回放组成，不是64笔成交；未获得完整运行后磁盘状态，不宣称独立执行了OC迁移。
+- Relay实际解码通过17条心跳、两页完整查询（12行订单）及2条同一单的working/cancelled事件。另核对2个accepted回执结构/关联及调用计数；所有新查询、结算、报撤、Redis/ACK均为模拟，原log仅为17条心跳摘要，不冒称真实Stream原文。ACK未知场景无业务输出、SDK调用0、recovery=false；没有独立完整故障轨迹，在线ACK恢复仍待验。
+- 修复旧Relay将所有pending都视为阻断所造成的初始化死锁：仅`test_broker_assessment`且显式`callback_policy=local_assessment_only.v1`允许延期子集。四个新字段必须同时存在；非负整数、`deferred+blocking=pending`、`callback_reconciliation_complete == (pending==0)`严格校验。缺字段、未知策略、矛盾计数、任何blocking均不放行。
+- `transport_recovery_clear`继续是独立必要条件，不能由blocking=0替代；只读初始化与报撤准入仍分开。旧模式仍要求pending=0，生产不接受测评模式。结算、订单/持仓快照、源/epoch/session、短时授权、行情/原生约束及一手报撤预算不变；历史时间不刷新、不把材料发送到真实路由。
+- 心跳诊断输出显式显示pending/deferred/blocking及reconciliation_complete，局部测评ready不能隐藏历史责任。新版本inspect/query/replies/trade CLI已构建；未启动业务接收/发送进程，未重启9092或OC，不改当前TEST环境。
+
+复验入口（只读文件，不登录、不连接Redis/PG）：
+
+```bash
+python3 scripts/audit-ctp-postclose-review.py reference/oc_ctp_postclose_review_20261117 outputs/recovery/ctp_fill_v2_review_20261117
+RELAY_OC_CTP_POSTCLOSE_REVIEW_DIR="$PWD/reference/oc_ctp_postclose_review_20261117" go test ./internal/futures -run 'Test(OCPostclose|Assessment)' -count=1
+```
+
+代码验证：全Go测试、定向race与vet、111项Python契约测试通过；新回归覆盖部分字段、错误计数/类型、ACK未知、过期心跳、生产拒绝和延期责任可见。Python首次误用普通`.venv`缺jsonschema，改用既有`.runtime/ctp-contract-venv`后全部通过，未改服务依赖。需PG/真实Redis的集成用例本轮未启用，不能将全包通过解释为在线验收。OC42项CTest仅按交付日志记录，未运行OC二进制。
+
+### 请OC直接准备下一步
+
+请给**新只读gateway、group、epoch候选及对应状态关联方式**，明确旧18 audit_only/32 pending继续保留在哪里，如何在新会话中重新核对；不搬旧cursor、不改旧回调gateway或把旧输出补回新流。Relay核对空路由/来源及独立PG起点后，再确认允许登录的窗口。只读窗口结算/报撤保持关闭；若现有主程序尚不能独立运行该只读路径，直接注明实际缺项，不用新增原则说明。
+
+下一交易时段再确认测评窗口及单次结算授权，用新session取得初始化快照后执行一手报单/对应撤单。原13:35授权不复用，今日无线上报撤成功结论。资金BizType及通用外部回放释放仍独立未验，不以局部测评通过替代。
+
+Redis在线配置改善已做首轮观察：随机独立开发前缀下1个string及1个stream，31次检查跨越300秒，值/entry/body/PTTL=-1均不变，run_id一致，evicted_keys始终12326，AOF写状态ok；结束仅清理本次两个键，清理成功。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。这不是压力测试，不恢复旧键；16:28全量SCAN旧下午前缀仍0键，未重建。未在共享Redis造OOM、重启或修改配置。容量耗尽时拒写、发布未知、启动配置及重启持久性仍是后续专项。生产17:10权威复算仍需用户确认切回，不自动切换。
+
 ## 16:10收盘后回执：接增量材料，不重做原则审阅
 
 已收到用户转交的OC16:04状态回执。OC报告业务基线`5ec0e31`、文档HEAD `33fa6e6`，已实现v2查询/事件、显式测评回放隔离、无本地命令旧身份的归档升级，以及journal/identity文件或锁缺失时持续拒绝；42项CTest及真实50回调的离线运行回归通过。**以上新实现目前为OC报告，Relay尚未收到v4材料，不将其记作独立验收或真实状态迁移完成。** 旧报告的24条观察/revision25计数已获OC更正。
