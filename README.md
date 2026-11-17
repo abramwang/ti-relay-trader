@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 09:20 Asia/Shanghai` 用户要求准备CTP测试：已核实东吴真实只读会话09:13:34登录ready、09:14:03停止；OC确认原生BrokerID=4900、UserID/InvestorID=300052141（Investor范围待查询验证）。三个CLI重新构建、定向测试通过，新独立本机PG库`relay_ctp_dongwu_20261117_test`准备33..41/44/45，仅Unix socket/15434、当前运行；32条实际心跳/39,620字节已持久化且SHA一致，登记/发送均0。详见[现场准备与续读位置](docs/CTP_TEST_QUERY_RUNNER_20261116.md#11月17日现场准备)。下一步请OC另开最长300秒只读窗口并及时给原始请求审计，核对新session后串行四查询；旧session已停不得使用。9092仍华鑫TEST，未改业务库/生产/权限、未发报撤/结算确认，不把登录心跳当四查询验收。
+
 - `2026-11-17 09:07 Asia/Shanghai` 按OC反馈补发TEST账户00030484托管凭据：先核实TEST Redis DB0及current缺失，使用现有`relayctl credentials rotate`和此前用户提供的凭据，09:06:43发布v1并切current，认证解密通过，PostgreSQL started/succeeded审计成功，operation_id=`fada24e451961faf4e35577053cf4d4c`。明文仅经关闭回显的stdin输入，未新增明文文件。OC自动读取为loaded，09:07:14心跳仍broker_not_ready/BROKER_DISCONNECTED，broker_ready/order_snapshot_ready/order_entry_ready=false；后续请OC核对柜台连接/登录日志，不再归因于凭据缺失。未切环境、重启OC、发报撤单或更改权限/迁移；生产未动。CLI旧restart_required=true为保守提示，本次未执行重启且已证实自动加载。
 
 - `2026-11-17 09:04 Asia/Shanghai` 用户确认早盘工作完成并要求切回测试：切换前核实生产`pre_open_init-20261117-1794877262047269000`为succeeded，09:01:02.047269开始、09:01:04.6867完成，盘前进程已结束。执行`switch-relay-env.sh test --skip-migrations`成功，本机/域名均TEST，生产独立worker停止；原权限及账本保留。测试OC有新鲜心跳但报`OC_CREDENTIAL_NOT_READY`，不是交易就绪，未自动修凭据或发送订单。未应用CTP迁移、未登录/重启OC；生产15:01收盘及17:10起权威复算配置未改，须用户明确指令再切回生产，不自动定时切换。

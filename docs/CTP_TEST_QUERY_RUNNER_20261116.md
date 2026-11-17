@@ -2,6 +2,20 @@
 
 日期：2026-11-16，Asia/Shanghai。
 
+## 11月17日现场准备
+
+截至09:20，Relay查询发送、reply接收、心跳采集三个CLI已重新构建，定向测试通过。新建独立本机数据库`relay_ctp_dongwu_20261117_test`，仅应用期货33..41、44、45表结构，不迁移9092业务库或生产库。
+
+- 数据目录`.runtime/ctp-dongwu-pg-20261117/data`，Unix socket目录`.runtime/ctp-dongwu-pg-20261117`，port=15434、user=relay_ctp_audit；无TCP监听，目录0700，数据库时区Asia/Shanghai。PG当前运行，未安装自启动服务。
+- 本机原有PG只有客户端，17.11服务端包下载并解包到`.runtime/ctp-pg-toolchain/root/`，未安装系统服务；后续pg_ctl使用其`usr/lib/postgresql/17/bin/pg_ctl`，不得重新initdb已有数据目录。
+- OC确认BrokerID=4900、UserID=300052141（认证/登录回包校验）、InvestorID=300052141（明确配置，范围仍需业务回包核实）。逻辑路由保持`test/ctp_4900/ctp-dongwu-assessment-20261117/300052141`。
+- 实际会话`ctpproc-62e233a7af3025ca87e72ca929e2cd61`于09:13:34进入read_only，连接代次1、TradingDay=20261117；09:14:03.164最后心跳为stopping。OC另确认09:14:03.163进程已退出，不能依据旧ready心跳发查询。
+- 32条真实心跳已捕获到独立PG，共39,620字节，PG原文SHA256不一致数0；末位点`1794878043172-0`，owner=`919de788e230865c3f651c638650a02614f86d59ac5000bdde08c293ce35003f`。采集器已退出，PG保留运行；记录仍为raw审计，不伪造业务delivered。
+- 采集输出`outputs/recovery/ctp_dongwu_joint_20261117/heartbeat-capture-20261117T012000Z.jsonl`，时点Redis检查仍保存在`outputs/recovery/ctp_dongwu_joint_20261116/preflight-20261117*.json`。本机一次性采集脚本`.runtime/ctp-dongwu-capture-20261117.go`只用于首次收件，不能直接重跑替代显式owner/cursor续读。
+- 登记命令数0、发送责任数0，未发送四查询/报撤/结算确认。9092仍华鑫TEST，未重启API或OC、未切换环境。
+
+下一轮请OC在双方准备完成后启动最长300秒的真实只读窗口，沿用已有路由/组/epoch，不清pending、不重新初始化。回传新session、代次、实际TradingDay、run_id/epoch及开始/结束时刻；Relay重新核对新鲜只读心跳，再按资金、持仓、订单、成交串行登记发送。每笔请求的ticket/SDK request_id及原始末页证据须通过OC审计及时取得，不能由reply反推预期身份；审核不及时则先保存raw，超时不补造即时成功。下一轮尚未启动，四查询和报撤均未验收。
+
 ## 当前已完成：校验、持久登记与受控发送
 
 `cmd/relay-ctp-query`复用已有`DecodeCommand`、`CommandStore`与000037结构；本轮增加000044发送审计表，不修改wire、不连接行情或柜台SDK。
