@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 09:51 Asia/Shanghai` 东吴TEST路由丢失，暂停CTP复测：全量SCAN真实路由/昨夜隔离路由均0键，run_id不变；本轮Relay未清理/设TTL/重建组epoch。发现共享Redis512MiB/allkeys-lru，累计evicted_keys11847、峰值535.53MiB，华鑫TEST托管凭据也已缺失；尚无逐键/历史监控证实具体删键来源，不直接归责。独立PG4条命令/4回复/327心跳完整且SHA通过。见[只读排查与待授权恢复方案](docs/OC_CTP_TEST_ROUTE_LOSS_20261117.md)：先独立noeviction交易存储或协调共享实例保护，再核对旧责任并批准新隔离路由/epoch；不回灌旧命令、不冒充首次空路由。未改Redis配置/清键/重启OC或切环境。
+
 - `2026-11-17` 接受OC资金定向修正说明`96c55f7`：请求BizType显式字符1/hex31，并在SDK调用前持久审计五个原生字段；响应NUL仍失败，wire/Relay解析不变。OC自述33项测试及4项sanitizer通过，本机尚无biztype_review材料，不冒称独立复验或已部署。下一步用户确认修正版部署并开新只读窗口后，仅一笔新身份资金查询，核对query_request与同步返回/原始末页/标准回包；见[复测清单](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md#接受oc定向修正说明)。不需再往返原则文档；本轮未连接业务Redis、未发查询或启停/切换环境。
 
 - `2026-11-17` 东吴四查询独立材料已验：`reference/query_review_20261117`清单7项、359行完整摘要链/319行当前会话、4条命令及回复、295条心跳、12条持仓字段映射全部一致。资金原始BizType=00（NUL），不是Redis丢字段；OC报告请求未显式填BizType，但本包无原生请求抓包。请OC仅明确期货资金请求类型并补审计/离线回归，再安排一笔新资金采样；不默认修改响应。六种BizType负例回归已补，解析/wire不变；详见[复核结论及最小修正](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md#资金问题与oc下一步)。原文已落PG，独立审计报告保留，业务快照未发布，逐命令durable ACK及非空报成交链路未验收；本轮无新查询/服务或环境变化。
