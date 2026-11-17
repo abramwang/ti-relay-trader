@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-17 15:16 Asia/Shanghai` 按用户新指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产API/独立worker停止。当前PID以service status为准；不得自行切回生产 |
-| 安全状态 | TEST华鑫00030484原配置trading_enabled=true但新鲜心跳broker_not_ready，不能以配置许可代替柜台就绪。生产4户trading_enabled=false、两停用户不变；切换skip-migrations。CTP独立TEST库仍5查询/0交易，下午路由再次缺键，禁止重建/重放；收盘后不沿旧窗口报撤 |
+| 当前环境 | `2026-11-17 22:57 Asia/Shanghai` 按用户明确指令切回production，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092生产API及独立worker运行，本机/域名production/ok。当前PID以service status为准；不得自行切回TEST |
+| 安全状态 | 生产配置6户、启用4户、trading_enabled=0，两停用户不变；本次切换skip-migrations，未开启下单或发送交易。CTP独立TEST审计和候选状态保留，旧丢失路由不重建/重放；11-18测试仍需用户切环境及新当日窗口授权 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 晚间` OC02af39b审计修复及8场景离线验收通过；新增部署准备材料4摘要、SDK/旧源/manifest一致，OC报告实际私有配置预检成功、state空且once不存在。只剩现场来源/路由/Relay接收器核查、11-18当日授权及<=300秒窗口后最终预检/初始化启动，见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`顶部。TEST不变，生产权威复算待用户切回；未真实登录报撤 |
+| 最近确认 | `2026-11-17 22:57` 已按用户指令切生产并保持下单关闭，生产权威复算此前待办未手工补跑、仍需核对任务结果。OC02af39b审计修复/离线联跑及部署准备材料通过；11-18现场核查/当日授权/<=300秒窗口见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`，未真实登录报撤 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 22:57` **按用户指令切回生产**：执行`switch-relay-env.sh production --skip-migrations`成功，API PID428463、独立worker PID428058（实时以status为准）；本机和域名均production/ok，Redis/DB正常，6配置/4启用/0可交易。保留TEST/CTP审计及配置，未迁移数据库、开交易、初始化候选、登录OC或发送命令；未手工补跑此前生产权威复算，不能将切换成功当任务完成。明日CTP需用户明确切回TEST并确认新当日窗口；以下“保持TEST”为切换前历史。
 
 - `2026-11-17 部署准备收口` 接收`reference/oc_ctp_deployment_preparation_20261118`，4摘要、SDK指纹、旧三个源文件及manifest与已验材料一致；OC报告实际凭据配置预检/本地来源准备退出0，新state空、两处once不存在。结算关闭、截止刻意过期，不改成即刻可启动；Relay未读远程私有配置、未联网或运行柜台。下一步直接按[现场四步清单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)核查新run_id/占用/接收器，用户确认新当日授权和窗口后最终预检、初始化、登录两查询及1报1撤；无需新增代码或原则回签。下方“实际配置预检待完成”为历史，现场最终预检仍待。
 
