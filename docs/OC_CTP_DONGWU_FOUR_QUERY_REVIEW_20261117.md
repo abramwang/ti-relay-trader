@@ -60,7 +60,7 @@
 
 OC报告拒绝点为`ctp_query_snapshot.h/sourceScope`的空BizType检查；另据其源码核对，资金查询请求零初始化后仅填写BrokerID和InvestorID，未显式设置BizType。**本包没有完整原生请求结构体抓包**，因此请求BizType=0是OC源码核对结论，不是Relay独立捕获的请求事实；也不能据此断定柜台回显请求或明确传1后必然恢复。
 
-请OC直接推进最小修正，不再重复材料或原则回签：
+以下最小修正已由OC报告在`96c55f7`实现；最新接受口径及待在线项见下一节，不再要求重复开发或原则回签：
 
 1. 仅期货资金查询请求显式使用SDK声明的`THOST_FTDC_BZTP_Future`，补充实际发送的BrokerID/InvestorID/AccountID/CurrencyID/BizType原值审计及离线回归；其他字段沿用明确配置，不猜账号、不扩大其他业务范围。
 2. 保留响应原值和当前失败保护。**不得将响应NUL替换为"1"、跨作用域聚合、补零或改写此次失败。** Relay本轮无wire/解析放宽；新增六种缺失/空/NUL/非字符串BizType回归，确认整批拒绝且原文不变。
@@ -68,6 +68,22 @@ OC报告拒绝点为`ctp_query_snapshot.h/sourceScope`的空BizType检查；另�
 4. 若响应仍为00，保留失败及原始资金，联合核实柜台语义后再设计显式未知范围表达；不能为了通过验收在Relay单方补默认值。已有持仓/订单/成交证据无需无条件重采。
 
 本轮不授权自动启动/登录或发送新查询。原即时接收时限已过，迟到证据按历史审计核实；不刷新batch/延长timeout伪造及时完成，raw pending不强制改为delivered。
+
+## 接受OC定向修正说明
+
+用户转交OC实现`96c55f7`（基于`db59783`）：资金请求显式使用字符`'1'`（hex31），AccountID/CurrencyID保持原空字段，不猜资金账户或币种；新增`query_request`审计，响应标准化及wire不变。Relay接受此最小修正方向，不需要新增解析兼容或放宽资金scope。
+
+OC报告Ubuntu33项测试及非PIE sanitizer4项通过，但本机`reference/testdata`尚未发现所述`biztype_review_20261117`材料，故仅登记为OC自测结论，不宣称Relay已独立复验，也不以此认定已部署/在线资金通过。不要求为缺材料重做一轮原则讨论。
+
+下一轮由用户确认已部署该版本并启动新的只读窗口后执行，保持已有路由/组/epoch，新session、新message/idempotency，仅一笔`account.asset.query`：
+
+1. Relay重新读取新鲜只读心跳并核对来源、恢复状态、session/代次/TradingDay，先持久登记再发送。旧命令/失败回包不重写、不重投。
+2. OC提供同一请求的`query_request`：api=ReqQryTradingAccount、stage=before_sdk_call，以及BrokerID/InvestorID/AccountID/CurrencyID/BizType五个全长成员hex；请求BizType应为31，其余身份与明确配置一致。
+3. `before_sdk_call`只证明调用前对象已审计，必须再关联同message/ticket/SDK ID/session/代次的同步返回、query_result、真实末页、原始资金scope及标准reply。审计写入失败不得推定SDK已调用，更不得自动重发。
+4. 若真实响应BizType为31且其他校验通过，再确认该次资金采样有效；若仍00，保留failed/missing_biz_type并向柜台核实，不覆盖响应或单方引入未知scope兼容。
+5. 只复测资金，不无条件重采已核实的持仓/空订单/空成交。成功不自动升级为全账户经济范围、最终清算、业务快照发布或报撤通过；逐命令持久ACK/恢复仍按其专项证据验收。
+
+本次仅接收说明和更新恢复记录，没有访问业务Redis、启动/重启、查询、确认结算、报撤或环境切换。原独立审计及数据库位点保持不变。
 
 ## 独立材料复核
 

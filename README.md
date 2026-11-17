@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17` 接受OC资金定向修正说明`96c55f7`：请求BizType显式字符1/hex31，并在SDK调用前持久审计五个原生字段；响应NUL仍失败，wire/Relay解析不变。OC自述33项测试及4项sanitizer通过，本机尚无biztype_review材料，不冒称独立复验或已部署。下一步用户确认修正版部署并开新只读窗口后，仅一笔新身份资金查询，核对query_request与同步返回/原始末页/标准回包；见[复测清单](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md#接受oc定向修正说明)。不需再往返原则文档；本轮未连接业务Redis、未发查询或启停/切换环境。
+
 - `2026-11-17` 东吴四查询独立材料已验：`reference/query_review_20261117`清单7项、359行完整摘要链/319行当前会话、4条命令及回复、295条心跳、12条持仓字段映射全部一致。资金原始BizType=00（NUL），不是Redis丢字段；OC报告请求未显式填BizType，但本包无原生请求抓包。请OC仅明确期货资金请求类型并补审计/离线回归，再安排一笔新资金采样；不默认修改响应。六种BizType负例回归已补，解析/wire不变；详见[复核结论及最小修正](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md#资金问题与oc下一步)。原文已落PG，独立审计报告保留，业务快照未发布，逐命令durable ACK及非空报成交链路未验收；本轮无新查询/服务或环境变化。
 
 - `2026-11-17 09:27 Asia/Shanghai` 东吴真实四查询已发送并收件：4笔均先PG登记再受控发布，各一次；持仓12条、订单/成交完整空列表，资金失败`QUERY_FAILED/missing_biz_type`（OC标记standard_projection、raw_completed=true）。4条命令/回复Redis与PG原文一致，OC两命令组pending/lag=0，无报撤。原始回复4条/8,695字节落独立PG，业务快照未发布，待OC独立请求审计；不得从reply自证ticket/SDK身份。会话09:25:14停止。详见[首轮四查询反馈及恢复位点](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md)，请OC定位BizType原始值/映射，不猜默认值。心跳续读后累计327条，当前owner/cursor以新反馈为准；独立PG仍运行，9092华鑫TEST与生产均未改。下一步审计核对和资金修复后定向复测，不是四查询整体通过。
