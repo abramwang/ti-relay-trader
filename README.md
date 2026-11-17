@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 09:27 Asia/Shanghai` 东吴真实四查询已发送并收件：4笔均先PG登记再受控发布，各一次；持仓12条、订单/成交完整空列表，资金失败`QUERY_FAILED/missing_biz_type`（OC标记standard_projection、raw_completed=true）。4条命令/回复Redis与PG原文一致，OC两命令组pending/lag=0，无报撤。原始回复4条/8,695字节落独立PG，业务快照未发布，待OC独立请求审计；不得从reply自证ticket/SDK身份。会话09:25:14停止。详见[首轮四查询反馈及恢复位点](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md)，请OC定位BizType原始值/映射，不猜默认值。心跳续读后累计327条，当前owner/cursor以新反馈为准；独立PG仍运行，9092华鑫TEST与生产均未改。下一步审计核对和资金修复后定向复测，不是四查询整体通过。
+
 - `2026-11-17 09:20 Asia/Shanghai` 用户要求准备CTP测试：已核实东吴真实只读会话09:13:34登录ready、09:14:03停止；OC确认原生BrokerID=4900、UserID/InvestorID=300052141（Investor范围待查询验证）。三个CLI重新构建、定向测试通过，新独立本机PG库`relay_ctp_dongwu_20261117_test`准备33..41/44/45，仅Unix socket/15434、当前运行；32条实际心跳/39,620字节已持久化且SHA一致，登记/发送均0。详见[现场准备与续读位置](docs/CTP_TEST_QUERY_RUNNER_20261116.md#11月17日现场准备)。下一步请OC另开最长300秒只读窗口并及时给原始请求审计，核对新session后串行四查询；旧session已停不得使用。9092仍华鑫TEST，未改业务库/生产/权限、未发报撤/结算确认，不把登录心跳当四查询验收。
 
 - `2026-11-17 09:07 Asia/Shanghai` 按OC反馈补发TEST账户00030484托管凭据：先核实TEST Redis DB0及current缺失，使用现有`relayctl credentials rotate`和此前用户提供的凭据，09:06:43发布v1并切current，认证解密通过，PostgreSQL started/succeeded审计成功，operation_id=`fada24e451961faf4e35577053cf4d4c`。明文仅经关闭回显的stdin输入，未新增明文文件。OC自动读取为loaded，09:07:14心跳仍broker_not_ready/BROKER_DISCONNECTED，broker_ready/order_snapshot_ready/order_entry_ready=false；后续请OC核对柜台连接/登录日志，不再归因于凭据缺失。未切环境、重启OC、发报撤单或更改权限/迁移；生产未动。CLI旧restart_required=true为保守提示，本次未执行重启且已证实自动加载。
