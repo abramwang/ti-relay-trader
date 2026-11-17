@@ -7,7 +7,7 @@
   const size = 20;
   const names = {"account.asset.query":"资金", "account.positions.query":"持仓", "order.list.query":"委托", "fill.list.query":"成交"};
   const states = {not_queried:"尚未查询", publication_unknown:"查询发送结果未知", not_published:"查询未发出", awaiting_reply:"等待回复", pending_review:"回复已收 · 待独立核验", collecting:"分页未完整", failed:"查询失败", invalid:"证据校验失败", ready:"历史查询已核验"};
-  const connections = {read_only:"柜台在线 · 只读", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪"};
+  const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中 · 本页只读", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪"};
   const text = (v) => v === null || v === undefined || v === "" ? "--" : String(v);
   const date = (v) => !v || !Number.isFinite(Date.parse(v)) ? "--" : new Date(v).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai", hour12:false});
   const escape = (v) => text(v).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -41,7 +41,7 @@
     }
     const status=el("futuresQueryStatus");
     status.dataset.failed=String(Boolean(loadError || a && a.ledger_error || q && ["failed","invalid"].includes(q.state)));
-    status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || a.connection_state!=="read_only")?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
+    status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || !["read_only","assessment"].includes(a.connection_state))?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
     const data=loadError || a && a.ledger_error?{columns:[],rows:[]}:tableData(q);
     data.rows.sort((a,b)=>{const x=a[sort]?.raw,y=b[sort]?.raw; const numeric=/^-?\d+(\.\d+)?$/;const delta=numeric.test(text(x)) && numeric.test(text(y))?Number(x)-Number(y):text(x).localeCompare(text(y),"zh-CN",{numeric:true});return ascending?delta:-delta;});
     const pages=Math.max(1,Math.ceil(data.rows.length/size));page=Math.min(page,pages-1);

@@ -2,6 +2,16 @@
 
 日期：2026-11-17，Asia/Shanghai。协调与命令发送：Relay；真实柜台执行：OC。
 
+## 12:45启动前新增阻断
+
+12:45:31只读全量SCAN确认`relay:test:v1:ctp_4900:ctp-dongwu-asset-retest-20261117`再次0键，epoch、两命令流、reply、event、hb均不存在；run_id仍为`94f801dc68e3699cc681feb6dbb48f19e46aef9e`。不能沿用下面的旧绑定启动或重新初始化成首次空路由。下午13:30窗口目标不变，但必须先完成此次责任核对和新隔离绑定确认。
+
+Relay独立PG仍保留5条命令，交易发布0；本轮未对该真实路由写入/删除/设置TTL，没有新查询或报撤。午间回归曾在授权的随机`relay-dev-*`键进行读写并清理各自开发键，共享Redis的其他键及配置未主动修改；目前没有逐键证据认定本次丢失来源，不将run_id不变当作数据完整证明。暂不继续向共享实例写测试样例。
+
+原始预检：`outputs/recovery/ctp_dongwu_asset_retest_20261117/preflight-20261117T044531.575036243Z.json`。终端显示`epoch_missing_or_changed`，历史查询仍可查看，这不是新JSON解析错误。
+
+已通知OC：核对10:33资金复测及本地journal/outbox/ACK、是否存在结算once标记；未决责任未清不启动，不删除旧证据。请回新的隔离报撤gateway/epoch/assessment_id候选，Relay核对占用并绑定新接收状态，不复制旧owner/cursor、不重放旧命令。用户此前允许临时TEST按新隔离路由继续功能验证，不代表免除来源保护或自动授权重做一次未知结算。所有真实操作等双方具体绑定确认后进行。
+
 ## 已确定事项
 
 用户已明确：**今天通过 Relay → Redis → OC 现有主程序 → 东吴柜台 → Relay 回报链路完成登录、至少一笔有效报单及成功撤单。不开发或采用临时直连程序。** 用户另行批准仅本次TEST账户300052141的显式结算确认，不默认开启每天自动确认，不涉及生产。
@@ -45,11 +55,23 @@
 
 Relay发布与事件收件代码已完成本轮测试及独立TEST工具准备，详情见下文。**尚未发送任何东吴真实报撤命令，不宣称柜台测评或完整交易业务账本已通过。** 下一步直接取得OC实际交易心跳/窗口后接线执行，不需要再发原则性回签。
 
-## 心跳对接的具体差项
+## 午间接线确认：c83731d
 
-Relay目前支持原draft.2普通心跳、test_transport_recovery_only及test_broker_read_only。后两者不能作为交易准入；若OC新增运行模式，请直接给实际JSON，Relay同步适配，不为赶时间忽略未知模式。
+Relay已接收并校验`reference/assessment-review-c83731d.tar.gz`，原样提取至`testdata/oc-assessment-c83731d-20261117/`；六项SHA清单均一致。接受现有主程序的`test_broker_assessment`心跳模式，普通只读及transport-only仍不能作为报撤准入，不需要再提交原则性回签。
 
-报单最低检查redis_ready、broker_ready、settlement_confirmed、order_snapshot_ready、accepting_trade_commands；撤单单独检查accepting_cancel_commands，不因报单关闭就阻止合法撤单。还需adapter_context已有connection_generation、transport_recovery_clear与当前绑定匹配。即便这些字段通过，OC仍负责最终原生合约/账户/风控检查，Relay不声称一个布尔值证明完整资金经济范围。
+- Relay独立解码七个离线场景的48条心跳、4条订单事件，原文不改；事件可携带顶层`action=order.submit`，撤成事件的origin仍关联原报单，不错误要求它改指撤单。没有向真实账户投递样例。
+- 当前会话恢复清楚、登录成功后，允许新`order.list.query`及`account.positions.query`取得初始化快照，不依赖尚未就绪的订单快照反向阻断这两查询。不重复四查询，不重发BizType资金查询。
+- 交易授权`assessment_id`须与OC心跳一致；绑定新session/代次/交易日及原SourceID/run_id/epoch。报单另校验持仓快照、OrderRef、次数、原生合约静态约束及5秒内原生上下限；原生tick须与Meridian一致。原生范围与Meridian范围都要满足，不自动改价。
+- 撤单检查独立`accepting_cancel_commands`、真实可撤订单身份及一次预算，不依赖原生限价或Meridian行情刷新，不因新单预算已消费而禁止撤单。
+- `asset_scope_verified=false`原样保留：本轮仅TEST一手测评，最终保证金与账户风险由柜台检查；未证明本地保证金足额或完整资金范围，不能据此放开普通交易/生产准入。资金旧失败不改成成功或零余额。
+- 本次结算确认使用用户已有单次授权。OC若出现已有once文件、未知结果或失败，不删除文件、换状态目录或自动重新确认。
+- 终端能识别“柜台测评中”，但网页期货交易按钮继续只读；实际报撤仅走受控CLI。原始收件不伪装业务账本已上线。
+
+用户确认下午13:30起进行。**等双方处理上方12:45路由丢失并收到实际窗口后再启动；当前没有自动定时登录或发单。** OC请提供实际`assessment_id`，启动后给新session、代次、TradingDay和带+08:00的截止时间（最多300秒）；rb2701不变，旧asset-retest状态保留但不能使用其丢失的Redis绑定。不得使用10:37已停止会话。
+
+实时顺序：新登录/单次结算确认 → 两条新初始化查询 → 原生约束就绪 → 现场Meridian行情/原文授权 → 一手买开 → 真实working/SysID → 一次撤单 → 真实cancelled及两端审计。真实行情、心跳或绑定不满足则停，不以离线通过替代。
+
+离线`runtime.examples.json` SHA256为`7c05889470381c0195532bb63c57b6260603c409e1c1df992e89cbf94caef8ed`，与同次runtime-test日志原字节一致。样例业务时钟13:30与原生约束采集时刻不同，原样可解析但不能通过当前实时时效门禁；新鲜度正例仅在测试中用明确合成时钟，不冒充真实柜台样本。OC的39项CTest/三项sanitizer为交付日志，本轮Relay未独立运行其C++源码；真实认证、结算、报撤和错误分支仍待在线核验。
 
 ## 最小 wire 样例
 
@@ -102,6 +124,7 @@ Relay目前支持原draft.2普通心跳、test_transport_recovery_only及test_br
 - Go全包、定向race/vet、独立PostgreSQL提交前持久化/提交失败/回包未知/完成写入失败/并发单次发布/批次预算/撤单原文核验通过。
 - 实际共享TEST Redis随机`relay-dev-*`隔离键通过精确原文单次发布、epoch/心跳变化、过期、错误代次、关闭/只读门禁及event收件/显式续读；合成输入未投递东吴或华鑫真实路由。
 - 文档两条wire样例已由现有DecodeCommand自动回归；CLI默认零连接及生产/缺失权限拒绝通过。
-- 仅独立库`relay_ctp_dongwu_20261117_test`应用迁移46。原5笔只读命令未变，交易发布记录0；没有业务库/生产迁移、9092重启或网页权限变化。
+- 仅独立库`relay_ctp_dongwu_20261117_test`应用迁移46。原5笔只读命令未变，交易发布记录0；没有业务库/生产迁移或网页交易权限变化。本次午间构建更新TEST运行工具及9092心跳展示，不切换环境、不重启OC。
 - 迁移前备份：`outputs/recovery/ctp_dongwu_asset_retest_20261117/before-trade-publication-5rE5Bu.dump`，SHA256 `5af8b34828b5dbdb99b6abe066ff5d09cced3c6503fe546e7e8603876f0ab0ca`。
-- **仍待OC真实交易模式JSON/部署及窗口、rb2701柜台支持与必要就绪证明。** 未知runtime_mode仍拒绝，拿到实际样例后适配，不临时放宽解析器。此处event收件只负责原始审计和撤单前独立验证，不把pending标delivered，不冒称终端业务订单账本已发布。
+- 新模式回归已覆盖初始化查询、停止/过期、一次报撤预算、assessment身份、原生报价过期及撤单独立准入；Go全包、定向race/vet、临时PG和共享TEST随机开发路由验证通过。
+- **仍待OC实际assessment_id/新窗口、rb2701柜台支持与真实就绪证明。** JSON适配已完成，不再等同样材料；未知模式仍拒绝。event收件只负责原始审计和撤单前独立验证，不把pending标delivered，不冒称终端业务订单账本已发布。

@@ -1,0 +1,21 @@
+{
+  "implementation_commit": "c83731d46254bb244400f8ed42caea02beff4080",
+  "evidence_scope": "offline_fake_sdk_fake_transport_real_local_journal",
+  "synthetic_only": true,
+  "online_assessment_started": false,
+  "ordinary_ctest_passed": 39,
+  "non_pie_asan_ubsan_targets_passed": 3,
+  "main_binary_sha256": "787c3948d9bbb1fff8e1aafca87d9c482fcaa4f3f814905e49dd50f7e32c973e",
+  "sdk_version": "v6.7.13_20260225 14:16:30.12079",
+  "trader_library_sha256": "8f919d0f75f407b0d7960358acee5f55864744be589f16cb545a91ab8cb80403",
+  "md_library_sha256": "204ad48dd082b2282422c5826b3d006d7e865833ae91556d6cf7c6aea8c56a18",
+  "runtime_mode": "test_broker_assessment",
+  "limitations": [
+    "No real Redis or broker operations in these tests",
+    "No actual session or connection generation assigned for the next window",
+    "Error callbacks not yet standardized remain durable pending and stop admission",
+    "BizType NUL failure retained; no verified asset scope or local sufficient-margin check",
+    "No general production runtime, CentOS7 acceptance, or actual crash/recovery acceptance",
+    "Original PIE sanitizer issue is not claimed resolved"
+  ]
+}

@@ -56,12 +56,18 @@ def main():
             assert not overflow, results
             # Browser-only larger data and failure states; never publish fixtures.
             sample = page.request.get("http://127.0.0.1:9092/v1/futures/terminal").json()
-            query = next(q for q in sample["data"]["accounts"][0]["queries"] if q["action"] == "account.positions.query")
+            account = sample["data"]["accounts"][0]
+            query = next(q for q in account["queries"] if q["action"] == "account.positions.query")
+            account["connection_state"] = "assessment"
+            account["heartbeat"] = {"counter_session_id": query["counter_session_id"], "produced_at": query["produced_at"]}
             query["positions"] = [dict(query["positions"][i % 12]) for i in range(45)]
             query["row_count"] = 45
             page.route("**/v1/futures/terminal", lambda route: route.fulfill(json=sample))
             page.locator("#futuresAccountRefresh").click()
             page.wait_for_function("document.querySelector('#futuresQueryCount').textContent.startsWith('45')")
+            assert "柜台测评中" in page.locator("#futuresConnection").inner_text()
+            assert "历史会话采样" not in page.locator("#futuresQueryStatus").inner_text()
+            assert page.locator("#submitOrderButton").is_disabled()
             assert page.locator("#futuresQueryTable tbody tr").count() == 20
             page.locator("#futuresQueryNext").click()
             page.locator("#futuresQueryNext").click()

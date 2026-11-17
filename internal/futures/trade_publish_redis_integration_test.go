@@ -12,7 +12,7 @@ import (
 )
 
 func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
-	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_generation", "closed", "readonly"} {
+	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_generation", "closed", "readonly", "assessment_publish", "native_stale"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, h, client, _, ctx := realStreamRole(t, "hb")
 			migrateFuturesTest(t, db, ctx, "000046_futures_test_trade_publication", "up")
@@ -61,6 +61,19 @@ func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			body := assessmentHeartbeat(t, scope.Route, target, time.Now()).Raw
+			if oneOf(scenario, "assessment_publish", "native_stale") {
+				row, _, _, _ := freshOCTradeHeartbeat(t, time.Now(), false)
+				body = editBody(t, row.Raw, func(m map[string]any) {
+					m["routing"], m["counter_session_id"] = scope.Route, target.CounterSessionID
+					p := m["payload"].(map[string]any)
+					p["counter_session_id"], p["trade_date"] = target.CounterSessionID, target.TradeDate
+					e := m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)
+					e["assessment_id"] = a.AssessmentID
+					if scenario == "native_stale" {
+						e["native_limits"].(map[string]any)["started_at"] = assessmentTime(time.Now().Add(-6 * time.Second))
+					}
+				})
+			}
 			if scenario == "closed" {
 				body = editBody(t, body, func(m map[string]any) { m["payload"].(map[string]any)["accepting_trade_commands"] = false })
 			}
@@ -78,11 +91,11 @@ func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer p.Close()
-			if oneOf(scenario, "closed", "readonly", "wrong_generation") {
+			if oneOf(scenario, "closed", "readonly", "wrong_generation", "native_stale") {
 				if _, err := p.inspect(ctx); err == nil {
 					t.Fatal("invalid gate accepted")
 				}
-			} else if scenario == "publish" {
+			} else if oneOf(scenario, "publish", "assessment_publish") {
 				s, _ := NewCommandStore(db)
 				r := registerVector(t, s, ctx, v, e, "registered")
 				result, err := s.PublishTestTrade(ctx, r.CommandID, r.Original.MessageID, p)

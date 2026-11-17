@@ -16,6 +16,7 @@ type Heartbeat struct {
 	State, StateText                                                 string
 	Recovery                                                         *HeartbeatRecovery
 	ReadOnly                                                         *HeartbeatReadOnly
+	Assessment                                                       *HeartbeatAssessment
 	ProducedAt                                                       time.Time
 	RedisReady, BrokerReady, SettlementConfirmed, OrderSnapshotReady bool
 	AcceptingTradeCommands, AcceptingCancelCommands                  bool
@@ -71,7 +72,8 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 	_, runtimeProfile := fields["runtime_mode"]
 	mode := textField(fields, "runtime_mode")
 	recoveryMode, readOnlyMode := mode == "test_transport_recovery_only", mode == "test_broker_read_only"
-	if runtimeProfile && !recoveryMode && !readOnlyMode {
+	assessmentMode := mode == "test_broker_assessment"
+	if runtimeProfile && !recoveryMode && !readOnlyMode && !assessmentMode {
 		return bad("unsupported runtime mode")
 	}
 	required := append([]string{"product_type", "schema_version", "counter_session_id", "trade_date"}, flags...)
@@ -104,6 +106,30 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			return bad("boolean " + key)
 		}
 		*values[i] = literal(p[key], "true")
+	}
+	if assessmentMode {
+		if expected.Env != "test" {
+			return bad("assessment TEST only")
+		}
+		for _, key := range mirrors {
+			same := bytes.Equal(bytes.TrimSpace(obj[key]), bytes.TrimSpace(p[key]))
+			if oneOf(key, "counter_session_id", "state", "state_text") {
+				same = textField(obj, key) == textField(p, key)
+			}
+			if !same {
+				return bad("missing or conflicting assessment mirror " + key)
+			}
+		}
+		if !literal(p["trade_date"], "null") && !validDay(h.TradeDate) {
+			return bad("assessment day")
+		}
+		h.State, h.StateText = textField(p, "state"), textField(p, "state_text")
+		a, err := decodeAssessmentHeartbeat(fields, h)
+		if err != nil {
+			return Heartbeat{}, err
+		}
+		h.Assessment = &a
+		return h, nil
 	}
 	if readOnlyMode {
 		if expected.Env != "test" || h.SettlementConfirmed || h.OrderSnapshotReady || h.AcceptingTradeCommands || h.AcceptingCancelCommands {

@@ -121,12 +121,15 @@ func DecodeTradeEvent(raw []byte, expected EventContext) (TradeEvent, error) {
 	if _, err := parseReply(raw); err != nil {
 		return TradeEvent{}, err
 	}
-	obj, err := shape(raw, []string{"protocol", "message_type", "message_id", "event_type", "produced_at", "routing", "payload"}, []string{"origin_message_id", "request_id", "correlation_id", "idempotency_key", "adapter_context"})
+	obj, err := shape(raw, []string{"protocol", "message_type", "message_id", "event_type", "produced_at", "routing", "payload"}, []string{"origin_message_id", "request_id", "correlation_id", "idempotency_key", "adapter_context", "action"})
 	if err != nil {
 		return TradeEvent{}, err
 	}
 	if textField(obj, "protocol") != "relay.stream.v1" || textField(obj, "message_type") != "event" || !validTime(textField(obj, "produced_at")) {
 		return bad("protocol/type/time")
+	}
+	if action, exists := obj["action"]; exists && (!literal(action, `"order.submit"`) || !validID(textField(obj, "origin_message_id"))) {
+		return bad("unsupported lifecycle action or missing origin")
 	}
 	for _, key := range []string{"message_id", "origin_message_id", "request_id", "correlation_id", "idempotency_key"} {
 		if _, ok := obj[key]; ok && (!validID(textField(obj, key)) || len(textField(obj, key)) > 512) {

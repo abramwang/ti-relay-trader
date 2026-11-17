@@ -3,6 +3,7 @@ package futures
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"time"
 )
 
@@ -85,7 +86,61 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 			expires = observed.Add(5 * time.Second)
 		}
 	}
+	if assessment := h.Assessment; assessment != nil {
+		if a.AssessmentID != assessment.AssessmentID || !now.Before(assessment.ExpiresAt) {
+			return queryPublishProof{}, ErrQueryPublishGate
+		}
+		if assessment.ExpiresAt.Before(expires) {
+			expires = assessment.ExpiresAt
+		}
+		if a.CancelReceiptID == 0 {
+			if a.Market.SourceInstrumentID != assessment.Symbol || a.Market.ExchangeID != assessment.Exchange || assessment.Static == nil || assessment.Limits == nil || assessment.Static.MinLimitLots > 1 || assessment.Static.MaxLimitLots < 1 || !equalDecimal(string(assessment.Static.PriceTick), string(a.Market.PriceTick)) {
+				return queryPublishProof{}, ErrQueryPublishGate
+			}
+			captured, _ := time.Parse(time.RFC3339Nano, assessment.Static.CapturedAt)
+			start, _ := time.Parse(time.RFC3339Nano, assessment.Limits.StartedAt)
+			end, _ := time.Parse(time.RFC3339Nano, assessment.Limits.CompletedAt)
+			if captured.After(now.Add(2*time.Second)) || !now.Before(captured.Add(300*time.Second)) || start.After(now.Add(2*time.Second)) || end.After(now.Add(2*time.Second)) || !now.Before(start.Add(5*time.Second)) {
+				return queryPublishProof{}, ErrQueryPublishGate
+			}
+			if start.Add(5 * time.Second).Before(expires) {
+				expires = start.Add(5 * time.Second)
+			}
+			if captured.Add(300 * time.Second).Before(expires) {
+				expires = captured.Add(300 * time.Second)
+			}
+		}
+	}
 	return queryPublishProof{EntryID: row.EntryID, Body: row.Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
+}
+
+func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
+	a := h.Assessment
+	if a == nil {
+		return nil
+	}
+	c, err := DecodeCommand(raw, scope, "cmd.trade")
+	if err != nil {
+		return err
+	}
+	if c.Action == "order.cancel" {
+		return nil
+	}
+	if len(c.Orders) != 1 || a.Limits == nil || a.Static == nil {
+		return ErrQueryPublishGate
+	}
+	o := c.Orders[0]
+	if o.Symbol != a.Symbol || o.Exchange != a.Exchange || int64(o.OrderQty) < a.Static.MinLimitLots || int64(o.OrderQty) > a.Static.MaxLimitLots {
+		return ErrQueryPublishGate
+	}
+	p, _ := new(big.Rat).SetString(string(o.LimitPrice))
+	tick, _ := new(big.Rat).SetString(string(a.Static.PriceTick))
+	low, _ := new(big.Rat).SetString(string(a.Limits.Lower))
+	high, _ := new(big.Rat).SetString(string(a.Limits.Upper))
+	if p == nil || tick == nil || low == nil || high == nil || p.Cmp(low) < 0 || p.Cmp(high) > 0 || !new(big.Rat).Quo(p, tick).IsInt() {
+		return ErrQueryPublishGate
+	}
+	return nil
 }
 
 // appendQuery implements the shared one-attempt transport interface; the
@@ -95,6 +150,10 @@ func (p *TestTradePublisher) appendQuery(ctx context.Context, proof queryPublish
 		return "", true, nil
 	}
 	b := p.base
+	h, err := DecodeHeartbeat(proof.Body, b.scope.Route)
+	if err != nil || assessmentNativePrice(raw, b.scope, h) != nil {
+		return "", true, nil
+	}
 	result, err := b.client.Eval(ctx, testQueryAppendScript, []string{b.prefix() + ":cmd.trade:transport-epoch", b.prefix() + ":hb", b.prefix() + ":cmd.trade"}, b.target.ServerRunID, b.target.Epoch, b.target.Group, proof.EntryID, string(proof.Body), proof.ExpiresAt.UnixMilli(), proof.ProducedAt.UnixMilli(), string(raw)).Result()
 	if err != nil {
 		return "", false, ErrQueryPublishUnknown

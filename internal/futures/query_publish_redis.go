@@ -57,12 +57,27 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 	}
 	h, err := DecodeHeartbeat(rows[0].Raw, p.scope.Route)
 	now := time.Now()
-	if err != nil || h.ReadOnly == nil || !h.ReadOnly.QueryCollectionReady || !h.ReadOnly.TransportRecoveryClear || h.ReadOnly.ConnectionGeneration == nil || *h.ReadOnly.ConnectionGeneration != p.target.ConnectionGeneration || h.CounterSessionID != p.target.CounterSessionID || h.TradeDate != p.target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
+	g, ready := h.queryCollection()
+	if err != nil || !ready || g == nil || *g != p.target.ConnectionGeneration || h.CounterSessionID != p.target.CounterSessionID || h.TradeDate != p.target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
 		return bad()
 	}
 	expires := h.ProducedAt.Add(30 * time.Second)
 	if expires.After(now.Add(30 * time.Second)) {
 		expires = now.Add(30 * time.Second)
+	}
+	if h.Assessment != nil {
+		if !now.Before(h.Assessment.ExpiresAt) {
+			return bad()
+		}
+		if h.Assessment.ExpiresAt.Before(expires) {
+			expires = h.Assessment.ExpiresAt
+		}
+		if h.ProducedAt.Add(5 * time.Second).Before(expires) {
+			expires = h.ProducedAt.Add(5 * time.Second)
+		}
+		if !now.Before(expires) {
+			return bad()
+		}
 	}
 	return queryPublishProof{EntryID: rows[0].EntryID, Body: rows[0].Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
 }

@@ -208,6 +208,11 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		state = "stale"
 	} else if h.BrokerReady && h.ReadOnly != nil && h.ReadOnly.QueryCollectionReady {
 		state = "read_only"
+	} else if h.Assessment != nil {
+		_, ready := h.queryCollection()
+		if ready && time.Now().Before(h.Assessment.ExpiresAt) {
+			state = "assessment"
+		}
 	}
 	var day *string
 	if h.TradeDate != "" {
@@ -219,6 +224,13 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		view.QueryCollectionReady = &h.ReadOnly.QueryCollectionReady
 		view.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
 		view.RuntimeMode = "test_broker_read_only"
+	} else if h.Assessment != nil {
+		g, ready := h.queryCollection()
+		view.ConnectionGeneration, view.QueryCollectionReady = g, &ready
+		view.RecoveryClear = &h.Assessment.TransportRecoveryClear
+		view.RuntimeMode = "test_broker_assessment"
+		view.SettlementConfirmed, view.OrderSnapshotReady = h.SettlementConfirmed, h.OrderSnapshotReady
+		view.AcceptingTradeCommands, view.AcceptingCancelCommands = h.AcceptingTradeCommands, h.AcceptingCancelCommands
 	}
 	return view, state, ""
 }

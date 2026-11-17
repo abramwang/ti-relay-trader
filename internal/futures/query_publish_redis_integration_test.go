@@ -12,7 +12,7 @@ import (
 )
 
 func TestQueryPublisherRedisAtomicGate(t *testing.T) {
-	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_run", "wrong_generation", "closed", "duplicate_body"} {
+	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_run", "wrong_generation", "closed", "duplicate_body", "assessment_init", "assessment_expired", "assessment_stopping"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, h, client, _, ctx := realStreamRole(t, "hb")
 			cfg, err := config.Load(os.Getenv("RELAY_FUTURES_TEST_REDIS_CONFIG"))
@@ -67,6 +67,23 @@ func TestQueryPublisherRedisAtomicGate(t *testing.T) {
 					m["adapter_context"].(map[string]any)["query_collection_ready"] = false
 				}
 			})
+			if strings.HasPrefix(scenario, "assessment_") {
+				index := 1
+				if scenario == "assessment_stopping" {
+					index = 9
+				}
+				body = editBody(t, ocAssessmentCases(t)[0].Heartbeats[index], func(m map[string]any) {
+					m["routing"], m["counter_session_id"], m["produced_at"] = h.config.Scope.Route, target.CounterSessionID, assessmentTime(time.Now())
+					p := m["payload"].(map[string]any)
+					p["counter_session_id"], p["trade_date"] = target.CounterSessionID, target.TradeDate
+					a := m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)
+					expires := time.Now().Add(30 * time.Second)
+					if scenario == "assessment_expired" {
+						expires = time.Now().Add(-time.Second)
+					}
+					a["expires_at"] = assessmentTime(expires)
+				})
+			}
 			if scenario == "duplicate_body" {
 				appendRealStream(t, ctx, client, h, "2-0", "body", body, "body", body)
 			} else {
@@ -83,12 +100,16 @@ func TestQueryPublisherRedisAtomicGate(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer publisher.Close()
-			if oneOf(scenario, "closed", "wrong_run", "wrong_generation", "duplicate_body") {
+			if oneOf(scenario, "closed", "wrong_run", "wrong_generation", "duplicate_body", "assessment_expired", "assessment_stopping") {
 				if _, err := publisher.inspect(ctx); err == nil {
 					t.Fatal("closed gate accepted")
 				}
-			} else if scenario == "publish" {
-				raw := editBody(t, []byte(intentVectors(t)["account.asset.query"].Raw), func(m map[string]any) { m["payload"].(map[string]any)["account_id"] = h.config.Scope.Route.AccountID })
+			} else if oneOf(scenario, "publish", "assessment_init") {
+				action := "account.asset.query"
+				if scenario == "assessment_init" {
+					action = "order.list.query"
+				}
+				raw := editBody(t, []byte(intentVectors(t)[action].Raw), func(m map[string]any) { m["payload"].(map[string]any)["account_id"] = h.config.Scope.Route.AccountID })
 				store, _ := NewCommandStore(db)
 				registration, err := store.Register(ctx, h.config.Scope, "cmd.query", raw, RegistrationEvidence{})
 				if err != nil {

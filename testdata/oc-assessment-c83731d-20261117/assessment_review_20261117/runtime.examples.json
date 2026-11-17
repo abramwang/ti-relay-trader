@@ -1,0 +1,4209 @@
+{
+  "cases": [
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": true,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:30.870+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:30.863+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-7",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": true,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": true,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:30.870+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:30.863+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-8",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": true,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 1,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:30.870+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:30.863+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-9",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 1,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_inactive_or_stale",
+              "instrument_usable": false,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:30.870+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:30.863+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:27.687+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+          "message_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a-hb-10",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [
+        {
+          "action": "order.list.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+              "sdk_request_id": 5,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "1"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-104",
+          "message_id": "ctp-query-v1-328c3c188ecd9f79f09df04cf4d77226faf3fc23982fd8a185e0ec771823e525",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-104",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:28.749+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-104",
+          "result_type": "order_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "account.positions.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+              "sdk_request_id": 6,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "2"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-107",
+          "message_id": "ctp-query-v1-5e63938a3c208893e2ad9461b1348ba1ed5cca232cdd9b05d624ff5522a5550b",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-107",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:29.826+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-107",
+          "result_type": "position_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "connection_generation": 1,
+            "order_snapshot_request_id": 5,
+            "sdk_request_id": 8,
+            "sdk_return_code": 0
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-trade-receipt-v1-8ac9572f78f8cc43f056183bda44437317b2e33779e58735b2d27ac569f3b5bb",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "gateway_order_id": "fixture-order",
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:31.777+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "result_type": "order_action_receipt",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "accepted"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "callback_sha256": "86fe267b2fb4bc9b3280201dd9b76ed6874e613c44f5814cde75f849447cf1b6",
+            "connection_generation": 1,
+            "ctp_raw": {
+              "BrokerID": {
+                "hex": "34393030",
+                "terminated": true
+              },
+              "CombHedgeFlag": {
+                "hex": "31",
+                "terminated": true
+              },
+              "CombOffsetFlag": {
+                "hex": "30",
+                "terminated": true
+              },
+              "Direction": "30",
+              "ExchangeID": {
+                "hex": "53484645",
+                "terminated": true
+              },
+              "FrontID": 7,
+              "InsertDate": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "InsertTime": {
+                "hex": "31333a33303a3031",
+                "terminated": true
+              },
+              "InstrumentID": {
+                "hex": "726232373031",
+                "terminated": true
+              },
+              "InvestorID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "LimitPrice_binary64": "40a7280000000000",
+              "OrderPriceType": "32",
+              "OrderRef": {
+                "hex": "303030303030303030303032",
+                "terminated": true
+              },
+              "OrderStatus": "33",
+              "OrderSubmitStatus": "33",
+              "OrderSysID": {
+                "hex": "20202030303030303030303838",
+                "terminated": true
+              },
+              "RequestID": 8,
+              "SessionID": -9,
+              "StatusMsg": {
+                "hex": "",
+                "terminated": true
+              },
+              "TradingDay": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "UserID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "VolumeTotal": 1,
+              "VolumeTotalOriginal": 1,
+              "VolumeTraded": 0,
+              "collected_at": "2026-11-17T12:21:31.772+08:00"
+            },
+            "source_callback_id": "ctp-callback-v1-0d302314d74d1cfcbdaa546a6bbf37f94f93494fa96ffcbee52c8e9a5f36fee2"
+          },
+          "correlation_id": "fixture-correlation",
+          "event_type": "order.event",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-lifecycle-v1-cbb1fd2c4843f9cc8b161a26ffed8db8be39169b92bf14db45747928bb2465af",
+          "message_type": "event",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "business_type": "F",
+            "captured_at": "2026-11-17T12:21:31.772+08:00",
+            "client_order_id": "fixture-client",
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "cum_filled_qty": 0,
+            "exchange": "SHFE",
+            "gateway_order_id": "fixture-order",
+            "gateway_status": "working",
+            "hedge_type": "speculation",
+            "leaves_qty": 1,
+            "limit_price": "2964",
+            "native_ids": {
+              "broker_id": "4900",
+              "front_id": 7,
+              "investor_id": "300052141",
+              "order_ref": "000000000002",
+              "order_sys_id": "0000000088",
+              "sdk_request_id": 8,
+              "session_id": -9,
+              "user_id": "300052141"
+            },
+            "offset_type": "O",
+            "order_qty": 1,
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "submitted_at": "2026-11-17T13:30:01+08:00",
+            "symbol": "rb2701",
+            "trade_date": "20261117",
+            "trade_side": "B"
+          },
+          "produced_at": "2026-11-17T12:21:31.772+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          }
+        },
+        {
+          "action": "order.cancel",
+          "adapter_context": {
+            "connection_generation": 1,
+            "order_snapshot_request_id": 5,
+            "sdk_request_id": 9,
+            "sdk_return_code": 0
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.trade-115",
+          "message_id": "ctp-trade-receipt-v1-4f304d464b66a1a6944ca3c8a0538219a88c2f3fd85bbbb52e03a3e41a223533",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.trade-115",
+          "payload": {
+            "account_id": "300052141",
+            "cancel_id": "fixture-cancel",
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "gateway_order_id": "fixture-order",
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:32.781+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-115",
+          "result_type": "order_action_receipt",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "accepted"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "callback_sha256": "2ba815922008268f3cca9456ff5ddaae6fc98972c01cb6bcb352c0df9dc52a5c",
+            "connection_generation": 1,
+            "ctp_raw": {
+              "BrokerID": {
+                "hex": "34393030",
+                "terminated": true
+              },
+              "CombHedgeFlag": {
+                "hex": "31",
+                "terminated": true
+              },
+              "CombOffsetFlag": {
+                "hex": "30",
+                "terminated": true
+              },
+              "Direction": "30",
+              "ExchangeID": {
+                "hex": "53484645",
+                "terminated": true
+              },
+              "FrontID": 7,
+              "InsertDate": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "InsertTime": {
+                "hex": "31333a33303a3031",
+                "terminated": true
+              },
+              "InstrumentID": {
+                "hex": "726232373031",
+                "terminated": true
+              },
+              "InvestorID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "LimitPrice_binary64": "40a7280000000000",
+              "OrderPriceType": "32",
+              "OrderRef": {
+                "hex": "303030303030303030303032",
+                "terminated": true
+              },
+              "OrderStatus": "35",
+              "OrderSubmitStatus": "33",
+              "OrderSysID": {
+                "hex": "20202030303030303030303838",
+                "terminated": true
+              },
+              "RequestID": 8,
+              "SessionID": -9,
+              "StatusMsg": {
+                "hex": "",
+                "terminated": true
+              },
+              "TradingDay": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "UserID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "VolumeTotal": 1,
+              "VolumeTotalOriginal": 1,
+              "VolumeTraded": 0,
+              "collected_at": "2026-11-17T12:21:32.774+08:00"
+            },
+            "source_callback_id": "ctp-callback-v1-3f6c63c218a294dd7612c5bde2f4c23ffb210109592335649d4f81203b29c994"
+          },
+          "correlation_id": "fixture-correlation",
+          "event_type": "order.event",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-lifecycle-v1-0756e7a73c9f2171700ee755843554a7a2c6f2eb6713546f436562c320d44b9d",
+          "message_type": "event",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "business_type": "F",
+            "captured_at": "2026-11-17T12:21:32.774+08:00",
+            "client_order_id": "fixture-client",
+            "counter_session_id": "ctpproc-c4e0f9c40751ecc51e0b956953b0772a",
+            "cum_filled_qty": 0,
+            "exchange": "SHFE",
+            "gateway_order_id": "fixture-order",
+            "gateway_status": "cancelled",
+            "hedge_type": "speculation",
+            "leaves_qty": 1,
+            "limit_price": "2964",
+            "native_ids": {
+              "broker_id": "4900",
+              "front_id": 7,
+              "investor_id": "300052141",
+              "order_ref": "000000000002",
+              "order_sys_id": "0000000088",
+              "sdk_request_id": 8,
+              "session_id": -9,
+              "user_id": "300052141"
+            },
+            "offset_type": "O",
+            "order_qty": 1,
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "submitted_at": "2026-11-17T13:30:01+08:00",
+            "symbol": "rb2701",
+            "trade_date": "20261117",
+            "trade_side": "B"
+          },
+          "produced_at": "2026-11-17T12:21:32.774+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          }
+        }
+      ],
+      "scenario": "happy",
+      "sdk_cancel_count": 1,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 1,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 0,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": true,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:38.952+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:38.948+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-7",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": true,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": true,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:38.952+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:38.948+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-8",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": true,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 1,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:38.952+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:38.948+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-9",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 1,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_inactive_or_stale",
+              "instrument_usable": false,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:38.952+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:38.948+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:35.783+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+          "message_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e-hb-10",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [
+        {
+          "action": "order.list.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+              "sdk_request_id": 5,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "1"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-104",
+          "message_id": "ctp-query-v1-2b2221996d12eca090a7f1851aa456ee5ad63202ee4597104d227b53afff9c60",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-104",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:36.839+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-104",
+          "result_type": "order_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "account.positions.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+              "sdk_request_id": 6,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "2"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-107",
+          "message_id": "ctp-query-v1-156001ff7f1a05cdaefcf5936ed6b3eb60dacbcd2d0237a060fe02fcef63f922",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-107",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:37.915+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-107",
+          "result_type": "position_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "connection_generation": 1,
+            "order_snapshot_request_id": 5,
+            "sdk_request_id": 8,
+            "sdk_return_code": 0
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-trade-receipt-v1-28f56d941579c7fadc8bd3637c0e7d63311a98321292e0aa52773b337587e01a",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "gateway_order_id": "fixture-order",
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:39.856+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "result_type": "order_action_receipt",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "accepted"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "callback_sha256": "d2f869f001c539b0be71ef1d47b0926f23b7b8c2cb03734be30944bf763d6100",
+            "connection_generation": 1,
+            "ctp_raw": {
+              "BrokerID": {
+                "hex": "34393030",
+                "terminated": true
+              },
+              "CombHedgeFlag": {
+                "hex": "31",
+                "terminated": true
+              },
+              "CombOffsetFlag": {
+                "hex": "30",
+                "terminated": true
+              },
+              "Direction": "30",
+              "ExchangeID": {
+                "hex": "53484645",
+                "terminated": true
+              },
+              "FrontID": 7,
+              "InsertDate": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "InsertTime": {
+                "hex": "31333a33303a3031",
+                "terminated": true
+              },
+              "InstrumentID": {
+                "hex": "726232373031",
+                "terminated": true
+              },
+              "InvestorID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "LimitPrice_binary64": "40a7280000000000",
+              "OrderPriceType": "32",
+              "OrderRef": {
+                "hex": "303030303030303030303032",
+                "terminated": true
+              },
+              "OrderStatus": "33",
+              "OrderSubmitStatus": "33",
+              "OrderSysID": {
+                "hex": "20202030303030303030303838",
+                "terminated": true
+              },
+              "RequestID": 8,
+              "SessionID": -9,
+              "StatusMsg": {
+                "hex": "",
+                "terminated": true
+              },
+              "TradingDay": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "UserID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "VolumeTotal": 1,
+              "VolumeTotalOriginal": 1,
+              "VolumeTraded": 0,
+              "collected_at": "2026-11-17T12:21:39.851+08:00"
+            },
+            "source_callback_id": "ctp-callback-v1-7b0fb8ed03ef3f2209b7e3e50533d5afbc55c8ea99d1ff8152a9aa5af63615ee"
+          },
+          "correlation_id": "fixture-correlation",
+          "event_type": "order.event",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-lifecycle-v1-cbb1fd2c4843f9cc8b161a26ffed8db8be39169b92bf14db45747928bb2465af",
+          "message_type": "event",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "business_type": "F",
+            "captured_at": "2026-11-17T12:21:39.851+08:00",
+            "client_order_id": "fixture-client",
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "cum_filled_qty": 0,
+            "exchange": "SHFE",
+            "gateway_order_id": "fixture-order",
+            "gateway_status": "working",
+            "hedge_type": "speculation",
+            "leaves_qty": 1,
+            "limit_price": "2964",
+            "native_ids": {
+              "broker_id": "4900",
+              "front_id": 7,
+              "investor_id": "300052141",
+              "order_ref": "000000000002",
+              "order_sys_id": "0000000088",
+              "sdk_request_id": 8,
+              "session_id": -9,
+              "user_id": "300052141"
+            },
+            "offset_type": "O",
+            "order_qty": 1,
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "submitted_at": "2026-11-17T13:30:01+08:00",
+            "symbol": "rb2701",
+            "trade_date": "20261117",
+            "trade_side": "B"
+          },
+          "produced_at": "2026-11-17T12:21:39.851+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          }
+        },
+        {
+          "action": "order.cancel",
+          "adapter_context": {
+            "connection_generation": 1,
+            "order_snapshot_request_id": 5,
+            "sdk_request_id": 9,
+            "sdk_return_code": 0
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.trade-116",
+          "message_id": "ctp-trade-receipt-v1-9c957c586f309cfefb9799e798dd9af7782da0ee2f41d4d48b006b6c7e3a4875",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.trade-116",
+          "payload": {
+            "account_id": "300052141",
+            "cancel_id": "fixture-cancel",
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "gateway_order_id": "fixture-order",
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:40.908+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-116",
+          "result_type": "order_action_receipt",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "accepted"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "callback_sha256": "1b111eac6002028d67b2d1722908061bf8dc4de7899b16f9e4867277dd59ef6d",
+            "connection_generation": 1,
+            "ctp_raw": {
+              "BrokerID": {
+                "hex": "34393030",
+                "terminated": true
+              },
+              "CombHedgeFlag": {
+                "hex": "31",
+                "terminated": true
+              },
+              "CombOffsetFlag": {
+                "hex": "30",
+                "terminated": true
+              },
+              "Direction": "30",
+              "ExchangeID": {
+                "hex": "53484645",
+                "terminated": true
+              },
+              "FrontID": 7,
+              "InsertDate": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "InsertTime": {
+                "hex": "31333a33303a3031",
+                "terminated": true
+              },
+              "InstrumentID": {
+                "hex": "726232373031",
+                "terminated": true
+              },
+              "InvestorID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "LimitPrice_binary64": "40a7280000000000",
+              "OrderPriceType": "32",
+              "OrderRef": {
+                "hex": "303030303030303030303032",
+                "terminated": true
+              },
+              "OrderStatus": "35",
+              "OrderSubmitStatus": "33",
+              "OrderSysID": {
+                "hex": "20202030303030303030303838",
+                "terminated": true
+              },
+              "RequestID": 8,
+              "SessionID": -9,
+              "StatusMsg": {
+                "hex": "",
+                "terminated": true
+              },
+              "TradingDay": {
+                "hex": "3230323631313137",
+                "terminated": true
+              },
+              "UserID": {
+                "hex": "333030303532313431",
+                "terminated": true
+              },
+              "VolumeTotal": 1,
+              "VolumeTotalOriginal": 1,
+              "VolumeTraded": 0,
+              "collected_at": "2026-11-17T12:21:40.900+08:00"
+            },
+            "source_callback_id": "ctp-callback-v1-cf67f9dcf29aae7bce6c2f32928fe6475d954f5120d9c7700ffccc44fca58414"
+          },
+          "correlation_id": "fixture-correlation",
+          "event_type": "order.event",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-lifecycle-v1-0756e7a73c9f2171700ee755843554a7a2c6f2eb6713546f436562c320d44b9d",
+          "message_type": "event",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "business_type": "F",
+            "captured_at": "2026-11-17T12:21:40.900+08:00",
+            "client_order_id": "fixture-client",
+            "counter_session_id": "ctpproc-949c02674e60ba15dfa4732c3d31826e",
+            "cum_filled_qty": 0,
+            "exchange": "SHFE",
+            "gateway_order_id": "fixture-order",
+            "gateway_status": "cancelled",
+            "hedge_type": "speculation",
+            "leaves_qty": 1,
+            "limit_price": "2964",
+            "native_ids": {
+              "broker_id": "4900",
+              "front_id": 7,
+              "investor_id": "300052141",
+              "order_ref": "000000000002",
+              "order_sys_id": "0000000088",
+              "sdk_request_id": 8,
+              "session_id": -9,
+              "user_id": "300052141"
+            },
+            "offset_type": "O",
+            "order_qty": 1,
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "submitted_at": "2026-11-17T13:30:01+08:00",
+            "symbol": "rb2701",
+            "trade_date": "20261117",
+            "trade_side": "B"
+          },
+          "produced_at": "2026-11-17T12:21:40.900+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          }
+        }
+      ],
+      "scenario": "duplicate_submit",
+      "sdk_cancel_count": 1,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 1,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb",
+          "message_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "recovery_blocked",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "recovery_blocked"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb",
+          "message_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-8a95a5fa42de0f818ecf05d40c2d09bb",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [],
+      "scenario": "blocked",
+      "sdk_cancel_count": 0,
+      "sdk_settlement_count": 0,
+      "sdk_submit_count": 0,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+          "message_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+          "message_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 1,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+          "message_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-770192a5e2cc1d7c6ff2286803594399",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [],
+      "scenario": "settlement_rejected",
+      "sdk_cancel_count": 0,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 0,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:43.984+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:43.984+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:43.984+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:43.984+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_inactive_or_stale",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:43.984+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+          "message_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f-hb-7",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [
+        {
+          "action": "order.list.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+              "sdk_request_id": 5,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "1"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-104",
+          "message_id": "ctp-query-v1-48e5492e55e626c9f775e7b707d07c44745e00165447e629ccd615680afc2511",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-104",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:45.046+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-104",
+          "result_type": "order_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "account.positions.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-2d342a5223ed4d5c0013f8a5a453f72f",
+              "sdk_request_id": 6,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "2"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-107",
+          "message_id": "ctp-query-v1-325bb76a657616bac1c28070c207332953c9beeb7c16d8766891432aae50f8c1",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-107",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:46.121+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-107",
+          "result_type": "position_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        }
+      ],
+      "scenario": "empty_limits",
+      "sdk_cancel_count": 0,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 0,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": true,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:51.447+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:51.442+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-7",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": true,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_inactive_or_stale",
+              "instrument_usable": false,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:51.447+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:51.442+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:48.254+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 1,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+          "message_id": "ctpproc-f396e1ca5e650b7f08803f517591733b-hb-8",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [
+        {
+          "action": "order.list.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+              "sdk_request_id": 5,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "1"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-104",
+          "message_id": "ctp-query-v1-41db207be52d2dc2ad7313052f57b9897cb1498c20f7be390017ca74543971d7",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-104",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:49.318+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-104",
+          "result_type": "order_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "account.positions.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+              "sdk_request_id": 6,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "2"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-107",
+          "message_id": "ctp-query-v1-615302335b4f84d7a7d5b46b407625108a05fb7f7ddbec64325745ff6836c614",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-107",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:50.401+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-107",
+          "result_type": "position_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "order.submit",
+          "adapter_context": {
+            "connection_generation": 1,
+            "order_snapshot_request_id": 5,
+            "sdk_request_id": 8,
+            "sdk_return_code": 0
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.trade-111",
+          "message_id": "ctp-trade-receipt-v1-dc2a636fb83b9bf2cf6b009057298d456c3b41a873f7ea1caab46b1c4f75a6b6",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.trade-111",
+          "payload": {
+            "account_id": "300052141",
+            "counter_session_id": "ctpproc-f396e1ca5e650b7f08803f517591733b",
+            "gateway_order_id": "fixture-order",
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:52.348+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.trade-111",
+          "result_type": "order_action_receipt",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "accepted"
+        }
+      ],
+      "scenario": "event_publish_failed",
+      "sdk_cancel_count": 0,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 1,
+      "synthetic_only": true
+    },
+    {
+      "exit_code": 4,
+      "heartbeats": [
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": false,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": null,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-1",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "broker_not_ready",
+            "trade_date": null
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "broker_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_missing",
+              "instrument_usable": false,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-2",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-3",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-4",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "order_snapshot_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "order_snapshot_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-5",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": null,
+              "native_limits_fresh": false,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-6",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "DEGRADED",
+            "state_text": "trade_constraints_not_ready",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "DEGRADED",
+          "state_text": "trade_constraints_not_ready"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": true,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "cached",
+              "instrument_usable": true,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:56.624+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:56.618+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": true,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": true
+          },
+          "broker_ready": true,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-7",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": true,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": true,
+            "broker_ready": true,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": true,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": true,
+            "state": "UP",
+            "state_text": "running",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": true,
+          "state": "UP",
+          "state_text": "running"
+        },
+        {
+          "accepting_cancel_commands": false,
+          "accepting_trade_commands": false,
+          "adapter_context": {
+            "admission_evidence": {
+              "assessment_id": "offline-assessment",
+              "asset_scope_verified": false,
+              "cancel_attempts": 0,
+              "exchange": "SHFE",
+              "expires_at": "2026-11-17T13:34:00+08:00",
+              "instrument_reason": "instrument_inactive_or_stale",
+              "instrument_usable": false,
+              "native_depth_request_id": 7,
+              "native_limits": {
+                "completed_at": "2026-11-17T12:21:56.624+08:00",
+                "lower_limit": "2800",
+                "started_at": "2026-11-17T12:21:56.618+08:00",
+                "upper_limit": "3200"
+              },
+              "native_limits_fresh": true,
+              "order_ref_ready": true,
+              "pending_callback_count": 0,
+              "position_snapshot_ready": false,
+              "static_constraints": {
+                "captured_at": "2026-11-17T12:21:53.437+08:00",
+                "max_limit_lots": 100,
+                "min_limit_lots": 1,
+                "price_tick": "1",
+                "sdk_request_id": 4,
+                "volume_multiple": 10
+              },
+              "submit_attempts": 0,
+              "symbol": "rb2701"
+            },
+            "connection_generation": 1,
+            "runtime_mode": "test_broker_assessment",
+            "transport_recovery_clear": false
+          },
+          "broker_ready": false,
+          "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+          "message_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13-hb-8",
+          "message_type": "heartbeat",
+          "order_snapshot_ready": false,
+          "payload": {
+            "accepting_cancel_commands": false,
+            "accepting_trade_commands": false,
+            "broker_ready": false,
+            "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+            "order_snapshot_ready": false,
+            "product_type": "futures",
+            "redis_ready": true,
+            "schema_version": "ctp.f0.draft.2",
+            "settlement_confirmed": false,
+            "state": "DEGRADED",
+            "state_text": "stopping",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T13:30:00+08:00",
+          "protocol": "relay.stream.v1",
+          "redis_ready": true,
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "settlement_confirmed": false,
+          "state": "DEGRADED",
+          "state_text": "stopping"
+        }
+      ],
+      "outputs": [
+        {
+          "action": "order.list.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+              "sdk_request_id": 5,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "1"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-104",
+          "message_id": "ctp-query-v1-25a3a637af8fb27e9bf421264c3375ff1513e55bd78ecda0e816f3ccd4449a0b",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-104",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:54.502+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-104",
+          "result_type": "order_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        },
+        {
+          "action": "account.positions.query",
+          "adapter_context": {
+            "query_evidence": {
+              "callback_error_id": null,
+              "connection_generation": 1,
+              "counter_session_id": "ctpproc-1ce8a52f90536c24c3f038b5bdaa7e13",
+              "sdk_request_id": 6,
+              "sdk_return_code": 0,
+              "snapshot_applied": true,
+              "ticket": "2"
+            },
+            "standard_validation": {
+              "raw_completed": true
+            }
+          },
+          "chunk": {
+            "index": 0,
+            "is_last": true
+          },
+          "code": "OK",
+          "correlation_id": "fixture-correlation",
+          "idempotency_key": "offline-cmd.query-107",
+          "message_id": "ctp-query-v1-1fe2ccc0962f8b380ceca6bf8d3d3fbc4aaf4d8aa00b81780e877c8a010d33b4",
+          "message_type": "reply",
+          "origin_message_id": "offline-cmd.query-107",
+          "payload": {
+            "items": [],
+            "product_type": "futures",
+            "schema_version": "ctp.f0.draft.2",
+            "trade_date": "20261117"
+          },
+          "produced_at": "2026-11-17T12:21:55.582+08:00",
+          "protocol": "relay.stream.v1",
+          "request_id": "offline-cmd.query-107",
+          "result_type": "position_page",
+          "routing": {
+            "account_id": "300052141",
+            "broker_id": "ctp_4900",
+            "env": "test",
+            "gateway_id": "ctp-dongwu-asset-retest-20261117"
+          },
+          "status": "completed"
+        }
+      ],
+      "scenario": "wrong_delivery",
+      "sdk_cancel_count": 0,
+      "sdk_settlement_count": 1,
+      "sdk_submit_count": 0,
+      "synthetic_only": true
+    }
+  ],
+  "real_broker": false,
+  "real_redis": false,
+  "synthetic_only": true
+}

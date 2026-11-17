@@ -167,6 +167,12 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.RuntimeMode = "test_broker_read_only"
 				a.ConnectionGeneration, a.QueryCollectionReady = h.ReadOnly.ConnectionGeneration, &h.ReadOnly.QueryCollectionReady
 				a.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
+			} else if h.Assessment != nil {
+				item.Classification = "test_broker_assessment"
+				a.RuntimeMode = "test_broker_assessment"
+				g, ready := h.queryCollection()
+				a.ConnectionGeneration, a.QueryCollectionReady = g, &ready
+				a.RecoveryClear = &h.Assessment.TransportRecoveryClear
 			} else if h.Recovery != nil {
 				item.Classification = "transport_recovery_only"
 				a.RecoveryClear, a.RecoveryIssues = &h.Recovery.TransportRecoveryClear, &h.Recovery.RecoveryIssueCount
