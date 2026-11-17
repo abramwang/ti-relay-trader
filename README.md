@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-17 Asia/Shanghai` 仍为用户指定TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092已增加CTP账户只读观察，仍用证券内嵌账本同步；生产API和独立worker停止。当前PID以service status为准，未启动CTP交易服务 |
-| 安全状态 | 保留原权限：华鑫TEST账户00030484配置trading_enabled=true，实际准入须查新鲜心跳；生产4户全部trading_enabled=false，501000114077/307000051389仍停用。业务库未应用未上线CTP迁移；CTP独立TEST库累计5笔只读查询，无报撤/结算确认，10:37:42会话已结束；不得自行切回生产 |
+| 当前环境 | `2026-11-17 14:56 Asia/Shanghai` 按用户指令切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092生产API与独立worker运行，TEST API停止。本机CTP CLI无运行进程，当前PID以service status为准；不得自行切回TEST |
+| 安全状态 | 生产4户全部trading_enabled=false，501000114077/307000051389仍停用；本次切换显式skip-migrations，未向生产应用CTP迁移。CTP独立TEST库累计5笔只读查询、0交易发布，13:30回放冲突后停止；测试延期，保留旧审计和责任 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17` 东吴资金复测仍missing_biz_type，请求31/响应00；12条历史持仓可在终端查看，报撤未开放。共享TEST Redis此前发生路由/凭据丢失，不能依赖旧凭据加载记录判断华鑫ready。生产盘前09:01:02至09:01:04成功；生产cron未改，后续生产任务须按用户指令切回，不依赖当前TEST的9092 |
+| 最近确认 | `2026-11-17 15:01` 生产盘前、收盘采集和结算四户均成功；每日绩效已执行，债享5号暂定净值发布，其余三户仍有质量阻断。API degraded来自历史checkpoint错误标记，4柜台在线、lag0；17:10起权威复算尚待执行，不能称今日绩效全部闭合 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 15:01` **生产日任务已执行并核验**：按用户指令14:56执行`switch-relay-env.sh production --skip-migrations`，API/独立worker运行、生产下单关闭、两停用户不变，未应用CTP迁移。今日盘前09:01成功；cron收盘采集15:01:02至03、结算15:01:04至06成功，四户资金及2行持仓快照全部落库、16项对账输入、0差异/账户错误。每日绩效15:01:12执行成功但仅债享5号发布暂定净值；768为previous_economic_nav_gap并保留ETF范围/清算未核验，388/387另有归因残差4,959,900/4,999,900元、前序净值缺口及当日日线未就绪，不将差额猜成资金划转或利润。证据`/var/log/relay/reports/{pre_open_init,post_close_capture,post_close_settlement,performance_daily,performance_publish}.json`及`post_close_pipeline.log`，API任务记录一致。17:10起权威复算计划不变、尚待执行，不保证可消除资金/历史缺口；本轮不强行发布或修改资金事实。TEST联调暂停，本机无CTP CLI运行，原证据/PG保留，不自动切回。以下14:22及之前的TEST安排仅为历史。
 
 - `2026-11-17 14:22` 用户明确OC只在交易时段内常驻，今天仍优先15:00前一手报单/对应撤单；原额度不增加、未知不重试、原13:35会话不复用。14:21:57只读检查下午路由仍3旧hb/末条stopping，两命令流0、pending/lag0，尚无新会话。已请OC回运行修复版本/预计就绪及新session/截止，下一步核验后受控执行，见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。不改生产，不因常驻自行放宽命令时效或门禁。
 
