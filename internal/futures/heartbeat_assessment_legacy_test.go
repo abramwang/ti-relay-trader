@@ -111,11 +111,16 @@ type ocNextdayCase struct {
 func nextdayCases(t *testing.T) []ocNextdayCase {
 	t.Helper()
 	dir := os.Getenv("RELAY_OC_CTP_NEXTDAY_REVIEW_DIR")
+	if fixed := os.Getenv("RELAY_OC_CTP_AUDIT_GROUP_FIX_DIR"); fixed != "" {
+		dir = fixed
+	}
 	if dir == "" {
 		t.Skip("explicit private OC nextday review required")
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "nextday-recorded.json"))
-	if err != nil || commandDigest(raw) != "f7c6e2dd56b7d13fec08a0e071f8169329290bd48f22bda4a2287138fc1b9ed6" {
+	pin := commandDigest(raw)
+	fixed := pin == "cd5a16bbcaa831c4a75aa1ef6522ba145a6c6f41940ee4da4e62f0cdbd62c68e"
+	if err != nil || (!fixed && pin != "f7c6e2dd56b7d13fec08a0e071f8169329290bd48f22bda4a2287138fc1b9ed6") {
 		t.Fatal("original evidence", err)
 	}
 	var doc struct {
@@ -124,7 +129,11 @@ func nextdayCases(t *testing.T) []ocNextdayCase {
 		Day       string          `json:"simulation_trade_date"`
 		Cases     []ocNextdayCase `json:"cases"`
 	}
-	if err = json.Unmarshal(raw, &doc); err != nil || doc.RealSDK || doc.RealRedis || doc.Day != "20261118" || len(doc.Cases) != 7 {
+	want := 7
+	if fixed {
+		want = 8
+	}
+	if err = json.Unmarshal(raw, &doc); err != nil || doc.RealSDK || doc.RealRedis || doc.Day != "20261118" || len(doc.Cases) != want {
 		t.Fatal("evidence boundary", err)
 	}
 	return doc.Cases
@@ -136,7 +145,8 @@ func nextdayRoute() QueryRoute {
 
 func TestOCNextdayDelivery(t *testing.T) {
 	n, bad, events, pages := 0, 0, 0, 0
-	for _, c := range nextdayCases(t) {
+	cases := nextdayCases(t)
+	for _, c := range cases {
 		origin := ""
 		for _, in := range c.Inputs {
 			var o rawObject
@@ -211,7 +221,11 @@ func TestOCNextdayDelivery(t *testing.T) {
 			}
 		}
 	}
-	if n != 63 || bad != 8 || events != 7 || pages != 9 {
+	wantHeartbeats := 63
+	if len(cases) == 8 {
+		wantHeartbeats = 68
+	}
+	if n != wantHeartbeats || bad != 8 || events != 7 || pages != 9 {
 		t.Fatal("coverage", n, bad, events, pages)
 	}
 }

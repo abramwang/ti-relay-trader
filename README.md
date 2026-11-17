@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-17 15:16 Asia/Shanghai` 按用户新指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产API/独立worker停止。当前PID以service status为准；不得自行切回生产 |
 | 安全状态 | TEST华鑫00030484原配置trading_enabled=true但新鲜心跳broker_not_ready，不能以配置许可代替柜台就绪。生产4户trading_enabled=false、两停用户不变；切换skip-migrations。CTP独立TEST库仍5查询/0交易，下午路由再次缺键，禁止重建/重放；收盘后不沿旧窗口报撤 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 晚间` OC75dbc19材料、legacy_source及事件回归已验；新增7场景初始化查询与报撤事件同库联跑通过，查询身份来自原审计。OC command_received缺group仍待正式修正，原9条草稿继续拒绝；假设修正版只在测试内验证下游，不算正式验收。入场事项见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`。TEST不变，生产权威复算待用户切回 |
+| 最近确认 | `2026-11-17 22:46` OC02af39b审计group修正版已独立通过：19文件、18次实际投递关联、9查询原审计草稿及Go回复校验、8场景PG/race通过；旧包继续拒绝。转入实际配置预检及11-18获授权窗口准备，见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`顶部；不是已部署/真实报撤通过。TEST不变，生产权威复算待用户切回 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 22:46` **OC group修正离线验收收口**：收到`reference/oc_ctp_audit_group_fix_20261118`版本02af39b，19摘要及18次投递组/原文关联通过，9查询直接由新原审计生成草稿并通过Go验证；错误组留证/不ACK，部分查询不升级成功，旧50回调保留。68心跳/23输出及8场景同库race通过，全Go/vet/14项Python通过。报告`outputs/recovery/ctp-audit-group-fix-20261118/material-audit.json`；[给OC下一步](docs/OC_CTP_JOINT_EXECUTION_20261118.md)已改为实际私有配置预检、明日新窗口/即时审计，不再要求协议修改。以下“缺group待修”为历史；无OC启动、业务Redis/PG修改、服务重启或环境切换。
 
 - `2026-11-17 22:40` **补齐查询与事件同库联跑**：新增7场景，9页查询按原命令及独立审计ticket/SDK身份绑定，完整查询/本地订单共存、working后登记撤单、重放不重复；失败/部分不产出快照，拒撤/意外成交保留原状态。专项临时PG race与既有解析/事件测试联合通过，14项Python、全Go及futures vet通过。仍未收到OC group修正版；内存假设修正验证9条下游草稿可通过但不出证据文件、不算正式接收通过。下一步只等定向新审计及实际预检，再安排新授权窗口；[同一协调单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)已同步，TEST/业务库/Redis/服务未动。
 
