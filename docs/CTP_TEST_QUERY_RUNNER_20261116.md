@@ -4,6 +4,8 @@
 
 ## 11月17日现场准备
 
+10:23更新：用户接受临时存储风险，新gateway=`ctp-dongwu-asset-retest-20261117`已只读核实空且确认给OC。仍同TEST Redis/独立PG，新的route接收绑定从0-0开始，不沿用旧owner/cursor；候选epoch及单笔执行口径见[新路由确认](OC_CTP_TEST_ROUTE_LOSS_20261117.md#1023用户授权的新路由功能复测)。尚无新会话、登记或发送，等待OC完成初始化并回实际窗口；不再将存储整改作为本次功能复测前置。
+
 11月17日更新：真实四查询已执行，3类completed、资金标准转换失败；OC独立审计已复核，资金原始BizType=NUL，业务快照未发布。见[本轮结果、OC最小修正项和最新owner/cursor](OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md)。以下09:20的0查询和owner记录是准备时状态，不作为最新恢复位点。
 
 截至09:20，Relay查询发送、reply接收、心跳采集三个CLI已重新构建，定向测试通过。新建独立本机数据库`relay_ctp_dongwu_20261117_test`，仅应用期货33..41、44、45表结构，不迁移9092业务库或生产库。

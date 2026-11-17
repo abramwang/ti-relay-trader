@@ -2,6 +2,24 @@
 
 日期：2026-11-17，Asia/Shanghai。状态：暂停资金复测，未实施恢复。
 
+## 10:23用户授权的新路由功能复测
+
+用户明确接受临时共享Redis风险，允许继续新隔离路由的单笔资金功能验证；不再要求先修改存储配置，不代表认可该环境的持久性/恢复可靠性。以下旧暂停与先保护存储建议保留为事故记录，本轮执行以本节为准。
+
+Relay于10:23:50完成只读全量SCAN：`relay:test:v1:ctp_4900:ctp-dongwu-asset-retest-20261117`为0键，epoch不存在，run_id仍`94f801dc68e3699cc681feb6dbb48f19e46aef9e`。这不是路由预留，OC初始化前须再次核对。新逻辑/原生身份为test/ctp_4900/300052141及4900/300052141/300052141，不从旧Stream推断身份。
+
+接受OC给定gateway=`ctp-dongwu-asset-retest-20261117`、group=`oc-ctp-dongwu-asset-retest-20261117`、consumer同组加`-owner1`、候选epoch=`dongwu-asset-retest-c943bafc0e7a920857d5a4bf34d07cf7`。SourceID仍使用shared-test-redis及既有配置指纹，不伪造物理实例改变。期货资金逻辑须含96c55f7；49feb3b仅为新gateway准备工具白名单。
+
+旧四笔published命令及独立原始结果均已在Relay核对，没有Relay未知发送。OC本次声明已核对旧本地持久ACK、未决为0，旧journal SHA256为`602e9459cdaf073e98acfe7dce37617312a850f15f07f6a06658e39c8bf376a4`；该ACK和journal摘要作为OC交付声明记录，本机尚未拿到引用的责任核对文件，不升级为Relay独立恢复验收。
+
+独立库仍使用`relay_ctp_dongwu_20261117_test`，按新gateway生成独立命令和Stream作用域；已确认新路由命令数0、receiver数0。旧作用域/owner/cursor不改，不需要新建服务器或重新迁移；新owner将在首次真实收件时创建，从0-0开始，不提前伪造心跳或接收记录。
+
+**Relay确认该新路由。** OC可在本次用户授权的协调窗口内复查来源/占用，显式初始化候选epoch及两命令组，再启动最多300秒真实只读会话，max_commands=1、心跳1秒、production_mode=false、trading_enabled=false、settlement_confirm=never。任何部分初始化/占用冲突均停止，不删键重试。请回传实际session、连接代次、TradingDay、T0与截止时刻。
+
+Relay只在新鲜只读心跳及实际epoch/组/来源核对通过后，登记并发布一笔新身份account.asset.query，不重放旧4笔；同步保留原文，核对query_request请求BizType31、真实响应/末页及标准结果。观察到缺键/原文丢失/绑定变化立即停，不回填、不自动重发或重新登录。响应仍00则保留失败，不猜默认值。功能闭合也不标生产/持久性/报撤通过。
+
+本次Relay仅只读复核及更新文档，未初始化Redis、未创建新命令/receiver、未启动柜台、未改行情缓存/淘汰策略/生产权限。检查证据：`outputs/recovery/ctp_dongwu_asset_retest_20261117/preflight-20261117T022350*.json`。
+
 ## 给OC的确认
 
 Relay本轮没有执行该路由的DEL/UNLINK、TTL设置、裁剪、FLUSH、消费组重建或epoch重建。实际操作为4条已登记的只读命令发布、XREAD原文采集及PG持久化，之后是本地审计/离线回归。查询发布EVAL只在准入检查通过后XADD；采集器不XACK、不删除源消息。开发回归的删除仅针对随机`relay:test:v1:ctp:relay-dev-*`，不使用真实东吴前缀；本日新增BizType回归不连接Redis。

@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 10:23 Asia/Shanghai` 用户接受临时共享TEST存储风险继续单笔功能测试。新gateway=`ctp-dongwu-asset-retest-20261117`全量SCAN空、run_id相同；Relay新路由命令/receiver均0，已确认给OC。group同名加oc-前缀，候选epoch=`dongwu-asset-retest-c943bafc0e7a920857d5a4bf34d07cf7`；仍同来源/独立PG，新接收从0-0起，旧证据位点不动。OC声明旧4笔持久ACK已核对，本机未独立核验该journal，不影响已核实原始结果。下一步OC复查后初始化并开300秒只读窗口，回新session/代次/TradingDay/截止，再仅一笔新资金查询。详见[新路由执行确认](docs/OC_CTP_TEST_ROUTE_LOSS_20261117.md#1023用户授权的新路由功能复测)。本轮无Redis写/查询/启停，缺键仍立即停；功能验证不等于持久性或生产验收。
+
 - `2026-11-17 09:51 Asia/Shanghai` 东吴TEST路由丢失，暂停CTP复测：全量SCAN真实路由/昨夜隔离路由均0键，run_id不变；本轮Relay未清理/设TTL/重建组epoch。发现共享Redis512MiB/allkeys-lru，累计evicted_keys11847、峰值535.53MiB，华鑫TEST托管凭据也已缺失；尚无逐键/历史监控证实具体删键来源，不直接归责。独立PG4条命令/4回复/327心跳完整且SHA通过。见[只读排查与待授权恢复方案](docs/OC_CTP_TEST_ROUTE_LOSS_20261117.md)：先独立noeviction交易存储或协调共享实例保护，再核对旧责任并批准新隔离路由/epoch；不回灌旧命令、不冒充首次空路由。未改Redis配置/清键/重启OC或切环境。
 
 - `2026-11-17` 接受OC资金定向修正说明`96c55f7`：请求BizType显式字符1/hex31，并在SDK调用前持久审计五个原生字段；响应NUL仍失败，wire/Relay解析不变。OC自述33项测试及4项sanitizer通过，本机尚无biztype_review材料，不冒称独立复验或已部署。下一步用户确认修正版部署并开新只读窗口后，仅一笔新身份资金查询，核对query_request与同步返回/原始末页/标准回包；见[复测清单](docs/OC_CTP_DONGWU_FOUR_QUERY_REVIEW_20261117.md#接受oc定向修正说明)。不需再往返原则文档；本轮未连接业务Redis、未发查询或启停/切换环境。
