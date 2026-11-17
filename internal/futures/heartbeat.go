@@ -128,7 +128,7 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			return bad("assessment day")
 		}
 		h.State, h.StateText = textField(p, "state"), textField(p, "state_text")
-		a, err := decodeAssessmentHeartbeat(fields, h)
+		a, err := decodeAssessmentHeartbeat(fields, h, expected)
 		if err != nil {
 			return Heartbeat{}, err
 		}

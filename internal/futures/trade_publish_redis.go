@@ -41,6 +41,10 @@ func (p *TestTradePublisher) inspect(ctx context.Context) (queryPublishProof, er
 	if err != nil || len(rows) != 1 {
 		return bad()
 	}
+	h, err := DecodeHeartbeat(rows[0].Raw, p.base.scope.Route)
+	if err != nil || !h.assessmentNativeScopeMatches(p.base.scope) {
+		return bad()
+	}
 	proof, err := testTradeHeartbeatProof(rows[0], p.base.scope.Route, p.base.target, p.approval, time.Now())
 	if err != nil {
 		return bad()
@@ -115,6 +119,9 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 }
 
 func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
+	if !h.assessmentNativeScopeMatches(scope) {
+		return ErrQueryPublishGate
+	}
 	a := h.Assessment
 	if a == nil {
 		return nil

@@ -58,7 +58,7 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 	h, err := DecodeHeartbeat(rows[0].Raw, p.scope.Route)
 	now := time.Now()
 	g, ready := h.queryCollection()
-	if err != nil || !h.readOnlyNativeScopeMatches(p.scope) || !ready || g == nil || *g != p.target.ConnectionGeneration || h.CounterSessionID != p.target.CounterSessionID || h.TradeDate != p.target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
+	if err != nil || !h.readOnlyNativeScopeMatches(p.scope) || !h.assessmentNativeScopeMatches(p.scope) || !ready || g == nil || *g != p.target.ConnectionGeneration || h.CounterSessionID != p.target.CounterSessionID || h.TradeDate != p.target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
 		return bad()
 	}
 	expires := h.ProducedAt.Add(30 * time.Second)

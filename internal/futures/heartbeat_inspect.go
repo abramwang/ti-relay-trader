@@ -60,6 +60,7 @@ type AdvertisedHeartbeat struct {
 	BlockingCallbacks              *int64                  `json:"blocking_callback_count,omitempty"`
 	CallbackReconciliationComplete *bool                   `json:"callback_reconciliation_complete,omitempty"`
 	ReadOnlyReconciliation         *ReadOnlyReconciliation `json:"readonly_reconciliation,omitempty"`
+	AssessmentLegacySource         *AssessmentLegacySource `json:"assessment_legacy_source,omitempty"`
 }
 
 type InspectedHeartbeat struct {
@@ -175,6 +176,7 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
 				a.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 			} else if h.Assessment != nil {
+				a.AssessmentLegacySource = h.Assessment.LegacySource
 				item.Classification = "test_broker_assessment"
 				a.RuntimeMode = "test_broker_assessment"
 				g, ready := h.queryCollection()

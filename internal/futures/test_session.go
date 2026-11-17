@@ -39,6 +39,7 @@ type TestSessionGuard struct {
 	changed                          chan struct{}
 	readOnlyMode                     bool
 	readOnlyReconciliation           *ReadOnlyReconciliation
+	assessmentLegacySource           *AssessmentLegacySource
 }
 
 func NewTestSessionGuard(source *TestStreamSource, expected DeliveryQualityContext, policy TestHeartbeatPolicy) (*TestSessionGuard, error) {
@@ -142,6 +143,16 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 	if h.CounterSessionID != g.expected.CounterSessionID || h.TradeDate != g.expected.Scope.TradeDate {
 		return g.stop("heartbeat_session_or_day_changed")
 	}
+	var legacy *AssessmentLegacySource
+	if h.Assessment != nil {
+		legacy = h.Assessment.LegacySource
+		if !h.assessmentNativeScopeMatches(g.scope) || (legacy != nil && legacy.Diagnostics.BlockingConflict) {
+			return g.stop("heartbeat_assessment_source_invalid")
+		}
+	}
+	if !g.producedAt.IsZero() && !sameAssessmentLegacyBinding(legacy, g.assessmentLegacySource) {
+		return g.stop("heartbeat_assessment_source_changed")
+	}
 	if !h.RedisReady || !h.BrokerReady {
 		return g.stop("heartbeat_disconnected")
 	}
@@ -173,6 +184,7 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 	}
 	g.seen[h.MessageID] = digest
 	g.readOnlyMode = h.ReadOnly != nil
+	g.assessmentLegacySource = legacy
 	if h.ReadOnly != nil {
 		g.readOnlyReconciliation = h.ReadOnly.Reconciliation
 	}

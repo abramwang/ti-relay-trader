@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-17 15:16 Asia/Shanghai` 按用户新指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产API/独立worker停止。当前PID以service status为准；不得自行切回生产 |
 | 安全状态 | TEST华鑫00030484原配置trading_enabled=true但新鲜心跳broker_not_ready，不能以配置许可代替柜台就绪。生产4户trading_enabled=false、两停用户不变；切换skip-migrations。CTP独立TEST库仍5查询/0交易，下午路由再次缺键，禁止重建/重放；收盘后不沿旧窗口报撤 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 晚间` OC只读恢复0cd38b6材料7摘要、58心跳/13回复已核验；Relay严格只读关联门禁及非空v2 PG回归完成。次日唯一协调清单为`docs/OC_CTP_JOINT_EXECUTION_20261118.md`，待OC最终assessment/跨日状态承接交付，不代表真实报撤通过。用户明确保持TEST、稍后切换；生产权威复算未完成，不自动切回/补跑 |
+| 最近确认 | `2026-11-17 晚间` OC75dbc19次日assessment材料9摘要、63心跳/23输出及旧50回调已验；Relay legacy_source及事件PG回归已接通。剩余实际阻塞：OC测评command_received审计缺group，9查询草稿均拒绝；定向修正及入场事项见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`顶部。TEST不变、生产权威复算仍待用户切回，不自动补跑 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 晚间增量` **OC次日测评实现已收，待一项审计修正**：`reference/oc_ctp_nextday_review_20261118`九摘要通过，原50回调/18审计/32pending逐条保留、7场景审计链/outbox核对一致；63心跳/9查询页/7事件及8反例通过解析。Relay新增严格assessment `legacy_source`、来源固定/原生身份/诊断及四场景PG终态与重放测试。**发现command_received缺group，已有草稿工具拒绝9条查询证据，未放宽校验**；请转[同一执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)让OC定向补实际消费组并提供新审计。接受唯一恢复候选走同一assessment主程序，无需独立只读进程切换；实际配置预检、占用/责任、新当日授权/会话/行情仍待。当前TEST、无业务Redis/PG修改/OC启动/报撤/9092重启；以下“等待最终assessment包”为历史。本次材料报告在`outputs/recovery/ctp-nextday-review-20261118/`，不将模拟值当明日实况。
 
 - `2026-11-17 晚间` **次日联调准备推进**：接收`reference/oc_ctp_readonly_runtime_review_20261117/`，21个离线场景的58心跳/13回复及9反例通过；新`readonly_query_evidence.v1`严格解析/原生范围/固定来源/诊断接通，待关联不死锁查询、冲突及未知ACK不放行。全Go/vet、专项race、临时PG非空订单/v2成交关联及23组本机Redis/PG演练通过。真实旧50/18/32责任未改，材料运行来源3/2/1不是真实迁移；无OC/Redis业务操作、环境切换或服务重启。**请转OC [11月18日执行清单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)**：今晚交最终assessment版本、跨日回放/状态承接回归及审计交付方式，明日真实窗口再做必要查询、1报1撤与落库。以下“等待只读实现”为历史；现等待测评路径最终交付与新窗口授权。
 

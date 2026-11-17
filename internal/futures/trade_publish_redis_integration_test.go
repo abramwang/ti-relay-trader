@@ -12,7 +12,7 @@ import (
 )
 
 func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
-	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_generation", "closed", "readonly", "assessment_publish", "native_stale"} {
+	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_generation", "closed", "readonly", "assessment_publish", "native_stale", "legacy_publish", "legacy_conflict", "legacy_native"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, h, client, _, ctx := realStreamRole(t, "hb")
 			migrateFuturesTest(t, db, ctx, "000046_futures_test_trade_publication", "up")
@@ -61,7 +61,7 @@ func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			body := assessmentHeartbeat(t, scope.Route, target, time.Now()).Raw
-			if oneOf(scenario, "assessment_publish", "native_stale") {
+			if oneOf(scenario, "assessment_publish", "native_stale", "legacy_publish", "legacy_conflict", "legacy_native") {
 				row, _, _, _ := freshOCTradeHeartbeat(t, time.Now(), false)
 				body = editBody(t, row.Raw, func(m map[string]any) {
 					m["routing"], m["counter_session_id"] = scope.Route, target.CounterSessionID
@@ -71,6 +71,18 @@ func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
 					e["assessment_id"] = a.AssessmentID
 					if scenario == "native_stale" {
 						e["native_limits"].(map[string]any)["started_at"] = assessmentTime(time.Now().Add(-6 * time.Second))
+					}
+				})
+			}
+			if strings.HasPrefix(scenario, "legacy_") {
+				body = withAssessmentLegacy(t, body, scope)
+				body = editBody(t, body, func(m map[string]any) {
+					l := m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)["legacy_source"].(map[string]any)
+					if scenario == "legacy_conflict" {
+						l["diagnostics"].(map[string]any)["blocking_conflict"] = true
+					}
+					if scenario == "legacy_native" {
+						l["source_scope"].(map[string]any)["investor_id"] = "wrong"
 					}
 				})
 			}
@@ -91,11 +103,11 @@ func TestAssessmentRedisGateAndExactOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer p.Close()
-			if oneOf(scenario, "closed", "readonly", "wrong_generation", "native_stale") {
+			if oneOf(scenario, "closed", "readonly", "wrong_generation", "native_stale", "legacy_conflict", "legacy_native") {
 				if _, err := p.inspect(ctx); err == nil {
 					t.Fatal("invalid gate accepted")
 				}
-			} else if oneOf(scenario, "publish", "assessment_publish") {
+			} else if oneOf(scenario, "publish", "assessment_publish", "legacy_publish") {
 				s, _ := NewCommandStore(db)
 				r := registerVector(t, s, ctx, v, e, "registered")
 				result, err := s.PublishTestTrade(ctx, r.CommandID, r.Original.MessageID, p)

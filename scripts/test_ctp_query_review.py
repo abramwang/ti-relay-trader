@@ -123,6 +123,12 @@ class QueryReviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.build(self.audit(self.entries[::-1]))
 
+    def test_missing_group_is_not_inferred_from_target(self):
+        entries = copy.deepcopy(self.entries)
+        del entries[0]["group"]
+        with self.assertRaisesRegex(ValueError, "received command transport mismatch"):
+            self.build(self.audit(entries))
+
     def test_oversized_evidence_rejected_without_truncation(self):
         self.entries[-1]["raw"]["sample"] = "a" * 262144
         with self.assertRaises(ValueError):

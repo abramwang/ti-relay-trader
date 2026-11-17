@@ -22,6 +22,7 @@ type HeartbeatAssessment struct {
 	NativeDepthRequestID                                                                          *int64
 	Static                                                                                        *AssessmentStatic
 	Limits                                                                                        *AssessmentLimits
+	LegacySource                                                                                  *AssessmentLegacySource
 }
 type AssessmentStatic struct {
 	PriceTick      Price  `json:"price_tick"`
@@ -43,7 +44,7 @@ func positivePrice(p Price) bool {
 	return ok && r.Sign() > 0
 }
 
-func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessment, error) {
+func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) (HeartbeatAssessment, error) {
 	bad := func() (HeartbeatAssessment, error) {
 		return HeartbeatAssessment{}, fmt.Errorf("invalid futures heartbeat: assessment evidence or readiness")
 	}
@@ -107,6 +108,14 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessme
 			return bad()
 		}
 	}
+	if b, ok := raw["legacy_source"]; ok {
+		a.LegacySource, err = decodeAssessmentLegacy(b, route)
+		if err != nil || a.CallbackPolicy != "local_assessment_only.v1" {
+			return bad()
+		}
+	} else if assessmentRequiresLegacy(route) {
+		return bad()
+	}
 	a.NativeDepthRequestID, err = nullableInteger(raw["native_depth_request_id"])
 	if err != nil || (a.NativeDepthRequestID != nil && *a.NativeDepthRequestID < 1) {
 		return bad()
@@ -162,6 +171,9 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat) (HeartbeatAssessme
 // Only the explicit TEST assessment profile can defer historical callbacks.
 // Transport/ACK safety remains an independent gate; deferred is not delivered.
 func (a HeartbeatAssessment) callbacksAllowAssessment() bool {
+	if a.LegacySource != nil && a.LegacySource.Diagnostics.BlockingConflict {
+		return false
+	}
 	return a.PendingCallbacks == 0 || (a.CallbackPolicy == "local_assessment_only.v1" && a.BlockingCallbacks == 0 && a.DeferredCallbacks == a.PendingCallbacks)
 }
 
