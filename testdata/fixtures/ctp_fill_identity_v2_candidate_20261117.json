@@ -1,0 +1,32 @@
+{
+  "status": "candidate_not_runtime_enabled",
+  "evidence_scope": "First two identity tuples transcribed from user-forwarded OC report; not raw callbacks. Prices, quantities and fees are intentionally absent. Third tuple is synthetic.",
+  "prefix": "ctp.identity.v2/fill/",
+  "result_prefix": "ctp-fill-v2-",
+  "component_order": ["env", "route_broker_id", "logical_account_id", "gateway_id", "trading_day", "exchange_id", "trade_id", "order_sys_id", "trade_side"],
+  "direction_mapping": {"0": "B", "1": "S"},
+  "legacy_collision_id": "ctp-fill-v1-c1ea83c3df6d62c4c8533d5b4fe1aa90e00b3939d73b01d7016d3347ce73e3d1",
+  "cases": [
+    {
+      "name": "reported_buy",
+      "parts": ["test", "ctp_4900", "300052141", "ctp-dongwu-assessment-pm-20261117", "20261117", "SHFE", "5013", "31174", "B"],
+      "native_direction": "0",
+      "encoded": "ctp.identity.v2/fill/4:test8:ctp_49009:30005214133:ctp-dongwu-assessment-pm-202611178:202611174:SHFE4:50135:311741:B",
+      "fill_id": "ctp-fill-v2-c43bada1b2248121701a3ae04bb765280df13289d2cb918ef6a2339410a4f8c7"
+    },
+    {
+      "name": "reported_sell",
+      "parts": ["test", "ctp_4900", "300052141", "ctp-dongwu-assessment-pm-20261117", "20261117", "SHFE", "5013", "31234", "S"],
+      "native_direction": "1",
+      "encoded": "ctp.identity.v2/fill/4:test8:ctp_49009:30005214133:ctp-dongwu-assessment-pm-202611178:202611174:SHFE4:50135:312341:S",
+      "fill_id": "ctp-fill-v2-fb3f70c23031778a9f971c799c545aac3a551c3384c0c649f0ef5c8583ad1de3"
+    },
+    {
+      "name": "synthetic_leading_zeros",
+      "parts": ["test", "ctp_4900", "300052141", "ctp-dongwu-assessment-pm-20261117", "20261117", "SHFE", "05013", "031174", "B"],
+      "native_direction": "0",
+      "encoded": "ctp.identity.v2/fill/4:test8:ctp_49009:30005214133:ctp-dongwu-assessment-pm-202611178:202611174:SHFE5:050136:0311741:B",
+      "fill_id": "ctp-fill-v2-793ae40b7b4b1a9f2ecd405f135d807e54231df3b81d1d4f0e120331fc56aa0c"
+    }
+  ]
+}

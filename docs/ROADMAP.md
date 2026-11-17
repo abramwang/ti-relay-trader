@@ -52,6 +52,8 @@
 - [x] 11-17午间适配OC c83731d的`test_broker_assessment`：六项材料摘要、48条心跳/4条订单事件独立核验；初始化两查询独立准入、assessment身份、原生约束时效/精确价位、报撤独立预算及顶层action解析接通。全Go、定向race/vet、临时PG与随机TEST Redis回归，不把离线样例当真实柜台证据。终端识别测评模式但仍只读。
 - [x] 12:45路由丢失后的候选核对：OC确认旧5只读查询本地ACK、无结算once/待发责任；Relay12:52:48核实下午新gateway前缀空、run_id一致，PG新命令/receiver0，旧历史保留。接受`ctp-dongwu-assessment-pm-20261117`及独立epoch/assessment_id，通知OC开窗前再次核实后初始化；终端切新观察绑定但仍只读。不是Redis初始化/持久性验收，不重放旧命令。
 - [ ] 13:30下午启动阻断：新会话13:30:33已stopping，pending_callback_count=32/recovery=false，未出现查询/报撤ready；Relay无新命令，3条心跳4443字节Redis-PG一致。等OC退出/回调/结算once证据，不从停止心跳推断结算是否执行，不自动重启/重新确认或延长13:35截止。
+- [x] OC退出反馈复核与成交身份缺口重现：报告两侧TradeID5013/SysID31174与31234复现旧七段碰撞；提供v2九段纯JSON候选和Go独立字节/SHA回归，不改旧fixture或实际账本。见[修正说明](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)，当前未启用新wire。
+- [ ] 双方同步修复成交复合键、旧派生身份升级及混合版本防重；OC对原50条启动回放给出逐类结果，Relay改查询/实时解析及持久账本回归。确认结算未调用的依据为OC报告，真实原包尚待；修复通过后另约窗口，不自动重启或换路由绕过。
 - [ ] 今日优先：按用户确认的Relay→Redis→OC主程序链路完成东吴SHFE一笔有效报单及对应成功撤单，不采用临时直连。本次TEST结算确认已授权；用户确认下午13:30窗口，待实际assessment_id/新session/截止及合约原生就绪。JSON已适配，不再等原则性回签；新会话仅重查订单/持仓作初始化，资金BizType失败独立保留。没有自动启动或切换生产。
 
 状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。

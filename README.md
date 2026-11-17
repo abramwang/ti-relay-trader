@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 下午` **OC退出根因反馈**：同日SHFE TradeID5013买卖两侧SysID31174/31234在旧七段成交键碰撞，Relay同一v1契约也有此缺口，离线已复现。OC报告50条历史回调、18audit_only/32pending，结算once不存在且未调用确认；本机尚无原包，明确证据来源。13:35窗口到期，无新命令/报撤。新增[双方最小修正说明](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)及`testdata/fixtures/ctp_fill_identity_v2_candidate_20261117.json`，候选九段键追加SysID/方向，旧状态逐条派生、防混合版本重复计数、启动回放与本轮交易分离。**当前仅离线候选，运行解析器仍v1，不要让OC直接发布v2或自动重启**；下一步OC确认编码/旧状态方案后双方同步实现和复验，再约窗口。源码/二进制无需交换，旧证据不改。
+
 - `2026-11-17 13:32 Asia/Shanghai` **下午测评启动即停止，尚未通过**：OC新session=`ctpproc-ea3476fac51da091a7bda6bd0dae79e4`，13:30:32两条broker_not_ready，13:30:33.778已stopping；代次1/20261117，recovery=false、pending_callback_count=32、order_ref_ready=true，报撤尝试0。Relay无新查询/交易，PG仍5旧查询/0交易，两命令流0/pending0/lag0。已通知OC查退出及自动回调积压，并核对结算once/SDK/回调，不自动重启重确认，13:35截止不延长。3条4443字节hb已落独立PG并与Redis原文/SHA核验一致，新owner=`7ab0d180bfd73394f1a2e7340525a4fe0ec8abaef887585af601bd89b1329766`、cursor=`1794893433793-0`，接收器已退出；后续须显式续读。见[执行单当前结果](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。下条计划不代表本轮成功或仍在运行。
 
 - `2026-11-17 13:01 Asia/Shanghai` **下午窗口已定**：用户转交OC部署`7d83ccd`、12:55:51前缀空/run_id一致/本地状态空；计划13:29复核初始化、13:30启动、**13:35硬截止不延长**。Relay仍等待实际session/代次/TradingDay/截止及新鲜心跳，收到后两初始化查询→一手报撤；不提前发占位查询、不自动登录/定时发单。未独立核验OC部署，不把安排当作已启动；见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。下条新路由参数继续有效。

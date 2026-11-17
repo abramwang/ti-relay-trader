@@ -2,6 +2,12 @@
 
 日期：2026-11-17，Asia/Shanghai。协调与命令发送：Relay；真实柜台执行：OC。
 
+## OC退出反馈已到：先修成交身份
+
+OC报告7d83ccd本轮退出为`callback_invalid_fill / fill_identity_conflict`：SHFE同日TradeID5013的买卖两侧分别属于SysID31174/31234，旧七段键碰撞。Relay使用相同v1契约，已离线重现，不能仅OC改ID后直接上线。OC报告50条启动回放（40订单/10成交）、18 audit_only/32 pending，结算once不存在且未进入确认调用；此为OC审计结论，Relay未获取原包。旧13:35窗口已到期，不自动重启/延长。
+
+下一步直接按[成交身份与启动回放修正](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)协调：共享v2复合键纯JSON和版本迁移边界已给出，Relay当前仅离线候选，不接受新wire。旧真实心跳/命令及回调审计不改，不通过换路由或强行ready绕过；等双方实现回归后另约窗口。
+
 ## 13:30真实启动后立即停止：当前结果
 
 用户通知OC已启动。Relay13:30:25先观察到新epoch/两命令组，尚无心跳；13:30:37观察到3条真实心跳，新session=`ctpproc-ea3476fac51da091a7bda6bd0dae79e4`。
