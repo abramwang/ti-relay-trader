@@ -64,7 +64,9 @@ tag_b64: 6+hjilk8OXUKgZiV/1RLAw==
 4. 读取、严格解析、校验身份并执行一次认证解密。
 5. 最后才原子更新 `credentials:current=N`。
 6. 写入 `succeeded` 审计；失败则写入错误码，不删除历史版本。
-7. 单独重启目标账户 OC，以心跳中的版本确认生效。
+7. 以目标账户 OC 心跳中的凭据状态、版本和 Key ID 确认生效；是否需要重启取决于 OC 版本和当前状态，不仅凭发布回执自动重启。
+
+2026-11-17 TEST实测：OC因current缺失等待凭据时，每5秒重新读取；Relay补发后自动出现`credential_status=loaded`，无需重启。现有CLI的`restart_required=true`仍是保守提示，不代表此次必须重启。已登录账户的凭据轮换不据此推定支持热更新，仍须按OC行为协调。`loaded`仅证明凭据已加载，必须另查`broker_ready`、订单快照及报撤准入；本轮加载后仍为`BROKER_DISCONNECTED`，不能宣称柜台登录成功。
 
 停用只删除 `current` 指针，不删除历史密文和交易账本。已经登录的 OC 不会自动退出，因此必须停止或重启对应账户进程。
 
@@ -132,4 +134,4 @@ managed_account_id
 5. PROD 逐账户写入并逐进程切换；任何时候都不批量重启全部账户。
 6. 全部验收后删除旧明文账户配置及包含凭据的历史副本。
 
-当前 TEST 仍使用旧 OC 的 `relay:prod:*` 兼容命名。切换新版托管 OC 时，必须在同一维护窗口把 TEST 的 `redis.env` 和账户 `stream_prefix` 一起改为 `relay:test:*`，不能只改一端。
+当前TEST已使用标准`relay:test:*`命名（2026-09-18完成迁移），不得向生产前缀补发测试凭据。后续环境切换仍需核对配置环境、Redis目标及账户路由，不能只改一端。
