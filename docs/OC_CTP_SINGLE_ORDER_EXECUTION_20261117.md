@@ -2,6 +2,23 @@
 
 日期：2026-11-17，Asia/Shanghai。协调与命令发送：Relay；真实柜台执行：OC。
 
+## 13:30真实启动后立即停止：当前结果
+
+用户通知OC已启动。Relay13:30:25先观察到新epoch/两命令组，尚无心跳；13:30:37观察到3条真实心跳，新session=`ctpproc-ea3476fac51da091a7bda6bd0dae79e4`。
+
+| produced_at（东八区） | 实际状态 |
+| --- | --- |
+| 13:30:32.809、13:30:32.813 | broker_not_ready，交易日/连接代次null，transport_recovery_clear=true，pending_callback_count=0 |
+| 13:30:33.778 | stopping，TradingDay=20261117、连接代次1，transport_recovery_clear=false，pending_callback_count=32，order_ref_ready=true；柜台/结算/订单快照/报撤ready全false |
+
+三条submit_attempts/cancel_attempts均0；没有出现可查询或可报撤就绪心跳。最后一条仍instrument_missing；回调积压32只是排查线索，不把它或恢复标志直接认定为根因。**Relay未登记或发送新查询/报撤，独立PG仍5笔旧查询、交易发布0。** 两命令流均空、pending/lag=0，不存在Relay等待发送或命令消费积压。终端正确显示OC已停止，历史数据不冒充本会话采样。
+
+已请用户立即转OC：提供退出原因、匹配审计和错误，优先核对登录后自动回调类型/积压及退出条件；同时核对`settlement-confirmation.once.json`、是否调用SDK和是否有匹配成功回调。停止心跳settlement_confirmed=false不能证明结算从未调用或未成功，不擅自重新确认/删除once/重启。原13:35硬截止不顺延，后续需按真实责任核对安排，不自动补测。
+
+13:31:11真实hb原文保存到独立PG，13:31:58与Redis逐条entry/body/SHA核对一致：3条、4443字节，范围1794893432823-0至1794893433793-0，拼接原文SHA256=`521e33abcc917d7eadea7f705bbabf1cd494938b73ce87d4f6c673f36542b907`。新hb owner=`7ab0d180bfd73394f1a2e7340525a4fe0ec8abaef887585af601bd89b1329766`，cursor=`1794893433793-0`；接收器已退出，后续续读必须显式使用该owner/cursor并确认停止，不重新从0覆盖。原始pending保留，不伪造delivered。reply0条，没有创建假回复。
+
+证据：`outputs/recovery/ctp_dongwu_assessment_pm_20261117/heartbeat-capture-20261117T053111Z.jsonl`、`verification-20261117T053158Z.json`及同目录原始预检。没有改环境、生产权限、OC状态或Redis绑定；本轮报撤测评尚未通过。
+
 ## 已确定窗口：13:30至13:35
 
 用户转交OC最新安排：部署版本`7d83ccd`，私有配置离线预检通过；OC报告12:55:51新前缀仍0键、run_id一致、本地状态为空。此为OC报告，Relay最近独立占用检查仍为下方12:52:48记录，不冒称已独立核验该部署版本。
