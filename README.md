@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 12:53 Asia/Shanghai` **下午候选已确认**：OC回报旧5查询均已本地ACK、无待发/交易/结算once，属OC本地证据；Relay独立PG仍5查询/0交易、旧位点保留。新gateway=`ctp-dongwu-assessment-pm-20261117`于12:52:48全量SCAN空、run_id相同，新PG命令/receiver均0；assessment=`dongwu-assessment-20261117-pm-01`，epoch=`dongwu-assessment-pm-be85ee43d6c54faa617e394ca36b9e15`。已告知OC开窗前复查后可初始化新绑定，目标13:30起最多300秒；等待实际session/代次/TradingDay/截止，不提前发命令。工具已就绪，终端新观察绑定已更新并重启TEST API，旧查询保留、网页只读、生产未动。见[唯一执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)；替代下条“等待候选”，不取消旧路由丢失记录。
+
 - `2026-11-17 12:45 Asia/Shanghai` **下午开窗前新阻断**：asset-retest前缀全量SCAN再次0键，epoch/命令流/reply/hb全部缺失，run_id未变；独立PG仍5查询/0交易发布。已通知OC核对10:33资金查询journal/outbox/ACK及settlement once，再提供新隔离报撤绑定候选；不能沿旧绑定启动、重建或重放。来源未能逐键确认，本轮开发回归仅写随机relay-dev键，不继续共享实例测试写入。终端`epoch_missing_or_changed`是真实连接状态，历史查询保留；下一步先确定新路由，再按13:30目标窗口执行，不能仅按下条“接线完成”就发单。详见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。
 
 - `2026-11-17 午间` OC c83731d单笔测评模式已适配：交付六项摘要、48心跳/4事件原文核验，初始化订单/持仓查询不被快照门禁反向阻断，assessment身份/原生限价时效/精确tick/独立撤单预算均受控；终端识别测评中但仍只读。全Go、定向race/vet及临时PG/随机隔离TEST Redis回归通过，更新TEST工具与9092展示，不切环境/不动OC。用户确认下午13:30窗口；**仍待OC实际assessment_id、新session/代次/TradingDay/截止**，不提前消耗单次结算授权、不使用10:37旧会话、不重复资金查询。随后两条新初始化查询→一手买开→真实working/SysID→撤单→真实cancelled。资金范围仍未核验、网页交易未开放，本轮尚无真实报撤。唯一协调文档仍为[单笔执行单](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md#午间接线确认c83731d)；本条替代下条“等待心跳JSON”。

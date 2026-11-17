@@ -2,6 +2,30 @@
 
 日期：2026-11-17，Asia/Shanghai。协调与命令发送：Relay；真实柜台执行：OC。
 
+## 12:53下午候选确认：当前启动口径
+
+Relay接受用户转交的OC旧责任核对与下午新候选，不再等待原则性回签。OC声明两份旧journal共5笔查询均有结果/outbox/发布确认/本地持久ACK，无未决交易或结算once文件；这属于OC本地核验，Relay未独立访问其journal或账户锁。Relay本机独立PG核对仍5条原命令、0交易发布，两旧路由owner/cursor保持原值，未重放旧命令。
+
+12:52:48.192341910+08:00，Relay只读全量SCAN新前缀0键，run_id仍为`94f801dc68e3699cc681feb6dbb48f19e46aef9e`；新路由PG命令/receiver均0。只是当前占用核验，不是预留/初始化成功。原始预检存于`outputs/recovery/ctp_dongwu_assessment_pm_20261117/`。
+
+| 项目 | 已接受下午候选 |
+| --- | --- |
+| assessment_id | dongwu-assessment-20261117-pm-01 |
+| env / broker / account | test / ctp_4900 / 300052141 |
+| gateway_id | ctp-dongwu-assessment-pm-20261117 |
+| group / consumer | oc-ctp-dongwu-assessment-pm-20261117 / oc-ctp-dongwu-assessment-pm-20261117-owner1 |
+| epoch | dongwu-assessment-pm-be85ee43d6c54faa617e394ca36b9e15 |
+| deployment_id | shared-test-redis，同一来源，不伪造新服务器 |
+| Relay source_id | ctp-test-source-v1:720cf56759dc5a71aaf46f01ba780a6b140c98d6a1ef282ad9d884fa472ca6f1 |
+| 接收起点 | 新路由首次从0-0开始；不复制旧owner/cursor，当前尚无新receiver |
+| 独立PG | relay_ctp_dongwu_20261117_test，保留旧历史，不应用新迁移 |
+
+已通过用户转交明确回复OC：开窗前再次核实来源、占用、旧责任及单次授权后，可以初始化**这条新路由**的epoch/两命令组；有占用或部分失败就停，不能清键重试。目标为13:30起、最多300秒真实窗口，启动后立即回传实际session/代次/TradingDay/截止及部署版本。当前没有定时启动，也未登记/发送新命令。换路由不新增报撤或结算授权次数。
+
+Relay运行工具已构建，上一轮全Go、PG/race和浏览器检查通过。终端受限配置已改为下午新route/epoch，两个旧gateway仅作历史查询；TEST API已重启，网页报撤继续禁用，生产/OC未动。启动前无epoch/心跳时显示连接不可用是正确状态，不伪造ready。真实命令只在新会话核验后逐项登记并发布。
+
+以下12:45记录保留为历史；其“等待候选”已由本节解决，旧asset-retest绑定仍禁止启动。
+
 ## 12:45启动前新增阻断
 
 12:45:31只读全量SCAN确认`relay:test:v1:ctp_4900:ctp-dongwu-asset-retest-20261117`再次0键，epoch、两命令流、reply、event、hb均不存在；run_id仍为`94f801dc68e3699cc681feb6dbb48f19e46aef9e`。不能沿用下面的旧绑定启动或重新初始化成首次空路由。下午13:30窗口目标不变，但必须先完成此次责任核对和新隔离绑定确认。
@@ -22,9 +46,9 @@ Relay独立PG仍保留5条命令，交易发布0；本轮未对该真实路由�
 
 | 项目 | 本轮约定 |
 | --- | --- |
-| 环境 / 路由 | test / ctp_4900 / ctp-dongwu-asset-retest-20261117 / 300052141 |
+| 环境 / 路由 | test / ctp_4900 / ctp-dongwu-assessment-pm-20261117 / 300052141；以顶部下午确认表为准 |
 | 原生身份 | BrokerID=4900，UserID=300052141，InvestorID=300052141 |
-| 测评模式 | production_mode=false；保留本轮绑定，不重建旧丢失路由 |
+| 测评模式 | production_mode=false；初始化经确认的下午新绑定，不重建旧丢失路由 |
 | 首选合约 | Meridian security_id=RB2701.SHFE，source_instrument_id=rb2701，exchange_id=SHFE；须OC确认东吴测试柜台支持 |
 | 开平、方向、套保 | trade_side=B、offset_type=O、hedge_type=speculation、business_type=F |
 | 数量 | order_qty=1，单位手；若柜台最小数量不是1，暂停并回报，不自动加量 |
@@ -108,7 +132,7 @@ Relay已接收并校验`reference/assessment-review-c83731d.tar.gz`，原样提�
 
 ```bash
 .runtime/bin/relay-ctp-trade \
-  --env test --broker ctp_4900 --gateway ctp-dongwu-asset-retest-20261117 \
+  --env test --broker ctp_4900 --gateway ctp-dongwu-assessment-pm-20261117 \
   --account 300052141 --native-broker 4900 --user 300052141 --investor 300052141 \
   --database relay_ctp_dongwu_20261117_test \
   --command-file "$COMMAND" --target-file "$TARGET" \
