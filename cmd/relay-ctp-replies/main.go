@@ -66,6 +66,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	capture := f.Bool("capture", false, "capture TEST reply originals only")
 	receive := f.Bool("receive-reviewed", false, "capture and apply independently reviewed query replies")
 	persist := f.Bool("persist-test-replies", false, "explicit permission to write dedicated TEST audit")
+	role := f.String("stream-role", "reply", "reply or event; events support raw capture only")
+	persistEvents := f.Bool("persist-test-events", false, "explicit permission to persist TEST event originals")
 	status := f.Bool("status", false, "read checkpoint only; no takeover or Redis connection")
 	owner := f.String("previous-owner", "", "explicit previous stopped receiver owner")
 	confirmStopped := f.Bool("confirm-stopped", false, "confirm previous receiver was stopped before takeover")
@@ -79,9 +81,16 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		}
 		return errors.New("invalid reply receiver arguments")
 	}
+	writeAllowed := *persist
+	if *role == "event" {
+		writeAllowed = *persistEvents
+	}
+	if (*role != "reply" && *role != "event") || (*role == "event" && (*persist || *receive || *reviewFile != "" || *evidenceFile != "")) || (*role == "reply" && *persistEvents) {
+		return errors.New("event capture requires its own permission and forbids query reviews")
+	}
 	if f.NArg() != 0 || scope.Route.Env != "test" || !(scope.Route.BrokerID == "ctp" || strings.HasPrefix(scope.Route.BrokerID, "ctp_")) ||
 		*targetFile == "" || *deployment == "" || !strings.HasSuffix(*database, "_test") || len(*database) > 63 || strings.ContainsAny(*database, " \r\n\t") ||
-		(*capture && *receive) || (*persist != (*capture || *receive)) || (*status && (*capture || *receive)) ||
+		(*capture && *receive) || (writeAllowed != (*capture || *receive)) || (*status && (*capture || *receive)) ||
 		((*reviewFile == "") != (*evidenceFile == "")) || (*receive && *reviewFile == "") || (*capture && *reviewFile != "") ||
 		((*owner != "") != *confirmStopped) || (*owner == "" && *cursor != "0-0") ||
 		*duration <= 0 || *duration > 5*time.Minute || *pageSize < 1 || *pageSize > 256 || *maxPages < 1 || *maxPages > 256 {
@@ -117,7 +126,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	check.Close()
 	if !*status && !*capture && !*receive {
-		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "reviewed_request": len(review) > 0, "business_authorized": false})
+		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "stream_role": *role, "reviewed_request": len(review) > 0, "business_authorized": false})
 	}
 	dsn, url := getenv("RELAY_CTP_REPLY_DATABASE_URL"), getenv("RELAY_CTP_REPLY_REDIS_URL")
 	pg, err := pgx.ParseConfig(dsn)
@@ -144,7 +153,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	store, _ := futures.NewStreamStore(db)
 	if *status {
-		cp, err := store.ReplyCheckpoint(bounded, source.StreamConfig("reply"))
+		var cp futures.HeartbeatCheckpoint
+		if *role == "event" {
+			cp, err = store.EventCheckpoint(bounded, source.StreamConfig(*role))
+		} else {
+			cp, err = store.ReplyCheckpoint(bounded, source.StreamConfig(*role))
+		}
 		if err != nil {
 			return errors.New("cannot inspect TEST reply checkpoint")
 		}
@@ -155,7 +169,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		return errors.New("cannot create TEST source verifier")
 	}
 	defer publisher.Close()
-	err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
+	err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Role: *role, Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
 	if err != nil {
 		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
 			if errors.Is(err, known) {

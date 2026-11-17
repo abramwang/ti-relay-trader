@@ -116,11 +116,35 @@ func (s *QueryStore) RegisterReviewedQuery(ctx context.Context, raw, evidence []
 }
 
 func validateReplyCapture(c StreamConfig) error {
-	if c.Role != "reply" || c.Scope.Route.Env != "test" || !(c.Scope.Route.BrokerID == "ctp" || strings.HasPrefix(c.Scope.Route.BrokerID, "ctp_")) {
+	return validateRawCapture(c, "reply")
+}
+
+func validateRawCapture(c StreamConfig, role string) error {
+	if !oneOf(role, "reply", "event") || c.Role != role || c.Scope.Route.Env != "test" || !(c.Scope.Route.BrokerID == "ctp" || strings.HasPrefix(c.Scope.Route.BrokerID, "ctp_")) {
 		return ErrStreamIdentity
 	}
 	_, err := c.stream()
 	return err
+}
+
+func (s *StreamStore) EventCheckpoint(ctx context.Context, c StreamConfig) (HeartbeatCheckpoint, error) {
+	if err := validateRawCapture(c, "event"); err != nil {
+		return HeartbeatCheckpoint{}, err
+	}
+	return s.captureCheckpoint(ctx, c)
+}
+
+func (s *StreamStore) OpenEventCapture(ctx context.Context, c StreamConfig, expected HeartbeatCheckpoint, target TestQueryTarget) (StreamHandle, error) {
+	if err := validateRawCapture(c, "event"); err != nil {
+		return StreamHandle{}, err
+	}
+	if target.Validate() != nil || target.SourceID != c.SourceID {
+		return StreamHandle{}, ErrStreamIdentity
+	}
+	if err := validateCaptureCheckpoint(expected); err != nil {
+		return StreamHandle{}, err
+	}
+	return s.openBound(ctx, c, &expected, &target)
 }
 
 func (s *StreamStore) ReplyCheckpoint(ctx context.Context, c StreamConfig) (HeartbeatCheckpoint, error) {
@@ -157,6 +181,8 @@ type QueryReceiveProgress struct {
 }
 
 type TestQueryReceiveOptions struct {
+	// Empty means reply. Event mode retains raw audit only; no query projection.
+	Role               string
 	Checkpoint         HeartbeatCheckpoint
 	PageSize, MaxPages int
 	Review, Evidence   []byte
@@ -166,6 +192,13 @@ type TestQueryReceiveOptions struct {
 // ACKs OC groups. Raw-only mode is deliberately independent of heartbeat ready.
 // Reviewed mode uses the original publication clock, not a new timeout on restart.
 func ReceiveTestQueryReplies(ctx context.Context, source *TestStreamSource, store *StreamStore, publisher *TestQueryPublisher, options TestQueryReceiveOptions, emit func(QueryReceiveProgress) error) (result error) {
+	role := options.Role
+	if role == "" {
+		role = "reply"
+	}
+	if !oneOf(role, "reply", "event") || (role == "event" && (len(options.Review) > 0 || len(options.Evidence) > 0)) {
+		return ErrStreamIdentity
+	}
 	deadline, ok := ctx.Deadline()
 	if source == nil || store == nil || publisher == nil || source.scope != publisher.scope || source.sourceID != publisher.target.SourceID || emit == nil ||
 		!ok || time.Until(deadline) <= 0 || time.Until(deadline) > 5*time.Minute || options.PageSize < 1 || options.PageSize > 256 || options.MaxPages < 1 || options.MaxPages > 256 {
@@ -186,15 +219,27 @@ func ReceiveTestQueryReplies(ctx context.Context, source *TestStreamSource, stor
 	}
 	// Physical source identity is checked even when a stopped OC's raw replies
 	// are being archived. Unlike query publishing, no live-ready flag is required.
-	if err = publisher.verifyTransport(ctx); err != nil {
+	verify := func() error {
+		if role == "event" {
+			return publisher.verifyTransportStream(ctx, "cmd.trade")
+		}
+		return publisher.verifyTransport(ctx)
+	}
+	if err = verify(); err != nil {
 		return err
 	}
 	// OC creates reply lazily. Do not bind/retire a query merely because the
 	// first response stream has not appeared yet; leave the durable intent alone.
-	if _, err = source.reader.client.XInfoStream(ctx, queryReplyStream(source.scope.Route)).Result(); err != nil {
-		return fmt.Errorf("TEST reply stream unavailable; receiver and query binding not opened")
+	stream, _ := source.StreamConfig(role).stream()
+	if _, err = source.reader.client.XInfoStream(ctx, stream).Result(); err != nil {
+		return fmt.Errorf("TEST %s stream unavailable; receiver and query binding not opened", role)
 	}
-	h, err := store.OpenReplyCapture(ctx, source.StreamConfig("reply"), options.Checkpoint, publisher.target)
+	var h StreamHandle
+	if role == "event" {
+		h, err = store.OpenEventCapture(ctx, source.StreamConfig(role), options.Checkpoint, publisher.target)
+	} else {
+		h, err = store.OpenReplyCapture(ctx, source.StreamConfig(role), options.Checkpoint, publisher.target)
+	}
 	if err != nil {
 		return err
 	}
@@ -230,7 +275,7 @@ func ReceiveTestQueryReplies(ctx context.Context, source *TestStreamSource, stor
 	}
 	var after int64
 	for page := 0; page < options.MaxPages; page++ {
-		if err = publisher.verifyTransport(ctx); err != nil {
+		if err = verify(); err != nil {
 			return err
 		}
 		capture, err := source.ReadOnce(ctx, store, h, options.PageSize)
@@ -239,7 +284,7 @@ func ReceiveTestQueryReplies(ctx context.Context, source *TestStreamSource, stor
 		}
 		p.Captured += len(capture.ReceiptIDs)
 		p.Cursor = capture.Cursor
-		if err = publisher.verifyTransport(ctx); err != nil {
+		if err = verify(); err != nil {
 			return err
 		}
 		if reviewed {

@@ -48,6 +48,9 @@
 
 ### F0-F6 CTP 期货接入
 
+- [x] 11-17单笔TEST报撤发布及事件审计入口：新增`relay-ctp-trade`，精确原文授权/批次限额/交易心跳与报价时效/持久attempted/未知不重发/真实订单事件撤单核验；既有收件CLI支持event原文与显式续读。独立PG、随机隔离TEST Redis、全Go和定向race/vet验证，迁移46仅应用独立东吴TEST库。见[本日执行单](OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。未发真实报撤，不等于F3整体完成或终端交易放开。
+- [ ] 今日优先：按用户确认的Relay→Redis→OC主程序链路完成东吴SHFE一笔有效报单及对应成功撤单，不采用临时直连。本次TEST结算确认已授权；待OC交易运行模式JSON/实际部署、新窗口和合约原生约束。资金BizType失败独立保留，不伪造ready；不重复四查询整体验收或切换生产。
+
 状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
 
 - [x] 11-17真实东吴TEST首轮四查询收件：持仓12行、订单/成交完整空；独立OC审计与PG原文核验通过，资金因BizType=NUL失败。后续新隔离路由仅一笔资金复测，显式请求31仍响应00，命令/1回复/592心跳已保存，两命令组pending/lag=0；不默认修响应、不标四查询整体通过。[结果与OC下一步](CTP_TERMINAL_READONLY_20261117.md)。

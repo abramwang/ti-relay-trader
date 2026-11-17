@@ -98,6 +98,21 @@ func (s *CommandStore) PublishTestQuery(ctx context.Context, id int64, messageID
 }
 
 func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope, id int64, messageID string, target TestQueryTarget, transport queryPublicationTransport) (QueryPublication, error) {
+	binding, _ := json.Marshal(target)
+	return s.publishTestRegistered(ctx, scope, id, messageID, target, transport, "futures_test_query_publications", binding, func(c CommandRegistration) error {
+		if queryResultType(c.Original.Action) == "" {
+			return ErrStreamIdentity
+		}
+		return nil
+	}, nil)
+}
+
+// The same durable attempt protocol is used for queries and explicit TEST trades.
+// The policy and table are internal constants, never caller-supplied SQL.
+func (s *CommandStore) publishTestRegistered(ctx context.Context, scope CommandScope, id int64, messageID string, target TestQueryTarget, transport queryPublicationTransport, table string, targetRaw []byte, validate func(CommandRegistration) error, insert func(context.Context, *sql.Tx, CommandRegistration, []byte, []byte) error) (QueryPublication, error) {
+	if !oneOf(table, "futures_test_query_publications", "futures_test_trade_publications") || validate == nil {
+		return QueryPublication{}, ErrStreamIdentity
+	}
 	if scope.validate() != nil || scope.Route.Env != "test" || !(scope.Route.BrokerID == "ctp" || strings.HasPrefix(scope.Route.BrokerID, "ctp_")) || id <= 0 || target.Validate() != nil || transport == nil {
 		return QueryPublication{}, ErrStreamIdentity
 	}
@@ -105,7 +120,6 @@ func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope,
 	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > time.Minute {
 		return QueryPublication{}, ErrStreamIdentity
 	}
-	targetRaw, _ := json.Marshal(target)
 	key := string(commandRouteBytes(scope.Route))
 	// Resolve an existing outcome before requiring fresh network evidence.
 	lookup := func(tx *sql.Tx) (CommandRegistration, *QueryPublication, error) {
@@ -117,13 +131,13 @@ func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope,
 		if err != nil {
 			return c, nil, err
 		}
-		if c.Scope != scope || queryResultType(c.Original.Action) == "" || c.Original.MessageID != messageID {
+		if c.Scope != scope || c.Original.MessageID != messageID || validate(c) != nil {
 			return c, nil, ErrStreamIdentity
 		}
 		var state, reason string
 		var entry sql.NullString
 		var same bool
-		err = tx.QueryRowContext(ctx, `SELECT state,entry_id,reason,target_json=$2::jsonb FROM futures_test_query_publications WHERE command_id=$1`, id, targetRaw).Scan(&state, &entry, &reason, &same)
+		err = tx.QueryRowContext(ctx, `SELECT state,entry_id,reason,target_json=$2::jsonb FROM `+table+` WHERE command_id=$1`, id, targetRaw).Scan(&state, &entry, &reason, &same)
 		if errors.Is(err, sql.ErrNoRows) {
 			return c, nil, nil
 		}
@@ -173,7 +187,12 @@ func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope,
 	if existing != nil {
 		return publicationOutcome(*existing)
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO futures_test_query_publications(command_id,target_json,proof_json,state) VALUES($1,$2,$3,'attempted')`, id, targetRaw, proofRaw); err != nil {
+	if insert != nil {
+		err = insert(ctx, tx, command, targetRaw, proofRaw)
+	} else {
+		_, err = tx.ExecContext(ctx, `INSERT INTO `+table+`(command_id,target_json,proof_json,state) VALUES($1,$2,$3,'attempted')`, id, targetRaw, proofRaw)
+	}
+	if err != nil {
 		return QueryPublication{}, err
 	}
 	attempt := publicationResult(id, "attempted", "", "", false)
@@ -192,7 +211,7 @@ func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope,
 	} else if _, e := streamID(entry); e != nil || entry == "0-0" {
 		return attempt, ErrQueryPublishUnknown
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE futures_test_query_publications SET state=$2,entry_id=$3,reason=$4,finished_at=clock_timestamp() WHERE command_id=$1 AND state='attempted' AND target_json=$5::jsonb`, id, state, storedEntry, reason, targetRaw)
+	result, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET state=$2,entry_id=$3,reason=$4,finished_at=clock_timestamp() WHERE command_id=$1 AND state='attempted' AND target_json=$5::jsonb`, id, state, storedEntry, reason, targetRaw)
 	if err != nil {
 		attempt.ObservedStreamID = entry
 		return attempt, ErrQueryPublishUnknown

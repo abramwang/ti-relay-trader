@@ -27,6 +27,20 @@ func TestRepliesDefaultOffline(t *testing.T) {
 	}
 }
 
+func TestEventCaptureDefaultAndPermissions(t *testing.T) {
+	var out bytes.Buffer
+	args := append(replyArgs(t), "--stream-role", "event")
+	if err := run(context.Background(), args, func(string) string { t.Fatal("offline read credentials"); return "" }, &out, &out); err != nil || !strings.Contains(out.String(), `"stream_role":"event"`) {
+		t.Fatal(out.String(), err)
+	}
+	for _, extra := range [][]string{{"--stream-role", "unknown"}, {"--stream-role", "event", "--capture", "--persist-test-replies"}, {"--stream-role", "event", "--receive-reviewed", "--persist-test-events"}, {"--persist-test-events"}, {"--stream-role", "event", "--capture"}} {
+		out.Reset()
+		if err := run(context.Background(), append(replyArgs(t), extra...), func(string) string { t.Fatal("invalid mode read credentials"); return "" }, &out, &out); err == nil {
+			t.Fatal("unsafe event invocation", extra)
+		}
+	}
+}
+
 func TestRepliesUnsafeFlagsOffline(t *testing.T) {
 	for _, extra := range [][]string{{"--env", "prod"}, {"--broker", "huaxin"}, {"--user", ""}, {"--database", "relay_trader"}, {"--capture"}, {"--persist-test-replies"}, {"--receive-reviewed", "--persist-test-replies"}, {"--capture", "--receive-reviewed", "--persist-test-replies"}, {"--status", "--capture", "--persist-test-replies"}, {"--duration", "6m"}, {"--max-pages", "257"}, {"--page-size", "0"}, {"--previous-owner", "old"}, {"--confirm-stopped"}, {"--cursor", "1-0"}, {"--review-file", "missing"}, {"--publish"}, {"unexpected"}} {
 		var out bytes.Buffer

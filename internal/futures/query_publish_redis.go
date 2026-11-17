@@ -68,6 +68,13 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 }
 
 func (p *TestQueryPublisher) verifyTransport(ctx context.Context) error {
+	return p.verifyTransportStream(ctx, "cmd.query")
+}
+
+func (p *TestQueryPublisher) verifyTransportStream(ctx context.Context, suffix string) error {
+	if !oneOf(suffix, "cmd.query", "cmd.trade") {
+		return ErrStreamIdentity
+	}
 	info, err := p.client.Info(ctx, "server").Result()
 	if err != nil || !strings.Contains(info, "\r\nrun_id:"+p.target.ServerRunID+"\r\n") {
 		return ErrQueryPublishGate
@@ -76,7 +83,7 @@ func (p *TestQueryPublisher) verifyTransport(ctx context.Context) error {
 	if err != nil || epoch != p.target.Epoch {
 		return ErrQueryPublishGate
 	}
-	groups, err := p.client.XInfoGroups(ctx, p.prefix()+":cmd.query").Result()
+	groups, err := p.client.XInfoGroups(ctx, p.prefix()+":"+suffix).Result()
 	if err != nil || len(groups) != 1 || groups[0].Name != p.target.Group {
 		return ErrQueryPublishGate
 	}

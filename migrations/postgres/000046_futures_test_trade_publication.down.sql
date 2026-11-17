@@ -1,0 +1,1 @@
+DROP TABLE futures_test_trade_publications;
