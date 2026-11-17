@@ -6,9 +6,9 @@
 
 真实TEST命令登记、Redis发送、OC回复、Relay原始收件已跑通：4条查询各发送一次、各收到一条回复，4条命令的本地文件/PG/Redis原文一致，4条回复的Redis/PG原文和SHA256一致。
 
-**资金标准转换失败；四查询整体验收尚未通过。** 持仓返回12条并通过Relay行结构校验；订单/成交各返回完整空列表。尚未取得OC独立请求审计，不把回复中的ticket/SDK ID自证为已核实上下文，也未发布业务快照。
+**资金标准转换失败；四查询整体验收尚未通过。** OC独立请求审计已收到并复核：持仓12条的原始字段与标准输出一致，订单/成交各有真实末页且为空；ticket/SDK ID已与原始审计关联。Relay已持久化原文，但尚未发布业务快照；历史审计核实不升级为当前交易准入。
 
-| 动作 | OC结果 | 数据/说明 | ticket / SDK request_id（回复宣告，待独立审计核对） |
+| 动作 | OC结果 | 数据/说明 | ticket / SDK request_id（已独立核对） |
 | --- | --- | --- | --- |
 | account.asset.query | failed / QUERY_FAILED | missing_biz_type；standard_projection失败 | 1 / 3 |
 | account.positions.query | completed / OK | 12条，index=0、is_last=true | 2 / 4 |
@@ -20,7 +20,7 @@
 ## 本轮身份与消息
 
 - 路由：`test / ctp_4900 / ctp-dongwu-assessment-20261117 / 300052141`。
-- 原生BrokerID=4900、UserID=300052141经OC确认认证/登录回包一致；InvestorID=300052141已明确配置，业务覆盖仍待原始结果核实。
+- 原生BrokerID=4900、UserID=300052141经OC确认认证/登录回包一致；12条原始持仓的BrokerID/InvestorID/TradingDay与4900/300052141/20261117一致。资金AccountID=300052141，缺BizType仍不能证明完整资金作用域。
 - session：`ctpproc-1040f2e889ecd8f7199e3ebf95914a38`；连接代次1，TradingDay=20261117。
 - Redis run_id：`94f801dc68e3699cc681feb6dbb48f19e46aef9e`；epoch：`dongwu-prepared-164bb9020478c4a8c83e9cf25d9f8e34`。
 - 命令组：`oc-ctp-dongwu-assessment-20261117`；09:26:33复核cmd.query/cmd.trade均pending=0、lag=0，cmd.trade长度0。PEL清空不代替OC本地durable ACK审计。
@@ -56,16 +56,31 @@
 }
 ```
 
-以上是标准回复的自述，说明失败位置在OC资金标准转换，而非Relay未收到响应；不能仅凭这些字段断定SDK原始BizType为空、权限不足或柜台无资金。`callback_error_id=null`不能改写为券商返回0。
+以上是标准回复；现已对照独立原始审计确认`raw.rows[0].fields_hex.BizType="00"`，即单字节NUL，不是字符`'0'`（30）或`'1'`（31）。该行50个SDK命名成员齐备，BrokerID=4900、AccountID=300052141、CurrencyID=CNY、TradingDay=20261117，SettlementID原始hex为01000000（小端整数1）。原始结果completed、末页true、同步返回0、callback_error=null；不得把null补成柜台返回0。
 
-请OC一次性提供：
+OC报告拒绝点为`ctp_query_snapshot.h/sourceScope`的空BizType检查；另据其源码核对，资金查询请求零初始化后仅填写BrokerID和InvestorID，未显式设置BizType。**本包没有完整原生请求结构体抓包**，因此请求BizType=0是OC源码核对结论，不是Relay独立捕获的请求事实；也不能据此断定柜台回显请求或明确传1后必然恢复。
 
-1. 本轮`readonly.audit.jsonl`中四条原命令、实际ticket/SDK请求、同步返回、原始各行及末页、标准转换、发布和ACK记录；提供纯数据即可，无需程序文件。
-2. 重点核对资金第1项的原始`BizType`命名成员hex/实际长度，以及BrokerID、AccountID、CurrencyID、TradingDay、SettlementID。确认是柜台真实未填、驱动读取/编码丢失，还是标准投影误判。
-3. 若原始BizType有效，修复投影并用相同原始输入离线回归；若真实为NUL/未填，先给证据，双方再确定显式未知范围表达。**不要猜填"1"、默认聚合多行、补零资金或去掉作用域约束。** Relay当前也要求非空单字符，不存在单改OC空串就自然兼容的假设。
-4. 修正后只需安排新的资金采样窗口复测；已有三类回包保留，除非证据或实现变化确有需要，不重复整轮查询。新的采样有新命令身份，不覆盖原失败，也不重投旧SDK请求。
+请OC直接推进最小修正，不再重复材料或原则回签：
 
-不需要新增原则回签。审计到齐后Relay复核事实；现有即时接收超时不会靠刷新batch或增加timeout改写，迟到证据按历史审计处理。尚无独立证据时不把raw pending强制改成delivered。
+1. 仅期货资金查询请求显式使用SDK声明的`THOST_FTDC_BZTP_Future`，补充实际发送的BrokerID/InvestorID/AccountID/CurrencyID/BizType原值审计及离线回归；其他字段沿用明确配置，不猜账号、不扩大其他业务范围。
+2. 保留响应原值和当前失败保护。**不得将响应NUL替换为"1"、跨作用域聚合、补零或改写此次失败。** Relay本轮无wire/解析放宽；新增六种缺失/空/NUL/非字符串BizType回归，确认整批拒绝且原文不变。
+3. OC修正完成后，双方明确新只读窗口，Relay只发一笔新身份的`account.asset.query`；核对请求BizType、真实响应、末页、scope及标准结果。资金通过不等于报撤获准。
+4. 若响应仍为00，保留失败及原始资金，联合核实柜台语义后再设计显式未知范围表达；不能为了通过验收在Relay单方补默认值。已有持仓/订单/成交证据无需无条件重采。
+
+本轮不授权自动启动/登录或发送新查询。原即时接收时限已过，迟到证据按历史审计核实；不刷新batch/延长timeout伪造及时完成，raw pending不强制改为delivered。
+
+## 独立材料复核
+
+材料位置`reference/query_review_20261117/`，7项SHA256清单全部通过。完整前缀359行的sequence、previous及逐record SHA256全部通过，当前会话319行与前缀第41..359行逐字节一致。摘要链是完整性证据，不冒充第三方签名。
+
+- 4条命令与Relay固定命令文件、PG登记、Redis发布ID匹配；4条OC发布回复与Relay PG原文、摘要及物理ID匹配。
+- 4项query_result分别有1/12/0/0原始行及真实末页；ticket、SDK request_id、session、代次、交易日、同步返回与标准reply一致。三项成功采样可确认，资金失败原因可确认。
+- 12条持仓逐行核对原生账户/证券/市场、多空/套保/持仓日期/投资单元、数量及冻结量；OpenCost/PositionCost/UseMargin十进制文本转换回double后，与SDK小端原始字节一致，不人为舍入。
+- 当前会话295条心跳与Relay PG原文一致；start记录明确production_mode=false、trading_enabled=false、settlement_confirm=never。
+- 包内没有逐命令durable ACK原始记录，只有stopped/unresolved_commands=0及此前Relay读取的PEL=0；故不宣称已独立完成持久ACK/进程恢复验收。无需为资金定向修正重复索要整包，后续恢复专项再补此项证据。
+- 原生资金请求字段审计尚缺，不能把源码检查当抓包。业务快照发布及非空订单/成交、报撤/实时事件仍未验收。
+
+复核报告`outputs/recovery/ctp_dongwu_joint_20261117/queries-20261117T012425Z/oc-independent-review.json`，本机只读核验脚本`.runtime/ctp-dongwu-review-20261117.py`；原始材料与旧报告未覆盖。未执行新柜台查询、重启、结算确认、环境或权限变更。
 
 ## Relay持久化与恢复
 

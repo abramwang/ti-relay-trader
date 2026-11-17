@@ -229,6 +229,50 @@ func TestAssetScopesRetainedWithoutSumming(t *testing.T) {
 	}
 }
 
+func TestAssetBizTypeMissingOrNULNeverDefaultsOrPublishesPartial(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   any
+		missing bool
+	}{
+		{name: "missing", missing: true},
+		{name: "null", value: nil},
+		{name: "empty", value: ""},
+		{name: "nul", value: "\x00"},
+		{name: "numeric_zero", value: 0},
+		{name: "numeric_one", value: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := mutate(t, "asset", func(items []map[string]any) []map[string]any {
+				encoded, err := json.Marshal(items[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var other map[string]any
+				if err := json.Unmarshal(encoded, &other); err != nil {
+					t.Fatal(err)
+				}
+				scope := other["futures"].(map[string]any)["scope"].(map[string]any)
+				scope["account_id"] = "OTHER_FUND"
+				if tc.missing {
+					delete(scope, "biz_type")
+				} else {
+					scope["biz_type"] = tc.value
+				}
+				return append(items, other)
+			})
+			original := append([]byte(nil), raw...)
+			if result, err := DecodeAssets(raw, testScope()); err == nil || result != nil {
+				t.Fatal("unknown BizType defaulted or preceding valid row escaped")
+			}
+			if !bytes.Equal(raw, original) {
+				t.Fatal("original evidence mutated")
+			}
+		})
+	}
+}
+
 func TestAllNativePositionDimensions(t *testing.T) {
 	for _, direction := range []string{"1", "2", "3"} {
 		for _, hedge := range []string{"1", "2", "3", "5", "6", "7"} {
