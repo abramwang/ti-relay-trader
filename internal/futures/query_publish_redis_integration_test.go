@@ -12,7 +12,7 @@ import (
 )
 
 func TestQueryPublisherRedisAtomicGate(t *testing.T) {
-	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_run", "wrong_generation", "closed", "duplicate_body", "assessment_init", "assessment_expired", "assessment_stopping"} {
+	for _, scenario := range []string{"publish", "epoch_changed", "heartbeat_changed", "expired", "wrong_run", "wrong_generation", "closed", "duplicate_body", "assessment_init", "assessment_expired", "assessment_stopping", "reconcile_waiting", "reconcile_blocked", "reconcile_native"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, h, client, _, ctx := realStreamRole(t, "hb")
 			cfg, err := config.Load(os.Getenv("RELAY_FUTURES_TEST_REDIS_CONFIG"))
@@ -67,6 +67,20 @@ func TestQueryPublisherRedisAtomicGate(t *testing.T) {
 					m["adapter_context"].(map[string]any)["query_collection_ready"] = false
 				}
 			})
+			if strings.HasPrefix(scenario, "reconcile_") {
+				body = withReadOnlyReconciliation(t, body, h.config.Scope)
+				body = editBody(t, body, func(m map[string]any) {
+					a := m["adapter_context"].(map[string]any)
+					r := a["readonly_reconciliation"].(map[string]any)
+					if scenario == "reconcile_blocked" {
+						a["query_collection_ready"], r["query_evidence_gate_clear"] = false, false
+						r["current"].(map[string]any)["blocking_error_count"] = 1
+					}
+					if scenario == "reconcile_native" {
+						r["source_scope"].(map[string]any)["user_id"] = "foreign"
+					}
+				})
+			}
 			if strings.HasPrefix(scenario, "assessment_") {
 				index := 1
 				if scenario == "assessment_stopping" {
@@ -100,11 +114,11 @@ func TestQueryPublisherRedisAtomicGate(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer publisher.Close()
-			if oneOf(scenario, "closed", "wrong_run", "wrong_generation", "duplicate_body", "assessment_expired", "assessment_stopping") {
+			if oneOf(scenario, "closed", "wrong_run", "wrong_generation", "duplicate_body", "assessment_expired", "assessment_stopping", "reconcile_blocked", "reconcile_native") {
 				if _, err := publisher.inspect(ctx); err == nil {
 					t.Fatal("closed gate accepted")
 				}
-			} else if oneOf(scenario, "publish", "assessment_init") {
+			} else if oneOf(scenario, "publish", "assessment_init", "reconcile_waiting") {
 				action := "account.asset.query"
 				if scenario == "assessment_init" {
 					action = "order.list.query"

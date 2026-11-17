@@ -196,7 +196,7 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		return nil, "unavailable", "heartbeat_invalid"
 	}
 	h, err := DecodeHeartbeat([]byte(raw), a.Scope.Route)
-	if err != nil {
+	if err != nil || !h.readOnlyNativeScopeMatches(a.Scope) {
 		return nil, "unavailable", "heartbeat_invalid"
 	}
 	// This is a display status only. No code path publishes commands or grants readiness.
@@ -220,6 +220,7 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 	}
 	view := &AdvertisedHeartbeat{SessionID: h.CounterSessionID, TradeDate: day, ProducedAt: h.ProducedAt, AgeMilliseconds: age.Milliseconds(), State: h.State, StateText: h.StateText, RedisReady: h.RedisReady, BrokerReady: h.BrokerReady}
 	if h.ReadOnly != nil {
+		view.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 		view.ConnectionGeneration = h.ReadOnly.ConnectionGeneration
 		view.QueryCollectionReady = &h.ReadOnly.QueryCollectionReady
 		view.RecoveryClear = &h.ReadOnly.TransportRecoveryClear

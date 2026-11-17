@@ -38,6 +38,7 @@ type TestSessionGuard struct {
 	failure                          error
 	changed                          chan struct{}
 	readOnlyMode                     bool
+	readOnlyReconciliation           *ReadOnlyReconciliation
 }
 
 func NewTestSessionGuard(source *TestStreamSource, expected DeliveryQualityContext, policy TestHeartbeatPolicy) (*TestSessionGuard, error) {
@@ -121,6 +122,16 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 		return g.stop("heartbeat_runtime_mode_changed")
 	}
 	if h.ReadOnly != nil {
+		if !h.readOnlyNativeScopeMatches(g.scope) {
+			return g.stop("heartbeat_native_scope_changed")
+		}
+		if !g.producedAt.IsZero() {
+			r, prior := h.ReadOnly.Reconciliation, g.readOnlyReconciliation
+			if (r == nil) != (prior == nil) || (r != nil && (r.SourceManifestSHA256 != prior.SourceManifestSHA256 || r.SourceScope != prior.SourceScope ||
+				r.Legacy.Retained != prior.Legacy.Retained || r.Legacy.Pending != prior.Legacy.Pending || r.Legacy.AuditOnly != prior.Legacy.AuditOnly)) {
+				return g.stop("heartbeat_reconciliation_binding_changed")
+			}
+		}
 		if !h.ReadOnly.QueryCollectionReady || !h.ReadOnly.TransportRecoveryClear {
 			return g.stop("heartbeat_query_collection_not_ready")
 		}
@@ -162,6 +173,9 @@ func (g *TestSessionGuard) observeLocked(source HeartbeatSource, raw []byte, now
 	}
 	g.seen[h.MessageID] = digest
 	g.readOnlyMode = h.ReadOnly != nil
+	if h.ReadOnly != nil {
+		g.readOnlyReconciliation = h.ReadOnly.Reconciliation
+	}
 	g.lastID, g.lastDigest, g.producedAt = source.EntryID, digest, h.ProducedAt
 	age := now.Sub(h.ProducedAt)
 	if age < 0 {

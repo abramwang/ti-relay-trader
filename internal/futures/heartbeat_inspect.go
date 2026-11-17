@@ -37,28 +37,29 @@ func (r HeartbeatInspectionRequest) Stream() (string, error) {
 }
 
 type AdvertisedHeartbeat struct {
-	SessionID                      string    `json:"counter_session_id"`
-	TradeDate                      *string   `json:"trade_date"`
-	ProducedAt                     time.Time `json:"produced_at"`
-	AgeMilliseconds                int64     `json:"age_ms"`
-	State                          string    `json:"state,omitempty"`
-	StateText                      string    `json:"state_text,omitempty"`
-	RedisReady                     bool      `json:"redis_ready"`
-	BrokerReady                    bool      `json:"broker_ready"`
-	SettlementConfirmed            bool      `json:"settlement_confirmed"`
-	OrderSnapshotReady             bool      `json:"order_snapshot_ready"`
-	AcceptingTradeCommands         bool      `json:"accepting_trade_commands"`
-	AcceptingCancelCommands        bool      `json:"accepting_cancel_commands"`
-	RecoveryClear                  *bool     `json:"transport_recovery_clear,omitempty"`
-	RecoveryIssues                 *int64    `json:"recovery_issue_count,omitempty"`
-	RuntimeMode                    string    `json:"runtime_mode,omitempty"`
-	ConnectionGeneration           *int64    `json:"connection_generation,omitempty"`
-	QueryCollectionReady           *bool     `json:"query_collection_ready,omitempty"`
-	CallbackPolicy                 string    `json:"callback_policy,omitempty"`
-	PendingCallbacks               *int64    `json:"pending_callback_count,omitempty"`
-	DeferredCallbacks              *int64    `json:"deferred_callback_count,omitempty"`
-	BlockingCallbacks              *int64    `json:"blocking_callback_count,omitempty"`
-	CallbackReconciliationComplete *bool     `json:"callback_reconciliation_complete,omitempty"`
+	SessionID                      string                  `json:"counter_session_id"`
+	TradeDate                      *string                 `json:"trade_date"`
+	ProducedAt                     time.Time               `json:"produced_at"`
+	AgeMilliseconds                int64                   `json:"age_ms"`
+	State                          string                  `json:"state,omitempty"`
+	StateText                      string                  `json:"state_text,omitempty"`
+	RedisReady                     bool                    `json:"redis_ready"`
+	BrokerReady                    bool                    `json:"broker_ready"`
+	SettlementConfirmed            bool                    `json:"settlement_confirmed"`
+	OrderSnapshotReady             bool                    `json:"order_snapshot_ready"`
+	AcceptingTradeCommands         bool                    `json:"accepting_trade_commands"`
+	AcceptingCancelCommands        bool                    `json:"accepting_cancel_commands"`
+	RecoveryClear                  *bool                   `json:"transport_recovery_clear,omitempty"`
+	RecoveryIssues                 *int64                  `json:"recovery_issue_count,omitempty"`
+	RuntimeMode                    string                  `json:"runtime_mode,omitempty"`
+	ConnectionGeneration           *int64                  `json:"connection_generation,omitempty"`
+	QueryCollectionReady           *bool                   `json:"query_collection_ready,omitempty"`
+	CallbackPolicy                 string                  `json:"callback_policy,omitempty"`
+	PendingCallbacks               *int64                  `json:"pending_callback_count,omitempty"`
+	DeferredCallbacks              *int64                  `json:"deferred_callback_count,omitempty"`
+	BlockingCallbacks              *int64                  `json:"blocking_callback_count,omitempty"`
+	CallbackReconciliationComplete *bool                   `json:"callback_reconciliation_complete,omitempty"`
+	ReadOnlyReconciliation         *ReadOnlyReconciliation `json:"readonly_reconciliation,omitempty"`
 }
 
 type InspectedHeartbeat struct {
@@ -172,6 +173,7 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.RuntimeMode = "test_broker_read_only"
 				a.ConnectionGeneration, a.QueryCollectionReady = h.ReadOnly.ConnectionGeneration, &h.ReadOnly.QueryCollectionReady
 				a.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
+				a.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 			} else if h.Assessment != nil {
 				item.Classification = "test_broker_assessment"
 				a.RuntimeMode = "test_broker_assessment"

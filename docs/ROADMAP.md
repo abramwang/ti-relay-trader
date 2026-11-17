@@ -48,6 +48,8 @@
 
 ### F0-F6 CTP 期货接入
 
+- [x] 11-17晚间OC只读恢复交付及Relay接线：0cd38b6材料7摘要，21场景/58心跳/13回复/9错误心跳核验；严格`readonly_query_evidence.v1`、原生身份、来源固定与查询门禁/诊断，非空订单/v2成交临时PG关联/重复/恢复回归通过。仅离线及本机隔离验证，不宣告真实旧32条已解决。
+- [ ] 11-18 P0测评完整闭环：OC最终assessment版本贯通v2/启动回放、跨日旧责任及只读到测评状态承接；Relay完成最终JSON复验和窗口准备后，获确认窗口内真实登录/结算确认/必要查询/1报1撤/原文与PG核对。具体分工及验收见[次日唯一执行清单](OC_CTP_JOINT_EXECUTION_20261118.md)，不是常驻交易或追加主动成交授权。
 - [x] 11-17盘外联调准备：统一入口`test-ctp-offline.sh`，私有Redis/临时PG的23组演练及4项容量/重启故障回归、五CLI构建；新增OC原始审计生成查询review草稿工具及严格契约测试，当日4笔原始查询通过无连接核验。不得将fixture测试视为柜台测评或旧请求恢复；开窗前/盘中职责见[准备清单](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 - [x] 11-17单笔TEST报撤发布及事件审计入口：新增`relay-ctp-trade`，精确原文授权/批次限额/交易心跳与报价时效/持久attempted/未知不重发/真实订单事件撤单核验；既有收件CLI支持event原文与显式续读。独立PG、随机隔离TEST Redis、全Go和定向race/vet验证，迁移46仅应用独立东吴TEST库。见[本日执行单](OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。未发真实报撤，不等于F3整体完成或终端交易放开。
 - [x] 11-17午间适配OC c83731d的`test_broker_assessment`：六项材料摘要、48条心跳/4条订单事件独立核验；初始化两查询独立准入、assessment身份、原生约束时效/精确价位、报撤独立预算及顶层action解析接通。全Go、定向race/vet、临时PG与随机TEST Redis回归，不把离线样例当真实柜台证据。终端识别测评模式但仍只读。
@@ -59,7 +61,7 @@
 - [x] 16:09收盘后存储状态独立复核：TEST Redis已2GiB/noeviction/AOF everysec、写状态ok，旧前缀仍0键；不认为旧数据已恢复、不将缺组PEL/lag填0，启动配置/持久挂载/负载与重启恢复未验。旧原包摘要及PG零交易责任复核通过，见[收盘后回执](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 - [x] OC5ec0e31收盘后增量材料核验：四摘要、50原回调/32延期逐条对应，17心跳/两页查询/2本地订单事件解析通过；ACK未知模拟场景保持零输出/调用及恢复阻断。Relay已接严格TEST局部延期策略，修复初始化查询死锁，并在诊断保留未核对责任；全Go/定向race/vet通过，CLI已构建，未启业务进程。见[当前回执](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)，不是在线恢复或报撤验收。
 - [x] 新只读候选及责任关联设计确认：接受`ctp-dongwu-readonly-recovery-20261117`、对应group及候选epoch，旧18 audit_only/32 pending原文不变、source-manifest/legacy-links追加关联；跨gateway双端ID保留、跨日空页不核销旧责任。仅设计确认，未联网验占用/初始化/登录，见[16:37开发分工](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
-- [ ] OC只读恢复接线与Relay适配：OC补来源关联持久化/重启拒绝、原生通知留证、完整查询证明、独立只读心跳及准备工具允许列表；Relay收到实际JSON后严格解析/诊断/查询门禁，不将assessment策略静默套入。当前只读无pending契约，不能仅忽略新审计字段宣告兼容；不要求清空全部历史责任才允许核对查询。
+- [x] OC只读恢复接线与Relay适配：OC交付来源关联持久化/重启拒绝、原生通知留证、完整查询证明及准备工具；Relay已按实际JSON严格解析新只读关联计数/范围/查询门禁并输出诊断。不把assessment策略静默套入，不以等待项阻断核对查询；实际迁移及真实柜台验收仍见下条。
 - [ ] 新只读实际迁移/恢复验收：实现和样例通过后，重查来源/空路由/旧PG零交易及新接收起点，再约窗口。旧原文/位点保留，不重建旧路由、不重放命令或自动沿13:35授权登录/结算/交易；通用外部事件释放仍后移。
 - [x] 独立Redis容量故障及受控AOF重启回归：4项race重复3轮通过，OOM保留旧键、查询PG attempted不重发、trade发布unknown、刷盘重启后原文/epoch/示意cursor/PEL保持而旧run_id禁发；仅本机Unix socket Redis8.0.2及可丢弃PG，不接OC或共享Redis，不是断电/负载/共享8.2.2认证。见[17:27回归](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 - [ ] 共享TEST Redis部署持久性验收：启动配置持久保存、挂载、真实8.2.2实例重启/故障恢复须另约窗口；不将本机回归或无淘汰计数等同该部署永久可靠，不恢复/重建旧丢失路由。

@@ -27,6 +27,7 @@ type HeartbeatReadOnly struct {
 	ConnectionGeneration   *int64
 	QueryCollectionReady   bool
 	TransportRecoveryClear bool
+	Reconciliation         *ReadOnlyReconciliation
 }
 
 // Recovery is transport diagnostics, never broker readiness. In this profile
@@ -73,6 +74,9 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 	mode := textField(fields, "runtime_mode")
 	recoveryMode, readOnlyMode := mode == "test_transport_recovery_only", mode == "test_broker_read_only"
 	assessmentMode := mode == "test_broker_assessment"
+	if _, exists := fields["readonly_reconciliation"]; exists && !readOnlyMode {
+		return bad("readonly reconciliation outside read-only mode")
+	}
 	if runtimeProfile && !recoveryMode && !readOnlyMode && !assessmentMode {
 		return bad("unsupported runtime mode")
 	}
@@ -161,7 +165,13 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			return bad("read-only day")
 		}
 		h.State, h.StateText = textField(p, "state"), textField(p, "state_text")
-		h.ReadOnly = &HeartbeatReadOnly{generation, literal(fields["query_collection_ready"], "true"), literal(fields["transport_recovery_clear"], "true")}
+		h.ReadOnly = &HeartbeatReadOnly{ConnectionGeneration: generation, QueryCollectionReady: literal(fields["query_collection_ready"], "true"), TransportRecoveryClear: literal(fields["transport_recovery_clear"], "true")}
+		if raw, exists := fields["readonly_reconciliation"]; exists {
+			h.ReadOnly.Reconciliation, err = decodeReadOnlyReconciliation(raw, expected, h.ReadOnly.QueryCollectionReady)
+			if err != nil {
+				return Heartbeat{}, err
+			}
+		}
 		if (h.BrokerReady && (generation == nil || !validDay(h.TradeDate))) ||
 			(h.StateText == "read_only" && (h.State != "UP" || !h.RedisReady || !h.BrokerReady || !h.ReadOnly.TransportRecoveryClear)) ||
 			(h.StateText != "read_only" && (h.State != "DEGRADED" || !oneOf(h.StateText, "recovery_blocked", "broker_not_ready", "stopping"))) ||
