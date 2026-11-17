@@ -2,6 +2,42 @@
 
 日期：2026-11-17，Asia/Shanghai。Relay给OC的具体修正提案；不是新登录或交易窗口授权。
 
+## 16:37候选已收到：直接开发，只读入口尚不可启动
+
+已收到用户转交的《OC 新只读绑定候选及旧回调关联方案》。OC引用的本文上一版SHA256 `ffde16eec39568398c09e8cdd0907fd993bec503844018b857f44e831a4f7fef`与Relay本机一致。**接受候选命名及只追加关联、旧证据不变的设计，OC可直接按以下顺序完成实现，无需再等原则回签。** 当前只是文字候选，未核验空路由、预留、创建配置/状态或授予初始化、登录权限；OC仍报告业务基线5ec0e31，不能当新功能已交付。
+
+### 唯一候选与边界
+
+| 项目 | 候选 |
+| --- | --- |
+| env / broker / account | `test / ctp_4900 / 300052141` |
+| native BrokerID / UserID / InvestorID | `4900 / 300052141 / 300052141` |
+| gateway | `ctp-dongwu-readonly-recovery-20261117` |
+| group / consumer | `oc-ctp-dongwu-readonly-recovery-20261117` / `oc-ctp-dongwu-readonly-recovery-20261117-owner1` |
+| epoch | `dongwu-readonly-0d304a7a29800b24d832803bed3007ab`，未写入 |
+| Redis / source | 既有TEST DB0 / `shared-test-redis`，启动前重查实际run_id，不改部署身份 |
+| 模式 | `test_broker_read_only`；production_mode=false、settlement_confirm=never、trading_enabled=false |
+| 窗口 | 待另行确认，最多300秒、心跳1秒；目前无T0/session/代次/TradingDay |
+
+前缀`relay:test:v1:ctp_4900:ctp-dongwu-readonly-recovery-20261117`，六流及epoch后缀沿既有协议；交易组只用于责任检查，不消费新交易。候选名日期不约束未来柜台TradingDay。OC本机候选JSON未传到Relay，不冒称已校验其字节；当前文本足以安排开发，无须为此补一次材料往返。
+
+### OC先交三块实现，不扩大任务
+
+1. **来源留档与追加关联。** 实现source-manifest、legacy-links及重启复核；引用原scope/session/epoch与三个文件完整摘要，按旧journal摘要/callback ID/evidence摘要唯一定位。50条原文、18 audit_only/32 pending及原outcome不改。缺源、摘要变化、未知执行/ACK或经济冲突停止；同scope升级器不能当跨gateway迁移器。
+2. **真正的只读运行接线。** 原生通知先持久化，再核对/关联；不得关闭通知来制造pending=0。接当前完整订单查询来源证明及按请求身份的结果校验，不把非空未知订单当空页成功。仅缺查询证明的可关联项允许必要只读查询，其他恢复/审计阻断保留；不确认结算、不报撤、不因关联成功发外部order.event/fill.event。**不要求先核销全部历史pending才启动只读核对，更不要求本轮实现通用外部事件释放。**
+3. **可验证输出与准备工具。** 补只读心跳中的旧/新责任计数、核对范围和实际查询准入语义；精确字段名、位置、类型、完整性规则随实际编码器JSON一次交付。候选gateway进入显式准备工具允许列表，保持空路由/来源检查。附增量测试日志/SHA，不要源码、二进制、凭据或整包重复传输。
+
+回归重点：原18/32不变；重复/重排不重复关联；同完整键经济冲突拒绝；缺源/损坏/ACK未知阻断；不完整查询不证明来源；跨gateway保留两端ID及原生元组；跨日当前空查询不核销旧日责任；重启保留关联与未决状态。只读可查询时结算及报撤仍关闭。当前入口缺失这些实现，不安排试启动探测。
+
+### Relay并行职责及一处口径更正
+
+- 本轮已核对代码：`test_broker_read_only`目前验证`query_collection_ready`与`transport_recovery_clear`及登录/代次/交易日，并强制结算、订单交易快照ready及报撤false；**没有pending计数字段契约**。下方早前“旧模式仍要求pending=0”只适用于不带延期策略的assessment，不能泛指只读模式。未知adapter审计扩展可被保存，不等于已理解新准入语义。
+- 不把`local_assessment_only.v1`搬到只读模式，不提前猜字段或放宽恢复门禁。收到实际只读心跳及正反例后，同轮实现独立解析、责任可见性与查询门禁回归；新路径完成前不建立发送目标或向候选路由发布查询。
+- 开窗前重新核对Redis来源、完整空路由和PG旧范围零交易事实/新范围零登记；上轮零事实结论不可替代开窗前核验。若已有入账事实则停止做显式范围消歧，不因gateway变更把同一原生事实记成第二笔成交，不自动建立生产范围归并规则。
+- 旧gateway的派生ID和新查询ID各自保留，关联靠完整原生事实及证据；不改原gateway，不搬cursor/ACK，不导入旧消息冒充新收到。跨日查询无历史能力时，旧pending可继续明确留档，不能补日期、补终态或用空页证明消失。
+
+当前不改代码契约、配置、环境或数据库，不执行Redis写入/初始化/登录。资金BizType=00继续失败、外部事件释放单列；只读恢复闭合后才另约日间单笔报撤窗口，原13:35授权不延长。此前“等待候选”由本节更新为“候选已定、等待上述实现及实际JSON”。生产17:10任务仍须用户确认切回生产，不能为了联调自动切换。
+
 ## 收盘后增量已核验：可推进新绑定准备
 
 用户已上传`reference/oc_ctp_postclose_review_20261117/`。本节替代下方16:10“尚待材料”的状态，不改变历史失败记录。**接受本轮离线交付，无需再讨论成交编码或重传材料；下一步是具体的新只读绑定/状态关联方案。** 不是已经完成真实报撤、实际旧状态迁移或持久性验收。
@@ -12,7 +48,7 @@
 - 32项延后记录逐条对应原pending callback ID及原证据摘要，`business_processed=false`；18条audit_only不变。正常场景64 pending由原32与模拟再次回放组成，不是64笔成交；未获得完整运行后磁盘状态，不宣称独立执行了OC迁移。
 - Relay实际解码通过17条心跳、两页完整查询（12行订单）及2条同一单的working/cancelled事件。另核对2个accepted回执结构/关联及调用计数；所有新查询、结算、报撤、Redis/ACK均为模拟，原log仅为17条心跳摘要，不冒称真实Stream原文。ACK未知场景无业务输出、SDK调用0、recovery=false；没有独立完整故障轨迹，在线ACK恢复仍待验。
 - 修复旧Relay将所有pending都视为阻断所造成的初始化死锁：仅`test_broker_assessment`且显式`callback_policy=local_assessment_only.v1`允许延期子集。四个新字段必须同时存在；非负整数、`deferred+blocking=pending`、`callback_reconciliation_complete == (pending==0)`严格校验。缺字段、未知策略、矛盾计数、任何blocking均不放行。
-- `transport_recovery_clear`继续是独立必要条件，不能由blocking=0替代；只读初始化与报撤准入仍分开。旧模式仍要求pending=0，生产不接受测评模式。结算、订单/持仓快照、源/epoch/session、短时授权、行情/原生约束及一手报撤预算不变；历史时间不刷新、不把材料发送到真实路由。
+- `transport_recovery_clear`继续是独立必要条件，不能由blocking=0替代；只读初始化与报撤准入仍分开。不带延期策略的assessment仍要求pending=0，生产不接受测评模式；独立只读模式的限制见顶部更正。结算、订单/持仓快照、源/epoch/session、短时授权、行情/原生约束及一手报撤预算不变；历史时间不刷新、不把材料发送到真实路由。
 - 心跳诊断输出显式显示pending/deferred/blocking及reconciliation_complete，局部测评ready不能隐藏历史责任。新版本inspect/query/replies/trade CLI已构建；未启动业务接收/发送进程，未重启9092或OC，不改当前TEST环境。
 
 复验入口（只读文件，不登录、不连接Redis/PG）：

@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 16:37` **OC新只读候选已确认，仍未具备启动条件**：接受`ctp-dongwu-readonly-recovery-20261117`、group同前缀加oc-、候选epoch `dongwu-readonly-0d304a7a29800b24d832803bed3007ab`；旧18 audit_only/32 pending保留原范围，source-manifest/legacy-links只追加关联。OC仍需完成只读原生通知持久留证、跨gateway关联/恢复、完整查询证明、心跳和工具允许列表；Relay收到实际只读JSON后适配，不能把assessment延期策略套用。代码核实独立只读目前无pending计数契约，早前“旧模式pending=0”仅指旧assessment。见[直接开发清单](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。本轮只更新文档，未查占用/预留/初始化/登录/迁移/改环境；下条“等候选”为历史，现等待实现及JSON，不再原则回签。生产17:10任务仍需用户切回。
+
 - `2026-11-17 16:29` **TEST Redis留存首测通过**：独立随机开发前缀下string/stream两键跨300秒31次检查，原值/entry/body及PTTL=-1保持，run_id不变、evicted_keys仍12326（增量0）、AOF写ok；结束清理本次两键成功。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。非容量压测/重启验收，不证明历史键已恢复；16:28旧下午route仍0键。共享Redis没有改配置/重启/业务键写入，OOM拒写与持久化重启后续单独验。
 
 - `2026-11-17 收盘后` **OC v4增量核验及Relay接线完成**：`reference/oc_ctp_postclose_review_20261117/`四摘要通过，原50回调/32延期逐条一致；17心跳、两页查询、2个本地订单事件及2个accepted关联通过离线核验。修复历史pending导致初始化查询死锁，仅显式TEST `local_assessment_only.v1`按严格计数允许延期；ACK未知、生产、过期授权仍阻断，诊断保留未完成责任。全Go、专项race/vet及111项Python通过，inspect/query/replies/trade CLI已构建；9092/OC未重启、无业务命令/迁移，环境仍TEST。复验脚本`scripts/audit-ctp-postclose-review.py`；详见[当前OC回执与下一步](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。下一步等待OC具体新只读绑定/旧回调关联方案，不再重传材料或原则回签，不重建旧路由；旧13:35授权不复用。生产17:10权威复算仍须用户确认切回。下条“待材料”为历史状态。
