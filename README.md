@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 16:10` **OC收盘后增量回执已接收**：报告业务5ec0e31已补运行v2/测评回放隔离/缺文件锁持续拒绝及50回调离线运行回归；无真实进程、新session、迁移或结算，v4增量材料仍待本机接收，不冒称独立验收。Relay16:09:28核实TEST Redis2GiB/noeviction/AOF everysec、写状态ok、累计evicted12326/expired307，run_id不变，下午前缀仍0键（组缺失PEL/lag不可读，不填0）。独立PG仍5查询/0交易/0成交，旧原包摘要及审计链复验一致。证据`outputs/recovery/ctp_dongwu_assessment_pm_20261117/preflight-20261117T080928.414206400Z.json`。已请求只传v4 JSON/log/CTest及SHA、新心跳说明；下一步直接核验延期责任/实际输出/ACK未知保护，然后明确新只读绑定或显式迁移，不重做原则审阅、不重建旧路由、不复用13:35配置。见[收盘后回执与最小清单](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。生产17:10任务仍需用户切回。
+
 - `2026-11-17 15:16` **按用户新指令恢复TEST联调环境**：`switch-relay-env.sh test --skip-migrations`成功，域名API返回test，生产API/worker停止、生产权限未改。华鑫00030484新session=`hxproc-531c8a3d45079d77`，心跳新鲜但broker_ready=false/BROKER_DISCONNECTED。东吴下午route在15:16:31再次全量SCAN0键，run_id不变，未重建epoch/组或发命令；独立PG5查询/0交易/0成交不变。检查证据`outputs/recovery/ctp_dongwu_assessment_pm_20261117/preflight-20261117T071631.918433093Z.json`，已通过用户请OC回最新运行修复/当前进程/本地journal与once责任；下一步只读核验及修复联调，不能收盘后沿旧会话报撤。17:10生产权威复算仍需生产API，已提醒用户，未自动切回或修改cron。下条生产运行状态为切换前历史。
 
 - `2026-11-17 15:01` **生产日任务已执行并核验**：按用户指令14:56执行`switch-relay-env.sh production --skip-migrations`，API/独立worker运行、生产下单关闭、两停用户不变，未应用CTP迁移。今日盘前09:01成功；cron收盘采集15:01:02至03、结算15:01:04至06成功，四户资金及2行持仓快照全部落库、16项对账输入、0差异/账户错误。每日绩效15:01:12执行成功但仅债享5号发布暂定净值；768为previous_economic_nav_gap并保留ETF范围/清算未核验，388/387另有归因残差4,959,900/4,999,900元、前序净值缺口及当日日线未就绪，不将差额猜成资金划转或利润。证据`/var/log/relay/reports/{pre_open_init,post_close_capture,post_close_settlement,performance_daily,performance_publish}.json`及`post_close_pipeline.log`，API任务记录一致。17:10起权威复算计划不变、尚待执行，不保证可消除资金/历史缺口；本轮不强行发布或修改资金事实。TEST联调暂停，本机无CTP CLI运行，原证据/PG保留，不自动切回。以下14:22及之前的TEST安排仅为历史。
