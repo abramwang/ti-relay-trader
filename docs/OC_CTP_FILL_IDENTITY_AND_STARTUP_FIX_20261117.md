@@ -2,6 +2,32 @@
 
 日期：2026-11-17，Asia/Shanghai。Relay给OC的具体修正提案；不是新登录或交易窗口授权。
 
+## 17:27 Relay独立Redis故障回归完成
+
+OC新只读实现/样例尚未收到，不猜字段推进运行。Relay先完成不依赖它的存储故障回归，代码为`internal/futures/redis_storage_local_test.go`，四项测试带race重复三轮共12次通过；默认全Go测试及vet通过。**只新增测试，不改变发布语义，不重启API/OC，不初始化候选路由。**
+
+| 用例 | 本机独立结果 |
+| --- | --- |
+| noeviction容量拒写 | 临时实例降低maxmemory至已用内存以下，SET/XADD/EVAL真实返回OOM；原string原字节/无TTL保持，evicted=0，命令流未增加 |
+| 查询发布与PG责任 | 先持久attempted，再在真实EVAL处遇OOM；Relay返回unknown、不伪称未发出或完成。恢复容量并重新构造CommandStore后仍返回原attempted，不再次append；使用独立可丢弃PG随机schema |
+| 报单发布 | 通过合成TEST授权/新鲜心跳及原生约束检查后，真实trade publisher在OOM处返回unknown，cmd.trade无新增；无SDK或柜台参与 |
+| AOF受控重启 | appendonly=yes/everysec，WAITAOF证明本机刷盘后SIGTERM并重新启动；Stream原文/entry、epoch、示意cursor、消费组/PEL及consumer/待确认entry保持。确认publisher连到新进程后，旧run_id被inspect和原子发布同时拒绝，不补发 |
+
+隔离方式：仅显式`RELAY_FUTURES_LOCAL_REDIS_SERVER`指定本机可执行文件，测试创建0700临时目录、Unix socket、`port=0`，不接受外部Redis URL、不读取应用配置。退出停止所有测试Redis并清理临时目录。Redis包及依赖只解包到`.runtime/redis-isolated-tools`，未安装/启动系统Redis服务。测试Redis为Debian包8.0.2，共享实例为8.2.2；**本轮不冒称相同版本或共享部署认证**。
+
+容量故障采用受控降低内存限额，不是高负载填满主机；AOF测试是先刷盘后的正常进程重启，不是断电/磁盘损坏/未刷盘崩溃证明；示意cursor是隔离Redis键，不替代Relay PG receiver恢复验收。共享TEST实例的启动配置、持久挂载、真实8.2.2重启仍待另约窗口；原16:23至16:28五分钟两键留存观察结论不扩大。旧路由没有恢复或重建。
+
+本机复验（显式隔离工具和可丢弃数据库，不使用生产/真实联调库）：
+
+```bash
+env LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu" \
+  RELAY_FUTURES_LOCAL_REDIS_SERVER="$PWD/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server" \
+  RELAY_FUTURES_TEST_DATABASE_URL="host=$PWD/.runtime/ctp-dongwu-pg-20261117 port=15434 user=relay_ctp_audit dbname=relay_ctp_terminal_test_20261117 sslmode=disable" \
+  go test -race ./internal/futures -run '^TestLocalRedis' -count=3 -v
+```
+
+环境决定：17:20生产权威复算脚本访问当前TEST 9092，返回`no enabled performance accounts selected`，Meridian权威水位已ready；不是今日15:01收盘采集/结算失败。用户随后明确“保持测试，稍后切换”，因此不切生产、不补跑、不修改cron；此任务继续列为未完成，不误标为CTP或行情故障。
+
 ## 16:37候选已收到：直接开发，只读入口尚不可启动
 
 已收到用户转交的《OC 新只读绑定候选及旧回调关联方案》。OC引用的本文上一版SHA256 `ffde16eec39568398c09e8cdd0907fd993bec503844018b857f44e831a4f7fef`与Relay本机一致。**接受候选命名及只追加关联、旧证据不变的设计，OC可直接按以下顺序完成实现，无需再等原则回签。** 当前只是文字候选，未核验空路由、预留、创建配置/状态或授予初始化、登录权限；OC仍报告业务基线5ec0e31，不能当新功能已交付。

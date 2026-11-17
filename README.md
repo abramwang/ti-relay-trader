@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-17 15:16 Asia/Shanghai` 按用户新指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产API/独立worker停止。当前PID以service status为准；不得自行切回生产 |
 | 安全状态 | TEST华鑫00030484原配置trading_enabled=true但新鲜心跳broker_not_ready，不能以配置许可代替柜台就绪。生产4户trading_enabled=false、两停用户不变；切换skip-migrations。CTP独立TEST库仍5查询/0交易，下午路由再次缺键，禁止重建/重放；收盘后不沿旧窗口报撤 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 15:16` TEST Redis/PG正常，华鑫OC心跳新鲜但柜台未就绪；东吴下午前缀全量SCAN0键、run_id未变，已请OC核对最新版本/进程及责任。生产15:01四户收盘采集/结算成功，绩效三户阻断保留；17:10权威复算依赖生产9092，届时需用户确认切回，不自动切环境 |
+| 最近确认 | `2026-11-17 17:20` 当前TEST API健康但degraded；生产权威复算因当前TEST接口无目标绩效账户失败，Meridian权威水位已ready。用户明确保持TEST、稍后切换，不自动切回/补跑。生产15:01四户收盘采集/结算成功与绩效三户阻断不变；CTP仍待OC新只读实现/样例 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 17:27` **独立Redis故障回归完成**：新增4项opt-in测试，race三轮12次通过；真实OOM下旧键不淘汰、查询发布保留PG attempted且恢复容量不重发、交易发布unknown、刷盘后受控重启保留原文/epoch/示意cursor/PEL而旧run_id拒绝发送。仅本机Unix socket Redis8.0.2（临时解包，无系统服务）及`relay_ctp_terminal_test_20261117`随机schema，退出已清理；不接共享8.2.2/OC，不更改运行代码。测试`internal/futures/redis_storage_local_test.go`、复验/边界见[回归记录](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。共享配置/挂载/重启仍未验，OC候选不初始化。17:20发现权威复算`no enabled performance accounts selected`（当前TEST9092），用户已明确保持测试稍后切换；不自动切回、不补跑、不改cron。
 
 - `2026-11-17 候选JSON补充` 用户已粘贴`oc.ctp.readonly-binding.candidate.v1`；路由/六流/epoch/只读开关与已确认方案一致，三个旧源文件SHA重新比对一致，18/32及22/10分类一致。仅核对粘贴内容及源摘要，不冒称拿到候选原文件字节；未查新路由占用、创建配置/状态或登录。继续等待OC五项只读实现及实际心跳/查询样例，无需再回签候选；详见[唯一候选与边界](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 

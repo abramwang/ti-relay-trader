@@ -60,7 +60,8 @@
 - [x] 新只读候选及责任关联设计确认：接受`ctp-dongwu-readonly-recovery-20261117`、对应group及候选epoch，旧18 audit_only/32 pending原文不变、source-manifest/legacy-links追加关联；跨gateway双端ID保留、跨日空页不核销旧责任。仅设计确认，未联网验占用/初始化/登录，见[16:37开发分工](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 - [ ] OC只读恢复接线与Relay适配：OC补来源关联持久化/重启拒绝、原生通知留证、完整查询证明、独立只读心跳及准备工具允许列表；Relay收到实际JSON后严格解析/诊断/查询门禁，不将assessment策略静默套入。当前只读无pending契约，不能仅忽略新审计字段宣告兼容；不要求清空全部历史责任才允许核对查询。
 - [ ] 新只读实际迁移/恢复验收：实现和样例通过后，重查来源/空路由/旧PG零交易及新接收起点，再约窗口。旧原文/位点保留，不重建旧路由、不重放命令或自动沿13:35授权登录/结算/交易；通用外部事件释放仍后移。
-- [ ] TEST Redis容量拒写/未知发布及重启持久性专项：noeviction配置已核实；共享实例仅低负载独立键留存观察，OOM在独立实例测试，真实重启另约窗口，不用无淘汰计数证明永久可靠。
+- [x] 独立Redis容量故障及受控AOF重启回归：4项race重复3轮通过，OOM保留旧键、查询PG attempted不重发、trade发布unknown、刷盘重启后原文/epoch/示意cursor/PEL保持而旧run_id禁发；仅本机Unix socket Redis8.0.2及可丢弃PG，不接OC或共享Redis，不是断电/负载/共享8.2.2认证。见[17:27回归](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
+- [ ] 共享TEST Redis部署持久性验收：启动配置持久保存、挂载、真实8.2.2实例重启/故障恢复须另约窗口；不将本机回归或无淘汰计数等同该部署永久可靠，不恢复/重建旧丢失路由。
 - [x] TEST Redis修改后的首轮留存观察：独立随机string/stream两键、300秒31次检查，原值/entry/body/无TTL保持，run_id不变、evicted增量0、AOF写ok，结束清理本次两键；不是OOM/负载/重启验收，OC旧路由未修改。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。
 - [ ] 报撤验收目标：按用户确认的Relay→Redis→OC主程序链路完成东吴SHFE一笔有效报单及对应成功撤单，不采用临时直连。13:30启动因回放身份冲突退出，13:35窗口已过；上述修复及新的日间窗口确认后再执行。结算确认尚未调用不代表可自动重启复用授权；新会话订单/持仓初始化、原生约束与独立资金BizType失败边界继续保留，不切换生产。
 
