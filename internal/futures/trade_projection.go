@@ -29,12 +29,13 @@ type ExecutionRecord struct {
 }
 
 type TradeReport struct {
-	Scope        TradeScope
-	Orders       map[string]*OrderRecord
-	Executions   map[string]*ExecutionRecord
-	Conflicts    []string
-	PendingCount int
-	Blocked      bool
+	Scope               TradeScope
+	FillIdentityVersion string `json:",omitempty"`
+	Orders              map[string]*OrderRecord
+	Executions          map[string]*ExecutionRecord
+	Conflicts           []string
+	PendingCount        int
+	Blocked             bool
 }
 
 // tradeProjection is rebuilt from durable observations. It is not a live event
@@ -79,7 +80,9 @@ func (p *tradeProjection) observe(id, kind string, raw []byte) string {
 			p.conflict(fmt.Sprintf("observation %s: %v", id, err))
 			return "rejected"
 		}
-		p.fill(id, row)
+		if !p.fill(id, row) {
+			return "rejected"
+		}
 	} else {
 		p.conflict("unsupported observation kind")
 		return "rejected"
@@ -186,7 +189,13 @@ func (p *tradeProjection) mergeOrder(record *OrderRecord, row OrderRow) {
 	}
 }
 
-func (p *tradeProjection) fill(id string, row FillRow) {
+func (p *tradeProjection) fill(id string, row FillRow) bool {
+	version := fillIdentityVersion(row.FillID)
+	if p.report.FillIdentityVersion != "" && p.report.FillIdentityVersion != version {
+		p.conflict("mixed fill identity versions; explicit migration required: " + row.FillID)
+		return false
+	}
+	p.report.FillIdentityVersion = version
 	r := p.report.Executions[row.FillID]
 	if r == nil {
 		r = &ExecutionRecord{Fill: row, GatewayHints: []string{}, FeeEvidence: []FeeEvidence{}, State: "pending"}
@@ -204,7 +213,7 @@ func (p *tradeProjection) fill(id string, row FillRow) {
 			r.FactConflict = true
 			p.dirtyFills[row.FillID] = true
 			p.conflict("execution facts/source time conflict: " + row.FillID)
-			return
+			return true
 		}
 		if r.Fill.MatchedAt == nil {
 			r.Fill.MatchedAt = row.MatchedAt
@@ -215,6 +224,7 @@ func (p *tradeProjection) fill(id string, row FillRow) {
 		r.GatewayHints = append(r.GatewayHints, row.GatewayOrderID)
 	}
 	r.FeeEvidence = append(r.FeeEvidence, FeeEvidence{ObservationID: id, Fee: row.Fee, Complete: row.FeeComplete})
+	return true
 }
 
 func (p *tradeProjection) reconcile() {

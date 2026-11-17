@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from jsonschema import ValidationError
 
-from query_contract import FORMATS, SCHEMA, StrictValidator, decode_json, identity, require
+from query_contract import FORMATS, SCHEMA, StrictValidator, decode_json, identity, require, validate_fill_identity
 
 
 def row_validator(kind):
@@ -46,6 +46,7 @@ class FillLinkage:
         self.orders = {}
         self.native_orders = {}
         self.fills = {}
+        self.fill_versions = {}
 
     def _conflict(self, reason):
         if reason not in self.conflicts:
@@ -96,8 +97,10 @@ class FillLinkage:
             if kind == "fill":
                 require(Decimal(price) > 0, "ordinary fill price must be positive")
                 require(not row["fee_complete"] or row["fee"] is not None, "complete fee is missing")
-                require(row["fill_id"] == "ctp-fill-v1-" + identity("fill", self._scope(row) + [ids["trade_id"]]),
-                        "fill identity mismatch")
+                version = validate_fill_identity(row, self._scope(row))
+                require(self.fill_versions.get(row["trade_date"], version) == version,
+                        "mixed fill identity versions; explicit migration required")
+                self.fill_versions[row["trade_date"]] = version
                 self._fill(row)
             else:
                 total, filled, leaves = row["order_qty"], row["cum_filled_qty"], row["leaves_qty"]

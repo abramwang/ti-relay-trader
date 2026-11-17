@@ -40,6 +40,7 @@ func DecodeFills(raw []byte, scope TradeScope) ([]FillRow, error) {
 	}
 	out := make([]FillRow, 0, len(items))
 	seen := map[string]bool{}
+	version := ""
 	for _, item := range items {
 		row, err := DecodeFill(item, scope)
 		if err != nil {
@@ -48,6 +49,11 @@ func DecodeFills(raw []byte, scope TradeScope) ([]FillRow, error) {
 		if seen[row.FillID] {
 			return nil, fmt.Errorf("duplicate execution identity in complete query")
 		}
+		current := fillIdentityVersion(row.FillID)
+		if version != "" && version != current {
+			return nil, fmt.Errorf("mixed fill identity versions in complete query")
+		}
+		version = current
 		seen[row.FillID] = true
 		out = append(out, row)
 	}

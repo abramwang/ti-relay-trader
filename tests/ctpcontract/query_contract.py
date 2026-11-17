@@ -50,13 +50,14 @@ StrictValidator = validators.extend(
         "integer", lambda checker, value: type(value) is int
     ),
 )
-SCHEMA = decode_json((ROOT / "query-page.schema.json").read_text())
+SCHEMA = decode_json((ROOT / "query-page-fill-v2.schema.json").read_text())
 Draft202012Validator.check_schema(SCHEMA)
 VALIDATOR = StrictValidator(SCHEMA, format_checker=FORMATS)
 
 
-def identity(kind, parts):
-    framed = f"ctp.identity.v1/{kind}/".encode("ascii")
+def identity(kind, parts, version="v1"):
+    require(version == "v1" or (version == "v2" and kind == "fill"), "unsupported identity version")
+    framed = f"ctp.identity.{version}/{kind}/".encode("ascii")
     for part in parts:
         encoded = part.encode("utf-8")
         framed += str(len(encoded)).encode("ascii") + b":" + encoded
@@ -66,6 +67,17 @@ def identity(kind, parts):
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def validate_fill_identity(row, scope_parts):
+    ids = row["native_ids"]
+    version = "v2" if row["fill_id"].startswith("ctp-fill-v2-") else "v1"
+    parts = scope_parts + [ids["trade_id"]]
+    if version == "v2":
+        require(row["exchange"] == "SHFE", "fill identity v2 requires SHFE")
+        parts += [ids["order_sys_id"], row["trade_side"]]
+    require(row["fill_id"] == f"ctp-fill-{version}-" + identity("fill", parts, version), "fill identity mismatch")
+    return version
 
 
 def validate_page(body, *, expected=None):
@@ -87,6 +99,7 @@ def validate_page(body, *, expected=None):
         return
 
     seen = set()
+    fill_version = None
     for row in payload["items"]:
         require(row["account_id"] == route["account_id"], "row account differs from routing")
         action = body["action"]
@@ -119,7 +132,9 @@ def validate_page(body, *, expected=None):
                 key = (row["trade_date"], gateway_id)
             else:
                 require(Decimal(price) > 0, "ordinary execution requires positive price")
-                require(row["fill_id"] == "ctp-fill-v1-" + identity("fill", scope_parts + [ids["trade_id"]]), "fill identity mismatch")
+                version = validate_fill_identity(row, scope_parts)
+                require(fill_version is None or fill_version == version, "mixed fill identity versions")
+                fill_version = version
                 require(not row["fee_complete"] or row["fee"] is not None, "complete fee cannot be unknown")
                 key = row["fill_id"]
         require(key not in seen, "duplicate business identity within page")

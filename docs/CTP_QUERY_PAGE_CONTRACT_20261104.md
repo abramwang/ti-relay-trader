@@ -2,6 +2,8 @@
 
 日期：2026-11-04，Asia/Shanghai。范围：资金、持仓、订单、成交查询的输出报文。本轮是F0的可校验字段附录，不是完整交易协议冻结、生产解析器或F1数据库上线。
 
+2026-11-17成交身份增量：SHFE v2九段编码已双方确认，Relay接收源码/跨页及持久防混合回归通过，见[最新回执](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。新机器契约为[query-page-fill-v2.schema.json](../testdata/ctp/query-page-fill-v2.schema.json)，文档ID以`:fill-identity-v2`结尾；wire版本仍为`ctp.f0.draft.2`。下面原schema及材料摘要不改，七段v1规则只用于历史版本，不再作为新v2成交的完整键；新运行窗口及OC发布仍待完成。
+
 交付状态更新：按用户要求暂不转给OC，先与[查询序列内部验证](CTP_QUERY_SEQUENCE_REVIEW_20261104.md)及后续账本设计收敛成一份最终对接稿；以下“请OC核对”是后续确认事项，不是当前交付指令。
 
 2026-11-05已汇总为 [OC统一送审稿](OC_CTP_UNIFIED_REVIEW_20261105.md)，可只转该文，不必另转本文。候选schema仍未冻结，具体待确认项见统一稿C1-C6。

@@ -114,6 +114,27 @@ func nativeIdentity(kind string, s TradeScope, exchange, id string) string {
 	return prefix + hex.EncodeToString(digest[:])
 }
 
+// v2 is limited to SHFE by decodeTrade. Inputs have already passed native
+// normalization validation; framing never trims or rewrites source identifiers.
+func nativeFillIdentityV2(s TradeScope, exchange, tradeID, orderSysID, side string) string {
+	parts := []string{s.Route.Env, s.Route.BrokerID, s.Route.AccountID, s.Route.GatewayID, s.TradeDate, exchange, tradeID, orderSysID, side}
+	var framed strings.Builder
+	framed.WriteString("ctp.identity.v2/fill/")
+	for _, part := range parts {
+		fmt.Fprintf(&framed, "%d:%s", len([]byte(part)), part)
+	}
+	digest := sha256.Sum256([]byte(framed.String()))
+	return "ctp-fill-v2-" + hex.EncodeToString(digest[:])
+}
+
+// Call only after DecodeFill; legacy synthetic projection tests use opaque IDs.
+func fillIdentityVersion(id string) string {
+	if strings.HasPrefix(id, "ctp-fill-v2-") {
+		return "v2"
+	}
+	return "v1"
+}
+
 func decodeTrade(raw []byte, scope TradeScope, kind string) (rawObject, error) {
 	if err := scope.validate(); err != nil {
 		return nil, err
@@ -190,8 +211,15 @@ func decodeTrade(raw []byte, scope TradeScope, kind string) (rawObject, error) {
 		if _, ok := ids["sdk_request_id"]; ok {
 			return nil, fmt.Errorf("fill has no native SDK request ID")
 		}
-		if !native(textField(ids, "order_sys_id"), 20, false) || !native(textField(ids, "trade_id"), 20, false) ||
-			textField(obj, "fill_id") != nativeIdentity("fill", scope, textField(obj, "exchange"), textField(ids, "trade_id")) {
+		fillID := textField(obj, "fill_id")
+		expectedID := nativeIdentity("fill", scope, textField(obj, "exchange"), textField(ids, "trade_id"))
+		if fillIdentityVersion(fillID) == "v2" {
+			if textField(obj, "exchange") != "SHFE" {
+				return nil, fmt.Errorf("fill identity v2 requires SHFE")
+			}
+			expectedID = nativeFillIdentityV2(scope, textField(obj, "exchange"), textField(ids, "trade_id"), textField(ids, "order_sys_id"), textField(obj, "trade_side"))
+		}
+		if !native(textField(ids, "order_sys_id"), 20, false) || !native(textField(ids, "trade_id"), 20, false) || fillID != expectedID {
 			return nil, fmt.Errorf("fill native identity mismatch")
 		}
 		if !literal(obj["fee_complete"], "true") && !literal(obj["fee_complete"], "false") {

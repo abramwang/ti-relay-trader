@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-// Candidate-only reference encoder; production parsers still enforce v1 until
-// both sides agree on activation and treatment of existing persistent records.
+// Independent reference encoder for the original, byte-preserved shared vectors.
 func candidateFillIdentity(parts []string) (string, string) {
 	var b strings.Builder
 	b.WriteString("ctp.identity.v2/fill/")
@@ -53,6 +52,9 @@ func TestOCReportedFillCollisionAndV2Candidate(t *testing.T) {
 		}
 		seen[id] = true
 		s := TradeScope{Route: QueryRoute{Env: c.Parts[0], BrokerID: c.Parts[1], AccountID: c.Parts[2], GatewayID: c.Parts[3]}, TradeDate: c.Parts[4]}
+		if nativeFillIdentityV2(s, c.Parts[5], c.Parts[6], c.Parts[7], c.Parts[8]) != id {
+			t.Fatal("runtime encoder differs from agreed vector")
+		}
 		if i < 2 && nativeIdentity("fill", s, c.Parts[5], c.Parts[6]) != f.Legacy {
 			t.Fatal("reported v1 collision did not reproduce")
 		}
@@ -65,14 +67,15 @@ func TestOCReportedFillCollisionAndV2Candidate(t *testing.T) {
 			}
 		}
 	}
-	// A candidate publication must not silently enable a new wire contract.
+	// OC has confirmed all nine parts. Original vectors retain their historical
+	// candidate label; enabling reception does not migrate any existing ledger.
 	scope := tradeScope()
 	row := tradeFixture(t, "fill")
 	changed := editBody(t, row, func(m map[string]any) {
 		ids := m["native_ids"].(map[string]any)
 		_, m["fill_id"] = candidateFillIdentity([]string{scope.Route.Env, scope.Route.BrokerID, scope.Route.AccountID, scope.Route.GatewayID, scope.TradeDate, m["exchange"].(string), ids["trade_id"].(string), ids["order_sys_id"].(string), m["trade_side"].(string)})
 	})
-	if _, err := DecodeFill(changed, scope); err == nil {
-		t.Fatal("unagreed candidate became runtime compatible")
+	if _, err := DecodeFill(changed, scope); err != nil {
+		t.Fatal("agreed SHFE v2 row rejected", err)
 	}
 }
