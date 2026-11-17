@@ -2,6 +2,59 @@
 
 日期：2026-11-17，Asia/Shanghai。Relay给OC的具体修正提案；不是新登录或交易窗口授权。
 
+## 盘外准备收口：统一演练与查询审计工具
+
+按用户“尽量今天完成不依赖柜台回报的基础工作”要求，新增下列可执行交付，不继续做重复原则回签：
+
+- `scripts/test-ctp-offline.sh`：清除继承的共享Redis/PG测试目标，启动私有Unix socket Redis和临时PG，运行Python契约、Go测试/vet、23组链路演练及4项存储故障回归，构建inspect/capture/query/replies/trade五个工具。日志、退出阶段、二进制摘要保留到新的受限`outputs/recovery/ctp-offline-*`目录。只构建，不替换9092服务，不启动OC。
+- `internal/futures/local_rehearsal_test.go`：复用真实Relay发送/接收/PG代码，覆盖四查询完整/失败/部分页、原文分页、位点与owner恢复、丢历史拒绝、发布未知不重发、独立撤单门禁、成交先到、v1/v2防重及CLI。输入为合成fixture，绝不投向共享Redis；不是OC SDK或真实报撤验收。
+- `scripts/build-ctp-query-review.py`：从独立OC原始审计完整前缀、Relay原始命令及已核对target生成review草稿；核对原文件SHA、逐条链、原生命名范围、会话/代次/交易日、原始接收命令字节、ticket和SDK请求身份。只输出新目录，不覆盖旧文件，不联网、不登记、不发命令。
+- 草稿必须同时有原命令接收及唯一`query_result`；单独`before_sdk_call`不够，reply也不能反过来作为请求证据。若有`query_request`，其身份及顺序必须匹配。失败/部分/缺失ErrorID保持原值，审计链仅证明材料内部一致，不等于券商签名或最终业务成功。
+- 当天四查询359行原始链已离线复验，4份草稿均通过Go接收器`check_only_no_connections`。证据为`outputs/recovery/ctp_dongwu_joint_20261117/offline-builder-{0,1,2,3}/`；历史资金仍为`missing_biz_type`。未重新注册过期查询，不写真实联调PG，不恢复Redis旧键。
+
+17:55验证收口：12项工具单测、111项Python契约、全Go/vet、23组私有Redis/PG演练及4项存储故障回归通过；另补跑整个futures包的临时PG race回归，耗时378.658秒，含1万订单+1万成交的分页、入账、关联、重启重放不重复和降级保护。全PG阶段未给共享Redis目标的专项按设计跳过，Redis覆盖以单独23组隔离演练为准，不说所有可选在线用例已通过。证据目录`outputs/recovery/ctp-offline-20261117T174715.4NPSjF/`（`postgres-full.log`为随后独立补跑，已并入统一脚本的固定阶段）；临时Redis/PG均退出清理。大容量耗时含race及合成证据验证，不作为生产吞吐承诺。
+
+### 一次运行
+
+```bash
+env LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu" \
+  RELAY_TEST_PG_BIN="$PWD/.runtime/ctp-pg-toolchain/root/usr/lib/postgresql/17/bin" \
+  RELAY_FUTURES_LOCAL_REDIS_SERVER="$PWD/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server" \
+  RELAY_CTP_CONTRACT_PYTHON="$PWD/.runtime/ctp-contract-venv/bin/python" \
+  bash scripts/test-ctp-offline.sh
+```
+
+不安装系统服务、不修改Redis配置、不依赖共享实例空闲；缺工具/依赖直接失败，不自动下载或切环境。本地Redis8.0.2与共享8.2.2仍有版本差异，不扩大部署可靠性结论。
+
+查询审计草稿工具参数（路径/身份必须来自本次真实发布记录，不复用历史示例）：
+
+```text
+python3 scripts/build-ctp-query-review.py
+  --audit-file <OC原始审计完整前缀> --audit-sha256 <已核对文件摘要>
+  --command-file <Relay已登记并发布的原始命令> --command-id <PG原命令ID>
+  --target-file <独立核对的本次target>
+  --broker <route broker> --gateway <gateway> --account <logical account>
+  --native-broker <BrokerID> --user <UserID> --investor <InvestorID>
+  --batch-id <新batch ID> --review-id <新review ID> --timeout-ms <1..300000>
+  --output-dir <尚不存在的受限目录>
+```
+
+输出`review.json/evidence.jsonl/report.json`。evidence逐行保留原字节，完整链SHA/头摘要/选中sequence在report中；选中证据超过接收器256KiB上限则失败，不截断。先用`relay-ctp-replies`无capture/receive参数的默认离线模式核验，然后才按执行单显式登记；接收器仍检查PG原发布target/原命令身份和**原发送时刻的截止时间**，生成草稿不能延长过期请求。未拿到独立审计时先保存raw，不能从reply构造可信请求。
+
+### 下一窗口前完成，不占交易时间
+
+| 责任方 | 开窗前必须完成 | 当前状态 |
+| --- | --- | --- |
+| Relay | 23组隔离演练、4项存储故障、五工具构建、原始审计自动生成/接收契约 | 工具与首轮演练完成，日志按运行目录留存 |
+| OC | 独立只读原生通知持久化、完整查询外部证明、旧50条source-manifest/legacy-links、恢复门禁/心跳及准备工具 | 仍等待实现；候选不是可启动版本 |
+| OC交付 | 同一版本实际编码的只读心跳（可查、待关联、阻断、停止）、非空订单/成交分页、失败/空/部分与损坏/重启测试结果及SHA | 一次提供纯JSON/日志，不交换程序或凭据；收到后Relay直接运行兼容回归，不再往返原则评审 |
+| 双方 | 核对旧责任不变、新候选无占用、run_id/epoch/组和独立PG绑定；落盘所有离线命令模板，但不预发占位查询 | 必须在实际初始化前重新核对，不把历史空路由结果当预留 |
+| Relay/OC | 报撤模式必须基于修复后的主程序完成离线回归；只读通过不自动获得交易或结算权限 | 新窗口和单次结算授权另行明确，13:35旧授权不复用 |
+
+交易时段只留：真实认证登录及会话确认、获授权的结算确认、当前订单/持仓完整查询、现场合约/价格约束验证、一手有效报单及该单真实撤成、原文与落库对账。价格、TradingDay、会话和交易权限不能提前伪造；未知、意外成交或绑定丢失仍停止。资金BizType缺失保留独立问题，不补字段，也不将有限测评准入说成资金范围已核验。
+
+服务保持TEST；生产权威复算继续等待用户明确切回。离线准备不切环境、不变更cron，也不抹去旧18 audit_only/32 pending。
+
 ## 17:27 Relay独立Redis故障回归完成
 
 OC新只读实现/样例尚未收到，不猜字段推进运行。Relay先完成不依赖它的存储故障回归，代码为`internal/futures/redis_storage_local_test.go`，四项测试带race重复三轮共12次通过；默认全Go测试及vet通过。**只新增测试，不改变发布语义，不重启API/OC，不初始化候选路由。**

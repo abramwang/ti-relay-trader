@@ -48,6 +48,7 @@
 
 ### F0-F6 CTP 期货接入
 
+- [x] 11-17盘外联调准备：统一入口`test-ctp-offline.sh`，私有Redis/临时PG的23组演练及4项容量/重启故障回归、五CLI构建；新增OC原始审计生成查询review草稿工具及严格契约测试，当日4笔原始查询通过无连接核验。不得将fixture测试视为柜台测评或旧请求恢复；开窗前/盘中职责见[准备清单](OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
 - [x] 11-17单笔TEST报撤发布及事件审计入口：新增`relay-ctp-trade`，精确原文授权/批次限额/交易心跳与报价时效/持久attempted/未知不重发/真实订单事件撤单核验；既有收件CLI支持event原文与显式续读。独立PG、随机隔离TEST Redis、全Go和定向race/vet验证，迁移46仅应用独立东吴TEST库。见[本日执行单](OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。未发真实报撤，不等于F3整体完成或终端交易放开。
 - [x] 11-17午间适配OC c83731d的`test_broker_assessment`：六项材料摘要、48条心跳/4条订单事件独立核验；初始化两查询独立准入、assessment身份、原生约束时效/精确价位、报撤独立预算及顶层action解析接通。全Go、定向race/vet、临时PG与随机TEST Redis回归，不把离线样例当真实柜台证据。终端识别测评模式但仍只读。
 - [x] 12:45路由丢失后的候选核对：OC确认旧5只读查询本地ACK、无结算once/待发责任；Relay12:52:48核实下午新gateway前缀空、run_id一致，PG新命令/receiver0，旧历史保留。接受`ctp-dongwu-assessment-pm-20261117`及独立epoch/assessment_id，通知OC开窗前再次核实后初始化；终端切新观察绑定但仍只读。不是Redis初始化/持久性验收，不重放旧命令。
@@ -65,7 +66,7 @@
 - [x] TEST Redis修改后的首轮留存观察：独立随机string/stream两键、300秒31次检查，原值/entry/body/无TTL保持，run_id不变、evicted增量0、AOF写ok，结束清理本次两键；不是OOM/负载/重启验收，OC旧路由未修改。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。
 - [ ] 报撤验收目标：按用户确认的Relay→Redis→OC主程序链路完成东吴SHFE一笔有效报单及对应成功撤单，不采用临时直连。13:30启动因回放身份冲突退出，13:35窗口已过；上述修复及新的日间窗口确认后再执行。结算确认尚未调用不代表可自动重启复用授权；新会话订单/持仓初始化、原生约束与独立资金BizType失败边界继续保留，不切换生产。
 
-状态：`doing`（F0 契约审阅与规划；未实现期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
+状态：`doing`（F0/F1查询及TEST受控报撤链路已开发，独立只读恢复接线及真实报撤验收未完成；未开放普通期货交易）。详细步骤见 [期货支持开发规划](FUTURES_TRADING_SUPPORT_PLAN_20261103.md)。
 
 - [x] 11-17真实东吴TEST首轮四查询收件：持仓12行、订单/成交完整空；独立OC审计与PG原文核验通过，资金因BizType=NUL失败。后续新隔离路由仅一笔资金复测，显式请求31仍响应00，命令/1回复/592心跳已保存，两命令组pending/lag=0；不默认修响应、不标四查询整体通过。[结果与OC下一步](CTP_TERMINAL_READONLY_20261117.md)。
 - [x] 11-17 CTP账户只读终端接入：独立TEST观察库、原始查询审核上下文、历史持仓/空查询、资金失败、心跳停止/陈旧、排序/分页；不改证券路由、业务快照/游标，不发浏览器柜台查询或放开报撤。[配置与验收](CTP_TERMINAL_READONLY_20261117.md)。

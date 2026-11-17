@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-17 15:16 Asia/Shanghai` 按用户新指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产API/独立worker停止。当前PID以service status为准；不得自行切回生产 |
 | 安全状态 | TEST华鑫00030484原配置trading_enabled=true但新鲜心跳broker_not_ready，不能以配置许可代替柜台就绪。生产4户trading_enabled=false、两停用户不变；切换skip-migrations。CTP独立TEST库仍5查询/0交易，下午路由再次缺键，禁止重建/重放；收盘后不沿旧窗口报撤 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 17:20` 当前TEST API健康但degraded；生产权威复算因当前TEST接口无目标绩效账户失败，Meridian权威水位已ready。用户明确保持TEST、稍后切换，不自动切回/补跑。生产15:01四户收盘采集/结算成功与绩效三户阻断不变；CTP仍待OC新只读实现/样例 |
+| 最近确认 | `2026-11-17 盘外` Relay统一离线演练、查询审计草稿工具及五CLI已完成；仍待OC新只读恢复实现/JSON，不代表真实报撤验收通过。用户17:20明确保持TEST、稍后切换；生产权威复算因TEST接口无目标账户未完成，不自动切回/补跑，15:01四户采集/结算成功记录保留 |
 | 更新时间 | `2026-11-17` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-17 17:55` 盘外准备补验收口：整个futures包临时PG race回归通过（378.658秒），含1万订单/1万成交关联及重启重放不重复；日志为下条第二目录`postgres-full.log`，现已并入统一脚本。共享Redis专项不在这次PG阶段连接，23组本机Redis演练另行通过；临时服务已清理，真实OC/服务/权限无变更。
+
+- `2026-11-17 盘外准备` **不再盘中临时拼装基本链路**：新增`scripts/test-ctp-offline.sh`，私有Redis/临时PG的23组链路演练与4项故障回归通过，12项审计工具测试、111项Python契约、全Go/vet通过，五CLI构建并保存摘要。新增`build-ctp-query-review.py`从OC独立原始审计生成草稿，拒绝缺链/错会话/错请求/仅调用前记录，不联网登记；今日4查询原始材料均通过Go离线校验，失败资金不改成功。两轮证据在`outputs/recovery/ctp-offline-20261117T174333.9Azl00/`及`ctp-offline-20261117T174715.4NPSjF/`，原始草稿在`ctp_dongwu_joint_20261117/offline-builder-{0..3}/`。服务/生产权限未改、共享Redis未写，旧50回调责任保留；开窗前分工及用法见[唯一协调清单顶部](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。下一步直接接OC实际只读JSON/恢复交付，未交付前不猜字段或初始化候选，新交易窗口另行确认。
 
 - `2026-11-17 17:27` **独立Redis故障回归完成**：新增4项opt-in测试，race三轮12次通过；真实OOM下旧键不淘汰、查询发布保留PG attempted且恢复容量不重发、交易发布unknown、刷盘后受控重启保留原文/epoch/示意cursor/PEL而旧run_id拒绝发送。仅本机Unix socket Redis8.0.2（临时解包，无系统服务）及`relay_ctp_terminal_test_20261117`随机schema，退出已清理；不接共享8.2.2/OC，不更改运行代码。测试`internal/futures/redis_storage_local_test.go`、复验/边界见[回归记录](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。共享配置/挂载/重启仍未验，OC候选不初始化。17:20发现权威复算`no enabled performance accounts selected`（当前TEST9092），用户已明确保持测试稍后切换；不自动切回、不补跑、不改cron。
 
