@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 候选JSON补充` 用户已粘贴`oc.ctp.readonly-binding.candidate.v1`；路由/六流/epoch/只读开关与已确认方案一致，三个旧源文件SHA重新比对一致，18/32及22/10分类一致。仅核对粘贴内容及源摘要，不冒称拿到候选原文件字节；未查新路由占用、创建配置/状态或登录。继续等待OC五项只读实现及实际心跳/查询样例，无需再回签候选；详见[唯一候选与边界](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。
+
 - `2026-11-17 16:37` **OC新只读候选已确认，仍未具备启动条件**：接受`ctp-dongwu-readonly-recovery-20261117`、group同前缀加oc-、候选epoch `dongwu-readonly-0d304a7a29800b24d832803bed3007ab`；旧18 audit_only/32 pending保留原范围，source-manifest/legacy-links只追加关联。OC仍需完成只读原生通知持久留证、跨gateway关联/恢复、完整查询证明、心跳和工具允许列表；Relay收到实际只读JSON后适配，不能把assessment延期策略套用。代码核实独立只读目前无pending计数契约，早前“旧模式pending=0”仅指旧assessment。见[直接开发清单](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)。本轮只更新文档，未查占用/预留/初始化/登录/迁移/改环境；下条“等候选”为历史，现等待实现及JSON，不再原则回签。生产17:10任务仍需用户切回。
 
 - `2026-11-17 16:29` **TEST Redis留存首测通过**：独立随机开发前缀下string/stream两键跨300秒31次检查，原值/entry/body及PTTL=-1保持，run_id不变、evicted_keys仍12326（增量0）、AOF写ok；结束清理本次两键成功。证据`outputs/recovery/ctp_redis_retention_20261117/5519565e16cbcec1e6bddbc615b06d0d.json`。非容量压测/重启验收，不证明历史键已恢复；16:28旧下午route仍0键。共享Redis没有改配置/重启/业务键写入，OOM拒写与持久化重启后续单独验。

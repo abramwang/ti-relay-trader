@@ -19,7 +19,11 @@
 | 模式 | `test_broker_read_only`；production_mode=false、settlement_confirm=never、trading_enabled=false |
 | 窗口 | 待另行确认，最多300秒、心跳1秒；目前无T0/session/代次/TradingDay |
 
-前缀`relay:test:v1:ctp_4900:ctp-dongwu-readonly-recovery-20261117`，六流及epoch后缀沿既有协议；交易组只用于责任检查，不消费新交易。候选名日期不约束未来柜台TradingDay。OC本机候选JSON未传到Relay，不冒称已校验其字节；当前文本足以安排开发，无须为此补一次材料往返。
+前缀`relay:test:v1:ctp_4900:ctp-dongwu-readonly-recovery-20261117`，六流及epoch后缀沿既有协议；交易组只用于责任检查，不消费新交易。候选名日期不约束未来柜台TradingDay。
+
+用户随后已粘贴`oc.ctp.readonly-binding.candidate.v1`候选内容：scope、六条流、epoch键、group/consumer和只读限制与本节一致；journal/identity/audit三个完整SHA256已重新与Relay保存的原包文件比对，一致。旧18+32=50、pending订单22+成交10=32，未处理/未修改/未向新路由重放标志一致。材料是经过消息转义的粘贴文本，**仅确认内容及所引用源文件摘要，不宣称取得OC候选文件原字节或其文件SHA**；OC本机路径不视为Relay已创建的目录。
+
+`candidate_not_initialized`、`runtime_ready_for_legacy_reconciliation=false`、`not_a_runtime_config_or_stream_message=true`及五项`unimplemented`保持原含义。候选声明的run_id仍为16:04历史观察，当前无占用检查、T0/session/代次/TradingDay，不生成发送目标、不投递候选JSON。候选内容无需修改或再次回签，按下列三块完成五项缺失实现，交付实际只读心跳/查询样例后继续接线。未来source-manifest仍须包含原scope/session/epoch等完整绑定，不能仅凭这份候选摘要代替已实现的关联存储。
 
 ### OC先交三块实现，不扩大任务
 
