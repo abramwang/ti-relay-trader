@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-17 14:22` 用户明确OC只在交易时段内常驻，今天仍优先15:00前一手报单/对应撤单；原额度不增加、未知不重试、原13:35会话不复用。14:21:57只读检查下午路由仍3旧hb/末条stopping，两命令流0、pending/lag0，尚无新会话。已请OC回运行修复版本/预计就绪及新session/截止，下一步核验后受控执行，见[执行单顶部](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。不改生产，不因常驻自行放宽命令时效或门禁。
+
 - `2026-11-17 下午` **成交v2接收与OC材料核验完成**：九段编码已获OC回签；上传`reference/fill-v2-review-20261117.tar.gz`外层9/内层7摘要通过，50原始回调逐条核对，10成交保留10个v2键、4组v1一对多，24条身份观察（revision25）及8条审计链通过。受限证据在`outputs/recovery/ctp_fill_v2_review_20261117/`，只读复验脚本`audit-ctp-fill-v2-review.py`；不导入候选。Relay源码已接严格SHFE v2、完整查询/账本混合版本阻断、查询实时防重；全Go/PG专项race/vet、111项Python通过，原schema另存不改，新扩展`query-page-fill-v2.schema.json`。真实独立PG仍5旧查询/0交易/0成交观察。**未重启服务或更新运行二进制、未启用新窗口**；OC仍待运行切换、持久外部来源/回放释放、只读查询准入拆分及新心跳。见[唯一当前修正及回执](docs/OC_CTP_FILL_IDENTITY_AND_STARTUP_FIX_20261117.md)，无需再回签原则；收到可运行版本后构建接收工具、核验旧绑定/责任，再约窗口。13:35旧窗口已截止，不自动重启/确认/交易，生产不动。
 
 - `2026-11-17 13:32 Asia/Shanghai` **下午测评启动即停止，尚未通过**：OC新session=`ctpproc-ea3476fac51da091a7bda6bd0dae79e4`，13:30:32两条broker_not_ready，13:30:33.778已stopping；代次1/20261117，recovery=false、pending_callback_count=32、order_ref_ready=true，报撤尝试0。Relay无新查询/交易，PG仍5旧查询/0交易，两命令流0/pending0/lag0。已通知OC查退出及自动回调积压，并核对结算once/SDK/回调，不自动重启重确认，13:35截止不延长。3条4443字节hb已落独立PG并与Redis原文/SHA核验一致，新owner=`7ab0d180bfd73394f1a2e7340525a4fe0ec8abaef887585af601bd89b1329766`、cursor=`1794893433793-0`，接收器已退出；后续须显式续读。见[执行单当前结果](docs/OC_CTP_SINGLE_ORDER_EXECUTION_20261117.md)。下条计划不代表本轮成功或仍在运行。
