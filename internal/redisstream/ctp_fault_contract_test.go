@@ -113,3 +113,26 @@ func TestCTPLocalCommandFailuresDoNotCreateOrderTerminalStates(t *testing.T) {
 		})
 	}
 }
+
+func TestCTPExecutionExpiredCommandRetainsFailureOnly(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/oc_execution_authority_review_20261118/execution_authority_examples.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d struct {
+		Synthetic bool              `json:"synthetic_only"`
+		RealSDK   bool              `json:"real_sdk_calls"`
+		Results   []json.RawMessage `json:"expired_command_results"`
+	}
+	if json.Unmarshal(raw, &d) != nil || !d.Synthetic || d.RealSDK || len(d.Results) != 1 {
+		t.Fatal("invalid execution evidence")
+	}
+	w := &fakeLedgerWriter{}
+	r := ProcessLedgerEntry(context.Background(), w, "relay:test:v1:ctp_4900:ctp-dongwu-assessment-pm-20261117:reply", "1-0", map[string]any{"body": string(d.Results[0])})
+	if r.Archived != 1 || r.Replies != 1 || r.ParseErrors != 0 || r.LedgerErrors != 0 || r.DeadLetters != 0 {
+		t.Fatal(r)
+	}
+	if len(w.orderUpdates) != 0 || len(w.orderEvents) != 0 || len(w.fills) != 0 {
+		t.Fatal("expired command became an order terminal state")
+	}
+}

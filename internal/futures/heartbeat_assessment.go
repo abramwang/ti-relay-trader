@@ -7,9 +7,11 @@ import (
 	"time"
 )
 
-// Assessment is a bounded TEST runtime profile, not production authorization
-// or evidence of complete asset scope / a local sufficient-margin calculation.
+// The historical runtime name also carries Relay-owned execution capabilities.
+// Neither form proves authorization, asset scope or sufficient local margin.
 type HeartbeatAssessment struct {
+	AuthorizationOwner                                                                            string
+	ResidentDurationSeconds                                                                       int64
 	ConnectionGeneration                                                                          *int64
 	TransportRecoveryClear                                                                        bool
 	AssessmentID, Symbol, Exchange                                                                string
@@ -62,16 +64,22 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		return bad()
 	}
 	a := HeartbeatAssessment{ConnectionGeneration: g, TransportRecoveryClear: literal(fields["transport_recovery_clear"], "true"), AssessmentID: textField(raw, "assessment_id"), Symbol: textField(raw, "symbol"), Exchange: textField(raw, "exchange")}
-	if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || !native(a.Symbol, 80, false) || a.Exchange != "SHFE" || !validTime(textField(raw, "expires_at")) {
-		return bad()
-	}
-	a.ExpiresAt, _ = time.Parse(time.RFC3339Nano, textField(raw, "expires_at"))
-	if err := a.decodeLifecycle(raw, h, route); err != nil {
-		return bad()
+	if _, present := raw["authorization_owner"]; present {
+		if err := a.decodeRelayExecution(raw, h); err != nil {
+			return bad()
+		}
+	} else {
+		if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || !native(a.Symbol, 80, false) || a.Exchange != "SHFE" || !validTime(textField(raw, "expires_at")) {
+			return bad()
+		}
+		a.ExpiresAt, _ = time.Parse(time.RFC3339Nano, textField(raw, "expires_at"))
+		if err := a.decodeLifecycle(raw, h, route); err != nil {
+			return bad()
+		}
 	}
 	if _, present := raw["order_snapshot_scope"]; present {
 		a.OrderSnapshotScope = textField(raw, "order_snapshot_scope")
-		if a.PermissionProfile != "test_day_relay.v1" || !oneOf(a.OrderSnapshotScope, "full_native_current_session", "relay_standard_projection") {
+		if (!a.relayExecution() && a.PermissionProfile != "test_day_relay.v1") || !oneOf(a.OrderSnapshotScope, "full_native_current_session", "relay_standard_projection") {
 			return bad()
 		}
 		for key, dst := range map[string]*bool{"native_order_snapshot_ready": &a.NativeOrderSnapshotReady, "order_projection_ready": &a.OrderProjectionReady, "local_orders_only": &a.LocalOrdersOnly} {
@@ -90,6 +98,9 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 			return bad()
 		}
 	} else {
+		if a.relayExecution() {
+			return bad()
+		}
 		for _, key := range []string{"native_order_snapshot_ready", "order_projection_ready", "local_orders_only"} {
 			if _, present := raw[key]; present {
 				return bad()
@@ -114,7 +125,7 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		}
 		*dst = *n
 	}
-	if a.PermissionProfile == "" && (a.SubmitAttempts > 1 || a.CancelAttempts > 1) {
+	if !a.relayExecution() && a.PermissionProfile == "" && (a.SubmitAttempts > 1 || a.CancelAttempts > 1) {
 		return bad()
 	}
 	policyKeys := []string{"callback_policy", "deferred_callback_count", "blocking_callback_count", "callback_reconciliation_complete"}
@@ -127,7 +138,7 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 	a.CallbackReconciliationComplete = a.PendingCallbacks == 0
 	if policyFields != 0 {
 		policy := textField(raw, "callback_policy")
-		if policyFields != len(policyKeys) || (policy != "local_assessment_only.v1" && !(a.PermissionProfile == "test_day_relay.v1" && policy == "reconcile_all")) {
+		if policyFields != len(policyKeys) || (policy != "local_assessment_only.v1" && !((a.relayExecution() || a.PermissionProfile == "test_day_relay.v1") && policy == "reconcile_all")) {
 			return bad()
 		}
 		a.CallbackPolicy = policy
@@ -188,7 +199,14 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		return bad()
 	}
 	common := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && h.OrderSnapshotReady && a.PositionSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.callbacksAllowAssessment()
-	if a.PermissionProfile == "test_day_relay.v1" {
+	if a.relayExecution() {
+		// Capabilities describe execution, not Relay permission, position risk
+		// checks, market freshness or OC's historical submit/cancel counts.
+		executionReady := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && a.NativeOrderSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.callbacksAllowAssessment()
+		if (h.AcceptingTradeCommands || h.AcceptingCancelCommands) && (!executionReady || a.TradePreparationPending || a.TradeResponsePending) {
+			return bad()
+		}
+	} else if a.PermissionProfile == "test_day_relay.v1" {
 		if (h.AcceptingTradeCommands || h.AcceptingCancelCommands) && (!common || a.TradePreparationPending || a.TradeResponsePending || !a.windowOpen(h.ProducedAt)) {
 			return bad()
 		}
@@ -238,8 +256,8 @@ func (h Heartbeat) queryCollection() (*int64, bool) {
 	return nil, false
 }
 
-// Explicit day-profile query readiness can outlive its trading authorization.
+// Explicit execution/day query readiness is independent of trading permission.
 // Legacy profiles without that capability retain their previous window gate.
 func (h Heartbeat) independentDayQueries() bool {
-	return h.Assessment != nil && h.Assessment.PermissionProfile == "test_day_relay.v1" && h.Operations != nil && h.Operations.AcceptingQueryCommands
+	return h.Assessment != nil && (h.Assessment.relayExecution() || h.Assessment.PermissionProfile == "test_day_relay.v1") && h.Operations != nil && h.Operations.AcceptingQueryCommands
 }

@@ -64,6 +64,8 @@ type AdvertisedHeartbeat struct {
 	AssessmentLegacySource         *AssessmentLegacySource `json:"assessment_legacy_source,omitempty"`
 	ProcessLifecycle               *AssessmentLifecycle    `json:"process_lifecycle,omitempty"`
 	PermissionProfile              string                  `json:"permission_profile,omitempty"`
+	AuthorizationOwner             string                  `json:"authorization_owner,omitempty"`
+	ResidentDurationSeconds        int64                   `json:"resident_duration_seconds,omitempty"`
 	OrderSnapshotScope             string                  `json:"order_snapshot_scope,omitempty"`
 	NativeOrderSnapshotReady       *bool                   `json:"native_order_snapshot_ready,omitempty"`
 	OrderProjectionReady           *bool                   `json:"order_projection_ready,omitempty"`
@@ -183,6 +185,7 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 			} else if h.Assessment != nil {
 				a.ProcessLifecycle, a.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
+				a.AuthorizationOwner, a.ResidentDurationSeconds = h.Assessment.AuthorizationOwner, h.Assessment.ResidentDurationSeconds
 				if h.Assessment.OrderSnapshotScope != "" {
 					a.OrderSnapshotScope = h.Assessment.OrderSnapshotScope
 					a.NativeOrderSnapshotReady, a.OrderProjectionReady = &h.Assessment.NativeOrderSnapshotReady, &h.Assessment.OrderProjectionReady

@@ -58,6 +58,11 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 	if err != nil || h.ReadOnly != nil || h.Recovery != nil || !h.RedisReady || !h.BrokerReady || !h.OrderSnapshotReady || h.CounterSessionID != target.CounterSessionID || h.TradeDate != target.TradeDate {
 		return queryPublishProof{}, ErrQueryPublishGate
 	}
+	// Parsing the new execution-only heartbeat must not silently upgrade the
+	// legacy assessment publisher. Relay-owned publication admission is separate.
+	if h.Assessment != nil && h.Assessment.relayExecution() {
+		return queryPublishProof{}, ErrQueryPublishGate
+	}
 	var envelope struct {
 		Adapter map[string]json.RawMessage `json:"adapter_context"`
 	}

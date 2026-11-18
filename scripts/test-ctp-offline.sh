@@ -35,7 +35,7 @@ go vet ./... 2>&1 | tee "$WORK/go-vet.log"
 STAGE=postgres_full
 env -u RELAY_FUTURES_LOCAL_REDIS_SERVER bash scripts/test-futures-postgres.sh 2>&1 | tee "$WORK/postgres-full.log"
 STAGE=isolated_integration
-bash scripts/test-futures-postgres.sh -run '^Test(LocalCTPJointRehearsal|LocalRedis|ResidentCapture)' 2>&1 | tee "$WORK/isolated-integration.log"
+bash scripts/test-futures-postgres.sh -run '^Test(LocalCTPJointRehearsal|LocalRedis|ResidentCapture|ExecutionAuthorityLocalRedis)' 2>&1 | tee "$WORK/isolated-integration.log"
 STAGE=cli_build
 mkdir "$WORK/bin"
 for tool in inspect capture query replies trade; do

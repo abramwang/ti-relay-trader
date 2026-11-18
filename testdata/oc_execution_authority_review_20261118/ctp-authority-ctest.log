@@ -1,0 +1,133 @@
+Test project /tmp/ctp-authority-ctest.udvS3S
+      Start  1: ctp_legacy_reconciliation_test
+ 1/53 Test  #1: ctp_legacy_reconciliation_test ........   Passed    7.54 sec
+      Start  2: ctp_fill_identity_v2_test
+ 2/53 Test  #2: ctp_fill_identity_v2_test .............   Passed    0.00 sec
+      Start  3: ctp_fill_migration_review_test
+ 3/53 Test  #3: ctp_fill_migration_review_test ........   Passed    0.03 sec
+      Start  4: ctp_readonly_audit_test
+ 4/53 Test  #4: ctp_readonly_audit_test ...............   Passed    0.02 sec
+      Start  5: ctp_asset_evidence_test
+ 5/53 Test  #5: ctp_asset_evidence_test ...............Child aborted***Exception:   0.09 sec
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  evidence file missing
+
+      Start  6: ctp_readonly_runtime_test
+ 6/53 Test  #6: ctp_readonly_runtime_test .............   Passed   19.83 sec
+      Start  7: ctp_assessment_runtime_test
+ 7/53 Test  #7: ctp_assessment_runtime_test ...........   Passed  265.00 sec
+      Start  8: ctp_command_rejection_runtime_test
+ 8/53 Test  #8: ctp_command_rejection_runtime_test ....   Passed   72.35 sec
+      Start  9: ctp_async_rejection_runtime_test
+ 9/53 Test  #9: ctp_async_rejection_runtime_test ......   Passed   50.19 sec
+      Start 10: ctp_native_facts_runtime_test
+10/53 Test #10: ctp_native_facts_runtime_test .........   Passed   10.08 sec
+      Start 11: ctp_resident_query_runtime_test
+11/53 Test #11: ctp_resident_query_runtime_test .......   Passed    8.23 sec
+      Start 12: ctp_instrument_failure_runtime_test
+12/53 Test #12: ctp_instrument_failure_runtime_test ...   Passed   52.30 sec
+      Start 13: ctp_held_window_runtime_test
+13/53 Test #13: ctp_held_window_runtime_test ..........   Passed   28.53 sec
+      Start 14: ctp_relay_authority_runtime_test
+14/53 Test #14: ctp_relay_authority_runtime_test ......   Passed   72.37 sec
+      Start 15: ctp_query_execution_test
+15/53 Test #15: ctp_query_execution_test ..............   Passed    0.58 sec
+      Start 16: ctp_native_facts_execution_test
+16/53 Test #16: ctp_native_facts_execution_test .......   Passed    0.53 sec
+      Start 17: ctp_native_trade_test
+17/53 Test #17: ctp_native_trade_test .................   Passed    0.03 sec
+      Start 18: ctp_native_depth_test
+18/53 Test #18: ctp_native_depth_test .................   Passed    0.01 sec
+      Start 19: ctp_trade_dispatch_test
+19/53 Test #19: ctp_trade_dispatch_test ...............   Passed    1.11 sec
+      Start 20: ctp_trade_events_test
+20/53 Test #20: ctp_trade_events_test .................   Passed    2.50 sec
+      Start 21: ctp_native_facts_test
+21/53 Test #21: ctp_native_facts_test .................   Passed    0.01 sec
+      Start 22: ctp_transport_runtime_test
+22/53 Test #22: ctp_transport_runtime_test ............   Passed    0.01 sec
+      Start 23: ctp_redis_decode_test
+23/53 Test #23: ctp_redis_decode_test .................   Passed    0.00 sec
+      Start 24: ctp_command_journal_test
+24/53 Test #24: ctp_command_journal_test ..............   Passed    0.25 sec
+      Start 25: ctp_command_recovery_test
+25/53 Test #25: ctp_command_recovery_test .............   Passed    0.85 sec
+      Start 26: ctp_f0_trade_projection_test
+26/53 Test #26: ctp_f0_trade_projection_test ..........   Passed    0.01 sec
+      Start 27: ctp_identity_store_test
+27/53 Test #27: ctp_identity_store_test ...............   Passed    0.33 sec
+      Start 28: ctp_identity_query_test
+28/53 Test #28: ctp_identity_query_test ...............   Passed    0.14 sec
+      Start 29: ctp_f0_command_test
+29/53 Test #29: ctp_f0_command_test ...................   Passed    0.06 sec
+      Start 30: ctp_f0_intent_test
+30/53 Test #30: ctp_f0_intent_test ....................   Passed    0.02 sec
+      Start 31: ctp_f0_query_reply_test
+31/53 Test #31: ctp_f0_query_reply_test ...............   Passed    0.25 sec
+      Start 32: ctp_f0_codec_test
+32/53 Test #32: ctp_f0_codec_test .....................   Passed    0.01 sec
+      Start 33: ctp_f0_credentials_test
+33/53 Test #33: ctp_f0_credentials_test ...............   Passed    0.02 sec
+      Start 34: ctp_f0_money_test
+34/53 Test #34: ctp_f0_money_test .....................   Passed    0.14 sec
+      Start 35: ctp_f0_money_field_test
+35/53 Test #35: ctp_f0_money_field_test ...............   Passed    0.00 sec
+      Start 36: ctp_f0_query_projection_test
+36/53 Test #36: ctp_f0_query_projection_test ..........   Passed    0.26 sec
+      Start 37: ctp_f0_query_material_test
+37/53 Test #37: ctp_f0_query_material_test ............   Passed    0.01 sec
+      Start 38: ctp_f0_shared_cases_test
+38/53 Test #38: ctp_f0_shared_cases_test ..............   Passed    0.01 sec
+      Start 39: ctp_audit_export_test
+39/53 Test #39: ctp_audit_export_test .................   Passed    0.06 sec
+      Start 40: ctp_fill_migration_cli_test
+40/53 Test #40: ctp_fill_migration_cli_test ...........   Passed    0.08 sec
+      Start 41: ctp_readonly_prepare_test
+41/53 Test #41: ctp_readonly_prepare_test .............***Failed    0.21 sec
+F..............
+======================================================================
+FAIL: test_assessment_uses_its_own_offline_preflight (__main__.PreparationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/Titian_Cpp/oceanus/src/oc_trader_commander_ctp/tests/ctp_readonly_prepare_test.py", line 112, in test_assessment_uses_its_own_offline_preflight
+    self.assertEqual(prepare.main(['--config', str(self.path), '--binary', str(binary)]), 0)
+AssertionError: 1 != 0
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.146s
+
+FAILED (failures=1)
+
+      Start 42: ctp_intent_vectors_test
+42/53 Test #42: ctp_intent_vectors_test ...............   Passed    0.02 sec
+      Start 43: ctp_cli_test
+43/53 Test #43: ctp_cli_test ..........................   Passed    0.98 sec
+      Start 44: ctp_query_execution_schema_test
+44/53 Test #44: ctp_query_execution_schema_test .......   Passed    0.68 sec
+      Start 45: ctp_trade_query_schema_test
+45/53 Test #45: ctp_trade_query_schema_test ...........   Passed    0.23 sec
+      Start 46: ctp_query_reply_schema_test
+46/53 Test #46: ctp_query_reply_schema_test ...........   Passed    0.42 sec
+      Start 47: ctp_query_schema_test
+47/53 Test #47: ctp_query_schema_test .................   Passed    0.18 sec
+      Start 48: ctp_query_book_test
+48/53 Test #48: ctp_query_book_test ...................   Passed    0.04 sec
+      Start 49: ctp_query_snapshot_test
+49/53 Test #49: ctp_query_snapshot_test ...............   Passed    0.01 sec
+      Start 50: ctp_instrument_cache_test
+50/53 Test #50: ctp_instrument_cache_test .............   Passed    0.00 sec
+      Start 51: ctp_session_test
+51/53 Test #51: ctp_session_test ......................   Passed    0.03 sec
+      Start 52: ctp_config_test
+52/53 Test #52: ctp_config_test .......................   Passed    0.00 sec
+      Start 53: ctp_sdk_link_test
+53/53 Test #53: ctp_sdk_link_test .....................   Passed    0.01 sec
+
+96% tests passed, 2 tests failed out of 53
+
+Total Test time (real) = 596.68 sec
+
+The following tests FAILED:
+	  5 - ctp_asset_evidence_test (Child aborted)
+	 41 - ctp_readonly_prepare_test (Failed)
+Errors while running CTest

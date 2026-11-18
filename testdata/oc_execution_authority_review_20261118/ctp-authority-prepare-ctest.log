@@ -1,0 +1,9 @@
+Test project /tmp/ctp-authority-ctest.udvS3S
+    Start 41: ctp_readonly_prepare_test
+1/2 Test #41: ctp_readonly_prepare_test ........   Passed    0.20 sec
+    Start 43: ctp_cli_test
+2/2 Test #43: ctp_cli_test .....................   Passed    0.96 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   1.15 sec
