@@ -16,12 +16,25 @@ import (
 // Legacy assessments reserve one submit/cancel; explicit day mode reserves each
 // original order independently. Both retain unknown attempts without resending.
 type TestTradeApproval struct {
-	PermissionProfile string           `json:"permission_profile,omitempty"`
-	AssessmentID      string           `json:"assessment_id"`
-	CommandSHA256     string           `json:"command_sha256"`
-	ExpiresAt         string           `json:"expires_at"`
-	CancelReceiptID   int64            `json:"cancel_receipt_id"`
-	Market            *TestTradeMarket `json:"market"`
+	PermissionProfile   string                   `json:"permission_profile,omitempty"`
+	ExecutionPermission *TestExecutionPermission `json:"execution_permission,omitempty"`
+	AssessmentID        string                   `json:"assessment_id"`
+	CommandSHA256       string                   `json:"command_sha256"`
+	ExpiresAt           string                   `json:"expires_at"`
+	CancelReceiptID     int64                    `json:"cancel_receipt_id"`
+	Market              *TestTradeMarket         `json:"market"`
+}
+
+// TestExecutionPermission is local, command-bound permission, never OC wire.
+type TestExecutionPermission struct {
+	Submit bool `json:"submit"`
+	Cancel bool `json:"cancel"`
+}
+
+const relayTestExecutionProfile = "relay_test_execution.v1"
+
+func (a TestTradeApproval) relayExecution() bool {
+	return a.PermissionProfile == relayTestExecutionProfile
 }
 
 type TestTradeMarket struct {
@@ -48,7 +61,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	if _, err := parseReply(raw); err != nil {
 		return a, err
 	}
-	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile"})
+	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile", "execution_permission"})
 	if err != nil {
 		return a, err
 	}
@@ -66,7 +79,21 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	if err := d.Decode(&a); err != nil {
 		return a, err
 	}
-	if p, present := fields["permission_profile"]; present && (!bytes.Equal(p, []byte(`"test_day_relay.v1"`)) || a.PermissionProfile != "test_day_relay.v1") {
+	if p, present := fields["permission_profile"]; present && (!oneOf(a.PermissionProfile, "test_day_relay.v1", relayTestExecutionProfile) || literal(p, "null")) {
+		return a, ErrStreamIdentity
+	}
+	permission, present := fields["execution_permission"]
+	if a.relayExecution() {
+		p, err := shape(permission, []string{"submit", "cancel"}, nil)
+		if err != nil || a.ExecutionPermission == nil {
+			return a, ErrStreamIdentity
+		}
+		for _, key := range []string{"submit", "cancel"} {
+			if !literal(p[key], "true") && !literal(p[key], "false") {
+				return a, ErrStreamIdentity
+			}
+		}
+	} else if present {
 		return a, ErrStreamIdentity
 	}
 	if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || len(a.CommandSHA256) != 64 || strings.Trim(a.CommandSHA256, "0123456789abcdef") != "" || !validTime(a.ExpiresAt) || a.CancelReceiptID < 0 {
@@ -97,6 +124,9 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	}
 	if a.PermissionProfile != "" && (c.Scope.Route.BrokerID != "ctp_4900" || c.Scope.Route.AccountID != "300052141" || c.Scope.NativeBrokerID != "4900" || c.Scope.InvestorID != "300052141" || c.Scope.UserID != "300052141") {
 		return ErrStreamIdentity
+	}
+	if a.relayExecution() && !a.executionActionAllowed(c.Original.Action) {
+		return ErrQueryPublishGate
 	}
 	if c.Original.Action == "order.cancel" {
 		if c.Original.Cancel == nil || c.Original.Cancel.TradeDate != target.TradeDate || a.CancelReceiptID <= 0 || a.Market != nil {
@@ -183,7 +213,7 @@ func (s *CommandStore) publishTestTrade(ctx context.Context, scope CommandScope,
 			return ErrStreamIdentity
 		}
 		key := assessment
-		if a.PermissionProfile == "test_day_relay.v1" {
+		if a.PermissionProfile == "test_day_relay.v1" || a.relayExecution() {
 			// Day mode reserves per original order, not per process. Existing
 			// command idempotency and unknown-attempt records remain unchanged.
 			var legacy bool

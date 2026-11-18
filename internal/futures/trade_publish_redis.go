@@ -17,7 +17,9 @@ type TestTradePublisher struct {
 
 func NewTestTradePublisher(c TestSourceConfig, t TestQueryTarget, a TestTradeApproval) (*TestTradePublisher, error) {
 	raw, _ := json.Marshal(a)
-	if _, err := DecodeTestTradeApproval(raw); err != nil {
+	var err error
+	a, err = DecodeTestTradeApproval(raw)
+	if err != nil {
 		return nil, err
 	}
 	p, err := NewTestQueryPublisher(c, t)
@@ -58,10 +60,16 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 	if err != nil || h.ReadOnly != nil || h.Recovery != nil || !h.RedisReady || !h.BrokerReady || !h.OrderSnapshotReady || h.CounterSessionID != target.CounterSessionID || h.TradeDate != target.TradeDate {
 		return queryPublishProof{}, ErrQueryPublishGate
 	}
-	// Parsing the new execution-only heartbeat must not silently upgrade the
-	// legacy assessment publisher. Relay-owned publication admission is separate.
-	if h.Assessment != nil && h.Assessment.relayExecution() {
+	execution := h.Assessment != nil && h.Assessment.relayExecution()
+	if execution != a.relayExecution() {
 		return queryPublishProof{}, ErrQueryPublishGate
+	}
+	var localEnd time.Time
+	if execution {
+		localEnd, err = relayExecutionTradeGate(route, target, a, h, now)
+		if err != nil {
+			return queryPublishProof{}, err
+		}
 	}
 	var envelope struct {
 		Adapter map[string]json.RawMessage `json:"adapter_context"`
@@ -87,6 +95,9 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 	if h.ProducedAt.Add(5 * time.Second).Before(expires) {
 		expires = h.ProducedAt.Add(5 * time.Second)
 	}
+	if execution && localEnd.Before(expires) {
+		expires = localEnd
+	}
 	if a.CancelReceiptID == 0 {
 		observed, err := time.Parse(time.RFC3339Nano, a.Market.ObservedAt)
 		maxAge := 5 * time.Second
@@ -104,7 +115,7 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 			expires = observed.Add(maxAge)
 		}
 	}
-	if assessment := h.Assessment; assessment != nil {
+	if assessment := h.Assessment; assessment != nil && !execution {
 		if a.AssessmentID != assessment.AssessmentID || !assessment.windowOpen(now) || assessment.PermissionProfile != a.PermissionProfile {
 			return queryPublishProof{}, ErrQueryPublishGate
 		}
@@ -131,7 +142,7 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 				expires = captured.Add(300 * time.Second)
 			}
 		}
-	} else if a.PermissionProfile != "" {
+	} else if !execution && a.PermissionProfile != "" {
 		return queryPublishProof{}, ErrQueryPublishGate
 	}
 	return queryPublishProof{EntryID: row.EntryID, Body: row.Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
@@ -155,7 +166,7 @@ func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
 	// OC day mode validates this command's contract/limits before its SDK call.
 	// A cached constraint_symbol may describe a previous command, so it must
 	// not be substituted for the current command's authoritative constraints.
-	if a.PermissionProfile == "test_day_relay.v1" {
+	if a.PermissionProfile == "test_day_relay.v1" || a.relayExecution() {
 		if len(c.Orders) != 1 || c.Orders[0].Exchange != "SHFE" {
 			return ErrQueryPublishGate
 		}
@@ -184,6 +195,25 @@ func (p *TestTradePublisher) appendQuery(ctx context.Context, proof queryPublish
 	h, err := DecodeHeartbeat(proof.Body, b.scope.Route)
 	if err != nil || assessmentNativePrice(raw, b.scope, h) != nil {
 		return "", true, nil
+	}
+	if p.approval.relayExecution() {
+		// Recheck immediately before XADD; the Lua expiry also covers time spent
+		// waiting for Redis, including exchange segment and command deadlines.
+		now := time.Now()
+		checked, err := testTradeHeartbeatProof(StreamInput{proof.EntryID, proof.Body}, b.scope.Route, b.target, p.approval, now)
+		if err != nil {
+			return "", true, nil
+		}
+		end, err := relayExecutionCommandDeadline(raw, p.approval, now)
+		if err != nil {
+			return "", true, nil
+		}
+		if checked.ExpiresAt.Before(proof.ExpiresAt) {
+			proof.ExpiresAt = checked.ExpiresAt
+		}
+		if end.Before(proof.ExpiresAt) {
+			proof.ExpiresAt = end
+		}
 	}
 	result, err := b.client.Eval(ctx, testQueryAppendScript, []string{b.prefix() + ":cmd.trade:transport-epoch", b.prefix() + ":hb", b.prefix() + ":cmd.trade"}, b.target.ServerRunID, b.target.Epoch, b.target.Group, proof.EntryID, string(proof.Body), proof.ExpiresAt.UnixMilli(), proof.ProducedAt.UnixMilli(), string(raw)).Result()
 	if err != nil {

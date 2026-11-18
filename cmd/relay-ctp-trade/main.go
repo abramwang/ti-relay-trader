@@ -62,7 +62,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	commandFile := f.String("command-file", "", "exact original command JSON")
 	targetFile := f.String("target-file", "", "reviewed source/run/epoch/group/session/day/generation JSON")
 	evidenceFile := f.String("evidence-file", "", "RegistrationEvidence JSON with verified mapping or cancel target")
-	approvalFile := f.String("approval-file", "", "short-lived exact-body TEST approval and quote or cancel receipt")
+	approvalFile := f.String("approval-file", "", "short-lived exact-body TEST approval; relay_test_execution.v1 requires explicit submit/cancel permissions")
 	database := f.String("database", "", "dedicated database ending in _test")
 	deployment := f.String("deployment-id", "", "TEST Redis deployment label")
 	register := f.Bool("register", false, "persist TEST intention only")
@@ -116,6 +116,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		return errors.New("invalid single TEST assessment command, mapping, quote or approval")
 	}
 	report := map[string]any{"mode": "check_only_no_connections", "action": command.Action, "message_id": command.MessageID, "body_sha256": approval.CommandSHA256, "assessment_id": approval.AssessmentID, "command_published": false, "broker_accepted": false, "business_authorized": false, "database": *database, "route": scope.Route}
+	report["permission_profile"] = approval.PermissionProfile
+	report["execution_permission"] = approval.ExecutionPermission
 	if !*register {
 		return json.NewEncoder(out).Encode(report)
 	}

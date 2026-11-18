@@ -50,8 +50,10 @@
 
 - [x] 明确交易授权唯一归属Relay：OC执行就绪与业务授权分离，不再以独立测评窗口/profile/报撤预算作为目标架构；保留环境账户校验、幂等、流控、过期命令拒绝及未知不重发。见[职责收敛顶部](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#交易授权唯一归属relay)。
 - [x] 复核后续《CTP TEST 常驻配置》：常驻/原文/局部失败处理可保留，但profile、OC自有时段及assessment_trade_window_closed仍与单一授权冲突；已列直接修改项，资源容量不混同交易预算。仅文字复核，不代表代码或部署通过。
-- [x] 接收OC授权收敛7d20c4b/59711d4：9摘要核验、原字节归档；Relay接新执行心跳/独立只读查询、检查输出及过期失败非订单终态。全Go/vet、隔离Redis/PG race通过。旧交易发布器拒绝新执行心跳，不冒充新授权交易已开放；OC无需重做该实现。
-- [ ] Relay本地单一授权交易发布接线：统一API/SDK/终端/CLI权限与发送准入，验证关闭新单零发布、撤单独立、权限到期/撤销及未知不重发，再联合部署OC新execution配置。当前仅新心跳和查询接通，旧false不能忽略，不把能力true当作本地权限。
+- [x] 接收OC授权收敛7d20c4b/59711d4：9摘要核验、原字节归档；Relay接新执行心跳/独立只读查询、检查输出及过期失败非订单终态。旧交易授权不能隐式进入新执行模式；OC无需重做该实现。
+- [x] Relay命令级TEST CLI授权发布：本地relay_test_execution.v1、独立submit/cancel、精确命令与会话绑定、北京时间日间时段/边界原子截止、短期授权及sent_at时效；按订单防重，未知不重发，旧profile保持隔离。单测及临时PG/隔离Redis回归通过；正向PG测试用模拟传输，非新版在线报撤验收，未部署。
+- [ ] 继续统一API/SDK/终端/CLI权限、动态停止/撤销及独立事实价格准入；当前只完成命令级CLI，仍保留买开1手边界与OC逐单原生检查，未开放新版普通交易接口。之后联合部署OC新execution配置，不把能力true当作本地权限。
+- [ ] OC后续：固定版本常驻在线联测、按账户/柜台TradingDay保留的显式结算确认及未知不重做；容量诊断为P1，不再把外部迁移/重复协议回签作为前置。见[当前分工](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#relay本地命令级授权与oc后续安排)。
 
 - [x] 审阅OC职责收敛增量3aaccfa：接受独立instrument.constraints.query/instrument_constraints候选及静态/动态非原子事实结构，OC可直接接现有调度；明确离线/未部署边界，不再重复模拟柜台核查。见[本轮接收结论](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本轮增量接收与直接执行结论)。
 - [x] 收到OC责任收敛材料7份并核验摘要：3心跳/2拒绝事件/3事实候选完成独立解析或结构回归；增加query能力镜像/原因、两类订单快照scope和绑定原命令的独立拒撤解码。明确false不能沿旧推导放行，拒撤不改变订单终态；仅离线接线，未部署或发命令。

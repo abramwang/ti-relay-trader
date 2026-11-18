@@ -73,3 +73,40 @@ func TestTradeCLIRejectsProductionAndUnpairedPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestTradeCLIExecutionPermissionOffline(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		args := preparationArgs(t)
+		for i, arg := range args {
+			if arg != "--approval-file" {
+				continue
+			}
+			raw, err := os.ReadFile(args[i+1])
+			var a futures.TestTradeApproval
+			if err != nil || json.Unmarshal(raw, &a) != nil {
+				t.Fatal(err)
+			}
+			a.PermissionProfile = "relay_test_execution.v1"
+			a.ExecutionPermission = &futures.TestExecutionPermission{Submit: enabled, Cancel: true}
+			raw, err = json.Marshal(a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(args[i+1], raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var out, diagnostics bytes.Buffer
+		err := run(context.Background(), args, func(string) string { t.Fatal("offline check accessed credentials"); return "" }, &out, &diagnostics)
+		if !enabled {
+			if err == nil {
+				t.Fatal("closed submit permission accepted")
+			}
+			continue
+		}
+		var result map[string]any
+		if err != nil || json.Unmarshal(out.Bytes(), &result) != nil || result["permission_profile"] != "relay_test_execution.v1" || result["business_authorized"] != false || result["command_published"] != false {
+			t.Fatal(result, err)
+		}
+	}
+}

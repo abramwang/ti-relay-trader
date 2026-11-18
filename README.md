@@ -26,7 +26,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- `2026-11-18` **OC授权收敛实现已收，Relay新心跳/查询适配完成**：7d20c4b/59711d4材料9摘要匹配，原字节归档testdata/oc_execution_authority_review_20261118；严格识别authorization_owner=relay及resident_execution.v1，新旧不混用，查询独立于交易窗口，过期命令不投影订单终态。全Go/vet和隔离Redis/PG race通过，未部署/切环境/发柜台命令。旧交易发布器明确拒绝新心跳，下一步Relay本地单一授权发布、独立撤单及各入口统一；尚未开放新版CTP交易。见[协调清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#oc授权收敛交付接收与relay适配)，不再要求OC重做或重复给材料；下方旧配置复核为历史。
+- `2026-11-18` **Relay命令级TEST授权发布接线完成，尚未部署**：在已接收OC 7d20c4b/59711d4新心跳基础上，CLI显式选择本地relay_test_execution.v1及独立submit/cancel权限；旧授权不隐式放行，Relay检查北京时间日间时段、账户/会话、短期授权/行情/命令时效，数据库按原订单防重，未知不重发。保持现有买开1手边界；API/SDK/终端统一权限、动态停止、独立事实定价及常驻业务分发仍待做。单测和临时PG/隔离Redis回归通过，不等于新版在线报撤验收，未切环境/发柜台命令。给OC的下一步已收敛为固定版本常驻联测、跨交易日结算once最小办法、非前置的容量诊断，见[协调清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#relay本地命令级授权与oc后续安排)；无需重复授权改造或大材料包。下方同日旧配置说明为历史阶段。
 
 - `2026-11-18` **复核OC常驻配置说明**：接受进程常驻、尾包、固定状态及普通失败继续；仍含OC授权profile/午休到期关报撤/assessment_trade_window_closed，未落实单一授权。已在[同一执行清单](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本次常驻配置说明的复核)列出移除项，并区分命令有效期、柜台能力及资源容量。下一步OC改现有运行路径并给最小配置/心跳差异，Relay同步去旧依赖；不再等大材料包。本轮仅文档，无运行权限/环境变化。
 
