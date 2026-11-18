@@ -28,6 +28,22 @@ SDK 应在启动阶段使用能力握手，不得只比较 Python 包版本。�
 
 ## HTTP Envelope
 
+### 期货只读报价准备（源码新增，待部署）
+
+`GET /v1/futures/price-preview?security_id=RB2701.SHFE&trade_date=20261119`，能力标识`futures.price_preview.v1`。只接受一个真实CFFEX/SHFE合约标准代码及明确的YYYYMMDD交易日，不从自然日期推导夜盘TradingDay；不接受账户权限、行情正文、原生来源、tick、URL或`allow_stale`覆盖参数。
+
+Relay从配置的Meridian依次读取唯一正式目录记录和当前快照，保留HTTP原始JSON字节及精确数值，复用现有报价核验函数。两次请求共用5秒超时，目录正文最多64KiB、快照最多32KiB；不重试、不跟随重定向、不使用陈旧缓存，不访问OC、Redis或交易数据库。目录publication/checksum、交易所coverage、真实期货类型和active状态均需有效；失败不继续查询快照。
+
+成功返回标准envelope，`data`包含：
+
+- `mode=price_preview_only`；`business_authorized=false`、`command_published=false`、`publication_supported=false`始终明确返回；只描述本接口，不改变账户权限。
+- `catalog_body_sha256`：本次目录原文摘要。
+- `preparation`：market、有效期、行情原文摘要及`business_authorized=false`；market包括目录映射/tick、Meridian报价来源及base64保留的行情JSON原文。目录与行情不是跨源原子快照，响应也不是可重复使用的下单许可。
+
+400表示非法/重复/多余参数，405表示非GET，503表示依赖不可用或证据未通过，`error.detail.stage`为`catalog_request/catalog_validation/snapshot_request/snapshot_validation`；不透出上游私有错误正文、URL或凭据。所有结果`Cache-Control: no-store`。
+
+SDK源码入口为`get_futures_price_preview(security_id=..., trade_date=...)`，仅一次GET。普通期货API/SDK报撤仍未开放；该能力不代表`/v1/orders`支持期货，也不改变既有股票接口。正式使用前核对部署版`/v1/schema`，本轮没有发布wheel或重启服务。
+
 API 模式统一返回 JSON envelope：
 
 ```json

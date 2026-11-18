@@ -12,6 +12,16 @@
 
 ## Meridian定价分流已接线
 
+### 服务端只读准备入口（后续增量）
+
+已接`GET /v1/futures/price-preview`与Python SDK `get_futures_price_preview`，能力标识`futures.price_preview.v1`；本轮为源码及离线验证，没有部署API或发布SDK安装包。调用方只提供真实合约标准代码和TradingDay，不能覆盖映射、tick、行情正文、URL或授权。由Relay现有配置的Meridian连接依次获取目录/快照原文，严格确认唯一正式目录后复用`PrepareMeridianPrice`；不再要求调用者准备映射/行情文件。目录与盘口均保留数值原文，拒绝上游跳转、非JSON、超量/部分响应和陈旧目标合约。
+
+这是只读报价数据入口，不新增OC动作，不访问交易Redis/PG，不返回交易许可、不挑选委托价；生产配置也只有只读能力，股票/期货权限均不改。两次请求总时限5秒，无自动重试、轮询、陈旧降级或OC行情回退。终端目前仍可沿用既有SSE显示；后续业务编排复用此解析器，不要求用高频HTTP预览替代SSE订阅。
+
+测试覆盖服务端HTTP端到端、目录失效即停止、行情原文/哈希保留、HTML/重定向/大响应拒绝、TEST/生产配置只读及SDK失败不重试；使用本地HTTP测试服务器和合成数据，不是线上行情或柜台验收。字段及错误阶段见[API契约](TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)。本轮无需OC或Meridian修改；API/SDK/终端统一交易授权与普通发送仍为下一阶段，不将预览成功等同已放开。
+
+验证：全Go测试、相关四包vet、定向race和Python SDK全部69项测试通过；构建及定向日志位于`outputs/recovery/ctp-price-preview.KLvLHC/`。构建产物没有替换在线服务，未发布SDK wheel，当前线上仍以部署版本的能力声明为准。
+
 沿上述实盘目标先完成可复用的行情准备逻辑，并接入现有TEST execution发布器进行离线验证；**不代表生产期货发送、API/SDK/终端已经开放**。没有修改OC或Meridian协议，也不新增柜台查询前置。
 
 - `PrepareMeridianPrice(raw, mapping, tick, tradeDate, now)`接收现有Meridian HTTP响应或SSE的JSON data正文，采用`futures_market_snapshot.v1`实际字段。mapping和tick来自调用方已核对的Meridian合约目录，不由代码大小写猜映射、不从OC盘口补值。支持SHFE/CFFEX行情身份；发送器原SHFE买开一手TEST范围不变。

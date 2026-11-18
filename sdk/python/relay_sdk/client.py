@@ -1402,6 +1402,20 @@ class RelayClient:
         query.update(extra_query)
         return self._request("GET", "/v1/meridian/market/bars", query=query)
 
+    def get_futures_price_preview(
+        self, *, security_id: str, trade_date: str,
+    ) -> Mapping[str, Any]:
+        """Resolve current Meridian price evidence, without authorizing or trading.
+
+        The server owns catalog/tick resolution. A preview expires quickly and
+        is not a reusable order permit; this method does not poll or refresh it.
+        Native assessment quotes are deliberately not selectable here.
+        """
+        return self._request(
+            "GET", "/v1/futures/price-preview",
+            query={"security_id": security_id, "trade_date": trade_date},
+        )
+
     def get_meridian_futures_status(self) -> Mapping[str, Any]:
         """Return Meridian's CTP futures service status through relay."""
 

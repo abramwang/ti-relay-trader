@@ -12,6 +12,7 @@ const (
 	CapabilityManagedCredentialState = "accounts.managed_credential_state.v1"
 	CapabilityCancelAttemptLedger    = "cancel_attempts.cursor_pagination.v1"
 	CapabilityPositionCloseBaseline  = "positions.close_baseline.v1"
+	CapabilityFuturesPricePreview    = "futures.price_preview.v1"
 )
 
 type CatalogDocument struct {
@@ -46,6 +47,7 @@ func Catalog() CatalogDocument {
 			CapabilityManagedCredentialState,
 			CapabilityCancelAttemptLedger,
 			CapabilityPositionCloseBaseline,
+			CapabilityFuturesPricePreview,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
@@ -59,6 +61,7 @@ func Catalog() CatalogDocument {
 		},
 		HTTPRoutes: []HTTPRouteSpec{
 			{Method: "GET", Path: "/healthz", Response: "StatusView", Description: "service health check"},
+			{Method: "GET", Path: "/v1/futures/price-preview", Request: "security_id/trade_date", Response: "MeridianPricePreparation", Description: "read-only server-resolved Meridian futures price evidence; never a trading grant or command"},
 			{Method: "GET", Path: "/v1/status", Response: "StatusView", Description: "service status"},
 			{Method: "GET", Path: "/v1/accounts", Response: "[]Account", Description: "configured accounts"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/readiness", Response: "AccountReadiness", Description: "account-level OC heartbeat and configured order-entry readiness"},

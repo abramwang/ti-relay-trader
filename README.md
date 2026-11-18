@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- **服务端报价准备与SDK源码完成**：新增只读`/v1/futures/price-preview`，由Relay从已配置Meridian解析唯一正式目录、tick和快照原文；不再要求API调用方准备映射/行情文件，不接收来源或权限覆盖。Python新增`get_futures_price_preview`，始终不授权/发单，未部署API或发布wheel、未改环境。见[接口边界](docs/TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)；普通期货交易授权及终端发送仍待接线。
+
 - **Meridian定价分流已接线**：复用HTTP/SSE正文和已核对目录，保留策略委托价，不套用测评买一减10tick、不增加OC行情查询/双源比价；新execution发布器校验原文、逐合约时效与基础价位。CLI有独立零连接准备模式，原生报价仍仅显式TEST特例；生产发送及API/SDK/终端接线未开放。见[实现边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#meridian定价分流已接线)。本轮没有变更环境或交易权限。
 
 - **定价边界（用户确认）**：实盘以Meridian行情定价，柜台做最终报单校验；OC原生行情路径仅服务东吴测评的不同源行情，不作为生产逐单前置，也不推广测试的一手/买一减10tick规则。见[职责边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#实盘定价边界用户确认)。本次仅更新设计，运行环境和权限未改。

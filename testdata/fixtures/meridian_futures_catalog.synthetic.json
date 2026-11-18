@@ -1,0 +1,23 @@
+{
+  "synthetic_only": true,
+  "data": [{
+    "schema_version": "futures_instrument.v1",
+    "security_id": "RB2701.SHFE",
+    "source_instrument_id": "rb2701",
+    "exchange_id": "SHFE",
+    "product_class": "futures",
+    "trading_status": "active",
+    "volume_multiple": 10,
+    "price_tick": 1
+  }],
+  "meta": {
+    "schema_version": "futures_instrument.v1",
+    "catalog_schema_version": "futures_instrument_catalog.v1",
+    "data_scope": "current_view",
+    "count": 1,
+    "total_count": 1,
+    "publication_snapshot_id": "synthetic-catalog-version",
+    "logical_table_checksum": "synthetic-catalog-checksum",
+    "exchange_coverage": {"SHFE": {"status": "production_ready"}}
+  }
+}

@@ -315,6 +315,19 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/futures/price-preview":
+            if query.get("trade_date") == ["20261116"]:
+                self._json({"ok": False, "error": {
+                    "code": "UNAVAILABLE", "message": "futures price preview unavailable",
+                    "detail": {"stage": "snapshot_validation"},
+                }}, status=503)
+            else:
+                self._json({"ok": True, "data": {
+                    "mode": "price_preview_only", "business_authorized": False,
+                    "command_published": False, "publication_supported": False,
+                    "preparation": {"market": {"price_tick": "0.2"}, "business_authorized": False},
+                }})
+            return
         if parsed.path == "/v1/meridian/futures/instruments":
             status, code = 200, None
             if query.get("exchange_id") == ["SHFE"]:
@@ -1533,6 +1546,30 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(event.event_type, "order.changed")
         self.assertEqual(event.account_ids, ("acct-1",))
         self.assertEqual(event.data["orders"], 1)
+
+    def test_futures_price_preview_is_read_only(self):
+        before = len(RelayHandler.requests)
+        result = self.client.get_futures_price_preview(
+            security_id="RB2701.SHFE", trade_date="20261117",
+        )
+        self.assertFalse(result["business_authorized"])
+        self.assertFalse(result["command_published"])
+        self.assertFalse(result["publication_supported"])
+        self.assertEqual(result["preparation"]["market"]["price_tick"], "0.2")
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "GET", "/v1/futures/price-preview",
+            {"security_id": ["RB2701.SHFE"], "trade_date": ["20261117"]}, None,
+        )])
+        before = len(RelayHandler.requests)
+        with self.assertRaises(RelayError) as caught:
+            self.client.get_futures_price_preview(security_id="RB2701.SHFE", trade_date="20261116")
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertEqual(caught.exception.raw_response["error"]["detail"]["stage"], "snapshot_validation")
+        self.assertEqual(len(RelayHandler.requests), before + 1)
+        with self.assertRaises(TypeError):
+            self.client.get_futures_price_preview(
+                security_id="RB2701.SHFE", trade_date="20261117", allow_stale=True,
+            )
 
     def test_meridian_futures_market_data(self):
         status = self.client.get_meridian_futures_status()

@@ -395,6 +395,7 @@ P8 helper methods are available for strategy and research tooling:
 - `list_reconciliation_breaks(...)`
 - `get_meridian_bars(security_id=..., trade_date=...)`
 - `get_meridian_futures_status()`
+- `get_futures_price_preview(security_id="RB2701.SHFE", trade_date="20261119")`（源码新增，待API/wheel发布；能力`futures.price_preview.v1`）：由Relay从Meridian解析正式目录、tick和当前行情，返回短期报价证据；不允许传入来源/权限或旧快照覆盖，不轮询、不重试、不下单。返回`business_authorized/command_published/publication_supported`均为false，不能据此认定账户可交易。503异常的`raw_response["error"]["detail"]["stage"]`保留失败阶段。生产期货发送仍未开放。
 - `get_meridian_futures_instruments(security_id=... | source_instrument_id=..., exchange_id=..., limit=..., cursor=...)`（源码新增，待随下一版 wheel/API 部署发布）：返回 Meridian `futures_instrument.v1` 原始目录和 publication/coverage，不自行生成标准代码；409 游标失效及 503 未发布通过异常保留在 `raw_response["error"]["detail"]`，不自动重新分页。
 - `get_meridian_futures_snapshots(security_id=... | product_ids=...)`
 - `get_meridian_futures_bars(security_id=..., trade_date=...)`
