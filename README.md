@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- **定价边界（用户确认）**：实盘以Meridian行情定价，柜台做最终报单校验；OC原生行情路径仅服务东吴测评的不同源行情，不作为生产逐单前置，也不推广测试的一手/买一减10tick规则。见[职责边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#实盘定价边界用户确认)。本次仅更新设计，运行环境和权限未改。
+
 - `2026-11-18` **新版execution原生事实定价接线完成**：新增仅本地oc_test_native_facts.v1，按已发布查询和PG原始reply绑定当前来源/会话/交易日，精确计算TEST一手买开建议价；发送前重读原文，静态300秒/动态5秒均从SDK请求开始计龄，冲突、刷新后旧事实及过期拒绝。现有CLI增加只读prepare-native-price，报价不授权/发单/ACK，撤单仍独立。单测及隔离PG/Redis回归通过，业务环境未改，在线验收待明日；OC不需新协议或逐笔材料，见[实现与用法](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#新版execution原生事实定价接线)。下条“定价待接线”为本轮前状态。
 
 - `2026-11-18` **接收11月19日东吴R2部署安排**：仅部署方报告部署/离线检查就绪，宿主机登录、真实报撤及SDK硬件采集待验。已只读核对Relay仍TEST/healthy、终端沿用readonly-recovery路由；不切环境、不启动OC或授权明日结算。明日先端口/单实例、原绑定与新会话，再续收/查询/报撤；不复用旧session或重置cursor。Relay优先补新版execution原生事实定价，新版端到端尚未宣称就绪，见[明日执行安排](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日r2部署联调安排)。

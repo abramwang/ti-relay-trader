@@ -48,6 +48,7 @@
 
 ### F0-F6 CTP 期货接入
 
+- [x] 用户确认实盘定价以Meridian为准，柜台负责最终报单校验；OC原生事实定价仅用于行情不同源的东吴TEST测评，不将逐笔原生查询、双源价格一致性或测试报价规则引入实盘前置。见[定价边界](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#实盘定价边界用户确认)。生产接线仍按后续开发与验收推进，不视为已上线。
 - [x] 接收11月19日东吴R2部署安排，核对Relay TEST服务及终端原路由，明确单实例/端口、新session/TradingDay、当日结算授权、持续收件及券商硬件采集核验顺序；部署方报告不等于在线验收。见[明日执行安排](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日r2部署联调安排)。
 - [x] 新版execution独立原生事实定价接线：引用已发布查询/PG原始reply，核对来源/会话/日/合约/完整页、原文摘要与数字来源，按请求开始计龄，精确建议买开一手限价；发布前重读，冲突/更新查询/过期拒绝，撤单不绑行情。CLI显式只读prepare-native-price及隔离PG/Redis回归；不新增OC wire，详见[实现与用法](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#新版execution原生事实定价接线)。
 - [ ] 11月19日现场确认绑定/接收器及当日权限后运行新版execution定价/报撤联测；不复用昨日测评限价/旧授权、不把Meridian实盘价作为仿真柜台同源报价。用户尚未给出明日结算明确授权，今晚不登录或发命令。
