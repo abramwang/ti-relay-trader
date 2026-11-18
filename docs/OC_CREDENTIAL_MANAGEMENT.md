@@ -68,6 +68,8 @@ tag_b64: 6+hjilk8OXUKgZiV/1RLAw==
 
 2026-11-17 TEST实测：OC因current缺失等待凭据时，每5秒重新读取；Relay补发后自动出现`credential_status=loaded`，无需重启。现有CLI的`restart_required=true`仍是保守提示，不代表此次必须重启。已登录账户的凭据轮换不据此推定支持热更新，仍须按OC行为协调。`loaded`仅证明凭据已加载，必须另查`broker_ready`、订单快照及报撤准入；本轮加载后仍为`BROKER_DISCONNECTED`，不能宣称柜台登录成功。
 
+2026-11-18 12:25（Asia/Shanghai）TEST恢复：当前指针再次不存在，使用既有加密CLI补发00030484原测试凭据，认证解密通过；OC自动加载v1，随后broker_ready、order_snapshot_ready、accepting_trade_commands及accepting_cancel_commands均true。未重启OC、未修改券商密码或发送订单；不因本次缺失自行认定Redis又发生淘汰。当前用户使用实时行情仿真柜台，Relay本地旧7x24时段配置已移除，准入仍受新鲜心跳/登录/快照控制，不将“密码已加载”单独视为交易就绪。
+
 停用只删除 `current` 指针，不删除历史密文和交易账本。已经登录的 OC 不会自动退出，因此必须停止或重启对应账户进程。
 
 CLI：

@@ -11,9 +11,9 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | `2026-11-18 12:11 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产独立worker停止。本机/域名test/ok，当前PID以service status为准；不得自行切回生产 |
-| 安全状态 | TEST华鑫00030484启用、保留原trading_enabled=true；本次只切环境，未发交易。生产4启用账户下单关闭、两停用户不变；切换skip-migrations。CTP独立审计和候选保留，不重建旧丢失路由；今日结算确认及报撤仍需新窗口授权 |
+| 安全状态 | TEST华鑫00030484单笔/批量/撤单写入启用，12:26凭据补发后OC登录/快照/报撤ready；旧7x24时段配置已移除，仅按新鲜OC心跳准入，保留参数/幂等/柜台风控。生产所有账户下单关闭；CTP独立测评预算不随华鑫权限放宽，未自动报单 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-18 12:13` 用户确认CTP当日结算/两查询/一报一撤，并允许仿真多笔；先按已验单笔链路测评，多笔计划最多5报5撤/每笔1手（含首笔），双方单笔限额尚待升级，不换ID绕过。13:30–13:35待现场落实，未初始化/登录/发单；今日15:01生产收盘前需用户明确切回。见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`顶部 |
+| 最近确认 | `2026-11-18 12:26` 用户要求放开TEST交易以手动测华鑫：原开关已true，实际阻塞为托管凭据missing及旧7x24时段。通过加密CLI补发原TEST凭据并去掉旧时段配置，API重启后域名报order_entry_ready及OC报撤ready均true。未代用户下单，生产未动。CTP当日授权已记录、多笔代码待升级；15:01生产收盘前仍需用户明确切回 |
 | 更新时间 | `2026-11-18` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 12:26` **华鑫TEST手动报单入口恢复**：00030484原trading_enabled=true，无额外批量/撤单权限开关；OC心跳实际credential_status=missing。12:25:30使用已有加密CLI和用户此前TEST凭据补发v1，operation_id=`d7ea2addbdd409495d7aa2a6ce1bef2e`、key_id=hx-test-20260918，解密验证成功；无明文文件，OC自动loaded并broker_ready/快照/报撤true，无需重启OC。移除私有`config/relay.local.yaml`旧huaxin_7x24_test的order_entry_schedule（现为实时行情仿真），API重启PID705419，域名order_entry_ready=true、来源oc_heartbeat、无阻断理由。实际午间接受/撮合由柜台决定，不承诺成交。生产6户trading_enabled全false；未改CTP、运维DLQ写权限、幂等或参数校验，未发订单。私有配置不入Git，凭据缺失原因本轮未溯源，不归因于新淘汰。
 
 - `2026-11-18 12:13` **当日CTP授权确认**：用户同意今日TEST300052141结算确认、两初始化查询及rb2701一手买开/对应撤单，同时允许扩大仿真多笔。安排先首笔闭环，再最多5笔/每笔1手串行（Relay执行上限、含首笔）；代码核实Relay及OC仍为单笔预算，多笔需联合小范围升级，不换assessment/清计数绕过，不延误首轮或自动反手平仓。已更新[授权与协调安排](docs/OC_CTP_JOINT_EXECUTION_20261118.md)；当前仅文档记录，未初始化、启动或发交易。
 
