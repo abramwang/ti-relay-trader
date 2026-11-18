@@ -3,6 +3,7 @@ package futures
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -212,14 +213,10 @@ func (c *TestConsumer) step(ctx context.Context) (ConsumerCycle, error) {
 		}
 		current := false
 		if err == nil {
-			message, err := DecodeTradeEvent(raw, EventContext{Scope: c.expected.Scope})
+			var err error
+			current, err = currentConsumerEvent(raw, c.expected)
 			if err != nil {
 				return out, err
-			}
-			if message.Order != nil {
-				current = message.Order.CounterSessionID == c.expected.CounterSessionID
-			} else {
-				current = message.Fill.CounterSessionID == c.expected.CounterSessionID
 			}
 		}
 		if current {
@@ -258,4 +255,29 @@ func (c *TestConsumer) step(ctx context.Context) (ConsumerCycle, error) {
 	out.Quality = quality
 	out.Progress = out.Captured+out.Delivered+out.StateChanges > 0
 	return out, nil
+}
+
+// Only filters already delivered input; EventStore.Process still independently
+// verifies cancel command/publication before writing an outcome.
+func currentConsumerEvent(raw []byte, expected DeliveryQualityContext) (bool, error) {
+	if isCancelRejectionEvent(raw) {
+		o, err := parseReply(raw)
+		if err != nil {
+			return false, err
+		}
+		var route QueryRoute
+		var payload rawObject
+		if json.Unmarshal(o["routing"], &route) != nil || route != expected.Scope.Route || json.Unmarshal(o["payload"], &payload) != nil || textField(payload, "account_id") != expected.Scope.Route.AccountID || textField(payload, "trade_date") != expected.Scope.TradeDate || !validID(textField(payload, "counter_session_id")) {
+			return false, ErrStreamIdentity
+		}
+		return textField(payload, "counter_session_id") == expected.CounterSessionID, nil
+	}
+	message, err := DecodeTradeEvent(raw, EventContext{Scope: expected.Scope})
+	if err != nil {
+		return false, err
+	}
+	if message.Order != nil {
+		return message.Order.CounterSessionID == expected.CounterSessionID, nil
+	}
+	return message.Fill.CounterSessionID == expected.CounterSessionID, nil
 }

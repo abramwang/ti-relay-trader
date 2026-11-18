@@ -473,8 +473,18 @@ func (s *StreamStore) ForwardEvent(ctx context.Context, h StreamHandle, id int64
 	}
 	// Never infer a trading-day scope from malformed or foreign JSON. Bad bodies
 	// remain pending here for explicit quarantine, without poisoning another day.
-	if _, err = DecodeTradeEvent(r.Raw, EventContext{Scope: registered.scope}); err != nil {
-		return EventReceipt{}, err
+	if isCancelRejectionEvent(r.Raw) {
+		bound, err := resolveCancelRejection(ctx, tx, registered, r.Raw)
+		if err != nil {
+			return EventReceipt{}, err
+		}
+		if bound.target.SourceID != h.config.SourceID {
+			return EventReceipt{}, ErrStreamIdentity
+		}
+	} else {
+		if _, err = DecodeTradeEvent(r.Raw, EventContext{Scope: registered.scope}); err != nil {
+			return EventReceipt{}, err
+		}
 	}
 	out, err := receiveEventTx(ctx, tx, target, QuerySource{h.stream, r.EntryID}, r.Raw)
 	if err != nil {

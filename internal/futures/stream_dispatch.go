@@ -3,6 +3,7 @@ package futures
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -157,6 +158,16 @@ func (d *StreamDispatcher) forward(ctx context.Context, row StreamRecord) (strin
 		target, found := d.events[dispatchEventKey(textField(payload, "trade_date"), textField(payload, "counter_session_id"))]
 		if !found {
 			return "unbound_event_day_or_session", nil
+		}
+		if isCancelRejectionEvent(row.Raw) {
+			_, err := d.store.ForwardEvent(ctx, d.handle, row.ID, target.key)
+			if errors.Is(err, ErrCancelRejectionBinding) {
+				return "unbound_cancel_command_or_publication", nil
+			}
+			if errors.Is(err, ErrStreamIdentity) {
+				return "invalid_bound_cancel_rejection", nil
+			}
+			return "", err
 		}
 		if _, err := DecodeTradeEvent(row.Raw, EventContext{Scope: target.scope}); err != nil {
 			return "invalid_bound_event", nil

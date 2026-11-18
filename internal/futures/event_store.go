@@ -224,26 +224,33 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 		}
 		return result, nil
 	}
-	event, decodeErr := DecodeTradeEvent(raw, EventContext{Scope: scope.scope})
-	if decodeErr != nil {
-		result.State = "rejected"
-		result.Reason = decodeErr.Error()
-	} else {
-		state, reason, err := authorizeEvent(ctx, tx, scope, event)
+	if isCancelRejectionEvent(raw) {
+		result.State, result.Reason, err = applyCancelRejection(ctx, tx, scope, key, id, raw)
 		if err != nil {
 			return EventReceipt{}, err
 		}
-		result.State, result.Reason = state, reason
-		if state == "applied" {
-			// The original full message ID deduplicates republished exact bytes.
-			source, _ := json.Marshal([]string{key, event.MessageID})
-			sum := sha256.Sum256(source)
-			kind := "order"
-			if event.Fill != nil {
-				kind = "fill"
-			}
-			if _, err := observeTradesTx(ctx, tx, scope.scope, []tradeObservation{{"ctp-event:" + hex.EncodeToString(sum[:]), kind, event.RawPayload}}); err != nil {
+	} else {
+		event, decodeErr := DecodeTradeEvent(raw, EventContext{Scope: scope.scope})
+		if decodeErr != nil {
+			result.State = "rejected"
+			result.Reason = decodeErr.Error()
+		} else {
+			state, reason, err := authorizeEvent(ctx, tx, scope, event)
+			if err != nil {
 				return EventReceipt{}, err
+			}
+			result.State, result.Reason = state, reason
+			if state == "applied" {
+				// The original full message ID deduplicates republished exact bytes.
+				source, _ := json.Marshal([]string{key, event.MessageID})
+				sum := sha256.Sum256(source)
+				kind := "order"
+				if event.Fill != nil {
+					kind = "fill"
+				}
+				if _, err := observeTradesTx(ctx, tx, scope.scope, []tradeObservation{{"ctp-event:" + hex.EncodeToString(sum[:]), kind, event.RawPayload}}); err != nil {
+					return EventReceipt{}, err
+				}
 			}
 		}
 	}
