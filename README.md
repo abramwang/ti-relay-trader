@@ -10,11 +10,11 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-17 22:57 Asia/Shanghai` 按用户明确指令切回production，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092生产API及独立worker运行，本机/域名production/ok。当前PID以service status为准；不得自行切回TEST |
-| 安全状态 | 生产配置6户、启用4户、trading_enabled=0，两停用户不变；本次切换skip-migrations，未开启下单或发送交易。CTP独立TEST审计和候选状态保留，旧丢失路由不重建/重放；11-18测试仍需用户切环境及新当日窗口授权 |
+| 当前环境 | `2026-11-18 12:11 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产独立worker停止。本机/域名test/ok，当前PID以service status为准；不得自行切回生产 |
+| 安全状态 | TEST华鑫00030484启用、保留原trading_enabled=true；本次只切环境，未发交易。生产4启用账户下单关闭、两停用户不变；切换skip-migrations。CTP独立审计和候选保留，不重建旧丢失路由；今日结算确认及报撤仍需新窗口授权 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
-| 最近确认 | `2026-11-17 22:57` 已按用户指令切生产并保持下单关闭，生产权威复算此前待办未手工补跑、仍需核对任务结果。OC02af39b审计修复/离线联跑及部署准备材料通过；11-18现场核查/当日授权/<=300秒窗口见`docs/OC_CTP_JOINT_EXECUTION_20261118.md`，未真实登录报撤 |
-| 更新时间 | `2026-11-17` |
+| 最近确认 | `2026-11-18 12:11` 切TEST成功，账户接口确认华鑫00030484；未发现独立日常任务进程，不据此断言今日盘前任务已完成。未手工补跑生产任务或启动CTP；今日15:01生产收盘前需用户明确切回。CTP准备见`docs/OC_CTP_JOINT_EXECUTION_20261118.md` |
+| 更新时间 | `2026-11-18` |
 
 新线程按以下顺序恢复：
 
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 12:11` **按用户指令切TEST账户**：`switch-relay-env.sh test --skip-migrations`成功，API PID698045（实时以status为准）、内嵌同步运行，生产worker停止；本机/域名test/ok，账户00030484启用且保留原交易配置。切换前未发现独立日常任务进程，生产API此前degraded未在本轮展开排查；不声称今日盘前已完成。未迁移DB、初始化CTP、确认结算、发查询/交易或自动补跑生产任务。今日生产15:01收盘前需用户明确切回，不自动定时切换；CTP沿已验准备材料另核实当日窗口。
 
 - `2026-11-17 22:57` **按用户指令切回生产**：执行`switch-relay-env.sh production --skip-migrations`成功，API PID428463、独立worker PID428058（实时以status为准）；本机和域名均production/ok，Redis/DB正常，6配置/4启用/0可交易。保留TEST/CTP审计及配置，未迁移数据库、开交易、初始化候选、登录OC或发送命令；未手工补跑此前生产权威复算，不能将切换成功当任务完成。明日CTP需用户明确切回TEST并确认新当日窗口；以下“保持TEST”为切换前历史。
 
