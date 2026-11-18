@@ -6,6 +6,24 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 13:14 准备包通过：可以进入初始化及提前登录
+
+接收 `reference/oc_ctp_scheduled_preparation_20261118T1305/`，6项SHA通过，Trader/Md两库指纹与此前已验材料一致。实际配置摘要为 `a9e65543ece26c10463fbc3f7934402596c92b361d1d3a8678b06bc1fac53c9d`；OC报告预检退出0、state空、once不存在。Relay没有访问远程私有配置，不把材料核对当作登录成功。
+
+**本轮配置已落实，不再只是建议窗口：** f79188a、scheduled单笔、无permission_profile；进程最长3600秒，业务窗口北京时间 **2026-11-18 13:30:00至13:35:00**。提前启动只登录等待，结算确认及命令仍在窗口内；两初始化查询、一手rb2701买开及该单一次撤单，硬截止不自动延长。沿用下方唯一恢复候选gateway、group及epoch，不创建额外测评身份增加额度。
+
+Relay独立现场核查：
+
+- 13:10:18完整SCAN新前缀0键、run_id前后一致且符合约定；2GiB/noeviction/AOF everysec、写状态ok。累计evicted_keys仍12326，不能将累计历史值当本次淘汰；不存在的组pending/lag为未知，不填0。这不替代共享存储重启/挂载验收。
+- 13:11:27独立PG `relay_ctp_dongwu_20261117_test` 可读，保留5笔旧查询/5次查询发布、0交易发布、0订单/成交事实；新路由命令和receiver均0，旧owner/cursor不修改。接收所需表权限已检查，不声称本轮执行了写入/重启测试。
+- 五个CLI已在上一轮构建。**程序与数据库就绪不等于接收器已运行：** 新路由尚未初始化，暂无真实hb/reply/event；待真实心跳建立新owner/cursor及会话target，不能填假session预注册，也不借旧receiver当新绑定。
+
+**给OC的执行回执：** 再次核对实际来源/空路由/旧责任后，可按已批准边界显式初始化候选epoch和两个命令组，启动scheduled提前登录；出现占用、部分初始化、来源变化或责任不清即停止，不删除重试。启动后立即回初始化结果、实际session/代次/TradingDay。请明确两查询完整原审计在窗口内交给Relay的方式及路径，不等13:35以后才整理；Relay据真实心跳接收、窗口内登记查询并核对原始结果，再执行报撤。
+
+当前没有Relay新查询或交易发布，没有更改生产、华鑫或终端观察绑定。CTP终端仍指旧PM绑定；新路由初始化并验证实际心跳后再更新观察绑定，历史记录保留。
+
+本机现场报告位于 `outputs/recovery/ctp_dongwu_scheduled_20261118/`。恢复入口为 `.runtime/ctp-dongwu-preflight-20261116.go --readonly-recovery --storage`（只读Redis）、`.runtime/ctp-scheduled-pg-preflight-20261118.go`（只读PG）。心跳采集封装 `.runtime/ctp-dongwu-capture-20261117.go --readonly-recovery` 已准备但尚未运行；它写独立PG原始收件，运行前必须核验新绑定，若已有owner须按CLI显式续读，禁止盲目接管。私有封装及报告不入Git，正式CLI和严格准入逻辑不变。
+
 ### 12:58 增量材料已验：首轮采用提前启动的单笔模式
 
 已接收 `reference/oc-ctp-day-permissions-f79188a-20261118.tar.gz`，解包至 `reference/oc_ctp_scheduled_process_20261118/`。业务版本 `f79188a7c50203897c70821ac6bb8e5878c8048d`，包括提前启动实现 `5b199cf`。
