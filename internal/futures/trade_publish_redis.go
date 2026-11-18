@@ -8,7 +8,8 @@ import (
 )
 
 // TestTradePublisher is never constructed by the public stock API or worker.
-// It publishes only an explicitly approved single TEST assessment command.
+// Each publication is one explicitly approved TEST command; day mode persists
+// independent order reservations while legacy mode retains its single budget.
 type TestTradePublisher struct {
 	base     *TestQueryPublisher
 	approval TestTradeApproval
@@ -91,13 +92,16 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 		}
 	}
 	if assessment := h.Assessment; assessment != nil {
-		if a.AssessmentID != assessment.AssessmentID || !assessment.windowOpen(now) || assessment.PermissionProfile != "" {
+		if a.AssessmentID != assessment.AssessmentID || !assessment.windowOpen(now) || assessment.PermissionProfile != a.PermissionProfile {
+			return queryPublishProof{}, ErrQueryPublishGate
+		}
+		if a.PermissionProfile == "test_day_relay.v1" && (assessment.OrderSnapshotScope != "full_native_current_session" || !assessment.NativeOrderSnapshotReady || !assessment.LocalOrdersOnly) {
 			return queryPublishProof{}, ErrQueryPublishGate
 		}
 		if assessment.ExpiresAt.Before(expires) {
 			expires = assessment.ExpiresAt
 		}
-		if a.CancelReceiptID == 0 {
+		if a.CancelReceiptID == 0 && a.PermissionProfile == "" {
 			if a.Market.SourceInstrumentID != assessment.Symbol || a.Market.ExchangeID != assessment.Exchange || assessment.Static == nil || assessment.Limits == nil || assessment.Static.MinLimitLots > 1 || assessment.Static.MaxLimitLots < 1 || !equalDecimal(string(assessment.Static.PriceTick), string(a.Market.PriceTick)) {
 				return queryPublishProof{}, ErrQueryPublishGate
 			}
@@ -114,6 +118,8 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 				expires = captured.Add(300 * time.Second)
 			}
 		}
+	} else if a.PermissionProfile != "" {
+		return queryPublishProof{}, ErrQueryPublishGate
 	}
 	return queryPublishProof{EntryID: row.EntryID, Body: row.Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
 }
@@ -131,6 +137,15 @@ func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
 		return err
 	}
 	if c.Action == "order.cancel" {
+		return nil
+	}
+	// OC day mode validates this command's contract/limits before its SDK call.
+	// A cached constraint_symbol may describe a previous command, so it must
+	// not be substituted for the current command's authoritative constraints.
+	if a.PermissionProfile == "test_day_relay.v1" {
+		if len(c.Orders) != 1 || c.Orders[0].Exchange != "SHFE" {
+			return ErrQueryPublishGate
+		}
 		return nil
 	}
 	if len(c.Orders) != 1 || a.Limits == nil || a.Static == nil {

@@ -6,6 +6,35 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 14:11 首笔真实命令已发布，OC停止后待核对执行责任
+
+新会话`ctpproc-bf780bba2df27c084c8864a4c33c83bb`，代次1/20261118，结算仅复核。Relay按当前会话新发两查询command10/11：订单标准页仍failed，完整原生快照ready；持仓completed。回复显式续收至`1794982164208-0`，owner=`1c4302f2ac0ac8795d2ebd7ce4621d4bd802e8b1f94ab1a475477275b6a5f611`，接收已退出，原始reply累计6条。
+
+14:09:31收到可报单心跳后，正式登记并发布command12：
+
+- message_id=`relay-ctp-day-20261118-01-1794982171142780504`，Stream ID=`1794982171204-0`。
+- `rb2701/SHFE`买开投机1手、限价2958，按当时Meridian买一减10 tick生成，映射/报价/命令/授权摘要已留档。
+- 14:09:41 OC发布stopping，`submit_attempts=0`、`trade_preparation_pending=true`，静态采样SDK7/14:09:33。这些心跳字段不能单独证明未调用报单SDK。
+- 14:10:42独立检查cmd.trade仅1条，pending=1/lag=0；reply6条均为查询、event=0、dlq=0；cmd.query pending=0/lag=0。没有对应交易回执、没有撤单发布，不宣称已报成或已拒单。
+
+已通知OC按此message_id核实原生约束查询、ReqOrderInsert是否调用、返回/回调、journal/outbox/ACK及停止原因。没有新证据前，不重发该命令，也不以新ID补单。现场程序已超时退出，不会后台自动重试；`day-trade-01`目录已存在，禁止盲目再次执行。证据在`outputs/recovery/ctp_dongwu_scheduled_20261118/day-trade-01/`及`initialization-ctpproc-bf780bba2df27c084c8864a4c33c83bb/`。后文“未发单”为历史状态。
+
+### 14:06 原生快照拆分及日间逐单发送完成，等待OC约束入口恢复
+
+接受OC798167d新口径：`order_snapshot_scope=full_native_current_session`，`native_order_snapshot_ready`与`order_projection_ready`独立，`local_orders_only=true`。Relay严格解析四字段组合、布尔及镜像一致性，检查/终端观察结构分别输出两种状态；原生ready不把失败标准订单页改成成功，也不发布完整标准账本。
+
+当前session `ctpproc-d5c3f0eadf37b0c11da1aa873516341c`，代次1/20261118。Relay13:57用新身份发送订单/持仓两查询，command8/9，message_id分别 `relay-dongwu-init-20261118-1794981466216194151-0`、`relay-dongwu-init-20261118-1794981468255975078-1`；订单标准页仍failed，持仓completed。其后心跳native_order_snapshot_ready=true、order_projection_ready=false、position_snapshot_ready=true，并曾接受本地报单。没有再次确认结算。
+
+两条新回复已显式续收原reply位点，累计4条pending原始审计；owner `126ebb3e4ad1b77bff5ed6fbffa8fd817e1d27af9f45c21c088a30518c02c9cb`、cursor `1794981471191-0`，接收进程已退出。首次调用无接管参数被原owner保护拒绝，仅接收失败，不影响已发布查询；随后显式续收，**没有重新发送命令**。记录`outputs/recovery/ctp_dongwu_scheduled_20261118/receive-20261118T060444.154586606Z.jsonl`。
+
+**Relay日间交易发布已升级，不再只观察：** 本地approval显式`permission_profile=test_day_relay.v1`，仅东吴TEST4900/300052141；持久额度按同一assessment内每个原始gateway订单/交易日区分，不更换assessment，不删除旧单笔唯一约束。撤单必须定位对应原报单及同会话真实可撤事件，不取最后一笔报单；逐命令attempted/unknown和重放不重发保持。串行锁禁止同assessment混用旧单笔/day权限，旧单笔行为不变。当前支持连续多笔一手买开限价及对应撤单，不声称任意开平/批量/生产交易已上线。
+
+day模式的每笔原生合约/价格约束由OC在SDK调用前检查，Relay不把上一合约或过期native_limits套到新单；发送仍核验新鲜心跳、原生快照、窗口/身份/来源，以及新鲜Meridian映射/盘口和合法限价。本地精确命令摘要授权由本次用户整体测试授权生成，不再逐笔询问用户。任意成交、未知执行或拒撤停止该轮，不自动平仓或补单。
+
+验证：全Go、专项vet通过；临时独立PG/race覆盖两不同订单同assessment发布、重放一次、撤第一笔而非最后一笔、原单笔预算/并发/未知结果及错目标拒绝。CLI已构建，无业务迁移/9092重启或生产更改。现场封装`.runtime/ctp-day-trade-20261118.go`已构建，使用实时Meridian并仅针对当前session；**尚未运行发单**。它要求新event接收位点，若已有位点须显式续读，不能盲目再次执行。
+
+14:03/14:05最新阻塞是OC `instrument_expired`：静态约束仍13:56:26 SDK4，5分钟后关闭accepting_trade_commands。已要求OC在现进程刷新或解除“接收后刷新却因过期拒绝接收”的死锁，不重做结算。无ready心跳不发单；截至本记录实际交易发布仍0。后文“day模式交易发送未实现”为此更新前历史。
+
 ### 13:48 两初始化查询已实际执行，暴露订单关联耦合
 
 OC定位原生合约错误：请求`rb2701/SHFE`后柜台先返目标合约，随后附带`rb2701C4350/SHFE`期权，旧驱动把附带行当身份冲突而提前结束。OC正在改为保留原文、等真实末页后仅应用精确匹配的目标合约。该根因为OC报告，Relay未收到原生请求/结果审计；不把其他行投影为目标合约，精确目标缺失/矛盾重复仍不能成功应用。

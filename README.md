@@ -26,6 +26,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 14:11` **CTP首笔报单已发布，未决，不可重报**：新session `ctpproc-bf780bba2df27c084c8864a4c33c83bb`完成当前两查询后，14:09:31发布command12，message_id=`relay-ctp-day-20261118-01-1794982171142780504`，Stream ID=`1794982171204-0`，rb2701买开1手2958。14:09:41 OC stopping；14:10:42命令pending=1、无交易回执/event，无撤单。已请OC核实是否进入ReqOrderInsert及退出原因，禁止自动重发/换ID补单，不按submit_attempts=0推定未执行。脚本已超时退出，`day-trade-01`目录留证、不可盲目再跑。day逐单实现及测试已完成，最新初始化/接收位点与现场证据见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。未重做结算、未改生产或重启9092。
+
+- `2026-11-18 14:06` **CTP原生快照分离、日间逐单发布已实现**：当前session `ctpproc-d5c3f0eadf37b0c11da1aa873516341c`（1/20261118），新订单/持仓查询command8/9已发，标准订单失败保留但native ready、持仓成功；两回复显式续收，owner/cursor见`receive-20261118T060444.154586606Z.jsonl`。day approval/逐订单持久额度、具体父单撤单、旧模式混用拒绝接通，全Go/vet/临时PG race通过，CLI已构建；不再逐笔询问用户。当前只支持连续一手买开限价及对应撤单，非全部期货动作。**尚未实际发单**：OC合约缓存13:56:26采样已过期，14:05报instrument_expired并关报单；已请OC修复刷新死锁，不能绕过ready。现场封装`.runtime/ctp-day-trade-20261118.go`仅适用当前session且须新event receiver，已构建未执行；见[当前执行单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。无结算重确认/生产变更/9092重启。
+
 - `2026-11-18 13:48` **已执行CTP两初始化查询**：常驻session `ctpproc-0338e2357dca25664bef86f9797770a2`、代次1/20261118、登录/结算true。command6订单查询failed `order_association_pending`（raw_completed=true），command7持仓completed14行/完整末页；两回复原文已入独立PG、业务审核待OC原审计，无报撤。已把外部订单关联阻断本地准入反馈OC，要求拆分而非伪造快照。OC另定位rb2701查询附带期权行被误判冲突，正改精确匹配/末页后应用；不将其记为合约不支持。命令/回复/续读位点在`outputs/recovery/ctp_dongwu_scheduled_20261118/initialization-ctpproc-0338e2357dca25664bef86f9797770a2/`；不重发已发查询/结算，详见[最新执行记录](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
 
 - `2026-11-18 13:40` **CTP真实结算已确认，接通day profile初始化查询**：新session `ctpproc-1a883ba7568fa47b9dddb146b421f419`在13:38:23心跳登录/结算true，22deferred/0blocking，随后合约identity_mismatch退出（根因待OC）；两命令流0。OC报告匹配结算成功回调，不能重复确认。day profile实际至15:00已获用户授权，Relay查询发布已适配/CLI构建，futures及query CLI测试通过；交易发布仍拒绝day profile，多笔升级待办。4条新心跳续收入独立PG累计7条，owner/cursor见`heartbeat-capture-20261118T054003Z.jsonl`，接收已退出。等OC修复后新会话，不再要大材料；无新查询/交易或生产修改，见[当前执行单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。

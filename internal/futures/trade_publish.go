@@ -13,13 +13,15 @@ import (
 )
 
 // TestTradeApproval is local operator evidence, not an extension of OC wire.
-// One assessment reserves at most one submit and one cancel, including unknowns.
+// Legacy assessments reserve one submit/cancel; explicit day mode reserves each
+// original order independently. Both retain unknown attempts without resending.
 type TestTradeApproval struct {
-	AssessmentID    string           `json:"assessment_id"`
-	CommandSHA256   string           `json:"command_sha256"`
-	ExpiresAt       string           `json:"expires_at"`
-	CancelReceiptID int64            `json:"cancel_receipt_id"`
-	Market          *TestTradeMarket `json:"market"`
+	PermissionProfile string           `json:"permission_profile,omitempty"`
+	AssessmentID      string           `json:"assessment_id"`
+	CommandSHA256     string           `json:"command_sha256"`
+	ExpiresAt         string           `json:"expires_at"`
+	CancelReceiptID   int64            `json:"cancel_receipt_id"`
+	Market            *TestTradeMarket `json:"market"`
 }
 
 type TestTradeMarket struct {
@@ -45,7 +47,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	if _, err := parseReply(raw); err != nil {
 		return a, err
 	}
-	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, nil)
+	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile"})
 	if err != nil {
 		return a, err
 	}
@@ -62,6 +64,9 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	d.DisallowUnknownFields()
 	if err := d.Decode(&a); err != nil {
 		return a, err
+	}
+	if p, present := fields["permission_profile"]; present && (!bytes.Equal(p, []byte(`"test_day_relay.v1"`)) || a.PermissionProfile != "test_day_relay.v1") {
+		return a, ErrStreamIdentity
 	}
 	if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || len(a.CommandSHA256) != 64 || strings.Trim(a.CommandSHA256, "0123456789abcdef") != "" || !validTime(a.ExpiresAt) || a.CancelReceiptID < 0 {
 		return a, ErrStreamIdentity
@@ -87,6 +92,9 @@ func ValidateTestTradePreparation(raw []byte, scope CommandScope, target TestQue
 
 func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTradeApproval) error {
 	if c.Scope.Route.Env != "test" || commandDigest(c.Original.Raw) != a.CommandSHA256 {
+		return ErrStreamIdentity
+	}
+	if a.PermissionProfile != "" && (c.Scope.Route.BrokerID != "ctp_4900" || c.Scope.Route.AccountID != "300052141" || c.Scope.NativeBrokerID != "4900" || c.Scope.InvestorID != "300052141" || c.Scope.UserID != "300052141") {
 		return ErrStreamIdentity
 	}
 	if c.Original.Action == "order.cancel" {
@@ -153,12 +161,41 @@ func (s *CommandStore) publishTestTrade(ctx context.Context, scope CommandScope,
 	assessment := string(framed("ctp.test.assessment.v1/", string(commandRouteBytes(scope.Route)), a.AssessmentID))
 	check := func(c CommandRegistration) error { return validateTestTrade(c, target, a) }
 	insert := func(ctx context.Context, tx *sql.Tx, c CommandRegistration, binding, proof []byte) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, assessment); err != nil {
+			return err
+		}
+		var mixed bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_test_trade_publications p JOIN futures_commands c USING(command_id) WHERE c.route_key=$1 AND p.target_json->'approval'->>'assessment_id'=$2 AND COALESCE(p.target_json->'approval'->>'permission_profile','')<>$3)`, string(commandRouteBytes(scope.Route)), a.AssessmentID, a.PermissionProfile).Scan(&mixed); err != nil {
+			return err
+		}
+		if mixed {
+			return ErrStreamIdentity
+		}
+		key := assessment
+		if a.PermissionProfile == "test_day_relay.v1" {
+			// Day mode reserves per original order, not per process. Existing
+			// command idempotency and unknown-attempt records remain unchanged.
+			var legacy bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_test_trade_publications WHERE assessment_key=$1)`, assessment).Scan(&legacy); err != nil {
+				return err
+			}
+			if legacy {
+				return ErrStreamIdentity
+			}
+			gateway, day := "", ""
+			if c.Original.Cancel != nil {
+				gateway, day = c.Original.Cancel.GatewayOrderID, c.Original.Cancel.TradeDate
+			} else {
+				gateway, day = c.Original.Orders[0].GatewayOrderID, c.Original.Orders[0].TradeDate
+			}
+			key = string(framed("ctp.test.day-order.v1/", string(commandRouteBytes(scope.Route)), a.AssessmentID, day, gateway))
+		}
 		if c.Original.Action == "order.cancel" {
-			if err := verifyAssessmentCancel(ctx, tx, assessment, c, target, a); err != nil {
+			if err := verifyAssessmentCancel(ctx, tx, key, c, target, a); err != nil {
 				return err
 			}
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO futures_test_trade_publications(command_id,assessment_key,action,target_json,proof_json,state) VALUES($1,$2,$3,$4,$5,'attempted')`, c.CommandID, assessment, c.Original.Action, binding, proof)
+		_, err := tx.ExecContext(ctx, `INSERT INTO futures_test_trade_publications(command_id,assessment_key,action,target_json,proof_json,state) VALUES($1,$2,$3,$4,$5,'attempted')`, c.CommandID, key, c.Original.Action, binding, proof)
 		return err
 	}
 	return s.publishTestRegistered(ctx, scope, id, messageID, target, transport, "futures_test_trade_publications", binding, check, insert)

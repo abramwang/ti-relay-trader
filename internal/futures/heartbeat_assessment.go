@@ -26,6 +26,8 @@ type HeartbeatAssessment struct {
 	Lifecycle                                                                                     *AssessmentLifecycle
 	PermissionProfile, ConstraintSymbol                                                           string
 	TradePreparationPending, TradeResponsePending                                                 bool
+	OrderSnapshotScope                                                                            string
+	NativeOrderSnapshotReady, OrderProjectionReady, LocalOrdersOnly                               bool
 }
 type AssessmentStatic struct {
 	PriceTick      Price  `json:"price_tick"`
@@ -66,6 +68,27 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 	a.ExpiresAt, _ = time.Parse(time.RFC3339Nano, textField(raw, "expires_at"))
 	if err := a.decodeLifecycle(raw, h, route); err != nil {
 		return bad()
+	}
+	if _, present := raw["order_snapshot_scope"]; present {
+		a.OrderSnapshotScope = textField(raw, "order_snapshot_scope")
+		if a.PermissionProfile != "test_day_relay.v1" || a.OrderSnapshotScope != "full_native_current_session" {
+			return bad()
+		}
+		for key, dst := range map[string]*bool{"native_order_snapshot_ready": &a.NativeOrderSnapshotReady, "order_projection_ready": &a.OrderProjectionReady, "local_orders_only": &a.LocalOrdersOnly} {
+			if !literal(raw[key], "true") && !literal(raw[key], "false") {
+				return bad()
+			}
+			*dst = literal(raw[key], "true")
+		}
+		if !a.LocalOrdersOnly || a.NativeOrderSnapshotReady != h.OrderSnapshotReady || (a.OrderProjectionReady && !a.NativeOrderSnapshotReady) {
+			return bad()
+		}
+	} else {
+		for _, key := range []string{"native_order_snapshot_ready", "order_projection_ready", "local_orders_only"} {
+			if _, present := raw[key]; present {
+				return bad()
+			}
+		}
 	}
 	for key, dst := range map[string]*bool{"asset_scope_verified": &a.AssetScopeVerified, "position_snapshot_ready": &a.PositionSnapshotReady, "instrument_usable": &a.InstrumentUsable, "order_ref_ready": &a.OrderRefReady, "native_limits_fresh": &a.NativeLimitsFresh} {
 		if !literal(raw[key], "true") && !literal(raw[key], "false") {

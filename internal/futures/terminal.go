@@ -243,6 +243,10 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		view.RuntimeMode = "test_broker_read_only"
 	} else if h.Assessment != nil {
 		view.ProcessLifecycle, view.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
+		if h.Assessment.OrderSnapshotScope != "" {
+			view.OrderSnapshotScope = h.Assessment.OrderSnapshotScope
+			view.NativeOrderSnapshotReady, view.OrderProjectionReady = &h.Assessment.NativeOrderSnapshotReady, &h.Assessment.OrderProjectionReady
+		}
 		g, ready := h.queryCollection()
 		view.AssessmentLegacySource = h.Assessment.LegacySource
 		view.ConnectionGeneration, view.QueryCollectionReady = g, &ready
