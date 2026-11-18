@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18` **复核OC常驻配置说明**：接受进程常驻、尾包、固定状态及普通失败继续；仍含OC授权profile/午休到期关报撤/assessment_trade_window_closed，未落实单一授权。已在[同一执行清单](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本次常驻配置说明的复核)列出移除项，并区分命令有效期、柜台能力及资源容量。下一步OC改现有运行路径并给最小配置/心跳差异，Relay同步去旧依赖；不再等大材料包。本轮仅文档，无运行权限/环境变化。
+
 - `2026-11-18` **用户确认交易授权只由Relay控制**：OC应移除独立测评时段/profile/报撤笔数授权，心跳只报真实执行可用性；账户/环境、幂等、流控、命令有效期及未知不重发保留。当前代码仍检查旧OC测评窗口与预算，尚未移除或部署，不忽略旧false、不开放新交易。下一步双方同步精简，Relay统一各发送入口权限；见[给OC的同一执行清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#交易授权唯一归属relay)。本轮仅更新职责/路线图，环境和运行权限未变。
 
 - `2026-11-18` **TEST常驻原文收件入口完成**：`relay-ctp-replies --capture --follow`支持reply/event独立许可、最长24小时、空闲继续和尾包保存；显式owner/cursor续读，来源/epoch/组及位点原文改变停收，取消/到期报告最终PG位点，不自动ACK/入账或放开交易。隔离Redis/PG回归及统一离线脚本已补；未部署/迁移在线库/发柜台命令，仍TEST。下一步持续业务分发、实际事实查询与价格准入、拒撤展示及人工新尝试预算；单次review/业务consumer仍限5分钟，不能与follow并行夺同流owner。见[协调清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#relay常驻原文收件进展)，OC无需新协议回签。

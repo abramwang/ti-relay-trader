@@ -49,6 +49,7 @@
 ### F0-F6 CTP 期货接入
 
 - [x] 明确交易授权唯一归属Relay：OC执行就绪与业务授权分离，不再以独立测评窗口/profile/报撤预算作为目标架构；保留环境账户校验、幂等、流控、过期命令拒绝及未知不重发。见[职责收敛顶部](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#交易授权唯一归属relay)。
+- [x] 复核后续《CTP TEST 常驻配置》：常驻/原文/局部失败处理可保留，但profile、OC自有时段及assessment_trade_window_closed仍与单一授权冲突；已列直接修改项，资源容量不混同交易预算。仅文字复核，不代表代码或部署通过。
 - [ ] 取消OC重复交易授权并同步Relay旧测评心跳依赖：OC精简现有主程序，Relay统一API/SDK/终端/CLI权限与发送准入，验证关闭新单零发布、撤单独立、普通拒绝继续服务；未联合更新前不忽略旧OC拒绝状态，不视为已开放交易。
 
 - [x] 审阅OC职责收敛增量3aaccfa：接受独立instrument.constraints.query/instrument_constraints候选及静态/动态非原子事实结构，OC可直接接现有调度；明确离线/未部署边界，不再重复模拟柜台核查。见[本轮接收结论](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本轮增量接收与直接执行结论)。
