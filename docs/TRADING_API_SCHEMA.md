@@ -57,11 +57,11 @@ HTTP202只表示已取得持久登记身份，返回原始order、idempotency_ke
 
 运行配置分两层：`futures_terminal.execution_enabled`默认false；期货专用manifest账户可选`execution`包含`submit_enabled`、`cancel_enabled`（缺省false）、带时区的`authorization_expires_at`、既有`command_group`。这些均由服务端运维配置，不从心跳取得授权、不由请求覆盖。必须已有独立、名称以`_test`结尾的数据库且`current_database()`与ExpectedName一致；不自动建库/迁移/初始化Redis。启用仍需独立收件及可用撤单路径，不因编排已完成直接开放终端。
 
-全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；终端仍保持只读预检/禁发。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单编排见下一节，原生事实HTTP分流、动态停止、持续回报与终端按钮联动仍待后续接入，OC无需修改wire。
+全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；线上终端保持禁发，新增按钮接线见下方终端小节。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单编排见下一节，原生事实HTTP分流、动态停止及持续消费服务部署仍待后续接入，OC无需修改wire。
 
 ### 期货TEST撤单编排（源码新增，默认关闭）
 
-`POST /v1/futures/cancels`复用上述服务、独立TEST库及原撤单发布器；新增只读`GET /v1/futures/cancel-command`。未部署、未开放终端按钮、未发布wheel，生产环境503；不改股票撤单或OC协议。
+`POST /v1/futures/cancels`复用上述服务、独立TEST库及原撤单发布器；新增只读`GET /v1/futures/cancel-command`。未部署、未开放线上终端权限、未发布wheel，生产环境503；不改股票撤单或OC协议。
 
 ```json
 {"idempotency_key":"strategy-run-1-cancel-1","account_id":"300052141","gateway_order_id":"原始报单返回的gateway_order_id","trade_date":"20261119"}
@@ -76,6 +76,20 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 - 新登记方最多发布一次，重复请求只读取原记录，不重取心跳/行情、不另造cancel_id、不重发。授权到期或账户撤单关闭后，同键仍能读取原责任（全局POST关闭则使用GET）。发送前新到终态导致只登记未发送时，也保留原记录，不在重试时恢复发送。
 
 202返回原请求、稳定`message_id/cancel_id`及publication；状态表沿用上一节，`broker_state_known=false/retry_safe=false`，published不等于cancelled。GET参数为`account_id`和撤单的`idempotency_key`，只读原登记/发布状态，不能用它替代订单终态。SDK新增`cancel_futures_order`、`get_futures_cancel_command`，均只请求一次，不自动重试或轮询。
+
+### 期货TEST终端报撤联动（源码新增，待部署）
+
+终端复用上述两个POST及两个命令状态GET，股票表单不会接收期货委托。当前仍只支持Meridian来源、SHFE买开投机1手的TEST报单；撤单继承上一节边界。界面接线不等于启用，线上配置与服务未替换；东吴测评不同源报价不能直接用本页实盘价格测试，仍走显式原生CLI。
+
+`GET /v1/futures/terminal`继续只读查询及本地订单回报，增加账户`execution`显示对象。只有TEST、发送总开关、已构建执行服务均满足时才返回该对象；生产不读取TEST账户。`submit_authorized/cancel_authorized`表示Relay配置及授权期限，`submit_enabled/cancel_enabled`还要求当前源绑定、心跳/恢复/结算/原生快照和TEST日间时段。`valid_until`不晚于心跳产生后5秒、授权截止和时段结束；`trade_date`来自柜台，不从浏览器自然日推导。`price_source=meridian_futures_snapshot.v1`。这些仅用于按钮显示，不能作为可复用许可或替代发布前校验；资产scope仍未升级为已验证。
+
+新版Relay-owned execution心跳使用`connection_state=execution`，不再因旧assessment截止字段为空误判未就绪；保持零时长常驻、容量及锁存字段，不把心跳存活当交易授权。顶层`mode`在任一动作当前可用时为`test_execution`，否则仍为`query_observation_only`，顶层及账户报撤布尔均以服务端结果为准。预检继续不发送且`can_submit=false`，已接执行服务时权限说明改取同一manifest，不再沿股票账户配置产生矛盾提示。
+
+网页报撤均需明确点击并确认账户、合约和数量/原单。请求前生成随机显式key并写入本标签页sessionStorage，写入失败不发请求；服务端PG仍是命令责任的权威持久记录，浏览器不是账本。按TEST route+账户隔离本页记录，上限100条，不自动删除未知记录。刷新后保留原key；关闭标签页、清浏览器存储或换设备不承诺恢复本页列表，后台跨浏览器命令列表仍待接入，不应据空列表推断无在途命令。
+
+发布状态与原委托的真实回报分别展示，published不改成accepted/cancelled。未知/注册未发及尚未观察到原委托的报单阻止本页再报；“核对状态”仅GET原key，404/网络错误不自动重新POST、换key或认定未执行。异步返回只更新原账户/route记录。撤单按钮只对当前会话本地回报开放，不从历史查询页假造本地单。查询表仍沿5秒只读刷新，使用既有持久event观察，不是新增交易SSE或独立消费守护服务。
+
+价格原文本保留；HTML步长基准改为0，避免默认股价9.67使整数tick的期货价无法提交。行情/接收时间按Asia/Shanghai转换，不把UTC原文截取后标成东八区；无时区值不猜时区。本轮浏览器验收全部API被拦截，未访问真实柜台或业务Redis。
 
 ### 期货只读报价准备（源码新增，待部署）
 

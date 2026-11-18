@@ -9,7 +9,44 @@ import (
 	"ti-relay-trader/internal/config"
 	"ti-relay-trader/internal/futures"
 	"ti-relay-trader/internal/redisstream"
+	"time"
 )
+
+type terminalPolicyStub struct{ futuresExecutionStub }
+
+func (s *terminalPolicyStub) TerminalExecution(futures.TerminalAccount, time.Time) futures.TerminalExecutionView {
+	return futures.TerminalExecutionView{SubmitAuthorized: true, CancelAuthorized: true, SubmitEnabled: true, CancelEnabled: true, ValidUntil: time.Now().Add(time.Second)}
+}
+
+func TestTerminalExecutionRequiresGlobalAndService(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		for _, available := range []bool{false, true} {
+			cfg := config.Default()
+			cfg.Service.Environment = config.EnvironmentTest
+			cfg.FuturesTerminal.ExecutionEnabled = enabled
+			deps := Dependencies{FuturesTerminal: &terminalStub{}}
+			if available {
+				deps.FuturesOrders = &terminalPolicyStub{}
+			}
+			w := httptest.NewRecorder()
+			NewWithDependencies(cfg, nil, deps).ServeHTTP(w, httptest.NewRequest("GET", "/v1/futures/terminal", nil))
+			var response struct {
+				Data struct {
+					Accounts       []futures.TerminalAccount `json:"accounts"`
+					TradingEnabled bool                      `json:"trading_enabled"`
+					CancelEnabled  bool                      `json:"cancel_enabled"`
+				}
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			want := enabled && available
+			if w.Code != 200 || len(response.Data.Accounts) != 1 || response.Data.TradingEnabled != want || response.Data.CancelEnabled != want || response.Data.Accounts[0].TradingEnabled != want || (response.Data.Accounts[0].Execution != nil) != want {
+				t.Fatal(w.Body.String())
+			}
+		}
+	}
+}
 
 type terminalStub struct{ calls int }
 

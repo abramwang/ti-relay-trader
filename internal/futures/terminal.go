@@ -53,18 +53,19 @@ type TerminalReader struct {
 }
 
 type TerminalAccount struct {
-	AccountID       string               `json:"account_id"`
-	Alias           string               `json:"alias"`
-	Route           QueryRoute           `json:"route"`
-	TradingEnabled  bool                 `json:"trading_enabled"`
-	CancelEnabled   bool                 `json:"cancel_enabled"`
-	Heartbeat       *AdvertisedHeartbeat `json:"heartbeat"`
-	ConnectionState string               `json:"connection_state"`
-	ConnectionError string               `json:"connection_error,omitempty"`
-	Queries         []TerminalQuery      `json:"queries"`
-	LedgerError     string               `json:"ledger_error,omitempty"`
-	LocalOrders     []OrderRow           `json:"local_orders"`
-	LocalOrderError string               `json:"local_order_error,omitempty"`
+	AccountID       string                 `json:"account_id"`
+	Alias           string                 `json:"alias"`
+	Route           QueryRoute             `json:"route"`
+	TradingEnabled  bool                   `json:"trading_enabled"`
+	CancelEnabled   bool                   `json:"cancel_enabled"`
+	Heartbeat       *AdvertisedHeartbeat   `json:"heartbeat"`
+	ConnectionState string                 `json:"connection_state"`
+	ConnectionError string                 `json:"connection_error,omitempty"`
+	Queries         []TerminalQuery        `json:"queries"`
+	LedgerError     string                 `json:"ledger_error,omitempty"`
+	LocalOrders     []OrderRow             `json:"local_orders"`
+	LocalOrderError string                 `json:"local_order_error,omitempty"`
+	Execution       *TerminalExecutionView `json:"execution,omitempty"`
 }
 
 type TerminalQuery struct {
@@ -245,8 +246,11 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 			state = l.Phase
 		}
 		_, ready := h.queryCollection()
-		if ready && time.Now().Before(h.Assessment.ExpiresAt) {
+		if ready && (h.Assessment.relayExecution() || time.Now().Before(h.Assessment.ExpiresAt)) {
 			state = "assessment"
+			if h.Assessment.relayExecution() {
+				state = "execution"
+			}
 		}
 	}
 	var day *string
@@ -262,6 +266,11 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		view.RuntimeMode = "test_broker_read_only"
 	} else if h.Assessment != nil {
 		view.ProcessLifecycle, view.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
+		view.AuthorizationOwner = h.Assessment.AuthorizationOwner
+		if h.Assessment.relayExecution() {
+			view.ResidentDurationSeconds = &h.Assessment.ResidentDurationSeconds
+			view.ResourceUsage, view.RuntimeBlockedReason = h.Assessment.ResourceUsage, h.Assessment.RuntimeBlockedReason
+		}
 		if h.Assessment.OrderSnapshotScope != "" {
 			view.OrderSnapshotScope = h.Assessment.OrderSnapshotScope
 			view.NativeOrderSnapshotReady, view.OrderProjectionReady = &h.Assessment.NativeOrderSnapshotReady, &h.Assessment.OrderProjectionReady

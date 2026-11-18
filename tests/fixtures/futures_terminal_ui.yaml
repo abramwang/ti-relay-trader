@@ -1,0 +1,9 @@
+service:
+  mode: docs
+  environment: test
+  public_url: http://127.0.0.1:19194
+worker:
+  embedded_ledger_sync: false
+market:
+  base_url: http://127.0.0.1:1
+accounts: []

@@ -29,7 +29,7 @@ func (s *previewAccountReader) Heartbeats(context.Context) []futures.TerminalAcc
 }
 
 func TestFuturesOrderPreview(t *testing.T) {
-	for _, scenario := range []string{"ready", "account_read_only", "route_mismatch", "broker_offline", "stale_heartbeat", "day_mismatch", "epoch_missing", "stopped", "latched", "unknown_account", "duplicate_account", "production", "off_tick", "above_limit", "outside_scope", "injection", "query_override", "quote_stale", "get"} {
+	for _, scenario := range []string{"ready", "account_read_only", "execution_manifest", "execution_disabled", "route_mismatch", "broker_offline", "stale_heartbeat", "day_mismatch", "epoch_missing", "stopped", "latched", "unknown_account", "duplicate_account", "production", "off_tick", "above_limit", "outside_scope", "injection", "query_override", "quote_stale", "get"} {
 		t.Run(scenario, func(t *testing.T) {
 			catalog, err := os.ReadFile("../../testdata/fixtures/meridian_futures_catalog.synthetic.json")
 			if err != nil {
@@ -129,7 +129,13 @@ func TestFuturesOrderPreview(t *testing.T) {
 				method = "GET"
 			}
 			w := httptest.NewRecorder()
-			handler := NewWithDependencies(cfg, nil, Dependencies{FuturesTerminal: stub})
+			deps := Dependencies{FuturesTerminal: stub}
+			if scenario == "execution_manifest" || scenario == "execution_disabled" {
+				cfg.Accounts = nil
+				cfg.FuturesTerminal.ExecutionEnabled = scenario == "execution_manifest"
+				deps.FuturesOrders = &terminalPolicyStub{}
+			}
+			handler := NewWithDependencies(cfg, nil, deps)
 			handler.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
 			want := 200
 			switch scenario {
@@ -161,10 +167,10 @@ func TestFuturesOrderPreview(t *testing.T) {
 				t.Fatal(err)
 			}
 			v := response.Data
-			if v.CanSubmit || v.CommandPublished || v.Quote.BusinessAuthorized || !slices.Contains(v.Blockers, "publication_not_connected") || calls != 2 {
+			if v.CanSubmit || v.CommandPublished || v.Quote.BusinessAuthorized || slices.Contains(v.Blockers, "publication_not_connected") != (scenario != "execution_manifest") || calls != 2 {
 				t.Fatal(w.Body.String())
 			}
-			wantPermission := scenario != "account_read_only" && scenario != "route_mismatch"
+			wantPermission := scenario != "account_read_only" && scenario != "route_mismatch" && scenario != "execution_disabled"
 			wantBroker := !slices.Contains([]string{"broker_offline", "stale_heartbeat", "day_mismatch", "epoch_missing", "stopped", "latched"}, scenario)
 			if v.AccountPermissionEnabled != wantPermission || v.BrokerAcceptingSubmit != wantBroker || v.PriceValid != (scenario != "off_tick") {
 				t.Fatal(w.Body.String())

@@ -85,7 +85,7 @@ func TestTradeTerminalDoesNotOverrideAssetWithIncompletePositionValuation(t *tes
 	}
 }
 
-func TestTradeTerminalSupportsFuturesMarketDataWithoutEnablingTrading(t *testing.T) {
+func TestTradeTerminalFuturesUsesSeparatePermissionGuard(t *testing.T) {
 	script, err := portalAssets.ReadFile("web/static/trade-terminal.js")
 	if err != nil {
 		t.Fatalf("read trade terminal script: %v", err)
@@ -97,8 +97,8 @@ func TestTradeTerminalSupportsFuturesMarketDataWithoutEnablingTrading(t *testing
 		`/v1/meridian/futures/snapshots?`,
 		`/v1/meridian/futures/bars?`,
 		`/v1/meridian/stream/futures/snapshots?`,
-		`期货交易路由尚未接通，不发送委托`,
-		`期货交易未开放，未发送下单请求`,
+		`els.submitOrderButton.disabled = !eligibility?.enabled`,
+		`window.RelayFuturesExecution.submit(futuresPreviewIntent())`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("trade terminal is missing futures market-data guard %q", required)

@@ -76,6 +76,10 @@ func (s *Server) handleFuturesOrderPreview(w http.ResponseWriter, r *http.Reques
 			result.AccountPermissionEnabled = a.Enabled && a.TradingEnabled
 		}
 	}
+	if policy, ok := s.futuresOrders.(futuresTerminalExecution); ok && s.cfg.FuturesTerminal.ExecutionEnabled {
+		result.AccountPermissionEnabled = policy.TerminalExecution(*account, time.Now()).SubmitAuthorized
+		result.Blockers = []string{}
+	}
 	if !result.AccountPermissionEnabled {
 		result.Blockers = append(result.Blockers, "relay_account_read_only")
 	}

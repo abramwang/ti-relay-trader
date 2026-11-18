@@ -7,7 +7,7 @@
   const size = 20;
   const names = {"account.asset.query":"资金", "account.positions.query":"持仓", "order.list.query":"委托", "fill.list.query":"成交"};
   const states = {not_queried:"尚未查询", publication_unknown:"查询发送结果未知", not_published:"查询未发出", awaiting_reply:"等待回复", pending_review:"回复已收 · 待独立核验", collecting:"分页未完整", failed:"查询失败", invalid:"证据校验失败", ready:"历史查询已核验"};
-  const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中 · 本页只读", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪", waiting:"等待交易窗口", expired:"授权窗口已结束"};
+  const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中", execution:"柜台在线 · Relay 授权", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪", waiting:"等待交易窗口", expired:"授权窗口已结束"};
   const text = (v) => v === null || v === undefined || v === "" ? "--" : String(v);
   const date = (v) => !v || !Number.isFinite(Date.parse(v)) ? "--" : new Date(v).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai", hour12:false});
   const escape = (v) => text(v).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -34,12 +34,15 @@
   }
   function render() {
     const a=accounts.find(a=>a.account_id===selected);
+    window.RelayFuturesExecution?.update(accounts,selected,loadError);
     const q=a && a.queries.find(q=>q.action===action);
     const hb=a && a.heartbeat;
     el("futuresAccountTitle").textContent=a?`${a.alias || a.account_id} · ${a.account_id}`:"期货账户";
     el("futuresConnection").textContent=loadError?"页面读取失败":a?(connections[a.connection_state] || a.connection_state):"未配置期货账户";
     el("futuresHeartbeatTime").textContent=`心跳：${date(hb && hb.produced_at)}（东八区）`;
     el("futuresRouteIdentity").textContent=a?`${a.route.broker_id} / ${a.route.gateway_id}${a.connection_error?" · "+a.connection_error:""}`:"";
+    const fresh=a?.execution && Date.parse(a.execution.valid_until)>Date.now() && !loadError;
+    el("futuresExecutionPermission").textContent=`TEST 报单：${fresh && a.execution.submit_enabled?"已授权":"关闭"} · 撤单：${fresh && a.execution.cancel_enabled?"已授权":"关闭"}`;
     for (const b of el("futuresQueryTabs").querySelectorAll("button")) {
       const query=a && a.queries.find(q=>q.action===b.dataset.futuresQuery);
       b.setAttribute("aria-selected", String(b.dataset.futuresQuery===action));
@@ -47,15 +50,22 @@
     }
     const status=el("futuresQueryStatus");
     status.dataset.failed=String(Boolean(loadError || a && a.ledger_error || q && ["failed","invalid"].includes(q.state)));
-    status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || !["read_only","assessment"].includes(a.connection_state))?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
+    status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || !["read_only","assessment","execution"].includes(a.connection_state))?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
     if(action==="order.list.query" && a && a.local_orders?.length)status.textContent += ` · 本地委托回报 ${a.local_orders.length} 笔`;
     if(action==="order.list.query" && a && a.local_order_error)status.textContent += ` · ${a.local_order_error}`;
-    const data=loadError || a && a.ledger_error?{columns:[],rows:[]}:tableData(orderObservation(a,q));
+    const observation=orderObservation(a,q);
+    const data=loadError || a && a.ledger_error?{columns:[],rows:[]}:tableData(observation);
+    if(action==="order.list.query" && data.columns.length){
+      data.columns.push("操作");
+      data.rows.forEach((row,i)=>{row.cancelTarget=observation.orders[i];row.push(cell(""));});
+    }
     data.rows.sort((a,b)=>{const x=a[sort]?.raw,y=b[sort]?.raw; const numeric=/^-?\d+(\.\d+)?$/;const delta=numeric.test(text(x)) && numeric.test(text(y))?Number(x)-Number(y):text(x).localeCompare(text(y),"zh-CN",{numeric:true});return ascending?delta:-delta;});
     const pages=Math.max(1,Math.ceil(data.rows.length/size));page=Math.min(page,pages-1);
     el("futuresQueryTable").querySelector("thead").innerHTML=`<tr>${data.columns.map((c,i)=>`<th><button type="button" data-sort="${i}" title="排序">${escape(c)}${i===sort?(ascending?" ↑":" ↓"):""}</button></th>`).join("")}</tr>`;
     const empty=q && q.reviewed && q.state==="ready"?"完整查询：0 条记录":"暂无可展示的有效数据";
-    el("futuresQueryTable").querySelector("tbody").innerHTML=data.rows.slice(page*size,(page+1)*size).map(row=>`<tr>${row.map(c=>`<td title="${escape(c.raw)}">${escape(c.display)}</td>`).join("")}</tr>`).join("")||`<tr><td class="empty-state" colspan="${data.columns.length||1}">${empty}</td></tr>`;
+    const visible=data.rows.slice(page*size,(page+1)*size);
+    el("futuresQueryTable").querySelector("tbody").innerHTML=visible.map((row,i)=>`<tr>${row.map((c,j)=>row.cancelTarget && j===row.length-1?`<td><button type="button" data-futures-cancel="${i}" ${window.RelayFuturesExecution?.canCancel(row.cancelTarget)?"":"disabled"} title="撤销本地 TEST 委托">撤单</button></td>`:`<td title="${escape(c.raw)}">${escape(c.display)}</td>`).join("")}</tr>`).join("")||`<tr><td class="empty-state" colspan="${data.columns.length||1}">${empty}</td></tr>`;
+    for(const button of el("futuresQueryTable").querySelectorAll("button[data-futures-cancel]"))button.addEventListener("click",()=>window.RelayFuturesExecution?.cancel(visible[Number(button.dataset.futuresCancel)].cancelTarget));
     el("futuresQueryCount").textContent=data.rows.length?`${data.rows.length} 条 · 每页 ${size} 条`:q && q.row_count===0?"0 条":"--";
     el("futuresQueryPage").textContent=`${page+1} / ${pages}`;
     el("futuresQueryPrev").disabled=page===0;el("futuresQueryNext").disabled=page+1>=pages;
@@ -72,7 +82,7 @@
       picker.innerHTML=accounts.map(a=>`<option value="${escape(a.account_id)}" title="${escape(a.alias)}">${escape(a.account_id)}</option>`).join("")||"<option>未配置期货账户</option>";
       picker.value=selected;picker.disabled=!accounts.length;
       el("futuresAccountEntry").hidden=!accounts.length;
-      if(accounts.length)el("futuresAccountEntry").textContent=`${accounts[0].alias||"期货"} · ${accounts[0].account_id} · 只读`;
+      if(accounts.length)el("futuresAccountEntry").textContent=`${accounts[0].alias||"期货"} · ${accounts[0].account_id} · TEST`;
     }catch(err){loadError=err.message;}finally{loading=false;el("futuresAccountRefresh").disabled=false;render();}
   }
   el("futuresAccountEntry").addEventListener("click",()=>window.dispatchEvent(new CustomEvent("relay-futures-account-open")));
@@ -82,6 +92,7 @@
   el("futuresQueryPrev").addEventListener("click",()=>{page=Math.max(0,page-1);render();});
   el("futuresQueryNext").addEventListener("click",()=>{page++;render();});
   el("futuresAccountRefresh").addEventListener("click",load);
+  window.addEventListener("relay-futures-refresh",load);
   load();
   window.setInterval(()=>{if(!document.hidden && el("terminalShell").classList.contains("market-futures"))load();},5000);
 })();

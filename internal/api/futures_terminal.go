@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+type futuresTerminalExecution interface {
+	TerminalExecution(futures.TerminalAccount, time.Time) futures.TerminalExecutionView
+}
+
 func (s *Server) handleFuturesTerminal(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
@@ -26,5 +30,20 @@ func (s *Server) handleFuturesTerminal(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		accounts = s.futuresTerminal.Snapshot(ctx)
 	}
-	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"accounts": accounts, "mode": "query_observation_only", "trading_enabled": false, "cancel_enabled": false})
+	var submit, cancelEnabled bool
+	policy, supportsPolicy := s.futuresOrders.(futuresTerminalExecution)
+	for i := range accounts {
+		accounts[i].TradingEnabled, accounts[i].CancelEnabled, accounts[i].Execution = false, false, nil
+		if supportsPolicy && s.cfg.FuturesTerminal.ExecutionEnabled && s.cfg.Service.Environment == config.EnvironmentTest {
+			view := policy.TerminalExecution(accounts[i], time.Now())
+			accounts[i].Execution = &view
+			accounts[i].TradingEnabled, accounts[i].CancelEnabled = view.SubmitEnabled, view.CancelEnabled
+			submit, cancelEnabled = submit || view.SubmitEnabled, cancelEnabled || view.CancelEnabled
+		}
+	}
+	mode := "query_observation_only"
+	if submit || cancelEnabled {
+		mode = "test_execution"
+	}
+	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"accounts": accounts, "mode": mode, "trading_enabled": submit, "cancel_enabled": cancelEnabled})
 }

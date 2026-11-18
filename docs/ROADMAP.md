@@ -50,7 +50,8 @@
 
 - [x] TEST发送服务/API/SDK源码：服务端取Meridian目录/原始行情和当前会话，复用持久登记/一次发布；同键并发只允许新登记方发一次，重试先返回原记录，registered/attempted不自动续发。新增POST `/v1/futures/orders`、GET `/v1/futures/order-command`，202不等于柜台接单；全局默认关、独立TEST库身份校验、账户单独权限/截止时间，生产拒绝。未部署或改在线配置，未发布wheel，未发柜台命令。见[契约](TRADING_API_SCHEMA.md#期货test发送编排源码新增默认关闭)。
 - [x] TEST撤单服务/API/SDK源码：POST `/v1/futures/cancels`、GET `/v1/futures/cancel-command`；服务端读取原单/最新原文并在发布前重验，独立cancel权限、无行情依赖，同键并发一次发布，未知不重发。仅本服务同会话新鲜回报的本地单，保留一次撤单尝试限制；不是普通期货完整撤单能力。默认关闭，未部署、未发命令、未发布wheel；见[撤单契约](TRADING_API_SCHEMA.md#期货test撤单编排源码新增默认关闭)。
-- [ ] 下一步接持续回报状态、原生TEST报价显式分流、动态停止与终端报撤联动，再安排固定版本在线联测；完善跨会话/长期挂单及明确拒撤后的再次撤单，不换key绕过未知责任。不将当前Meridian-only服务直接用于东吴异源报价。保持OC既有wire，无需新增协议回签。
+- [x] TEST终端报撤按钮及本页结果联动源码：独立服务端权限/有效期、明确确认、原key先留存、未知只GET核对；命令发布与本地柜台回报分开展示，当前会话本地单撤单。修复新版execution在线显示及价格输入步长基准。生产/默认关闭隔离保留，未部署或发真实命令；桌面/手机全API拦截验收，见[终端契约](TRADING_API_SCHEMA.md#期货test终端报撤联动源码新增待部署)。
+- [ ] 下一步接后台跨浏览器命令列表、持续消费服务部署、原生TEST报价显式分流及动态停止，再安排固定版本在线联测；完善跨会话/长期挂单及明确拒撤后的再次撤单，不换key绕过未知责任。不将当前Meridian-only网页服务直接用于东吴异源报价。保持OC既有wire，无需新增协议回签。
 - [x] TEST委托预检API/SDK及终端源码：`POST /v1/futures/orders/preview`复用服务端Meridian目录/报价，保留精确原委托价；Relay账户配置、OC瞬时接单和发送入口分别展示，始终不登记/发送。终端“核对委托”处理输入变更、晚到响应、失效与错误，不开放报撤。详见[接口边界](TRADING_API_SCHEMA.md#期货委托预检源码新增待部署)。终端发送/撤单联动仍未完成，未部署/改权限。
 
 - [x] 服务端Meridian只读报价准备及SDK源码：GET `/v1/futures/price-preview`，服务端解析正式合约目录/tick和原始快照，复用精确定价核验，拒绝调用方覆盖数据来源/权限。能力`futures.price_preview.v1`、严格只读/短期证据；无OC查询或交易数据库写入。HTTP端到端/SDK回归已接，不是普通期货发送开放；API/wheel未部署，详见[契约](TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)。

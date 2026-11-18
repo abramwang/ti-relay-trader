@@ -1000,8 +1000,8 @@
     const facts = [
       ["合约", instrument.instrument_name || securityID], ["交易所", instrument.exchange_id || els.exchangeInput.value],
       ["交易日", snapshot.trading_day ? displayDate(String(snapshot.trading_day)) : "--"],
-      ["行情时间（东八区）", shortDateTime(snapshot.exchange_timestamp)],
-      ["接收时间（东八区）", shortDateTime(snapshot.received_at)],
+      ["行情时间（东八区）", futuresDateTime(snapshot.exchange_timestamp)],
+      ["接收时间（东八区）", futuresDateTime(snapshot.received_at)],
       ["最小价位", instrument.price_tick ?? "--"], ["合约乘数", instrument.volume_multiple ?? "--"],
       ["昨结算", formatPrice(snapshot.pre_settlement, instrument)], ["昨收", formatPrice(snapshot.pre_close, instrument)],
       ["涨停 / 跌停", formatPrice(snapshot.upper_limit_price, instrument) + " / " + formatPrice(snapshot.lower_limit_price, instrument)],
@@ -1009,6 +1009,11 @@
       ["合约状态", instrument.trading_status || "--"], ["目录来源", instrument.source || "--"]
     ];
     els.futuresContractFacts.innerHTML = facts.map(([label, value]) => `<div><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(String(value))}</dd></div>`).join("");
+  }
+
+  function futuresDateTime(value) {
+    if (!value || !/(Z|[+-]\d{2}:\d{2})$/i.test(value) || !Number.isFinite(Date.parse(value))) return "--";
+    return new Date(value).toLocaleString("sv-SE", {timeZone:"Asia/Shanghai",hour12:false});
   }
 
   function clearSelectedMarketData() {
@@ -7401,10 +7406,11 @@
     renderFuturesContext();
     syncFuturesOrderPreview();
     if (futuresMarketSelected()) {
-      els.submitOrderButton.disabled = true;
-      els.submitOrderButton.textContent = "期货交易未开放";
-      els.submitOrderButton.title = "期货交易路由尚未接通，不发送委托";
-      els.riskAlert.textContent = "只读行情 · 期货报撤单未开放";
+      const eligibility = window.RelayFuturesExecution?.sync(futuresPreviewIntent());
+      els.submitOrderButton.disabled = !eligibility?.enabled;
+      els.submitOrderButton.textContent = eligibility?.enabled ? "TEST 买入开仓" : "期货报单不可用";
+      els.submitOrderButton.title = eligibility?.reason || "期货交易未开放";
+      els.riskAlert.textContent = eligibility?.reason || "只读行情 · 期货报撤单未开放";
       return;
     }
     els.submitOrderButton.textContent = state.side === "S" ? "卖出下单" : "买入下单";
@@ -7478,7 +7484,7 @@
       if (result.mode !== "order_preview_only" || result.command_published !== false || result.can_submit !== false || !result.intent || !Object.keys(intent).every(key => result.intent[key] === intent[key]) || !Array.isArray(result.blockers)) throw new Error("预检响应不匹配");
       const validUntil = Date.parse(result.quote?.preparation?.valid_until || "");
       if (!Number.isFinite(validUntil) || validUntil <= Date.now()) throw new Error("行情证据已过期");
-      const reasons = {publication_not_connected:"网页期货发送未接通",relay_account_read_only:"Relay账户只读",broker_not_ready:"OC未就绪或心跳过期",price_off_tick:"价格不符合最小价位",outside_current_test_scope:"超出当前TEST报单范围"};
+      const reasons = {publication_not_connected:"网页期货发送未启用",relay_account_read_only:"Relay账户只读",broker_not_ready:"OC未就绪或心跳过期",price_off_tick:"价格不符合最小价位",outside_current_test_scope:"超出当前TEST报单范围"};
       els.futuresOrderPreviewResult.textContent = [
         `${intent.security_id} · ${intent.price} × ${intent.qty}手`,
         `Meridian · 最小价位 ${result.quote.preparation.market.price_tick} · ${result.price_valid ? "价格档位通过" : "价格档位未通过"}`,
@@ -7503,8 +7509,8 @@
     event.preventDefault();
     const accountID = els.orderAccount.value || state.activeAccount;
     if (futuresMarketSelected()) {
+      if (window.RelayFuturesExecution) await window.RelayFuturesExecution.submit(futuresPreviewIntent());
       updateRisk();
-      showToast("期货交易未开放，未发送下单请求", "error");
       return;
     }
     if (!accountTradingEnabled(accountID)) {
@@ -7968,8 +7974,9 @@
     });
     els.orderForm.addEventListener("submit", submitOrder);
     els.futuresOrderPreviewButton.addEventListener("click", previewFuturesOrder);
-    els.orderForm.addEventListener("input", syncFuturesOrderPreview);
-    els.orderForm.addEventListener("change", syncFuturesOrderPreview);
+    els.orderForm.addEventListener("input", updateRisk);
+    els.orderForm.addEventListener("change", updateRisk);
+    window.addEventListener("relay-futures-execution-change", () => { if (futuresMarketSelected()) updateRisk(); });
     els.resetOrderButton.addEventListener("click", () => {
       els.symbolInput.value = "600000";
       els.exchangeInput.value = "SH";

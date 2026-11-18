@@ -163,10 +163,16 @@ test("night chart labels keep natural date and ordering", () => {
   assert.equal(ctx.barChartLabel(day), "11-17 09:01");
   assert.ok(ctx.compareBarRows(night, day) < 0);
 });
-test("manual form submission cannot send a futures order", async () => {
+test("futures source timestamps display Shanghai time rather than slicing UTC", () => {
+  const ctx=context(["futuresDateTime"]);
+  assert.equal(ctx.futuresDateTime("2026-11-18T23:33:14Z"),"2026-11-19 07:33:14");
+  assert.equal(ctx.futuresDateTime("2026-11-19T07:33:14+08:00"),"2026-11-19 07:33:14");
+  assert.equal(ctx.futuresDateTime("2026-11-19 07:33:14"),"--");
+});
+test("manual futures submission cannot fall through to the stock endpoint", async () => {
   let writes = 0;
   const ctx = context(["submitOrder"], {
-    els: { orderAccount: { value: "00030484" } }, state: {},
+    els: { orderAccount: { value: "00030484" } }, state: {}, window:{},
     futuresMarketSelected: () => true, updateRisk: () => {}, showToast: () => {},
     request: async () => { writes++; },
   });
