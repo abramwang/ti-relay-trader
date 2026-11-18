@@ -40,6 +40,7 @@ type QueryContext struct {
 	NativeInvestorID     string               `json:",omitempty"`
 	NativeUserID         string               `json:",omitempty"`
 	Command              *QueryCommandBinding `json:",omitempty"`
+	Constraints          *ConstraintsTarget   `json:",omitempty"`
 }
 
 type BatchState string
@@ -63,11 +64,12 @@ func DefaultBatchLimits() BatchLimits {
 // SnapshotCandidate is a complete query result, NOT a publication/ACK permit.
 // Current-session readiness, durable audit and atomic publication are separate.
 type SnapshotCandidate struct {
-	Context   QueryContext
-	Assets    []AssetRow
-	Positions []PositionRow
-	Orders    []OrderRow `json:",omitempty"`
-	Fills     []FillRow  `json:",omitempty"`
+	Context     QueryContext
+	Assets      []AssetRow
+	Positions   []PositionRow
+	Orders      []OrderRow              `json:",omitempty"`
+	Fills       []FillRow               `json:",omitempty"`
+	Constraints []InstrumentConstraints `json:",omitempty"`
 }
 
 type queryPage struct {
@@ -79,7 +81,8 @@ type queryPage struct {
 	items     []json.RawMessage
 }
 
-// QueryBatch is a single-owner, in-memory assembler for four query categories.
+// QueryBatch is a single-owner assembler for account/trade queries and TEST
+// instrument facts; collecting facts never grants trading permission.
 // Callers must durably audit ALL input (including rejected bodies) before ACK.
 // now/deadline are elapsed durations from one monotonic clock, not business time.
 // A transport disconnect must call Interrupt; no reconnection auto-resume exists.
@@ -113,6 +116,7 @@ func validID(s string) bool {
 
 func copyContext(c QueryContext) QueryContext {
 	c.Command = clonePtr(c.Command)
+	c.Constraints = clonePtr(c.Constraints)
 	if c.SDKRequestID != nil {
 		v := *c.SDKRequestID
 		c.SDKRequestID = &v
@@ -137,6 +141,13 @@ func NewQueryBatch(c QueryContext, now, deadline time.Duration, limits BatchLimi
 	}
 	if isTradeQuery(c.Action) && !native(c.NativeInvestorID, 12, false) {
 		return nil, fmt.Errorf("trade query requires configured native investor")
+	}
+	if c.Action == "instrument.constraints.query" {
+		if c.Route.Env != "test" || c.Constraints == nil || !c.Constraints.valid() || !validDay(c.TradeDate) || c.ConnectionGeneration == nil || c.Ticket != "" || c.SDKRequestID != nil {
+			return nil, fmt.Errorf("invalid constraints query context")
+		}
+	} else if c.Constraints != nil {
+		return nil, fmt.Errorf("unexpected constraints target")
 	}
 	if (c.ConnectionGeneration != nil && *c.ConnectionGeneration <= 0) ||
 		(c.SDKRequestID != nil && *c.SDKRequestID <= 0) ||
@@ -261,6 +272,8 @@ func (b *QueryBatch) Accept(raw []byte, now time.Duration) (replayed bool, err e
 		candidate.Orders, err = DecodeOrders(joined, b.context.tradeScope())
 	case "fill.list.query":
 		candidate.Fills, err = DecodeFills(joined, b.context.tradeScope())
+	case "instrument.constraints.query":
+		candidate.Constraints, err = decodeInstrumentConstraints(joined, b.context)
 	}
 	if err != nil {
 		return false, b.invalidate(fmt.Errorf("invalid complete snapshot: %w", err))
@@ -301,6 +314,12 @@ func (b *QueryBatch) Candidate() (SnapshotCandidate, error) {
 		c.Fills = append(make([]FillRow, 0, len(c.Fills)), c.Fills...)
 		for i := range c.Fills {
 			c.Fills[i] = cloneFill(c.Fills[i])
+		}
+	}
+	if c.Constraints != nil {
+		c.Constraints = append([]InstrumentConstraints(nil), c.Constraints...)
+		for i := range c.Constraints {
+			c.Constraints[i] = cloneInstrumentConstraints(c.Constraints[i])
 		}
 	}
 	return c, nil
@@ -421,6 +440,9 @@ func decodeQueryPage(raw []byte, c QueryContext) (queryPage, error) {
 		textField(obj, "action") != c.Action || textField(obj, "result_type") != resultType || !validTime(textField(obj, "produced_at")) {
 		return bad("envelope context")
 	}
+	if c.Action == "instrument.constraints.query" {
+		return decodeConstraintsPage(obj, c)
+	}
 	payload, err := shape(obj["payload"], []string{"product_type", "schema_version"}, []string{"account_id", "trade_date", "items"})
 	if err != nil {
 		return queryPage{}, err
@@ -519,6 +541,8 @@ func queryResultType(action string) string {
 		return "order_page"
 	case "fill.list.query":
 		return "fill_page"
+	case "instrument.constraints.query":
+		return "instrument_constraints"
 	default:
 		return ""
 	}

@@ -259,8 +259,8 @@ func TestResponsibilityNativeFactsRemainCandidateNotTradingPermission(t *testing
 		t.Fatal("wrong candidate scope")
 	}
 	for _, c := range doc.Cases {
-		if _, err := DecodeCommand(c.Request, responsibilityCommandScope(), "cmd.query"); err == nil {
-			t.Fatal("unfinished action became publishable")
+		if command, err := DecodeCommand(c.Request, responsibilityCommandScope(), "cmd.query"); err != nil || command.Constraints == nil {
+			t.Fatal("candidate syntax not registered independently of publication", err)
 		}
 		a := c.Reply["adapter_context"].(map[string]any)
 		p := c.Reply["payload"].(map[string]any)

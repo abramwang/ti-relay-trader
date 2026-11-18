@@ -30,6 +30,14 @@ type CancelIntent struct {
 	GatewayOrderID, TradeDate, CancelID string
 }
 
+// ConstraintsTarget uses the broker's native symbol, not a second instrument catalog.
+type ConstraintsTarget struct {
+	Symbol   string `json:"symbol"`
+	Exchange string `json:"exchange"`
+}
+
+func (t ConstraintsTarget) valid() bool { return native(t.Symbol, 80, false) && t.Exchange == "SHFE" }
+
 type IntentField struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -39,6 +47,7 @@ type IntentField struct {
 type Command struct {
 	SubmitCommand
 	Cancel                                   *CancelIntent
+	Constraints                              *ConstraintsTarget
 	Fields                                   []IntentField
 	Intent, IdempotencyLookup, MessageLookup []byte
 }
@@ -63,7 +72,8 @@ func commandRouteBytes(r QueryRoute) []byte {
 	return framed("ctp.command.route.v1/", r.Env, r.BrokerID, r.AccountID, r.GatewayID)
 }
 
-// DecodeCommand implements OC's seven-action syntax and ctp.intent.v1 encoding.
+// DecodeCommand implements the existing actions and the TEST constraints
+// candidate using ctp.intent.v1 encoding. Syntax does not enable publication.
 // streamSuffix is selected by the trusted caller. TradingDay/target checks are
 // deliberately deferred until AFTER durable lookup in CommandStore.Register.
 func DecodeCommand(raw []byte, scope CommandScope, streamSuffix string) (Command, error) {
@@ -102,7 +112,12 @@ func DecodeCommand(raw []byte, scope CommandScope, streamSuffix string) (Command
 		}
 	} else {
 		required := []string{"account_id", "product_type", "schema_version"}
-		if action == "order.cancel" {
+		if action == "instrument.constraints.query" {
+			if scope.Route.Env != "test" {
+				return bad()
+			}
+			required = append(required, "symbol", "exchange")
+		} else if action == "order.cancel" {
 			required = append(required, "gateway_order_id", "trade_date", "cancel_id")
 		} else if !query {
 			return bad()
@@ -113,6 +128,12 @@ func DecodeCommand(raw []byte, scope CommandScope, streamSuffix string) (Command
 		}
 		if textField(p, "account_id") != scope.Route.AccountID || textField(p, "product_type") != "futures" || textField(p, "schema_version") != "ctp.f0.draft.2" {
 			return bad()
+		}
+		if action == "instrument.constraints.query" {
+			c.Constraints = &ConstraintsTarget{textField(p, "symbol"), textField(p, "exchange")}
+			if !c.Constraints.valid() {
+				return bad()
+			}
 		}
 		if action == "order.cancel" {
 			for _, k := range []string{"gateway_order_id", "cancel_id"} {
@@ -146,6 +167,9 @@ func DecodeCommand(raw []byte, scope CommandScope, streamSuffix string) (Command
 		add("gateway_order_id", c.Cancel.GatewayOrderID)
 		add("trade_date", c.Cancel.TradeDate)
 		add("cancel_id", c.Cancel.CancelID)
+	} else if c.Constraints != nil {
+		add("symbol", c.Constraints.Symbol)
+		add("exchange", c.Constraints.Exchange)
 	}
 	values := make([]string, len(c.Fields))
 	for i, f := range c.Fields {

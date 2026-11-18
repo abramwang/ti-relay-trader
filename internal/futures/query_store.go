@@ -44,9 +44,10 @@ func NewQueryStore(db *sql.DB) (*QueryStore, error) {
 
 func queryScope(c QueryContext) string {
 	raw, _ := json.Marshal(struct {
-		Route  QueryRoute
-		Action string
-	}{c.Route, c.Action})
+		Route       QueryRoute
+		Action      string
+		Constraints *ConstraintsTarget `json:",omitempty"`
+	}{c.Route, c.Action, c.Constraints})
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:])
 }

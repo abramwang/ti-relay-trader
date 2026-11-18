@@ -100,6 +100,11 @@ func (s *CommandStore) PublishTestQuery(ctx context.Context, id int64, messageID
 func (s *CommandStore) publishTestQuery(ctx context.Context, scope CommandScope, id int64, messageID string, target TestQueryTarget, transport queryPublicationTransport) (QueryPublication, error) {
 	binding, _ := json.Marshal(target)
 	return s.publishTestRegistered(ctx, scope, id, messageID, target, transport, "futures_test_query_publications", binding, func(c CommandRegistration) error {
+		// Offline registration/collection is ready; OC's candidate scheduler has
+		// not been delivered. Do not silently enable a new wire action online.
+		if c.Original.Action == "instrument.constraints.query" {
+			return fmt.Errorf("instrument constraints runtime not enabled")
+		}
 		if queryResultType(c.Original.Action) == "" {
 			return ErrStreamIdentity
 		}

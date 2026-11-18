@@ -39,6 +39,8 @@ func queryBinding(command CommandRegistration) QueryCommandBinding {
 // OC ticket/session/generation/day must be independently verified by the caller;
 // they cannot be learned from an arbitrary first reply. Alias origins are rejected
 // rather than rewriting incoming audit. A restart never reissues the old command.
+// Instrument facts bind the registered target and expected session/generation/day;
+// their two SDK requests remain reply evidence, not a fabricated single ticket.
 func (s *QueryStore) RegisterCommand(ctx context.Context, id string, commandID int64, c QueryContext, timeout time.Duration, limits BatchLimits) error {
 	if commandID <= 0 || c.Command != nil || c.commandScope().validate() != nil {
 		return ErrBatchIdentity
@@ -65,7 +67,7 @@ func (s *QueryStore) registerCommandTx(ctx context.Context, tx *sql.Tx, id strin
 	if err != nil {
 		return err
 	}
-	if command.Scope != c.commandScope() || command.Original.Action != c.Action || queryResultType(c.Action) == "" || command.Original.MessageID != c.OriginMessageID {
+	if command.Scope != c.commandScope() || command.Original.Action != c.Action || queryResultType(c.Action) == "" || command.Original.MessageID != c.OriginMessageID || !reflect.DeepEqual(command.Original.Constraints, c.Constraints) {
 		return ErrBatchIdentity
 	}
 	bind := queryBinding(command)
@@ -116,7 +118,7 @@ func verifyQueryCommand(ctx context.Context, tx *sql.Tx, id string, c QueryConte
 	if err != nil {
 		return err
 	}
-	if command.Scope != c.commandScope() || command.Original.Action != c.Action || command.Original.MessageID != c.OriginMessageID || queryBinding(command) != *c.Command {
+	if command.Scope != c.commandScope() || command.Original.Action != c.Action || command.Original.MessageID != c.OriginMessageID || queryBinding(command) != *c.Command || !reflect.DeepEqual(command.Original.Constraints, c.Constraints) {
 		return ErrBatchIdentity
 	}
 	return nil
