@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18` **接收11月19日东吴R2部署安排**：仅部署方报告部署/离线检查就绪，宿主机登录、真实报撤及SDK硬件采集待验。已只读核对Relay仍TEST/healthy、终端沿用readonly-recovery路由；不切环境、不启动OC或授权明日结算。明日先端口/单实例、原绑定与新会话，再续收/查询/报撤；不复用旧session或重置cursor。Relay优先补新版execution原生事实定价，新版端到端尚未宣称就绪，见[明日执行安排](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日r2部署联调安排)。
+
 - `2026-11-18` **接收OC a03d58a SQLite当前责任只读导出说明**：include-journal已由OC报告支持一致性SQLite快照，保留原document字节/未决责任、audit跨文件非原子边界，不再要求重复开发。Relay本机尚无本轮snapshot/index样例，未独立运行导出、升级状态或核验OC测试；样例核对可随下一次交付，不阻塞后续开发。OC继续按需访问/身份存储/安全保留、断连恢复、进程内跨日；不把人工导出变成交易前置或日常任务，见[当前分工](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#sqlite当前责任只读导出接收)。本轮仅文档更新，环境/权限/服务未变。
 
 - `2026-11-18` **OC三条完整常驻心跳复验通过**：resident_heartbeat_review两清单3+3摘要及3份原文/长度/外层body一致，8,604字节原样归档；正常/满额/锁存均被现有解析器正确处理，空授权和陈旧心跳拒绝，无需再补心跳或放宽规则。新增原文回归通过，未部署/切环境/发命令。OC报告b1a7489已做SQLite逐记录落盘、940df39/58f1f1a已有按日结算记录，不重复要求；尚非Relay独立SQLite验收，容量/内存/身份JSON、安全保留、自动重连及进程内跨日未闭环。下一步先补SQLite当前责任只读导出，再推进剩余持久层/恢复；Relay继续统一权限、事实定价和业务分发。见[最新分工](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#完整心跳复验与sqlite阶段接收)。
