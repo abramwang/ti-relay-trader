@@ -64,6 +64,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	reviewFile := f.String("review-file", "", "independent request review, max 16 KiB")
 	evidenceFile := f.String("evidence-file", "", "original OC request evidence, max 256 KiB; no credentials")
 	capture := f.Bool("capture", false, "capture TEST reply originals only")
+	follow := f.Bool("follow", false, "keep raw capture running across idle periods; never apply business results")
+	maxRecords := f.Int("max-records", 50000, "follow-only record budget 1..50000; existing durable capacity also applies")
 	receive := f.Bool("receive-reviewed", false, "capture and apply independently reviewed query replies")
 	persist := f.Bool("persist-test-replies", false, "explicit permission to write dedicated TEST audit")
 	role := f.String("stream-role", "reply", "reply or event; events support raw capture only")
@@ -72,7 +74,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	owner := f.String("previous-owner", "", "explicit previous stopped receiver owner")
 	confirmStopped := f.Bool("confirm-stopped", false, "confirm previous receiver was stopped before takeover")
 	cursor := f.String("cursor", "0-0", "explicit previous durable cursor")
-	duration := f.Duration("duration", 30*time.Second, "bounded receive window, at most 5m")
+	duration := f.Duration("duration", 30*time.Second, "receive window: at most 5m, or 24h with --follow")
 	pageSize := f.Int("page-size", 32, "raw/dispatch page size 1..256")
 	maxPages := f.Int("max-pages", 256, "page budget 1..256")
 	if err := f.Parse(args); err != nil {
@@ -80,6 +82,16 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 			return nil
 		}
 		return errors.New("invalid reply receiver arguments")
+	}
+	seen := map[string]bool{}
+	f.Visit(func(v *flag.Flag) { seen[v.Name] = true })
+	maxDuration := 5 * time.Minute
+	if *follow {
+		maxDuration = 24 * time.Hour
+	}
+	if (*follow && (*receive || *status || *reviewFile != "" || *evidenceFile != "" || seen["max-pages"])) ||
+		(!*follow && seen["max-records"]) || *maxRecords < 1 || *maxRecords > 50000 {
+		return errors.New("follow is raw-only, uses max-records instead of max-pages, and forbids status/review modes")
 	}
 	writeAllowed := *persist
 	if *role == "event" {
@@ -93,7 +105,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		(*capture && *receive) || (writeAllowed != (*capture || *receive)) || (*status && (*capture || *receive)) ||
 		((*reviewFile == "") != (*evidenceFile == "")) || (*receive && *reviewFile == "") || (*capture && *reviewFile != "") ||
 		((*owner != "") != *confirmStopped) || (*owner == "" && *cursor != "0-0") ||
-		*duration <= 0 || *duration > 5*time.Minute || *pageSize < 1 || *pageSize > 256 || *maxPages < 1 || *maxPages > 256 {
+		*duration <= 0 || *duration > maxDuration || *pageSize < 1 || *pageSize > 256 || *maxPages < 1 || *maxPages > 256 {
 		return errors.New("explicit TEST scope, paired mode/permission and bounded options required")
 	}
 	raw, err := boundedFile(*targetFile, 4096)
@@ -126,7 +138,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	check.Close()
 	if !*status && !*capture && !*receive {
-		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "stream_role": *role, "reviewed_request": len(review) > 0, "business_authorized": false})
+		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "stream_role": *role, "follow": *follow, "reviewed_request": len(review) > 0, "business_authorized": false})
 	}
 	dsn, url := getenv("RELAY_CTP_REPLY_DATABASE_URL"), getenv("RELAY_CTP_REPLY_REDIS_URL")
 	pg, err := pgx.ParseConfig(dsn)
@@ -169,9 +181,21 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		return errors.New("cannot create TEST source verifier")
 	}
 	defer publisher.Close()
-	err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Role: *role, Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
+	if *follow {
+		opts := futures.DefaultResidentCaptureOptions()
+		opts.Role, opts.PageSize, opts.MaxRecords = *role, *pageSize, *maxRecords
+		opts.Checkpoint = futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}
+		err = futures.FollowTestRawStream(bounded, source, store, publisher, opts, func(p futures.ResidentCaptureProgress) error { return json.NewEncoder(out).Encode(p) })
+		// A clean bounded stop is not a business success. Joined checkpoint or
+		// output errors must still return nonzero even alongside cancellation.
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			return nil
+		}
+	} else {
+		err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Role: *role, Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
+	}
 	if err != nil {
-		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
+		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrStreamHistory, futures.ErrResidentCaptureBudget, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
 			if errors.Is(err, known) {
 				return fmt.Errorf("TEST reply receive stopped: %w; no command sent", known)
 			}

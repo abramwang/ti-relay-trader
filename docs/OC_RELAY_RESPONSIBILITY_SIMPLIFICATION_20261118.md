@@ -2,6 +2,34 @@
 
 日期：2026-11-18，Asia/Shanghai。发送方：Relay；接收方：OC。
 
+## Relay常驻原文收件进展
+
+现有`relay-ctp-replies --capture --follow`已支持`reply/event`常驻原文收件，无需OC修改wire或再交材料。默认离线检查，显式TEST身份、专用数据库、target及角色写许可后才连接；最长24小时，空闲退避继续等待，不因交易窗口结束停收。首次未产生输出流只等待，不创建Redis键/组或PG owner。
+
+- 每轮核对run_id、epoch及对应命令组；原文/摘要和位点原子保存。读取前后核对位点的Redis原文和PG摘要，配合XINFO拒绝可见的删除/改写/丢失，不宣称所有历史都完整或共享Redis持久性已验。
+- 重启须先停止旧进程，再明确owner/cursor接管，陈旧owner拒绝。已接收过的流缺失不能当首次空流等待。SIGINT/SIGTERM或到期保留位点；错误非零退出，不自动重启、清流、发命令或ACK。
+- 输出逐批/空闲及最终checkpoint、停止原因，时间东八区。`checkpoint_verified`只证明PG位点，`business_authorized=false`。停止后或新会话原文仍可留存，但pending不是业务成功；不自动确认查询、入账或授权交易。
+- 本轮最多50,000条；单流累计50,000条/64MiB限制仍在，重启不清零。达到容量应停查，不删证据/换路由绕过。单次review/业务consumer仍限5分钟，不能同流并行夺owner，持续业务分发另行接线。
+
+### 运行与续读
+
+沿用已核对的scope、`--database`、`--deployment-id`、`--target-file`，按角色分别增加以下参数（两条独立进程，不是组合参数）：
+
+```text
+--capture --persist-test-replies --follow --duration 9h --max-records 50000
+--stream-role event --capture --persist-test-events --follow --duration 9h --max-records 50000
+```
+
+这是用法，不是新启动/交易授权。凭据沿用`RELAY_CTP_REPLY_DATABASE_URL`和`RELAY_CTP_REPLY_REDIS_URL`，不写命令行。follow拒绝receive-reviewed、max-pages；不带capture/写许可仍离线检查。恢复时停止旧进程，用同角色`--status`读取PG位点，保留原target/来源，追加`--previous-owner <owner> --cursor <cursor> --confirm-stopped`。原始收件可以跨OC会话留证，不意味着原target可以发送新会话查询。
+
+正常到期/取消退出0仅指采集按计划结束；预算/错误非零。最后输出丢失时查PG status，不猜位点或从0开始。没有安装自启动、迁移在线库、部署/切环境或发送柜台命令。
+
+验证使用本机Unix socket Redis和临时PG：懒创建、空闲后尾包、两角色续读、防旧owner、来源/组/epoch变化、位点改写、数据库事务失败、输出失败、取消收尾，并联合既有存储/OOM/AOF/收件回归。统一`scripts/test-ctp-offline.sh`已纳入新用例；共享TEST/真实柜台未参与。
+
+本轮`go test ./...`、futures及replies CLI的vet/build通过；临时PG race的原文收件/存储组16.395秒通过，新常驻与既有23组本机联调演练54.654秒通过（均为离线合成输入，不是实际柜台成交）。没有执行整套离线脚本的全PG长测；新增分组及涉及的旧链路已实际运行，临时服务退出清理。
+
+**下一步：** OC固定已交付版本准备常驻TEST，无需新增协议；Relay继续衔接持续业务分发、独立事实价格准入、拒撤展示及人工新尝试预算。随后约定实际交易日联测，不将本轮离线通过称为全天稳定或生产就绪。
+
 ## 事实调度与常驻增量复核
 
 已收到`reference/query_runtime_review_20261118/`，10项SHA256全部匹配，原字节归档至`testdata/oc_query_runtime_review_20261118/`。OC业务基线`f0f0477`（事实调度`ffde36b`、常驻配置`beeb778`），测试修订`62011e2`。接受这轮实现交付；不要求OC重复实现这三项或再做原则回签。以下是当前执行状态，后文早期候选阶段的验收记录不代表仍未交付。
@@ -22,7 +50,7 @@
 **可以进入固定版本TEST独立部署和常驻联调准备，不再等候选协议讨论。不能据离线通过宣布完整交易日稳定性或生产可用。**
 
 1. OC固定本次实现及配套SDK，按已交付`TEST_RESIDENT_GUIDE.md`准备原路由/epoch/state的常驻配置；不需再交大材料包，启动前只回实际版本、配置时限、来源与会话。真实启动/结算/报撤另按当日授权，不能复用11月18日已结束的窗口。跨日once尚未自动化，不删除旧文件换取授权。
-2. Relay继续完成常驻接收运行入口及生命周期管理。现有单次review收件/交易consumer仍有5分钟上限，本轮没有把它冒称整日常驻服务；不能只扩大循环时限而忽略尾部回报、接管位点和当前会话。
+2. Relay已补常驻原文接收运行入口，见顶部；继续衔接持续业务分发。单次review/业务consumer仍限5分钟，不把原文收件称为整日业务入账服务。
 3. 获授权窗口先用现有登记/发布/接收链路取一份真实独立事实，核对两段采样，再接入Relay现有精确价格/档位/上下限及时效准入。**替代准入尚未完成，双方当前逐单原生检查暂不删除。**
 4. 拒撤页面/API/SDK、成功撤单汇总及明确拒撤后的人工新尝试预算继续由Relay完成。OC保持普通拒绝后继续服务；执行未知仍不重报，不为了重复测试换路由或清状态。
 

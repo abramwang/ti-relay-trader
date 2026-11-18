@@ -59,3 +59,25 @@ func TestRepliesDatabaseErrorsRedacted(t *testing.T) {
 		}
 	}
 }
+
+func TestResidentFollowOfflineAndFlags(t *testing.T) {
+	for _, role := range []string{"reply", "event"} {
+		var out bytes.Buffer
+		args := append(replyArgs(t), "--follow", "--duration", "9h", "--stream-role", role)
+		if err := run(context.Background(), args, func(string) string { t.Fatal("offline read credentials"); return "" }, &out, &out); err != nil || !strings.Contains(out.String(), `"follow":true`) {
+			t.Fatal(out.String(), err)
+		}
+	}
+	for _, extra := range [][]string{
+		{"--follow", "--duration", "25h"}, {"--follow", "--status"},
+		{"--follow", "--receive-reviewed", "--persist-test-replies"},
+		{"--follow", "--max-pages", "1"}, {"--max-records", "1"},
+		{"--follow", "--max-records", "0"}, {"--follow", "--max-records", "50001"},
+		{"--follow", "--capture"}, {"--follow", "--persist-test-replies"},
+	} {
+		var out bytes.Buffer
+		if err := run(context.Background(), append(replyArgs(t), extra...), func(string) string { t.Fatal("unsafe follow read credentials"); return "" }, &out, &out); err == nil {
+			t.Fatal("unsafe follow accepted", extra)
+		}
+	}
+}

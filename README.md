@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18` **TEST常驻原文收件入口完成**：`relay-ctp-replies --capture --follow`支持reply/event独立许可、最长24小时、空闲继续和尾包保存；显式owner/cursor续读，来源/epoch/组及位点原文改变停收，取消/到期报告最终PG位点，不自动ACK/入账或放开交易。隔离Redis/PG回归及统一离线脚本已补；未部署/迁移在线库/发柜台命令，仍TEST。下一步持续业务分发、实际事实查询与价格准入、拒撤展示及人工新尝试预算；单次review/业务consumer仍限5分钟，不能与follow并行夺同流owner。见[协调清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#relay常驻原文收件进展)，OC无需新协议回签。
+
 - `2026-11-18` **事实调度/常驻增量适配完成**：OC f0f0477/测试62011e2材料10摘要匹配，原字节归档`testdata/oc_query_runtime_review_20261118/`；9事实/3心跳/6坏请求回归。TEST事实显式登记发布/review收件已接通，未执行阶段null保持失败，day只读查询可在交易窗口外继续；修复本地命令失败误投影订单拒单。全Go/vet及隔离PG race通过。未部署/迁移在线库/发柜台命令，仍TEST；000047拒撤迁移仍待部署。下一步常驻接收生命周期（当前单次consumer仍5分钟）、真实事实联测和价格准入替代、拒撤展示及人工重撤预算。OC三项实现已收，不再要求重复开发或材料回签，按[当前执行清单](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#事实调度与常驻增量复核)准备固定版本TEST部署；不宣称全天稳定/生产就绪。以下同日条目为阶段记录，以本条为准。
 
 - `2026-11-18` **独立拒撤持久接线完成**：现有Stream分发/事件收件/消费循环支持order.cancel.rejected，核对原撤单和已确认发布的scope/session/代次/Redis来源，结果落独立表，不改订单/成交或撤单预算。未知发布继续待核，同文去重、冲突保留、事务失败不丢原收件；全Go/vet及专项和旧链路隔离PG race通过。新增迁移000047仅临时库已测，业务库/CTP独立库未迁移、未部署或发柜台命令，保持TEST。下一步事实查询在线编排、拒撤页面/API/SDK及人工新尝试预算；见[协调清单顶部](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#拒撤持久接线进展)。不宣称完整撤单尝试汇总或无人值守稳定版。
