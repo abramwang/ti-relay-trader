@@ -81,3 +81,44 @@ func TestResidentFollowOfflineAndFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestPairedResidentOfflineAndPermissions(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "positions.json")
+	if err := os.WriteFile(file, []byte(`{"reply":{"cursor":"0-0"},"event":{"cursor":"0-0"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := append(replyArgs(t), "--stream-role", "both", "--follow", "--duration", "9h", "--checkpoints-file", file)
+	var out bytes.Buffer
+	noEnv := func(string) string { t.Fatal("offline or invalid mode read credentials"); return "" }
+	if err := run(context.Background(), args, noEnv, &out, &out); err != nil || !strings.Contains(out.String(), `"stream_role":"both"`) || !strings.Contains(out.String(), `"business_authorized":false`) {
+		t.Fatal(out.String(), err)
+	}
+	for _, extra := range [][]string{
+		{"--capture"}, {"--capture", "--persist-test-replies"}, {"--capture", "--persist-test-events"},
+		{"--persist-test-replies", "--persist-test-events"}, {"--previous-owner", ""}, {"--cursor", "0-0"},
+		{"--confirm-stopped"}, {"--receive-reviewed"}, {"--status"}, {"--review-file", "missing"},
+		{"--max-pages", "1"}, {"--duration", "25h"}, {"--checkpoints-file", ""},
+	} {
+		out.Reset()
+		if err := run(context.Background(), append(append([]string{}, args...), extra...), noEnv, &out, &out); err == nil {
+			t.Fatal("unsafe paired invocation", extra)
+		}
+	}
+	// Only fully paired write permission may proceed to credential validation.
+	out.Reset()
+	err := run(context.Background(), append(args, "--capture", "--persist-test-replies", "--persist-test-events"), func(string) string { return "" }, &out, &out)
+	if err == nil || !strings.Contains(err.Error(), "matching TEST database") {
+		t.Fatal(out.String(), err)
+	}
+	// Explicit old owners require stopped confirmation even for offline preflight.
+	old := `{"reply":{"owner":"` + strings.Repeat("a", 64) + `","cursor":"1-0"},"event":{"cursor":"0-0"}}`
+	if err := os.WriteFile(file, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), args, noEnv, &out, &out); err == nil {
+		t.Fatal("unconfirmed takeover accepted")
+	}
+	if err := run(context.Background(), append(args, "--confirm-stopped"), noEnv, &out, &out); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -314,6 +314,32 @@ OC测试口径：53项首跑51通过，资产权限用原权限单独补验、�
 
 ## Relay常驻原文收件进展
 
+### 双路同进程收件（11月19日增量）
+
+现有`relay-ctp-replies`增加`--stream-role both`，无需两份进程分别维护reply/event。复用原单流收件器、源绑定、原文校验和PG原子位点，不增加OC动作、数据库表或业务授权。两路独立读取/位点，输出按行串行写JSON；任一路错误或达到预算，取消另一条并等待两条最终报告后退出。来源/epoch/组、位点原文变化仍拒绝，不为继续运行自动重建或重发。
+
+沿用明确的TEST scope、数据库、deployment及target参数。凭据仍仅从`RELAY_CTP_REPLY_DATABASE_URL`、`RELAY_CTP_REPLY_REDIS_URL`取得，不写命令行。首次两路均未登记时的`checkpoints.json`为：
+
+```json
+{"reply":{"owner":"","cursor":"0-0"},"event":{"owner":"","cursor":"0-0"}}
+```
+
+仅追加以下参数为**离线预检**，不会读凭据或联网：
+
+```text
+--stream-role both --follow --duration 9h --checkpoints-file /absolute/checkpoints.json
+```
+
+实际收件另需`--capture --persist-test-replies --persist-test-events`三项同时指定。只给一路写许可拒绝；每路`max-records`上限50,000、既有累计容量不变，不因合并进程无限增长。窗口最长24小时，不由登录/结算/交易授权决定收件期限；接收尾包不授予报撤权限。
+
+续读前先停止原有两路收件器，以同scope和target执行`--stream-role both --status`（不带follow/capture）只读查询PG，取输出`checkpoints`对象作为新的输入文件，并显式加`--confirm-stopped`。允许一路已经登记而另一路仍未产生流；不可把已登记一侧恢复为0位点。两路预核对失败不会先接管另一侧；预核对后的竞争仍由各路原CAS拒绝，双路接管不是跨流原子事务，失败后重新读PG而不是复用旧文件。输入文件和进度日志不是权威位点，不自动覆盖或猜测。
+
+正常到期/SIGTERM返回0只表示原文采集结束；存储/输出/来源错误或满额仍非零，即使同时收到取消也不隐藏错误。返回前等待两路停止，但日志或数据库故障时可能无法确认最终位点，仍需查PG。此入口不做query review、业务投影、OC ACK、交易或自动重启。`pending`仍表示原文责任，不为了清零冒充delivered。原单流模式不变。
+
+**部署边界：** 本轮仅源码与隔离回归，未启动共享TEST收件器、未迁移/重启业务库或服务、未改权限。上线前仍需接收件故障到Relay停发状态、持续业务分发与运维展示；不能只因双路进程存在就放开交易。OC无需新协议或材料，保持原reply/event输出即可。
+
+隔离验证使用本机Unix socket Redis 8.0.2和临时PostgreSQL，原收件/新增双路race回归20.342秒通过，包含实际编译CLI后的双路采集、数据库位点查询、拒绝隐式接管、显式续读和原文不重复；原命令流始终空、4条原文仍pending。单路丢失使两路退出、错误与取消同时发生不吞错误也通过。首次本机Redis因缺动态库未启动，补显式测试库路径后重跑通过，不属于业务Redis故障；未访问共享Redis或真实柜台。
+
 现有`relay-ctp-replies --capture --follow`已支持`reply/event`常驻原文收件，无需OC修改wire或再交材料。默认离线检查，显式TEST身份、专用数据库、target及角色写许可后才连接；最长24小时，空闲退避继续等待，不因交易窗口结束停收。首次未产生输出流只等待，不创建Redis键/组或PG owner。
 
 - 每轮核对run_id、epoch及对应命令组；原文/摘要和位点原子保存。读取前后核对位点的Redis原文和PG摘要，配合XINFO拒绝可见的删除/改写/丢失，不宣称所有历史都完整或共享Redis持久性已验。

@@ -68,7 +68,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	maxRecords := f.Int("max-records", 50000, "follow-only record budget 1..50000; existing durable capacity also applies")
 	receive := f.Bool("receive-reviewed", false, "capture and apply independently reviewed query replies")
 	persist := f.Bool("persist-test-replies", false, "explicit permission to write dedicated TEST audit")
-	role := f.String("stream-role", "reply", "reply or event; events support raw capture only")
+	role := f.String("stream-role", "reply", "reply, event, or both; both requires follow or status and is raw-only")
+	checkpointsFile := f.String("checkpoints-file", "", "both-only explicit reply/event previous checkpoints JSON, max 4 KiB")
 	persistEvents := f.Bool("persist-test-events", false, "explicit permission to persist TEST event originals")
 	status := f.Bool("status", false, "read checkpoint only; no takeover or Redis connection")
 	owner := f.String("previous-owner", "", "explicit previous stopped receiver owner")
@@ -85,6 +86,26 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	seen := map[string]bool{}
 	f.Visit(func(v *flag.Flag) { seen[v.Name] = true })
+	paired := *role == "both"
+	var checkpoints futures.ResidentCheckpoints
+	if paired {
+		if (!*follow && !*status) || *receive || *reviewFile != "" || *evidenceFile != "" || seen["previous-owner"] || seen["cursor"] ||
+			(*status && (*checkpointsFile != "" || *confirmStopped)) || (!*status && *checkpointsFile == "") || *persist != *persistEvents {
+			return errors.New("paired capture requires explicit checkpoints, both write permissions, and no query review or single-stream checkpoint flags")
+		}
+		if !*status {
+			raw, err := boundedFile(*checkpointsFile, 4096)
+			if err != nil {
+				return err
+			}
+			checkpoints, err = futures.DecodeResidentCheckpoints(raw)
+			if err != nil || ((checkpoints.Reply.Owner != "" || checkpoints.Event.Owner != "") != *confirmStopped) {
+				return errors.New("invalid paired checkpoints or missing confirmation that previous receivers stopped")
+			}
+		}
+	} else if *checkpointsFile != "" {
+		return errors.New("checkpoints-file is only valid for paired capture")
+	}
 	maxDuration := 5 * time.Minute
 	if *follow {
 		maxDuration = 24 * time.Hour
@@ -97,14 +118,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	if *role == "event" {
 		writeAllowed = *persistEvents
 	}
-	if (*role != "reply" && *role != "event") || (*role == "event" && (*persist || *receive || *reviewFile != "" || *evidenceFile != "")) || (*role == "reply" && *persistEvents) {
+	if (*role != "reply" && *role != "event" && !paired) || (*role == "event" && (*persist || *receive || *reviewFile != "" || *evidenceFile != "")) || (*role == "reply" && *persistEvents) {
 		return errors.New("event capture requires its own permission and forbids query reviews")
 	}
 	if f.NArg() != 0 || scope.Route.Env != "test" || !(scope.Route.BrokerID == "ctp" || strings.HasPrefix(scope.Route.BrokerID, "ctp_")) ||
 		*targetFile == "" || *deployment == "" || !strings.HasSuffix(*database, "_test") || len(*database) > 63 || strings.ContainsAny(*database, " \r\n\t") ||
 		(*capture && *receive) || (writeAllowed != (*capture || *receive)) || (*status && (*capture || *receive)) ||
 		((*reviewFile == "") != (*evidenceFile == "")) || (*receive && *reviewFile == "") || (*capture && *reviewFile != "") ||
-		((*owner != "") != *confirmStopped) || (*owner == "" && *cursor != "0-0") ||
+		(!paired && ((*owner != "") != *confirmStopped)) || (*owner == "" && *cursor != "0-0") ||
 		*duration <= 0 || *duration > maxDuration || *pageSize < 1 || *pageSize > 256 || *maxPages < 1 || *maxPages > 256 {
 		return errors.New("explicit TEST scope, paired mode/permission and bounded options required")
 	}
@@ -165,6 +186,16 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	store, _ := futures.NewStreamStore(db)
 	if *status {
+		if paired {
+			checkpoints.Reply, err = store.ReplyCheckpoint(bounded, source.StreamConfig("reply"))
+			if err == nil {
+				checkpoints.Event, err = store.EventCheckpoint(bounded, source.StreamConfig("event"))
+			}
+			if err != nil {
+				return errors.New("cannot inspect TEST reply/event checkpoints")
+			}
+			return json.NewEncoder(out).Encode(map[string]any{"mode": "checkpoint_only", "checkpoints": checkpoints, "source_id": source.String(), "business_authorized": false})
+		}
 		var cp futures.HeartbeatCheckpoint
 		if *role == "event" {
 			cp, err = store.EventCheckpoint(bounded, source.StreamConfig(*role))
@@ -183,9 +214,15 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	defer publisher.Close()
 	if *follow {
 		opts := futures.DefaultResidentCaptureOptions()
-		opts.Role, opts.PageSize, opts.MaxRecords = *role, *pageSize, *maxRecords
-		opts.Checkpoint = futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}
-		err = futures.FollowTestRawStream(bounded, source, store, publisher, opts, func(p futures.ResidentCaptureProgress) error { return json.NewEncoder(out).Encode(p) })
+		opts.PageSize, opts.MaxRecords = *pageSize, *maxRecords
+		emit := func(p futures.ResidentCaptureProgress) error { return json.NewEncoder(out).Encode(p) }
+		if paired {
+			err = futures.FollowTestRawPair(bounded, source, store, publisher, opts, checkpoints, emit)
+		} else {
+			opts.Role = *role
+			opts.Checkpoint = futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}
+			err = futures.FollowTestRawStream(bounded, source, store, publisher, opts, emit)
+		}
 		// A clean bounded stop is not a business success. Joined checkpoint or
 		// output errors must still return nonzero even alongside cancellation.
 		if err == context.Canceled || err == context.DeadlineExceeded {
