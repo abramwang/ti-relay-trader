@@ -13,7 +13,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 当前环境 | `2026-11-18 15:02 Asia/Shanghai` 按用户指令结束今日测试并切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092 API及独立worker运行。本机/域名均production，当前PID以service status为准；后续切换仍需用户明确指令 |
 | 安全状态 | 生产6个账户保留、2个启用查询（债享5号/富盈13号）、0个开放交易；387/388于11月18日按用户要求暂时停用，历史账本保留。TEST配置及CTP独立审计保留但不是当前服务环境。今日CTP交易授权15:00已结束，不追加报撤、不重做结算或重启OC |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；CTP TEST已完成CLI经Redis的真实单笔报撤及回报持久收件，普通API/终端报撤与完整业务快照仍未上线 |
-| 最近确认 | `2026-11-18 15:12` 按用户要求补跑生产收盘采集：仅6830/5768，两户五类查询全部completed，资金/持仓broker_close快照落库，任务succeeded，耗时2.748秒。387/388保持停用；今日结算/绩效未在本轮补跑，不以采集成功替代。原Stream错误证据保留 |
+| 最近确认 | `2026-11-18 15:16` 昨日20261117权威行情复算补跑成功，仅当前启用6830/5768；6830已是权威日线、核对无变化，5768仍有previous_economic_nav_gap及ETF范围/清算未核验、未发布净值。今日15:12收盘采集两户成功，今日结算/绩效仍未补跑；387/388保持停用 |
 | 更新时间 | `2026-11-18` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 15:15:58–15:16:03` **补跑昨日权威行情复算**：昨日失败实际为TEST环境下`no enabled performance accounts selected`，并非Meridian水位未就绪。按用户要求以生产配置、目标20261117、当前启用6830/5768执行正常canonical脚本及互斥锁；任务`performance_canonical-20261117-watermark-poll`已从jobs接口核验succeeded，完成标记写入。6830原权威日线版本不变；5768成本calculated、价格来源meridian_1d_pre_close_and_close，但净值仍blocked且persisted=false，保留前序净值缺口/ETF权益范围/私有清算未核验，不宣称全账户业绩闭合。原失败报告备份`performance_canonical.failed-20261117.json`，补跑日志`/var/log/relay/performance_canonical-manual-20261118-for-20261117.log`。不重新启用387/388、不查询OC、不调整交易权限；今日17:10自动复算安排不变，今日正式结算未在本轮补跑。
 
 - `2026-11-18 15:12:38–41` **生产盘后查询已补齐**：显式限定债享5号314000046830、富盈13号314000045768，通过正常post_close_capture及流水线互斥锁补跑，五类资金/持仓/订单/成交/费用查询终态和资金持仓新鲜度全部通过；两户broker_close资金快照写入，当前均零证券持仓。查询账本6830订单/成交0/0，5768订单/成交100/92；不是仅看命令受理。生产任务run_id=`post_close_capture-20261118-1794985958677590000`已从jobs接口确认succeeded。15:01原定时任务实际采集的是当时TEST00030484，原报告另存`/var/log/relay/reports/post_close_capture.test-20261118-1501.json`，新生产报告为`post_close_capture.json`，执行日志`/var/log/relay/post_close_capture-manual-20261118-1513.log`。本轮没有报撤、重新启用停用户或补跑结算/绩效；17:10权威复算安排不变。
 
