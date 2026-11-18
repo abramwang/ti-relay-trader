@@ -10,6 +10,25 @@
 
 下述`oc_test_native_facts.v1`只用于东吴测评柜台行情与实盘显著不同的特殊TEST场景，不是实盘默认定价方案，也不要求所有TEST柜台采用。买一减10tick、买开一手及原生动态5秒等均是该测试路径的边界，不推广为生产策略规则。本次只明确设计与后续开发方向，不改变现有运行权限或提前删除尚在联测的OC保护。
 
+## Meridian定价分流已接线
+
+沿上述实盘目标先完成可复用的行情准备逻辑，并接入现有TEST execution发布器进行离线验证；**不代表生产期货发送、API/SDK/终端已经开放**。没有修改OC或Meridian协议，也不新增柜台查询前置。
+
+- `PrepareMeridianPrice(raw, mapping, tick, tradeDate, now)`接收现有Meridian HTTP响应或SSE的JSON data正文，采用`futures_market_snapshot.v1`实际字段。mapping和tick来自调用方已核对的Meridian合约目录，不由代码大小写猜映射、不从OC盘口补值。支持SHFE/CFFEX行情身份；发送器原SHFE买开一手TEST范围不变。
+- 显式本地`price_source=meridian_futures_snapshot.v1`与原生测试来源互斥。不自动回退、不将旧空来源默认为新Meridian证据。仅新execution接受此来源，旧测评规则保持原样。
+- 核对目标合约、源原生代码、交易所、TradingDay、行情会话、ready/realtime及显式非陈旧标记、一档价量与盘口自洽。逐合约交易所时间和接收时间各自最多5秒，允许250毫秒未来时钟偏差；不能用全局缓存新鲜代替目标合约，也不把夜盘自然日期当TradingDay。
+- 价格数值保留精确十进制，不先经float64重编码。**不产生建议委托价、不执行买一减10tick、不限制必须挂在买一下方。** 委托只做正数/精确档位基础校验，最终价格范围、资金、持仓与权限由柜台判断；不把正常柜台拒单视为OC进程故障，不自动改价重报。
+- 返回完整market、有效期、正文摘要，`business_authorized=false`。原JSON正文以base64保存在本地approval的`meridian_snapshot`，避免序列化重排改变原字节；限32KiB、最多16个合约，选择目标唯一行。发布校验及紧邻XADD时重新核对该正文与market、行情期限。摘要与自洽核对不是Meridian签名，也不证明上游来源独立可信；调用者必须使用可信行情连接和已核对目录，不接受外部任意正文作为授权。
+- 不增加`instrument.constraints.query`，不等待OC行情、不做双源比价。撤单继续不带market。原文只进入Relay本地发布审计，不加入OC命令wire；既有命令幂等、执行未知不重报、心跳和本地授权保持。
+
+现有`relay-ctp-trade`增加`--prepare-meridian-price --meridian-snapshot-file /absolute/snapshot.json --meridian-mapping-file /absolute/mapping.json --meridian-price-tick 1`，同时沿用显式TEST账户/路由、专用数据库名称及`--target-file`参数。此模式**不访问数据库、Redis或网络、不读取凭据**；文件仅供CLI离线检查，不是日常手工行情导入流程。正式编排应直接把现有HTTP/SSE正文传给Go函数。与原生准备、登记、发送参数混用会拒绝；生产参数仍拒绝。
+
+本轮测试使用明确标记的合成Meridian快照，不向真实流投递；覆盖夜盘、CFFEX/SHFE映射、精确价位、源混用/篡改/重复目标/过期/空盘口拒绝、策略原价保留、CLI零连接及PG发布/未知重放。临时PG使用假publisher，不冒称真实Meridian订阅或柜台报撤验收。没有切环境、启动OC、结算确认或交易操作。
+
+验证：`go test ./...`及futures/trade CLI的`go vet`通过；最终临时PG race回归2.574秒通过，核对发布记录保留原始JSON、没有新增OC查询、重开store后不重复发布。构建及PG日志位于`outputs/recovery/ctp-meridian-price.YZRZsM/`，CLI未替换常驻服务。未执行整日在线稳定性或新的真实Redis报撤验收。
+
+下一步仍是统一API/SDK/终端权限和可信行情接收编排，再安排真实新会话联测；OC无需为本次分流新增功能，按已约定的常驻与连接恢复工作推进。原生测评路径仍可供东吴不同源行情使用，不将生产设计更改为测评规则。
+
 ## 新版execution原生事实定价接线
 
 Relay已完成本地`oc_test_native_facts.v1`定价路径，供`relay_test_execution.v1`命令级授权使用。它不是新增OC动作/profile/wire；继续使用已交付的`instrument.constraints.query`和原reply。OC无需再修改协议、提供逐笔审计文件或重复原则回签。下面明日安排中的“定价待接线”已由本节开发进展替代，真实柜台联测仍待当日会话和授权。

@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- **Meridian定价分流已接线**：复用HTTP/SSE正文和已核对目录，保留策略委托价，不套用测评买一减10tick、不增加OC行情查询/双源比价；新execution发布器校验原文、逐合约时效与基础价位。CLI有独立零连接准备模式，原生报价仍仅显式TEST特例；生产发送及API/SDK/终端接线未开放。见[实现边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#meridian定价分流已接线)。本轮没有变更环境或交易权限。
+
 - **定价边界（用户确认）**：实盘以Meridian行情定价，柜台做最终报单校验；OC原生行情路径仅服务东吴测评的不同源行情，不作为生产逐单前置，也不推广测试的一手/买一减10tick规则。见[职责边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#实盘定价边界用户确认)。本次仅更新设计，运行环境和权限未改。
 
 - `2026-11-18` **新版execution原生事实定价接线完成**：新增仅本地oc_test_native_facts.v1，按已发布查询和PG原始reply绑定当前来源/会话/交易日，精确计算TEST一手买开建议价；发送前重读原文，静态300秒/动态5秒均从SDK请求开始计龄，冲突、刷新后旧事实及过期拒绝。现有CLI增加只读prepare-native-price，报价不授权/发单/ACK，撤单仍独立。单测及隔离PG/Redis回归通过，业务环境未改，在线验收待明日；OC不需新协议或逐笔材料，见[实现与用法](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#新版execution原生事实定价接线)。下条“定价待接线”为本轮前状态。

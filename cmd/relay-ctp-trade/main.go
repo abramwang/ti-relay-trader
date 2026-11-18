@@ -73,6 +73,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	nativeQuery := f.Int64("native-query-id", 0, "registered and published instrument.constraints.query command ID")
 	nativeReceipt := f.Int64("native-receipt-id", 0, "durable raw reply receipt ID")
 	nativeMapping := f.String("native-mapping-file", "", "verified Meridian CatalogBinding JSON; identities only, not a quote")
+	prepareMeridian := f.Bool("prepare-meridian-price", false, "check existing Meridian HTTP/SSE data; no connections, price selection or authority")
+	meridianSnapshot := f.String("meridian-snapshot-file", "", "original Meridian futures snapshot response JSON")
+	meridianMapping := f.String("meridian-mapping-file", "", "verified Meridian CatalogBinding JSON")
+	meridianTick := f.String("meridian-price-tick", "", "exact decimal tick from the verified Meridian contract catalog")
 	if err := f.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -81,6 +85,16 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	if f.NArg() != 0 || scope.Route.Env != "test" || !(scope.Route.BrokerID == "ctp" || strings.HasPrefix(scope.Route.BrokerID, "ctp_")) || !strings.HasSuffix(*database, "_test") || len(*database) > 63 || strings.ContainsAny(*database, " \t\r\n") || *register != *persist || *publish != *allow || (*publish && (!*register || *deployment == "")) || len(*deployment) > 128 || strings.ContainsAny(*deployment, " \t\r\n") {
 		return errors.New("explicit TEST CTP scope, dedicated database and paired write flags required")
+	}
+	if *preparePrice && *prepareMeridian {
+		return errors.New("choose one explicit price source")
+	}
+	if *prepareMeridian {
+		if *register || *persist || *publish || *allow || *commandFile != "" || *approvalFile != "" || *evidenceFile != "" || *meridianSnapshot == "" || *meridianMapping == "" || *meridianTick == "" {
+			return errors.New("Meridian price preparation is offline and requires snapshot, mapping and tick only")
+		}
+	} else if *meridianSnapshot != "" || *meridianMapping != "" || *meridianTick != "" {
+		return errors.New("Meridian price flags require --prepare-meridian-price")
 	}
 	if *preparePrice {
 		if *register || *persist || *publish || *allow || *commandFile != "" || *approvalFile != "" || *evidenceFile != "" || *nativeQuery <= 0 || *nativeReceipt <= 0 || *nativeMapping == "" {
@@ -100,11 +114,32 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	if *preparePrice {
 		return prepareNativePrice(ctx, scope, target, *database, *nativeQuery, *nativeReceipt, *nativeMapping, getenv, out)
 	}
+	if *prepareMeridian {
+		mappingRaw, err := readBounded(*meridianMapping, 4096)
+		if err != nil {
+			return err
+		}
+		var mapping futures.CatalogBinding
+		d := json.NewDecoder(bytes.NewReader(mappingRaw))
+		d.DisallowUnknownFields()
+		if d.Decode(&mapping) != nil || d.Decode(new(any)) != io.EOF {
+			return errors.New("invalid Meridian catalog mapping")
+		}
+		snapshot, err := readBounded(*meridianSnapshot, 32768)
+		if err != nil {
+			return err
+		}
+		result, err := futures.PrepareMeridianPrice(snapshot, mapping, futures.Price(*meridianTick), target.TradeDate, time.Now())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_meridian_price_no_connections", "command_published": false, "business_authorized": false, "preparation": result})
+	}
 	raw, err := readBounded(*commandFile, 65536)
 	if err != nil {
 		return err
 	}
-	b, err = readBounded(*approvalFile, 8192)
+	b, err = readBounded(*approvalFile, 65536)
 	if err != nil {
 		return err
 	}

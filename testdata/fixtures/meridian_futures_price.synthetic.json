@@ -1,0 +1,35 @@
+{
+  "synthetic_only": true,
+  "data": [{
+    "schema_version": "futures_market_snapshot.v1",
+    "security_id": "RB2701.SHFE",
+    "source_instrument_id": "rb2701",
+    "exchange_id": "SHFE",
+    "product_id": "RB",
+    "trading_day": 20261117,
+    "source_action_date": "20261116",
+    "normalized_action_date": 20261116,
+    "exchange_timestamp": "2026-11-16T21:18:47.500+08:00",
+    "received_at": "2026-11-16T21:18:47.582+08:00",
+    "timestamp_quality": "source_action_date",
+    "last": 3000,
+    "upper_limit_price": 3173,
+    "lower_limit_price": 2870,
+    "bids": [{"level": 1, "price": 2999, "volume": 20, "available": true}],
+    "asks": [{"level": 1, "price": 3000, "volume": 10, "available": true}],
+    "depth": 1,
+    "source": "ctp",
+    "session_id": "synthetic-meridian-session",
+    "event_identity": "synthetic-meridian-event"
+  }],
+  "meta": {
+    "cache_status": "ready",
+    "count": 1,
+    "data_scope": "realtime",
+    "process_running": true,
+    "schema_version": "futures_market_snapshot.v1",
+    "session_id": "synthetic-meridian-session",
+    "stale_data": false,
+    "trade_date": "20261117"
+  }
+}

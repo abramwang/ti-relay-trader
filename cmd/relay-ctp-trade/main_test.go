@@ -11,9 +11,68 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"ti-relay-trader/internal/futures"
 )
+
+func TestMeridianPriceCLIIsOffline(t *testing.T) {
+	args := preparationArgs(t)
+	var clean []string
+	var targetPath string
+	for i := 0; i < len(args); i += 2 {
+		if args[i] == "--target-file" {
+			targetPath = args[i+1]
+		}
+		if args[i] != "--command-file" && args[i] != "--approval-file" && args[i] != "--evidence-file" {
+			clean = append(clean, args[i:i+2]...)
+		}
+	}
+	if targetPath == "" {
+		t.Fatal("target missing")
+	}
+	raw, err := os.ReadFile("../../testdata/fixtures/meridian_futures_price.synthetic.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	row := payload["data"].([]any)[0].(map[string]any)
+	row["exchange_timestamp"] = now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
+	row["received_at"] = now.Format(time.RFC3339Nano)
+	raw, _ = json.Marshal(payload)
+	dir := t.TempDir()
+	snapshot := filepath.Join(dir, "snapshot.json")
+	mapping := filepath.Join(dir, "mapping.json")
+	if err := os.WriteFile(snapshot, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(futures.CatalogBinding{SecurityID: "RB2701.SHFE", SourceInstrumentID: "rb2701", ExchangeID: "SHFE", PublicationSnapshotID: "synthetic-version", LogicalTableChecksum: "synthetic-checksum"})
+	if err := os.WriteFile(mapping, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	clean = append(clean, "--prepare-meridian-price", "--meridian-snapshot-file", snapshot, "--meridian-mapping-file", mapping, "--meridian-price-tick", "1")
+	for _, extra := range [][]string{nil, {"--prepare-native-price"}, {"--register", "--persist-test-intent"}, {"--env", "production"}, {"--native-query-id", "1"}} {
+		var out, diagnostics bytes.Buffer
+		err := run(context.Background(), append(append([]string{}, clean...), extra...), func(string) string { t.Fatal("Meridian preparation accessed credentials"); return "" }, &out, &diagnostics)
+		if len(extra) > 0 {
+			if err == nil {
+				t.Fatal("mixed/production invocation accepted", extra)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result map[string]any
+		if json.Unmarshal(out.Bytes(), &result) != nil || result["mode"] != "check_meridian_price_no_connections" || result["business_authorized"] != false || result["command_published"] != false {
+			t.Fatal(out.String())
+		}
+	}
+}
 
 func preparationArgs(t *testing.T) []string {
 	t.Helper()

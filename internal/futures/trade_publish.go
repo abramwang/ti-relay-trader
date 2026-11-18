@@ -38,6 +38,7 @@ func (a TestTradeApproval) relayExecution() bool {
 }
 
 type TestTradeMarket struct {
+	MeridianSnapshot      []byte                    `json:"meridian_snapshot,omitempty"`
 	NativeFacts           *TestNativeFactsReference `json:"native_facts,omitempty"`
 	PriceSource           string                    `json:"price_source,omitempty"`
 	SecurityID            string                    `json:"security_id"`
@@ -67,7 +68,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 		return a, err
 	}
 	if !literal(fields["market"], "null") {
-		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "lower_limit", "upper_limit"}, []string{"price_source", "best_bid", "native_facts"})
+		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "lower_limit", "upper_limit"}, []string{"price_source", "best_bid", "native_facts", "meridian_snapshot"})
 		if err != nil {
 			return a, err
 		}
@@ -106,6 +107,13 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 		return a, ErrStreamIdentity
 	}
 	if a.Market != nil {
+		if a.Market.PriceSource == meridianPriceSource {
+			if !a.relayExecution() || verifyMeridianMarket(*a.Market) != nil {
+				return a, ErrStreamIdentity
+			}
+		} else if a.Market.MeridianSnapshot != nil {
+			return a, ErrStreamIdentity
+		}
 		if a.Market.PriceSource == nativeFactsPriceSource {
 			if !a.relayExecution() || a.Market.NativeFacts == nil || a.Market.NativeFacts.validate() != nil {
 				return a, ErrStreamIdentity
@@ -162,8 +170,20 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	}
 	nativeLower := m.PriceSource == "oc_test_native_lower_limit.v1"
 	nativeFacts := m.PriceSource == nativeFactsPriceSource
-	if m.PriceSource != "" && !nativeLower && !nativeFacts {
+	meridian := m.PriceSource == meridianPriceSource
+	if m.PriceSource != "" && !nativeLower && !nativeFacts && !meridian {
 		return ErrStreamIdentity
+	}
+	if meridian {
+		if !a.relayExecution() {
+			return ErrStreamIdentity
+		}
+		if err := verifyMeridianMarket(*m); err != nil {
+			return err
+		}
+		// The strategy owns the price; final trading limits are broker decisions.
+		// Do not inherit the assessment's bid-minus-ten preference here.
+		return validatePriceTick(o.LimitPrice, m.PriceTick)
 	}
 	if nativeFacts {
 		if !a.relayExecution() || m.NativeFacts == nil || m.NativeFacts.validate() != nil {

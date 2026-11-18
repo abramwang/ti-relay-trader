@@ -22,6 +22,21 @@ func checkedPositivePrice(p Price) (*big.Rat, bool) {
 	return r, ok && r.Sign() > 0
 }
 
+func validatePriceTick(price, tick Price) error {
+	p, ok := checkedPositivePrice(price)
+	if !ok {
+		return priceAdmissionError("invalid_limit_price")
+	}
+	t, ok := checkedPositivePrice(tick)
+	if !ok {
+		return priceAdmissionError("invalid_price_tick")
+	}
+	if !new(big.Rat).Quo(p, t).IsInt() {
+		return priceAdmissionError("price_off_tick")
+	}
+	return nil
+}
+
 // The caller supplies already scoped evidence. This checks economics only;
 // it does not establish freshness, provenance, margin sufficiency or authority.
 func validateLimitOrderPrice(price, tick, lower, upper Price) error {
