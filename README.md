@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 13:35` **用户明确放开CTP TEST交易测试，不再逐笔请示**：实际新路由hb仅3条，最后13:15:22 stopping/14 blocking，session `ctpproc-dc96c0954ecd430394e5eb6eef073614`；两命令流0，未发报撤。13:36原始心跳已落独立PG，owner/cursor见`outputs/recovery/ctp_dongwu_scheduled_20261118/heartbeat-capture-20261118T053617Z.jsonl`，接收进程已退出。已请用户转OC直接恢复实际可用进程/新当日日间配置，不清状态、不重做未知结算；旧13:35已过期。Relay多笔发布仍未实现，day profile仍拒绝，不能宣称全部功能已开；多笔接线提升优先级，生产保持关闭。见[最新授权与阻塞](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
+
 - `2026-11-18 用户调整职责` **先测本地报撤，暂缓外部恢复迁移**：OC收敛为连接/授权结算/命令调用/标准转换与原文错误转发，无关外部坏回报不应退出或拖停本地链路；账本、外部关联、清算及策略准入归Relay。已覆盖执行单旧前置并更新路线图；Relay既有延期策略不要求旧32条关联/清零，新增查询及本地报撤回归。当前legacy_source专用字段仍按已交付协议解析，若OC精简由Relay同步接线，不新增恢复机制。未收到真实启动session，未发新命令、未切环境/延长13:35窗口。
 
 - `2026-11-18 13:14` **OC scheduled实际准备通过，进入现场启动**：`reference/oc_ctp_scheduled_preparation_20261118T1305`六摘要/SDK一致，单笔无day profile，窗口13:30–13:35、进程上限3600秒。Relay13:10独立SCAN新恢复路由0键/run_id符合/noeviction；13:11独立PG保留5查询/0交易，新命令/receiver均0。已发给用户转交OC的复核后初始化及提前登录回执，结算和命令仅窗口内；等待实际session/代次/TradingDay及窗口内审计交付方式。程序/库已就绪但接收尚未运行，不伪造会话，终端仍旧PM观察绑定待新心跳再切。无新命令/生产变更，见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
