@@ -10,8 +10,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-18 15:02 Asia/Shanghai` 按用户指令结束今日测试并切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092 API及独立worker运行。本机/域名均production，当前PID以service status为准；后续切换仍需用户明确指令 |
-| 安全状态 | 生产6个账户保留、2个启用查询（债享5号/富盈13号）、0个开放交易；387/388于11月18日按用户要求暂时停用，历史账本保留。TEST配置及CTP独立审计保留但不是当前服务环境。今日CTP交易授权15:00已结束，不追加报撤、不重做结算或重启OC |
+| 当前环境 | `2026-11-18 15:18 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 API内嵌同步运行，生产独立worker停止。本机/域名均test/ok，当前PID以service status为准；后续切换仍需用户明确指令 |
+| 安全状态 | TEST华鑫00030484沿用已启用交易配置，15:18心跳登录/快照ready，但不以盘后ready承诺可撮合，本轮未发报撤。生产配置仍6户保留/2户查询/0交易，387/388暂时停用、历史保留。今日CTP交易授权15:00已结束，不追加报撤、不重做结算或重启OC |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；CTP TEST已完成CLI经Redis的真实单笔报撤及回报持久收件，普通API/终端报撤与完整业务快照仍未上线 |
 | 最近确认 | `2026-11-18 15:16` 昨日20261117权威行情复算补跑成功，仅当前启用6830/5768；6830已是权威日线、核对无变化，5768仍有previous_economic_nav_gap及ETF范围/清算未核验、未发布净值。今日15:12收盘采集两户成功，今日结算/绩效仍未补跑；387/388保持停用 |
 | 更新时间 | `2026-11-18` |
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 15:18` **按用户指令切回TEST**：通过switch-relay-env.sh test完成目标库迁移检查、停止生产API/worker并启动TEST内嵌同步，域名test/ok、Redis/数据库/行情/事件桥正常；华鑫00030484心跳broker/order_snapshot/accepting_trade_commands均true。生产配置及387/388停用状态不变，无新柜台查询/报撤或OC重启。今日17:10生产canonical任务仍依赖生产API，留在TEST会无法选择生产账户；已提醒用户，不能据计划时间自行切生产。今日正式结算/绩效未补跑，昨日复算和今日柜台收盘采集证据保留。
 
 - `2026-11-18 15:15:58–15:16:03` **补跑昨日权威行情复算**：昨日失败实际为TEST环境下`no enabled performance accounts selected`，并非Meridian水位未就绪。按用户要求以生产配置、目标20261117、当前启用6830/5768执行正常canonical脚本及互斥锁；任务`performance_canonical-20261117-watermark-poll`已从jobs接口核验succeeded，完成标记写入。6830原权威日线版本不变；5768成本calculated、价格来源meridian_1d_pre_close_and_close，但净值仍blocked且persisted=false，保留前序净值缺口/ETF权益范围/私有清算未核验，不宣称全账户业绩闭合。原失败报告备份`performance_canonical.failed-20261117.json`，补跑日志`/var/log/relay/performance_canonical-manual-20261118-for-20261117.log`。不重新启用387/388、不查询OC、不调整交易权限；今日17:10自动复算安排不变，今日正式结算未在本轮补跑。
 
