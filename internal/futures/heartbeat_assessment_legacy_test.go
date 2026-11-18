@@ -95,6 +95,34 @@ func TestAssessmentLegacyStrict(t *testing.T) {
 	}
 }
 
+func TestAssessmentUnlinkedExternalReplayDoesNotBlockLocalFlow(t *testing.T) {
+	now := time.Now()
+	for _, cancel := range []bool{false, true} {
+		row, scope, target, approval := freshOCTradeHeartbeat(t, now, cancel)
+		row.Raw = deferredAssessmentBody(t, withAssessmentLegacy(t, row.Raw, scope))
+		h, err := DecodeHeartbeat(row.Raw, scope.Route)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := h.Assessment.LegacySource.Diagnostics
+		if d.Linked != 0 || d.QueryObservations != 0 || d.BusinessProcessed != 0 || d.Pending != 32 || h.Assessment.CallbackReconciliationComplete {
+			t.Fatal("external replay must remain unresolved")
+		}
+		if _, ready := h.queryCollection(); !ready {
+			t.Fatal("unlinked external replay blocked initialization")
+		}
+		if _, err := testTradeHeartbeatProof(row, scope.Route, target, approval, now); err != nil {
+			t.Fatal("unlinked external replay blocked local submit/cancel", err)
+		}
+		// Isolation cannot turn a local execution conflict into a deferred item.
+		h.Assessment.BlockingCallbacks = 1
+		h.Assessment.DeferredCallbacks--
+		if h.Assessment.callbacksAllowAssessment() {
+			t.Fatal("local blocking callback ignored")
+		}
+	}
+}
+
 type ocNextdayCase struct {
 	Scenario   string            `json:"scenario"`
 	Audit      string            `json:"audit_prefix"`
