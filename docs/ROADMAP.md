@@ -48,6 +48,8 @@
 
 ### F0-F6 CTP 期货接入
 
+- [x] TEST委托预检API/SDK及终端源码：`POST /v1/futures/orders/preview`复用服务端Meridian目录/报价，保留精确原委托价；Relay账户配置、OC瞬时接单和发送入口分别展示，始终不登记/发送。终端“核对委托”处理输入变更、晚到响应、失效与错误，不开放报撤。详见[接口边界](TRADING_API_SCHEMA.md#期货委托预检源码新增待部署)。普通发送编排仍未完成，未部署/改权限。
+
 - [x] 服务端Meridian只读报价准备及SDK源码：GET `/v1/futures/price-preview`，服务端解析正式合约目录/tick和原始快照，复用精确定价核验，拒绝调用方覆盖数据来源/权限。能力`futures.price_preview.v1`、严格只读/短期证据；无OC查询或交易数据库写入。HTTP端到端/SDK回归已接，不是普通期货发送开放；API/wheel未部署，详见[契约](TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)。
 - [x] Meridian行情准备与TEST execution来源分流：接现有快照/SSE正文，映射/TradingDay/逐合约时间核验，精确基础价位、策略原价保留；不绑OC原生查询或双源一致性，不继承测评挂价规则。CLI零连接准备及发布审计原文核对，纯函数支持CFFEX/SHFE，发送仍限既有TEST范围。见[实现边界](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#meridian定价分流已接线)。生产行情接收编排及普通交易入口仍待统一接入。
 - [x] 用户确认实盘定价以Meridian为准，柜台负责最终报单校验；OC原生事实定价仅用于行情不同源的东吴TEST测评，不将逐笔原生查询、双源价格一致性或测试报价规则引入实盘前置。见[定价边界](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#实盘定价边界用户确认)。生产接线仍按后续开发与验收推进，不视为已上线。

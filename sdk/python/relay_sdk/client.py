@@ -1416,6 +1416,25 @@ class RelayClient:
             query={"security_id": security_id, "trade_date": trade_date},
         )
 
+    def preview_futures_order(
+        self, *, account_id: str, security_id: str, trade_date: str,
+        trade_side: str, offset_type: str, qty: int, price: str,
+        hedge_type: str = "speculation",
+    ) -> Mapping[str, Any]:
+        """Read-only TEST intention check, not an order or reusable permission.
+
+        Price must be exact decimal text. No float conversion, market-source
+        override, automatic reprice or submission is performed.
+        """
+        if not isinstance(price, str):
+            raise TypeError("price must be decimal text")
+        return self._request("POST", "/v1/futures/orders/preview", json_body={
+            "account_id": account_id, "security_id": security_id,
+            "trade_date": trade_date, "trade_side": trade_side,
+            "offset_type": offset_type, "hedge_type": hedge_type,
+            "qty": qty, "price": price,
+        })
+
     def get_meridian_futures_status(self) -> Mapping[str, Any]:
         """Return Meridian's CTP futures service status through relay."""
 

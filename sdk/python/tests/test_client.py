@@ -833,6 +833,16 @@ class RelayHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         RelayHandler.requests.append(("POST", parsed.path, query, body))
+        if parsed.path == "/v1/futures/orders/preview":
+            if body.get("trade_date") == "20261116":
+                self._json({"ok": False, "error": {"code": "UNAVAILABLE", "message": "stale quote"}}, status=503)
+            else:
+                self._json({"ok": True, "data": {
+                    "mode": "order_preview_only", "intent": body,
+                    "can_submit": False, "command_published": False,
+                    "blockers": ["publication_not_connected"],
+                }})
+            return
         if parsed.path == "/v1/orders":
             if body.get("gateway_order_id") == "gw-replay":
                 self._json(
@@ -1570,6 +1580,26 @@ class RelayClientTest(unittest.TestCase):
             self.client.get_futures_price_preview(
                 security_id="RB2701.SHFE", trade_date="20261117", allow_stale=True,
             )
+
+    def test_futures_order_preview_does_not_submit(self):
+        intent = dict(account_id="300052141", security_id="RB2701.SHFE",
+                      trade_date="20261117", trade_side="B", offset_type="O",
+                      qty=1, price="3000.000000001")
+        before = len(RelayHandler.requests)
+        result = self.client.preview_futures_order(**intent)
+        self.assertEqual(result["intent"]["price"], intent["price"])
+        self.assertFalse(result["command_published"])
+        self.assertFalse(result["can_submit"])
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "POST", "/v1/futures/orders/preview", {}, {**intent, "hedge_type": "speculation"},
+        )])
+        before = len(RelayHandler.requests)
+        with self.assertRaises(TypeError):
+            self.client.preview_futures_order(**{**intent, "price": 3000.1})
+        self.assertEqual(len(RelayHandler.requests), before)
+        with self.assertRaises(RelayError):
+            self.client.preview_futures_order(**{**intent, "trade_date": "20261116"})
+        self.assertEqual(len(RelayHandler.requests), before + 1)
 
     def test_meridian_futures_market_data(self):
         status = self.client.get_meridian_futures_status()

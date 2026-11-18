@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
-  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261117-ctp-readonly-2">
+  <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261118-ctp-preview-1">
   <link rel="stylesheet" href="/assets/futures-account.css?v=20261117-2">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
@@ -162,6 +162,10 @@
             <span>可用资金 <strong id="availableCash">--</strong></span>
           </div>
           <div class="risk-alert" id="riskAlert">风控提示：当前为测试账户，请确认价格和数量。</div>
+          <div class="futures-only futures-order-preview">
+            <button type="button" id="futuresOrderPreviewButton" title="核对当前委托，不发送订单" disabled>核对委托</button>
+            <output id="futuresOrderPreviewResult" aria-live="polite">尚未核对 · 不发送订单</output>
+          </div>
           <div class="form-actions">
             <button type="submit" class="primary-trade buy" id="submitOrderButton" disabled>买入下单</button>
             <button type="button" id="resetOrderButton">重置</button>
@@ -961,7 +965,7 @@
   </script>
   <script defer src="/assets/echarts.min.js"></script>
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
-  <script defer src="/assets/trade-terminal.js?v=20261117-ctp-readonly-2"></script>
+  <script defer src="/assets/trade-terminal.js?v=20261118-ctp-preview-1"></script>
   <script defer src="/assets/futures-account.js?v=20261117-2"></script>
 </body>
 </html>

@@ -1,6 +1,9 @@
 package futures
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ResolveMeridianPriceCatalog accepts an exact selector response, not a
 // caller-invented mapping or a partially read catalog page.
@@ -31,6 +34,9 @@ func ResolveMeridianPriceCatalog(raw []byte, securityID string) (CatalogBinding,
 		return bad()
 	}
 	b := CatalogBinding{SecurityID: securityID, SourceInstrumentID: textField(row, "source_instrument_id"), ExchangeID: textField(row, "exchange_id"), PublicationSnapshotID: textField(meta, "publication_snapshot_id"), LogicalTableChecksum: textField(meta, "logical_table_checksum")}
+	if !strings.HasSuffix(securityID, "."+b.ExchangeID) {
+		return bad()
+	}
 	if !oneOf(b.ExchangeID, "SHFE", "CFFEX") || !native(b.SourceInstrumentID, 30, false) || !validID(b.SecurityID) || len(b.SecurityID) > 128 || !validID(b.PublicationSnapshotID) || len(b.PublicationSnapshotID) > 128 || !validID(b.LogicalTableChecksum) || len(b.LogicalTableChecksum) > 128 {
 		return bad()
 	}

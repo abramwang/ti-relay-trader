@@ -16,12 +16,16 @@ func TestMeridianPriceCatalog(t *testing.T) {
 	}
 	for name, change := range map[string]func(map[string]any, map[string]any, map[string]any){
 		"wrong_symbol": func(root, row, meta map[string]any) { row["security_id"] = "AU2612.SHFE" },
-		"options":      func(root, row, meta map[string]any) { row["product_class"] = "options" },
-		"expired":      func(root, row, meta map[string]any) { row["trading_status"] = "expired_observed" },
-		"ambiguous":    func(root, row, meta map[string]any) { root["data"] = []any{row, row}; meta["count"] = 2 },
-		"partial":      func(root, row, meta map[string]any) { meta["total_count"] = 2 },
-		"cursor":       func(root, row, meta map[string]any) { meta["next_cursor"] = "next" },
-		"bad_cursor":   func(root, row, meta map[string]any) { meta["next_cursor"] = true },
+		"wrong_exchange": func(root, row, meta map[string]any) {
+			row["exchange_id"] = "CFFEX"
+			meta["exchange_coverage"] = map[string]any{"CFFEX": map[string]any{"status": "production_ready"}}
+		},
+		"options":    func(root, row, meta map[string]any) { row["product_class"] = "options" },
+		"expired":    func(root, row, meta map[string]any) { row["trading_status"] = "expired_observed" },
+		"ambiguous":  func(root, row, meta map[string]any) { root["data"] = []any{row, row}; meta["count"] = 2 },
+		"partial":    func(root, row, meta map[string]any) { meta["total_count"] = 2 },
+		"cursor":     func(root, row, meta map[string]any) { meta["next_cursor"] = "next" },
+		"bad_cursor": func(root, row, meta map[string]any) { meta["next_cursor"] = true },
 		"shadow": func(root, row, meta map[string]any) {
 			meta["exchange_coverage"] = map[string]any{"SHFE": map[string]any{"status": "ready_for_promotion"}}
 		},

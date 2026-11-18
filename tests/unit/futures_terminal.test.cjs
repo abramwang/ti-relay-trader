@@ -17,6 +17,76 @@ function context(names, overrides = {}) {
   }
   return ctx;
 }
+
+function previewContext(request) {
+  const picker = {value:"300052141"};
+  const els = {
+    futuresOrderPreviewButton:{disabled:false}, futuresOrderPreviewResult:{textContent:""},
+    futuresOffset:{value:"O"}, qtyInput:{value:"1"}, priceInput:{value:"3000.000000001"},
+  };
+  const state = {side:"B", marketSnapshot:{security_id:"RB2701.SHFE",trading_day:20261119}};
+  let expiry;
+  const ctx = context(["futuresPreviewIntent", "syncFuturesOrderPreview", "previewFuturesOrder"], {
+    state, els, byID:()=>picker, currentSecurityID:()=>"RB2701.SHFE", futuresMarketSelected:()=>true,
+    isFuturesSecurityID:()=>true, request,
+    window:{clearTimeout:()=>{}, setTimeout:fn=>{expiry=fn;return 1;}},
+  });
+  return {ctx,els,state,picker,expire:()=>expiry()};
+}
+function previewResponse(intent) {
+  return {mode:"order_preview_only",intent,can_submit:false,command_published:false,
+    account_permission_enabled:false,broker_accepting_submit:true,price_valid:true,
+    blockers:["publication_not_connected","relay_account_read_only"],
+    quote:{preparation:{valid_until:new Date(Date.now()+4000).toISOString(),market:{price_tick:"0.000000001"}}}};
+}
+test("order preview preserves decimal price, never submits, and expires visibly", async () => {
+  const calls=[];
+  const p=previewContext(async (path, options)=>{calls.push([path,options]);return previewResponse(options.body);});
+  await p.ctx.previewFuturesOrder();
+  assert.equal(calls.length,1);
+  assert.equal(p.state.priceEdited,true);
+  assert.equal(calls[0][0],"/v1/futures/orders/preview");
+  assert.equal(calls[0][1].body.price,"3000.000000001");
+  assert.equal(calls[0][1].body.trade_date,"20261119");
+  assert.match(p.els.futuresOrderPreviewResult.textContent,/Relay权限：未开放/);
+  assert.match(p.els.futuresOrderPreviewResult.textContent,/未发送订单/);
+  p.expire();
+  assert.match(p.els.futuresOrderPreviewResult.textContent,/已过期/);
+});
+test("editing an in-flight preview discards its late response", async () => {
+  let finish, count=0;
+  const p=previewContext((path, options)=>{count++;return new Promise(resolve=>{finish=()=>resolve(previewResponse(options.body));});});
+  const pending=p.ctx.previewFuturesOrder();
+  await p.ctx.previewFuturesOrder();
+  assert.equal(count,1);
+  p.picker.value="other-account";
+  p.ctx.syncFuturesOrderPreview();
+  finish(); await pending;
+  assert.equal(p.els.futuresOrderPreviewResult.textContent,"委托已变更 · 待核对");
+});
+test("missing TradingDay never falls back to wall date and failures do not retry", async () => {
+  let count=0;
+  const p=previewContext(async ()=>{count++;throw new Error("market unavailable");});
+  p.state.marketSnapshot=null;
+  await p.ctx.previewFuturesOrder();
+  assert.equal(count,0);
+  p.state.marketSnapshot={security_id:"RB2701.SHFE",trading_day:20261119};
+  await p.ctx.previewFuturesOrder();
+  assert.equal(count,1);
+  assert.match(p.els.futuresOrderPreviewResult.textContent,/核对失败.*未发送订单/);
+});
+test("unexpected permission or expired preview cannot look successful", async () => {
+  for(const invalid of ["permit","expired"]){
+    const p=previewContext(async (_,options)=>{
+      const response=previewResponse(options.body);
+      if(invalid==="permit")response.can_submit=true;
+      else response.quote.preparation.valid_until=new Date(Date.now()-1000).toISOString();
+      return response;
+    });
+    await p.ctx.previewFuturesOrder();
+    assert.match(p.els.futuresOrderPreviewResult.textContent,/核对失败/);
+  }
+});
 test("SHFE and CFFEX security identities do not rewrite source instrument ids", () => {
   const ctx = context(["isFuturesSecurityID"]);
   for (const id of ["AU2612.SHFE", "rb2701.shfe", "IF2612.CFFEX", "T2612.CFFEX"]) assert.ok(ctx.isFuturesSecurityID(id));

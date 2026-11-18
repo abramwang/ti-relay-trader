@@ -146,6 +146,8 @@
     orderForm: byID("orderForm"),
     marketSelector: byID("marketSelector"),
     futuresOffset: byID("futuresOffset"),
+    futuresOrderPreviewButton: byID("futuresOrderPreviewButton"),
+    futuresOrderPreviewResult: byID("futuresOrderPreviewResult"),
     futuresBarsScope: byID("futuresBarsScope"),
     futuresContractFacts: byID("futuresContractFacts"),
     futuresQuoteStatus: byID("futuresQuoteStatus"),
@@ -6778,6 +6780,7 @@
     els.quotePrice.classList.toggle("down", change < 0);
     els.quotePrice.classList.toggle("flat", !Number.isFinite(change) || change === 0);
     renderFuturesContext();
+    syncFuturesOrderPreview();
   }
 
   function renderDepthBook() {
@@ -6887,6 +6890,7 @@
     if (Number.isFinite(price) && price > 0) {
       els.priceInput.value = price.toFixed(priceDigitsForItem(state.marketSnapshot));
     }
+    syncFuturesOrderPreview();
   }
 
   function quoteOrderPrice() {
@@ -7395,6 +7399,7 @@
   function updateRisk() {
     updateBatchGuard();
     renderFuturesContext();
+    syncFuturesOrderPreview();
     if (futuresMarketSelected()) {
       els.submitOrderButton.disabled = true;
       els.submitOrderButton.textContent = "期货交易未开放";
@@ -7423,6 +7428,75 @@
       return;
     }
     els.riskAlert.textContent = "风控提示：测试账户指令将写入测试 Redis。";
+  }
+
+  function futuresPreviewIntent() {
+    const securityID = currentSecurityID();
+    const snapshot = state.marketSnapshot;
+    return {
+      account_id: byID("futuresAccount").value,
+      security_id: securityID,
+      trade_date: snapshot && snapshot.security_id === securityID ? String(snapshot.trading_day || "") : "",
+      trade_side: state.side,
+      offset_type: els.futuresOffset.value,
+      hedge_type: "speculation",
+      qty: Number(els.qtyInput.value),
+      price: els.priceInput.value.trim()
+    };
+  }
+
+  function syncFuturesOrderPreview() {
+    if (!els.futuresOrderPreviewButton) return;
+    const intent = futuresPreviewIntent();
+    const signature = JSON.stringify(intent);
+    if (state.futuresPreviewSignature && (signature !== state.futuresPreviewSignature || !futuresMarketSelected())) {
+      state.futuresPreviewSeq = (state.futuresPreviewSeq || 0) + 1;
+      state.futuresPreviewSignature = "";
+      state.futuresPreviewPending = false;
+      window.clearTimeout(state.futuresPreviewTimer);
+      els.futuresOrderPreviewResult.textContent = "委托已变更 · 待核对";
+    }
+    els.futuresOrderPreviewButton.disabled = Boolean(state.futuresPreviewPending) || !futuresMarketSelected() || !/^\d{8}$/.test(intent.trade_date) || !/^\d+$/.test(intent.account_id) || !isFuturesSecurityID(intent.security_id) || !Number.isInteger(intent.qty) || intent.qty <= 0 || !intent.price;
+  }
+
+  async function previewFuturesOrder() {
+    syncFuturesOrderPreview();
+    if (els.futuresOrderPreviewButton.disabled) return;
+    state.priceEdited = true;
+    const intent = futuresPreviewIntent();
+    const signature = JSON.stringify(intent);
+    const seq = state.futuresPreviewSeq = (state.futuresPreviewSeq || 0) + 1;
+    state.futuresPreviewSignature = signature;
+    state.futuresPreviewPending = true;
+    window.clearTimeout(state.futuresPreviewTimer);
+    els.futuresOrderPreviewResult.textContent = "正在核对…";
+    syncFuturesOrderPreview();
+    const current = () => seq === state.futuresPreviewSeq && signature === JSON.stringify(futuresPreviewIntent()) && futuresMarketSelected();
+    try {
+      const result = await request("/v1/futures/orders/preview", {method: "POST", body: intent});
+      if (!current()) return;
+      if (result.mode !== "order_preview_only" || result.command_published !== false || result.can_submit !== false || !result.intent || !Object.keys(intent).every(key => result.intent[key] === intent[key]) || !Array.isArray(result.blockers)) throw new Error("预检响应不匹配");
+      const validUntil = Date.parse(result.quote?.preparation?.valid_until || "");
+      if (!Number.isFinite(validUntil) || validUntil <= Date.now()) throw new Error("行情证据已过期");
+      const reasons = {publication_not_connected:"网页期货发送未接通",relay_account_read_only:"Relay账户只读",broker_not_ready:"OC未就绪或心跳过期",price_off_tick:"价格不符合最小价位",outside_current_test_scope:"超出当前TEST报单范围"};
+      els.futuresOrderPreviewResult.textContent = [
+        `${intent.security_id} · ${intent.price} × ${intent.qty}手`,
+        `Meridian · 最小价位 ${result.quote.preparation.market.price_tick} · ${result.price_valid ? "价格档位通过" : "价格档位未通过"}`,
+        `Relay权限：${result.account_permission_enabled ? "已配置" : "未开放"} · OC接单：${result.broker_accepting_submit ? "就绪" : "未就绪"}`,
+        result.blockers.map(code => reasons[code] || code).join("；"),
+        "未发送订单"
+      ].join("\n");
+      state.futuresPreviewTimer = window.setTimeout(() => {
+        if (current()) els.futuresOrderPreviewResult.textContent = "行情证据已过期 · 未发送订单";
+      }, validUntil - Date.now());
+    } catch (err) {
+      if (current()) els.futuresOrderPreviewResult.textContent = "核对失败：" + err.message + " · 未发送订单";
+    } finally {
+      if (seq === state.futuresPreviewSeq) {
+        state.futuresPreviewPending = false;
+        syncFuturesOrderPreview();
+      }
+    }
   }
 
   async function submitOrder(event) {
@@ -7893,6 +7967,9 @@
       scheduleTradeChartLoad(120);
     });
     els.orderForm.addEventListener("submit", submitOrder);
+    els.futuresOrderPreviewButton.addEventListener("click", previewFuturesOrder);
+    els.orderForm.addEventListener("input", syncFuturesOrderPreview);
+    els.orderForm.addEventListener("change", syncFuturesOrderPreview);
     els.resetOrderButton.addEventListener("click", () => {
       els.symbolInput.value = "600000";
       els.exchangeInput.value = "SH";

@@ -13,6 +13,15 @@ import (
 	"ti-relay-trader/internal/httpx"
 )
 
+type futuresPricePreview struct {
+	Mode                 string                           `json:"mode"`
+	BusinessAuthorized   bool                             `json:"business_authorized"`
+	CommandPublished     bool                             `json:"command_published"`
+	PublicationSupported bool                             `json:"publication_supported"`
+	CatalogBodySHA256    string                           `json:"catalog_body_sha256"`
+	Preparation          futures.MeridianPricePreparation `json:"preparation"`
+}
+
 var futuresPriceSecurityID = regexp.MustCompile(`^[A-Z]{1,3}[0-9]{4}\.(SHFE|CFFEX)$`)
 
 func (s *Server) handleFuturesPricePreview(w http.ResponseWriter, r *http.Request) {
@@ -33,31 +42,34 @@ func (s *Server) handleFuturesPricePreview(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "explicit CFFEX/SHFE contract and YYYYMMDD trade_date required", nil)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	unavailable := func(stage string) {
+	preview, stage := s.prepareFuturesPrice(r.Context(), securityID, day)
+	if stage != "" {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "futures price preview unavailable", map[string]string{"stage": stage})
+		return
 	}
+	httpx.WriteOK(w, r, http.StatusOK, preview)
+}
+
+func (s *Server) prepareFuturesPrice(parent context.Context, securityID, day string) (futuresPricePreview, string) {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	var result futuresPricePreview
 	catalog, err := s.market.FuturesPriceCatalog(ctx, securityID)
 	if err != nil {
-		unavailable("catalog_request")
-		return
+		return result, "catalog_request"
 	}
 	mapping, tick, err := futures.ResolveMeridianPriceCatalog(catalog, securityID)
 	if err != nil {
-		unavailable("catalog_validation")
-		return
+		return result, "catalog_validation"
 	}
 	raw, err := s.market.FuturesPriceSnapshot(ctx, securityID)
 	if err != nil {
-		unavailable("snapshot_request")
-		return
+		return result, "snapshot_request"
 	}
 	prepared, err := futures.PrepareMeridianPrice(raw, mapping, tick, day, time.Now())
 	if err != nil {
-		unavailable("snapshot_validation")
-		return
+		return result, "snapshot_validation"
 	}
 	digest := sha256.Sum256(catalog)
-	httpx.WriteOK(w, r, http.StatusOK, map[string]any{"mode": "price_preview_only", "business_authorized": false, "command_published": false, "publication_supported": false, "catalog_body_sha256": hex.EncodeToString(digest[:]), "preparation": prepared})
+	return futuresPricePreview{Mode: "price_preview_only", CatalogBodySHA256: hex.EncodeToString(digest[:]), Preparation: prepared}, ""
 }

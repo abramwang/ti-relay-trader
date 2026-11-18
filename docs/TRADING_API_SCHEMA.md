@@ -44,6 +44,27 @@ Relay从配置的Meridian依次读取唯一正式目录记录和当前快照，�
 
 SDK源码入口为`get_futures_price_preview(security_id=..., trade_date=...)`，仅一次GET。普通期货API/SDK报撤仍未开放；该能力不代表`/v1/orders`支持期货，也不改变既有股票接口。正式使用前核对部署版`/v1/schema`，本轮没有发布wheel或重启服务。
 
+### 期货委托预检（源码新增，待部署）
+
+`POST /v1/futures/orders/preview`，能力`futures.order_preview.v1`，当前仅服务已配置的TEST期货观察账户。POST只是传递委托意图，**不登记订单、不写交易流、不授权、不撤单**；生产环境不读取TEST观察库或心跳，返回503。本接口不替代既有TEST execution CLI，不是普通期货交易已开放。
+
+```json
+{"account_id":"300052141","security_id":"RB2701.SHFE","trade_date":"20261119","trade_side":"B","offset_type":"O","hedge_type":"speculation","qty":1,"price":"3000.000"}
+```
+
+字段全部必填：price必须是正十进制字符串，qty是正int32整数token；日期为明确TradingDay。方向B/S、开平O/C/CT/CY、投机speculation；参数合法不代表当前发送范围支持。拒绝重复键、额外字段、query参数、超4KiB正文及来源/权限覆盖。只读取所选账户当前心跳，不加载历史账本，再复用Meridian目录/快照准备；总时限8秒，其中行情最多5秒，无重试或OC查询命令。
+
+成功返回`mode=order_preview_only`、原样`intent`及`quote`（前述报价准备结构）。以下指标分别说明，不互相代替：
+
+- `price_valid`：正数、精确tick校验。原委托价格不变，不以动态涨跌停、买一减10tick或保证金作本地附加门禁，最终由柜台判断。
+- `account_permission_enabled`：Relay服务端现有账户配置的enabled/trading_enabled，且broker/gateway/account精确匹配。不是OC授予权限，也不是本次命令许可。
+- `broker_accepting_submit`：当前所选路由心跳仍新鲜（5秒）、同TradingDay且连接/结算/恢复/接单状态满足诊断条件。是瞬时观察，不证明正式发送前置完整或有效订单快照。
+- `can_submit=false`、`command_published=false`始终保持；`blockers`始终含`publication_not_connected`。其他值为`relay_account_read_only/broker_not_ready/price_off_tick/outside_current_test_scope`；后一项仅说明现有TEST发布器仍限SHFE买开一手，不推广为生产策略规则。
+
+400为请求格式问题，404为未配置观察账户，405为非POST；503为环境/读取能力不可用、账户歧义或行情失败，行情错误保留`detail.stage`。预检不检查完整委托状态/幂等责任，不改变交易权限，不自动向股票配置添加期货账户。所有结果no-store；浏览器参数变化、晚到结果或行情有效期已过必须丢弃，不持有可复用授权。
+
+SDK源码`preview_futures_order(..., price="3000.000")`只发送一次预检，拒绝float价格以避免精度丢失。终端新增“核对委托”，分别显示Relay权限/OC接单/价位和未开放原因；依然禁止期货提交和撤单。源码及离线测试完成后仍需部署，未发布SDK安装包。
+
 API 模式统一返回 JSON envelope：
 
 ```json

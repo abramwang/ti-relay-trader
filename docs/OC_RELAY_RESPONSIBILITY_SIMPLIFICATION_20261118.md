@@ -12,6 +12,16 @@
 
 ## Meridian定价分流已接线
 
+### 委托预检与终端操作（后续增量）
+
+新增`POST /v1/futures/orders/preview`和SDK `preview_futures_order`，终端“核对委托”复用该只读入口。服务端使用已配置TEST观察账户和现有Relay账户开关，读取心跳及Meridian目录/快照；不接受浏览器传权限、行情原文或路由。展示Relay账户权限、OC当前接单能力及价格档位三项独立结果，不把OC心跳当授权。原委托价和精度保留，柜台最终风险校验不复制到预检。
+
+这一步仍不登记订单、不发OC查询/报撤、不迁移数据库；`can_submit/command_published`恒false。普通发送、撤单编排及发布前重验仍待完成，不能用预检结果作为命令许可。当前UI支持的开平/多手意图可核对，但超过既有SHFE买开一手TEST发送范围时单列原因。无OC/行情侧新协议需求，无需重新回签或部署OC；Relay源码也未替换在线9092。
+
+覆盖请求注入/重复键/浮点数量拒绝、生产隔离、账户路由/权限及陈旧心跳、精确档位、行情失败与无自动重试；前端覆盖输入变更、晚到结果、期限到达、接口失败与手工submit仍禁发。浏览器使用完全拦截的合成API，不访问业务Redis/柜台；证据目录`outputs/recovery/futures-order-preview-20261118/`。正式启用前核对[预检契约](TRADING_API_SCHEMA.md#期货委托预检源码新增待部署)，不把本轮开发记成在线报撤验收。
+
+验证结果：`go test ./...`、相关包vet及定向race通过；SDK70项、前端34项通过，Playwright桌面1600×1000/手机390×844通过，禁发及无横向溢出均核对。构建仅保留在上述证据目录，未安装至常驻服务、未发布wheel。
+
 ### 服务端只读准备入口（后续增量）
 
 已接`GET /v1/futures/price-preview`与Python SDK `get_futures_price_preview`，能力标识`futures.price_preview.v1`；本轮为源码及离线验证，没有部署API或发布SDK安装包。调用方只提供真实合约标准代码和TradingDay，不能覆盖映射、tick、行情正文、URL或授权。由Relay现有配置的Meridian连接依次获取目录/快照原文，严格确认唯一正式目录后复用`PrepareMeridianPrice`；不再要求调用者准备映射/行情文件。目录与盘口均保留数值原文，拒绝上游跳转、非JSON、超量/部分响应和陈旧目标合约。

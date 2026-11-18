@@ -485,6 +485,11 @@ button {
 .market-selector { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .market-selector select { min-width: 0; flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 6px; }
 .market-futures .order-form .futures-only { display: grid; }
+.futures-order-preview { gap: 6px; min-width: 0; }
+.futures-order-preview button { min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-soft); color: var(--text); font: inherit; cursor: pointer; }
+.futures-order-preview button:hover:not(:disabled) { background: var(--panel-high); }
+.futures-order-preview button:disabled { opacity: 0.5; cursor: not-allowed; }
+.futures-order-preview output { white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .market-futures .order-form > * { flex-shrink: 0; }
 .market-futures .order-form > label:not(.stock-order-account):not(.symbol-field) { grid-template-columns: 60px minmax(0, 1fr); align-items: center; }
 .market-futures .quote-head { flex-wrap: wrap; gap: 8px; }
