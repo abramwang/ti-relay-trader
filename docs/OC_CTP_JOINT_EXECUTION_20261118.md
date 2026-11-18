@@ -6,6 +6,20 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 14:47 OC原始审计与Redis/PG逐字节核对通过
+
+用户提供完整JSONL附件，原样归档`reference/oc_ctp_live_audit_20261118/readonly.audit.jsonl`，5,596,299字节、1711条；SHA256=`58ccc7459fc53cc215f2ee8e951a29566cb9c0dd2c166ab0372fe23dbc664df1`。逐条验证唯一JSON成员、标准序列化SHA256、sequence连续1–1711、previous和原生/路由scope；全部通过，链头`55cb05f4b5a78dd336280445bad60d3cd7de87309a3298dcf47309ec9fc4e7fe`。只证明所交付OC审计内容一致，不是券商签名或独立网络抓包。
+
+- 报单：序号1610命令原文与Relay文件一致；1615原生请求SDK9，rb2701/SHFE、买开1手5218、OrderRef000000000008；1616受理回执同步返回0；1617对应投递已ACK；1618发布working。
+- 撤单：1621命令原文一致；1622原生请求SDK10，撤单ActionFlag0、原生OrderSysID39429、FrontID5/SessionID1208356524；1623受理回执同步返回0；1624对应投递已ACK；1625发布cancelled/原生OrderStatus5、成交0。
+- `trade_request.stage=before_durable_dispatch`单独不证明SDK已调用；本轮以对应后续受理回执、同身份原生状态字段和终态事件组合核验，不把调用前审计当完成。
+- 原生行情序号1613：精确rb2701/SHFE/20261118，真实末页与同步0，买一5218、卖一5428、下限5218/上限5653。确认测评行情与Meridian实盘不一致，并非将实盘价格改写为5218。
+- 整份材料结算请求/同步返回/成功响应各1条，成功末页序号24、ErrorID0；另有6组只读结算状态查询/响应，未出现重复结算确认请求。
+
+14:47:30只读读取现有Redis及独立PG：报单receipt `1794984115581-0`/1075、撤单receipt `1794984122039-0`/1076、working `1794984118516-0`/1073、cancelled `1794984125094-0`/1074，四条物理键/entry/body与OC审计逐字节相等，分别1062/1151/2707/2709 UTF-8字节。摘要及结果保存在`outputs/recovery/ctp_dongwu_scheduled_20261118/day-trade-03/oc-audit-review/{summary.json,expected-outputs.json,pg-redis-comparison.json}`。
+
+可以收口本轮单笔报撤的OC审计→Redis→Relay持久收件证据。附件含回报内嵌原始字段，但未附完整独立原生callback状态文件，未独立重算其callback证据链；不改变历史`result.json`原时点的`oc_native_audit_verified=false`，新复核以本节及追加报告为准。券商正式测评签认、全部查询/业务投影和生产准入仍不在通过范围。本次仅审计、Redis读和PG只读事务，无发单、结算、重启、环境切换或业务账本改写。
+
 ### 14:43 真实登录、单笔报单及同单撤单链路已完成
 
 session=`ctpproc-cac1855c2c51ccbad63ea1ffde3b5b92`，代次1/TradingDay20261118，原路由/epoch不变。第二笔旧单的失败回执`1794983425909-0`明确TEST rb2701限价5218–5653、未调用ReqOrderInsert；Redis确认ACK，原文已持久收件。没有重发前两单、清理责任或再次确认结算。

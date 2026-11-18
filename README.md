@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 14:47` **OC报撤审计闭环核验通过**：新附件1711条/5,596,299字节，sequence/previous/SHA256/scope全部通过；报单SDK9、撤单SDK10的原生请求/受理回执/ACK/working及cancelled关联一致。两回执两事件与Redis及独立PG原文4/4逐字节一致；结算确认仅1次，后续6次为只读核验。原生行情确认为rb2701买一5218/卖一5428、限价5218–5653。归档`reference/oc_ctp_live_audit_20261118/readonly.audit.jsonl`，追加报告在`day-trade-03/oc-audit-review/`，详见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。不覆盖历史证据、不声称券商正式签认或完整独立callback链验证；本轮无交易/环境变更。
+
 - `2026-11-18 14:43` **东吴TEST真实一报一撤已完成**：session `ctpproc-cac1855c2c51ccbad63ea1ffde3b5b92`，完成新查询command16/17后，14:41:54发布command18（message尾`03-1794984114779304590`），rb2701买开1手5218，14:41:55.366收到working；14:42:01发布command19撤单，14:42:01.818收到cancelled，OrderRef=`000000000008`/OrderSysID=`39429`、成交0。严格解析的两事件及两回执已进独立PG原始收件，两命令组pending/lag均0；不冒充已完成全部业务账本/柜台测评签认。前两单未调用SDK的失败回执均保存，不重发。定价新增仅东吴TEST/day/rb2701的一手下限价模式，使用实际OC限价且SDK前仍刷新，Meridian仅作证券映射，不伪造买一或把测评行情当实盘；原生产规则未变。全Go/vet/临时PG race通过，CLI已构建，9092未重启。证据`day-trade-03/`及最新receiver位点见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)；已请OC核对柜台记录，无需重复发单。仍保持TEST，不能自行切生产。
 
 - `2026-11-18 14:27` **第二轮实际报单仍待OC核对，禁止重发**：旧command12已有失败回执`1794982934537-0`明确未调用ReqOrderInsert，pending清零且原文已入PG。新session `ctpproc-eb6393fdb05193a1e805b5495260cee2`两查询command13/14完成后，14:25:47发布command15（message尾`02-1794983147097334006`、entry`1794983147144-0`），rb2701买开1手2958。14:25:49 OC停止，原生限价5218–5653与Meridian买一2968不一致；第二笔pending=1、无reply/event，未发撤单。已请OC核对精确原生行情及执行责任，不凭心跳认定未报柜台。脚本已退出，`day-trade-02`不可盲目重跑；新reply owner/cursor、查询和报价证据见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。保持TEST，生产/结算授权未变。
