@@ -1,0 +1,124 @@
+{
+  "cases": [
+    {
+      "body": {
+        "action": "order.submit",
+        "adapter_context": {
+          "callback_sha256": "5f3933db9be9af10faa9be1f594d0c3ca7f5f1b5ad6160aaf0f70dde55205a6d",
+          "connection_generation": 1,
+          "native_action_rejected": true,
+          "native_error": {
+            "ErrorID": 42,
+            "ErrorMsg_hex": "73796e7468657469632062726f6b65722072656a656374696f6e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "projection_source": "input_order_error",
+          "sdk_request_id": 1,
+          "source_callback_id": "ctp-callback-v1-bac0a7287b836bc8f9cdfe16f74e201c05ddd4c4fe390782e89f8b66188af444"
+        },
+        "correlation_id": "fixture-correlation",
+        "event_type": "order.event",
+        "idempotency_key": "fixture-idem",
+        "message_id": "ctp-action-rejected-v1-ae35039e07c3751a1128d1ac341a0253889ed1699bb0b1e62555c824f0e18388",
+        "message_type": "event",
+        "origin_message_id": "fixture-submit",
+        "payload": {
+          "account_id": "990000000001",
+          "business_type": "F",
+          "captured_at": "2026-11-05T09:01:02+08:00",
+          "client_order_id": "fixture-client",
+          "counter_session_id": "ctpproc-journal-fixture",
+          "cum_filled_qty": 0,
+          "exchange": "SHFE",
+          "gateway_order_id": "fixture-order",
+          "gateway_status": "rejected",
+          "hedge_type": "speculation",
+          "leaves_qty": 10,
+          "limit_price": "3600",
+          "native_ids": {
+            "broker_id": "9999",
+            "front_id": 7,
+            "investor_id": "FIXTURE_INV",
+            "order_ref": "000001",
+            "order_sys_id": "",
+            "sdk_request_id": 1,
+            "session_id": 9,
+            "user_id": "FIXTURE_USER"
+          },
+          "offset_type": "O",
+          "order_qty": 10,
+          "product_type": "futures",
+          "reject_code": "42",
+          "reject_message": "CTP ErrorID=42",
+          "schema_version": "ctp.f0.draft.2",
+          "submitted_at": null,
+          "symbol": "rb2612",
+          "trade_date": "20261105",
+          "trade_side": "B"
+        },
+        "produced_at": "2026-11-05T09:01:02+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        }
+      },
+      "isolated_state": true,
+      "name": "native_insert_rejected"
+    },
+    {
+      "body": {
+        "action": "order.cancel",
+        "adapter_context": {
+          "callback_sha256": "a034d4f6ebac98d460d523b3aa134e0229baa1adf43268bf24d3e3141373f01c",
+          "connection_generation": 1,
+          "native_action_rejected": true,
+          "native_error": {
+            "ErrorID": 42,
+            "ErrorMsg_hex": "73796e7468657469632062726f6b65722072656a656374696f6e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "projection_source": "order_action_error",
+          "sdk_request_id": 2,
+          "source_callback_id": "ctp-callback-v1-bac0a7287b836bc8f9cdfe16f74e201c05ddd4c4fe390782e89f8b66188af444"
+        },
+        "correlation_id": "fixture-correlation",
+        "event_name": "order.cancel.rejected",
+        "event_type": "order.cancel.event",
+        "idempotency_key": "cancel-idem",
+        "message_id": "ctp-action-rejected-v1-83082791f09fcf1ed32de0640039f1d696b291fd528509b10b6ec3659c6d1431",
+        "message_type": "event",
+        "origin_message_id": "cancel-message",
+        "payload": {
+          "account_id": "990000000001",
+          "cancel_id": "fixture-cancel",
+          "cancel_status": "rejected",
+          "code": "BROKER_CANCEL_REJECTED",
+          "counter_session_id": "ctpproc-journal-fixture",
+          "gateway_order_id": "fixture-order",
+          "message": "CTP ErrorID=42",
+          "occurred_at": "2026-11-05T09:01:02+08:00",
+          "order_state_changed": false,
+          "product_type": "futures",
+          "reconciliation_required": true,
+          "retry_safe": false,
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261105"
+        },
+        "produced_at": "2026-11-05T09:01:02+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        }
+      },
+      "isolated_state": true,
+      "name": "native_cancel_rejected"
+    }
+  ],
+  "synthetic_only": true
+}

@@ -49,6 +49,7 @@ type AdvertisedHeartbeat struct {
 	OrderSnapshotReady             bool                    `json:"order_snapshot_ready"`
 	AcceptingTradeCommands         bool                    `json:"accepting_trade_commands"`
 	AcceptingCancelCommands        bool                    `json:"accepting_cancel_commands"`
+	Operations                     *HeartbeatOperations    `json:"operations,omitempty"`
 	RecoveryClear                  *bool                   `json:"transport_recovery_clear,omitempty"`
 	RecoveryIssues                 *int64                  `json:"recovery_issue_count,omitempty"`
 	RuntimeMode                    string                  `json:"runtime_mode,omitempty"`
@@ -170,7 +171,7 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 			a := &AdvertisedHeartbeat{SessionID: h.CounterSessionID, ProducedAt: h.ProducedAt.In(zone), AgeMilliseconds: out.FinishedAt.Sub(h.ProducedAt).Milliseconds(),
 				State: h.State, StateText: h.StateText, RedisReady: h.RedisReady, BrokerReady: h.BrokerReady,
 				SettlementConfirmed: h.SettlementConfirmed, OrderSnapshotReady: h.OrderSnapshotReady,
-				AcceptingTradeCommands: h.AcceptingTradeCommands, AcceptingCancelCommands: h.AcceptingCancelCommands}
+				AcceptingTradeCommands: h.AcceptingTradeCommands, AcceptingCancelCommands: h.AcceptingCancelCommands, Operations: h.Operations}
 			if h.TradeDate != "" {
 				a.TradeDate = &h.TradeDate
 			}

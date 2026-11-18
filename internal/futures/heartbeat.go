@@ -17,6 +17,7 @@ type Heartbeat struct {
 	Recovery                                                         *HeartbeatRecovery
 	ReadOnly                                                         *HeartbeatReadOnly
 	Assessment                                                       *HeartbeatAssessment
+	Operations                                                       *HeartbeatOperations
 	ProducedAt                                                       time.Time
 	RedisReady, BrokerReady, SettlementConfirmed, OrderSnapshotReady bool
 	AcceptingTradeCommands, AcceptingCancelCommands                  bool
@@ -50,7 +51,7 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 	}
 	flags := []string{"redis_ready", "broker_ready", "settlement_confirmed", "order_snapshot_ready", "accepting_trade_commands", "accepting_cancel_commands"}
 	mirrors := append([]string{"counter_session_id", "state", "state_text"}, flags...)
-	obj, err := shape(raw, []string{"protocol", "message_type", "message_id", "produced_at", "routing", "payload"}, append([]string{"adapter_context"}, mirrors...))
+	obj, err := shape(raw, []string{"protocol", "message_type", "message_id", "produced_at", "routing", "payload"}, append([]string{"adapter_context", "accepting_query_commands"}, mirrors...))
 	if err != nil {
 		return Heartbeat{}, err
 	}
@@ -90,7 +91,7 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			}
 		}
 	}
-	p, err := shape(obj["payload"], required, nil)
+	p, err := shape(obj["payload"], required, []string{"accepting_query_commands"})
 	if err != nil {
 		return Heartbeat{}, err
 	}
@@ -110,6 +111,10 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			return bad("boolean " + key)
 		}
 		*values[i] = literal(p[key], "true")
+	}
+	h.Operations, err = decodeHeartbeatOperations(obj, p, fields, h, assessmentMode)
+	if err != nil {
+		return bad("operation capabilities or reasons")
 	}
 	if assessmentMode {
 		if expected.Env != "test" {
@@ -133,6 +138,11 @@ func DecodeHeartbeat(raw []byte, expected QueryRoute) (Heartbeat, error) {
 			return Heartbeat{}, err
 		}
 		h.Assessment = &a
+		if h.Operations != nil && h.Operations.AcceptingQueryCommands {
+			if _, ready := h.queryCollection(); !ready {
+				return bad("query capability contradicts session readiness")
+			}
+		}
 		return h, nil
 	}
 	if readOnlyMode {

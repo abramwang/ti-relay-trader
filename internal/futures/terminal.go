@@ -243,7 +243,7 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 	if h.TradeDate != "" {
 		day = &h.TradeDate
 	}
-	view := &AdvertisedHeartbeat{SessionID: h.CounterSessionID, TradeDate: day, ProducedAt: h.ProducedAt, AgeMilliseconds: age.Milliseconds(), State: h.State, StateText: h.StateText, RedisReady: h.RedisReady, BrokerReady: h.BrokerReady}
+	view := &AdvertisedHeartbeat{SessionID: h.CounterSessionID, TradeDate: day, ProducedAt: h.ProducedAt, AgeMilliseconds: age.Milliseconds(), State: h.State, StateText: h.StateText, RedisReady: h.RedisReady, BrokerReady: h.BrokerReady, Operations: h.Operations}
 	if h.ReadOnly != nil {
 		view.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 		view.ConnectionGeneration = h.ReadOnly.ConnectionGeneration

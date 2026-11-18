@@ -1,0 +1,330 @@
+{
+  "candidate_only": true,
+  "cases": [
+    {
+      "name": "complete_exact_target",
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "numeric_source_binary64": {
+            "AskPrice1": "40b4630000000000",
+            "BidPrice1": "40b4620000000000",
+            "LowerLimitPrice": "40b4620000000000",
+            "PriceTick": "3ff0000000000000",
+            "UpperLimitPrice": "40b6150000000000"
+          },
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-05T09:00:01+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 11,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-05T09:00:00+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-04T21:01:00+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 10,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-04T21:00:00+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "chunk": {
+          "index": 0,
+          "is_last": true
+        },
+        "code": "OK",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message_id": "review-only-facts-c0e16a4820b3d36961016584daf2a6929c2b3de7cea6fbabb163965db65ea45b",
+        "message_type": "reply",
+        "origin_message_id": "review-only-native-facts",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-fixture",
+          "items": [
+            {
+              "dynamic": {
+                "action_day": "20261105",
+                "ask_price1": "5219",
+                "bid_price1": "5218",
+                "broker_trade_date": "20261105",
+                "captured_at": "2026-11-05T09:00:01+08:00",
+                "lower_limit_price": "5218",
+                "update_millisec": 0,
+                "update_time": "09:00:00",
+                "upper_limit_price": "5653"
+              },
+              "exchange": "SHFE",
+              "source": "ctp_trader_api",
+              "source_environment": "test",
+              "static": {
+                "captured_at": "2026-11-04T21:01:00+08:00",
+                "expire_date": "20270115",
+                "inst_life_phase": "1",
+                "is_trading": 1,
+                "max_limit_order_volume": 100,
+                "min_limit_order_volume": 1,
+                "open_date": "20260101",
+                "price_tick": "1",
+                "product_class": "1",
+                "volume_multiple": 10
+              },
+              "symbol": "rb2701",
+              "trade_date": "20261105",
+              "trade_date_source": "login_query_context",
+              "unavailable_numeric_fields": []
+            }
+          ],
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261105"
+        },
+        "produced_at": "2026-11-05T09:00:02+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "completed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message_id": "review-only-native-facts",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      }
+    },
+    {
+      "name": "missing_depth_terminal",
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-05T09:00:01+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": false,
+              "row_count": 1,
+              "sdk_request_id": 11,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-05T09:00:00+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-04T21:01:00+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 10,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-04T21:00:00+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message": "native_facts_incomplete",
+        "message_id": "review-only-facts-9092a425acbf5bee38d9ad4ec3fb526ebca7bfa470832fa8aabc444a06ea9fee",
+        "message_type": "reply",
+        "origin_message_id": "review-only-native-facts",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-fixture",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261105"
+        },
+        "produced_at": "2026-11-05T09:00:02+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message_id": "review-only-native-facts",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      }
+    },
+    {
+      "name": "complete_with_unavailable_facts",
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "numeric_source_binary64": {
+            "AskPrice1": "7ff8000000000000",
+            "BidPrice1": "0000000000000000",
+            "LowerLimitPrice": "40b4620000000000",
+            "PriceTick": "3ff0000000000000",
+            "UpperLimitPrice": "7fefffffffffffff"
+          },
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-05T09:00:01+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 11,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-05T09:00:00+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-04T21:01:00+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 10,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-04T21:00:00+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "chunk": {
+          "index": 0,
+          "is_last": true
+        },
+        "code": "OK",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message_id": "review-only-facts-4a06ddf0c17b00ed6993f23036b3346af8eb0866c8a5637100ef59a40ccffde4",
+        "message_type": "reply",
+        "origin_message_id": "review-only-native-facts",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-fixture",
+          "items": [
+            {
+              "dynamic": {
+                "action_day": "20261105",
+                "ask_price1": null,
+                "bid_price1": null,
+                "broker_trade_date": null,
+                "captured_at": "2026-11-05T09:00:01+08:00",
+                "lower_limit_price": "5218",
+                "update_millisec": 0,
+                "update_time": "09:00:00",
+                "upper_limit_price": null
+              },
+              "exchange": "SHFE",
+              "source": "ctp_trader_api",
+              "source_environment": "test",
+              "static": {
+                "captured_at": "2026-11-04T21:01:00+08:00",
+                "expire_date": "20270115",
+                "inst_life_phase": "1",
+                "is_trading": 1,
+                "max_limit_order_volume": 100,
+                "min_limit_order_volume": 1,
+                "open_date": "20260101",
+                "price_tick": "1",
+                "product_class": "1",
+                "volume_multiple": 10
+              },
+              "symbol": "rb2701",
+              "trade_date": "20261105",
+              "trade_date_source": "login_query_context",
+              "unavailable_numeric_fields": [
+                "UpperLimitPrice",
+                "BidPrice1",
+                "AskPrice1"
+              ]
+            }
+          ],
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261105"
+        },
+        "produced_at": "2026-11-05T09:00:02+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "completed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "fixture-idem",
+        "message_id": "review-only-native-facts",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "fixture-request",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      }
+    }
+  ],
+  "runtime_command_enabled": false,
+  "synthetic_only": true
+}

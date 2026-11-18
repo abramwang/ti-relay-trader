@@ -71,7 +71,7 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 	}
 	if _, present := raw["order_snapshot_scope"]; present {
 		a.OrderSnapshotScope = textField(raw, "order_snapshot_scope")
-		if a.PermissionProfile != "test_day_relay.v1" || a.OrderSnapshotScope != "full_native_current_session" {
+		if a.PermissionProfile != "test_day_relay.v1" || !oneOf(a.OrderSnapshotScope, "full_native_current_session", "relay_standard_projection") {
 			return bad()
 		}
 		for key, dst := range map[string]*bool{"native_order_snapshot_ready": &a.NativeOrderSnapshotReady, "order_projection_ready": &a.OrderProjectionReady, "local_orders_only": &a.LocalOrdersOnly} {
@@ -80,7 +80,13 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 			}
 			*dst = literal(raw[key], "true")
 		}
-		if !a.LocalOrdersOnly || a.NativeOrderSnapshotReady != h.OrderSnapshotReady || (a.OrderProjectionReady && !a.NativeOrderSnapshotReady) {
+		if a.OrderProjectionReady && !a.NativeOrderSnapshotReady {
+			return bad()
+		}
+		if a.OrderSnapshotScope == "full_native_current_session" && (!a.LocalOrdersOnly || a.NativeOrderSnapshotReady != h.OrderSnapshotReady) {
+			return bad()
+		}
+		if a.OrderSnapshotScope == "relay_standard_projection" && (a.LocalOrdersOnly || a.OrderProjectionReady != h.OrderSnapshotReady) {
 			return bad()
 		}
 	} else {
@@ -226,7 +232,8 @@ func (h Heartbeat) queryCollection() (*int64, bool) {
 		return h.ReadOnly.ConnectionGeneration, h.ReadOnly.QueryCollectionReady && h.ReadOnly.TransportRecoveryClear
 	}
 	if a := h.Assessment; a != nil {
-		return a.ConnectionGeneration, h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && a.windowOpen(h.ProducedAt) && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
+		allowed := h.Operations == nil || h.Operations.AcceptingQueryCommands
+		return a.ConnectionGeneration, allowed && h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && a.windowOpen(h.ProducedAt) && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
 	}
 	return nil, false
 }
