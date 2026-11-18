@@ -1,0 +1,32 @@
+{"connection_generation":0,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1118 20:25:20.128731 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 20:25:20.128756 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 20:25:20.131433 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+I1118 20:25:21.196398 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"running","stream_id":"106-0","trade_date":"20261117"}
+I1118 20:25:22.298081 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"running","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-749e6de0abc51d74f7dbc32ccd37eff3","state_text":"stopping","stream_id":"111-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 20:25:27.284085 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 20:25:27.284096 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"settlement_not_confirmed","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"settlement_not_confirmed","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"settlement_not_confirmed","stream_id":"104-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"settlement_not_confirmed","stream_id":"105-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"settlement_not_confirmed","stream_id":"106-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-0191abbe21575882cb9ebc61c4b727d9","state_text":"stopping","stream_id":"107-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 20:25:32.084728 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 20:25:32.084738 392822 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"settlement_not_confirmed","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"recovery_blocked","stream_id":"104-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"recovery_blocked","stream_id":"105-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"recovery_blocked","stream_id":"106-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"recovery_blocked","stream_id":"107-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-fd599bd698dd357957600226afd5eacc","state_text":"stopping","stream_id":"108-0","trade_date":"20261117"}
+PASS: three full resident heartbeat bodies from actual runtime encoder; synthetic SDK/IO only
