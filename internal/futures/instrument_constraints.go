@@ -162,9 +162,17 @@ func decodeConstraintsPage(o rawObject, c QueryContext) (queryPage, error) {
 	if !failed && status != "completed" {
 		return bad()
 	}
+	if literal(evidence["instrument"], "null") && !literal(evidence["depth"], "null") {
+		return bad()
+	}
 	completedTimes := map[string]string{}
 	requestIDs := map[int64]bool{}
 	for _, name := range []string{"instrument", "depth"} {
+		// An unexecuted SDK leg has no request identity or completion evidence.
+		// Only failed replies may omit it; never synthesize a successful leg.
+		if failed && literal(evidence[name], "null") {
+			continue
+		}
 		e, err := shape(evidence[name], []string{"sdk_request_id", "sdk_return_code", "callback_error_id", "is_last", "row_count", "excluded_prefix_count", "state", "started_at", "completed_at"}, []string{"response_error_id"})
 		if err != nil || (!literal(e["is_last"], "true") && !literal(e["is_last"], "false")) || !validID(textField(e, "state")) {
 			return bad()

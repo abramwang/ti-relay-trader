@@ -51,3 +51,30 @@ func TestQueryRequestReviewStrict(t *testing.T) {
 		t.Fatal("changed evidence accepted")
 	}
 }
+
+func TestConstraintsRequestReviewBindsExactTarget(t *testing.T) {
+	c := constraintsContext()
+	target := publicationTarget()
+	target.CounterSessionID, target.TradeDate = c.CounterSessionID, c.TradeDate
+	raw, evidence := reviewFixture(t, c, target, 1)
+	r, err := DecodeQueryRequestReview(raw, evidence)
+	if err != nil || r.Query.Constraints == nil || *r.Query.Constraints != *c.Constraints {
+		t.Fatal("facts target lost", err)
+	}
+	for _, edit := range []func(map[string]any){
+		func(m map[string]any) { delete(m["query_context"].(map[string]any), "Constraints") },
+		func(m map[string]any) { m["query_context"].(map[string]any)["Constraints"] = nil },
+		func(m map[string]any) {
+			m["query_context"].(map[string]any)["Constraints"].(map[string]any)["exchange"] = "CFFEX"
+		},
+		func(m map[string]any) {
+			m["query_context"].(map[string]any)["Constraints"].(map[string]any)["extra"] = true
+		},
+		func(m map[string]any) { m["query_context"].(map[string]any)["Action"] = "account.asset.query" },
+		func(m map[string]any) { m["query_context"].(map[string]any)["SDKRequestID"] = 3 },
+	} {
+		if _, err := DecodeQueryRequestReview(editBody(t, raw, edit), evidence); err == nil {
+			t.Fatal("invalid facts review accepted")
+		}
+	}
+}

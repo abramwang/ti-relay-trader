@@ -77,7 +77,13 @@ func (a *HeartbeatAssessment) decodeLifecycle(raw rawObject, h Heartbeat, route 
 		return ErrQueryPublishGate
 	}
 	a.Lifecycle = &l
-	if (l.Phase == "active" && !a.windowOpen(h.ProducedAt)) || ((h.AcceptingTradeCommands || h.AcceptingCancelCommands) && !a.windowOpen(h.ProducedAt)) {
+	active := a.windowOpen(h.ProducedAt)
+	if a.PermissionProfile == "test_day_relay.v1" {
+		// The process can remain active at lunch; only trading uses the exchange
+		// segments. Explicit query readiness is validated separately.
+		active = !h.ProducedAt.Before(l.StartsAt) && h.ProducedAt.Before(l.ExpiresAt)
+	}
+	if (l.Phase == "active" && !active) || ((h.AcceptingTradeCommands || h.AcceptingCancelCommands) && !a.windowOpen(h.ProducedAt)) {
 		return ErrQueryPublishGate
 	}
 	return nil

@@ -212,8 +212,13 @@ func TestInstrumentConstraintsPersistencePostgres(t *testing.T) {
 		t.Fatal("restart turned history into ready", err)
 	}
 	f := &fakeQueryPublisher{}
-	if _, err := commands.publishTestQuery(ctx, c.commandScope(), r.CommandID, r.Original.MessageID, publicationTarget(), f); err == nil || f.appends.Load() != 0 || f.inspections.Load() != 0 || storedCount(t, db, "futures_test_query_publications") != 0 {
-		t.Fatal("unimplemented OC action published", err)
+	target := publicationTarget()
+	target.CounterSessionID, target.TradeDate = c.CounterSessionID, c.TradeDate
+	if _, err := commands.publishTestQuery(ctx, c.commandScope(), r.CommandID, r.Original.MessageID, target, f); err != nil || f.appends.Load() != 1 || storedCount(t, db, "futures_test_query_publications") != 1 {
+		t.Fatal("facts query did not use durable publisher", err)
+	}
+	if replay, err := commands.publishTestQuery(ctx, c.commandScope(), r.CommandID, r.Original.MessageID, target, f); err != nil || !replay.Replayed || f.appends.Load() != 1 {
+		t.Fatal("facts query was resent", err)
 	}
 	// Same idempotency key with another native target must conflict.
 	changed := editBody(t, v.Request, func(m map[string]any) {

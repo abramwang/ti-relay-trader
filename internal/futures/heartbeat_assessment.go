@@ -233,7 +233,13 @@ func (h Heartbeat) queryCollection() (*int64, bool) {
 	}
 	if a := h.Assessment; a != nil {
 		allowed := h.Operations == nil || h.Operations.AcceptingQueryCommands
-		return a.ConnectionGeneration, allowed && h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && a.windowOpen(h.ProducedAt) && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
+		return a.ConnectionGeneration, allowed && h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && (h.independentDayQueries() || a.windowOpen(h.ProducedAt)) && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
 	}
 	return nil, false
+}
+
+// Explicit day-profile query readiness can outlive its trading authorization.
+// Legacy profiles without that capability retain their previous window gate.
+func (h Heartbeat) independentDayQueries() bool {
+	return h.Assessment != nil && h.Assessment.PermissionProfile == "test_day_relay.v1" && h.Operations != nil && h.Operations.AcceptingQueryCommands
 }

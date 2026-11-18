@@ -36,9 +36,17 @@ func DecodeQueryRequestReview(raw, evidence []byte) (QueryRequestReview, error) 
 	if err != nil {
 		return r, ErrBatchIdentity
 	}
-	qc, err := shape(obj["query_context"], []string{"Route", "Action", "OriginMessageID", "Ticket", "CounterSessionID", "ConnectionGeneration", "SDKRequestID", "TradeDate", "NativeBrokerID", "NativeInvestorID", "NativeUserID"}, nil)
+	qc, err := shape(obj["query_context"], []string{"Route", "Action", "OriginMessageID", "Ticket", "CounterSessionID", "ConnectionGeneration", "SDKRequestID", "TradeDate", "NativeBrokerID", "NativeInvestorID", "NativeUserID"}, []string{"Constraints"})
 	if err != nil {
 		return r, ErrBatchIdentity
+	}
+	if target, exists := qc["Constraints"]; exists {
+		if textField(qc, "Action") != "instrument.constraints.query" {
+			return r, ErrBatchIdentity
+		}
+		if _, err := shape(target, []string{"symbol", "exchange"}, nil); err != nil {
+			return r, ErrBatchIdentity
+		}
 	}
 	if _, err = shape(qc["Route"], []string{"env", "broker_id", "gateway_id", "account_id"}, nil); err != nil {
 		return r, ErrBatchIdentity

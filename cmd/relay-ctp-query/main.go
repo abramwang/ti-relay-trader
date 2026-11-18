@@ -78,7 +78,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 	}
 	command, err := futures.DecodeCommand(raw, scope, "cmd.query")
 	if err != nil {
-		return errors.New("invalid four-query command or explicit native scope; trading actions are forbidden")
+		return errors.New("invalid TEST query command or explicit native scope; trading actions are forbidden")
 	}
 	var target futures.TestQueryTarget
 	if *targetFile != "" {

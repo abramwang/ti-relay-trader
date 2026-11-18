@@ -263,6 +263,21 @@ func processReplyEnvelope(ctx context.Context, writer LedgerWriter, envelope Ent
 		}
 		return processCancelAttemptEnvelope(ctx, writer, envelope, status, result)
 	}
+	// OC local validation/admission failures are command outcomes, not broker
+	// order events. Preserve their raw reply without inventing a terminal order.
+	if envelope.Routing.Env == "test" && (envelope.Routing.BrokerID == "ctp" || strings.HasPrefix(envelope.Routing.BrokerID, "ctp_")) &&
+		(envelope.Status == string(trading.ReplyStatusFailed) || envelope.Status == string(trading.ReplyStatusRejected)) {
+		var payload struct {
+			ProductType       string `json:"product_type"`
+			SchemaVersion     string `json:"schema_version"`
+			OrderStateChanged *bool  `json:"order_state_changed"`
+		}
+		if json.Unmarshal(envelope.Payload, &payload) == nil && payload.ProductType == "futures" && payload.SchemaVersion == "ctp.f0.draft.2" && payload.OrderStateChanged != nil && !*payload.OrderStateChanged {
+			result.Skipped++
+			result.SkipReasons = append(result.SkipReasons, "CTP command failure does not establish an order terminal state")
+			return result
+		}
+	}
 
 	if envelope.Action == ActionOrderBatchSubmit {
 		var processed int

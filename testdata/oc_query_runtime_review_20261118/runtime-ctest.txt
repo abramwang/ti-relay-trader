@@ -1,0 +1,15 @@
+Test project /tmp/ctp-runtime-ctest-0oACrL
+    Start  6: ctp_readonly_runtime_test
+1/5 Test  #6: ctp_readonly_runtime_test ..........   Passed   19.82 sec
+    Start  7: ctp_assessment_runtime_test
+2/5 Test  #7: ctp_assessment_runtime_test ........   Passed  264.75 sec
+    Start  9: ctp_async_rejection_runtime_test
+3/5 Test  #9: ctp_async_rejection_runtime_test ...   Passed   50.21 sec
+    Start 10: ctp_native_facts_runtime_test
+4/5 Test #10: ctp_native_facts_runtime_test ......   Passed   10.07 sec
+    Start 11: ctp_resident_query_runtime_test
+5/5 Test #11: ctp_resident_query_runtime_test ....   Passed    8.23 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) = 353.09 sec

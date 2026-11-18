@@ -1,0 +1,1166 @@
+{
+  "cases": [
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:05.846+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [],
+          "is_last": true,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015b640000000000062b4400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400726232373031000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "sdk_request_id": 4,
+          "sdk_return_code": 0,
+          "started_at": "2026-11-18T17:03:05.837+08:00",
+          "state": "completed"
+        }
+      ],
+      "name": "complete",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"numeric_source_binary64\":{\"AskPrice1\":\"40b4630000000000\",\"BidPrice1\":\"40b4620000000000\",\"LowerLimitPrice\":\"40b4620000000000\",\"PriceTick\":\"3ff0000000000000\",\"UpperLimitPrice\":\"40b6150000000000\"},\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:05.846+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:05.837+08:00\",\"state\":\"completed\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:05.832+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:05.827+08:00\",\"state\":\"completed\"}}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"ctp-query-v1-6ace4257e180471544d59dabc6a7ce3ba4d91d6e38b4d4ee1c0806a39dba489d\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-ad011143d3deba33a7b39a5e573406c2\",\"items\":[{\"dynamic\":{\"action_day\":\"20261104\",\"ask_price1\":\"5219\",\"bid_price1\":\"5218\",\"broker_trade_date\":\"20261104\",\"captured_at\":\"2026-11-18T17:03:05.846+08:00\",\"lower_limit_price\":\"5218\",\"update_millisec\":0,\"update_time\":\"09:00:00\",\"upper_limit_price\":\"5653\"},\"exchange\":\"SHFE\",\"source\":\"ctp_trader_api\",\"source_environment\":\"test\",\"static\":{\"captured_at\":\"2026-11-18T17:03:05.832+08:00\",\"expire_date\":\"20270115\",\"inst_life_phase\":\"1\",\"is_trading\":1,\"max_limit_order_volume\":100,\"min_limit_order_volume\":1,\"open_date\":\"20260101\",\"price_tick\":\"1\",\"product_class\":\"1\",\"volume_multiple\":10},\"symbol\":\"rb2701\",\"trade_date\":\"20261104\",\"trade_date_source\":\"login_query_context\",\"unavailable_numeric_fields\":[]}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:05.847+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}",
+          "message_id": "ctp-query-v1-6ace4257e180471544d59dabc6a7ce3ba4d91d6e38b4d4ee1c0806a39dba489d",
+          "sha256": "8153294cc5518af85bf3dc3100607979c2b3b63724d701ccd26f6f594b9f5e85",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "numeric_source_binary64": {
+            "AskPrice1": "40b4630000000000",
+            "BidPrice1": "40b4620000000000",
+            "LowerLimitPrice": "40b4620000000000",
+            "PriceTick": "3ff0000000000000",
+            "UpperLimitPrice": "40b6150000000000"
+          },
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:05.846+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 4,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:05.837+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:05.832+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:05.827+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "chunk": {
+          "index": 0,
+          "is_last": true
+        },
+        "code": "OK",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "ctp-query-v1-6ace4257e180471544d59dabc6a7ce3ba4d91d6e38b4d4ee1c0806a39dba489d",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-ad011143d3deba33a7b39a5e573406c2",
+          "items": [
+            {
+              "dynamic": {
+                "action_day": "20261104",
+                "ask_price1": "5219",
+                "bid_price1": "5218",
+                "broker_trade_date": "20261104",
+                "captured_at": "2026-11-18T17:03:05.846+08:00",
+                "lower_limit_price": "5218",
+                "update_millisec": 0,
+                "update_time": "09:00:00",
+                "upper_limit_price": "5653"
+              },
+              "exchange": "SHFE",
+              "source": "ctp_trader_api",
+              "source_environment": "test",
+              "static": {
+                "captured_at": "2026-11-18T17:03:05.832+08:00",
+                "expire_date": "20270115",
+                "inst_life_phase": "1",
+                "is_trading": 1,
+                "max_limit_order_volume": 100,
+                "min_limit_order_volume": 1,
+                "open_date": "20260101",
+                "price_tick": "1",
+                "product_class": "1",
+                "volume_multiple": 10
+              },
+              "symbol": "rb2701",
+              "trade_date": "20261104",
+              "trade_date_source": "login_query_context",
+              "unavailable_numeric_fields": []
+            }
+          ],
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:05.847+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "completed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:05.920+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [],
+          "is_last": true,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffffffffffffef7f000000000062b4400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400726232373031000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "sdk_request_id": 4,
+          "sdk_return_code": 0,
+          "started_at": "2026-11-18T17:03:05.914+08:00",
+          "state": "completed"
+        }
+      ],
+      "name": "null_price",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"numeric_source_binary64\":{\"AskPrice1\":\"40b4630000000000\",\"BidPrice1\":\"40b4620000000000\",\"LowerLimitPrice\":\"40b4620000000000\",\"PriceTick\":\"3ff0000000000000\",\"UpperLimitPrice\":\"7fefffffffffffff\"},\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:05.920+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:05.914+08:00\",\"state\":\"completed\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:05.911+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:05.908+08:00\",\"state\":\"completed\"}}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"ctp-query-v1-4c2c8c1bf4a46ac244a769f1e9bf6e2881d53b3df4e0ecaf9db4688e3b676e30\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-f000743df46e47a3f549226042025646\",\"items\":[{\"dynamic\":{\"action_day\":\"20261104\",\"ask_price1\":\"5219\",\"bid_price1\":\"5218\",\"broker_trade_date\":\"20261104\",\"captured_at\":\"2026-11-18T17:03:05.920+08:00\",\"lower_limit_price\":\"5218\",\"update_millisec\":0,\"update_time\":\"09:00:00\",\"upper_limit_price\":null},\"exchange\":\"SHFE\",\"source\":\"ctp_trader_api\",\"source_environment\":\"test\",\"static\":{\"captured_at\":\"2026-11-18T17:03:05.911+08:00\",\"expire_date\":\"20270115\",\"inst_life_phase\":\"1\",\"is_trading\":1,\"max_limit_order_volume\":100,\"min_limit_order_volume\":1,\"open_date\":\"20260101\",\"price_tick\":\"1\",\"product_class\":\"1\",\"volume_multiple\":10},\"symbol\":\"rb2701\",\"trade_date\":\"20261104\",\"trade_date_source\":\"login_query_context\",\"unavailable_numeric_fields\":[\"UpperLimitPrice\"]}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:05.920+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}",
+          "message_id": "ctp-query-v1-4c2c8c1bf4a46ac244a769f1e9bf6e2881d53b3df4e0ecaf9db4688e3b676e30",
+          "sha256": "18dec46f4244039e03bc87e3b2a41f12f931181fbb5c1dd5826e49b8cd918328",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "numeric_source_binary64": {
+            "AskPrice1": "40b4630000000000",
+            "BidPrice1": "40b4620000000000",
+            "LowerLimitPrice": "40b4620000000000",
+            "PriceTick": "3ff0000000000000",
+            "UpperLimitPrice": "7fefffffffffffff"
+          },
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:05.920+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 4,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:05.914+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:05.911+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:05.908+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "chunk": {
+          "index": 0,
+          "is_last": true
+        },
+        "code": "OK",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "ctp-query-v1-4c2c8c1bf4a46ac244a769f1e9bf6e2881d53b3df4e0ecaf9db4688e3b676e30",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-f000743df46e47a3f549226042025646",
+          "items": [
+            {
+              "dynamic": {
+                "action_day": "20261104",
+                "ask_price1": "5219",
+                "bid_price1": "5218",
+                "broker_trade_date": "20261104",
+                "captured_at": "2026-11-18T17:03:05.920+08:00",
+                "lower_limit_price": "5218",
+                "update_millisec": 0,
+                "update_time": "09:00:00",
+                "upper_limit_price": null
+              },
+              "exchange": "SHFE",
+              "source": "ctp_trader_api",
+              "source_environment": "test",
+              "static": {
+                "captured_at": "2026-11-18T17:03:05.911+08:00",
+                "expire_date": "20270115",
+                "inst_life_phase": "1",
+                "is_trading": 1,
+                "max_limit_order_volume": 100,
+                "min_limit_order_volume": 1,
+                "open_date": "20260101",
+                "price_tick": "1",
+                "product_class": "1",
+                "volume_multiple": 10
+              },
+              "symbol": "rb2701",
+              "trade_date": "20261104",
+              "trade_date_source": "login_query_context",
+              "unavailable_numeric_fields": [
+                "UpperLimitPrice"
+              ]
+            }
+          ],
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:05.920+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "completed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        }
+      ],
+      "name": "instrument_failed",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":null,\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:05.971+08:00\",\"excluded_prefix_count\":0,\"is_last\":false,\"response_error_id\":null,\"row_count\":0,\"sdk_request_id\":3,\"sdk_return_code\":-3,\"started_at\":\"2026-11-18T17:03:05.965+08:00\",\"state\":\"submit_failed\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_instrument_incomplete\",\"message_id\":\"ctp-query-v1-a905f278c4ab129c3c4cf39a67d6e19336c00d97f939630eae2456e9fac5bbf9\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-10bd0377244636f8e6d55c4b0abd8335\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:05.971+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-a905f278c4ab129c3c4cf39a67d6e19336c00d97f939630eae2456e9fac5bbf9",
+          "sha256": "c0a21709bba90931a970f1adfbbbb85968f64ac67ed5e28179fe6f829100046f",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": null,
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:05.971+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": false,
+              "response_error_id": null,
+              "row_count": 0,
+              "sdk_request_id": 3,
+              "sdk_return_code": -3,
+              "started_at": "2026-11-18T17:03:05.965+08:00",
+              "state": "submit_failed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_instrument_incomplete",
+        "message_id": "ctp-query-v1-a905f278c4ab129c3c4cf39a67d6e19336c00d97f939630eae2456e9fac5bbf9",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-10bd0377244636f8e6d55c4b0abd8335",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:05.971+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 1,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        }
+      ],
+      "name": "instrument_timeout",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":null,\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.025+08:00\",\"excluded_prefix_count\":0,\"is_last\":false,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.017+08:00\",\"state\":\"timeout\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_instrument_incomplete\",\"message_id\":\"ctp-query-v1-0ec4e3951c4e8ab916b22c68a1446c0ace8ed86e2fa09cc1076274a3d07ebf4a\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-fb782a4ff591c7aa22be04883bc7830d\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.025+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-0ec4e3951c4e8ab916b22c68a1446c0ace8ed86e2fa09cc1076274a3d07ebf4a",
+          "sha256": "e24b817571587913cf1c4a9b2bf4c84e4df6b8fa9003013b2ad5f44a33e1d87d",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": null,
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.025+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": false,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.017+08:00",
+              "state": "timeout"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_instrument_incomplete",
+        "message_id": "ctp-query-v1-0ec4e3951c4e8ab916b22c68a1446c0ace8ed86e2fa09cc1076274a3d07ebf4a",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-fb782a4ff591c7aa22be04883bc7830d",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.025+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 1,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:06.082+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [],
+          "is_last": false,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [],
+          "sdk_request_id": 4,
+          "sdk_return_code": -2,
+          "started_at": "2026-11-18T17:03:06.076+08:00",
+          "state": "submit_failed"
+        }
+      ],
+      "name": "depth_failed",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.082+08:00\",\"excluded_prefix_count\":0,\"is_last\":false,\"row_count\":0,\"sdk_request_id\":4,\"sdk_return_code\":-2,\"started_at\":\"2026-11-18T17:03:06.076+08:00\",\"state\":\"submit_failed\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.073+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.070+08:00\",\"state\":\"completed\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_incomplete\",\"message_id\":\"ctp-query-v1-a6550e0b8efaa8bce0d422fb6906bfa424df09271addeafd92a3b6fdfe49dd4b\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-8206ec8e32aad63197d577d25adf0e5c\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.082+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-a6550e0b8efaa8bce0d422fb6906bfa424df09271addeafd92a3b6fdfe49dd4b",
+          "sha256": "c4fa43eab79a3302fe10da33a7e4f65636878334115e8ee902f8013e4afeafc3",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.082+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": false,
+              "row_count": 0,
+              "sdk_request_id": 4,
+              "sdk_return_code": -2,
+              "started_at": "2026-11-18T17:03:06.076+08:00",
+              "state": "submit_failed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.073+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.070+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_incomplete",
+        "message_id": "ctp-query-v1-a6550e0b8efaa8bce0d422fb6906bfa424df09271addeafd92a3b6fdfe49dd4b",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-8206ec8e32aad63197d577d25adf0e5c",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.082+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:06.139+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [],
+          "is_last": false,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015b640000000000062b4400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400726232373031000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "sdk_request_id": 4,
+          "sdk_return_code": 0,
+          "started_at": "2026-11-18T17:03:06.132+08:00",
+          "state": "timeout"
+        }
+      ],
+      "name": "depth_timeout",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.139+08:00\",\"excluded_prefix_count\":0,\"is_last\":false,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.132+08:00\",\"state\":\"timeout\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.129+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.126+08:00\",\"state\":\"completed\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_incomplete\",\"message_id\":\"ctp-query-v1-1087bede0303e8895cf40644a21b3f0ee426a6b6871b5b3898795e6cafd62c77\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-a41fdd7507c18b69279a94c98ce82e2b\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.139+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-1087bede0303e8895cf40644a21b3f0ee426a6b6871b5b3898795e6cafd62c77",
+          "sha256": "936d506d202bffb45434bf1879501f3088fd6ec2e0d3bd6c34c3b17a8d965934",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.139+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": false,
+              "row_count": 1,
+              "sdk_request_id": 4,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.132+08:00",
+              "state": "timeout"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.129+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.126+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_incomplete",
+        "message_id": "ctp-query-v1-1087bede0303e8895cf40644a21b3f0ee426a6b6871b5b3898795e6cafd62c77",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-a41fdd7507c18b69279a94c98ce82e2b",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.139+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:06.199+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [],
+          "is_last": true,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015b640000000000062b4400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400637532373031000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "sdk_request_id": 4,
+          "sdk_return_code": 0,
+          "started_at": "2026-11-18T17:03:06.196+08:00",
+          "state": "scope_mismatch"
+        }
+      ],
+      "name": "wrong_depth_target",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.199+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.196+08:00\",\"state\":\"scope_mismatch\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.193+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.190+08:00\",\"state\":\"completed\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_incomplete\",\"message_id\":\"ctp-query-v1-959655f86b40f69f3ea344af959937c5d87e4fa57e4f57a798a377fda3ffd05b\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-9c75d2e0ade2b691b5829ab508a6366c\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.202+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-959655f86b40f69f3ea344af959937c5d87e4fa57e4f57a798a377fda3ffd05b",
+          "sha256": "5f42043bc8feee6b80947e519bedf10f280a1a7e96620d8c02b742c308456f04",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.199+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 4,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.196+08:00",
+              "state": "scope_mismatch"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.193+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.190+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_incomplete",
+        "message_id": "ctp-query-v1-959655f86b40f69f3ea344af959937c5d87e4fa57e4f57a798a377fda3ffd05b",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-9c75d2e0ade2b691b5829ab508a6366c",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.202+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        }
+      ],
+      "name": "disconnect",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"query_evidence\":{\"depth\":null,\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.247+08:00\",\"excluded_prefix_count\":0,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.244+08:00\",\"state\":\"completed\"}}},\"code\":\"QUERY_FAILED\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message\":\"native_facts_interrupted_before_depth\",\"message_id\":\"ctp-query-v1-2f418091388cc5c71ffb4bdb953ee641e16e82de340759aa09342388d2980a37\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-88a2e328c92831fe300810d6cda703d2\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.250+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"failed\"}",
+          "message_id": "ctp-query-v1-2f418091388cc5c71ffb4bdb953ee641e16e82de340759aa09342388d2980a37",
+          "sha256": "17ceed98c73318bc7b930a147eba93def06784ebf7ee1ae924430e7eb35497ef",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "query_evidence": {
+            "depth": null,
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.247+08:00",
+              "excluded_prefix_count": 0,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.244+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "code": "QUERY_FAILED",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message": "native_facts_interrupted_before_depth",
+        "message_id": "ctp-query-v1-2f418091388cc5c71ffb4bdb953ee641e16e82de340759aa09342388d2980a37",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-88a2e328c92831fe300810d6cda703d2",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.250+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "failed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 1,
+      "trade_calls": 0
+    },
+    {
+      "audit": [
+        {
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "instrument",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 3,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701",
+          "ticket": 1
+        },
+        {
+          "connection_generation": 1,
+          "exchange": "SHFE",
+          "kind": "native_facts_request",
+          "leg": "depth",
+          "origin_message_id": "msg-one",
+          "sdk_request_id": 4,
+          "stage": "before_durable_dispatch",
+          "symbol": "rb2701"
+        },
+        {
+          "callback_error": null,
+          "completed_at": "2026-11-18T17:03:06.280+08:00",
+          "error_hex": null,
+          "excluded_prefix_rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015b6400000000000c058400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400726232373031433330303000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "is_last": true,
+          "kind": "native_facts_depth_result",
+          "origin_message_id": "msg-one",
+          "rows_hex": [
+            "3230323631313034000000000000000000000000000000000000000000000000000000000000000053484645000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015b640000000000062b4400000000000000000000000000000000030393a30303a30300000000000000000000000000062b4400000000000000000000000000063b440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323032363131303400726232373031000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "sdk_request_id": 4,
+          "sdk_return_code": 0,
+          "started_at": "2026-11-18T17:03:06.274+08:00",
+          "state": "completed"
+        }
+      ],
+      "name": "prefix_option",
+      "outputs": [
+        {
+          "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"numeric_source_binary64\":{\"AskPrice1\":\"40b4630000000000\",\"BidPrice1\":\"40b4620000000000\",\"LowerLimitPrice\":\"40b4620000000000\",\"PriceTick\":\"3ff0000000000000\",\"UpperLimitPrice\":\"40b6150000000000\"},\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.280+08:00\",\"excluded_prefix_count\":1,\"is_last\":true,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.274+08:00\",\"state\":\"completed\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-18T17:03:06.271+08:00\",\"excluded_prefix_count\":1,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":3,\"sdk_return_code\":0,\"started_at\":\"2026-11-18T17:03:06.268+08:00\",\"state\":\"completed\"}}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"idem-one\",\"message_id\":\"ctp-query-v1-7f06215807a870b2884c37c3f646cc83e202af0f368616e6a12a63d8101afbae\",\"message_type\":\"reply\",\"origin_message_id\":\"msg-one\",\"payload\":{\"account_id\":\"990000000001\",\"counter_session_id\":\"ctpproc-57c6945649924bfa4120dc7e7257c114\",\"items\":[{\"dynamic\":{\"action_day\":\"20261104\",\"ask_price1\":\"5219\",\"bid_price1\":\"5218\",\"broker_trade_date\":\"20261104\",\"captured_at\":\"2026-11-18T17:03:06.280+08:00\",\"lower_limit_price\":\"5218\",\"update_millisec\":0,\"update_time\":\"09:00:00\",\"upper_limit_price\":\"5653\"},\"exchange\":\"SHFE\",\"source\":\"ctp_trader_api\",\"source_environment\":\"test\",\"static\":{\"captured_at\":\"2026-11-18T17:03:06.271+08:00\",\"expire_date\":\"20270115\",\"inst_life_phase\":\"1\",\"is_trading\":1,\"max_limit_order_volume\":100,\"min_limit_order_volume\":1,\"open_date\":\"20260101\",\"price_tick\":\"1\",\"product_class\":\"1\",\"volume_multiple\":10},\"symbol\":\"rb2701\",\"trade_date\":\"20261104\",\"trade_date_source\":\"login_query_context\",\"unavailable_numeric_fields\":[]}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261104\"},\"produced_at\":\"2026-11-18T17:03:06.280+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"req-one\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"990000000001\",\"broker_id\":\"ctp_fixture\",\"env\":\"test\",\"gateway_id\":\"fixture-gw\"},\"status\":\"completed\"}",
+          "message_id": "ctp-query-v1-7f06215807a870b2884c37c3f646cc83e202af0f368616e6a12a63d8101afbae",
+          "sha256": "517f276898c207ef4163aa2adc6b498206e723854f30f7494cee6b8d06259375",
+          "stream_suffix": "reply"
+        }
+      ],
+      "replay_sdk_calls": 0,
+      "reply": {
+        "action": "instrument.constraints.query",
+        "adapter_context": {
+          "atomic_snapshot": false,
+          "connection_generation": 1,
+          "numeric_source_binary64": {
+            "AskPrice1": "40b4630000000000",
+            "BidPrice1": "40b4620000000000",
+            "LowerLimitPrice": "40b4620000000000",
+            "PriceTick": "3ff0000000000000",
+            "UpperLimitPrice": "40b6150000000000"
+          },
+          "query_evidence": {
+            "depth": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.280+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "row_count": 1,
+              "sdk_request_id": 4,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.274+08:00",
+              "state": "completed"
+            },
+            "instrument": {
+              "callback_error_id": null,
+              "completed_at": "2026-11-18T17:03:06.271+08:00",
+              "excluded_prefix_count": 1,
+              "is_last": true,
+              "response_error_id": null,
+              "row_count": 1,
+              "sdk_request_id": 3,
+              "sdk_return_code": 0,
+              "started_at": "2026-11-18T17:03:06.268+08:00",
+              "state": "completed"
+            }
+          }
+        },
+        "chunk": {
+          "index": 0,
+          "is_last": true
+        },
+        "code": "OK",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "ctp-query-v1-7f06215807a870b2884c37c3f646cc83e202af0f368616e6a12a63d8101afbae",
+        "message_type": "reply",
+        "origin_message_id": "msg-one",
+        "payload": {
+          "account_id": "990000000001",
+          "counter_session_id": "ctpproc-57c6945649924bfa4120dc7e7257c114",
+          "items": [
+            {
+              "dynamic": {
+                "action_day": "20261104",
+                "ask_price1": "5219",
+                "bid_price1": "5218",
+                "broker_trade_date": "20261104",
+                "captured_at": "2026-11-18T17:03:06.280+08:00",
+                "lower_limit_price": "5218",
+                "update_millisec": 0,
+                "update_time": "09:00:00",
+                "upper_limit_price": "5653"
+              },
+              "exchange": "SHFE",
+              "source": "ctp_trader_api",
+              "source_environment": "test",
+              "static": {
+                "captured_at": "2026-11-18T17:03:06.271+08:00",
+                "expire_date": "20270115",
+                "inst_life_phase": "1",
+                "is_trading": 1,
+                "max_limit_order_volume": 100,
+                "min_limit_order_volume": 1,
+                "open_date": "20260101",
+                "price_tick": "1",
+                "product_class": "1",
+                "volume_multiple": 10
+              },
+              "symbol": "rb2701",
+              "trade_date": "20261104",
+              "trade_date_source": "login_query_context",
+              "unavailable_numeric_fields": []
+            }
+          ],
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "trade_date": "20261104"
+        },
+        "produced_at": "2026-11-18T17:03:06.280+08:00",
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "result_type": "instrument_constraints",
+        "routing": {
+          "account_id": "990000000001",
+          "broker_id": "ctp_fixture",
+          "env": "test",
+          "gateway_id": "fixture-gw"
+        },
+        "status": "completed"
+      },
+      "request": {
+        "action": "instrument.constraints.query",
+        "correlation_id": "fixture-correlation",
+        "idempotency_key": "idem-one",
+        "message_id": "msg-one",
+        "message_type": "command",
+        "payload": {
+          "account_id": "990000000001",
+          "exchange": "SHFE",
+          "product_type": "futures",
+          "schema_version": "ctp.f0.draft.2",
+          "symbol": "rb2701"
+        },
+        "protocol": "relay.stream.v1",
+        "request_id": "req-one",
+        "sent_at": "2026-11-04T21:01:00+08:00"
+      },
+      "sdk_calls": 2,
+      "trade_calls": 0
+    }
+  ],
+  "real_sdk_calls": false,
+  "synthetic_only": true
+}

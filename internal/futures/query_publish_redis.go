@@ -72,10 +72,10 @@ func testQueryHeartbeatProof(row StreamInput, scope CommandScope, target TestQue
 	if h.Assessment != nil {
 		// Query collection does not consume a trade budget or require a ready
 		// order snapshot: these queries are how that snapshot is obtained.
-		if !h.Assessment.windowOpen(now) {
+		if !h.independentDayQueries() && !h.Assessment.windowOpen(now) {
 			return bad()
 		}
-		if h.Assessment.ExpiresAt.Before(expires) {
+		if !h.independentDayQueries() && h.Assessment.ExpiresAt.Before(expires) {
 			expires = h.Assessment.ExpiresAt
 		}
 		if h.ProducedAt.Add(5 * time.Second).Before(expires) {
