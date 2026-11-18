@@ -110,3 +110,17 @@ func TestTradeCLIExecutionPermissionOffline(t *testing.T) {
 		}
 	}
 }
+
+func TestNativePriceCLIExplicitReadOnly(t *testing.T) {
+	for _, extra := range [][]string{
+		{"--native-query-id", "1"},
+		{"--prepare-native-price"},
+		{"--prepare-native-price", "--native-query-id", "1", "--native-receipt-id", "1", "--native-mapping-file", "/not-read"},
+	} {
+		args := append(preparationArgs(t), extra...)
+		var out, diagnostics bytes.Buffer
+		if err := run(context.Background(), args, func(string) string { t.Fatal("unsafe price mode accessed credentials"); return "" }, &out, &diagnostics); err == nil {
+			t.Fatal("mixed modes accepted")
+		}
+	}
+}

@@ -69,6 +69,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	persist := f.Bool("persist-test-intent", false, "explicit TEST database write permission")
 	publish := f.Bool("publish-trade", false, "one gated cmd.trade append; never a retry loop")
 	allow := f.Bool("allow-test-trade-write", false, "explicit TEST assessment publication permission")
+	preparePrice := f.Bool("prepare-native-price", false, "read durable TEST facts and suggest a limit; no Redis, registration or permission")
+	nativeQuery := f.Int64("native-query-id", 0, "registered and published instrument.constraints.query command ID")
+	nativeReceipt := f.Int64("native-receipt-id", 0, "durable raw reply receipt ID")
+	nativeMapping := f.String("native-mapping-file", "", "verified Meridian CatalogBinding JSON; identities only, not a quote")
 	if err := f.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -78,9 +82,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	if f.NArg() != 0 || scope.Route.Env != "test" || !(scope.Route.BrokerID == "ctp" || strings.HasPrefix(scope.Route.BrokerID, "ctp_")) || !strings.HasSuffix(*database, "_test") || len(*database) > 63 || strings.ContainsAny(*database, " \t\r\n") || *register != *persist || *publish != *allow || (*publish && (!*register || *deployment == "")) || len(*deployment) > 128 || strings.ContainsAny(*deployment, " \t\r\n") {
 		return errors.New("explicit TEST CTP scope, dedicated database and paired write flags required")
 	}
-	raw, err := readBounded(*commandFile, 65536)
-	if err != nil {
-		return err
+	if *preparePrice {
+		if *register || *persist || *publish || *allow || *commandFile != "" || *approvalFile != "" || *evidenceFile != "" || *nativeQuery <= 0 || *nativeReceipt <= 0 || *nativeMapping == "" {
+			return errors.New("native price preparation is read-only and requires query/receipt IDs and mapping only")
+		}
+	} else if *nativeQuery != 0 || *nativeReceipt != 0 || *nativeMapping != "" {
+		return errors.New("native price flags require --prepare-native-price")
 	}
 	b, err := readBounded(*targetFile, 4096)
 	if err != nil {
@@ -89,6 +96,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	target, err := futures.DecodeTestQueryTarget(b)
 	if err != nil {
 		return errors.New("invalid reviewed TEST target")
+	}
+	if *preparePrice {
+		return prepareNativePrice(ctx, scope, target, *database, *nativeQuery, *nativeReceipt, *nativeMapping, getenv, out)
+	}
+	raw, err := readBounded(*commandFile, 65536)
+	if err != nil {
+		return err
 	}
 	b, err = readBounded(*approvalFile, 8192)
 	if err != nil {
@@ -171,4 +185,44 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		return errors.New("TEST publication not confirmed; inspect durable outcome, do not resend")
 	}
 	return nil
+}
+
+func prepareNativePrice(ctx context.Context, scope futures.CommandScope, target futures.TestQueryTarget, database string, queryID, receiptID int64, mappingFile string, getenv func(string) string, out io.Writer) error {
+	raw, err := readBounded(mappingFile, 4096)
+	if err != nil {
+		return err
+	}
+	var mapping futures.CatalogBinding
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if d.Decode(&mapping) != nil || d.Decode(new(any)) != io.EOF {
+		return errors.New("invalid native price catalog mapping")
+	}
+	url := getenv("RELAY_CTP_TRADE_DATABASE_URL")
+	pg, err := pgx.ParseConfig(url)
+	if url == "" || err != nil || pg.Database != database {
+		return errors.New("explicit matching RELAY_CTP_TRADE_DATABASE_URL required")
+	}
+	pg.ConnectTimeout = 3 * time.Second
+	db := stdlib.OpenDB(*pg)
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var actual string
+	if db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actual) != nil || actual != database {
+		return errors.New("cannot verify dedicated TEST database")
+	}
+	store, err := futures.NewCommandStore(db)
+	if err != nil {
+		return err
+	}
+	result, err := store.PrepareTestNativePrice(ctx, scope, target, queryID, receiptID, mapping)
+	if err != nil {
+		if errors.Is(err, futures.ErrQueryPublishGate) || errors.Is(err, futures.ErrStreamIdentity) {
+			return fmt.Errorf("native price preparation rejected; no command sent: %w", err)
+		}
+		return errors.New("native price evidence unavailable, incomplete, inconsistent or expired; no command sent")
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"mode": "read_only_native_price", "command_published": false, "business_authorized": false, "preparation": result})
 }

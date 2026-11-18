@@ -38,19 +38,20 @@ func (a TestTradeApproval) relayExecution() bool {
 }
 
 type TestTradeMarket struct {
-	PriceSource           string `json:"price_source,omitempty"`
-	SecurityID            string `json:"security_id"`
-	SourceInstrumentID    string `json:"source_instrument_id"`
-	ExchangeID            string `json:"exchange_id"`
-	TradeDate             string `json:"trade_date"`
-	ObservedAt            string `json:"observed_at"`
-	PublicationSnapshotID string `json:"publication_snapshot_id"`
-	LogicalTableChecksum  string `json:"logical_table_checksum"`
-	Stale                 bool   `json:"stale"`
-	PriceTick             Price  `json:"price_tick"`
-	BestBid               Price  `json:"best_bid,omitempty"`
-	LowerLimit            Price  `json:"lower_limit"`
-	UpperLimit            Price  `json:"upper_limit"`
+	NativeFacts           *TestNativeFactsReference `json:"native_facts,omitempty"`
+	PriceSource           string                    `json:"price_source,omitempty"`
+	SecurityID            string                    `json:"security_id"`
+	SourceInstrumentID    string                    `json:"source_instrument_id"`
+	ExchangeID            string                    `json:"exchange_id"`
+	TradeDate             string                    `json:"trade_date"`
+	ObservedAt            string                    `json:"observed_at"`
+	PublicationSnapshotID string                    `json:"publication_snapshot_id"`
+	LogicalTableChecksum  string                    `json:"logical_table_checksum"`
+	Stale                 bool                      `json:"stale"`
+	PriceTick             Price                     `json:"price_tick"`
+	BestBid               Price                     `json:"best_bid,omitempty"`
+	LowerLimit            Price                     `json:"lower_limit"`
+	UpperLimit            Price                     `json:"upper_limit"`
 }
 
 func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
@@ -66,12 +67,17 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 		return a, err
 	}
 	if !literal(fields["market"], "null") {
-		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "lower_limit", "upper_limit"}, []string{"price_source", "best_bid"})
+		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "lower_limit", "upper_limit"}, []string{"price_source", "best_bid", "native_facts"})
 		if err != nil {
 			return a, err
 		}
 		if !literal(market["stale"], "true") && !literal(market["stale"], "false") {
 			return a, ErrStreamIdentity
+		}
+		if ref, ok := market["native_facts"]; ok {
+			if _, err := shape(ref, []string{"command_id", "receipt_id", "body_sha256", "instrument_started_at", "depth_started_at"}, nil); err != nil {
+				return a, err
+			}
 		}
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
@@ -98,6 +104,15 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	}
 	if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || len(a.CommandSHA256) != 64 || strings.Trim(a.CommandSHA256, "0123456789abcdef") != "" || !validTime(a.ExpiresAt) || a.CancelReceiptID < 0 {
 		return a, ErrStreamIdentity
+	}
+	if a.Market != nil {
+		if a.Market.PriceSource == nativeFactsPriceSource {
+			if !a.relayExecution() || a.Market.NativeFacts == nil || a.Market.NativeFacts.validate() != nil {
+				return a, ErrStreamIdentity
+			}
+		} else if a.Market.NativeFacts != nil {
+			return a, ErrStreamIdentity
+		}
 	}
 	return a, nil
 }
@@ -146,8 +161,27 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 		return ErrStreamIdentity
 	}
 	nativeLower := m.PriceSource == "oc_test_native_lower_limit.v1"
-	if m.PriceSource != "" && !nativeLower {
+	nativeFacts := m.PriceSource == nativeFactsPriceSource
+	if m.PriceSource != "" && !nativeLower && !nativeFacts {
 		return ErrStreamIdentity
+	}
+	if nativeFacts {
+		if !a.relayExecution() || m.NativeFacts == nil || m.NativeFacts.validate() != nil {
+			return ErrStreamIdentity
+		}
+		ceiling, err := nativeTestBuyPrice(*m)
+		if err != nil {
+			return err
+		}
+		if err := validateLimitOrderPrice(o.LimitPrice, m.PriceTick, m.LowerLimit, m.UpperLimit); err != nil {
+			return err
+		}
+		p, _ := checkedPositivePrice(o.LimitPrice)
+		cap, _ := checkedPositivePrice(ceiling)
+		if p.Cmp(cap) > 0 {
+			return priceAdmissionError("test_resting_price_required")
+		}
+		return nil
 	}
 	if nativeLower {
 		if a.PermissionProfile != "test_day_relay.v1" || o.Symbol != "rb2701" || m.SourceInstrumentID != "rb2701" || m.BestBid != "" {
@@ -202,6 +236,11 @@ func (s *CommandStore) publishTestTrade(ctx context.Context, scope CommandScope,
 	assessment := string(framed("ctp.test.assessment.v1/", string(commandRouteBytes(scope.Route)), a.AssessmentID))
 	check := func(c CommandRegistration) error { return validateTestTrade(c, target, a) }
 	insert := func(ctx context.Context, tx *sql.Tx, c CommandRegistration, binding, proof []byte) error {
+		if a.Market != nil && a.Market.PriceSource == nativeFactsPriceSource {
+			if err := verifyTestNativeMarket(ctx, tx, c, target, *a.Market); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, assessment); err != nil {
 			return err
 		}

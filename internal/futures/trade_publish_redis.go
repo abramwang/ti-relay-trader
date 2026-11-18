@@ -99,6 +99,18 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 		expires = localEnd
 	}
 	if a.CancelReceiptID == 0 {
+		if a.Market.PriceSource == nativeFactsPriceSource {
+			if !execution {
+				return queryPublishProof{}, ErrQueryPublishGate
+			}
+			end, err := nativeFactsDeadline(*a.Market, now)
+			if err != nil {
+				return queryPublishProof{}, err
+			}
+			if end.Before(expires) {
+				expires = end
+			}
+		}
 		observed, err := time.Parse(time.RFC3339Nano, a.Market.ObservedAt)
 		maxAge := 5 * time.Second
 		if a.Market.PriceSource == "oc_test_native_lower_limit.v1" {

@@ -2,6 +2,47 @@
 
 日期：2026-11-18，Asia/Shanghai。发送方：Relay；接收方：OC。
 
+## 新版execution原生事实定价接线
+
+Relay已完成本地`oc_test_native_facts.v1`定价路径，供`relay_test_execution.v1`命令级授权使用。它不是新增OC动作/profile/wire；继续使用已交付的`instrument.constraints.query`和原reply。OC无需再修改协议、提供逐笔审计文件或重复原则回签。下面明日安排中的“定价待接线”已由本节开发进展替代，真实柜台联测仍待当日会话和授权。
+
+### 取证、价格与有效期
+
+- 必须引用Relay已登记且已确认发布的事实查询command_id和已持久收件的reply receipt_id。核对原命令全部关联字段、scope、source/run_id/epoch/group、session/代次/TradingDay、目标合约、原文SHA256及真实完整末页；不从任意首条reply学习会话，不把旧快照当新查询成功。
+- Meridian只提供证券代码/原生合约/交易所及目录版本映射；本路径的tick、限价、买卖一全部来自同一条OC事实回复。静态/动态是两次SDK采样，`atomic_snapshot=false`。数字字符串与附带binary64来源比对，价格档位与建议计算仍用精确有理数，不用浮点容差。
+- 当前仍限定东吴TEST `4900 / 300052141`、SHFE普通存续期货、投机买开一手；校验乘数、最小/最大限价手数及交易状态。需要正的tick、上下限、买一；缺失不补0，不由IOPV/实盘报价代填。卖一若存在则校验范围、档位及不低于买一，缺失保留null。
+- 显式建议为买一减10个tick与最低合法档位中的较高值；最低合法档位是上取整至tick的下限。买一恰在下限时可建议下限价，**不保证不成交**。调用方决定采用的原命令价格；检查器只拒绝，不静默改价、加量或换合约。旧`oc_test_native_lower_limit.v1`仍仅属旧模式，不自动升级。
+- 静态最多300秒、动态最多5秒，分别从SDK请求started_at计龄，不从回复完成/落库/读取时刷新有效期；检查查询发布先于请求及采样顺序，未来采样拒绝。保留ActionDay、broker_trade_date和UpdateTime原值，采样新鲜不宣称撮合行情源时间与实盘同步。
+- 发送前在持久attempt事务里重新读取、严格解析原回复并逐字段匹配approval.market。新版本地授权、心跳、命令时效及交易时段仍独立检查；Redis原子发布期限包含事实有效期。更晚的同目标事实查询尝试使旧结果失效，不因刷新失败退回旧成功；同命令已有冲突/隔离回复也拒绝。最近回复核对最多256条/4MiB，超过则明确不准入，不静默跳过。
+- 报价准备不更新inbox状态、不ACK或补业务快照，不占报单预算。重复/未知发布仍只返回原责任，不重报。撤单独立沿原订单证据和本地cancel权限执行，不要求新报价。
+
+### 使用现有入口
+
+Go调用`CommandStore.PrepareTestNativePrice(ctx, scope, target, queryID, receiptID, mapping)`只读专用TEST PG，返回market、建议限价、valid_until和原始事实字段；business_authorized始终false。这里的mapping为已核对的Meridian CatalogBinding，不包含行情。
+
+现有`relay-ctp-trade`增加显式只读模式；以下占位ID/路径必须由本次实际记录替换，不能直接作为现场命令：
+
+```bash
+relay-ctp-trade --prepare-native-price \
+  --env test --broker ctp_4900 \
+  --gateway ctp-dongwu-readonly-recovery-20261117 --account 300052141 \
+  --native-broker 4900 --user 300052141 --investor 300052141 \
+  --database relay_ctp_dongwu_20261117_test \
+  --target-file /absolute/current-target.json \
+  --native-query-id QUERY_COMMAND_ID --native-receipt-id REPLY_RECEIPT_ID \
+  --native-mapping-file /absolute/verified-catalog-binding.json
+```
+
+该模式只读取显式`RELAY_CTP_TRADE_DATABASE_URL`，不连接Redis、不登记/发送命令，禁止混用register/publish/command-file/approval-file。默认未指定此模式时仍为原离线校验。调用方将返回的完整market放入当前命令approval，选择价格后计算原命令SHA256，再沿原发布入口发送；有效期短，现场应由Relay编排调用，不靠人工拷贝过期报价，不自动刷新或重发未知命令。
+
+### 验证和未扩大范围
+
+新增原生事实完整性/缺失/陈旧/错误会话、精确档位及本地引用严格解析测试；临时PG验证原始收件与来源、混淆/篡改/冲突/新查询失效、发布持久化及重启未知不重发。隔离Unix Redis完成查询发布、模拟SDK回复运输、PG收件及只读报价生成；交易发送正向用模拟publisher验证持久责任，不冒称新execution已经在线报撤。全部样例只在隔离测试使用。
+
+本轮证据保留在`outputs/recovery/ctp-offline-20261118T224000.8QSQL8/`。全Go单测和相关vet通过；Python契约111项通过，审计复核13项通过、1项因私有材料缺失跳过。全量隔离PG首跑只有旧`TestTradeStoreMalformedAuditIntegrityAndDown`清理遗漏撤单拒绝表迁移而失败，原`result.json`及日志保留失败状态；一万订单/成交容量用例当次通过。补上测试清理顺序后，原生定价、执行授权、本地Redis联合链路与该失败用例的隔离回归全部通过（65.177秒），见`post-fix-isolated-integration.log`；没有将首轮改写为全绿，也未重跑昂贵容量用例。五个CTP CLI已构建至同目录`bin/`，不是替换常驻服务或部署上线。
+
+没有连接业务Redis/柜台、登录/确认结算、迁移业务库、重启9092或更改生产/TEST权限。没有删除OC逐单原生校验；真实替代链路联合通过后再协调移除。API/SDK/终端统一交易权限、持续业务分发和普通生产期货准入仍是后续项。
+
 ## 11月19日R2部署联调安排
 
 用户确认OC已部署到宿主机R2目录并完成离线检查。记录为**部署方报告就绪**，不是Relay独立验证宿主机版本、真实登录、报撤或终端采集。今晚端口拒绝连接本身不证明配置错误；本节不授权今晚登录、结算或交易，不设置自动启动/切环境任务。下文旧300秒测评和中间版本配置保留作历史，不再作为明日默认执行安排。
