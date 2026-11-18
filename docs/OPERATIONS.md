@@ -342,6 +342,12 @@ scripts/restore-postgres-drill.sh outputs/backups/relay_trader_*.dump 2026-07-31
 
 ## Gateway、Stream 与 DLQ 运维
 
+### CTP 期货账户状态
+
+`2026-11-18` 起，`/operations` 的账户表、筛选和在线数量同时纳入已配置的 TEST CTP 观察账户。`GET /v1/operations/status` 新增 `futures_accounts`，复用期货终端绑定的来源/run_id/epoch/原生身份校验，仅读取心跳，不加载历史查询账本或向 OC 发送查询。原 `gateways`、`summary`、`streams` 仍保持证券监控口径；页面单独合并期货在线数，不把未采集的期货 PEL/lag 记为零。
+
+显示别名、账户、路由、最后心跳、登录/查询/结算/订单快照、OC 报撤声明及会话/交易日。超时和停止的心跳明确标为历史，终端只读权限不因 OC 报撤 ready 而开放。绑定缺失显示 `epoch_missing_or_changed`，不得重建旧键来消除显示错误；新联调路由须核验绑定后更新私有 manifest。生产不会读取 TEST CTP 观察账户，期货也不进入华鑫凭据管理列表。观察器未初始化时返回 `futures_error`，保留证券账户展示。
+
 独立页面 `/operations` 和接口 `GET /v1/operations/status` 统一展示：
 
 1. 每个 broker/gateway/account 的最新 OC 心跳、组件状态、账户级下单准入、下一次时段切换、pending trade/query 和最近 `BROKER_NOT_READY`。

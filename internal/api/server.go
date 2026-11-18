@@ -4222,6 +4222,7 @@ func (s *Server) handleJobRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOperationsStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
 		httpx.WriteMethodNotAllowed(w, r, http.MethodGet)
 		return
@@ -4246,7 +4247,29 @@ func (s *Server) handleOperationsStatus(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
-	httpx.WriteOK(w, r, http.StatusOK, snapshot)
+	futuresAccounts := []futures.TerminalAccount{}
+	futuresError := ""
+	if s.cfg.Service.Environment == config.EnvironmentTest && s.cfg.FuturesTerminal.ManifestFile != "" {
+		if reader, ok := s.futuresTerminal.(interface {
+			Heartbeats(context.Context) []futures.TerminalAccount
+		}); ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+			futuresAccounts = reader.Heartbeats(ctx)
+			cancel()
+			for i := range futuresAccounts {
+				if alias := strings.TrimSpace(aliasOverrides[futuresAccounts[i].AccountID]); alias != "" {
+					futuresAccounts[i].Alias = alias
+				}
+			}
+		} else {
+			futuresError = "observation_reader_unavailable"
+		}
+	}
+	httpx.WriteOK(w, r, http.StatusOK, struct {
+		redisstream.RuntimeSnapshot
+		FuturesAccounts []futures.TerminalAccount `json:"futures_accounts"`
+		FuturesError    string                    `json:"futures_error,omitempty"`
+	}{snapshot, futuresAccounts, futuresError})
 }
 
 type credentialRotateRequest struct {

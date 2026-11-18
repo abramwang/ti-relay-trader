@@ -81,6 +81,11 @@
     error: "消费错误",
     idle: "暂无数据",
     unknown: "未知",
+    read_only: "只读就绪",
+    assessment: "测评查询就绪",
+    not_ready: "柜台未就绪",
+    stopped: "已停止",
+    unavailable: "无法观测",
     pending: "待处理",
     recovered: "已自动恢复",
     acknowledged: "已确认",
@@ -159,7 +164,7 @@
 
   function renderAccountOptions() {
     const current = elements.accountFilter.value;
-    const gateways = state.snapshot?.gateways || [];
+    const gateways = allGateways();
     const options = gateways.map((gateway) => {
       const label = gateway.alias ? `${gateway.alias} (${gateway.account_id})` : gateway.account_id;
       return `<option value="${escapeHTML(gateway.account_id)}">${escapeHTML(label)}</option>`;
@@ -188,8 +193,11 @@
     elements.monitoringWindow.textContent = active ? "监控中" : (monitoringLabels[snapshot?.monitoring_reason] || "--");
     elements.monitoringWindow.style.color = active ? "#36c9ad" : "";
     elements.monitoringReason.textContent = monitoringLabels[snapshot?.monitoring_reason] || snapshot?.monitoring_reason || "--";
-    elements.gatewayOnline.textContent = `${formatNumber(summary.gateways_online)} / ${formatNumber((snapshot?.gateways || []).length)}`;
-    elements.gatewayAttention.textContent = active ? `${formatNumber(summary.gateways_attention)} 个需关注` : `${formatNumber(summary.gateways_off_hours)} 个休市`;
+    const futures = snapshot?.futures_accounts || [];
+    const futuresOnline = futures.filter((a) => ["read_only", "assessment"].includes(a.connection_state)).length;
+    elements.gatewayOnline.textContent = `${formatNumber((summary.gateways_online || 0) + futuresOnline)} / ${formatNumber(allGateways().length)}`;
+    const securitiesAttention = active ? `${formatNumber(summary.gateways_attention)} 个需关注` : `${formatNumber(summary.gateways_off_hours)} 个休市`;
+    elements.gatewayAttention.textContent = securitiesAttention + (futures.length ? ` · 期货 ${futures.length - futuresOnline} 个未就绪` : "") + (snapshot?.futures_error ? " · 期货观察器不可用" : "");
     elements.streamLag.textContent = formatNumber(summary.total_lag);
     elements.streamAttention.textContent = `${formatNumber(summary.streams_attention)} 条流需关注`;
     elements.pendingDLQ.textContent = formatNumber(summary.pending_dead_letters);
@@ -202,8 +210,53 @@
       : "当前环境只读，审核动作未启用";
   }
 
+  function allGateways() {
+    const futures = (state.snapshot?.futures_accounts || []).map((account) => ({
+      account_id: account.account_id, alias: account.alias,
+      broker_id: account.route?.broker_id, gateway_id: account.route?.gateway_id,
+      status: account.connection_state || "unavailable",
+      last_heartbeat_at: account.heartbeat?.produced_at,
+      heartbeat_age_seconds: Math.max(0, Math.floor((account.heartbeat?.age_ms || 0) / 1000)),
+      pending_trade_count: null, pending_query_count: null,
+      futures_account: account,
+    }));
+    return [...(state.snapshot?.gateways || []), ...futures];
+  }
+
+  function futuresStatusDetails(account) {
+    const h = account.heartbeat;
+    if (!h) return '<br><span>未取得有效心跳</span><br><span>终端报撤：未开放</span>';
+    const current = ["read_only", "assessment", "not_ready"].includes(account.connection_state);
+    const flag = (v) => v === true ? "就绪" : v === false ? "未就绪" : "未知";
+    const mode = h.runtime_mode === "test_broker_assessment" ? "测评" : h.runtime_mode === "test_broker_read_only" ? "只读" : (h.runtime_mode || "未知模式");
+    const lines = [
+      `${current ? "当前" : "历史"}心跳 · ${mode} · ${h.state_text || h.state || "--"}`,
+      `柜台登录 ${flag(h.broker_ready)} · 查询 ${flag(h.query_collection_ready)}`,
+      `结算确认 ${flag(h.settlement_confirmed)} · 订单快照 ${flag(h.order_snapshot_ready)}`,
+      `${current ? "OC" : "历史OC"}报单 ${flag(h.accepting_trade_commands)} · 撤单 ${flag(h.accepting_cancel_commands)}`,
+      "终端报撤：未开放",
+      `交易日 ${h.trade_date || "--"} · 连接代次 ${h.connection_generation ?? "--"}`,
+      `会话 ${h.counter_session_id || "--"}`,
+    ];
+    return lines.map((line) => `<br><span>${escapeHTML(line)}</span>`).join("");
+  }
+
+  function futuresIssue(account) {
+    const labels = {
+      epoch_missing_or_changed: "路由绑定缺失或已变化",
+      source_changed: "Redis 来源已变化",
+      redis_unavailable: "Redis 不可用",
+      heartbeat_missing: "尚无心跳",
+      heartbeat_invalid: "心跳校验失败",
+    };
+    if (account.connection_error) return `${escapeHTML(labels[account.connection_error] || account.connection_error)}<br><span>${escapeHTML(account.connection_error)}</span>`;
+    if (account.connection_state === "stale") return "心跳已过期，不代表当前就绪";
+    if (account.connection_state === "stopped") return "进程已停止，保留最后心跳";
+    return "--";
+  }
+
   function filteredGateways() {
-    return (state.snapshot?.gateways || []).filter((gateway) => !state.accountID || gateway.account_id === state.accountID);
+    return allGateways().filter((gateway) => !state.accountID || gateway.account_id === state.accountID);
   }
 
   function renderGateways() {
@@ -217,15 +270,16 @@
       const account = gateway.alias
         ? `<strong>${escapeHTML(gateway.alias)}</strong><br><span class="mono">${escapeHTML(gateway.account_id)}</span>`
         : `<strong class="mono">${escapeHTML(gateway.account_id)}</strong>`;
-      const issue = gateway.last_issue_code
+      const issue = gateway.futures_account ? futuresIssue(gateway.futures_account) : gateway.last_issue_code
         ? `${escapeHTML(gateway.last_issue_code)}<br><span>${escapeHTML(gateway.last_issue_message || formatTime(gateway.last_issue_at, true))}</span>`
         : "--";
       return `
         <tr>
-          <td>${account}</td>
-          <td class="mono-cell">${escapeHTML(gateway.broker_id)} / ${escapeHTML(gateway.gateway_id)}</td>
-          <td>
+          <td>${account}<br><span>${gateway.futures_account ? "期货 · CTP" : "证券"}</span></td>
+          <td class="mono-cell gateway-route">${escapeHTML(gateway.broker_id)} / ${escapeHTML(gateway.gateway_id)}</td>
+          <td class="gateway-state">
             ${statusBadge(gateway.status)}
+            ${gateway.futures_account ? futuresStatusDetails(gateway.futures_account) : ""}
             ${gateway.state_text ? `<br><span>${escapeHTML(gateway.state_text)}</span>` : ""}
             ${gateway.accepting_trade_commands !== undefined
               ? `<br><span>OC交易命令 ${gateway.accepting_trade_commands ? "接收" : "暂停"} · 撤单 ${gateway.accepting_cancel_commands ? "接收" : "暂停"}</span>`
@@ -242,8 +296,8 @@
           </td>
           <td>${formatTime(gateway.last_heartbeat_at, true)}</td>
           <td class="mono-cell">${gateway.last_heartbeat_at ? `${formatNumber(gateway.heartbeat_age_seconds)}s` : "--"}</td>
-          <td class="mono-cell">${formatNumber(gateway.pending_trade_count)}</td>
-          <td class="mono-cell">${formatNumber(gateway.pending_query_count)}</td>
+          <td class="mono-cell">${gateway.pending_trade_count == null ? "--" : formatNumber(gateway.pending_trade_count)}</td>
+          <td class="mono-cell">${gateway.pending_query_count == null ? "--" : formatNumber(gateway.pending_query_count)}</td>
           <td>${issue}</td>
         </tr>`;
     }).join("");

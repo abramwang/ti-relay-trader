@@ -311,6 +311,8 @@
 }
 
 .status-online,
+.status-read_only,
+.status-assessment,
 .status-ok,
 .status-recovered {
   border-color: rgba(8, 153, 129, 0.45);
@@ -318,6 +320,8 @@
 }
 
 .status-warning,
+.status-not_ready,
+.status-unavailable,
 .status-broker_not_ready,
 .status-reconnecting {
   border-color: rgba(255, 152, 0, 0.46);
@@ -337,6 +341,7 @@
 }
 
 .status-off_hours,
+.status-stopped,
 .status-idle,
 .status-unknown {
   color: #9297a5;
@@ -345,6 +350,15 @@
 .stream-role-tabs {
   display: flex;
   gap: 4px;
+}
+
+.operations-status td.gateway-route,
+.operations-status td.gateway-state {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 200px;
+  max-width: 340px;
+  line-height: 1.6;
 }
 
 .stream-role-tabs button {

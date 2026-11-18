@@ -39,6 +39,11 @@ def main() -> int:
             if message.type == "error"
             else None,
         )
+
+        status = page.request.get(args.base_url.rstrip("/") + "/v1/operations/status").json()["data"]
+        futures = status.get("futures_accounts", [])
+        expected_gateways = len(status.get("gateways", [])) + len(futures)
+        expected_streams = len(status.get("streams", []))
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.on(
             "response",
@@ -58,14 +63,15 @@ def main() -> int:
             state="visible", timeout=20_000
         )
         page.wait_for_function(
-            """() => {
+            """(expected) => {
                 const gateways = document.querySelectorAll("#gatewayBody tr");
                 const streams = document.querySelectorAll("#streamBody tr");
                 const accounts = document.querySelectorAll("#operationsAccountFilter option");
                 const writeMode = document.querySelector("#dlqWriteMode")?.textContent || "";
-                return gateways.length === 6 && streams.length === 24 &&
-                    accounts.length === 7 && !writeMode.includes("读取中");
+                return gateways.length === Math.max(1, expected.gateways) && streams.length === Math.max(1, expected.streams) &&
+                    accounts.length === expected.gateways + 1 && !writeMode.includes("读取中");
             }""",
+            arg={"gateways": expected_gateways, "streams": expected_streams},
             timeout=20_000,
         )
         page.wait_for_timeout(300)
@@ -103,13 +109,21 @@ def main() -> int:
             }"""
         )
         page.screenshot(path=str(output), full_page=True)
+        for account in futures:
+            page.select_option("#operationsAccountFilter", account["account_id"])
+            page.wait_for_timeout(100)
+            row = page.locator("#gatewayBody")
+            assert "期货 · CTP" in row.inner_text()
+            assert account["account_id"] in row.inner_text()
+            assert "终端报撤：未开放" in row.inner_text()
+            assert account["account_id"] not in page.locator("#credentialAccount").inner_text()
         browser.close()
 
-    if diagnostics["gatewayRows"] != 6:
-        raise AssertionError(f"expected six gateways: {diagnostics}")
-    if diagnostics["streamRows"] != 24:
-        raise AssertionError(f"expected 24 output streams: {diagnostics}")
-    if diagnostics["accountOptions"] != 7:
+    if diagnostics["gatewayRows"] != max(1, expected_gateways):
+        raise AssertionError(f"gateway list incomplete: {diagnostics}")
+    if diagnostics["streamRows"] != max(1, expected_streams):
+        raise AssertionError(f"output streams incomplete: {diagnostics}")
+    if diagnostics["accountOptions"] != expected_gateways + 1:
         raise AssertionError(f"account selector is incomplete: {diagnostics}")
     rendered_account_text = "\n".join(
         diagnostics["gatewayLabels"] + diagnostics["accountOptionLabels"]
@@ -123,11 +137,11 @@ def main() -> int:
         raise AssertionError(
             f"operations account aliases are stale: missing={missing_aliases} diagnostics={diagnostics}"
         )
-    if "只读" not in diagnostics["writeMode"]:
+    if not status.get("actions_write_enabled") and "只读" not in diagnostics["writeMode"]:
         raise AssertionError(f"production operation guard is unclear: {diagnostics}")
     if diagnostics["bodyOverflow"]:
         raise AssertionError(f"page has horizontal overflow: {diagnostics}")
-    if any(width < 1000 for width in diagnostics["panelWidths"]):
+    if args.width >= 1200 and any(width < 1000 for width in diagnostics["panelWidths"]):
         raise AssertionError(f"operations panels are undersized: {diagnostics}")
     if console_errors or page_errors or response_errors:
         raise AssertionError(

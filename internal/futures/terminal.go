@@ -153,12 +153,25 @@ func (r *TerminalReader) Close() {
 }
 
 func (r *TerminalReader) Snapshot(ctx context.Context) []TerminalAccount {
+	return r.snapshot(ctx, true)
+}
+
+// Heartbeats observes the same bound source without loading historical query ledgers.
+func (r *TerminalReader) Heartbeats(ctx context.Context) []TerminalAccount {
+	return r.snapshot(ctx, false)
+}
+
+func (r *TerminalReader) snapshot(ctx context.Context, includeQueries bool) []TerminalAccount {
 	out := make([]TerminalAccount, 0, len(r.manifest.Accounts))
 	for i, a := range r.manifest.Accounts {
 		item := TerminalAccount{AccountID: a.Scope.Route.AccountID, Alias: a.Alias, Route: a.Scope.Route, Queries: []TerminalQuery{}}
 		hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		item.Heartbeat, item.ConnectionState, item.ConnectionError = r.connection(hctx, i)
 		cancel()
+		if !includeQueries {
+			out = append(out, item)
+			continue
+		}
 		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		queries, err := r.queries(qctx, a)
 		cancel()
