@@ -55,10 +55,14 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 	if err != nil || len(rows) != 1 {
 		return bad()
 	}
-	h, err := DecodeHeartbeat(rows[0].Raw, p.scope.Route)
-	now := time.Now()
+	return testQueryHeartbeatProof(rows[0], p.scope, p.target, time.Now())
+}
+
+func testQueryHeartbeatProof(row StreamInput, scope CommandScope, target TestQueryTarget, now time.Time) (queryPublishProof, error) {
+	bad := func() (queryPublishProof, error) { return queryPublishProof{}, ErrQueryPublishGate }
+	h, err := DecodeHeartbeat(row.Raw, scope.Route)
 	g, ready := h.queryCollection()
-	if err != nil || !h.readOnlyNativeScopeMatches(p.scope) || !h.assessmentNativeScopeMatches(p.scope) || !ready || g == nil || *g != p.target.ConnectionGeneration || h.CounterSessionID != p.target.CounterSessionID || h.TradeDate != p.target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
+	if err != nil || !h.readOnlyNativeScopeMatches(scope) || !h.assessmentNativeScopeMatches(scope) || !ready || g == nil || *g != target.ConnectionGeneration || h.CounterSessionID != target.CounterSessionID || h.TradeDate != target.TradeDate || h.ProducedAt.After(now.Add(2*time.Second)) || !now.Before(h.ProducedAt.Add(30*time.Second)) {
 		return bad()
 	}
 	expires := h.ProducedAt.Add(30 * time.Second)
@@ -66,7 +70,9 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 		expires = now.Add(30 * time.Second)
 	}
 	if h.Assessment != nil {
-		if !h.Assessment.windowOpen(now) || h.Assessment.PermissionProfile != "" {
+		// Query collection does not consume a trade budget or require a ready
+		// order snapshot: these queries are how that snapshot is obtained.
+		if !h.Assessment.windowOpen(now) {
 			return bad()
 		}
 		if h.Assessment.ExpiresAt.Before(expires) {
@@ -79,7 +85,7 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 			return bad()
 		}
 	}
-	return queryPublishProof{EntryID: rows[0].EntryID, Body: rows[0].Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
+	return queryPublishProof{EntryID: row.EntryID, Body: row.Raw, CheckedAt: now, ExpiresAt: expires, ProducedAt: h.ProducedAt}, nil
 }
 
 func (p *TestQueryPublisher) verifyTransport(ctx context.Context) error {
