@@ -2,6 +2,27 @@
 
 日期：2026-11-18，Asia/Shanghai。发送方：Relay；接收方：OC。
 
+## SQLite当前责任只读导出接收
+
+接收OC实现提交a03d58a的说明：现有export_runtime_audit.py的include-journal可识别SQLite，输出当前一致性journal快照，不再要求OC重复开发此项。以下是说明复核，不是Relay运行OC导出器或独立验收其存储；本机reference暂未发现commands.sqlite.snapshot.jsonl及本轮audit-index/清单样例。下文“先补SQLite导出”的安排为此前阶段历史。
+
+### 接受的边界
+
+- 导出是只读取证，不是交易、迁移或恢复执行入口；不要求停OC或取得其独占账户锁，但必须使用正确所属用户、现有绝对state路径及全新输出目录。没有本轮运行导出或访问实际state的操作授权。
+- 沿用审计工具，mode=ro连接后增量备份至独立临时副本，再校验/编码；不直接复制活动数据库。增量备份只在读取步骤短暂持锁，不能承诺零调度影响，此机制与[SQLite官方Online Backup API说明](https://www.sqlite.org/backup.html)一致；这里只核对机制，不据官方文档证明OC实现或10秒预算已实测。
+- commands.sqlite.snapshot.jsonl首行snapshot、随后meta和六类entry；entry.document是原JSON文本，应先按解码后的UTF-8原字节校验sha256，再做业务只读关联，不重排/舍入或改写嵌套body。原未决、未确认仍保留原状态。
+- journal_consistent=true仅限journal内部；cross_file_atomic_snapshot=false和business_state_validated=false必须保留。独立audit前缀与journal采集存在时间差，不用采集开始时间替代源事件时间，不将跨文件暂时缺项直接定性为丢失、成功或未执行。
+- 缺失/替换/损坏/错作用域、升级不完整、额外WAL及需要写恢复的hot rollback journal保持失败，不回退旧JSON或清理故障文件。未升级旧JSON仍用原出口，不自动迁移。中断输出不当完整交付。
+- 10秒备份预算、64MiB源库及当前平台验证范围仍有限；导出成功不保证后续可写、持续容量或执行就绪，也不改变Relay授权。
+
+OC报告Ubuntu构建及7项相关CTest通过/13.27秒（含15个SQLite导出用例），原JSON4项继续通过；均为临时状态/合成记录，不标记为全CTest、真实柜台/Redis、sanitizer、物理断电或CentOS7验收。
+
+### Relay后续核验与OC继续工作
+
+下一次有现成导出时，只需交SHA256SUMS、audit-index.json、commands.sqlite.snapshot.jsonl及对应审计前缀，不要数据库、凭据、源码或二进制，不必另起大材料包。Relay核对清单、作用域/revision/六类数量、逐行原字节摘要、重复bucket/key及原命令/输出关联；分开报告格式一致性和业务未决，不把导出结果导回Stream、自动ACK或改写账本。该样例核验可与后续交付一起完成，不阻塞OC开发下一项。
+
+OC继续：**按需访问/有界活跃状态、身份存储及安全保留 → 暂时连接故障的有界恢复和事实重取 → 同进程TradingDay切换**。已有按日结算记录和导出工具不重做；保留未决责任、跨重启幂等及未知执行不重报。容量契约若改变给最小差异，真实升级/断连/上线另约窗口。Relay继续统一权限、事实定价及持续业务处理，不因这项本地工具新增交易wire或要求日常人工导出。
+
 ## 完整心跳复验与SQLite阶段接收
 
 已收到用户指定的`reference/resident_heartbeat_review_20261118/`，原字节归档至`testdata/oc_resident_heartbeat_review_20261118/`。以下为最新结论；下文此前“等待三条body”和结算记录待开发均是阶段历史，不再重复要求。
