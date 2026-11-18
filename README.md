@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 15:24` **推进OC职责精简及Relay本地准入**：[给OC执行清单](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md)明确局部业务失败不退出、行情事实查询与连接就绪解耦、普通运行配置精简三项；Relay接事实/准入/账本，Meridian协调由Relay负责。已统一准备和原生发布前的精确十进制价格检查，发布登记层不再吞掉具体价格拒绝原因；新增20个边界用例及隔离PG“拒绝零发布/零预算占用，后续合法请求正常”回归。全Go、futures/CLI vet及临时PG race通过，交易CLI已构建；Redis在线测试未运行，未发送任何柜台命令、未重启9092/OC、未切环境。现有day模式仍依赖OC逐命令原生检查；待实际心跳/独立事实出口交付后协同移除，不单边取消保护或宣称OC已完成。
+
 - `2026-11-18 15:18` **按用户指令切回TEST**：通过switch-relay-env.sh test完成目标库迁移检查、停止生产API/worker并启动TEST内嵌同步，域名test/ok、Redis/数据库/行情/事件桥正常；华鑫00030484心跳broker/order_snapshot/accepting_trade_commands均true。生产配置及387/388停用状态不变，无新柜台查询/报撤或OC重启。今日17:10生产canonical任务仍依赖生产API，留在TEST会无法选择生产账户；已提醒用户，不能据计划时间自行切生产。今日正式结算/绩效未补跑，昨日复算和今日柜台收盘采集证据保留。
 
 - `2026-11-18 15:15:58–15:16:03` **补跑昨日权威行情复算**：昨日失败实际为TEST环境下`no enabled performance accounts selected`，并非Meridian水位未就绪。按用户要求以生产配置、目标20261117、当前启用6830/5768执行正常canonical脚本及互斥锁；任务`performance_canonical-20261117-watermark-poll`已从jobs接口核验succeeded，完成标记写入。6830原权威日线版本不变；5768成本calculated、价格来源meridian_1d_pre_close_and_close，但净值仍blocked且persisted=false，保留前序净值缺口/ETF权益范围/私有清算未核验，不宣称全账户业绩闭合。原失败报告备份`performance_canonical.failed-20261117.json`，补跑日志`/var/log/relay/performance_canonical-manual-20261118-for-20261117.log`。不重新启用387/388、不查询OC、不调整交易权限；今日17:10自动复算安排不变，今日正式结算未在本轮补跑。

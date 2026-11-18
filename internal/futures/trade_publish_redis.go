@@ -3,7 +3,7 @@ package futures
 import (
 	"context"
 	"encoding/json"
-	"math/big"
+	"fmt"
 	"time"
 )
 
@@ -163,12 +163,8 @@ func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
 	if o.Symbol != a.Symbol || o.Exchange != a.Exchange || int64(o.OrderQty) < a.Static.MinLimitLots || int64(o.OrderQty) > a.Static.MaxLimitLots {
 		return ErrQueryPublishGate
 	}
-	p, _ := new(big.Rat).SetString(string(o.LimitPrice))
-	tick, _ := new(big.Rat).SetString(string(a.Static.PriceTick))
-	low, _ := new(big.Rat).SetString(string(a.Limits.Lower))
-	high, _ := new(big.Rat).SetString(string(a.Limits.Upper))
-	if p == nil || tick == nil || low == nil || high == nil || p.Cmp(low) < 0 || p.Cmp(high) > 0 || !new(big.Rat).Quo(p, tick).IsInt() {
-		return ErrQueryPublishGate
+	if err := validateLimitOrderPrice(o.LimitPrice, a.Static.PriceTick, a.Limits.Lower, a.Limits.Upper); err != nil {
+		return fmt.Errorf("%w: %v", ErrQueryPublishGate, err)
 	}
 	return nil
 }

@@ -115,7 +115,6 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	if b.SecurityID != m.SecurityID || b.SourceInstrumentID != m.SourceInstrumentID || b.ExchangeID != m.ExchangeID || b.PublicationSnapshotID != m.PublicationSnapshotID || b.LogicalTableChecksum != m.LogicalTableChecksum {
 		return ErrStreamIdentity
 	}
-	values := []Price{o.LimitPrice, m.PriceTick, m.BestBid, m.LowerLimit, m.UpperLimit}
 	nativeLower := m.PriceSource == "oc_test_native_lower_limit.v1"
 	if m.PriceSource != "" && !nativeLower {
 		return ErrStreamIdentity
@@ -124,37 +123,30 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 		if a.PermissionProfile != "test_day_relay.v1" || o.Symbol != "rb2701" || m.SourceInstrumentID != "rb2701" || m.BestBid != "" {
 			return ErrStreamIdentity
 		}
-		// No bid is implied: this TEST-only order explicitly uses the lower
-		// exchange limit and remains exposed to possible execution there.
-		values[2] = m.LowerLimit
 	}
-	rats := make([]*big.Rat, len(values))
-	for i, p := range values {
-		var checked Price
-		raw, _ := json.Marshal(p)
-		if json.Unmarshal(raw, &checked) != nil {
-			return ErrStreamIdentity
-		}
-		r, ok := new(big.Rat).SetString(string(p))
-		if !ok || r.Sign() <= 0 {
-			return ErrStreamIdentity
-		}
-		rats[i] = r
+	if err := validateLimitOrderPrice(o.LimitPrice, m.PriceTick, m.LowerLimit, m.UpperLimit); err != nil {
+		return err
 	}
-	price, tick, bid, low, high := rats[0], rats[1], rats[2], rats[3], rats[4]
-	if low.Cmp(high) >= 0 || bid.Cmp(low) < 0 || bid.Cmp(high) > 0 || price.Cmp(low) < 0 || price.Cmp(high) > 0 || !new(big.Rat).Quo(price, tick).IsInt() {
-		return ErrStreamIdentity
-	}
+	price, _ := checkedPositivePrice(o.LimitPrice)
+	tick, _ := checkedPositivePrice(m.PriceTick)
+	low, _ := checkedPositivePrice(m.LowerLimit)
+	high, _ := checkedPositivePrice(m.UpperLimit)
 	if nativeLower {
+		// No bid is implied: the TEST-only lower-limit preference is not
+		// a guarantee against execution.
 		if price.Cmp(low) != 0 {
-			return ErrStreamIdentity
+			return priceAdmissionError("test_lower_limit_required")
 		}
 		return nil
+	}
+	bid, ok := checkedPositivePrice(m.BestBid)
+	if !ok || bid.Cmp(low) < 0 || bid.Cmp(high) > 0 {
+		return priceAdmissionError("invalid_reference_bid")
 	}
 	// A resting-price preference is not a guarantee against execution.
 	ceiling := new(big.Rat).Sub(bid, new(big.Rat).Mul(tick, big.NewRat(10, 1)))
 	if price.Cmp(ceiling) > 0 {
-		return ErrStreamIdentity
+		return priceAdmissionError("test_resting_price_required")
 	}
 	return nil
 }

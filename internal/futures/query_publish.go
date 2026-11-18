@@ -131,8 +131,11 @@ func (s *CommandStore) publishTestRegistered(ctx context.Context, scope CommandS
 		if err != nil {
 			return c, nil, err
 		}
-		if c.Scope != scope || c.Original.MessageID != messageID || validate(c) != nil {
+		if c.Scope != scope || c.Original.MessageID != messageID {
 			return c, nil, ErrStreamIdentity
+		}
+		if err := validate(c); err != nil {
+			return c, nil, err
 		}
 		var state, reason string
 		var entry sql.NullString
