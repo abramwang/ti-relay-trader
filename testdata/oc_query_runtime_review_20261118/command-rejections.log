@@ -1,0 +1,122 @@
+{"connection_generation":0,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1118 17:15:06.435559 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:15:06.435578 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:15:06.438274 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:15:07.451568 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:15:08.519188 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:15:09.601649 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"115-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"118-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"126-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5046ed22db7e248a1810958378dbca64","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"127-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 17:15:18.506139 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:15:18.506148 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:15:18.508798 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:15:19.519618 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:15:20.586216 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:15:21.667802 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-677c7b7345df2374435c83bbd1f41a3d","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"126-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 17:15:30.569085 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:15:30.569094 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:15:30.571676 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:15:31.588040 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:15:32.657439 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:15:33.735894 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"120-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-93e62d12273ceca3dfde3bf9492d24e2","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"126-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 17:15:42.630438 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:15:42.630447 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:15:42.632965 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:15:43.643198 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:15:44.715634 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:15:45.797612 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-9f8d79f625ede43251ae7edfb8634a5a","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"126-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 17:15:54.714953 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:15:54.714962 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:15:54.717397 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:15:55.732023 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:15:56.802276 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:15:57.899809 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-3e4835721da99bd1c553f2d765e98e95","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"126-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 17:16:06.782171 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 17:16:06.782178 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+I1118 17:16:06.784605 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"102-0","trade_date":"20261117"}
+I1118 17:16:07.798285 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"103-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"order_snapshot_not_ready","stream_id":"104-0","trade_date":"20261117"}
+I1118 17:16:08.868012 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=5 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"107-0","trade_date":"20261117"}
+I1118 17:16:09.952162 379865 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=6 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"trade_constraints_not_ready","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"122-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-767cbc54024c02c1a25e2f0a101043d8","expires_at":"2026-11-17T13:34:00+08:00","state_text":"stopping","stream_id":"126-0","trade_date":"20261117"}
+PASS: invalid quantity/price/cancel, unsupported offset/exchange and expired command each reject durably then continue; no duplicate SDK call
