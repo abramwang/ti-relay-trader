@@ -342,6 +342,8 @@
 
 .status-off_hours,
 .status-stopped,
+.status-waiting,
+.status-expired,
 .status-idle,
 .status-unknown {
   color: #9297a5;

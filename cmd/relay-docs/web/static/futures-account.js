@@ -7,7 +7,7 @@
   const size = 20;
   const names = {"account.asset.query":"资金", "account.positions.query":"持仓", "order.list.query":"委托", "fill.list.query":"成交"};
   const states = {not_queried:"尚未查询", publication_unknown:"查询发送结果未知", not_published:"查询未发出", awaiting_reply:"等待回复", pending_review:"回复已收 · 待独立核验", collecting:"分页未完整", failed:"查询失败", invalid:"证据校验失败", ready:"历史查询已核验"};
-  const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中 · 本页只读", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪"};
+  const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中 · 本页只读", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪", waiting:"等待交易窗口", expired:"授权窗口已结束"};
   const text = (v) => v === null || v === undefined || v === "" ? "--" : String(v);
   const date = (v) => !v || !Number.isFinite(Date.parse(v)) ? "--" : new Date(v).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai", hour12:false});
   const escape = (v) => text(v).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));

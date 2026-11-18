@@ -91,7 +91,7 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 		}
 	}
 	if assessment := h.Assessment; assessment != nil {
-		if a.AssessmentID != assessment.AssessmentID || !now.Before(assessment.ExpiresAt) {
+		if a.AssessmentID != assessment.AssessmentID || !assessment.windowOpen(now) || assessment.PermissionProfile != "" {
 			return queryPublishProof{}, ErrQueryPublishGate
 		}
 		if assessment.ExpiresAt.Before(expires) {

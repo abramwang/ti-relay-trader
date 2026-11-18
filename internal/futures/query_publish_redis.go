@@ -66,7 +66,7 @@ func (p *TestQueryPublisher) inspect(ctx context.Context) (queryPublishProof, er
 		expires = now.Add(30 * time.Second)
 	}
 	if h.Assessment != nil {
-		if !now.Before(h.Assessment.ExpiresAt) {
+		if !h.Assessment.windowOpen(now) || h.Assessment.PermissionProfile != "" {
 			return bad()
 		}
 		if h.Assessment.ExpiresAt.Before(expires) {

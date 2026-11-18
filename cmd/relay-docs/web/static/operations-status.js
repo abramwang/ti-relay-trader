@@ -86,6 +86,8 @@
     not_ready: "柜台未就绪",
     stopped: "已停止",
     unavailable: "无法观测",
+    waiting: "等待交易窗口",
+    expired: "授权窗口结束",
     pending: "待处理",
     recovered: "已自动恢复",
     acknowledged: "已确认",
@@ -226,7 +228,7 @@
   function futuresStatusDetails(account) {
     const h = account.heartbeat;
     if (!h) return '<br><span>未取得有效心跳</span><br><span>终端报撤：未开放</span>';
-    const current = ["read_only", "assessment", "not_ready"].includes(account.connection_state);
+    const current = ["read_only", "assessment", "not_ready", "waiting", "expired"].includes(account.connection_state);
     const flag = (v) => v === true ? "就绪" : v === false ? "未就绪" : "未知";
     const mode = h.runtime_mode === "test_broker_assessment" ? "测评" : h.runtime_mode === "test_broker_read_only" ? "只读" : (h.runtime_mode || "未知模式");
     const lines = [
@@ -238,6 +240,12 @@
       `交易日 ${h.trade_date || "--"} · 连接代次 ${h.connection_generation ?? "--"}`,
       `会话 ${h.counter_session_id || "--"}`,
     ];
+    if (h.process_lifecycle) {
+      const l = h.process_lifecycle;
+      const phase = { waiting: "等待", active: "窗口内", expired: "已结束" }[l.phase] || l.phase;
+      lines.push(`业务窗口 ${phase} · ${formatTime(l.starts_at)} 至 ${formatTime(l.expires_at)}`);
+    }
+    if (h.permission_profile === "test_day_relay.v1") lines.push("日间多笔模式 · Relay 发布尚未开放");
     return lines.map((line) => `<br><span>${escapeHTML(line)}</span>`).join("");
   }
 

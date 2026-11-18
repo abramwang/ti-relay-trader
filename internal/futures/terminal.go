@@ -222,6 +222,9 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 	} else if h.BrokerReady && h.ReadOnly != nil && h.ReadOnly.QueryCollectionReady {
 		state = "read_only"
 	} else if h.Assessment != nil {
+		if l := h.Assessment.Lifecycle; l != nil && l.Phase != "active" {
+			state = l.Phase
+		}
 		_, ready := h.queryCollection()
 		if ready && time.Now().Before(h.Assessment.ExpiresAt) {
 			state = "assessment"
@@ -239,6 +242,7 @@ func (r *TerminalReader) connection(ctx context.Context, index int) (*Advertised
 		view.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
 		view.RuntimeMode = "test_broker_read_only"
 	} else if h.Assessment != nil {
+		view.ProcessLifecycle, view.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
 		g, ready := h.queryCollection()
 		view.AssessmentLegacySource = h.Assessment.LegacySource
 		view.ConnectionGeneration, view.QueryCollectionReady = g, &ready

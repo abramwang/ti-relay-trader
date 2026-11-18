@@ -23,6 +23,9 @@ type HeartbeatAssessment struct {
 	Static                                                                                        *AssessmentStatic
 	Limits                                                                                        *AssessmentLimits
 	LegacySource                                                                                  *AssessmentLegacySource
+	Lifecycle                                                                                     *AssessmentLifecycle
+	PermissionProfile, ConstraintSymbol                                                           string
+	TradePreparationPending, TradeResponsePending                                                 bool
 }
 type AssessmentStatic struct {
 	PriceTick      Price  `json:"price_tick"`
@@ -61,6 +64,9 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		return bad()
 	}
 	a.ExpiresAt, _ = time.Parse(time.RFC3339Nano, textField(raw, "expires_at"))
+	if err := a.decodeLifecycle(raw, h, route); err != nil {
+		return bad()
+	}
 	for key, dst := range map[string]*bool{"asset_scope_verified": &a.AssetScopeVerified, "position_snapshot_ready": &a.PositionSnapshotReady, "instrument_usable": &a.InstrumentUsable, "order_ref_ready": &a.OrderRefReady, "native_limits_fresh": &a.NativeLimitsFresh} {
 		if !literal(raw[key], "true") && !literal(raw[key], "false") {
 			return bad()
@@ -79,7 +85,7 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		}
 		*dst = *n
 	}
-	if a.SubmitAttempts > 1 || a.CancelAttempts > 1 {
+	if a.PermissionProfile == "" && (a.SubmitAttempts > 1 || a.CancelAttempts > 1) {
 		return bad()
 	}
 	policyKeys := []string{"callback_policy", "deferred_callback_count", "blocking_callback_count", "callback_reconciliation_complete"}
@@ -91,10 +97,11 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 	}
 	a.CallbackReconciliationComplete = a.PendingCallbacks == 0
 	if policyFields != 0 {
-		if policyFields != len(policyKeys) || textField(raw, "callback_policy") != "local_assessment_only.v1" {
+		policy := textField(raw, "callback_policy")
+		if policyFields != len(policyKeys) || (policy != "local_assessment_only.v1" && !(a.PermissionProfile == "test_day_relay.v1" && policy == "reconcile_all")) {
 			return bad()
 		}
-		a.CallbackPolicy = "local_assessment_only.v1"
+		a.CallbackPolicy = policy
 		for key, dst := range map[string]*int64{"deferred_callback_count": &a.DeferredCallbacks, "blocking_callback_count": &a.BlockingCallbacks} {
 			n, e := nullableInteger(raw[key])
 			if e != nil || n == nil || *n < 0 || *n > a.PendingCallbacks {
@@ -105,6 +112,9 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		if a.PendingCallbacks-a.DeferredCallbacks != a.BlockingCallbacks ||
 			(!literal(raw["callback_reconciliation_complete"], "true") && !literal(raw["callback_reconciliation_complete"], "false")) ||
 			literal(raw["callback_reconciliation_complete"], "true") != a.CallbackReconciliationComplete {
+			return bad()
+		}
+		if policy == "reconcile_all" && a.DeferredCallbacks != 0 {
 			return bad()
 		}
 	}
@@ -149,11 +159,20 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 		return bad()
 	}
 	common := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && h.OrderSnapshotReady && a.PositionSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.callbacksAllowAssessment()
-	if h.AcceptingTradeCommands && (!common || !a.InstrumentUsable || !a.NativeLimitsFresh || a.SubmitAttempts != 0 || a.Static == nil || a.Limits == nil || a.NativeDepthRequestID == nil) {
-		return bad()
-	}
-	if h.AcceptingCancelCommands && (!common || a.CancelAttempts != 0 || a.SubmitAttempts != 1) {
-		return bad()
+	if a.PermissionProfile == "test_day_relay.v1" {
+		if (h.AcceptingTradeCommands || h.AcceptingCancelCommands) && (!common || a.TradePreparationPending || a.TradeResponsePending || !a.windowOpen(h.ProducedAt)) {
+			return bad()
+		}
+		if a.CancelAttempts > a.SubmitAttempts || (h.AcceptingCancelCommands && a.CancelAttempts >= a.SubmitAttempts) {
+			return bad()
+		}
+	} else {
+		if h.AcceptingTradeCommands && (!common || !a.InstrumentUsable || !a.NativeLimitsFresh || a.SubmitAttempts != 0 || a.Static == nil || a.Limits == nil || a.NativeDepthRequestID == nil) {
+			return bad()
+		}
+		if h.AcceptingCancelCommands && (!common || a.CancelAttempts != 0 || a.SubmitAttempts != 1) {
+			return bad()
+		}
 	}
 	if h.StateText == "running" {
 		if h.State != "UP" || (!h.AcceptingTradeCommands && !h.AcceptingCancelCommands) {
@@ -184,7 +203,7 @@ func (h Heartbeat) queryCollection() (*int64, bool) {
 		return h.ReadOnly.ConnectionGeneration, h.ReadOnly.QueryCollectionReady && h.ReadOnly.TransportRecoveryClear
 	}
 	if a := h.Assessment; a != nil {
-		return a.ConnectionGeneration, h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
+		return a.ConnectionGeneration, h.RedisReady && h.BrokerReady && a.TransportRecoveryClear && a.callbacksAllowAssessment() && a.windowOpen(h.ProducedAt) && !oneOf(h.StateText, "stopping", "recovery_blocked") && validDay(h.TradeDate)
 	}
 	return nil, false
 }

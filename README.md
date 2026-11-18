@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 12:58` **OC日间权限包复核与提前启动适配**：f79188a包9摘要、9离线场景审计链/journal/31输出原文、14查询审核草稿及104心跳通过；合成时间/来源不得作真实证据。已接scheduled生命周期及等待/到期发送门禁，day profile仅解码观察，查询/交易发布显式拒绝，PG单笔额度不变。先请OC使用本版scheduled不带day profile完成首轮1手报撤，无需再改首轮代码；多笔持久预算/逐单撤单仍Relay待办。全Go/专项race/vet和临时PG额度/未知/目标回归通过，五CLI已构建；详见[唯一协调单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。未初始化、登录或发柜台命令，生产未动。
+
 - `2026-11-18 12:39` **运维页纳入CTP账户**：`/operations`合并证券与TEST期货观察账户表/筛选/在线数，新增API `futures_accounts`，轻量复用严格来源/epoch心跳读取，不查询历史账本或向OC发命令。登录/查询/结算/报撤声明与终端只读权限分开，停止/过期标历史，未知PEL显示`--`。域名桌面1600及手机390检查通过，全Go/专项vet及3项JS测试通过，API重启PID713310仍TEST。当前300052141私有manifest仍指向旧PM路由，实际`epoch_missing_or_changed`，未自行切候选/重建键；当日联调核验后需更新观察绑定。华鑫权限、生产配置和CTP授权均未改；详见[运维说明](docs/OPERATIONS.md#ctp-期货账户状态)。
 
 - `2026-11-18 12:26` **华鑫TEST手动报单入口恢复**：00030484原trading_enabled=true，无额外批量/撤单权限开关；OC心跳实际credential_status=missing。12:25:30使用已有加密CLI和用户此前TEST凭据补发v1，operation_id=`d7ea2addbdd409495d7aa2a6ce1bef2e`、key_id=hx-test-20260918，解密验证成功；无明文文件，OC自动loaded并broker_ready/快照/报撤true，无需重启OC。移除私有`config/relay.local.yaml`旧huaxin_7x24_test的order_entry_schedule（现为实时行情仿真），API重启PID705419，域名order_entry_ready=true、来源oc_heartbeat、无阻断理由。实际午间接受/撮合由柜台决定，不承诺成交。生产6户trading_enabled全false；未改CTP、运维DLQ写权限、幂等或参数校验，未发订单。私有配置不入Git，凭据缺失原因本轮未溯源，不归因于新淘汰。

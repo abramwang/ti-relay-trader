@@ -61,6 +61,8 @@ type AdvertisedHeartbeat struct {
 	CallbackReconciliationComplete *bool                   `json:"callback_reconciliation_complete,omitempty"`
 	ReadOnlyReconciliation         *ReadOnlyReconciliation `json:"readonly_reconciliation,omitempty"`
 	AssessmentLegacySource         *AssessmentLegacySource `json:"assessment_legacy_source,omitempty"`
+	ProcessLifecycle               *AssessmentLifecycle    `json:"process_lifecycle,omitempty"`
+	PermissionProfile              string                  `json:"permission_profile,omitempty"`
 }
 
 type InspectedHeartbeat struct {
@@ -176,6 +178,7 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.RecoveryClear = &h.ReadOnly.TransportRecoveryClear
 				a.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 			} else if h.Assessment != nil {
+				a.ProcessLifecycle, a.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
 				a.AssessmentLegacySource = h.Assessment.LegacySource
 				item.Classification = "test_broker_assessment"
 				a.RuntimeMode = "test_broker_assessment"
