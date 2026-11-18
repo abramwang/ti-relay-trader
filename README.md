@@ -10,10 +10,10 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-18 12:11 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产独立worker停止。本机/域名test/ok，当前PID以service status为准；不得自行切回生产 |
-| 安全状态 | TEST华鑫00030484单笔/批量/撤单写入启用，12:26凭据补发后OC登录/快照/报撤ready；旧7x24时段配置已移除，仅按新鲜OC心跳准入，保留参数/幂等/柜台风控。生产所有账户下单关闭；CTP独立测评预算不随华鑫权限放宽，未自动报单 |
+| 当前环境 | `2026-11-18 15:02 Asia/Shanghai` 按用户指令结束今日测试并切回生产，`.runtime/active-config.yaml -> config/relay.prod.yaml`；9092 API及独立worker运行。本机/域名均production，当前PID以service status为准；后续切换仍需用户明确指令 |
+| 安全状态 | 生产6个账户保留、4个启用查询、0个开放交易；TEST配置及CTP独立审计保留但不是当前服务环境。今日CTP交易授权15:00已结束，不追加报撤、不重做结算或重启OC |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；CTP TEST已完成CLI经Redis的真实单笔报撤及回报持久收件，普通API/终端报撤与完整业务快照仍未上线 |
-| 最近确认 | `2026-11-18 12:26` 用户要求放开TEST交易以手动测华鑫：原开关已true，实际阻塞为托管凭据missing及旧7x24时段。通过加密CLI补发原TEST凭据并去掉旧时段配置，API重启后域名报order_entry_ready及OC报撤ready均true。未代用户下单，生产未动。CTP当日授权已记录、多笔代码待升级；15:01生产收盘前仍需用户明确切回 |
+| 最近确认 | `2026-11-18 15:02` 生产API/worker、Redis、数据库、行情正常；387/388柜台broker_not_ready导致总体degraded，lag=0、pending DLQ=0。切换时已过15:01收盘捕获时间，状态接口最近收盘记录仍为11月17日，不能据服务恢复声称今日收盘任务已完成；本轮未补跑任务 |
 | 更新时间 | `2026-11-18` |
 
 新线程按以下顺序恢复：
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 15:02` **按用户指令结束TEST并恢复生产**：通过`scripts/switch-relay-env.sh production`完成目标库迁移检查及API/独立worker启动；本机与域名确认production、trading_enabled=0。387/388柜台未ready，另两户online，Redis/数据库/行情/事件桥正常。TEST历史、CTP独立PG和原始证据保留；今日唯一实际报单已撤，额外两笔未发，不延长15:00授权。今日生产收盘任务完成情况需单独核对，不以切换成功代替结算成功。
 
 - `2026-11-18 14:57` **交易终端已显示真实CTP委托**：修正私有terminal manifest从旧PM路由到当前readonly-recovery路由；只读API新增经本地命令/发布记录/来源/摘要/会话校验的`local_orders`，与失败的全量订单查询分开，按订单归并实时状态，不改审计pending或冒充业务快照。桌面/手机Playwright均看到39429/rb2701/1手/已撤单，增加柜台委托号及中文状态，TEST API已发布重启，生产未改。全Go/vet、临时PG race和前端测试通过。用户要求追加两笔，脚本04/05已准备显式接管上次已退出event位点，但OC限价仍14:41:54过期，已通知刷新，尚未追加发单；15:00截止后不发。用户确认后续OC做减法，行情/价格准入、关联/账本归Relay，必要身份/幂等及未知不重发保留，见路线图。
 
