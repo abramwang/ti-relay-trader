@@ -177,6 +177,11 @@ func TestDayMultipleOrdersAndOwnCancelPostgres(t *testing.T) {
 	}
 	a = firstApproval
 	a.CancelReceiptID = assessmentOrderReceipt(t, db, ctx, first, target, nil)
+	reader := &TerminalReader{db: db}
+	orders, err := reader.localOrders(ctx, TerminalAccountConfig{Scope: first.Scope})
+	if err != nil || len(orders) != 1 || orders[0].GatewayOrderID != first.Original.Orders[0].GatewayOrderID || orders[0].GatewayStatus != "working" {
+		t.Fatal("terminal local order", orders, err)
+	}
 	a.Market = nil
 	cancelV := v
 	cancelV.Raw = string(editBody(t, []byte(intentVectors(t)["cancel_target_day"].Raw), func(m map[string]any) {

@@ -24,7 +24,13 @@
       rows:(q.assets || []).map(r=>{const f=r.futures;return [cell(f.scope.account_id),cell(f.scope.currency_id),cell(f.scope.biz_type),...["balance","available","curr_margin","frozen_margin","frozen_cash","frozen_commission","commission","position_profit","close_profit","deposit","withdraw"].map(k=>cell(f[k],number(f[k]))),cell(f.scope_verified,f.scope_verified?"已确认":"未核验"),cell(r.captured_at,date(r.captured_at))];})
     };
     const fill=action === "fill.list.query";
-    return {columns:[fill?"成交编号":"委托编号","合约","交易所","买卖","开平","价格","数量",fill?"费用":"已成交",fill?"成交时间（东八区）":"委托时间（东八区）",fill?"费用完整":"状态"],rows:(fill?q.fills||[]:q.orders||[]).map(r=>[cell(fill?r.fill_id:r.gateway_order_id),cell(r.symbol),cell(r.exchange),cell(r.trade_side),cell(r.offset_type),cell(Number(fill?r.price:r.limit_price),number(fill?r.price:r.limit_price)),cell(fill?r.qty:r.order_qty),cell(fill?r.fee:r.cum_filled_qty),cell(fill?r.matched_at:r.submitted_at,date(fill?r.matched_at:r.submitted_at)),cell(fill?r.fee_complete:r.gateway_status)])};
+    return {columns:[fill?"成交编号":"委托编号","柜台委托号","合约","交易所","买卖","开平","价格","数量",fill?"费用":"已成交",fill?"成交时间（东八区）":"委托时间（东八区）",fill?"费用完整":"状态"],rows:(fill?q.fills||[]:q.orders||[]).map(r=>[cell(fill?r.fill_id:r.gateway_order_id),cell(r.native_ids?.order_sys_id),cell(r.symbol),cell(r.exchange),cell(r.trade_side,{B:"买入",S:"卖出"}[r.trade_side]||r.trade_side),cell(r.offset_type,{O:"开仓",C:"平仓",T:"平今",Y:"平昨"}[r.offset_type]||r.offset_type),cell(Number(fill?r.price:r.limit_price),number(fill?r.price:r.limit_price)),cell(fill?r.qty:r.order_qty),cell(fill?r.fee:r.cum_filled_qty),cell(fill?r.matched_at:r.submitted_at,date(fill?r.matched_at:r.submitted_at)),cell(fill?r.fee_complete:r.gateway_status,fill?text(r.fee_complete):({working:"已报",cancelled:"已撤单",filled:"全部成交",partially_filled:"部分成交",rejected:"已拒绝"}[r.gateway_status]||r.gateway_status))])};
+  }
+  function orderObservation(a, q) {
+    if(action!=="order.list.query" || !a || !Array.isArray(a.local_orders) || !a.local_orders.length)return q;
+    const merged=new Map((q && q.reviewed && q.state==="ready"?q.orders||[]:[]).map(r=>[r.gateway_order_id,r]));
+    for(const row of a.local_orders)merged.set(row.gateway_order_id,row);
+    return {...q,reviewed:true,state:"ready",orders:[...merged.values()],local_event_view:true};
   }
   function render() {
     const a=accounts.find(a=>a.account_id===selected);
@@ -37,12 +43,14 @@
     for (const b of el("futuresQueryTabs").querySelectorAll("button")) {
       const query=a && a.queries.find(q=>q.action===b.dataset.futuresQuery);
       b.setAttribute("aria-selected", String(b.dataset.futuresQuery===action));
-      b.textContent=names[b.dataset.futuresQuery]+(query && query.row_count!==null && query.row_count!==undefined?` · ${query.row_count}`:query && query.state==="failed"?" · 失败":"");
+      b.textContent=names[b.dataset.futuresQuery]+(b.dataset.futuresQuery==="order.list.query" && a?.local_orders?.length?` · ${a.local_orders.length}`:query && query.row_count!==null && query.row_count!==undefined?` · ${query.row_count}`:query && query.state==="failed"?" · 失败":"");
     }
     const status=el("futuresQueryStatus");
     status.dataset.failed=String(Boolean(loadError || a && a.ledger_error || q && ["failed","invalid"].includes(q.state)));
     status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || !["read_only","assessment"].includes(a.connection_state))?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
-    const data=loadError || a && a.ledger_error?{columns:[],rows:[]}:tableData(q);
+    if(action==="order.list.query" && a && a.local_orders?.length)status.textContent += ` · 本地委托回报 ${a.local_orders.length} 笔`;
+    if(action==="order.list.query" && a && a.local_order_error)status.textContent += ` · ${a.local_order_error}`;
+    const data=loadError || a && a.ledger_error?{columns:[],rows:[]}:tableData(orderObservation(a,q));
     data.rows.sort((a,b)=>{const x=a[sort]?.raw,y=b[sort]?.raw; const numeric=/^-?\d+(\.\d+)?$/;const delta=numeric.test(text(x)) && numeric.test(text(y))?Number(x)-Number(y):text(x).localeCompare(text(y),"zh-CN",{numeric:true});return ascending?delta:-delta;});
     const pages=Math.max(1,Math.ceil(data.rows.length/size));page=Math.min(page,pages-1);
     el("futuresQueryTable").querySelector("thead").innerHTML=`<tr>${data.columns.map((c,i)=>`<th><button type="button" data-sort="${i}" title="排序">${escape(c)}${i===sort?(ascending?" ↑":" ↓"):""}</button></th>`).join("")}</tr>`;

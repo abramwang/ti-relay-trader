@@ -53,6 +53,8 @@ type TerminalAccount struct {
 	ConnectionError string               `json:"connection_error,omitempty"`
 	Queries         []TerminalQuery      `json:"queries"`
 	LedgerError     string               `json:"ledger_error,omitempty"`
+	LocalOrders     []OrderRow           `json:"local_orders"`
+	LocalOrderError string               `json:"local_order_error,omitempty"`
 }
 
 type TerminalQuery struct {
@@ -179,6 +181,13 @@ func (r *TerminalReader) snapshot(ctx context.Context, includeQueries bool) []Te
 			item.LedgerError = "observation_store_unavailable"
 		} else {
 			item.Queries = queries
+		}
+		ectx, ecancel := context.WithTimeout(ctx, 3*time.Second)
+		item.LocalOrders, err = r.localOrders(ectx, a)
+		ecancel()
+		if err != nil {
+			item.LocalOrders = nil
+			item.LocalOrderError = "local_order_observation_invalid"
 		}
 		out = append(out, item)
 	}
