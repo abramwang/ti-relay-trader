@@ -65,7 +65,9 @@ type AdvertisedHeartbeat struct {
 	ProcessLifecycle               *AssessmentLifecycle    `json:"process_lifecycle,omitempty"`
 	PermissionProfile              string                  `json:"permission_profile,omitempty"`
 	AuthorizationOwner             string                  `json:"authorization_owner,omitempty"`
-	ResidentDurationSeconds        int64                   `json:"resident_duration_seconds,omitempty"`
+	ResidentDurationSeconds        *int64                  `json:"resident_duration_seconds,omitempty"`
+	ResourceUsage                  *ExecutionResourceUsage `json:"resource_usage,omitempty"`
+	RuntimeBlockedReason           string                  `json:"runtime_blocked_reason,omitempty"`
 	OrderSnapshotScope             string                  `json:"order_snapshot_scope,omitempty"`
 	NativeOrderSnapshotReady       *bool                   `json:"native_order_snapshot_ready,omitempty"`
 	OrderProjectionReady           *bool                   `json:"order_projection_ready,omitempty"`
@@ -185,7 +187,11 @@ func InspectTestHeartbeats(ctx context.Context, reader StreamReadClient, req Hea
 				a.ReadOnlyReconciliation = h.ReadOnly.Reconciliation
 			} else if h.Assessment != nil {
 				a.ProcessLifecycle, a.PermissionProfile = h.Assessment.Lifecycle, h.Assessment.PermissionProfile
-				a.AuthorizationOwner, a.ResidentDurationSeconds = h.Assessment.AuthorizationOwner, h.Assessment.ResidentDurationSeconds
+				a.AuthorizationOwner = h.Assessment.AuthorizationOwner
+				if h.Assessment.relayExecution() {
+					a.ResidentDurationSeconds = &h.Assessment.ResidentDurationSeconds
+					a.ResourceUsage, a.RuntimeBlockedReason = h.Assessment.ResourceUsage, h.Assessment.RuntimeBlockedReason
+				}
 				if h.Assessment.OrderSnapshotScope != "" {
 					a.OrderSnapshotScope = h.Assessment.OrderSnapshotScope
 					a.NativeOrderSnapshotReady, a.OrderProjectionReady = &h.Assessment.NativeOrderSnapshotReady, &h.Assessment.OrderProjectionReady

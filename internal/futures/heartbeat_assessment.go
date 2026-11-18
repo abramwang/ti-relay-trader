@@ -12,6 +12,8 @@ import (
 type HeartbeatAssessment struct {
 	AuthorizationOwner                                                                            string
 	ResidentDurationSeconds                                                                       int64
+	ResourceUsage                                                                                 *ExecutionResourceUsage
+	RuntimeBlockedReason                                                                          string
 	ConnectionGeneration                                                                          *int64
 	TransportRecoveryClear                                                                        bool
 	AssessmentID, Symbol, Exchange                                                                string

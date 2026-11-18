@@ -1,0 +1,28 @@
+{
+  "mode": "test_broker_assessment",
+  "scope": {
+    "env": "test", "broker_id": "ctp_4900", "account_id": "300052141",
+    "gateway_id": "REPLACE_EXISTING_GATEWAY",
+    "native_broker_id": "4900", "investor_id": "300052141", "user_id": "300052141"
+  },
+  "redis": {
+    "host": "192.168.3.100", "port": 6379, "db": 0,
+    "password": "REPLACE_TEST_REDIS_PASSWORD", "source_id": "shared-test-redis",
+    "server_run_id": "REPLACE_VERIFIED_RUN_ID", "epoch": "REPLACE_EXISTING_EPOCH",
+    "group": "REPLACE_EXISTING_GROUP", "consumer": "REPLACE_EXISTING_CONSUMER"
+  },
+  "state_directory": "/REPLACE_EXISTING_STATE_DIRECTORY",
+  "process_duration_seconds": 0,
+  "heartbeat_seconds": 1, "fill_identity_version": "v2",
+  "broker": {
+    "environment": "test", "is_production_mode": "false",
+    "locations": "tcp://222.92.185.26:61205",
+    "broker_id": "4900", "user": "300052141", "investor_id": "300052141",
+    "pass": "REPLACE_PASSWORD", "app_id": "REPLACE_APP_ID", "auth_code": "REPLACE_AUTH_CODE",
+    "settlement_confirm": "never"
+  },
+  "execution": {
+    "trade_date": "REPLACE_EXPECTED_BROKER_TRADING_DAY",
+    "confirm_settlement_once": false, "defer_unregistered_replay": true
+  }
+}

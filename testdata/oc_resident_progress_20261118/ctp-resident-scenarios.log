@@ -1,0 +1,22 @@
+{"connection_generation":0,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1118 20:01:20.779170 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 20:01:20.779191 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"settlement_not_confirmed","stream_id":"102-0","trade_date":"20261117"}
+I1118 20:01:20.818626 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"settlement_not_confirmed","stream_id":"105-0","trade_date":"20261117"}
+I1118 20:01:21.903452 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"settlement_not_confirmed","stream_id":"108-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"settlement_not_confirmed","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-a9e527da7e120cbc4aa21a654ecb96e9","state_text":"stopping","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1118 20:01:23.893240 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=2 return_code=0
+I1118 20:01:23.893250 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=1 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"settlement_not_confirmed","stream_id":"102-0","trade_date":"20261117"}
+I1118 20:01:23.930753 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"settlement_not_confirmed","stream_id":"105-0","trade_date":"20261117"}
+I1118 20:01:25.015179 389384 ti_ctp_trader_client.cpp:422] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"settlement_not_confirmed","stream_id":"108-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"settlement_not_confirmed","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-5c695c2022970dfd485fff1977e33838","state_text":"stopping","stream_id":"110-0","trade_date":"20261117"}
+PASS: omitted/zero duration waits for SIGTERM; repeated queries exceed old budget without restart

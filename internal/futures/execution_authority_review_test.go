@@ -100,7 +100,7 @@ func TestExecutionAuthorityStrictContract(t *testing.T) {
 		"old_exchange":         func(a map[string]any) { a["exchange"] = "SHFE" },
 		"old_phase":            func(a map[string]any) { a["process_lifecycle"].(map[string]any)["phase"] = "active" },
 		"bad_lifetime":         func(a map[string]any) { a["process_lifecycle"].(map[string]any)["process_duration_seconds"] = 86401 },
-		"zero_lifetime":        func(a map[string]any) { a["process_lifecycle"].(map[string]any)["process_duration_seconds"] = 0 },
+		"negative_lifetime":    func(a map[string]any) { a["process_lifecycle"].(map[string]any)["process_duration_seconds"] = -1 },
 		"old_lifecycle":        func(a map[string]any) { a["process_lifecycle"].(map[string]any)["mode"] = "scheduled_assessment.v1" },
 		"missing_scope":        func(a map[string]any) { delete(a, "order_snapshot_scope") },
 		"missing_native_check": func(a map[string]any) { delete(a, "per_command_native_validation") },
@@ -218,7 +218,7 @@ func TestExecutionAuthorityLocalRedisQueryAndTradeFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range inspection.Records {
-		if r.Advertised == nil || r.Advertised.AuthorizationOwner != "relay" || r.Advertised.ResidentDurationSeconds <= 0 || r.Advertised.ProcessLifecycle != nil {
+		if r.Advertised == nil || r.Advertised.AuthorizationOwner != "relay" || r.Advertised.ResidentDurationSeconds == nil || *r.Advertised.ResidentDurationSeconds <= 0 || r.Advertised.ProcessLifecycle != nil {
 			t.Fatal("inspection invented legacy permission", r)
 		}
 	}

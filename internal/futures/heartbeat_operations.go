@@ -46,7 +46,12 @@ func decodeHeartbeatOperations(envelope, payload, adapter rawObject, h Heartbeat
 			return nil, ErrQueryPublishGate
 		}
 	}
-	if !oneOf(o.QueryReason, "ready", "broker_not_ready", "recovery_blocked", "query_window_closed", "query_command_limit", "initialization_pending", "query_scheduler_busy", "stopping") ||
+	if o.QueryReason == "journal_capacity_exhausted" || o.SubmitReason == "journal_capacity_exhausted" || o.CancelReason == "journal_capacity_exhausted" {
+		if textField(admission, "authorization_owner") != "relay" {
+			return nil, ErrQueryPublishGate
+		}
+	}
+	if !oneOf(o.QueryReason, "ready", "broker_not_ready", "recovery_blocked", "query_window_closed", "query_command_limit", "journal_capacity_exhausted", "initialization_pending", "query_scheduler_busy", "stopping") ||
 		(!literal(execution["ready"], "true") && !literal(execution["ready"], "false")) ||
 		literal(execution["ready"], "true") != o.AcceptingQueryCommands || textField(execution, "reason") != o.QueryReason {
 		return nil, ErrQueryPublishGate

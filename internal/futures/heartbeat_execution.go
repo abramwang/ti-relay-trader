@@ -20,7 +20,7 @@ func (a *HeartbeatAssessment) decodeRelayExecution(raw rawObject, h Heartbeat) e
 		return ErrQueryPublishGate
 	}
 	n, err := nullableInteger(l["process_duration_seconds"])
-	if err != nil || n == nil || *n < 1 || *n > 86400 {
+	if err != nil || n == nil || *n < 0 || *n > 86400 {
 		return ErrQueryPublishGate
 	}
 	if !literal(raw["per_command_native_validation"], "true") {
@@ -37,5 +37,5 @@ func (a *HeartbeatAssessment) decodeRelayExecution(raw rawObject, h Heartbeat) e
 		*dst = literal(raw[key], "true")
 	}
 	a.AuthorizationOwner, a.ResidentDurationSeconds = "relay", *n
-	return nil
+	return a.decodeResidentDiagnostics(raw, h)
 }

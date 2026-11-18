@@ -1,0 +1,101 @@
+Test project /tmp/ctp-resource-ctest.49leIf
+      Start  1: ctp_legacy_reconciliation_test
+ 1/48 Test  #1: ctp_legacy_reconciliation_test ........   Passed    7.54 sec
+      Start  2: ctp_fill_identity_v2_test
+ 2/48 Test  #2: ctp_fill_identity_v2_test .............   Passed    0.00 sec
+      Start  3: ctp_fill_migration_review_test
+ 3/48 Test  #3: ctp_fill_migration_review_test ........   Passed    0.03 sec
+      Start  4: ctp_readonly_audit_test
+ 4/48 Test  #4: ctp_readonly_audit_test ...............   Passed    0.02 sec
+      Start  5: ctp_async_rejection_runtime_test
+ 5/48 Test  #5: ctp_async_rejection_runtime_test ......   Passed   50.20 sec
+      Start  6: ctp_relay_authority_runtime_test
+ 6/48 Test  #6: ctp_relay_authority_runtime_test ......   Passed   72.59 sec
+      Start  7: ctp_resource_capacity_runtime_test
+ 7/48 Test  #7: ctp_resource_capacity_runtime_test ....   Passed   24.61 sec
+      Start  8: ctp_resident_execution_runtime_test
+ 8/48 Test  #8: ctp_resident_execution_runtime_test ...   Passed    6.24 sec
+      Start  9: ctp_resident_blocked_runtime_test
+ 9/48 Test  #9: ctp_resident_blocked_runtime_test .....   Passed    5.41 sec
+      Start 10: ctp_query_execution_test
+10/48 Test #10: ctp_query_execution_test ..............   Passed    0.60 sec
+      Start 11: ctp_native_facts_execution_test
+11/48 Test #11: ctp_native_facts_execution_test .......   Passed    0.51 sec
+      Start 12: ctp_native_trade_test
+12/48 Test #12: ctp_native_trade_test .................   Passed    0.03 sec
+      Start 13: ctp_native_depth_test
+13/48 Test #13: ctp_native_depth_test .................   Passed    0.01 sec
+      Start 14: ctp_trade_dispatch_test
+14/48 Test #14: ctp_trade_dispatch_test ...............   Passed    1.06 sec
+      Start 15: ctp_trade_events_test
+15/48 Test #15: ctp_trade_events_test .................   Passed    2.49 sec
+      Start 16: ctp_native_facts_test
+16/48 Test #16: ctp_native_facts_test .................   Passed    0.01 sec
+      Start 17: ctp_transport_runtime_test
+17/48 Test #17: ctp_transport_runtime_test ............   Passed    0.01 sec
+      Start 18: ctp_redis_decode_test
+18/48 Test #18: ctp_redis_decode_test .................   Passed    0.00 sec
+      Start 19: ctp_command_journal_test
+19/48 Test #19: ctp_command_journal_test ..............   Passed    0.26 sec
+      Start 20: ctp_command_recovery_test
+20/48 Test #20: ctp_command_recovery_test .............   Passed    0.81 sec
+      Start 21: ctp_f0_trade_projection_test
+21/48 Test #21: ctp_f0_trade_projection_test ..........   Passed    0.01 sec
+      Start 22: ctp_identity_store_test
+22/48 Test #22: ctp_identity_store_test ...............   Passed    0.34 sec
+      Start 23: ctp_identity_query_test
+23/48 Test #23: ctp_identity_query_test ...............   Passed    0.16 sec
+      Start 24: ctp_f0_command_test
+24/48 Test #24: ctp_f0_command_test ...................   Passed    0.06 sec
+      Start 25: ctp_f0_intent_test
+25/48 Test #25: ctp_f0_intent_test ....................   Passed    0.02 sec
+      Start 26: ctp_f0_query_reply_test
+26/48 Test #26: ctp_f0_query_reply_test ...............   Passed    0.26 sec
+      Start 27: ctp_f0_codec_test
+27/48 Test #27: ctp_f0_codec_test .....................   Passed    0.01 sec
+      Start 28: ctp_f0_credentials_test
+28/48 Test #28: ctp_f0_credentials_test ...............   Passed    0.02 sec
+      Start 29: ctp_f0_money_test
+29/48 Test #29: ctp_f0_money_test .....................   Passed    0.13 sec
+      Start 30: ctp_f0_money_field_test
+30/48 Test #30: ctp_f0_money_field_test ...............   Passed    0.00 sec
+      Start 31: ctp_f0_query_projection_test
+31/48 Test #31: ctp_f0_query_projection_test ..........   Passed    0.26 sec
+      Start 32: ctp_f0_query_material_test
+32/48 Test #32: ctp_f0_query_material_test ............   Passed    0.01 sec
+      Start 33: ctp_f0_shared_cases_test
+33/48 Test #33: ctp_f0_shared_cases_test ..............   Passed    0.01 sec
+      Start 34: ctp_audit_export_test
+34/48 Test #34: ctp_audit_export_test .................   Passed    0.06 sec
+      Start 35: ctp_fill_migration_cli_test
+35/48 Test #35: ctp_fill_migration_cli_test ...........   Passed    0.08 sec
+      Start 36: ctp_readonly_prepare_test
+36/48 Test #36: ctp_readonly_prepare_test .............   Passed    0.21 sec
+      Start 37: ctp_intent_vectors_test
+37/48 Test #37: ctp_intent_vectors_test ...............   Passed    0.03 sec
+      Start 38: ctp_cli_test
+38/48 Test #38: ctp_cli_test ..........................   Passed    1.00 sec
+      Start 39: ctp_query_execution_schema_test
+39/48 Test #39: ctp_query_execution_schema_test .......   Passed    0.67 sec
+      Start 40: ctp_trade_query_schema_test
+40/48 Test #40: ctp_trade_query_schema_test ...........   Passed    0.25 sec
+      Start 41: ctp_query_reply_schema_test
+41/48 Test #41: ctp_query_reply_schema_test ...........   Passed    0.42 sec
+      Start 42: ctp_query_schema_test
+42/48 Test #42: ctp_query_schema_test .................   Passed    0.16 sec
+      Start 43: ctp_query_book_test
+43/48 Test #43: ctp_query_book_test ...................   Passed    0.03 sec
+      Start 44: ctp_query_snapshot_test
+44/48 Test #44: ctp_query_snapshot_test ...............   Passed    0.01 sec
+      Start 45: ctp_instrument_cache_test
+45/48 Test #45: ctp_instrument_cache_test .............   Passed    0.00 sec
+      Start 46: ctp_session_test
+46/48 Test #46: ctp_session_test ......................   Passed    0.02 sec
+      Start 47: ctp_config_test
+47/48 Test #47: ctp_config_test .......................   Passed    0.00 sec
+      Start 48: ctp_sdk_link_test
+48/48 Test #48: ctp_sdk_link_test .....................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 48
+
+Total Test time (real) = 176.72 sec

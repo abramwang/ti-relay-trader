@@ -1,0 +1,48 @@
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/Titian_Cpp/oceanus/src/oc_trader_commander_ctp/build
+[  0%] Built target ctp_query_book_test
+[  1%] Built target ctp_instrument_cache_test
+[  1%] Built target ctp_sdk_link_test
+[  1%] Built target ctp_config_test
+[  2%] Built target ctp_f0_query_material_test
+[  3%] Built target ctp_f0_shared_cases_test
+[  4%] Built target ctp_f0_credentials_test
+[  6%] Built target ctp_fill_identity_v2_test
+[  8%] Built target ctp_command_recovery_test
+Scanning dependencies of target oc_trader_commander_ctp
+[ 10%] Built target ctp_session_test
+[ 10%] Building CXX object CMakeFiles/oc_trader_commander_ctp.dir/ctp_assessment_runtime.cpp.o
+[ 12%] Built target ctp_asset_evidence_test
+[ 14%] Built target ctp_readonly_audit_test
+[ 15%] Built target ctp_f0_codec_test
+[ 20%] Built target ctp_identity_store_test
+[ 21%] Built target ctp_legacy_reconciliation_test
+[ 22%] Built target ctp_f0_money_field_test
+[ 23%] Built target ctp_native_depth_test
+[ 25%] Built target ctp_fill_migration_review_test
+[ 27%] Built target ctp_f0_query_projection_test
+Scanning dependencies of target ctp_assessment_runtime_test
+[ 34%] Built target ctp_readonly_runtime_test
+[ 34%] Built target ctp_query_snapshot_test
+[ 34%] Building CXX object CMakeFiles/ctp_assessment_runtime_test.dir/ctp_assessment_runtime.cpp.o
+[ 34%] Building CXX object CMakeFiles/ctp_assessment_runtime_test.dir/tests/ctp_assessment_runtime_test.cpp.o
+[ 40%] Built target ctp_query_execution_test
+[ 42%] Built target ctp_native_trade_test
+[ 48%] Built target ctp_trade_dispatch_test
+[ 50%] Built target ctp_trade_events_test
+[ 52%] Built target ctp_native_facts_test
+[ 55%] Built target ctp_transport_runtime_test
+[ 57%] Built target ctp_redis_decode_test
+[ 61%] Built target ctp_redis_recovery_test
+[ 62%] Built target ctp_f0_command_test
+[ 64%] Built target ctp_command_journal_test
+[ 65%] Built target ctp_f0_trade_projection_test
+[ 68%] Built target ctp_identity_query_test
+[ 71%] Built target ctp_f0_query_reply_test
+[ 73%] Built target ctp_f0_intent_test
+[ 74%] Built target ctp_f0_money_test
+[ 75%] Linking CXX executable oc_trader_commander_ctp
+[ 75%] Linking CXX executable ctp_assessment_runtime_test
+[ 82%] Built target ctp_assessment_runtime_test
+[100%] Built target oc_trader_commander_ctp
