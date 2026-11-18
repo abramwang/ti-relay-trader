@@ -55,9 +55,27 @@ HTTP202只表示已取得持久登记身份，返回原始order、idempotency_ke
 
 `broker_state_known=false`、`retry_safe=false`，publication里的broker_accepted也不作为拒单事实；柜台终态仍查订单/成交回报。`GET /v1/futures/order-command?account_id=300052141&idempotency_key=strategy-run-1-order-1`只读上述原始身份/发布记录，不访问Meridian或OC、不恢复发送。404表示该已配置scope下未找到记录，不是全路由的柜台未执行证明。格式400、冲突409、服务/依赖不可用503；未登记时失败不暴露私有连接错误。所有业务响应no-store。登记后的发布异常仍返回202和状态，调用方必须检查publication，不能仅判断HTTP成功。
 
-运行配置分两层：`futures_terminal.execution_enabled`默认false；期货专用manifest账户可选`execution`包含`submit_enabled`、带时区的`authorization_expires_at`、既有`command_group`。这些均由服务端运维配置，不从心跳取得授权、不由请求覆盖。必须已有独立、名称以`_test`结尾的数据库且`current_database()`与ExpectedName一致；不自动建库/迁移/初始化Redis。启用仍需独立收件及可用撤单路径，不因编排已完成直接开放终端。
+运行配置分两层：`futures_terminal.execution_enabled`默认false；期货专用manifest账户可选`execution`包含`submit_enabled`、`cancel_enabled`（缺省false）、带时区的`authorization_expires_at`、既有`command_group`。这些均由服务端运维配置，不从心跳取得授权、不由请求覆盖。必须已有独立、名称以`_test`结尾的数据库且`current_database()`与ExpectedName一致；不自动建库/迁移/初始化Redis。启用仍需独立收件及可用撤单路径，不因编排已完成直接开放终端。
 
-全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；终端仍保持只读预检/禁发。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单HTTP编排、原生事实HTTP分流、动态停止、持续回报与终端按钮联动仍待后续接入，OC无需修改wire。
+全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；终端仍保持只读预检/禁发。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单编排见下一节，原生事实HTTP分流、动态停止、持续回报与终端按钮联动仍待后续接入，OC无需修改wire。
+
+### 期货TEST撤单编排（源码新增，默认关闭）
+
+`POST /v1/futures/cancels`复用上述服务、独立TEST库及原撤单发布器；新增只读`GET /v1/futures/cancel-command`。未部署、未开放终端按钮、未发布wheel，生产环境503；不改股票撤单或OC协议。
+
+```json
+{"idempotency_key":"strategy-run-1-cancel-1","account_id":"300052141","gateway_order_id":"原始报单返回的gateway_order_id","trade_date":"20261119"}
+```
+
+POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相同。调用方不能提供receipt_id、cancel_id、session、柜台ID、报价或授权。报单与撤单共用scope级幂等键空间，必须使用不同的显式key；相同撤单key改目标或交易日409。
+
+- Relay从持久原报单及event原文选择可撤证据，核对来源、scope、原命令关联、哈希、交易日/会话及原生SysID。按数值Stream ID选最新订单观察，不按数据库插入顺序或浏览器选中行猜测；发现终态、冲突/损坏/隔离记录或晚于最新订单的成交，拒绝发送。发布事务内再次核验，不能沿用已被更新的working回报。DB核对与柜台状态不构成跨系统原子快照，最终可撤性仍由柜台判断。
+- 账户`cancel_enabled`和OC `accepting_cancel_commands`独立检查，不依赖`submit_enabled`、OC新报单能力或Meridian行情；全局`execution_enabled=false`仍关闭两个POST，两个GET只读不受此开关影响。不能把“停止新报单”配置成关闭所有执行而期望撤单仍可发送。
+- 当前继承原TEST边界：仅本服务已确认发布的本地单、相同source/run/epoch/group/session/代次/交易日，订单为accepted/working且有剩余量；最新订单回报须在1分钟内。旧CLI单、外部单、跨会话/跨日、已发布但状态未知和长期无新回报的挂单均不在此增量范围；不能伪造新时间解除限制。
+- 保留每单一次持久撤单发布尝试的保护；已有attempted/published/not_published不允许换key追加撤单。registered记录同键也不续发。明确拒撤后再次撤单尚待独立实现，不把该限制宣称为完整普通期货撤单能力。
+- 新登记方最多发布一次，重复请求只读取原记录，不重取心跳/行情、不另造cancel_id、不重发。授权到期或账户撤单关闭后，同键仍能读取原责任（全局POST关闭则使用GET）。发送前新到终态导致只登记未发送时，也保留原记录，不在重试时恢复发送。
+
+202返回原请求、稳定`message_id/cancel_id`及publication；状态表沿用上一节，`broker_state_known=false/retry_safe=false`，published不等于cancelled。GET参数为`account_id`和撤单的`idempotency_key`，只读原登记/发布状态，不能用它替代订单终态。SDK新增`cancel_futures_order`、`get_futures_cancel_command`，均只请求一次，不自动重试或轮询。
 
 ### 期货只读报价准备（源码新增，待部署）
 

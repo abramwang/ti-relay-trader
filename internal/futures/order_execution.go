@@ -66,22 +66,24 @@ type OrderMarketEvidence interface {
 type TestOrderAccount struct {
 	Source                 TestSourceConfig
 	SubmitEnabled          bool
+	CancelEnabled          bool
 	AuthorizationExpiresAt time.Time
 }
 
 type TestOrderService struct {
-	store     *CommandStore
-	accounts  map[string]TestOrderAccount
-	market    OrderMarketEvidence
-	target    func(context.Context, CommandScope) (TestQueryTarget, error)
-	transport func(TestSourceConfig, TestQueryTarget, TestTradeApproval) (queryPublicationTransport, func(), error)
+	store        *CommandStore
+	accounts     map[string]TestOrderAccount
+	market       OrderMarketEvidence
+	target       func(context.Context, CommandScope) (TestQueryTarget, error)
+	cancelTarget func(context.Context, CommandScope) (TestQueryTarget, error)
+	transport    func(TestSourceConfig, TestQueryTarget, TestTradeApproval) (queryPublicationTransport, func(), error)
 }
 
 func NewTestOrderService(store *CommandStore, accounts []TestOrderAccount, market OrderMarketEvidence, target func(context.Context, CommandScope) (TestQueryTarget, error)) (*TestOrderService, error) {
 	if store == nil || store.db == nil || market == nil || target == nil || len(accounts) == 0 || len(accounts) > 16 {
 		return nil, ErrOrderExecutionOff
 	}
-	s := &TestOrderService{store: store, accounts: map[string]TestOrderAccount{}, market: market, target: target}
+	s := &TestOrderService{store: store, accounts: map[string]TestOrderAccount{}, market: market, target: target, cancelTarget: target}
 	for _, a := range accounts {
 		scope := a.Source.Scope
 		if scope.validate() != nil || scope.Route.Env != "test" || scope.Route.BrokerID != "ctp_4900" || scope.Route.AccountID != "300052141" || scope.NativeBrokerID != "4900" || scope.UserID != "300052141" || scope.InvestorID != "300052141" {
@@ -228,6 +230,26 @@ func (s *TestOrderService) Lookup(ctx context.Context, account, key string) (Ord
 }
 
 func serviceOrderRegistration(ctx context.Context, tx *sql.Tx, scope CommandScope, requestKey string, expected *OrderPreviewRequest) (*CommandRegistration, error) {
+	reg, err := readServiceRegistration(ctx, tx, scope, requestKey)
+	if err != nil || reg == nil {
+		return nil, err
+	}
+	id := orderRequestIdentity(scope, requestKey)
+	if reg.Original.Action != "order.submit" || reg.Original.MessageID != "relay-web-submit-"+id || len(reg.Original.Orders) != 1 || reg.Original.Orders[0].GatewayOrderID != "relay-web-order-"+id || reg.Original.Orders[0].ClientOrderID != "relay-web-client-"+id {
+		return nil, ErrOrderRequestConflict
+	}
+	if expected != nil {
+		original := serviceOrderResult(*reg, requestKey).Order
+		price := original.Price
+		original.Price = expected.Price
+		if original != *expected || !equalDecimal(string(price), string(expected.Price)) {
+			return nil, ErrOrderRequestConflict
+		}
+	}
+	return reg, nil
+}
+
+func readServiceRegistration(ctx context.Context, tx *sql.Tx, scope CommandScope, requestKey string) (*CommandRegistration, error) {
 	key := string(commandRouteBytes(scope.Route))
 	id := orderRequestIdentity(scope, requestKey)
 	var commandID int64
@@ -242,16 +264,8 @@ func serviceOrderRegistration(ctx context.Context, tx *sql.Tx, scope CommandScop
 	if err != nil {
 		return nil, err
 	}
-	if reg.Scope != scope || reg.Original.Action != "order.submit" || reg.Original.MessageID != "relay-web-submit-"+id || len(reg.Original.Orders) != 1 || reg.Original.Orders[0].GatewayOrderID != "relay-web-order-"+id || reg.Original.Orders[0].ClientOrderID != "relay-web-client-"+id {
+	if reg.Scope != scope {
 		return nil, ErrOrderRequestConflict
-	}
-	if expected != nil {
-		original := serviceOrderResult(reg, requestKey).Order
-		price := original.Price
-		original.Price = expected.Price
-		if original != *expected || !equalDecimal(string(price), string(expected.Price)) {
-			return nil, ErrOrderRequestConflict
-		}
 	}
 	reg.Outcome = "replayed"
 	return &reg, nil
@@ -281,23 +295,28 @@ func (s *TestOrderService) lookup(ctx context.Context, scope CommandScope, key s
 		return OrderExecutionResult{}, ErrOrderRequestMissing
 	}
 	result := serviceOrderResult(*reg, key)
+	result.Publication, err = readServicePublication(ctx, tx, *reg)
+	return result, err
+}
+
+func readServicePublication(ctx context.Context, tx *sql.Tx, reg CommandRegistration) (QueryPublication, error) {
+	result := QueryPublication{CommandID: reg.CommandID, State: "registered", Replayed: reg.Outcome == "replayed"}
 	var state, reason string
 	var entry sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT state,entry_id,reason FROM futures_test_trade_publications WHERE command_id=$1`, reg.CommandID).Scan(&state, &entry, &reason)
+	err := tx.QueryRowContext(ctx, `SELECT state,entry_id,reason FROM futures_test_trade_publications WHERE command_id=$1`, reg.CommandID).Scan(&state, &entry, &reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, nil
 	}
 	if err != nil {
-		return OrderExecutionResult{}, err
+		return QueryPublication{}, err
 	}
 	if !oneOf(state, "published", "not_published", "attempted") {
-		return OrderExecutionResult{}, ErrStreamIdentity
+		return QueryPublication{}, ErrStreamIdentity
 	}
 	if state == "published" {
 		if _, err := streamID(entry.String); err != nil || entry.String == "0-0" {
-			return OrderExecutionResult{}, ErrStreamCursor
+			return QueryPublication{}, ErrStreamCursor
 		}
 	}
-	result.Publication = publicationResult(reg.CommandID, state, entry.String, reason, true)
-	return result, nil
+	return publicationResult(reg.CommandID, state, entry.String, reason, true), nil
 }

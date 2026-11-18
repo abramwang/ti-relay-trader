@@ -31,9 +31,7 @@ func (s *Server) handleFuturesOrderSubmit(w http.ResponseWriter, r *http.Request
 	if !s.futuresExecutionAvailable(w, r, true) {
 		return
 	}
-	typ, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	origin, originErr := url.Parse(r.Header.Get("Origin"))
-	if mediaErr != nil || typ != "application/json" || r.URL.RawQuery != "" || (r.Header.Get("Origin") != "" && (originErr != nil || origin.Host != r.Host || (origin.Scheme != "http" && origin.Scheme != "https"))) {
+	if !validFuturesWriteRequest(r) {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "JSON order intention required; cross-origin writes are not allowed", nil)
 		return
 	}
@@ -53,6 +51,12 @@ func (s *Server) handleFuturesOrderSubmit(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.writeFuturesExecutionError(w, r, err)
+}
+
+func validFuturesWriteRequest(r *http.Request) bool {
+	typ, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	origin, originErr := url.Parse(r.Header.Get("Origin"))
+	return mediaErr == nil && typ == "application/json" && r.URL.RawQuery == "" && (r.Header.Get("Origin") == "" || (originErr == nil && origin.Host == r.Host && (origin.Scheme == "http" || origin.Scheme == "https")))
 }
 
 func (s *Server) handleFuturesOrderCommand(w http.ResponseWriter, r *http.Request) {

@@ -315,7 +315,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
-        if parsed.path == "/v1/futures/order-command":
+        if parsed.path in ("/v1/futures/order-command", "/v1/futures/cancel-command"):
             self._json({"ok": True, "data": {
                 "idempotency_key": query["idempotency_key"][0],
                 "message_id": "original-message", "broker_state_known": False,
@@ -841,7 +841,7 @@ class RelayHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         RelayHandler.requests.append(("POST", parsed.path, query, body))
-        if parsed.path == "/v1/futures/orders":
+        if parsed.path in ("/v1/futures/orders", "/v1/futures/cancels"):
             if body["idempotency_key"] == "conflict":
                 self._json({"ok": False, "error": {"code": "CONFLICT", "message": "intention conflict"}}, status=409)
             else:
@@ -1650,6 +1650,33 @@ class RelayClientTest(unittest.TestCase):
             self.client.submit_futures_order(idempotency_key="one-request", **{**intent, "price": 3000.1})
         with self.assertRaises(ValueError):
             self.client.submit_futures_order(idempotency_key="", **intent)
+        self.assertEqual(len(RelayHandler.requests), before)
+
+    def test_futures_cancel_execution_never_retries(self):
+        intent = dict(account_id="300052141", gateway_order_id="original-order",
+                      trade_date="20261119")
+        before = len(RelayHandler.requests)
+        result = self.client.cancel_futures_order(idempotency_key="cancel-1", **intent)
+        self.assertIsNone(result["publication"]["command_published"])
+        self.assertFalse(result["broker_state_known"])
+        self.assertFalse(result["retry_safe"])
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "POST", "/v1/futures/cancels", {}, {**intent, "idempotency_key": "cancel-1"},
+        )])
+        before = len(RelayHandler.requests)
+        status = self.client.get_futures_cancel_command(account_id="300052141", idempotency_key="cancel-1")
+        self.assertEqual(status["message_id"], result["message_id"])
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "GET", "/v1/futures/cancel-command", {"account_id": ["300052141"], "idempotency_key": ["cancel-1"]}, None,
+        )])
+        before = len(RelayHandler.requests)
+        with self.assertRaises(RelayError) as caught:
+            self.client.cancel_futures_order(idempotency_key="conflict", **intent)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(len(RelayHandler.requests), before + 1)
+        before = len(RelayHandler.requests)
+        with self.assertRaises(ValueError):
+            self.client.cancel_futures_order(idempotency_key="", **intent)
         self.assertEqual(len(RelayHandler.requests), before)
 
     def test_meridian_futures_market_data(self):

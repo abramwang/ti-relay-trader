@@ -44,8 +44,13 @@ func TestOrderServiceTerminalDatabaseAndPolicy(t *testing.T) {
 	}
 	r.manifest.Accounts[0].Execution = &TerminalExecutionConfig{SubmitEnabled: false, CommandGroup: "existing-group", AuthorizationExpiresAt: "2026-11-18T15:00:00+08:00"}
 	s, err := r.NewOrderService(ctx, "unused", name, market)
-	if err != nil || !r.HasOrderPolicy() || s.accounts["300052141"].SubmitEnabled {
+	if err != nil || !r.HasOrderPolicy() || s.accounts["300052141"].SubmitEnabled || s.accounts["300052141"].CancelEnabled {
 		t.Fatal("read-only policy unavailable", err)
+	}
+	r.manifest.Accounts[0].Execution.CancelEnabled = true
+	s, err = r.NewOrderService(ctx, "unused", name, market)
+	if err != nil || s.accounts["300052141"].SubmitEnabled || !s.accounts["300052141"].CancelEnabled {
+		t.Fatal("independent cancel policy lost", err)
 	}
 	for _, expected := range []string{"", "postgres", "other_test"} {
 		if _, err := r.NewOrderService(ctx, "unused", expected, market); err == nil {

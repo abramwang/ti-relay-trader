@@ -35,6 +35,7 @@ type TerminalAccountConfig struct {
 // does not enable an API or change the terminal's read-only controls.
 type TerminalExecutionConfig struct {
 	SubmitEnabled          bool   `json:"submit_enabled"`
+	CancelEnabled          bool   `json:"cancel_enabled"`
 	AuthorizationExpiresAt string `json:"authorization_expires_at"`
 	CommandGroup           string `json:"command_group"`
 }

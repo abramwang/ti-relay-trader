@@ -304,6 +304,8 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/futures/orders/preview", server.handleFuturesOrderPreview)
 	mux.HandleFunc("/v1/futures/orders", server.handleFuturesOrderSubmit)
 	mux.HandleFunc("/v1/futures/order-command", server.handleFuturesOrderCommand)
+	mux.HandleFunc("/v1/futures/cancels", server.handleFuturesCancel)
+	mux.HandleFunc("/v1/futures/cancel-command", server.handleFuturesCancelCommand)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
 	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)

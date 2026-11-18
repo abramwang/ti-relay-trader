@@ -36,23 +36,36 @@ func (r *TerminalReader) NewOrderService(ctx context.Context, redisURL, expected
 		}
 		accounts = append(accounts, TestOrderAccount{
 			Source:        TestSourceConfig{Scope: a.Scope, DeploymentID: a.DeploymentID, RedisURL: redisURL},
-			SubmitEnabled: a.Execution.SubmitEnabled, AuthorizationExpiresAt: end,
+			SubmitEnabled: a.Execution.SubmitEnabled, CancelEnabled: a.Execution.CancelEnabled, AuthorizationExpiresAt: end,
 		})
 	}
 	store, err := NewCommandStore(r.db)
 	if err != nil {
 		return nil, err
 	}
-	return NewTestOrderService(store, accounts, market, r.orderTarget)
+	service, err := NewTestOrderService(store, accounts, market, r.orderTarget)
+	if err == nil {
+		service.cancelTarget = func(ctx context.Context, scope CommandScope) (TestQueryTarget, error) {
+			return r.executionTarget(ctx, scope, true)
+		}
+	}
+	return service, err
 }
 
 func (r *TerminalReader) orderTarget(ctx context.Context, scope CommandScope) (TestQueryTarget, error) {
+	return r.executionTarget(ctx, scope, false)
+}
+
+func (r *TerminalReader) executionTarget(ctx context.Context, scope CommandScope, cancel bool) (TestQueryTarget, error) {
 	for i, a := range r.manifest.Accounts {
 		if a.Scope != scope || a.Execution == nil {
 			continue
 		}
 		h, _, issue := r.connection(ctx, i)
-		if issue != "" || h == nil || h.SessionID == "" || h.TradeDate == nil || h.ConnectionGeneration == nil || *h.ConnectionGeneration < 1 || time.Since(h.ProducedAt) < 0 || time.Since(h.ProducedAt) >= 5*time.Second || !h.BrokerReady || !h.AcceptingTradeCommands || !h.SettlementConfirmed || h.StateText == "stopping" || h.State == "STOPPED" || h.RuntimeBlockedReason != "" {
+		if issue != "" || h == nil || h.SessionID == "" || h.TradeDate == nil || h.ConnectionGeneration == nil || *h.ConnectionGeneration < 1 || time.Since(h.ProducedAt) < 0 || time.Since(h.ProducedAt) >= 5*time.Second || !h.BrokerReady || !h.SettlementConfirmed || h.StateText == "stopping" || h.State == "STOPPED" || h.RuntimeBlockedReason != "" {
+			return TestQueryTarget{}, ErrQueryPublishGate
+		}
+		if (cancel && !h.AcceptingCancelCommands) || (!cancel && !h.AcceptingTradeCommands) {
 			return TestQueryTarget{}, ErrQueryPublishGate
 		}
 		// This identifies the current target only. The existing publisher

@@ -318,6 +318,12 @@ func verifyAssessmentCancel(ctx context.Context, tx *sql.Tx, assessment string, 
 	if c.Original.Cancel.GatewayOrderID != o.GatewayOrderID || c.Original.Cancel.TradeDate != o.TradeDate {
 		return ErrStreamIdentity
 	}
+	if a.relayExecution() && a.AssessmentID == "relay-order-service-v1" {
+		latest, err := latestServiceCancelReceipt(ctx, tx, parent, target)
+		if err != nil || latest != a.CancelReceiptID {
+			return ErrQueryPublishGate
+		}
+	}
 	var raw, digest, configRaw []byte
 	var stream, state string
 	if err := tx.QueryRowContext(ctx, `SELECT i.body,i.body_sha256,i.stream_key,i.state,r.config_json FROM futures_stream_inbox i JOIN futures_stream_receivers r USING(stream_key) WHERE i.receipt_id=$1`, a.CancelReceiptID).Scan(&raw, &digest, &stream, &state, &configRaw); err != nil {

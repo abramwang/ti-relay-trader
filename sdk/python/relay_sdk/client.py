@@ -1461,6 +1461,30 @@ class RelayClient:
             },
         })
 
+    def cancel_futures_order(
+        self, *, idempotency_key: str, account_id: str,
+        gateway_order_id: str, trade_date: str,
+    ) -> Mapping[str, Any]:
+        """One explicit TEST cancel attempt; publication is not cancellation.
+
+        Relay selects the retained original order/receipt. No market quote,
+        caller-supplied evidence, generated replacement key or retry is used.
+        """
+        if not isinstance(idempotency_key, str) or not idempotency_key:
+            raise ValueError("an explicit idempotency_key is required")
+        return self._request("POST", "/v1/futures/cancels", json_body={
+            "idempotency_key": idempotency_key, "account_id": account_id,
+            "gateway_order_id": gateway_order_id, "trade_date": trade_date,
+        })
+
+    def get_futures_cancel_command(
+        self, *, account_id: str, idempotency_key: str,
+    ) -> Mapping[str, Any]:
+        """Read original cancellation publication; never resume or retry."""
+        return self._request("GET", "/v1/futures/cancel-command", query={
+            "account_id": account_id, "idempotency_key": idempotency_key,
+        })
+
     def get_futures_order_command(
         self, *, account_id: str, idempotency_key: str,
     ) -> Mapping[str, Any]:
