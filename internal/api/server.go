@@ -35,6 +35,7 @@ import (
 
 type Dependencies struct {
 	FuturesTerminal FuturesTerminalReader
+	FuturesOrders   FuturesOrderService
 	Orders          OrderService
 	Jobs            JobRunStore
 	Settlements     SettlementStore
@@ -57,6 +58,11 @@ type HealthCheckFunc func(context.Context) error
 
 type FuturesTerminalReader interface {
 	Snapshot(context.Context) []futures.TerminalAccount
+}
+
+type FuturesOrderService interface {
+	Submit(context.Context, futures.OrderExecutionRequest) (futures.OrderExecutionResult, error)
+	Lookup(context.Context, string, string) (futures.OrderExecutionResult, error)
 }
 
 const (
@@ -215,6 +221,7 @@ func (err *performanceScopeConflict) Unwrap() error { return errPerformanceScope
 
 type Server struct {
 	futuresTerminal FuturesTerminalReader
+	futuresOrders   FuturesOrderService
 	cfg             config.Config
 	logger          *slog.Logger
 	started         time.Time
@@ -259,6 +266,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 
 	server := &Server{
 		futuresTerminal: deps.FuturesTerminal,
+		futuresOrders:   deps.FuturesOrders,
 		cfg:             cfg,
 		logger:          logger,
 		started:         timeutil.Now(),
@@ -294,6 +302,8 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/futures/terminal", server.handleFuturesTerminal)
 	mux.HandleFunc("/v1/futures/price-preview", server.handleFuturesPricePreview)
 	mux.HandleFunc("/v1/futures/orders/preview", server.handleFuturesOrderPreview)
+	mux.HandleFunc("/v1/futures/orders", server.handleFuturesOrderSubmit)
+	mux.HandleFunc("/v1/futures/order-command", server.handleFuturesOrderCommand)
 	mux.HandleFunc("/v1/accounts/", server.handleAccountPath)
 	mux.HandleFunc("/v1/performance/settings", server.handlePerformanceSettings)
 	mux.HandleFunc("/v1/performance/fee-rules", server.handlePerformanceFeeRules)

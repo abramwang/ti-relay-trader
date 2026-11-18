@@ -1,6 +1,6 @@
 # relay 统一交易接口 Schema
 
-更新时间：`2026-09-14`
+更新时间：`2026-11-18`
 
 ## 当前状态
 
@@ -27,6 +27,37 @@ SDK 应在启动阶段使用能力握手，不得只比较 Python 包版本。�
 当前前置测试环境已启动，后续需要联调时可以直接基于 Redis Stream 做查询、下单、撤单和事件消费验证。凭据仍只放在部署机本地配置或安全渠道，不写入仓库。
 
 ## HTTP Envelope
+
+### 期货TEST发送编排（源码新增，默认关闭）
+
+`POST /v1/futures/orders`和`GET /v1/futures/order-command`已接现有持久命令登记/TEST发布器；本轮只完成源码及隔离验证，未部署、未发真实命令、未发布SDK wheel，不表示生产期货或终端发送已开放。两个入口与股票`/v1/orders`分离，不改变股票账户配置。生产环境始终503。
+
+POST要求`Content-Type: application/json`，拒绝跨Origin、query参数、重复键、额外字段及超过4KiB正文：
+
+```json
+{"idempotency_key":"strategy-run-1-order-1","order":{"account_id":"300052141","security_id":"RB2701.SHFE","trade_date":"20261119","trade_side":"B","offset_type":"O","hedge_type":"speculation","qty":1,"price":"3000.000"}}
+```
+
+调用方只给意图及显式幂等键，不能传路由、session、权限、原始行情或command/order ID。price为正十进制字符串，委托原价不改；同一scope及key生成稳定的message/client/gateway身份，幂等域跨交易日保留。同键改价、改量、改方向/开平/日期/标的返回409；仅价格尾零不同视为同一数值并返回原始价格文本。路由变更不是幂等续接，仍须按既有责任核对流程处理，不能换gateway规避历史。
+
+新请求由服务端从已配置Meridian取得唯一正式目录/tick及当前原始快照，取得绑定路由的新鲜心跳session/代次/TradingDay，再构造短期Relay本地许可，登记后使用既有原子TEST发布器。总时限8秒，不自动重试、不改价、不发送OC行情查询、不静默回退原生报价。现有发布边界仍为东吴TEST `ctp_4900 / 300052141`、SHFE买开投机1手；不放宽成生产规则。**东吴测评行情与实盘不同，不能据此直接用Meridian实盘价启动测试**；需要原生定价时仍显式使用既有execution CLI，不能冒称本HTTP服务已支持原生来源。
+
+幂等重试先读取已登记事实，不再要求行情/新会话或重新授权。并发请求在同一数据库路由锁下重查，只有新登记的请求可以尝试发布；其余返回原记录。不另造幂等表，不修改原始命令、目录证据及行情正文。进程中断后即使只有registered，也不自动续发；attempted/超时/发布确认未知继续待核。SDK不生成替代key、不重试、不轮询。
+
+HTTP202只表示已取得持久登记身份，返回原始order、idempotency_key、message_id、gateway_order_id、client_order_id及publication：
+
+| publication.state | command_published | 解释 |
+| --- | --- | --- |
+| registered | null | 已登记，尚无可用的持久发布结果；可能有并发首请求仍在处理，不据此补发 |
+| attempted | null | 发布尝试已登记，结果未确认；不得自动补发 |
+| published | true | 已确认Redis命令entry；不等于OC受理、柜台接单或成交 |
+| not_published | false | 原子门禁关闭，原请求不再尝试；也不授权调用方自动换key重报 |
+
+`broker_state_known=false`、`retry_safe=false`，publication里的broker_accepted也不作为拒单事实；柜台终态仍查订单/成交回报。`GET /v1/futures/order-command?account_id=300052141&idempotency_key=strategy-run-1-order-1`只读上述原始身份/发布记录，不访问Meridian或OC、不恢复发送。404表示该已配置scope下未找到记录，不是全路由的柜台未执行证明。格式400、冲突409、服务/依赖不可用503；未登记时失败不暴露私有连接错误。所有业务响应no-store。登记后的发布异常仍返回202和状态，调用方必须检查publication，不能仅判断HTTP成功。
+
+运行配置分两层：`futures_terminal.execution_enabled`默认false；期货专用manifest账户可选`execution`包含`submit_enabled`、带时区的`authorization_expires_at`、既有`command_group`。这些均由服务端运维配置，不从心跳取得授权、不由请求覆盖。必须已有独立、名称以`_test`结尾的数据库且`current_database()`与ExpectedName一致；不自动建库/迁移/初始化Redis。启用仍需独立收件及可用撤单路径，不因编排已完成直接开放终端。
+
+全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；终端仍保持只读预检/禁发。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单HTTP编排、原生事实HTTP分流、动态停止、持续回报与终端按钮联动仍待后续接入，OC无需修改wire。
 
 ### 期货只读报价准备（源码新增，待部署）
 

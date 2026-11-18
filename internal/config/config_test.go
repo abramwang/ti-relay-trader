@@ -29,6 +29,32 @@ func TestFuturesTerminalRequiresSeparateTestDatabase(t *testing.T) {
 	}
 }
 
+func TestFuturesExecutionExplicitTestConfiguration(t *testing.T) {
+	cfg := Default()
+	if cfg.FuturesTerminal.ExecutionEnabled {
+		t.Fatal("execution enabled by default")
+	}
+	cfg.FuturesTerminal.ExecutionEnabled = true
+	if cfg.Validate() == nil {
+		t.Fatal("enabled without manifest")
+	}
+	cfg.Redis.Env = "test"
+	cfg.FuturesTerminal.ManifestFile = "private.json"
+	cfg.FuturesTerminal.Database = DatabaseConfig{DSN: "postgres://localhost/futures_test", ExpectedName: "futures_test"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Service.Environment = EnvironmentProduction
+	if cfg.Validate() == nil {
+		t.Fatal("production execution enabled")
+	}
+	cfg.Service.Environment = EnvironmentTest
+	cfg.FuturesTerminal.Database = DatabaseConfig{DSN: "postgres://localhost/futures", ExpectedName: "futures"}
+	if cfg.Validate() == nil {
+		t.Fatal("unmarked database allowed")
+	}
+}
+
 func TestDecodeAppliesDefaults(t *testing.T) {
 	cfg, err := Decode(strings.NewReader(`service: {}`))
 	if err != nil {

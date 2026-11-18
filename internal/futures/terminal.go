@@ -21,13 +21,22 @@ type TerminalManifest struct {
 }
 
 type TerminalAccountConfig struct {
-	Alias           string       `json:"alias"`
-	Scope           CommandScope `json:"scope"`
-	HistoryGateways []string     `json:"history_gateways"`
-	DeploymentID    string       `json:"deployment_id"`
-	SourceID        string       `json:"source_id"`
-	ServerRunID     string       `json:"server_run_id"`
-	Epoch           string       `json:"epoch"`
+	Alias           string                   `json:"alias"`
+	Scope           CommandScope             `json:"scope"`
+	HistoryGateways []string                 `json:"history_gateways"`
+	DeploymentID    string                   `json:"deployment_id"`
+	SourceID        string                   `json:"source_id"`
+	ServerRunID     string                   `json:"server_run_id"`
+	Epoch           string                   `json:"epoch"`
+	Execution       *TerminalExecutionConfig `json:"execution,omitempty"`
+}
+
+// Optional server-side policy. Merely adding this to an observation manifest
+// does not enable an API or change the terminal's read-only controls.
+type TerminalExecutionConfig struct {
+	SubmitEnabled          bool   `json:"submit_enabled"`
+	AuthorizationExpiresAt string `json:"authorization_expires_at"`
+	CommandGroup           string `json:"command_group"`
 }
 
 type TerminalReview struct {

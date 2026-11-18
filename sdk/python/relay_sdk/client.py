@@ -1435,6 +1435,40 @@ class RelayClient:
             "qty": qty, "price": price,
         })
 
+    def submit_futures_order(
+        self, *, idempotency_key: str, account_id: str, security_id: str,
+        trade_date: str, trade_side: str, offset_type: str, qty: int,
+        price: str, hedge_type: str = "speculation",
+    ) -> Mapping[str, Any]:
+        """One explicit TEST request, without retry or automatic repricing.
+
+        HTTP 202 means registration, not broker acceptance. Keep this key;
+        inspect get_futures_order_command after timeout or an unknown result.
+        A preview is not authorization. The server service is disabled unless
+        explicitly wired with operator-owned account policy and live evidence.
+        """
+        if not isinstance(price, str):
+            raise TypeError("price must be decimal text")
+        if not isinstance(idempotency_key, str) or not idempotency_key:
+            raise ValueError("an explicit idempotency_key is required")
+        return self._request("POST", "/v1/futures/orders", json_body={
+            "idempotency_key": idempotency_key,
+            "order": {
+                "account_id": account_id, "security_id": security_id,
+                "trade_date": trade_date, "trade_side": trade_side,
+                "offset_type": offset_type, "hedge_type": hedge_type,
+                "qty": qty, "price": price,
+            },
+        })
+
+    def get_futures_order_command(
+        self, *, account_id: str, idempotency_key: str,
+    ) -> Mapping[str, Any]:
+        """Read original publication responsibility; never resume or resend."""
+        return self._request("GET", "/v1/futures/order-command", query={
+            "account_id": account_id, "idempotency_key": idempotency_key,
+        })
+
     def get_meridian_futures_status(self) -> Mapping[str, Any]:
         """Return Meridian's CTP futures service status through relay."""
 

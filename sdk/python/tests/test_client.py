@@ -315,6 +315,14 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/futures/order-command":
+            self._json({"ok": True, "data": {
+                "idempotency_key": query["idempotency_key"][0],
+                "message_id": "original-message", "broker_state_known": False,
+                "retry_safe": False,
+                "publication": {"state": "attempted", "command_published": None},
+            }})
+            return
         if parsed.path == "/v1/futures/price-preview":
             if query.get("trade_date") == ["20261116"]:
                 self._json({"ok": False, "error": {
@@ -833,6 +841,16 @@ class RelayHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         RelayHandler.requests.append(("POST", parsed.path, query, body))
+        if parsed.path == "/v1/futures/orders":
+            if body["idempotency_key"] == "conflict":
+                self._json({"ok": False, "error": {"code": "CONFLICT", "message": "intention conflict"}}, status=409)
+            else:
+                self._json({"ok": True, "data": {
+                    **body, "message_id": "original-message", "broker_state_known": False,
+                    "retry_safe": False,
+                    "publication": {"state": "attempted", "command_published": None},
+                }}, status=202)
+            return
         if parsed.path == "/v1/futures/orders/preview":
             if body.get("trade_date") == "20261116":
                 self._json({"ok": False, "error": {"code": "UNAVAILABLE", "message": "stale quote"}}, status=503)
@@ -1600,6 +1618,39 @@ class RelayClientTest(unittest.TestCase):
         with self.assertRaises(RelayError):
             self.client.preview_futures_order(**{**intent, "trade_date": "20261116"})
         self.assertEqual(len(RelayHandler.requests), before + 1)
+
+    def test_futures_order_execution_never_retries(self):
+        intent = dict(account_id="300052141", security_id="RB2701.SHFE",
+                      trade_date="20261117", trade_side="B", offset_type="O",
+                      qty=1, price="3000.000000001")
+        before = len(RelayHandler.requests)
+        result = self.client.submit_futures_order(idempotency_key="one-request", **intent)
+        self.assertEqual(result["order"]["price"], intent["price"])
+        self.assertIsNone(result["publication"]["command_published"])
+        self.assertFalse(result["broker_state_known"])
+        self.assertFalse(result["retry_safe"])
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "POST", "/v1/futures/orders", {}, {
+                "idempotency_key": "one-request", "order": {**intent, "hedge_type": "speculation"},
+            },
+        )])
+        before = len(RelayHandler.requests)
+        status = self.client.get_futures_order_command(account_id="300052141", idempotency_key="one-request")
+        self.assertEqual(status["message_id"], result["message_id"])
+        self.assertEqual(RelayHandler.requests[before:], [(
+            "GET", "/v1/futures/order-command", {"account_id": ["300052141"], "idempotency_key": ["one-request"]}, None,
+        )])
+        before = len(RelayHandler.requests)
+        with self.assertRaises(RelayError) as caught:
+            self.client.submit_futures_order(idempotency_key="conflict", **intent)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(len(RelayHandler.requests), before + 1)
+        before = len(RelayHandler.requests)
+        with self.assertRaises(TypeError):
+            self.client.submit_futures_order(idempotency_key="one-request", **{**intent, "price": 3000.1})
+        with self.assertRaises(ValueError):
+            self.client.submit_futures_order(idempotency_key="", **intent)
+        self.assertEqual(len(RelayHandler.requests), before)
 
     def test_meridian_futures_market_data(self):
         status = self.client.get_meridian_futures_status()

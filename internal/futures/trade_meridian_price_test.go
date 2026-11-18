@@ -52,6 +52,40 @@ func TestMeridianPricePreparation(t *testing.T) {
 	}
 }
 
+func TestMeridianPriceApprovalEnvelopeCapacity(t *testing.T) {
+	now := time.Now()
+	v, e, target, a, _ := executionTradeFixture(t, now)
+	raw, binding := meridianPriceFixture(t, now)
+	raw = append(raw, []byte(strings.Repeat(" ", maxMeridianPriceBody-len(raw)))...)
+	prepared, err := PrepareMeridianPrice(raw, binding, "1", target.TradeDate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Market = &prepared.Market
+	c, err := DecodeCommand([]byte(v.Raw), v.scope(), "cmd.trade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Mappings[c.Orders[0].GatewayOrderID] = binding
+	if _, err := ValidateTestTradePreparation([]byte(v.Raw), v.scope(), target, e, a); err != nil {
+		t.Fatal("valid bounded quote rejected by outer approval", err)
+	}
+	encoded, _ := json.Marshal(a)
+	if len(encoded) <= 8192 || len(encoded) > 65536 {
+		t.Fatal("fixture did not exercise base64 expansion", len(encoded))
+	}
+	decoded, err := DecodeTestTradeApproval(encoded)
+	if err != nil || string(decoded.Market.MeridianSnapshot) != string(raw) {
+		t.Fatal("original snapshot changed", err)
+	}
+	if _, err := DecodeTestTradeApproval(append(encoded, []byte(strings.Repeat(" ", 65537-len(encoded)))...)); err == nil {
+		t.Fatal("unbounded approval accepted")
+	}
+	if _, err := PrepareMeridianPrice(append(raw, ' '), binding, "1", target.TradeDate, now); err == nil {
+		t.Fatal("snapshot bound widened")
+	}
+}
+
 func TestMeridianPriceRejectsInvalidEvidence(t *testing.T) {
 	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
 	raw, b := meridianPriceFixture(t, now)

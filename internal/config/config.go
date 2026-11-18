@@ -40,10 +40,11 @@ type Config struct {
 	FuturesTerminal FuturesTerminalConfig `yaml:"futures_terminal"`
 }
 
-// Separate TEST observation storage; never added to securities account routes.
+// Separate TEST storage with optional execution; never a securities account route.
 type FuturesTerminalConfig struct {
-	Database     DatabaseConfig `yaml:"database"`
-	ManifestFile string         `yaml:"manifest_file"`
+	Database         DatabaseConfig `yaml:"database"`
+	ManifestFile     string         `yaml:"manifest_file"`
+	ExecutionEnabled bool           `yaml:"execution_enabled"`
 }
 
 type ServiceConfig struct {
@@ -303,6 +304,9 @@ func (cfg *Config) ApplyDefaults() {
 }
 
 func (cfg Config) Validate() error {
+	if cfg.FuturesTerminal.ExecutionEnabled && (cfg.FuturesTerminal.ManifestFile == "" || !strings.HasSuffix(cfg.FuturesTerminal.Database.ExpectedName, "_test")) {
+		return errors.New("futures execution requires an explicit TEST manifest and an independent _test database")
+	}
 	if cfg.FuturesTerminal.ManifestFile != "" {
 		if cfg.Service.Environment != EnvironmentTest || cfg.Redis.Env != "test" {
 			return errors.New("futures_terminal currently requires TEST")

@@ -57,7 +57,10 @@ type TestTradeMarket struct {
 
 func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	var a TestTradeApproval
-	if len(raw) > 8192 {
+	// A bounded 32KiB original Meridian body is base64 encoded inside this
+	// local evidence object. Keep the envelope bounded without rejecting an
+	// otherwise valid snapshot solely because of encoding expansion.
+	if len(raw) > 65536 {
 		return a, ErrStreamIdentity
 	}
 	if _, err := parseReply(raw); err != nil {

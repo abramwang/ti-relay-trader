@@ -580,6 +580,16 @@ func buildAPIDependencies(cfg relayconfig.Config, logger *slog.Logger) (api.Depe
 				previousCleanup := cleanup
 				cleanup = func() { terminal.Close(); observationDB.Close(); previousCleanup() }
 				deps.FuturesTerminal = terminal
+				if cfg.FuturesTerminal.ExecutionEnabled || terminal.HasOrderPolicy() {
+					checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+					execution, executionErr := terminal.NewOrderService(checkCtx, cfg.Redis.URL, cfg.FuturesTerminal.Database.ExpectedName, marketClient)
+					checkCancel()
+					if executionErr != nil {
+						logger.Warn("ctp_execution_unavailable", "reason", "TEST policy or database validation failed")
+					} else {
+						deps.FuturesOrders = execution
+					}
+				}
 			}
 		}
 	}

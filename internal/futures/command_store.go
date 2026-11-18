@@ -94,6 +94,13 @@ func checkRegistrationEvidence(c Command, scope CommandScope, e RegistrationEvid
 // Syntax/scope/stream failures and capacity/DB errors are NOT acknowledged or
 // recorded here; the future ingress must retain responsibility for those bytes.
 func (s *CommandStore) Register(ctx context.Context, scope CommandScope, stream string, raw []byte, e RegistrationEvidence) (CommandRegistration, error) {
+	return s.register(ctx, scope, stream, raw, e, nil)
+}
+
+// replay is evaluated under the same route lock as ordinary command
+// registration. A concurrent service retry must use the original bytes, not
+// manufacture another sent_at or replace its catalog evidence.
+func (s *CommandStore) register(ctx context.Context, scope CommandScope, stream string, raw []byte, e RegistrationEvidence, replay func(*sql.Tx) (*CommandRegistration, error)) (CommandRegistration, error) {
 	c, err := DecodeCommand(raw, scope, stream)
 	if err != nil {
 		return CommandRegistration{}, err
@@ -117,6 +124,15 @@ func (s *CommandStore) Register(ctx context.Context, scope CommandScope, stream 
 	var count, total int
 	if err = tx.QueryRowContext(ctx, `SELECT audit_count,audit_bytes FROM futures_command_routes WHERE route_key=$1 FOR UPDATE`, key).Scan(&count, &total); err != nil {
 		return CommandRegistration{}, err
+	}
+	if replay != nil {
+		existing, err := replay(tx)
+		if err != nil {
+			return CommandRegistration{}, err
+		}
+		if existing != nil {
+			return *existing, tx.Commit()
+		}
 	}
 	out, err := resolveCommand(ctx, tx, key, scope, stream, c, e, evidence)
 	if err != nil {
