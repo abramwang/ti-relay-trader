@@ -6,6 +6,18 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 14:27 旧命令未报柜台已核对，新命令遇柜台限价差异后待核实
+
+OC提供新session `ctpproc-eb6393fdb05193a1e805b5495260cee2`、代次1/20261118，原路由/epoch不变，结算仅复核。Relay独立读到旧单失败回执`1794982934537-0`：`ORDER_SUBMIT_REJECTED`，`failure_stage=before_order_dispatch`、`sdk_order_insert_calls=0`，原命令摘要一致；cmd.trade pending=0/lag=0。该事实为OC公开的处置回执及用户转交确认，未冒充Relay独立SPI取证；旧单不再重发，也不伪造cancelled。
+
+新会话订单/持仓command13/14已各发送一次，订单标准投影仍failed但原生快照ready，持仓completed。两新回复及旧失败回执3条原文显式续收入PG，累计9条，owner=`80efed737502a0fd7d371ced36632ec67c7cb2c7ba4d40ed12ed76ff766ae828`、cursor=`1794983131475-0`，接收已退出。目录`initialization-ctpproc-eb6393fdb05193a1e805b5495260cee2/`保留命令、终态原文和位点，不把原文落库等同业务标准转换成功。
+
+新鲜可报单心跳后，14:25:47登记发布command15：message_id=`relay-ctp-day-20261118-02-1794983147097334006`、entry=`1794983147144-0`、gateway=`gw-relay-ctp-day-20261118-02-1794983147097334006`；rb2701买开1手2958，来自当时Meridian买一2968减10 tick，非复用旧命令/幂等身份。
+
+14:25:49再次stopping，最新心跳原生限价SDK7为5218–5653，采样14:25:49.644–49.666；14:26:21确认交易流2命令、pending=1/lag=0，第二单无reply/event，event总数0，未发撤单。尚不能依据submit_attempts或无回报断定未进入SDK。已通知OC核实精确合约/交易所/交易日/盘口/上下限原值及是否调用ReqOrderInsert，并处理失败回执/ACK；报价越界应局部失败而非进程退出。若证明是测评柜台独立行情，后续仅该TEST场景使用有来源的柜台报价；不改Meridian定义、不跨来源拼价、不放宽生产规则。目前未修改定价保护、未发第三单。
+
+证据`outputs/recovery/ctp_dongwu_scheduled_20261118/day-trade-02/`，最新全流检查在`day-trade-01/inspection-20261118T062621.631462050Z.json`。现场程序已超时退出，无后台自动重报。实测仍未完成报成/撤成目标，先解决第二笔未决责任和实际报价来源，不能继续盲报。
+
 ### 14:11 首笔真实命令已发布，OC停止后待核对执行责任
 
 新会话`ctpproc-bf780bba2df27c084c8864a4c33c83bb`，代次1/20261118，结算仅复核。Relay按当前会话新发两查询command10/11：订单标准页仍failed，完整原生快照ready；持仓completed。回复显式续收至`1794982164208-0`，owner=`1c4302f2ac0ac8795d2ebd7ce4621d4bd802e8b1f94ab1a475477275b6a5f611`，接收已退出，原始reply累计6条。

@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 14:27` **第二轮实际报单仍待OC核对，禁止重发**：旧command12已有失败回执`1794982934537-0`明确未调用ReqOrderInsert，pending清零且原文已入PG。新session `ctpproc-eb6393fdb05193a1e805b5495260cee2`两查询command13/14完成后，14:25:47发布command15（message尾`02-1794983147097334006`、entry`1794983147144-0`），rb2701买开1手2958。14:25:49 OC停止，原生限价5218–5653与Meridian买一2968不一致；第二笔pending=1、无reply/event，未发撤单。已请OC核对精确原生行情及执行责任，不凭心跳认定未报柜台。脚本已退出，`day-trade-02`不可盲目重跑；新reply owner/cursor、查询和报价证据见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。保持TEST，生产/结算授权未变。
+
 - `2026-11-18 14:11` **CTP首笔报单已发布，未决，不可重报**：新session `ctpproc-bf780bba2df27c084c8864a4c33c83bb`完成当前两查询后，14:09:31发布command12，message_id=`relay-ctp-day-20261118-01-1794982171142780504`，Stream ID=`1794982171204-0`，rb2701买开1手2958。14:09:41 OC stopping；14:10:42命令pending=1、无交易回执/event，无撤单。已请OC核实是否进入ReqOrderInsert及退出原因，禁止自动重发/换ID补单，不按submit_attempts=0推定未执行。脚本已超时退出，`day-trade-01`目录留证、不可盲目再跑。day逐单实现及测试已完成，最新初始化/接收位点与现场证据见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。未重做结算、未改生产或重启9092。
 
 - `2026-11-18 14:06` **CTP原生快照分离、日间逐单发布已实现**：当前session `ctpproc-d5c3f0eadf37b0c11da1aa873516341c`（1/20261118），新订单/持仓查询command8/9已发，标准订单失败保留但native ready、持仓成功；两回复显式续收，owner/cursor见`receive-20261118T060444.154586606Z.jsonl`。day approval/逐订单持久额度、具体父单撤单、旧模式混用拒绝接通，全Go/vet/临时PG race通过，CLI已构建；不再逐笔询问用户。当前只支持连续一手买开限价及对应撤单，非全部期货动作。**尚未实际发单**：OC合约缓存13:56:26采样已过期，14:05报instrument_expired并关报单；已请OC修复刷新死锁，不能绕过ready。现场封装`.runtime/ctp-day-trade-20261118.go`仅适用当前session且须新event receiver，已构建未执行；见[当前执行单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。无结算重确认/生产变更/9092重启。
