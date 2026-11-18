@@ -6,6 +6,21 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 13:48 两初始化查询已实际执行，暴露订单关联耦合
+
+OC定位原生合约错误：请求`rb2701/SHFE`后柜台先返目标合约，随后附带`rb2701C4350/SHFE`期权，旧驱动把附带行当身份冲突而提前结束。OC正在改为保留原文、等真实末页后仅应用精确匹配的目标合约。该根因为OC报告，Relay未收到原生请求/结果审计；不把其他行投影为目标合约，精确目标缺失/矛盾重复仍不能成功应用。
+
+新会话 `ctpproc-0338e2357dca25664bef86f9797770a2`、代次1、TradingDay20261118已常驻，登录/结算true，37条外部延期/0 blocking。Relay核对来源/epoch及新鲜day心跳后，先在独立PG登记再各发布一次：
+
+| 查询 | 命令/SDK身份 | 实际回复 |
+| --- | --- | --- |
+| order.list.query | command_id=6；message_id=`relay-dongwu-init-20261118-1794980926121931648-0`；ticket1/SDK5 | 13:48:46 failed/QUERY_FAILED，`order_association_pending`，raw_completed=true、snapshot_applied=false；reply entry `1794980926734-0` |
+| account.positions.query | command_id=7；message_id=`relay-dongwu-init-20261118-1794980927755727786-1`；ticket2/SDK6 | 13:48:49 completed，14行、chunk0/is_last=true、snapshot_applied=true；reply entry `1794980929643-0` |
+
+两条原始回复已持久收件，尚未用OC独立原审计完成业务审核，不从reply自证SDK关联。保存路径为 `outputs/recovery/ctp_dongwu_scheduled_20261118/initialization-ctpproc-0338e2357dca25664bef86f9797770a2/`，含命令、发布、目标绑定及回包原文。reply接收已退出，owner `e958a47ea1648c6aecac655ec0bf33c2c8e21737a8dc2efdbec3a0ada4b989d2`、cursor `1794980929643-0`；pending=2表示待业务处理，不是OC命令PEL。
+
+已向OC反馈第二个具体阻塞：完整原始订单查询的外部关联失败，不能直接成为无关本地报撤不可用的理由。请区分本地OrderRef/重复执行保护所需证据和完整外部业务投影；失败页保留，不伪造成成功订单快照，不关闭保护后冒称已建立全账户账本。两查询均不自动重发、不重新确认结算。Relay本轮无报单或撤单；合约修复、订单准入拆分及Relay多笔交易发布仍待，不把14行持仓成功写成完整交易验收。
+
 ### 13:40 实际登录/结算已确认，日间初始化查询已接通
 
 OC反馈13:38真实登录、匹配结算成功回调已收到，外部回放不再阻断；随后原生`rb2701`查询返回有效行但驱动判`identity_mismatch`退出。Relay没有原始合约请求/回包，具体比较字段由OC定位，不将此错误解释为不支持合约，也不猜测大小写、空白或账户字段是哪项根因。

@@ -26,6 +26,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
+- `2026-11-18 13:48` **已执行CTP两初始化查询**：常驻session `ctpproc-0338e2357dca25664bef86f9797770a2`、代次1/20261118、登录/结算true。command6订单查询failed `order_association_pending`（raw_completed=true），command7持仓completed14行/完整末页；两回复原文已入独立PG、业务审核待OC原审计，无报撤。已把外部订单关联阻断本地准入反馈OC，要求拆分而非伪造快照。OC另定位rb2701查询附带期权行被误判冲突，正改精确匹配/末页后应用；不将其记为合约不支持。命令/回复/续读位点在`outputs/recovery/ctp_dongwu_scheduled_20261118/initialization-ctpproc-0338e2357dca25664bef86f9797770a2/`；不重发已发查询/结算，详见[最新执行记录](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
+
 - `2026-11-18 13:40` **CTP真实结算已确认，接通day profile初始化查询**：新session `ctpproc-1a883ba7568fa47b9dddb146b421f419`在13:38:23心跳登录/结算true，22deferred/0blocking，随后合约identity_mismatch退出（根因待OC）；两命令流0。OC报告匹配结算成功回调，不能重复确认。day profile实际至15:00已获用户授权，Relay查询发布已适配/CLI构建，futures及query CLI测试通过；交易发布仍拒绝day profile，多笔升级待办。4条新心跳续收入独立PG累计7条，owner/cursor见`heartbeat-capture-20261118T054003Z.jsonl`，接收已退出。等OC修复后新会话，不再要大材料；无新查询/交易或生产修改，见[当前执行单](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
 
 - `2026-11-18 13:35` **用户明确放开CTP TEST交易测试，不再逐笔请示**：实际新路由hb仅3条，最后13:15:22 stopping/14 blocking，session `ctpproc-dc96c0954ecd430394e5eb6eef073614`；两命令流0，未发报撤。13:36原始心跳已落独立PG，owner/cursor见`outputs/recovery/ctp_dongwu_scheduled_20261118/heartbeat-capture-20261118T053617Z.jsonl`，接收进程已退出。已请用户转OC直接恢复实际可用进程/新当日日间配置，不清状态、不重做未知结算；旧13:35已过期。Relay多笔发布仍未实现，day profile仍拒绝，不能宣称全部功能已开；多笔接线提升优先级，生产保持关闭。见[最新授权与阻塞](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。
