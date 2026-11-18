@@ -12,7 +12,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
 | 当前环境 | `2026-11-18 12:11 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 TEST API内嵌同步运行，生产独立worker停止。本机/域名test/ok，当前PID以service status为准；不得自行切回生产 |
 | 安全状态 | TEST华鑫00030484单笔/批量/撤单写入启用，12:26凭据补发后OC登录/快照/报撤ready；旧7x24时段配置已移除，仅按新鲜OC心跳准入，保留参数/幂等/柜台风控。生产所有账户下单关闭；CTP独立测评预算不随华鑫权限放宽，未自动报单 |
-| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；F0/F1期货只读联调，9092已接TEST历史查询观察，期货报撤/业务快照未上线 |
+| 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；CTP TEST已完成CLI经Redis的真实单笔报撤及回报持久收件，普通API/终端报撤与完整业务快照仍未上线 |
 | 最近确认 | `2026-11-18 12:26` 用户要求放开TEST交易以手动测华鑫：原开关已true，实际阻塞为托管凭据missing及旧7x24时段。通过加密CLI补发原TEST凭据并去掉旧时段配置，API重启后域名报order_entry_ready及OC报撤ready均true。未代用户下单，生产未动。CTP当日授权已记录、多笔代码待升级；15:01生产收盘前仍需用户明确切回 |
 | 更新时间 | `2026-11-18` |
 
@@ -25,6 +25,8 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 5. 需要追溯旧决策时再阅读 [README 完整历史归档](/home/ti-relay-trader/docs/README_HISTORY_20260826.md:1)。
 
 ## 当前工作
+
+- `2026-11-18 14:43` **东吴TEST真实一报一撤已完成**：session `ctpproc-cac1855c2c51ccbad63ea1ffde3b5b92`，完成新查询command16/17后，14:41:54发布command18（message尾`03-1794984114779304590`），rb2701买开1手5218，14:41:55.366收到working；14:42:01发布command19撤单，14:42:01.818收到cancelled，OrderRef=`000000000008`/OrderSysID=`39429`、成交0。严格解析的两事件及两回执已进独立PG原始收件，两命令组pending/lag均0；不冒充已完成全部业务账本/柜台测评签认。前两单未调用SDK的失败回执均保存，不重发。定价新增仅东吴TEST/day/rb2701的一手下限价模式，使用实际OC限价且SDK前仍刷新，Meridian仅作证券映射，不伪造买一或把测评行情当实盘；原生产规则未变。全Go/vet/临时PG race通过，CLI已构建，9092未重启。证据`day-trade-03/`及最新receiver位点见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)；已请OC核对柜台记录，无需重复发单。仍保持TEST，不能自行切生产。
 
 - `2026-11-18 14:27` **第二轮实际报单仍待OC核对，禁止重发**：旧command12已有失败回执`1794982934537-0`明确未调用ReqOrderInsert，pending清零且原文已入PG。新session `ctpproc-eb6393fdb05193a1e805b5495260cee2`两查询command13/14完成后，14:25:47发布command15（message尾`02-1794983147097334006`、entry`1794983147144-0`），rb2701买开1手2958。14:25:49 OC停止，原生限价5218–5653与Meridian买一2968不一致；第二笔pending=1、无reply/event，未发撤单。已请OC核对精确原生行情及执行责任，不凭心跳认定未报柜台。脚本已退出，`day-trade-02`不可盲目重跑；新reply owner/cursor、查询和报价证据见[执行单顶部](docs/OC_CTP_JOINT_EXECUTION_20261118.md)。保持TEST，生产/结算授权未变。
 

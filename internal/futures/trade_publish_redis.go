@@ -84,11 +84,19 @@ func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQuery
 	}
 	if a.CancelReceiptID == 0 {
 		observed, err := time.Parse(time.RFC3339Nano, a.Market.ObservedAt)
-		if err != nil || observed.After(now.Add(2*time.Second)) || !now.Before(observed.Add(5*time.Second)) {
+		maxAge := 5 * time.Second
+		if a.Market.PriceSource == "oc_test_native_lower_limit.v1" {
+			s := h.Assessment
+			if route.Env != "test" || route.BrokerID != "ctp_4900" || route.AccountID != "300052141" || a.PermissionProfile != "test_day_relay.v1" || s == nil || s.Limits == nil || s.Static == nil || s.ConstraintSymbol != "rb2701" || s.Exchange != "SHFE" || s.Limits.CompletedAt != a.Market.ObservedAt || !equalDecimal(string(s.Limits.Lower), string(a.Market.LowerLimit)) || !equalDecimal(string(s.Limits.Upper), string(a.Market.UpperLimit)) || !equalDecimal(string(s.Static.PriceTick), string(a.Market.PriceTick)) {
+				return queryPublishProof{}, ErrQueryPublishGate
+			}
+			maxAge = 300 * time.Second
+		}
+		if err != nil || observed.After(now.Add(2*time.Second)) || !now.Before(observed.Add(maxAge)) {
 			return queryPublishProof{}, ErrQueryPublishGate
 		}
-		if observed.Add(5 * time.Second).Before(expires) {
-			expires = observed.Add(5 * time.Second)
+		if observed.Add(maxAge).Before(expires) {
+			expires = observed.Add(maxAge)
 		}
 	}
 	if assessment := h.Assessment; assessment != nil {

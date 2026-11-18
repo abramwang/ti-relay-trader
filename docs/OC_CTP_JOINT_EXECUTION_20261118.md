@@ -6,6 +6,27 @@
 
 ## 11月18日当日授权与扩展安排
 
+### 14:43 真实登录、单笔报单及同单撤单链路已完成
+
+session=`ctpproc-cac1855c2c51ccbad63ea1ffde3b5b92`，代次1/TradingDay20261118，原路由/epoch不变。第二笔旧单的失败回执`1794983425909-0`明确TEST rb2701限价5218–5653、未调用ReqOrderInsert；Redis确认ACK，原文已持久收件。没有重发前两单、清理责任或再次确认结算。
+
+新会话两查询command16/17各发送一次；订单标准投影仍failed但完整原生快照ready，持仓completed。随后Relay使用显式`price_source=oc_test_native_lower_limit.v1`：只限东吴TEST账户300052141、day profile、rb2701买开1手且价格精确等于柜台下限。无买一证据时省略best_bid，不编造价格；Meridian仍提供证券主数据映射，不把独立TEST行情写成Meridian实盘价格。原生上下限/采集时刻/tick必须匹配当前会话心跳，参考采样不超过300秒、新鲜心跳5秒；OC每笔调用SDK前重新查询和检查，不因本地参考采样放宽其动态门禁。下限买入仍可能成交，并不保证一定可撤。
+
+| 事实 | 实际证据 |
+| --- | --- |
+| 新报单 | command18，`relay-ctp-day-20261118-03-1794984114779304590`，发布entry `1794984114826-0`，14:41:54.787，rb2701/SHFE买开投机1手5218 |
+| 已报可撤 | `working`原生采集14:41:55.366，event entry `1794984118516-0` |
+| 柜台身份 | OrderRef=`000000000008`，OrderSysID=`39429`，FrontID=5，SessionID=1208356524，报单SDK request_id=9 |
+| 撤单 | command19，`cancel-relay-ctp-day-20261118-03-1794984114779304590`，entry `1794984121322-0`，14:42:01.283，仅指向该原单 |
+| 已撤终态 | 原生采集14:42:01.818，event entry `1794984125094-0`，`cancelled`/原生OrderStatus=5，成交0；14:42:05完成持久收件 |
+| OC组 | 14:42:15查询/交易两组pending=0、lag=0，event总2条，无fill，dlq=0 |
+
+命令/报价依据/心跳/working/cancelled/收件位点在`outputs/recovery/ctp_dongwu_scheduled_20261118/day-trade-03/`；`result.json`记录最终身份。两事件严格解析通过、原文及摘要进独立TEST PG。event receiver最终owner=`7eeefc4da5972f754c0049c23710927bddee5e9bfcad95c61fa2631dcac8e307`、cursor=`1794984125094-0`；reply显式续收后owner=`d829f99bb6ce6f2048585b21969875773f64e14ba212d4617cc0216baae30af4`、cursor=`1794984122039-0`，累计14条原始reply，见`receive-20261118T064250.534982059Z.jsonl`。两接收进程均已退出，不伪造delivered以清理审计pending。
+
+已通知OC按原命令及39429核对本机SDK回调与券商测评记录，未声称Relay已独立查验OC完整审计链或取得券商最终签认。成功范围是实际登录状态、Relay登记/Redis/OC柜台报撤/真实回报及持久收件，不表示外部订单关联、资金BizType、全量账本、生产期货权限或所有API/终端交易已通过。
+
+代码验证：全Go测试、专项vet、临时PG/race覆盖逐单持久预算/重放/具体父单撤单，新增下限价来源匹配、无伪造bid、旧模式/生产拒绝、过期/不匹配证据拒绝。无数据库结构迁移或9092重启。后文未完成状态均为历史；本轮不再为凑次数发单。
+
 ### 14:27 旧命令未报柜台已核对，新命令遇柜台限价差异后待核实
 
 OC提供新session `ctpproc-eb6393fdb05193a1e805b5495260cee2`、代次1/20261118，原路由/epoch不变，结算仅复核。Relay独立读到旧单失败回执`1794982934537-0`：`ORDER_SUBMIT_REJECTED`，`failure_stage=before_order_dispatch`、`sdk_order_insert_calls=0`，原命令摘要一致；cmd.trade pending=0/lag=0。该事实为OC公开的处置回执及用户转交确认，未冒充Relay独立SPI取证；旧单不再重发，也不伪造cancelled。

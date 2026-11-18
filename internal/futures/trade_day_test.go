@@ -6,6 +6,53 @@ import (
 	"time"
 )
 
+func TestDayNativeLowerLimitPreparation(t *testing.T) {
+	v, _, target, a := assessmentFixture(t)
+	v.Scope = map[string]string{"env": "test", "broker_id": "ctp_4900", "gateway_id": "day-test", "account_id": "300052141", "native_broker_id": "4900", "investor_id": "300052141", "user_id": "300052141"}
+	v.Raw = string(editBody(t, []byte(v.Raw), func(m map[string]any) {
+		p := m["payload"].(map[string]any)
+		p["account_id"], p["symbol"], p["limit_price"] = "300052141", "rb2701", "5218"
+	}))
+	c, err := DecodeCommand([]byte(v.Raw), v.scope(), "cmd.trade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := registrationEvidence(t, v)
+	b := e.Mappings[c.Orders[0].GatewayOrderID]
+	a.PermissionProfile, a.CommandSHA256 = "test_day_relay.v1", commandDigest([]byte(v.Raw))
+	a.Market.SecurityID, a.Market.SourceInstrumentID, a.Market.ExchangeID = b.SecurityID, b.SourceInstrumentID, b.ExchangeID
+	a.Market.PublicationSnapshotID, a.Market.LogicalTableChecksum = b.PublicationSnapshotID, b.LogicalTableChecksum
+	a.Market.PriceSource, a.Market.BestBid = "oc_test_native_lower_limit.v1", ""
+	a.Market.PriceTick, a.Market.LowerLimit, a.Market.UpperLimit = "1", "5218", "5653"
+	r := CommandRegistration{Scope: v.scope(), Original: c, Evidence: e}
+	if err := validateTestTrade(r, target, a); err != nil {
+		t.Fatal(err)
+	}
+	binary, _ := json.Marshal(a)
+	if _, err := DecodeTestTradeApproval(binary); err != nil {
+		t.Fatal(err)
+	}
+	a.Market.BestBid = "5500"
+	if validateTestTrade(r, target, a) == nil {
+		t.Fatal("native lower mode invented bid")
+	}
+	a.Market.BestBid = ""
+	a.Market.LowerLimit = "5217"
+	if validateTestTrade(r, target, a) == nil {
+		t.Fatal("not at lower limit")
+	}
+	a.Market.LowerLimit = "5218"
+	a.PermissionProfile = ""
+	if validateTestTrade(r, target, a) == nil {
+		t.Fatal("legacy mode accepted")
+	}
+	a.PermissionProfile = "test_day_relay.v1"
+	r.Scope.Route.Env = "prod"
+	if validateTestTrade(r, target, a) == nil {
+		t.Fatal("production accepted")
+	}
+}
+
 func TestDayNativeSnapshotAndTradeProof(t *testing.T) {
 	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
 	row, scope, target, a := freshOCTradeHeartbeat(t, now, false)
@@ -54,6 +101,38 @@ func TestDayNativeSnapshotAndTradeProof(t *testing.T) {
 	if _, err := DecodeHeartbeat(changed.Raw, scope.Route); err == nil {
 		t.Fatal("contradictory native snapshot")
 	}
+	t.Run("native TEST lower limit evidence", func(t *testing.T) {
+		native := row
+		native.Raw = editBody(t, row.Raw, func(m map[string]any) {
+			v := m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)
+			v["native_depth_request_id"] = 7
+			v["native_limits"] = map[string]any{"lower_limit": "5218", "upper_limit": "5653", "started_at": now.Add(-61 * time.Second).Format(time.RFC3339Nano), "completed_at": now.Add(-60 * time.Second).Format(time.RFC3339Nano)}
+		})
+		h, err := DecodeHeartbeat(native.Raw, scope.Route)
+		if err != nil {
+			t.Fatal(err)
+		}
+		na := a
+		market := *a.Market
+		na.Market = &market
+		market.PriceSource = "oc_test_native_lower_limit.v1"
+		market.BestBid = ""
+		market.LowerLimit, market.UpperLimit = "5218", "5653"
+		market.ObservedAt = h.Assessment.Limits.CompletedAt
+		market.PriceTick = h.Assessment.Static.PriceTick
+		if _, err := testTradeHeartbeatProof(native, scope.Route, target, na, now); err != nil {
+			t.Fatal(err)
+		}
+		market.LowerLimit = "5219"
+		if _, err := testTradeHeartbeatProof(native, scope.Route, target, na, now); err == nil {
+			t.Fatal("mismatched native limit accepted")
+		}
+		market.LowerLimit = "5218"
+		market.ObservedAt = now.Add(-301 * time.Second).Format(time.RFC3339Nano)
+		if _, err := testTradeHeartbeatProof(native, scope.Route, target, na, now); err == nil {
+			t.Fatal("old native observation accepted")
+		}
+	})
 }
 
 func TestDayMultipleOrdersAndOwnCancelPostgres(t *testing.T) {

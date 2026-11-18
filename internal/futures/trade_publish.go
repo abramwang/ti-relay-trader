@@ -25,6 +25,7 @@ type TestTradeApproval struct {
 }
 
 type TestTradeMarket struct {
+	PriceSource           string `json:"price_source,omitempty"`
 	SecurityID            string `json:"security_id"`
 	SourceInstrumentID    string `json:"source_instrument_id"`
 	ExchangeID            string `json:"exchange_id"`
@@ -34,7 +35,7 @@ type TestTradeMarket struct {
 	LogicalTableChecksum  string `json:"logical_table_checksum"`
 	Stale                 bool   `json:"stale"`
 	PriceTick             Price  `json:"price_tick"`
-	BestBid               Price  `json:"best_bid"`
+	BestBid               Price  `json:"best_bid,omitempty"`
 	LowerLimit            Price  `json:"lower_limit"`
 	UpperLimit            Price  `json:"upper_limit"`
 }
@@ -52,7 +53,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 		return a, err
 	}
 	if !literal(fields["market"], "null") {
-		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "best_bid", "lower_limit", "upper_limit"}, nil)
+		market, err := shape(fields["market"], []string{"security_id", "source_instrument_id", "exchange_id", "trade_date", "observed_at", "publication_snapshot_id", "logical_table_checksum", "stale", "price_tick", "lower_limit", "upper_limit"}, []string{"price_source", "best_bid"})
 		if err != nil {
 			return a, err
 		}
@@ -115,6 +116,18 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 		return ErrStreamIdentity
 	}
 	values := []Price{o.LimitPrice, m.PriceTick, m.BestBid, m.LowerLimit, m.UpperLimit}
+	nativeLower := m.PriceSource == "oc_test_native_lower_limit.v1"
+	if m.PriceSource != "" && !nativeLower {
+		return ErrStreamIdentity
+	}
+	if nativeLower {
+		if a.PermissionProfile != "test_day_relay.v1" || o.Symbol != "rb2701" || m.SourceInstrumentID != "rb2701" || m.BestBid != "" {
+			return ErrStreamIdentity
+		}
+		// No bid is implied: this TEST-only order explicitly uses the lower
+		// exchange limit and remains exposed to possible execution there.
+		values[2] = m.LowerLimit
+	}
 	rats := make([]*big.Rat, len(values))
 	for i, p := range values {
 		var checked Price
@@ -131,6 +144,12 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	price, tick, bid, low, high := rats[0], rats[1], rats[2], rats[3], rats[4]
 	if low.Cmp(high) >= 0 || bid.Cmp(low) < 0 || bid.Cmp(high) > 0 || price.Cmp(low) < 0 || price.Cmp(high) > 0 || !new(big.Rat).Quo(price, tick).IsInt() {
 		return ErrStreamIdentity
+	}
+	if nativeLower {
+		if price.Cmp(low) != 0 {
+			return ErrStreamIdentity
+		}
+		return nil
 	}
 	// A resting-price preference is not a guarantee against execution.
 	ceiling := new(big.Rat).Sub(bid, new(big.Rat).Mul(tick, big.NewRat(10, 1)))
