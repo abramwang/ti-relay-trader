@@ -1,0 +1,34 @@
+[HANDLER_OUTPUT] 
+Test project /tmp/ctp-settlement-tests-M71SId
+
+    Start 20: ctp_resident_execution_runtime_test
+1/4 Test #20: ctp_resident_execution_runtime_test ...   Passed    8.26 sec
+    Start 21: ctp_resident_blocked_runtime_test
+2/4 Test #21: ctp_resident_blocked_runtime_test .....Child aborted***Exception:   1.28 sec
+{"connection_generation":0,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1119 19:31:22.970566 434793 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:31:22.970583 434793 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:31:22.970738 434793 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","state_text":"running","stream_id":"106-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","runtime_blocked_reason":"assessment_unexpected_pending_or_wrong_delivery","state_text":"recovery_blocked","stream_id":"112-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-27d5b694c1ea01b15b0bc1dae15f4104","runtime_blocked_reason":"assessment_unexpected_pending_or_wrong_delivery","state_text":"stopping","stream_id":"113-0","trade_date":"20261117"}
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  blocked executor retried SDK
+
+    Start 41: ctp_command_journal_test
+3/4 Test #41: ctp_command_journal_test ..............   Passed    0.45 sec
+    Start 43: ctp_command_recovery_test
+4/4 Test #43: ctp_command_recovery_test .............   Passed    0.76 sec
+
+75% tests passed, 1 tests failed out of 4
+
+Total Test time (real) =  10.75 sec
+
+The following tests FAILED:
+	 21 - ctp_resident_blocked_runtime_test (Child aborted)
+[ERROR_MESSAGE] 
+Errors while running CTest
+

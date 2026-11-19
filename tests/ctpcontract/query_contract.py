@@ -74,7 +74,7 @@ def validate_fill_identity(row, scope_parts):
     version = "v2" if row["fill_id"].startswith("ctp-fill-v2-") else "v1"
     parts = scope_parts + [ids["trade_id"]]
     if version == "v2":
-        require(row["exchange"] == "SHFE", "fill identity v2 requires SHFE")
+        require(row["exchange"] in {"SHFE", "CFFEX"}, "fill identity v2 requires SHFE or CFFEX")
         parts += [ids["order_sys_id"], row["trade_side"]]
     require(row["fill_id"] == f"ctp-fill-{version}-" + identity("fill", parts, version), "fill identity mismatch")
     return version

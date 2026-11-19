@@ -1,0 +1,19 @@
+[HANDLER_OUTPUT] 
+Test project /tmp/ctp-settlement-tests-M71SId
+
+    Start  2: ctp_fill_identity_v2_test
+1/6 Test  #2: ctp_fill_identity_v2_test ........   Passed    0.01 sec
+    Start 42: ctp_f0_trade_projection_test
+2/6 Test #42: ctp_f0_trade_projection_test .....   Passed    0.02 sec
+    Start 43: ctp_identity_store_test
+3/6 Test #43: ctp_identity_store_test ..........   Passed    0.33 sec
+    Start 45: ctp_f0_command_test
+4/6 Test #45: ctp_f0_command_test ..............   Passed    0.06 sec
+    Start 46: ctp_f0_intent_test
+5/6 Test #46: ctp_f0_intent_test ...............   Passed    0.02 sec
+    Start 48: ctp_f0_codec_test
+6/6 Test #48: ctp_f0_codec_test ................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =   0.45 sec

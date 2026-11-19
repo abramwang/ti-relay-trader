@@ -1,0 +1,45 @@
+[HANDLER_OUTPUT] 
+Test project /tmp/ctp-settlement-tests-M71SId
+
+      Start  2: ctp_fill_identity_v2_test
+ 1/19 Test  #2: ctp_fill_identity_v2_test ............   Passed    0.01 sec
+      Start 11: ctp_cffex_facts_runtime_test
+ 2/19 Test #11: ctp_cffex_facts_runtime_test .........   Passed    3.12 sec
+      Start 16: ctp_relay_forwarding_runtime_test
+ 3/19 Test #16: ctp_relay_forwarding_runtime_test ....   Passed   40.79 sec
+      Start 17: ctp_cffex_execution_runtime_test
+ 4/19 Test #17: ctp_cffex_execution_runtime_test .....   Passed   66.64 sec
+      Start 18: ctp_cffex_cancel_during_query_test
+ 5/19 Test #18: ctp_cffex_cancel_during_query_test ...   Passed    5.13 sec
+      Start 24: ctp_session_reconnect_test
+ 6/19 Test #24: ctp_session_reconnect_test ...........   Passed   66.93 sec
+      Start 28: ctp_cancel_during_preparation_test
+ 7/19 Test #28: ctp_cancel_during_preparation_test ...   Passed    5.16 sec
+      Start 32: ctp_query_execution_test
+ 8/19 Test #32: ctp_query_execution_test .............   Passed    0.56 sec
+      Start 33: ctp_native_facts_execution_test
+ 9/19 Test #33: ctp_native_facts_execution_test ......   Passed    1.16 sec
+      Start 34: ctp_native_trade_test
+10/19 Test #34: ctp_native_trade_test ................   Passed    0.05 sec
+      Start 36: ctp_trade_dispatch_test
+11/19 Test #36: ctp_trade_dispatch_test ..............   Passed    1.56 sec
+      Start 37: ctp_trade_events_test
+12/19 Test #37: ctp_trade_events_test ................   Passed    2.67 sec
+      Start 38: ctp_native_facts_test
+13/19 Test #38: ctp_native_facts_test ................   Passed    0.01 sec
+      Start 44: ctp_f0_trade_projection_test
+14/19 Test #44: ctp_f0_trade_projection_test .........   Passed    0.01 sec
+      Start 45: ctp_identity_store_test
+15/19 Test #45: ctp_identity_store_test ..............   Passed    0.32 sec
+      Start 46: ctp_identity_query_test
+16/19 Test #46: ctp_identity_query_test ..............   Passed    0.14 sec
+      Start 47: ctp_f0_command_test
+17/19 Test #47: ctp_f0_command_test ..................   Passed    0.07 sec
+      Start 50: ctp_f0_codec_test
+18/19 Test #50: ctp_f0_codec_test ....................   Passed    0.01 sec
+      Start 54: ctp_f0_query_projection_test
+19/19 Test #54: ctp_f0_query_projection_test .........   Passed    0.27 sec
+
+100% tests passed, 0 tests failed out of 19
+
+Total Test time (real) = 194.62 sec

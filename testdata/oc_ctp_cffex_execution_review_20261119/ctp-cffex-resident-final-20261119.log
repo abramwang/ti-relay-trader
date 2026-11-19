@@ -1,0 +1,15 @@
+[HANDLER_OUTPUT] 
+Test project /tmp/ctp-settlement-tests-M71SId
+
+    Start 20: ctp_resident_execution_runtime_test
+1/4 Test #20: ctp_resident_execution_runtime_test ...   Passed    8.61 sec
+    Start 21: ctp_resident_blocked_runtime_test
+2/4 Test #21: ctp_resident_blocked_runtime_test .....   Passed    5.36 sec
+    Start 41: ctp_command_journal_test
+3/4 Test #41: ctp_command_journal_test ..............   Passed    0.45 sec
+    Start 43: ctp_command_recovery_test
+4/4 Test #43: ctp_command_recovery_test .............   Passed    0.83 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =  15.25 sec

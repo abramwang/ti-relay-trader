@@ -1,0 +1,33 @@
+[HANDLER_OUTPUT] 
+Test project /tmp/ctp-settlement-tests-M71SId
+
+      Start 10: ctp_native_facts_runtime_test
+ 1/13 Test #10: ctp_native_facts_runtime_test ........   Passed   10.08 sec
+      Start 11: ctp_cffex_facts_runtime_test
+ 2/13 Test #11: ctp_cffex_facts_runtime_test .........   Passed    3.12 sec
+      Start 16: ctp_relay_forwarding_runtime_test
+ 3/13 Test #16: ctp_relay_forwarding_runtime_test ....   Passed   40.61 sec
+      Start 22: ctp_session_reconnect_test
+ 4/13 Test #22: ctp_session_reconnect_test ...........   Passed   66.07 sec
+      Start 26: ctp_cancel_during_preparation_test
+ 5/13 Test #26: ctp_cancel_during_preparation_test ...   Passed    5.17 sec
+      Start 30: ctp_query_execution_test
+ 6/13 Test #30: ctp_query_execution_test .............   Passed    0.60 sec
+      Start 31: ctp_native_facts_execution_test
+ 7/13 Test #31: ctp_native_facts_execution_test ......   Passed    1.22 sec
+      Start 32: ctp_native_trade_test
+ 8/13 Test #32: ctp_native_trade_test ................   Passed    0.03 sec
+      Start 33: ctp_native_depth_test
+ 9/13 Test #33: ctp_native_depth_test ................   Passed    0.02 sec
+      Start 34: ctp_trade_dispatch_test
+10/13 Test #34: ctp_trade_dispatch_test ..............   Passed    1.51 sec
+      Start 36: ctp_native_facts_test
+11/13 Test #36: ctp_native_facts_test ................   Passed    0.01 sec
+      Start 45: ctp_f0_command_test
+12/13 Test #45: ctp_f0_command_test ..................   Passed    0.07 sec
+      Start 46: ctp_f0_intent_test
+13/13 Test #46: ctp_f0_intent_test ...................   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 13
+
+Total Test time (real) = 128.53 sec

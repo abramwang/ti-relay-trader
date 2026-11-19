@@ -1,0 +1,12 @@
+{"connection_generation":0,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1119 19:12:37.679927 433078 ti_ctp_trader_client.cpp:490] [CTP submit] request_id=2 return_code=0
+I1119 19:12:37.679946 433078 ti_ctp_trader_client.cpp:490] [CTP submit] request_id=1 return_code=0
+I1119 19:12:37.680105 433078 ti_ctp_trader_client.cpp:490] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"running","stream_id":"103-0","trade_date":"20261117"}
+I1119 19:12:38.742002 433078 ti_ctp_trader_client.cpp:490] [CTP submit] request_id=4 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"running","stream_id":"105-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"running","stream_id":"107-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70","state_text":"stopping","stream_id":"108-0","trade_date":"20261117"}
+PASS: CFFEX explicit facts through execution runtime; exact target, audit, output and ACK; no trade/confirmation

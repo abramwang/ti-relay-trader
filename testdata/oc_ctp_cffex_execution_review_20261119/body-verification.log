@@ -1,0 +1,9 @@
+PASS no_queries inputs=18 outputs=33
+PASS external_projection_failed inputs=20 outputs=35
+PASS partial_query inputs=20 outputs=35
+PASS business_rejections inputs=19 outputs=34
+PASS partial_fill_then_cancel inputs=20 outputs=43
+PASS full_fill_before_order inputs=20 outputs=35
+PASS: independent original-body byte/SHA256, origin/request correlation, CFFEX v2 hash and query/event identity checks
+{"fill_identity_occurrences": 32, "input_deliveries": 117, "output_bodies": 215, "selected_bodies": 21, "synthetic_cancel_calls": 40, "synthetic_insert_calls": 48}
+Synthetic SDK/IO only; not Redis, broker, strict full-wire-schema or Relay independent acceptance.

@@ -13,6 +13,8 @@ bin/
 dist/
 build/
 *.log
+!testdata/oc_ctp_cffex_facts_review_20261119/*.log
+!testdata/oc_ctp_cffex_execution_review_20261119/*.log
 *.pid
 tmp/
 outputs/backups/

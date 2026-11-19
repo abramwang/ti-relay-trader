@@ -1,0 +1,149 @@
+{"connection_generation":0,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I1119 19:33:14.117690 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:33:14.117707 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:33:14.117868 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"113-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"129-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"133-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"137-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"141-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"145-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"149-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"153-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"157-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"161-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"165-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"running","stream_id":"169-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-7d1aaf1fade07d315e52739fba6736c1","state_text":"stopping","stream_id":"170-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1119 19:33:21.029259 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:33:21.029268 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:33:21.034556 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"113-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+I1119 19:33:22.459122 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=10 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"131-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"135-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"139-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"143-0","trade_date":"20261117"}
+I1119 19:33:24.402254 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=15 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"149-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"153-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"157-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"161-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"165-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"169-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"running","stream_id":"173-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-bce5eff868957fdac6d74d213787f81d","state_text":"stopping","stream_id":"174-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1119 19:33:28.882198 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:33:28.882207 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:33:28.882359 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"113-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"121-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"125-0","trade_date":"20261117"}
+I1119 19:33:30.296770 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=10 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"130-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"134-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"138-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"142-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"146-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"150-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"154-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"158-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"162-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"166-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"170-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"171-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"172-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"173-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"174-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"175-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"176-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"177-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"178-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"179-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"181-0","trade_date":"20261117"}
+I1119 19:33:46.864377 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=21 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"running","stream_id":"184-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-63fc048110ed60963c89d1e26e51c63a","state_text":"stopping","stream_id":"185-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1119 19:33:47.484834 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:33:47.484843 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:33:47.484998 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"109-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"115-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"119-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"127-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"131-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"135-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"139-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"143-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"147-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"151-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"155-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"159-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"163-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"167-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"running","stream_id":"171-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-eb6fe58f478234e55b599bdba32c00cc","state_text":"stopping","stream_id":"172-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1119 19:33:54.572635 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:33:54.572644 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:33:54.572798 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"114-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"119-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"123-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"128-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"132-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"137-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"141-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"146-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"150-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"155-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"159-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"164-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"168-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"173-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"177-0","trade_date":"20261117"}
+I1119 19:34:05.551038 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=20 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"180-0","trade_date":"20261117"}
+I1119 19:34:07.352552 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=21 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"running","stream_id":"183-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8ffd8b933895210642fd12ce4935e58c","state_text":"stopping","stream_id":"184-0","trade_date":"20261117"}
+{"connection_generation":0,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"broker_not_ready","stream_id":"101-0","trade_date":""}
+I1119 19:34:09.595301 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=2 return_code=0
+I1119 19:34:09.595311 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=1 return_code=0
+I1119 19:34:09.595470 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=3 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"102-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"110-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"117-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"124-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"131-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"138-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"145-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"152-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"159-0","trade_date":"20261117"}
+I1119 19:34:16.666194 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=12 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"164-0","trade_date":"20261117"}
+I1119 19:34:18.254272 434989 ti_ctp_trader_client.cpp:491] [CTP submit] request_id=13 return_code=0
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"running","stream_id":"167-0","trade_date":"20261117"}
+{"connection_generation":1,"counter_session_id":"ctpproc-8f436e8001a7399db25564bed331576f","state_text":"stopping","stream_id":"168-0","trade_date":"20261117"}
+PASS: Relay execution encodes B/S O/C/CT/CY unchanged; no quote/snapshot/age admission; ordinary failures continue; replay deduped

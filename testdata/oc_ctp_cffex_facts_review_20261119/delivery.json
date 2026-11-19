@@ -1,0 +1,31 @@
+{
+  "source_commit": "0298c94a07b952175b0cf3af8df19e77e7f3303d",
+  "synthetic_only": true,
+  "real_sdk_calls": false,
+  "real_redis": false,
+  "deployed": false,
+  "must_not_publish_to_business_streams": true,
+  "change": "Existing TEST instrument.constraints.query now accepts exact SHFE or CFFEX targets; action, result_type, fields and heartbeat are unchanged.",
+  "example": "native_facts_example.json contains one original encoded command and one reply from the execution runtime with injected test SDK/IO. Route strings and Stream IDs are fixture values, not live transport evidence. IF2701, its dates, prices, tick and multiplier are synthetic, not authoritative contract facts.",
+  "verification": {
+    "minimal_ubuntu_main_build": "passed",
+    "targeted_ctest_entries": 13,
+    "failed_entries": 0,
+    "elapsed_seconds": 128.53,
+    "native_facts_execution_cases": 22,
+    "sample_export": "passed in a separate offline run",
+    "not_run": ["full CTest", "sanitizer", "CentOS7", "online Redis", "broker", "Relay independent review"]
+  },
+  "retained": [
+    "Exact native symbol/exchange, source, connection generation, TradingDay and request IDs",
+    "Separate instrument/depth completion, errors, raw rows and collection times; not an atomic snapshot",
+    "Missing or invalid numeric facts remain null; no default market constraints",
+    "Original output, replay deduplication and durable ACK; no automatic trade or settlement confirmation"
+  ],
+  "remaining": [
+    "CFFEX order entry, cancel, order/fill projection and fill-v2 identity integration",
+    "Target-counter applicability of O/C/CT/CY without silently rewriting intent",
+    "A confirmed CFFEX-capable simulation environment and actual target contracts",
+    "Fixed-version acceptance across at least three complete CFFEX daytime sessions, next-day positions, settlement and recovery"
+  ]
+}

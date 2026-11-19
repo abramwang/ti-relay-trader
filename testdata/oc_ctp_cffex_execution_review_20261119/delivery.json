@@ -1,0 +1,43 @@
+{
+  "implementation_commits": ["7503f11", "bf9df173b598d2cdfe24f469790254b3213a3997"],
+  "test_fixture_commit": "d8482e8d9a2f6e48622de92edddf9425687c36d4",
+  "synthetic_only": true,
+  "real_sdk_calls": false,
+  "real_redis": false,
+  "deployed": false,
+  "must_not_publish_to_business_streams": true,
+  "scope": "Existing ordinary TEST execution entry: CFFEX limit/speculation submit, local cancel, order/fill events and complete query projection, persistent identity and original outbox replay. Existing SHFE support is retained.",
+  "protocol": {
+    "new_actions_or_fields": false,
+    "new_route_or_runtime_mode": false,
+    "storage_format_migration": false,
+    "fill_identity": "Existing ctp-fill-v2 algorithm with the actual CFFEX exchange; original SHFE vectors are unchanged.",
+    "offsets": "O/C/CT/CY encode to SDK Open/Close/CloseToday/CloseYesterday verbatim. This does not verify target-counter acceptance or business applicability. No silent CT/CY to C conversion.",
+    "shutdown": "On explicit ordinary executor shutdown, known filled/open orders remain in orders_requiring_review but do not alone cause exit 4. Execution uncertainty, unresolved commands and blocking callbacks retain failure behavior. Exit 0 is not a flat-position or business-reconciliation claim."
+  },
+  "verification": {
+    "minimal_ubuntu_main_build": "passed",
+    "distinct_passing_ctest_entries": 23,
+    "targeted": {"entries": 19, "seconds": 194.62, "log": "ctp-cffex-runtime-final-20261119.log"},
+    "resident_and_recovery": {"entries": 4, "seconds": 15.25, "log": "ctp-cffex-resident-final-20261119.log"},
+    "earlier_identity_step": "Six component tests passed before the identity commit; these overlap the final 19, not six extra distinct tests.",
+    "sample_export": "Separate run passed. Independent Python recomputation: 117 synthetic input deliveries, 215 original business output bodies, 21 selected bodies, 32 event/query fill-v2 identity occurrences; all byte counts, SHA256 and command correlations match. See body-verification.log. This is not strict full-wire-schema or Relay independent validation.",
+    "first_failures_retained": [
+      "ctp-cffex-runtime-first-20261119.log: partial fills exposed the historical assessment-only zero-exposure exit condition; fixed in ordinary execution without clearing review facts.",
+      "ctp-cffex-resident-first-20261119.log: old fixture injected a valid submit/cancel before its malformed query but expected zero total trade calls. Isolated the bad-query fixture; SDK/ACK blocking assertions remain strict."
+    ],
+    "not_run": ["full CTest", "sanitizer", "CentOS7", "live Redis", "broker", "Relay independent review"]
+  },
+  "evidence": {
+    "file": "execution_examples.json",
+    "runtime_scenarios": 6,
+    "contents": "Original encoded command inputs and business outputs, output byte counts/SHA256, selected heartbeat/rejection bodies, fake native submit/cancel terms and call counts.",
+    "limits": "Not a complete runtime audit or real transport capture. Stream IDs and routes are test IO values. Account-shaped labels, IF2701, dates, quantities and prices are synthetic, not authoritative contract facts or instructions. No credentials are included. Repeat message IDs across scenarios belong to isolated stores, not one command sequence."
+  },
+  "remaining": [
+    "CFFEX-capable simulation environment, native identities, target contracts and actual offset applicability",
+    "Fixed-version acceptance across at least three complete CFFEX daytime sessions with next-day positions, settlement and recovery; no night-session requirement",
+    "Unknown cash scope and minimal original external-failure facts without inventing fields or deleting rows",
+    "On-demand storage/identity retention, Redis reconnect, in-process TradingDay transition and production deployment entry"
+  ]
+}

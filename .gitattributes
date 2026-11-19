@@ -1,0 +1,3 @@
+# Preserve original OC review bytes and digests, including log whitespace.
+testdata/oc_ctp_cffex_execution_review_20261119/* -text -whitespace
+testdata/oc_ctp_cffex_facts_review_20261119/* -text -whitespace

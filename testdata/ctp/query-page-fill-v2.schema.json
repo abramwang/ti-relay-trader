@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:relay:ctp:query-page:draft:2:fill-identity-v2",
-  "title": "CTP draft.2 query page with SHFE fill identity v2; offline contract",
+  "title": "CTP draft.2 query page with SHFE/CFFEX fill identity v2; offline contract",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol", "message_type", "message_id", "origin_message_id", "produced_at", "routing", "action", "status", "code", "result_type", "payload", "adapter_context"],
@@ -191,7 +191,7 @@
     "fill": {
       "allOf": [{"$ref": "#/$defs/trade_row"}], "unevaluatedProperties": false,
       "if": {"properties": {"fill_id": {"pattern": "^ctp-fill-v2-"}}, "required": ["fill_id"]},
-      "then": {"properties": {"exchange": {"const": "SHFE"}}},
+      "then": {"properties": {"exchange": {"enum": ["SHFE", "CFFEX"]}}},
       "required": ["fill_id", "qty", "price", "matched_at", "fee", "fee_complete"],
       "properties": {
         "fill_id": {"type": "string", "pattern": "^ctp-fill-v[12]-[0-9a-f]{64}$(?![\\s\\S])"}, "qty": {"$ref": "#/$defs/lots"},

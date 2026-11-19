@@ -36,7 +36,9 @@ type ConstraintsTarget struct {
 	Exchange string `json:"exchange"`
 }
 
-func (t ConstraintsTarget) valid() bool { return native(t.Symbol, 80, false) && t.Exchange == "SHFE" }
+func (t ConstraintsTarget) valid() bool {
+	return native(t.Symbol, 80, false) && oneOf(t.Exchange, "SHFE", "CFFEX")
+}
 
 type IntentField struct {
 	Name  string `json:"name"`

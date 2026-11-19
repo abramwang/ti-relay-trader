@@ -56,7 +56,7 @@ class FillIdentityV2Test(unittest.TestCase):
             if change == "hash":
                 row["fill_id"] = "ctp-fill-v2-" + "0" * 64
             else:
-                row["exchange"] = "CFFEX"
+                row["exchange"] = "DCE"
                 self.set_id(row)
             self.page["payload"]["items"] = [row]
             with self.assertRaises((ValueError, ValidationError)):

@@ -78,7 +78,7 @@ def validate_command(body, *, routing, trading_day=None, max_children=100):
     for row in rows:
         require(row["account_id"] == payload["account_id"], "cross-account batch child")
         require(row["trade_date"] == trading_day, "new order TradingDay mismatch")
-        require(row["exchange"] == "SHFE", "first-phase exchange not supported")
+        require(row["exchange"] in {"SHFE", "CFFEX"}, "exchange not supported")
         canonical_price(row["limit_price"])
         for key, seen in (("gateway_order_id", gateway_ids), ("client_order_id", client_ids)):
             require(row[key] not in seen, f"duplicate batch {key}")

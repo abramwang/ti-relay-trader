@@ -1,0 +1,25 @@
+{
+  "depth_calls": 1,
+  "inputs": [
+    {
+      "body": "{\"action\":\"instrument.constraints.query\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"offline-cmd.query-103\",\"message_id\":\"offline-cmd.query-103\",\"message_type\":\"command\",\"payload\":{\"account_id\":\"300052141\",\"exchange\":\"CFFEX\",\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"symbol\":\"IF2701\"},\"protocol\":\"relay.stream.v1\",\"request_id\":\"offline-cmd.query-103\",\"sent_at\":\"2026-11-17T13:30:00+08:00\"}",
+      "entry_id": "104-0",
+      "group": "offline-group",
+      "stream": "relay:test:v1:ctp_4900:300052141:cmd.query"
+    }
+  ],
+  "instrument_calls": 1,
+  "outputs": [
+    {
+      "body": "{\"action\":\"instrument.constraints.query\",\"adapter_context\":{\"atomic_snapshot\":false,\"connection_generation\":1,\"numeric_source_binary64\":{\"AskPrice1\":\"0000000000000000\",\"BidPrice1\":\"0000000000000000\",\"LowerLimitPrice\":\"40a5e00000000000\",\"PriceTick\":\"3ff0000000000000\",\"UpperLimitPrice\":\"40a9000000000000\"},\"query_evidence\":{\"depth\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-19T19:12:39.756+08:00\",\"excluded_prefix_count\":1,\"is_last\":true,\"row_count\":1,\"sdk_request_id\":5,\"sdk_return_code\":0,\"started_at\":\"2026-11-19T19:12:39.742+08:00\",\"state\":\"completed\"},\"instrument\":{\"callback_error_id\":null,\"completed_at\":\"2026-11-19T19:12:38.737+08:00\",\"excluded_prefix_count\":1,\"is_last\":true,\"response_error_id\":null,\"row_count\":1,\"sdk_request_id\":4,\"sdk_return_code\":0,\"started_at\":\"2026-11-19T19:12:38.726+08:00\",\"state\":\"completed\"}}},\"chunk\":{\"index\":0,\"is_last\":true},\"code\":\"OK\",\"correlation_id\":\"fixture-correlation\",\"idempotency_key\":\"offline-cmd.query-103\",\"message_id\":\"ctp-query-v1-522d0aa6f1591b6f4ea3608cc4b0695bc083572f12d9ad55e4912f7a21616533\",\"message_type\":\"reply\",\"origin_message_id\":\"offline-cmd.query-103\",\"payload\":{\"account_id\":\"300052141\",\"counter_session_id\":\"ctpproc-ed3936db8d946c7cbf0c1a2c6e24ee70\",\"items\":[{\"dynamic\":{\"action_day\":null,\"ask_price1\":null,\"bid_price1\":null,\"broker_trade_date\":\"20261117\",\"captured_at\":\"2026-11-19T19:12:39.756+08:00\",\"lower_limit_price\":\"2800\",\"update_millisec\":0,\"update_time\":null,\"upper_limit_price\":\"3200\"},\"exchange\":\"CFFEX\",\"source\":\"ctp_trader_api\",\"source_environment\":\"test\",\"static\":{\"captured_at\":\"2026-11-19T19:12:38.737+08:00\",\"expire_date\":\"20270115\",\"inst_life_phase\":\"1\",\"is_trading\":1,\"max_limit_order_volume\":100,\"min_limit_order_volume\":1,\"open_date\":\"20260101\",\"price_tick\":\"1\",\"product_class\":\"1\",\"volume_multiple\":10},\"symbol\":\"IF2701\",\"trade_date\":\"20261117\",\"trade_date_source\":\"login_query_context\",\"unavailable_numeric_fields\":[\"BidPrice1\",\"AskPrice1\"]}],\"product_type\":\"futures\",\"schema_version\":\"ctp.f0.draft.2\",\"trade_date\":\"20261117\"},\"produced_at\":\"2026-11-19T19:12:39.759+08:00\",\"protocol\":\"relay.stream.v1\",\"request_id\":\"offline-cmd.query-103\",\"result_type\":\"instrument_constraints\",\"routing\":{\"account_id\":\"300052141\",\"broker_id\":\"ctp_4900\",\"env\":\"test\",\"gateway_id\":\"300052141\"},\"status\":\"completed\"}",
+      "body_bytes": 2295,
+      "body_sha256": "7c19c3fea4d7ae1cd315c0c2729b3ed56c3a53b0b184159e4b13232c367bed2c"
+    }
+  ],
+  "pending": 0,
+  "real_redis": false,
+  "real_sdk_calls": false,
+  "settlement_confirm_calls": 0,
+  "synthetic_only": true,
+  "trade_calls": 0
+}

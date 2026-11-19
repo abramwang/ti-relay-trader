@@ -114,7 +114,7 @@ func nativeIdentity(kind string, s TradeScope, exchange, id string) string {
 	return prefix + hex.EncodeToString(digest[:])
 }
 
-// v2 is limited to SHFE by decodeTrade. Inputs have already passed native
+// v2 is limited to SHFE/CFFEX by decodeTrade. Inputs have already passed native
 // normalization validation; framing never trims or rewrites source identifiers.
 func nativeFillIdentityV2(s TradeScope, exchange, tradeID, orderSysID, side string) string {
 	parts := []string{s.Route.Env, s.Route.BrokerID, s.Route.AccountID, s.Route.GatewayID, s.TradeDate, exchange, tradeID, orderSysID, side}
@@ -214,8 +214,8 @@ func decodeTrade(raw []byte, scope TradeScope, kind string) (rawObject, error) {
 		fillID := textField(obj, "fill_id")
 		expectedID := nativeIdentity("fill", scope, textField(obj, "exchange"), textField(ids, "trade_id"))
 		if fillIdentityVersion(fillID) == "v2" {
-			if textField(obj, "exchange") != "SHFE" {
-				return nil, fmt.Errorf("fill identity v2 requires SHFE")
+			if !oneOf(textField(obj, "exchange"), "SHFE", "CFFEX") {
+				return nil, fmt.Errorf("fill identity v2 requires SHFE or CFFEX")
 			}
 			expectedID = nativeFillIdentityV2(scope, textField(obj, "exchange"), textField(ids, "trade_id"), textField(ids, "order_sys_id"), textField(obj, "trade_side"))
 		}
