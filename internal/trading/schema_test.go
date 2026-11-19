@@ -29,6 +29,20 @@ func TestCatalogAdvertisesAssetReadinessErrors(t *testing.T) {
 	}
 }
 
+func TestCatalogAdvertisesFuturesCommandHistory(t *testing.T) {
+	catalog := Catalog()
+	foundCapability, foundRoute := false, false
+	for _, capability := range catalog.Capabilities {
+		foundCapability = foundCapability || capability == CapabilityFuturesCommandHistory
+	}
+	for _, route := range catalog.HTTPRoutes {
+		foundRoute = foundRoute || (route.Method == "GET" && route.Path == "/v1/futures/commands" && route.Response == "CommandHistoryPage")
+	}
+	if !foundCapability || !foundRoute {
+		t.Fatal("missing futures command history capability or route")
+	}
+}
+
 func TestSubmitOrderValidate(t *testing.T) {
 	req := SubmitOrderRequest{
 		AccountID:    "00030484",

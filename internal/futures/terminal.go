@@ -81,6 +81,8 @@ type TerminalQuery struct {
 	Code              string        `json:"code,omitempty"`
 	Message           string        `json:"message,omitempty"`
 	Reviewed          bool          `json:"reviewed"`
+	ResponseValidated bool          `json:"response_validated"`
+	ResponsePersisted bool          `json:"response_persisted"`
 	BusinessPublished bool          `json:"business_published"`
 	Assets            []AssetRow    `json:"assets,omitempty"`
 	Positions         []PositionRow `json:"positions,omitempty"`
@@ -380,19 +382,44 @@ func (r *TerminalReader) queries(ctx context.Context, a TerminalAccountConfig) (
 			result = append(result, view)
 			continue
 		}
+		stored, _, _, err := readReplyResult(ctx, tx, c.id, c.target)
+		if err != nil {
+			return nil, err
+		}
+		if stored != nil {
+			if stored.Action != c.command.Action {
+				return nil, ErrBatchIdentity
+			}
+			view.State, view.Code, view.Message, view.ProducedAt = stored.State, stored.Code, stored.Message, stored.ProducedAt
+			view.ResponseValidated, view.ResponsePersisted = stored.ResponseValidated, true
+			if stored.State == "ready" && stored.Snapshot != nil {
+				s := stored.Snapshot
+				view.State = "response_ready"
+				view.Assets, view.Positions, view.Orders, view.Fills = s.Assets, s.Positions, s.Orders, s.Fills
+				n := len(s.Assets) + len(s.Positions) + len(s.Orders) + len(s.Fills)
+				view.RowCount = &n
+			}
+			result = append(result, view)
+			continue
+		}
 		pages := [][]byte{}
-		rows, err := tx.QueryContext(ctx, `SELECT body,body_sha256,state FROM futures_stream_inbox WHERE stream_key=$1 AND convert_from(body,'UTF8')::jsonb->>'origin_message_id'=$2 ORDER BY receipt_id LIMIT 257`, queryReplyStream(c.scope.Route), c.command.MessageID)
+		rows, err := tx.QueryContext(ctx, `SELECT i.body,i.body_sha256,i.state,r.config_json FROM futures_stream_inbox i JOIN futures_stream_receivers r USING(stream_key) WHERE i.stream_key=$1 AND convert_from(i.body,'UTF8')::jsonb->>'origin_message_id'=$2 ORDER BY i.receipt_id LIMIT 257`, queryReplyStream(c.scope.Route), c.command.MessageID)
 		if err != nil {
 			return nil, err
 		}
 		count, total := 0, 0
 		for rows.Next() {
 			count++
-			var body, digest []byte
+			var body, digest, receiverJSON []byte
 			var disposition string
-			if err = rows.Scan(&body, &digest, &disposition); err != nil {
+			if err = rows.Scan(&body, &digest, &disposition, &receiverJSON); err != nil {
 				rows.Close()
 				return nil, err
+			}
+			var receiver StreamConfig
+			if json.Unmarshal(receiverJSON, &receiver) != nil || receiver.Scope != c.scope || receiver.Role != "reply" || receiver.SourceID != c.target.SourceID {
+				rows.Close()
+				return nil, ErrStreamIdentity
 			}
 			total += len(body)
 			if count > 256 || total > 8<<20 {
@@ -424,6 +451,7 @@ func (r *TerminalReader) queries(ctx context.Context, a TerminalAccountConfig) (
 		}
 		if err := r.renderObservation(&view, c, pages); err != nil {
 			view.State = "invalid"
+			view.ResponseValidated = false
 			view.Message = err.Error()
 			view.RowCount = nil
 			view.Assets = nil
@@ -453,6 +481,18 @@ func (r *TerminalReader) renderObservation(v *TerminalQuery, c terminalCommand, 
 			return err
 		}
 		v.Reviewed = true
+	} else if c.command.Action == "account.positions.query" && len(pages) > 0 {
+		// Display a complete, correlated response without claiming independent
+		// SDK audit or publishing a business snapshot. Session/route/day come
+		// from our persisted command, never from the returned rows.
+		if c.publicationState != "published" {
+			return ErrBatchIdentity
+		}
+		var err error
+		batch, err = terminalPositionBatch(c, pages[0])
+		if err != nil {
+			return err
+		}
 	}
 	for _, body := range pages {
 		obj, err := parseReply(body)
@@ -512,5 +552,34 @@ func (r *TerminalReader) renderObservation(v *TerminalQuery, c terminalCommand, 
 	v.Fills = candidate.Fills
 	n := len(v.Assets) + len(v.Positions) + len(v.Orders) + len(v.Fills)
 	v.RowCount = &n
+	if !reviewed {
+		v.State, v.ResponseValidated = "response_ready", true
+	}
 	return nil
+}
+
+func terminalPositionBatch(c terminalCommand, raw []byte) (*QueryBatch, error) {
+	obj, err := parseReply(raw)
+	if err != nil {
+		return nil, err
+	}
+	var adapter, evidence rawObject
+	if json.Unmarshal(obj["adapter_context"], &adapter) != nil || json.Unmarshal(adapter["query_evidence"], &evidence) != nil {
+		return nil, ErrBatchIdentity
+	}
+	requestID, err := nullableInteger(evidence["sdk_request_id"])
+	if err != nil {
+		return nil, err
+	}
+	qc := QueryContext{
+		Route: c.scope.Route, Action: c.command.Action, OriginMessageID: c.command.MessageID,
+		CounterSessionID: c.target.CounterSessionID, ConnectionGeneration: &c.target.ConnectionGeneration,
+		TradeDate: c.target.TradeDate, NativeBrokerID: c.scope.NativeBrokerID,
+		NativeInvestorID: c.scope.InvestorID, NativeUserID: c.scope.UserID,
+		Command: &QueryCommandBinding{c.id, c.command.RequestID, c.command.CorrelationID, c.command.IdempotencyKey},
+		Ticket:  textField(evidence, "ticket"), SDKRequestID: requestID,
+	}
+	// Ticket/SDK ID here only enforce consistency across response pages. This
+	// ephemeral batch must never be registered as independently reviewed input.
+	return NewQueryBatch(qc, 0, time.Second, DefaultBatchLimits())
 }

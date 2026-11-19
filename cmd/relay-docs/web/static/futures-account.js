@@ -5,16 +5,17 @@
   if (!picker) return;
   let accounts = [], selected = "", action = "account.positions.query", page = 0, sort = 0, ascending = true, loading = false, loadError = "";
   const size = 20;
-  const names = {"account.asset.query":"资金", "account.positions.query":"持仓", "order.list.query":"委托", "fill.list.query":"成交"};
-  const states = {not_queried:"尚未查询", publication_unknown:"查询发送结果未知", not_published:"查询未发出", awaiting_reply:"等待回复", pending_review:"回复已收 · 待独立核验", collecting:"分页未完整", failed:"查询失败", invalid:"证据校验失败", ready:"历史查询已核验"};
+  const names = {"account.asset.query":"资金", "account.positions.query":"持仓", "order.list.query":"委托", "fill.list.query":"成交", commands:"报撤命令"};
+  const states = {not_queried:"尚未查询", publication_unknown:"查询发送结果未知", not_published:"查询未发出", awaiting_reply:"等待回复", pending_review:"回复已收 · 待独立核验", collecting:"分页未完整", failed:"查询失败", invalid:"证据校验失败", ready:"历史查询已核验", response_ready:"柜台查询快照 · 回包校验通过"};
   const connections = {read_only:"柜台在线 · 只读", assessment:"柜台测评中", execution:"柜台在线 · Relay 授权", stopped:"OC 已停止", stale:"心跳已过期", unavailable:"连接状态不可用", not_ready:"柜台未就绪", waiting:"等待交易窗口", expired:"授权窗口已结束"};
   const text = (v) => v === null || v === undefined || v === "" ? "--" : String(v);
   const date = (v) => !v || !Number.isFinite(Date.parse(v)) ? "--" : new Date(v).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai", hour12:false});
   const escape = (v) => text(v).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v) => v === null || v === undefined || v === "" ? "--" : Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN", {maximumFractionDigits:2}) : text(v);
   const cell = (raw, display = text(raw)) => ({raw, display});
+  const displayable = (q) => Boolean(q && (q.reviewed && q.state === "ready" || q.local_event_view && action === "order.list.query" || (q.response_persisted || action === "account.positions.query") && q.response_validated && q.state === "response_ready"));
   function tableData(q) {
-    if (!q || !q.reviewed || q.state !== "ready") return {columns:[], rows:[]};
+    if (!displayable(q)) return {columns:[], rows:[]};
     if (action === "account.positions.query") return {
       columns:["合约", "交易所", "多空", "今昨仓", "投保", "投资单元", "持仓（手）", "今仓", "昨仓", "多头冻结", "空头冻结", "开仓成本", "持仓成本", "占用保证金", "采样时间（东八区）"],
       rows:(q.positions || []).map((r) => { const f=r.futures; return [cell(r.symbol),cell(r.exchange),cell(f.posi_direction, {"2":"多头","3":"空头"}[f.posi_direction] || f.posi_direction),cell(f.position_date,{"1":"今仓","2":"昨仓"}[f.position_date] || f.position_date),cell(f.hedge_flag),cell(f.invest_unit_id),...["position","today_position","yd_position","long_frozen","short_frozen","open_cost","position_cost","use_margin"].map(k=>cell(f[k],number(f[k]))),cell(r.captured_at,date(r.captured_at))]; })
@@ -28,9 +29,10 @@
   }
   function orderObservation(a, q) {
     if(action!=="order.list.query" || !a || !Array.isArray(a.local_orders) || !a.local_orders.length)return q;
-    const merged=new Map((q && q.reviewed && q.state==="ready"?q.orders||[]:[]).map(r=>[r.gateway_order_id,r]));
+    const complete=q && (q.reviewed && q.state==="ready" || q.response_persisted && q.response_validated && q.state==="response_ready");
+    const merged=new Map((complete?q.orders||[]:[]).map(r=>[r.gateway_order_id,r]));
     for(const row of a.local_orders)merged.set(row.gateway_order_id,row);
-    return {...q,reviewed:true,state:"ready",orders:[...merged.values()],local_event_view:true};
+    return {...q,orders:[...merged.values()],local_event_view:true};
   }
   function render() {
     const a=accounts.find(a=>a.account_id===selected);
@@ -48,6 +50,10 @@
       b.setAttribute("aria-selected", String(b.dataset.futuresQuery===action));
       b.textContent=names[b.dataset.futuresQuery]+(b.dataset.futuresQuery==="order.list.query" && a?.local_orders?.length?` · ${a.local_orders.length}`:query && query.row_count!==null && query.row_count!==undefined?` · ${query.row_count}`:query && query.state==="failed"?" · 失败":"");
     }
+    const commandView=action==="commands";
+    for(const id of ["futuresQueryStatus","futuresQueryWrap","futuresQueryPager","futuresQuerySource"])el(id).hidden=commandView;
+    window.RelayFuturesCommandHistory?.update(a,commandView);
+    if(commandView)return;
     const status=el("futuresQueryStatus");
     status.dataset.failed=String(Boolean(loadError || a && a.ledger_error || q && ["failed","invalid"].includes(q.state)));
     status.textContent=loadError || a && a.ledger_error || (q?[states[q.state]||q.state,q.code!=="OK"?q.code:"",q.message,q.produced_at?`回报 ${date(q.produced_at)}`:"",q.trade_date?`交易日 ${q.trade_date}`:"",q.message_id && (!hb || hb.counter_session_id!==q.counter_session_id || !["read_only","assessment","execution"].includes(a.connection_state))?"历史会话采样":""].filter(Boolean).join(" · "):"尚无查询结果");
@@ -62,14 +68,14 @@
     data.rows.sort((a,b)=>{const x=a[sort]?.raw,y=b[sort]?.raw; const numeric=/^-?\d+(\.\d+)?$/;const delta=numeric.test(text(x)) && numeric.test(text(y))?Number(x)-Number(y):text(x).localeCompare(text(y),"zh-CN",{numeric:true});return ascending?delta:-delta;});
     const pages=Math.max(1,Math.ceil(data.rows.length/size));page=Math.min(page,pages-1);
     el("futuresQueryTable").querySelector("thead").innerHTML=`<tr>${data.columns.map((c,i)=>`<th><button type="button" data-sort="${i}" title="排序">${escape(c)}${i===sort?(ascending?" ↑":" ↓"):""}</button></th>`).join("")}</tr>`;
-    const empty=q && q.reviewed && q.state==="ready"?"完整查询：0 条记录":"暂无可展示的有效数据";
+    const empty=displayable(q)?"完整查询：0 条记录":q && q.state==="failed"?"持仓或查询读取失败，不代表空仓":q && q.state==="collecting"?"查询尚未完整，不代表空仓":"尚无完整可展示的查询快照，不代表空仓";
     const visible=data.rows.slice(page*size,(page+1)*size);
     el("futuresQueryTable").querySelector("tbody").innerHTML=visible.map((row,i)=>`<tr>${row.map((c,j)=>row.cancelTarget && j===row.length-1?`<td><button type="button" data-futures-cancel="${i}" ${window.RelayFuturesExecution?.canCancel(row.cancelTarget)?"":"disabled"} title="撤销本地 TEST 委托">撤单</button></td>`:`<td title="${escape(c.raw)}">${escape(c.display)}</td>`).join("")}</tr>`).join("")||`<tr><td class="empty-state" colspan="${data.columns.length||1}">${empty}</td></tr>`;
     for(const button of el("futuresQueryTable").querySelectorAll("button[data-futures-cancel]"))button.addEventListener("click",()=>window.RelayFuturesExecution?.cancel(visible[Number(button.dataset.futuresCancel)].cancelTarget));
     el("futuresQueryCount").textContent=data.rows.length?`${data.rows.length} 条 · 每页 ${size} 条`:q && q.row_count===0?"0 条":"--";
     el("futuresQueryPage").textContent=`${page+1} / ${pages}`;
     el("futuresQueryPrev").disabled=page===0;el("futuresQueryNext").disabled=page+1>=pages;
-    el("futuresQueryAudit").textContent=q?JSON.stringify({message_id:q.message_id,gateway_id:q.gateway_id,counter_session_id:q.counter_session_id,requested_at:q.requested_at,produced_at:q.produced_at,reviewed:q.reviewed,business_published:q.business_published},null,2):"--";
+    el("futuresQueryAudit").textContent=q?JSON.stringify({message_id:q.message_id,gateway_id:q.gateway_id,counter_session_id:q.counter_session_id,requested_at:q.requested_at,produced_at:q.produced_at,reviewed:q.reviewed,response_validated:q.response_validated,response_persisted:q.response_persisted,business_published:q.business_published},null,2):"--";
   }
   async function load() {
     if(loading)return;loading=true;el("futuresAccountRefresh").disabled=true;
@@ -91,7 +97,7 @@
   el("futuresQueryTable").addEventListener("click",e=>{const b=e.target.closest("button[data-sort]");if(!b)return;const next=Number(b.dataset.sort);ascending=sort===next?!ascending:true;sort=next;render();});
   el("futuresQueryPrev").addEventListener("click",()=>{page=Math.max(0,page-1);render();});
   el("futuresQueryNext").addEventListener("click",()=>{page++;render();});
-  el("futuresAccountRefresh").addEventListener("click",load);
+  el("futuresAccountRefresh").addEventListener("click",()=>{load();if(action==="commands")window.RelayFuturesCommandHistory?.refresh();});
   window.addEventListener("relay-futures-refresh",load);
   load();
   window.setInterval(()=>{if(!document.hidden && el("terminalShell").classList.contains("market-futures"))load();},5000);

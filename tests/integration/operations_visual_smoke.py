@@ -116,6 +116,10 @@ def main() -> int:
             assert "期货 · CTP" in row.inner_text()
             assert account["account_id"] in row.inner_text()
             assert "终端报撤：未开放" in row.inner_text()
+            if account.get("connection_state") == "execution":
+                assert "当前心跳 · Relay执行模式" in row.inner_text()
+                assert "已连接 · 查询就绪" in row.inner_text()
+                assert "历史OC" not in row.inner_text()
             assert account["account_id"] not in page.locator("#credentialAccount").inner_text()
         browser.close()
 

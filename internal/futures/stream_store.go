@@ -53,12 +53,13 @@ type StreamInput struct {
 	Raw     []byte
 }
 type StreamRecord struct {
-	ID            int64
-	EntryID       string
-	Raw           []byte
-	State, Reason string
-	EventID       sql.NullInt64
-	BatchID       sql.NullString
+	ID             int64
+	EntryID        string
+	Raw            []byte
+	State, Reason  string
+	EventID        sql.NullInt64
+	BatchID        sql.NullString
+	ReplyCommandID sql.NullInt64
 }
 type StreamCapture struct {
 	ReceiptIDs []int64
@@ -168,6 +169,10 @@ func (s *StreamStore) open(ctx context.Context, c StreamConfig, expected *Heartb
 }
 
 func (s *StreamStore) openBound(ctx context.Context, c StreamConfig, expected *HeartbeatCheckpoint, target *TestQueryTarget) (StreamHandle, error) {
+	return s.openBoundManaged(ctx, c, expected, target, nil)
+}
+
+func (s *StreamStore) openBoundManaged(ctx context.Context, c StreamConfig, expected *HeartbeatCheckpoint, target *TestQueryTarget, service *captureServiceOwner) (StreamHandle, error) {
 	key, err := c.stream()
 	if err != nil {
 		return StreamHandle{}, err
@@ -228,6 +233,14 @@ func (s *StreamStore) openBound(ctx context.Context, c StreamConfig, expected *H
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_receivers SET owner_id=$2 WHERE stream_key=$1`, key, h.owner); err != nil {
 		return StreamHandle{}, err
+	}
+	if service != nil {
+		if expected == nil || target == nil {
+			return StreamHandle{}, ErrStreamIdentity
+		}
+		if err := service.advance(ctx, tx, c.Role, expected.Owner, h.owner); err != nil {
+			return StreamHandle{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return StreamHandle{}, err
@@ -360,7 +373,7 @@ func (s *StreamStore) Capture(ctx context.Context, h StreamHandle, expected stri
 func readStreamRecord(ctx context.Context, tx *sql.Tx, h StreamHandle, id int64) (StreamRecord, error) {
 	var r StreamRecord
 	var digest []byte
-	err := tx.QueryRowContext(ctx, `SELECT receipt_id,entry_id,body,body_sha256,state,reason,event_id,batch_id FROM futures_stream_inbox WHERE stream_key=$1 AND receipt_id=$2 FOR UPDATE`, h.stream, id).Scan(&r.ID, &r.EntryID, &r.Raw, &digest, &r.State, &r.Reason, &r.EventID, &r.BatchID)
+	err := tx.QueryRowContext(ctx, `SELECT receipt_id,entry_id,body,body_sha256,state,reason,event_id,batch_id,reply_command_id FROM futures_stream_inbox WHERE stream_key=$1 AND receipt_id=$2 FOR UPDATE`, h.stream, id).Scan(&r.ID, &r.EntryID, &r.Raw, &digest, &r.State, &r.Reason, &r.EventID, &r.BatchID, &r.ReplyCommandID)
 	if err != nil {
 		return r, err
 	}

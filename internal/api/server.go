@@ -300,6 +300,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("/v1/account-routes", server.handleAccountRoutes)
 	mux.HandleFunc("/v1/accounts", server.handleAccounts)
 	mux.HandleFunc("/v1/futures/terminal", server.handleFuturesTerminal)
+	mux.HandleFunc("/v1/futures/commands", server.handleFuturesCommands)
 	mux.HandleFunc("/v1/futures/price-preview", server.handleFuturesPricePreview)
 	mux.HandleFunc("/v1/futures/orders/preview", server.handleFuturesOrderPreview)
 	mux.HandleFunc("/v1/futures/orders", server.handleFuturesOrderSubmit)

@@ -83,6 +83,7 @@
     unknown: "未知",
     read_only: "只读就绪",
     assessment: "测评查询就绪",
+    execution: "已连接 · 查询就绪",
     not_ready: "柜台未就绪",
     stopped: "已停止",
     unavailable: "无法观测",
@@ -196,7 +197,7 @@
     elements.monitoringWindow.style.color = active ? "#36c9ad" : "";
     elements.monitoringReason.textContent = monitoringLabels[snapshot?.monitoring_reason] || snapshot?.monitoring_reason || "--";
     const futures = snapshot?.futures_accounts || [];
-    const futuresOnline = futures.filter((a) => ["read_only", "assessment"].includes(a.connection_state)).length;
+    const futuresOnline = futures.filter((a) => ["read_only", "assessment", "execution"].includes(a.connection_state)).length;
     elements.gatewayOnline.textContent = `${formatNumber((summary.gateways_online || 0) + futuresOnline)} / ${formatNumber(allGateways().length)}`;
     const securitiesAttention = active ? `${formatNumber(summary.gateways_attention)} 个需关注` : `${formatNumber(summary.gateways_off_hours)} 个休市`;
     elements.gatewayAttention.textContent = securitiesAttention + (futures.length ? ` · 期货 ${futures.length - futuresOnline} 个未就绪` : "") + (snapshot?.futures_error ? " · 期货观察器不可用" : "");
@@ -228,9 +229,9 @@
   function futuresStatusDetails(account) {
     const h = account.heartbeat;
     if (!h) return '<br><span>未取得有效心跳</span><br><span>终端报撤：未开放</span>';
-    const current = ["read_only", "assessment", "not_ready", "waiting", "expired"].includes(account.connection_state);
+    const current = ["read_only", "assessment", "execution", "not_ready", "waiting", "expired"].includes(account.connection_state);
     const flag = (v) => v === true ? "就绪" : v === false ? "未就绪" : "未知";
-    const mode = h.runtime_mode === "test_broker_assessment" ? "测评" : h.runtime_mode === "test_broker_read_only" ? "只读" : (h.runtime_mode || "未知模式");
+    const mode = h.authorization_owner === "relay" ? "Relay执行模式" : h.runtime_mode === "test_broker_assessment" ? "测评" : h.runtime_mode === "test_broker_read_only" ? "只读" : (h.runtime_mode || "未知模式");
     const lines = [
       `${current ? "当前" : "历史"}心跳 · ${mode} · ${h.state_text || h.state || "--"}`,
       `柜台登录 ${flag(h.broker_ready)} · 查询 ${flag(h.query_collection_ready)}`,
@@ -246,6 +247,7 @@
       lines.push(`业务窗口 ${phase} · ${formatTime(l.starts_at)} 至 ${formatTime(l.expires_at)}`);
     }
     if (h.permission_profile === "test_day_relay.v1") lines.push("日间多笔模式 · Relay 发布尚未开放");
+    if (h.runtime_blocked_reason) lines.push(`运行诊断 ${h.runtime_blocked_reason}`);
     return lines.map((line) => `<br><span>${escapeHTML(line)}</span>`).join("");
   }
 
@@ -260,6 +262,8 @@
     if (account.connection_error) return `${escapeHTML(labels[account.connection_error] || account.connection_error)}<br><span>${escapeHTML(account.connection_error)}</span>`;
     if (account.connection_state === "stale") return "心跳已过期，不代表当前就绪";
     if (account.connection_state === "stopped") return "进程已停止，保留最后心跳";
+    if (account.heartbeat?.runtime_blocked_reason === "historical_state_missing_read_only") return "历史状态缺失，仅允许只读；报撤未开放";
+    if (account.heartbeat?.runtime_blocked_reason) return escapeHTML(account.heartbeat.runtime_blocked_reason);
     return "--";
   }
 

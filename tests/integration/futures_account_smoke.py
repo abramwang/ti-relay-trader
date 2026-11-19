@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Read-only browser check of the configured CTP observation account."""
+import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 
 def main():
-    out = Path("outputs/recovery/futures_terminal_account_20261117")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default="outputs/recovery/futures_terminal_positions_20261119")
+    parser.add_argument("--require-persisted", action="store_true")
+    args = parser.parse_args()
+    out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     results, writes, errors = [], [], []
     with sync_playwright() as p:
@@ -32,35 +37,71 @@ def main():
             assert page.locator("#futuresAccount").input_value() == "300052141"
             assert page.locator("#submitOrderButton").is_disabled()
             assert page.locator("#assetPanel").is_hidden()
-            assert page.locator("#futuresQueryTable tbody tr").count() == 12
+            sample = page.request.get("http://127.0.0.1:9092/v1/futures/terminal").json()
+            account = sample["data"]["accounts"][0]
+            query = next(q for q in account["queries"] if q["action"] == "account.positions.query")
+            count = query["row_count"]
+            assert count > 0 and query["response_validated"] and not query["reviewed"]
+            if args.require_persisted:
+                assert query["response_persisted"] and not query["business_published"]
+            assert page.locator("#futuresQueryTable tbody tr").count() == min(count, 20)
             assert "初始化失败" not in page.locator("body").inner_text()
-            assert "历史" in page.locator("#futuresQueryStatus").inner_text()
+            assert "回包校验通过" in page.locator("#futuresQueryStatus").inner_text()
             page.locator("#futuresQueryTable th button").first.click()
             rows = page.locator("#futuresQueryTable tbody tr td:first-child").all_text_contents()
             assert rows == sorted(rows, reverse=True)
             page.locator('[data-futures-query="account.asset.query"]').click()
             assert "missing_biz_type" in page.locator("#futuresQueryStatus").inner_text()
-            assert "暂无可展示" in page.locator("#futuresQueryTable").inner_text()
+            assert "不代表空仓" in page.locator("#futuresQueryTable").inner_text()
             page.locator('[data-futures-query="order.list.query"]').click()
-            assert "完整查询：0" in page.locator("#futuresQueryTable").inner_text()
+            assert "rb2701" in page.locator("#futuresQueryTable").inner_text()
             page.locator('[data-futures-query="fill.list.query"]').click()
-            assert "完整查询：0" in page.locator("#futuresQueryTable").inner_text()
+            assert "待独立核验" in page.locator("#futuresQueryStatus").inner_text()
             page.locator('[data-futures-query="account.positions.query"]').click()
             page.locator("#futuresAccountRefresh").click()
             page.wait_for_timeout(1500)
-            assert page.locator("#futuresQueryTable tbody tr").count() == 12
+            assert page.locator("#futuresQueryTable tbody tr").count() == min(count, 20)
             page.locator("#futuresAccountTitle").scroll_into_view_if_needed()
             page.screenshot(path=str(out / f"account-{width}.png"), full_page=True)
             overflow = page.evaluate("document.documentElement.scrollWidth > innerWidth + 2")
-            results.append({"viewport": [width, height], "rows": 12, "horizontal_overflow": overflow, "connection": page.locator("#futuresConnection").inner_text()})
+            results.append({"viewport": [width, height], "rows": count, "horizontal_overflow": overflow, "connection": page.locator("#futuresConnection").inner_text()})
             assert not overflow, results
+            history = page.request.get("http://127.0.0.1:9092/v1/futures/commands?account_id=300052141&limit=20").json()["data"]
+            assert history["route"] == account["route"] and history["items"]
+            page.locator('[data-futures-query="commands"]').click()
+            page.locator('[data-command-id="' + str(history["items"][0]["command_id"]) + '"]').wait_for()
+            assert page.locator("#futuresCommandTable tbody tr").count() == len(history["items"])
+            assert page.locator("#futuresCommandStatus").get_attribute("data-failed") == "false"
+            if args.require_persisted:
+                receipts = [item for item in history["items"] if item.get("response")]
+                assert receipts and any(item["response"]["state"] == "accepted" for item in receipts)
+                assert "OC 回执" in page.locator("#futuresCommandTable thead").inner_text()
+                for item in receipts:
+                    receipt = item["response"]
+                    assert receipt["command_id"] == item["command_id"]
+                    assert not receipt["order_state_changed"] and not receipt["retry_safe"]
+                    row = page.locator(f'[data-command-id="{item["command_id"]}"]')
+                    expected = {"accepted": "命令已接收", "failed": "命令失败", "invalid": "回执冲突或无效"}
+                    assert row.locator("td").nth(7).inner_text() == expected[receipt["state"]]
+                    targets = [item["cancel"]] if item["action"] == "order.cancel" else item["orders"]
+                    for target in targets:
+                        order = next((o for o in account["local_orders"] if
+                                      o["gateway_order_id"] == target["gateway_order_id"] and
+                                      o["trade_date"] == target["trade_date"]), None)
+                        if order and order["gateway_status"] == "filled":
+                            assert "全部成交" in row.locator("td").nth(8).inner_text()
+                results[-1]["persisted_receipts"] = len(receipts)
+            assert page.evaluate("sessionStorage.getItem('relay.futures.test.commands.v1')") is None
+            assert page.locator("#submitOrderButton").is_disabled()
+            page.locator("#futuresCommandView").scroll_into_view_if_needed()
+            page.screenshot(path=str(out / f"commands-live-{width}.png"), full_page=True)
+            results[-1]["persistent_commands"] = len(history["items"])
+            results[-1]["command_ids"] = [item["command_id"] for item in history["items"]]
+            page.locator('[data-futures-query="account.positions.query"]').click()
             # Browser-only larger data and failure states; never publish fixtures.
-            sample = page.request.get("http://127.0.0.1:9092/v1/futures/terminal").json()
-            account = sample["data"]["accounts"][0]
-            query = next(q for q in account["queries"] if q["action"] == "account.positions.query")
             account["connection_state"] = "assessment"
             account["heartbeat"] = {"counter_session_id": query["counter_session_id"], "produced_at": query["produced_at"]}
-            query["positions"] = [dict(query["positions"][i % 12]) for i in range(45)]
+            query["positions"] = [dict(query["positions"][i % count]) for i in range(45)]
             query["row_count"] = 45
             page.route("**/v1/futures/terminal", lambda route: route.fulfill(json=sample))
             page.locator("#futuresAccountRefresh").click()
@@ -77,7 +118,7 @@ def main():
             query["row_count"] = None
             page.locator("#futuresAccountRefresh").click()
             page.wait_for_function("document.querySelector('#futuresQueryStatus').textContent.includes('分页未完整')")
-            assert "暂无可展示" in page.locator("#futuresQueryTable").inner_text()
+            assert "不代表空仓" in page.locator("#futuresQueryTable").inner_text()
             page.close()
         browser.close()
     assert not writes and not errors, (writes, errors)

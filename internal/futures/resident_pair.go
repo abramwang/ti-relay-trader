@@ -44,8 +44,12 @@ func FollowTestLocalEventPair(ctx context.Context, source *TestStreamSource, sto
 }
 
 func followTestPair(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, options ResidentCaptureOptions, checkpoints ResidentCheckpoints, emit func(ResidentCaptureProgress) error, project bool) error {
+	return followTestPairMode(ctx, source, store, verifier, options, checkpoints, emit, project, nil)
+}
+
+func followTestPairMode(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, options ResidentCaptureOptions, checkpoints ResidentCheckpoints, emit func(ResidentCaptureProgress) error, project bool, service *CaptureServiceConfig) (result error) {
 	deadline, bounded := ctx.Deadline()
-	if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || source == nil || store == nil || verifier == nil || source.scope != verifier.scope || source.String() != verifier.target.SourceID || emit == nil || options.validate() != nil || validateCaptureCheckpoint(checkpoints.Reply) != nil || validateCaptureCheckpoint(checkpoints.Event) != nil {
+	if (service == nil && (!bounded || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour)) || ctx.Done() == nil || source == nil || store == nil || verifier == nil || source.scope != verifier.scope || source.String() != verifier.target.SourceID || emit == nil || options.validate() != nil || validateCaptureCheckpoint(checkpoints.Reply) != nil || validateCaptureCheckpoint(checkpoints.Event) != nil {
 		return ErrStreamIdentity
 	}
 	// Check both expected positions before changing either owner. The existing
@@ -56,6 +60,9 @@ func followTestPair(ctx context.Context, source *TestStreamSource, store *Stream
 		role string
 		cp   HeartbeatCheckpoint
 	}{{"reply", checkpoints.Reply}, {"event", checkpoints.Event}} {
+		if service != nil {
+			break // Durable service ownership is checked under the singleton lock.
+		}
 		actual, err := store.captureCheckpoint(checkCtx, source.StreamConfig(item.role))
 		if err != nil {
 			return err
@@ -72,7 +79,31 @@ func followTestPair(ctx context.Context, source *TestStreamSource, store *Stream
 		return err
 	}
 	defer health.close()
+	defer func() {
+		if err := health.stop(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}()
+	var managed *captureServiceOwner
+	if service != nil {
+		for _, role := range []string{"cmd.query", "cmd.trade"} {
+			if err := verifier.verifyTransportStream(checkCtx, role); err != nil {
+				return err
+			}
+		}
+		managed, checkpoints, err = store.prepareCaptureService(checkCtx, source, *service)
+		if err != nil {
+			return err
+		}
+	}
 	var projector *LocalEventProjector
+	var replies *ReplyProjector
+	if service != nil && service.ProjectReplies {
+		replies, err = NewReplyProjector(store, source.scope, verifier.target)
+		if err != nil {
+			return err
+		}
+	}
 	if project {
 		projector, err = NewLocalEventProjector(checkCtx, store, source.scope, verifier.target)
 		if err != nil {
@@ -88,11 +119,17 @@ func followTestPair(ctx context.Context, source *TestStreamSource, store *Stream
 		if role == "event" {
 			o.Checkpoint = checkpoints.Event
 		}
-		result := followTestRawStream(run, source, store, verifier, o, func(p ResidentCaptureProgress) error {
+		result := followTestStream(run, source, store, verifier, o, func(p ResidentCaptureProgress) error {
 			output.Lock()
 			defer output.Unlock()
 			if project {
 				p.Mode = "test_resident_local_event_projection"
+			}
+			if service != nil {
+				p.Mode = "test_capture_service_raw"
+				if project {
+					p.Mode = "test_capture_service_local_events"
+				}
 			}
 			return emit(p)
 		}, func(check context.Context, h StreamHandle, p *ResidentCaptureProgress) error {
@@ -113,8 +150,15 @@ func followTestPair(ctx context.Context, source *TestStreamSource, store *Stream
 					}
 				}
 			}
+			if replies != nil && role == "reply" && h.owner != "" {
+				page, err := replies.Step(check, h, options.PageSize)
+				if err != nil {
+					return err
+				}
+				p.ReplyProjection = &page
+			}
 			return health.observe(check, *p)
-		})
+		}, managed)
 		// Close readiness as soon as one lane exits, before waiting for its
 		// peer's cleanup. Never let a successful late cycle reopen it.
 		heartbeat.Lock()

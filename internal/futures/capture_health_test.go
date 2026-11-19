@@ -58,6 +58,62 @@ func TestCaptureHealthLifecycle(t *testing.T) {
 	}
 }
 
+func TestCaptureHealthCancellationKeepsLeaseUntilStop(t *testing.T) {
+	ctx, source, store, p, _ := residentFixture(t)
+	w, err := startCaptureHealth(ctx, store.db, source, p.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.close()
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `SELECT 1 FROM futures_capture_health FOR UPDATE`); err != nil {
+		t.Fatal(err)
+	}
+	run, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	key, _ := source.StreamConfig("reply").stream()
+	go func() {
+		done <- w.observe(run, ResidentCaptureProgress{Stream: key, Phase: "waiting_stream", CheckpointVerified: true})
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		var waiting bool
+		if err := store.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE query LIKE 'UPDATE futures_capture_health SET reply_checked_at=%' AND wait_event_type='Lock')`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("health write did not wait on lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal("shutdown destroyed lease connection", err)
+	}
+	if other, err := startCaptureHealth(ctx, store.db, source, p.target); err == nil {
+		other.close()
+		t.Fatal("lease released before stop")
+	}
+	if err := w.stop(); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := store.db.QueryRowContext(ctx, `SELECT state FROM futures_capture_health`).Scan(&state); err != nil || state != "stopped" {
+		t.Fatal(state, err)
+	}
+}
+
 func TestCaptureGuardRejectsLostEvidence(t *testing.T) {
 	for _, scenario := range []string{"missing", "missing_table", "starting", "missing_lane", "stopped", "stale_reply", "stale_event", "future", "wrong_binding", "changed_owner", "receiver_takeover", "healthy"} {
 		t.Run(scenario, func(t *testing.T) {

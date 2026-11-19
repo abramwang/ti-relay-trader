@@ -37,6 +37,7 @@ type ResidentCaptureProgress struct {
 	StopReason         string               `json:"stop_reason,omitempty"`
 	BusinessAuthorized bool                 `json:"business_authorized"`
 	LocalProjection    *LocalProjectionPage `json:"local_projection,omitempty"`
+	ReplyProjection    *ReplyProjectionPage `json:"reply_projection,omitempty"`
 }
 
 func (o ResidentCaptureOptions) validate() error {
@@ -57,8 +58,12 @@ func FollowTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 }
 
 func followTestRawStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error, observe func(context.Context, StreamHandle, *ResidentCaptureProgress) error) (result error) {
+	return followTestStream(ctx, source, store, verifier, o, emit, observe, nil)
+}
+
+func followTestStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error, observe func(context.Context, StreamHandle, *ResidentCaptureProgress) error, service *captureServiceOwner) (result error) {
 	deadline, ok := ctx.Deadline()
-	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || o.validate() != nil ||
+	if (service == nil && (!ok || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour)) || ctx.Done() == nil || o.validate() != nil ||
 		source == nil || store == nil || verifier == nil || emit == nil || source.scope != verifier.scope || source.scope.Route.Env != "test" || source.sourceID != verifier.target.SourceID {
 		return ErrStreamIdentity
 	}
@@ -152,7 +157,7 @@ func followTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 				if kind != "stream" {
 					return 0, false, ErrStreamHistory
 				}
-				h, err = store.openBound(stepCtx, cfg, &o.Checkpoint, &verifier.target)
+				h, err = store.openBoundManaged(stepCtx, cfg, &o.Checkpoint, &verifier.target, service)
 				if err != nil {
 					return 0, false, err
 				}
@@ -162,7 +167,10 @@ func followTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 			if err := verifyResidentTail(stepCtx, source, store, h); err != nil {
 				return 0, false, err
 			}
-			limit := min(o.PageSize, o.MaxRecords-p.Captured)
+			limit := o.PageSize
+			if service == nil {
+				limit = min(limit, o.MaxRecords-p.Captured)
+			}
 			captured, err := source.ReadOnce(stepCtx, store, h, limit)
 			if err != nil {
 				return 0, false, err
@@ -207,15 +215,16 @@ func followTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 				return err
 			}
 		}
-		if newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || time.Since(lastReport) >= o.ReportInterval {
+		if newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || (p.ReplyProjection != nil && p.ReplyProjection.Delivered > 0) || time.Since(lastReport) >= o.ReportInterval {
 			if err := report(phase); err != nil {
 				return fmt.Errorf("resident capture output failed: %w", err)
 			}
 		}
-		if p.Captured >= o.MaxRecords {
+		if service == nil && p.Captured >= o.MaxRecords {
 			return ErrResidentCaptureBudget
 		}
 		projectionProgress := p.LocalProjection != nil && (p.LocalProjection.Applied > 0 || (!p.LocalProjection.CycleComplete && p.LocalProjection.Scanned > 0))
+		projectionProgress = projectionProgress || (p.ReplyProjection != nil && (p.ReplyProjection.Delivered > 0 || (!p.ReplyProjection.CycleComplete && p.ReplyProjection.Scanned > 0)))
 		delay = consumerDelay(delay, TestConsumerOptions{MinDelay: o.MinDelay, MaxDelay: o.MaxDelay}, newRecords > 0 || projectionProgress)
 		timer := time.NewTimer(delay)
 		select {

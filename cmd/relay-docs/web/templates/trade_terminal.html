@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Relay Trader - 交易终端</title>
   <link rel="stylesheet" href="/assets/trade-terminal.css?v=20261118-ctp-preview-1">
-  <link rel="stylesheet" href="/assets/futures-account.css?v=20261119-1">
+  <link rel="stylesheet" href="/assets/futures-account.css?v=20261119-2">
   <link rel="stylesheet" href="/assets/research-costs.css?v=20261114-1">
 </head>
 <body>
@@ -205,11 +205,17 @@
           <button type="button" data-futures-query="account.positions.query" role="tab" aria-selected="true">持仓</button>
           <button type="button" data-futures-query="order.list.query" role="tab">委托</button>
           <button type="button" data-futures-query="fill.list.query" role="tab">成交</button>
+          <button type="button" data-futures-query="commands" role="tab" aria-controls="futuresCommandView">报撤命令</button>
         </div>
         <div id="futuresQueryStatus" class="futures-query-status" role="status">等待读取</div>
-        <div class="futures-query-table-wrap" tabindex="0" aria-label="期货查询明细"><table id="futuresQueryTable"><thead></thead><tbody></tbody></table></div>
-        <div class="futures-query-pager"><span id="futuresQueryCount">--</span><button type="button" id="futuresQueryPrev" title="上一页" aria-label="上一页">‹</button><span id="futuresQueryPage">--</span><button type="button" id="futuresQueryNext" title="下一页" aria-label="下一页">›</button></div>
-        <details class="futures-query-audit"><summary>查询来源</summary><pre id="futuresQueryAudit"></pre></details>
+        <div id="futuresQueryWrap" class="futures-query-table-wrap" tabindex="0" aria-label="期货查询明细"><table id="futuresQueryTable"><thead></thead><tbody></tbody></table></div>
+        <div id="futuresQueryPager" class="futures-query-pager"><span id="futuresQueryCount">--</span><button type="button" id="futuresQueryPrev" title="上一页" aria-label="上一页">‹</button><span id="futuresQueryPage">--</span><button type="button" id="futuresQueryNext" title="下一页" aria-label="下一页">›</button></div>
+        <details id="futuresQuerySource" class="futures-query-audit"><summary>查询来源</summary><pre id="futuresQueryAudit"></pre></details>
+        <div id="futuresCommandView" class="futures-command-view" hidden>
+          <div class="futures-command-toolbar"><span id="futuresCommandStatus" role="status">尚未读取命令记录</span><button id="futuresCommandRefresh" type="button" title="刷新最新命令记录" aria-label="刷新最新命令记录">↻</button></div>
+          <div class="futures-query-table-wrap" tabindex="0" aria-label="持久报撤命令"><table id="futuresCommandTable"><thead><tr><th>登记时间（东八区）</th><th>命令</th><th>合约 / 目标委托</th><th>买卖 / 开平</th><th>价格</th><th>数量（手）</th><th>发布状态</th><th>OC 回执</th><th>关联委托状态</th><th>命令身份</th></tr></thead><tbody></tbody></table></div>
+          <div class="futures-query-pager"><span id="futuresCommandCount">--</span><button id="futuresCommandPrev" type="button" title="上一页命令" aria-label="上一页命令">‹</button><span id="futuresCommandPage">--</span><button id="futuresCommandNext" type="button" title="下一页命令" aria-label="下一页命令">›</button></div>
+        </div>
         <details class="futures-command-history" open><summary>本页报撤记录</summary><div id="futuresExecutionRecords" aria-live="polite"></div></details>
       </section>
 
@@ -968,6 +974,7 @@
   <script defer src="/assets/research-costs.js?v=20261114-1"></script>
   <script defer src="/assets/futures-execution.js?v=20261119-1"></script>
   <script defer src="/assets/trade-terminal.js?v=20261119-execution-1"></script>
-  <script defer src="/assets/futures-account.js?v=20261119-1"></script>
+  <script defer src="/assets/futures-command-history.js?v=20261119-1"></script>
+  <script defer src="/assets/futures-account.js?v=20261119-2"></script>
 </body>
 </html>

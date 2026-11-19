@@ -85,6 +85,9 @@ func discardCaptureConnection(conn *sql.Conn) {
 }
 
 func (w *captureHealthWriter) observe(ctx context.Context, p ResidentCaptureProgress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	role := ""
 	for k, v := range w.streams {
 		if v == p.Stream {
@@ -99,7 +102,11 @@ func (w *captureHealthWriter) observe(ctx context.Context, p ResidentCaptureProg
 	if role == "event" {
 		other = "reply"
 	}
-	result, err := w.conn.ExecContext(ctx, `UPDATE futures_capture_health SET `+role+`_checked_at=clock_timestamp(),`+role+`_owner=$3,state=CASE WHEN `+other+`_checked_at IS NULL THEN 'starting' ELSE 'running' END,updated_at=clock_timestamp() WHERE route_key=$1 AND owner_id=$2 AND state<>'stopped'`, w.key, w.owner, p.Checkpoint.Owner)
+	// SIGTERM must not tear down the connection holding our advisory lock in
+	// the middle of a health write, before the final stopped update can commit.
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	result, err := w.conn.ExecContext(writeCtx, `UPDATE futures_capture_health SET `+role+`_checked_at=clock_timestamp(),`+role+`_owner=$3,state=CASE WHEN `+other+`_checked_at IS NULL THEN 'starting' ELSE 'running' END,updated_at=clock_timestamp() WHERE route_key=$1 AND owner_id=$2 AND state<>'stopped'`, w.key, w.owner, p.Checkpoint.Owner)
 	if err != nil {
 		return err
 	}

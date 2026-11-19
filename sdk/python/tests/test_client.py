@@ -315,6 +315,14 @@ class RelayHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/v1/futures/commands":
+            self._json({"ok": True, "data": {
+                "items": [{"command_id": 12, "action": "order.submit",
+                           "broker_state_known": False, "retry_safe": False,
+                           "publication": {"state": "attempted", "command_published": None}}],
+                "next_before_id": 12,
+            }})
+            return
         if parsed.path in ("/v1/futures/order-command", "/v1/futures/cancel-command"):
             self._json({"ok": True, "data": {
                 "idempotency_key": query["idempotency_key"][0],
@@ -1677,6 +1685,29 @@ class RelayClientTest(unittest.TestCase):
         before = len(RelayHandler.requests)
         with self.assertRaises(ValueError):
             self.client.cancel_futures_order(idempotency_key="", **intent)
+        self.assertEqual(len(RelayHandler.requests), before)
+
+    def test_futures_command_history_read_only(self):
+        before = len(RelayHandler.requests)
+        page = self.client.list_futures_commands(account_id="300052141")
+        self.assertIsNone(page["items"][0]["publication"]["command_published"])
+        self.assertFalse(page["items"][0]["retry_safe"])
+        self.client.list_futures_commands(
+            account_id="300052141", limit=2, before_id=page["next_before_id"],
+        )
+        self.assertEqual(RelayHandler.requests[before:], [
+            ("GET", "/v1/futures/commands", {"account_id": ["300052141"], "limit": ["50"]}, None),
+            ("GET", "/v1/futures/commands", {"account_id": ["300052141"], "limit": ["2"], "before_id": ["12"]}, None),
+        ])
+        before = len(RelayHandler.requests)
+        for invalid in (
+            {"limit": 0}, {"limit": 101}, {"limit": True}, {"limit": 1.5},
+            {"before_id": 0}, {"before_id": -1}, {"before_id": 2**63},
+            {"before_id": True}, {"before_id": "12"},
+            {"account_id": ""}, {"account_id": "test-account"},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.client.list_futures_commands(**{"account_id": "300052141", **invalid})
         self.assertEqual(len(RelayHandler.requests), before)
 
     def test_meridian_futures_market_data(self):

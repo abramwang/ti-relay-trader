@@ -14,6 +14,7 @@ const (
 	CapabilityPositionCloseBaseline  = "positions.close_baseline.v1"
 	CapabilityFuturesPricePreview    = "futures.price_preview.v1"
 	CapabilityFuturesOrderPreview    = "futures.order_preview.v1"
+	CapabilityFuturesCommandHistory  = "futures.command_history.v1"
 )
 
 type CatalogDocument struct {
@@ -50,6 +51,7 @@ func Catalog() CatalogDocument {
 			CapabilityPositionCloseBaseline,
 			CapabilityFuturesPricePreview,
 			CapabilityFuturesOrderPreview,
+			CapabilityFuturesCommandHistory,
 		},
 		Enums: map[string][]string{
 			"exchange":       {"SH", "SZ", "BJ"},
@@ -67,6 +69,7 @@ func Catalog() CatalogDocument {
 			{Method: "POST", Path: "/v1/futures/orders/preview", Request: "FuturesOrderPreviewRequest", Response: "FuturesOrderPreview", Description: "read-only TEST order preview; no registration, authorization or publication"},
 			{Method: "POST", Path: "/v1/futures/orders", Request: "OrderExecutionRequest", Response: "OrderExecutionResult", Description: "default-off TEST command registration/publication; HTTP 202 is not broker acceptance"},
 			{Method: "GET", Path: "/v1/futures/order-command", Request: "account_id/idempotency_key", Response: "OrderExecutionResult", Description: "read-only original TEST command publication; never resumes an unknown attempt"},
+			{Method: "GET", Path: "/v1/futures/commands", Request: "account_id/limit/before_id", Response: "CommandHistoryPage", Description: "read-only persisted TEST trade intentions, including CLI; publication is not a broker outcome"},
 			{Method: "GET", Path: "/v1/status", Response: "StatusView", Description: "service status"},
 			{Method: "GET", Path: "/v1/accounts", Response: "[]Account", Description: "configured accounts"},
 			{Method: "GET", Path: "/v1/accounts/{account_id}/readiness", Response: "AccountReadiness", Description: "account-level OC heartbeat and configured order-entry readiness"},

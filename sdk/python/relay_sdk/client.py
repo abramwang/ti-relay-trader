@@ -1493,6 +1493,29 @@ class RelayClient:
             "account_id": account_id, "idempotency_key": idempotency_key,
         })
 
+    def list_futures_commands(
+        self, *, account_id: str, limit: int = 50,
+        before_id: int | None = None,
+    ) -> Mapping[str, Any]:
+        """Read persisted TEST trade intentions without requiring execution.
+
+        Use next_before_id for the next page. Publication is not a broker
+        outcome; unknown records never authorize resending. No automatic
+        pagination, broker query or command publication is performed.
+        """
+        if (not isinstance(account_id, str) or not account_id.isascii()
+                or not account_id.isdigit() or not 6 <= len(account_id) <= 20):
+            raise ValueError("account_id must contain 6..20 ASCII digits")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer in 1..100")
+        if before_id is not None and (
+            type(before_id) is not int or not 1 <= before_id <= 2**63 - 1
+        ):
+            raise ValueError("before_id must be a positive signed 64-bit integer")
+        return self._request("GET", "/v1/futures/commands", query={
+            "account_id": account_id, "limit": limit, "before_id": before_id,
+        })
+
     def get_meridian_futures_status(self) -> Mapping[str, Any]:
         """Return Meridian's CTP futures service status through relay."""
 

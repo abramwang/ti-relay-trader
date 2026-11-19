@@ -24,7 +24,9 @@ type QueryRoute struct {
 	AccountID string `json:"account_id"`
 }
 
-// QueryContext is caller-verified request evidence, never learned from a reply.
+// QueryContext is caller-verified request evidence for persistent query batches.
+// Response observations also use it to compare OC-reported request IDs across
+// pages; those observations are not independently verified SDK request evidence.
 // Empty Ticket/TradeDate and nil integers mean genuinely unavailable evidence.
 // NativeBrokerID is the configured CTP BrokerID, not the routing broker label.
 type QueryContext struct {

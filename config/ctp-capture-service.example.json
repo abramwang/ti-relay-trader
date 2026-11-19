@@ -1,0 +1,24 @@
+{
+  "version": "ctp.capture.service.v1",
+  "service_id": "example-ctp-capture",
+  "database": "relay_ctp_example_test",
+  "deployment_id": "example-isolated-redis",
+  "scope": {
+    "Route": {"env": "test", "broker_id": "ctp_example", "gateway_id": "example-capture", "account_id": "990000000019"},
+    "NativeBrokerID": "9999",
+    "InvestorID": "990000000019",
+    "UserID": "990000000019"
+  },
+  "target": {
+    "source_id": "ctp-test-source-v1:0000000000000000000000000000000000000000000000000000000000000000",
+    "server_run_id": "0000000000000000000000000000000000000000",
+    "epoch": "example-not-initialized",
+    "group": "example-oc-group",
+    "counter_session_id": "example-not-a-live-session",
+    "trade_date": "20261119",
+    "connection_generation": 1
+  },
+  "initial_checkpoints": {"reply": {"owner": "", "cursor": "0-0"}, "event": {"owner": "", "cursor": "0-0"}},
+  "project_local_events": false,
+  "project_replies": false
+}
