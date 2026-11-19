@@ -2,6 +2,51 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## CFFEX双包接收回归
+
+11-19新增`cffex_delivery_test.go`、`cffex_delivery_integration_test.go`及`test_cffex_delivery.py`。原样材料在`testdata/oc_ctp_cffex_{facts,execution}_review_20261119/`，13个清单文件全部校验；215条执行原输出、21条选取原文、32处成交v2及独立事实回复核对通过。Python独立重算九段身份，Go核对原命令关联及失败/空/部分语义；IF2701、101手和3500.21均为合成参数，不是实际合约规格或可发送订单。
+
+```bash
+.runtime/ctp-contract-venv/bin/python -m unittest discover -s tests/ctpcontract -v
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'TestCFFEX|TestFillV2|TestCommandStore|TestSubmit|TestConstraintsRequestReview|TestReplyResult|TestExecution|TestTradePublish|TestOrderExecution' -timeout 3m
+```
+
+隔离PG四组正序/逆序、重建读者及原文重投验证部分成交后撤单/成交先到，各8委托8成交不重复入账；只启动临时库及本地Unix socket Redis，不连接共享Redis/OC或业务库。全量Go、vet、112项Python及上述定向race通过；实际发送护栏保持原边界。首次回归暴露旧测试仍把CFFEX视为非法交易所、旧命令表降级漏撤000050外键，已分别改用DCE反例及逆序撤依赖，不放宽业务降级保护。未验证真实CFFEXSDK、在线常驻、物理断电或生产。
+
+## CTP持续收件服务隔离回归
+
+11-19新增`capture_service_test.go`及`cmd/relay-ctp-worker`离线CLI测试，后续`reply_result_test.go/reply_projection_test.go`覆盖持续回执与完整查询。下列入口自建一次性PostgreSQL和仅Unix socket的Redis，不读取应用DSN或连接共享Redis/OC；迁移000049/000050只在临时库执行。实际worker子进程测试先SIGKILL再重启/SIGTERM，核对原文不重复、持久owner/cursor续读及零命令发布。
+
+```bash
+go test ./cmd/relay-ctp-worker
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'Test(ReplyResult|ReplyProjection|CaptureService|ResidentPair|ResidentLocalProjection|ResidentCapture|CaptureHealth|CommandHistory|Terminal|QueryStoreIdentityIntegrityAndMigrationDown)'
+```
+
+默认race。最终定向回归通过，无跳过；覆盖显式旧位点接管、竞争读者/来源变化拒绝、owner事务故障回滚、输出失败后恢复、当前会话本地投影和取消时持锁健康写入。首轮断言修正及随后发现的真实停机竞态均保留开发记录，不将中间失败记为通过。全量Go/vet及worker离线配置校验另行通过；没有业务库迁移、线上收件器部署、柜台或整日稳定性验收。
+
+回执增量覆盖四查询及OC九组事实原文、六组失败回执、分页重排/跨重启补齐/重复、迟到矛盾永久失效、来源/请求/会话错配、发布未知延后、原文损坏、交接失败事务回滚和降级防丢。accepted/failed不生成订单/成交状态。浏览器`futures_command_history_smoke.py`全拦截API，检查四查询持久结果、独立回执列、错误/分页、桌面及手机无页面溢出；不得将合成样例发往账户Stream。首轮测试夹具的空资金断言、发布未知finished_at及损坏顺序已修正，保留失败事实，不称首跑全绿。
+
+11-19固定TEST账户只读浏览器复验可使用下面入口。`--require-persisted`验证持仓及命令回执已落库、回执不改变关联委托终态；所有非只读API请求被拦截。后半段分页/失败场景仅浏览器拦截数据，不向Redis发布。使用新的输出目录保留前轮证据；当前样本结果18持仓行、7命令/6当前会话回执，桌面/手机无页面溢出，写请求及页面异常均0。系统Python未安装Playwright，使用项目`.venv`，无需另装依赖。
+
+```bash
+.venv/bin/python tests/integration/futures_account_smoke.py --require-persisted \
+  --output outputs/recovery/ctp_capture_activation_20261119/browser
+```
+
+本轮在线启用及34条原文核对记录见[启用结果](../docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日test持续收件启用)，与上面的隔离迁移/故障注入测试分开。没有新柜台查询或报撤，不将既有回包处理写成实时新回报验收。
+
+扩展旧账本降级回归时同步补齐000050/49/48的逆序撤销，避免新表残留导致旧四表数量断言失败；不删除真实数据或修改业务降级保护。共享Redis专用测试不在本轮授权范围，使用`-skip '^TestReplyReceiveCLIRealRedis$'`明确排除，其他数据库/本地Redis测试照常执行。
+
+## 历史验证记录
+
 11-07证据导出：`heartbeat_evidence_integration_test.go`新增5项PG，CLI子进程集成补audit默认隐藏正文/显式原文/旧锚点拒绝。覆盖只读分页与锚点一致、空body/坏UTF-8无损还原、跨Stream游标、元数据/尾部/SHA/顺序损坏、8MiB页预算、空收件与stage1分类。用下方临时PG脚本及Redis双开关执行`-run 'TestHeartbeatEvidence|TestHeartbeatCapture|TestHeartbeatInspection' -timeout 3m`，17项Go/race通过、19.226秒、无跳过；3项CLI/race、103项Python、七包/cmd/vet通过。日志`.runtime/ctp-evidence-regression.log`；临时PG及随机开发键清理完成，无OC业务流读写或运行库迁移。本轮未重复前轮万笔容量回归。
 
 11-07持久采集入口：新增1项模型、6项PG（3项含真实TEST随机开发hb键，1项构建执行`relay-ctp-capture`子进程），以及`cmd/relay-ctp-capture`的3项离线护栏。覆盖无native的hb限定、禁止业务guard、只读status不写/不连Redis、初建/续读CAS及8路竞争、旧位点/旧owner拒绝、提交失败回滚、完整原文及页预算、输出失败后按真实checkpoint恢复。CLI子进程使用本机临时PG下独立`*_test`数据库，结束删除；不会创建/迁移应用数据库。最终`-skip '^TestTradeCapacityTenThousandOrdersAndFills$' -timeout 3m`的211项Go/race通过，81.305秒、无运行时skip；万笔订单/成交恢复单项在首轮日志中通过（299.39秒），产品代码相同，仅CLI测试夹具修正。合计212项（125项PG）分批覆盖通过，另103项Python、3项CLI/race、七包/cmd及vet通过。临时PG销毁、随机开发键清理无报错。

@@ -10,13 +10,19 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 | 工作目录 | `/home/ti-relay-trader` |
 | 对外服务 | `http://relay-trader.quantstage.com`，端口 `9092` |
 | 业务时区 | `Asia/Shanghai`，所有交易日、任务和业务时间按东八区解释 |
-| 当前环境 | `2026-11-18 15:18 Asia/Shanghai` 按用户指令切回TEST，`.runtime/active-config.yaml -> config/relay.local.yaml`；9092 API内嵌同步运行，生产独立worker停止。本机/域名均test/ok，当前PID以service status为准；后续切换仍需用户明确指令 |
-| 安全状态 | TEST华鑫00030484沿用已启用交易配置，15:18心跳登录/快照ready，但不以盘后ready承诺可撮合，本轮未发报撤。生产配置仍6户保留/2户查询/0交易，387/388暂时停用、历史保留。今日CTP交易授权15:00已结束，不追加报撤、不重做结算或重启OC |
+| 当前环境 | `2026-11-19 20:00 Asia/Shanghai` 按用户指令切回生产。`.runtime/active-config.yaml -> config/relay.prod.yaml`；API/独立worker运行，本机及域名production/ok，Redis/数据库正常。保留现有二进制/schema及生产权限，未部署本轮CFFEX源码或补跑任务 |
+| 安全状态 | 生产沿用6830/5768两户启用及原交易权限，其余四户停用不变。今日CTP测试仍暂停，本机TEST持续收件worker已SIGTERM停止，原文/PG/owner/位点保留；宿主机OC未操作。最后核对rb2701多头今仓2手，未重新查询或平仓。恢复测试须用户明确指令，不自动切回 |
 | 当前阶段 | P0-P4 完成，P5-P8/P10 持续生产化；N13 绩效重建保留未完成项；CTP TEST已完成CLI经Redis的真实单笔报撤及回报持久收件，普通API/终端报撤与完整业务快照仍未上线 |
 | 最近确认 | `2026-11-18 15:16` 昨日20261117权威行情复算补跑成功，仅当前启用6830/5768；6830已是权威日线、核对无变化，5768仍有previous_economic_nav_gap及ETF范围/清算未核验、未发布净值。今日15:12收盘采集两户成功，今日结算/绩效仍未补跑；387/388保持停用 |
-| 更新时间 | `2026-11-18` |
+| 更新时间 | `2026-11-19` |
+
+`2026-11-19 09:08` 运维CTP显示已修复并部署到TEST API：观察清单改为用户指定的新gateway `300052141` 和实读epoch，旧gateway仅保留历史查询入口，旧receiver/cursor及审计不迁移。兼容OC `historical_state_missing_read_only` 的只读心跳，仍拒绝携带报撤ready的矛盾报文；常驻execution按当前心跳和查询在线计数显示，历史缺失诊断不隐藏。Go futures/API及5项前端回归通过，桌面/移动浏览器检查通过；无OC重启、结算确认、业务查询、报撤或Redis写入。
+
+`2026-11-19 09:18` OC澄清该诊断来自发布包显式`state_loss_read_only=true`，因旧/home/Titian_Cpp被删除后无法恢复历史state，不是当前新目录再次缺文件；配置及启动入口均限制只读，不因行情/查询自动解除。Relay只读核对独立PG旧4笔交易命令：12/15有未调用SDK失败回执，18为rb2701买开1手、SysID39429/OrderRef000000000008，有cancelled且cum_filled_qty=0，19为其撤单；六条原文保留pending，业务投影表0不代表无柜台事实。今日仅实际发布命令20订单查询`relay-state-review-20261119-1795051013414640745-0`，ticket1/SDK3，failed/order_association_pending、raw_completed=true/snapshot_applied=false；已请求OC提供原始行。命令21成交查询`relay-state-review-20261119-1795051014696117758-1`在发布前门禁失败，无publication行、Redis仅1条query/0条trade；持仓未发，不自动续发/重放。原失败reply已收件PG，receiver owner=a3b2803b59a14d256ac4438f27687e86abce21876c0e3b56dcfada9963c4cd99、cursor=1795051013530-0，3秒接收器已正常停止。证据`outputs/recovery/ctp_state_loss_20261119/`，不解除OC只读、不确认结算、不改旧状态。
 
 新线程按以下顺序恢复：
+
+11月19日09:28收到`reference/query-audit.jsonl.gz`后已核验2595条审计链、请求/回包原文及OC ACK；09:16订单查询返回ad2701/ag2701/ag2702三笔价格低于跌停的拒单、各1手/成交0，SysID首字节NUL为空，不把后面的ORD残留当有效ID。标准页仍失败，raw_application=applied仅原生快照。成交命令21发布前门禁源于09:16:53.933 query_scheduler_busy，下一心跳恢复ready；未重发。本轮离线证据见`outputs/recovery/ctp_state_loss_20261119/oc-audit-review/`，给OC的最小下一步已补到职责收敛清单顶部；当前成交/持仓仍待查询，只读保护未解除。
 
 1. 阅读本节和“当前工作”。
 2. 阅读 [开发路线图](/home/ti-relay-trader/docs/ROADMAP.md:1)，确认最新未完成项。
@@ -26,7 +32,27 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- **TEST期货终端、双路收件、HTTP停发及本地事件投影源码完成，线上仍未启用**：双路收件可显式追加`--project-local-events`，对已确认发布的本地订单/成交/拒撤回报持续入账；原文转交与业务应用同事务，外部/其他会话/未知发布继续留存。原文收件默认不投影，不自动发单或ACK。沿用迁移000048收件健康与HTTP停发联动，未部署/切环境/改权限。下一步查询及外部回报分发、账本展示统一、跨浏览器命令列表、动态停止及操作员CLI统一。见[本地事件投影](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本地事件持续投影11月19日增量)。
+- **11-19 20:00 按用户指令恢复生产**：使用现有二进制，`switch-relay-env.sh production --skip-migrations --allow-production-trading`沿用既有两户权限；API PID1864722、worker PID1864658（实时以status为准），本机及域名production/ok。独立TEST CTP收件worker已正常停止，原配置/状态及未决证据保留；未发查询/报撤、重启OC、确认结算、迁移数据库或补跑日任务。下方19:33及17:46为切换前记录。
+
+- **11-19 BizType处理安排**：用户决定将请求已传`'1'`、响应NUL的问题暂按疑似仿真差异保留，待生产环境提供后做获授权的只读资金核验；不反复TEST复测、不新增补值兼容、不阻塞其他开发。原失败/审计和现有权限不变，生产资金验收尚未完成，不能自动登录生产或发查询。
+
+- **11-19 CFFEX日盘接线**：OC事实/执行两包已独立离线复核；Relay补齐命令解析/登记、显式事实及成交v2兼容，215条原输出、32处成交身份和隔离PG乱序/防重通过。未部署或开放CFFEX报撤，下一项平仓可平量/冻结与通用撤单；OC继续容量、断连及跨日，实际CFFEX环境仍待确认。仅日盘、不增加夜盘；[双方进度与下一项](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#cffex双包复核与下一步)。
+
+- **11-19 CTP持续收件已启用TEST**：19:33从原owner/位点显式接管reply/event；独立测试库备份后补迁移47/49/50，TEST API及回执显示已更新。当前会话13条回执落库（6完整查询、5受理、2失败），11条旧会话原文仍pending；4委托/2成交未变，34条Redis/PG原文逐条一致。桌面/手机只读验证通过，未发柜台查询/报撤/结算、未改权限或生产库。详情与备份见[启用记录](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日test持续收件启用)。worker尚无自启动/自动重连/会话跟随，不把OC停止或收件健康当交易就绪。下一项推进CFFEX日盘平仓/可平量、通用撤单及剩余外部关联，仍不可直接生产。
+
+- **11-19 17:46 按用户指令切回TEST**：执行`switch-relay-env.sh test --skip-migrations`，API PID1739680（实时以status为准）、内嵌同步运行，生产独立worker停止；本机/域名test/ok、Redis/数据库/行情/事件桥正常。沿用华鑫测试账户权限，生产配置和两启用/四停用账户不变。CTP仅恢复只读终端显示，报撤关闭、not_ready；今日暂停安排不因切环境自动解除，无柜台查询/交易、OC重启或结算确认。本轮不迁移或补跑生产任务。
+
+- **11-19 10:44 已按用户指令恢复生产，今日CTP暂停**：执行`switch-relay-env.sh production --skip-migrations --allow-production-trading`，沿用用户今早明确开放的6830/5768权限，不改停用户。API PID1567809、worker PID1567449（实时以status为准），本机/域名production；两柜台在线、总lag0、pending DLQ0，今晨盘前成功。API仍degraded，来源为6830 event的10-29历史订单缺失、5768 reply的10-20历史成交字段缺失及event的11-18历史订单缺失，三流当前lag0，不清告警或宣称账本已修好。无CTP脚本残留，测试2手多仓未平、证据/PG保留，未改OC进程或重做结算；15:01收盘及17:10权威复算计划未变。
+
+- **11-19 10:41 追加两轮测试已核清**：6342买开1手5124后撤成/成交0；6349买开1手5124成交，撤单到达时已终态、OC本地failed/sdk_calls=0，不误记柜台拒撤。两轮5事件已入账，终端可见；失败后持仓查询成功18行，rb2701多头今仓由1增至2手。无自动补单/平仓，命令pending/lag均0；接收已停止，最新位点及证据见[追加结果](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日1040追加两轮结果)。
+
+- **11-19 10:34 新版执行真实报撤完成**：当前会话持仓查询18行、显式原生事实查询成功；订单标准页仍关联失败，未伪造成功。命令35报单/36撤单，rb2701买开1手5124、SysID6196，真实cancelled/成交0；两事件已入账，终端可见，10:37两命令组pending/lag均0。早上长仓未动、未重复结算。证据`outputs/recovery/ctp_state_loss_20261119/trade-023422.583058285/`；收尾文件名冲突后已独立只读核验，不重发交易。最终接收位点及剩余边界见[本轮结果](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日1034新版执行报撤通过)，收件器已停止。
+
+- **11-19 10:25 期货持仓显示已修复**：此前完整持仓回包被终端人工审计前置隐藏，现自动核验登记命令、来源/会话及分页后显示，不冒充独立SDK审计或正式快照。仅发一笔只读持仓命令31，10:23:57完整返回18条，rb2701多头今仓1手；TEST API与桌面/手机验证通过，未报撤/确认结算。reply接收器已停止，新owner=`2d301ed7cba21dd7110b250475366107833974a8a94ae83c59c727e6bbfa3d5f`、cursor=`1795055037950-0`；event位点未变。证据`outputs/recovery/ctp_state_loss_20261119/live-022357.749165699/`，浏览器`outputs/recovery/futures_terminal_positions_20261119/`。
+
+- **11-19 10:15 Relay职责整改已部署TEST**：新版execution不再要求完整原生订单快照或OC逐单行情校验；撤单独立于报单准备/响应和新OrderRef就绪，保留本地授权、目标状态、路由/会话、幂等及未知不重发。全Go/vet、race及隔离PG/Redis回归通过，API与五个CTP CLI更新，未改生产或权限、未发新命令。OC实际调度解耦及今日撤成待验；当前收件器已停止，续接使用独立PG真实owner/cursor，不从0重建。见[配套整改](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#11月19日-relay-配套整改)。
+
+- **TEST期货双路收件与权限边界**：本地事件及回执投影现已按上述固定会话启用，原文与结果同事务；外部/其他会话/未知发布继续留存。000048收件健康与HTTP停发联动不替代独立交易授权，终端报撤仍关闭。操作员CLI统一健康检查、动态停止及外部关联仍待推进，见[本地事件投影](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#本地事件持续投影11月19日增量)。
 
 - **服务端报价准备与SDK源码完成**：新增只读`/v1/futures/price-preview`，由Relay从已配置Meridian解析唯一正式目录、tick和快照原文；不再要求API调用方准备映射/行情文件，不接收来源或权限覆盖。Python新增`get_futures_price_preview`，始终不授权/发单，未部署API或发布wheel、未改环境。见[接口边界](docs/TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)；普通期货交易授权及终端发送仍待接线。
 

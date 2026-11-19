@@ -1,6 +1,6 @@
 # relay 统一交易接口 Schema
 
-更新时间：`2026-11-18`
+更新时间：`2026-11-19`
 
 ## 当前状态
 
@@ -27,6 +27,22 @@ SDK 应在启动阶段使用能力握手，不得只比较 Python 包版本。�
 当前前置测试环境已启动，后续需要联调时可以直接基于 Redis Stream 做查询、下单、撤单和事件消费验证。凭据仍只放在部署机本地配置或安全渠道，不写入仓库。
 
 ## HTTP Envelope
+
+### 期货持久命令列表（TEST已部署）
+
+`GET /v1/futures/commands?account_id=300052141&limit=50&before_id=43`，能力标识`futures.command_history.v1`。只读取已配置TEST账户当前gateway的PostgreSQL命令，不依赖发送服务、交易权限、新鲜心跳、Redis或Meridian在线；不登录/查询OC，不创建登记、不发布或恢复命令。生产环境503；该能力标识表示实现存在，不表示账户已配置或可交易。
+
+参数仅有必填`account_id`、可选`limit`（默认50，1..100）、`before_id`（上一页`next_before_id`，正int64）；未知/重复参数、非法游标400，未配置账户404，不完整/损坏记录或数据库不可用503而非空成功。错误不泄露私有连接信息；GET以外405。使用同一个只读数据库快照取得页面及发布状态，全部响应no-store，不改变owner/cursor、审计计数或ACK。
+
+`data.route`始终返回本页的`env/broker_id/gateway_id/account_id`，空页也保留，供切账户/路由时校验。`data.items`按持久`command_id`倒序，一条登记只出现一次，不按重投别名重复列；包含HTTP及CLI登记的报单、批量报单意图、撤单，不包含只读查询和登记前失败的请求。每项包括`command_id/account_id/gateway_id/action/message_id/idempotency_key/registered_at`、原始`orders`或`cancel`以及`publication`。只列已登记的批量意图不代表批量交易服务已开放。金额/价格继续使用已有精确十进制类型。
+
+`publication`沿用下一节的四种状态；`command_published=null`保持未知，`broker_state_known=false/retry_safe=false`，本GET的`replayed=false`，均不能推断柜台受理/拒绝/成交/撤成。`next_before_id`存在才有下一页，下一页严格小于此ID；新登记在前页之前插入不导致重复，刷新首页才会看到。空页`items=[]`，不声称柜台无订单。当前只查配置的gateway，不自动跨历史路由合并。
+
+SDK源码`list_futures_commands(account_id=..., limit=50, before_id=None)`，一次GET、不自动翻页/轮询/重试下单；SDK wheel尚未发布。11月19日TEST API及终端“报撤命令”已部署，每页20条，显式分页/刷新，关闭页面或换浏览器后可从PG重新读取，不依赖本页sessionStorage。关联委托状态仅来自同账户/当前路由、原委托ID及交易日匹配的本地订单观察，不能把撤单命令published或原单filled解释为撤成；尚未将独立拒撤/全部命令回执作为列表结果列。列表不提供重发或撤单操作，不开放新权限。此前按key的两个GET和“本页报撤记录”保持原职责。
+
+后续源码增量（尚未部署，需迁移000050及显式worker `project_replies=true`）：单笔报单/撤单列表可增加`response`，含`command_id/action/state/code/message/produced_at/response_validated`，state为accepted、failed或invalid。`native_audit_verified/order_state_changed/retry_safe`始终false；与publication及真实委托状态分开呈现，未收到/未关联则省略，不把失败自动转换为可重试。批量交易回执暂不自动投影。独立拒撤事件不归入这个命令回执字段。
+
+同一增量使`GET /v1/futures/terminal`的四查询优先读持久结果：`response_persisted=true`；完整校验通过为`response_ready`及原类型行数组/row_count，缺页collecting、失败failed、矛盾invalid，失败和矛盾不回退旧成功候选。`response_validated`只是协议/关联校验，`reviewed=false/business_published=false`保留；不是独立原生审计、经济账本已发布或新鲜交易准入。GET不收件、不ACK、不发查询，旧人工审计批次仍沿用原路径。
 
 ### 期货TEST发送编排（源码新增，默认关闭）
 
@@ -83,11 +99,13 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 
 终端复用上述两个POST及两个命令状态GET，股票表单不会接收期货委托。当前仍只支持Meridian来源、SHFE买开投机1手的TEST报单；撤单继承上一节边界。界面接线不等于启用，线上配置与服务未替换；东吴测评不同源报价不能直接用本页实盘价格测试，仍走显式原生CLI。
 
-`GET /v1/futures/terminal`继续只读查询及本地订单回报，增加账户`execution`显示对象。只有TEST、发送总开关、已构建执行服务均满足时才返回该对象；生产不读取TEST账户。`submit_authorized/cancel_authorized`表示Relay配置及授权期限，`submit_enabled/cancel_enabled`还要求当前源绑定、心跳/恢复/结算/原生快照和TEST日间时段。`valid_until`不晚于心跳产生后5秒、授权截止和时段结束；`trade_date`来自柜台，不从浏览器自然日推导。`price_source=meridian_futures_snapshot.v1`。这些仅用于按钮显示，不能作为可复用许可或替代发布前校验；资产scope仍未升级为已验证。
+`GET /v1/futures/terminal`继续只读查询及本地订单回报，增加账户`execution`显示对象。只有TEST、发送总开关、已构建执行服务均满足时才返回该对象；生产不读取TEST账户。`submit_authorized/cancel_authorized`表示Relay配置及授权期限，`submit_enabled/cancel_enabled`还要求当前源绑定、心跳/恢复/结算和TEST日间时段。11月19日新版execution已删除全量原生订单快照的重复门禁。`valid_until`不晚于心跳产生后5秒、授权截止和时段结束；`trade_date`来自柜台，不从浏览器自然日推导。`price_source=meridian_futures_snapshot.v1`。这些仅用于按钮显示，不能作为可复用许可或替代发布前校验；资产scope仍未升级为已验证。
+
+11月19日持仓显示修复：`account.positions.query`的已发布命令，可直接展示经关联和完整性校验的OC持仓回包，不再要求运维先补一份人工SDK审计文件。自动校验原登记scope、来源、session/代次/交易日、命令关联、原文摘要、SDK返回/快照应用标志及完整分页；SDK ticket/request_id只用于回包间一致性，不宣称是独立请求审计。完整结果返回`state=response_ready`、`response_validated=true`、`positions`和`row_count`；`reviewed=false`、`business_published=false`保持不变，不修改收件状态、游标或正式业务快照。独立人工核验的原`ready/reviewed=true`路径仍可读取。未完成、失败、冲突及未知发布不展示部分持仓或伪造0；只有完整空结果才显示0。采样时间和历史会话照实显示，不从成交增量拼造完整当前持仓。页面刷新仍为GET已保存快照，不隐式发柜台查询；资金、订单和成交查询的独立核验规则此次未扩大。
 
 新版Relay-owned execution心跳使用`connection_state=execution`，不再因旧assessment截止字段为空误判未就绪；保持零时长常驻、容量及锁存字段，不把心跳存活当交易授权。顶层`mode`在任一动作当前可用时为`test_execution`，否则仍为`query_observation_only`，顶层及账户报撤布尔均以服务端结果为准。预检继续不发送且`can_submit=false`，已接执行服务时权限说明改取同一manifest，不再沿股票账户配置产生矛盾提示。
 
-网页报撤均需明确点击并确认账户、合约和数量/原单。请求前生成随机显式key并写入本标签页sessionStorage，写入失败不发请求；服务端PG仍是命令责任的权威持久记录，浏览器不是账本。按TEST route+账户隔离本页记录，上限100条，不自动删除未知记录。刷新后保留原key；关闭标签页、清浏览器存储或换设备不承诺恢复本页列表，后台跨浏览器命令列表仍待接入，不应据空列表推断无在途命令。
+网页报撤均需明确点击并确认账户、合约和数量/原单。请求前生成随机显式key并写入本标签页sessionStorage，写入失败不发请求；服务端PG仍是命令责任的权威持久记录，浏览器不是账本。按TEST route+账户隔离本页记录，上限100条，不自动删除未知记录。刷新后保留原key；关闭标签页、清浏览器存储或换设备不承诺恢复本页列表，可通过独立“报撤命令”页签读取已持久登记的历史。不应据空列表推断无在途命令；新列表不替代服务端跨浏览器未决风险检查。
 
 发布状态与原委托的真实回报分别展示，published不改成accepted/cancelled。未知/注册未发及尚未观察到原委托的报单阻止本页再报；“核对状态”仅GET原key，404/网络错误不自动重新POST、换key或认定未执行。异步返回只更新原账户/route记录。撤单按钮只对当前会话本地回报开放，不从历史查询页假造本地单。查询表仍沿5秒只读刷新，使用既有持久event观察，不是新增交易SSE或独立消费守护服务。
 
