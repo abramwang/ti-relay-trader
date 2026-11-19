@@ -40,6 +40,7 @@ func cancelServiceFixture(t *testing.T) (*sql.DB, *TestOrderService, *fakeQueryP
 		t.Fatal(err)
 	}
 	receipt := assessmentOrderReceipt(t, db, ctx, reg, target, nil)
+	seedServiceCapture(t, store, a.Source.Scope, target)
 	m.failed.Store(true)
 	s.target = func(context.Context, CommandScope) (TestQueryTarget, error) {
 		t.Error("cancel called submit target")

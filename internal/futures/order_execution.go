@@ -144,6 +144,9 @@ func (s *TestOrderService) Submit(ctx context.Context, request OrderExecutionReq
 	if err != nil || target.Validate() != nil || target.TradeDate != r.Order.TradeDate {
 		return OrderExecutionResult{}, ErrQueryPublishGate
 	}
+	if _, _, err := readCaptureHealth(ctx, s.store.db, a.Source.Scope, target); err != nil {
+		return OrderExecutionResult{}, err
+	}
 	catalog, err := s.market.FuturesPriceCatalog(ctx, r.Order.SecurityID)
 	if err != nil {
 		return OrderExecutionResult{}, err
@@ -177,6 +180,7 @@ func (s *TestOrderService) Submit(ctx context.Context, request OrderExecutionReq
 		return OrderExecutionResult{}, err
 	}
 	defer closeTransport()
+	transport = &captureGuardTransport{inner: transport, db: s.store.db, scope: a.Source.Scope, target: target}
 	// No network I/O under the registration lock. Competing requests can
 	// prepare independently but only the winner is allowed to attempt publish.
 	reg, err := s.store.register(ctx, a.Source.Scope, "cmd.trade", raw, evidence, func(tx *sql.Tx) (*CommandRegistration, error) {

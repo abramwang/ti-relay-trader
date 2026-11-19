@@ -26,6 +26,10 @@ func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.T
 		return v
 	}
 	v.SubmitAuthorized, v.CancelAuthorized = a.SubmitEnabled, a.CancelEnabled
+	if account.Capture == nil || !account.Capture.Ready || !account.Capture.ValidUntil.After(now) {
+		v.Reason = "relay_capture_unavailable"
+		return v
+	}
 	h := account.Heartbeat
 	v.Reason = "broker_not_ready"
 	if account.ConnectionError != "" || account.LedgerError != "" || account.LocalOrderError != "" || account.ConnectionState != "execution" || h == nil || h.AuthorizationOwner != "relay" || h.SessionID == "" || h.TradeDate == nil || h.ConnectionGeneration == nil || *h.ConnectionGeneration < 1 || h.ProducedAt.After(now) || !now.Before(h.ProducedAt.Add(5*time.Second)) || !h.RedisReady || !h.BrokerReady || !h.SettlementConfirmed || h.RecoveryClear == nil || !*h.RecoveryClear || h.NativeOrderSnapshotReady == nil || !*h.NativeOrderSnapshotReady || h.OrderSnapshotScope != "full_native_current_session" || h.RuntimeBlockedReason != "" || h.StateText == "stopping" || h.State == "STOPPED" {
@@ -41,7 +45,7 @@ func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.T
 	endMinute := []int{615, 690, 900}[segment-1]
 	end := time.Date(local.Year(), local.Month(), local.Day(), endMinute/60, endMinute%60, 0, 0, local.Location())
 	v.ValidUntil = h.ProducedAt.Add(5 * time.Second)
-	for _, limit := range []time.Time{a.AuthorizationExpiresAt, end} {
+	for _, limit := range []time.Time{a.AuthorizationExpiresAt, end, account.Capture.ValidUntil} {
 		if limit.Before(v.ValidUntil) {
 			v.ValidUntil = limit
 		}

@@ -9,16 +9,21 @@ import (
 
 func TestTerminalExecutionPolicy(t *testing.T) {
 	now := time.Date(2026, 11, 19, 9, 5, 0, 0, timeutil.Location())
-	for _, scenario := range []string{"ready", "cancel_only", "no_cancel", "expired", "stale", "future", "wrong_route", "production", "unavailable", "ledger", "blocked", "legacy", "missing_native", "recovery", "afternoon_break", "wrong_day"} {
+	for _, scenario := range []string{"ready", "cancel_only", "no_cancel", "capture_missing", "capture_stale", "expired", "stale", "future", "wrong_route", "production", "unavailable", "ledger", "blocked", "legacy", "missing_native", "recovery", "afternoon_break", "wrong_day"} {
 		t.Run(scenario, func(t *testing.T) {
 			b, g, day := true, int64(1), "20261119"
 			scope := CommandScope{Route: QueryRoute{Env: "test", BrokerID: "ctp_4900", GatewayID: "synthetic", AccountID: "300052141"}}
 			policy := TestOrderAccount{Source: TestSourceConfig{Scope: scope}, SubmitEnabled: true, CancelEnabled: true, AuthorizationExpiresAt: now.Add(time.Hour)}
 			h := &AdvertisedHeartbeat{ProducedAt: now, SessionID: "test-session", TradeDate: &day, ConnectionGeneration: &g, AuthorizationOwner: "relay", RedisReady: true, BrokerReady: true, SettlementConfirmed: true, RecoveryClear: &b, NativeOrderSnapshotReady: &b, OrderSnapshotScope: "full_native_current_session", AcceptingTradeCommands: true, AcceptingCancelCommands: true}
 			a := TerminalAccount{AccountID: "300052141", Route: scope.Route, Heartbeat: h, ConnectionState: "execution"}
+			a.Capture = &CaptureHealthView{Ready: true, State: "running", ValidUntil: now.Add(time.Minute)}
 			n := now
 			wantSubmit, wantCancel := false, false
 			switch scenario {
+			case "capture_missing":
+				a.Capture = nil
+			case "capture_stale":
+				a.Capture.ValidUntil = now
 			case "ready":
 				wantSubmit, wantCancel = true, true
 			case "cancel_only":

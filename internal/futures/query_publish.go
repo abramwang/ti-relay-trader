@@ -55,11 +55,12 @@ func (t TestQueryTarget) Validate() error {
 }
 
 type queryPublishProof struct {
-	EntryID    string    `json:"entry_id"`
-	Body       []byte    `json:"body"`
-	CheckedAt  time.Time `json:"checked_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	ProducedAt time.Time `json:"produced_at"`
+	EntryID    string               `json:"entry_id"`
+	Body       []byte               `json:"body"`
+	CheckedAt  time.Time            `json:"checked_at"`
+	ExpiresAt  time.Time            `json:"expires_at"`
+	ProducedAt time.Time            `json:"produced_at"`
+	Capture    *CapturePublishProof `json:"capture,omitempty"`
 }
 
 type queryPublicationTransport interface {

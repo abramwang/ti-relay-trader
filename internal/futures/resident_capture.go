@@ -52,6 +52,10 @@ func (o ResidentCaptureOptions) validate() error {
 // those bytes do not acquire business authority by being captured.
 // The caller owns source/publisher closing and must stop any prior receiver.
 func FollowTestRawStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error) (result error) {
+	return followTestRawStream(ctx, source, store, verifier, o, emit, nil)
+}
+
+func followTestRawStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error, observe func(context.Context, ResidentCaptureProgress) error) (result error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || o.validate() != nil ||
 		source == nil || store == nil || verifier == nil || emit == nil || source.scope != verifier.scope || source.scope.Route.Env != "test" || source.sourceID != verifier.target.SourceID {
@@ -192,6 +196,15 @@ func FollowTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 			phase = "waiting_stream"
 		} else if newRecords > 0 {
 			phase = "captured"
+		}
+		if observe != nil {
+			p.Phase = phase
+			stepCtx, cancel := context.WithTimeout(ctx, o.StepTimeout)
+			err := observe(stepCtx, p)
+			cancel()
+			if err != nil {
+				return err
+			}
 		}
 		if newRecords > 0 || time.Since(lastReport) >= o.ReportInterval {
 			if err := report(phase); err != nil {

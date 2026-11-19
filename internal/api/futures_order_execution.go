@@ -85,6 +85,8 @@ func (s *Server) handleFuturesOrderCommand(w http.ResponseWriter, r *http.Reques
 func (s *Server) writeFuturesExecutionError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, message := http.StatusServiceUnavailable, httpx.CodeUnavailable, "futures execution unavailable; query the same request key before taking further action"
 	switch {
+	case errors.Is(err, futures.ErrCaptureUnavailable):
+		message = "futures reply/event receiver is unavailable; retain the original request key for reconciliation"
 	case errors.Is(err, futures.ErrOrderRequestConflict):
 		status, code, message = http.StatusConflict, httpx.CodeConflict, "idempotency key belongs to a different order intention"
 	case errors.Is(err, futures.ErrOrderRequestMissing):

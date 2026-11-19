@@ -37,7 +37,7 @@ func (s *futuresExecutionStub) Lookup(_ context.Context, account, key string) (f
 const futuresOrderRequestJSON = `{"idempotency_key":"one-request","order":{"account_id":"300052141","security_id":"RB2701.SHFE","trade_date":"20261117","trade_side":"B","offset_type":"O","hedge_type":"speculation","qty":1,"price":"3000.000"}}`
 
 func TestFuturesExecutionHTTP(t *testing.T) {
-	for _, scenario := range []string{"published", "unknown", "registered", "status", "status_switch_off", "conflict", "missing", "unavailable", "production", "disabled", "switch_off", "injected_permission", "query_override", "duplicate_key", "number_price", "bad_method", "cross_origin", "form_body", "bad_status_query", "extra_status_query", "duplicate_status_query"} {
+	for _, scenario := range []string{"published", "unknown", "registered", "status", "status_switch_off", "conflict", "missing", "unavailable", "capture_unavailable", "production", "disabled", "switch_off", "injected_permission", "query_override", "duplicate_key", "number_price", "bad_method", "cross_origin", "form_body", "bad_status_query", "extra_status_query", "duplicate_status_query"} {
 		t.Run(scenario, func(t *testing.T) {
 			cfg := config.Default()
 			cfg.Service.Environment = config.EnvironmentTest
@@ -66,6 +66,8 @@ func TestFuturesExecutionHTTP(t *testing.T) {
 				stub.result, stub.err, want = futures.OrderExecutionResult{}, futures.ErrOrderRequestMissing, 404
 			case "unavailable":
 				stub.result, stub.err, want = futures.OrderExecutionResult{}, errors.New("private-database-address"), 503
+			case "capture_unavailable":
+				stub.result, stub.err, want = futures.OrderExecutionResult{}, futures.ErrCaptureUnavailable, 503
 			case "production":
 				cfg.Service.Environment = config.EnvironmentProduction
 				want, submits = 503, 0
@@ -119,6 +121,9 @@ func TestFuturesExecutionHTTP(t *testing.T) {
 			h.ServeHTTP(w, r)
 			if w.Code != want || stub.submits != submits || stub.lookups != lookups {
 				t.Fatal(w.Code, w.Body.String(), stub.submits, stub.lookups)
+			}
+			if scenario == "capture_unavailable" && !strings.Contains(w.Body.String(), "reply/event receiver is unavailable") {
+				t.Fatal(w.Body.String())
 			}
 			if w.Code != 405 && w.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("missing no-store")

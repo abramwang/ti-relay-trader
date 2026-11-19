@@ -30,6 +30,8 @@ SDK 应在启动阶段使用能力握手，不得只比较 Python 包版本。�
 
 ### 期货TEST发送编排（源码新增，默认关闭）
 
+收件健康增量（2026-11-19，源码待部署）：新报单/撤单要求独立TEST库中双路reply/event收件健康、来源与owner匹配；登记前和实际发布前均检查。无记录/缺表/任一路15秒未续期/显式停收时拒绝新发送，登记前返回503，已登记未发布保留原publication结果。重复原key及GET核对不依赖此健康状态，不自动重发。终端账户增加`capture={ready,state,valid_until}`，`execution.reason=relay_capture_unavailable`表示收件链路不可用；业务落库/柜台授权另行判断。需先应用迁移000048并启动双路收件，操作员CLI不属于本HTTP门禁，详见[运行边界](OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#收件健康与http停发联动11月19日增量)。
+
 `POST /v1/futures/orders`和`GET /v1/futures/order-command`已接现有持久命令登记/TEST发布器；本轮只完成源码及隔离验证，未部署、未发真实命令、未发布SDK wheel，不表示生产期货或终端发送已开放。两个入口与股票`/v1/orders`分离，不改变股票账户配置。生产环境始终503。
 
 POST要求`Content-Type: application/json`，拒绝跨Origin、query参数、重复键、额外字段及超过4KiB正文：

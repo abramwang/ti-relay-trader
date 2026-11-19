@@ -87,6 +87,11 @@ func TestResidentPairRawCaptureResumeAndPeerFailure(t *testing.T) {
 	err := FollowTestRawPair(run, s, store, p, o, checkpoints, func(v ResidentCaptureProgress) error {
 		last[v.Stream] = v
 		if last[keys["reply"]].Captured == 1 && last[keys["event"]].Captured == 1 {
+			if v.Phase != "stopped" {
+				if health, _, e := readCaptureHealth(ctx, store.db, s.scope, p.target); e != nil || !health.Ready {
+					return errors.New("both captured lanes failed to publish health")
+				}
+			}
 			cancel()
 		}
 		return nil
@@ -94,6 +99,9 @@ func TestResidentPairRawCaptureResumeAndPeerFailure(t *testing.T) {
 	cancel()
 	if err != context.Canceled || len(last) != 2 {
 		t.Fatal(last, err)
+	}
+	if health, _, err := readCaptureHealth(ctx, store.db, s.scope, p.target); err == nil || health.State != "stopped" {
+		t.Fatal("pair exit did not close readiness", health, err)
 	}
 	for _, v := range last {
 		if v.Phase != "stopped" || !v.CheckpointVerified || v.Checkpoint.Cursor != "1-0" || v.BusinessAuthorized {

@@ -25,6 +25,7 @@ var futuresTestMigrations = []string{
 	"000044_futures_query_publication",
 	"000045_futures_query_reviews",
 	"000047_futures_cancel_rejections",
+	"000048_futures_capture_health",
 }
 
 func migrateFuturesTest(t *testing.T, db *sql.DB, ctx context.Context, name, direction string) {

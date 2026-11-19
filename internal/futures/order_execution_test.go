@@ -102,6 +102,7 @@ func serviceFixture(t *testing.T, store *CommandStore, transport *fakeQueryPubli
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedServiceCapture(t, store, v.scope(), target)
 	s.transport = func(TestSourceConfig, TestQueryTarget, TestTradeApproval) (queryPublicationTransport, func(), error) {
 		return transport, func() {}, nil
 	}

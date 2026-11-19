@@ -69,6 +69,9 @@ func (s *TestOrderService) Cancel(ctx context.Context, request CancelExecutionRe
 	if err != nil || target.Validate() != nil || target.TradeDate != r.TradeDate {
 		return CancelExecutionResult{}, ErrQueryPublishGate
 	}
+	if _, _, err := readCaptureHealth(ctx, s.store.db, a.Source.Scope, target); err != nil {
+		return CancelExecutionResult{}, err
+	}
 	// The browser supplies neither a receipt nor a native order identity.
 	// Resolve both from the published local command and retained OC evidence.
 	tx, err := beginFuturesTransaction(ctx, s.store.db)
@@ -106,6 +109,7 @@ func (s *TestOrderService) Cancel(ctx context.Context, request CancelExecutionRe
 		return CancelExecutionResult{}, err
 	}
 	defer closeTransport()
+	transport = &captureGuardTransport{inner: transport, db: s.store.db, scope: a.Source.Scope, target: target}
 	reg, err := s.store.register(ctx, a.Source.Scope, "cmd.trade", raw, evidence, func(tx *sql.Tx) (*CommandRegistration, error) {
 		return serviceCancelRegistration(ctx, tx, a.Source.Scope, r.IdempotencyKey, &r)
 	})

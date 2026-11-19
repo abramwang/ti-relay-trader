@@ -26,7 +26,7 @@ relay 是量化研究系统的交易基础数据项目，负责标准化实盘�
 
 ## 当前工作
 
-- **TEST期货终端及双路收件源码完成，线上仍未启用**：网页已接独立报撤权限及本页原key核对；`relay-ctp-replies --stream-role both --follow`将reply/event收件合并为一个进程，独立位点、任一路失败联动停收，显式确认停止后续读。不自动发单/ACK/业务投影，未部署/切环境/改权限。下一步持续业务分发、收件故障停发联动、跨浏览器命令列表及动态停止；东吴异源报价仍走原生CLI。见[终端边界](docs/TRADING_API_SCHEMA.md#期货test终端报撤联动源码新增待部署)及[双路收件](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#双路同进程收件11月19日增量)。
+- **TEST期货终端、双路收件及HTTP停发联动源码完成，线上仍未启用**：网页已接独立报撤权限及本页原key核对；双路收件器在独立TEST库记录短期健康状态，HTTP/API/SDK发送前核对两路收件、来源与owner，停止/过期/绑定变化时拒绝新报撤，原key查询保留。新增迁移000048尚未部署，不自动发单/ACK/业务投影，不切环境或改权限。下一步持续业务分发、跨浏览器命令列表、动态停止及操作员CLI统一；东吴异源报价仍走原生CLI。见[收件停发边界](docs/OC_RELAY_RESPONSIBILITY_SIMPLIFICATION_20261118.md#收件健康与http停发联动11月19日增量)。
 
 - **服务端报价准备与SDK源码完成**：新增只读`/v1/futures/price-preview`，由Relay从已配置Meridian解析唯一正式目录、tick和快照原文；不再要求API调用方准备映射/行情文件，不接收来源或权限覆盖。Python新增`get_futures_price_preview`，始终不授权/发单，未部署API或发布wheel、未改环境。见[接口边界](docs/TRADING_API_SCHEMA.md#期货只读报价准备源码新增待部署)；普通期货交易授权及终端发送仍待接线。
 

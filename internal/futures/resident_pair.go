@@ -57,19 +57,42 @@ func FollowTestRawPair(ctx context.Context, source *TestStreamSource, store *Str
 			return ErrStreamCursor
 		}
 	}
+	health, err := startCaptureHealth(checkCtx, store.db, source, verifier.target)
+	if err != nil {
+		return err
+	}
+	defer health.close()
 	var output sync.Mutex
-	return runCapturePair(ctx, func(run context.Context, role string) error {
+	var heartbeat sync.Mutex
+	err = runCapturePair(ctx, func(run context.Context, role string) error {
 		o := options
 		o.Role, o.Checkpoint = role, checkpoints.Reply
 		if role == "event" {
 			o.Checkpoint = checkpoints.Event
 		}
-		return FollowTestRawStream(run, source, store, verifier, o, func(p ResidentCaptureProgress) error {
+		result := followTestRawStream(run, source, store, verifier, o, func(p ResidentCaptureProgress) error {
 			output.Lock()
 			defer output.Unlock()
 			return emit(p)
+		}, func(check context.Context, p ResidentCaptureProgress) error {
+			heartbeat.Lock()
+			defer heartbeat.Unlock()
+			if err := check.Err(); err != nil {
+				return err
+			}
+			return health.observe(check, p)
 		})
+		// Close readiness as soon as one lane exits, before waiting for its
+		// peer's cleanup. Never let a successful late cycle reopen it.
+		heartbeat.Lock()
+		stopErr := health.stop()
+		heartbeat.Unlock()
+		if stopErr != nil {
+			return errors.Join(result, stopErr)
+		}
+		return result
 	})
+	return err
 }
 
 func runCapturePair(ctx context.Context, follow func(context.Context, string) error) error {

@@ -66,6 +66,7 @@ type TerminalAccount struct {
 	LocalOrders     []OrderRow             `json:"local_orders"`
 	LocalOrderError string                 `json:"local_order_error,omitempty"`
 	Execution       *TerminalExecutionView `json:"execution,omitempty"`
+	Capture         *CaptureHealthView     `json:"capture,omitempty"`
 }
 
 type TerminalQuery struct {
@@ -181,6 +182,18 @@ func (r *TerminalReader) snapshot(ctx context.Context, includeQueries bool) []Te
 		hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		item.Heartbeat, item.ConnectionState, item.ConnectionError = r.connection(hctx, i)
 		cancel()
+		if a.Execution != nil {
+			cctx, ccancel := context.WithTimeout(ctx, 2*time.Second)
+			t := TestQueryTarget{SourceID: a.SourceID, ServerRunID: a.ServerRunID, Epoch: a.Epoch, Group: a.Execution.CommandGroup}
+			if h := item.Heartbeat; h != nil && h.TradeDate != nil && h.ConnectionGeneration != nil {
+				t.CounterSessionID = h.SessionID
+				t.TradeDate = *h.TradeDate
+				t.ConnectionGeneration = *h.ConnectionGeneration
+			}
+			v, _, _ := readCaptureHealth(cctx, r.db, a.Scope, t)
+			item.Capture = &v
+			ccancel()
+		}
 		if !includeQueries {
 			out = append(out, item)
 			continue
