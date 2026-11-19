@@ -200,6 +200,17 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 		return EventReceipt{}, err
 	}
 	defer tx.Rollback()
+	result, err := processEventTx(ctx, tx, id)
+	if err != nil {
+		return EventReceipt{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return EventReceipt{}, err
+	}
+	return result, nil
+}
+
+func processEventTx(ctx context.Context, tx *sql.Tx, id int64) (EventReceipt, error) {
 	var key string
 	if err := tx.QueryRowContext(ctx, `SELECT scope_key FROM futures_event_inbox WHERE event_id=$1`, id).Scan(&key); err != nil {
 		return EventReceipt{}, err
@@ -219,9 +230,6 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 	}
 	if !oneOf(result.State, "pending", "waiting_identity") {
 		result.Replayed = true
-		if err := tx.Commit(); err != nil {
-			return EventReceipt{}, err
-		}
 		return result, nil
 	}
 	if isCancelRejectionEvent(raw) {
@@ -255,9 +263,6 @@ func (s *EventStore) Process(ctx context.Context, id int64) (EventReceipt, error
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE futures_event_inbox SET state=$2,reason=$3,processed_at=clock_timestamp() WHERE event_id=$1`, id, result.State, result.Reason); err != nil {
-		return EventReceipt{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return EventReceipt{}, err
 	}
 	return result, nil

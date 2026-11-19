@@ -457,7 +457,21 @@ func (s *StreamStore) ForwardEvent(ctx context.Context, h StreamHandle, id int64
 		return EventReceipt{}, err
 	}
 	defer tx.Rollback()
-	if _, _, _, err = lockStream(ctx, tx, h); err != nil {
+	out, err := forwardEventTx(ctx, tx, h, id, target)
+	if err != nil {
+		return EventReceipt{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return EventReceipt{}, err
+	}
+	return out, nil
+}
+
+func forwardEventTx(ctx context.Context, tx *sql.Tx, h StreamHandle, id int64, target string) (EventReceipt, error) {
+	if h.config.Role != "event" {
+		return EventReceipt{}, ErrStreamIdentity
+	}
+	if _, _, _, err := lockStream(ctx, tx, h); err != nil {
 		return EventReceipt{}, err
 	}
 	r, err := readStreamRecord(ctx, tx, h, id)
@@ -494,9 +508,6 @@ func (s *StreamStore) ForwardEvent(ctx context.Context, h StreamHandle, id int64
 		return EventReceipt{}, ErrStreamIdentity
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_inbox SET state='delivered',event_id=$2,delivered_at=clock_timestamp() WHERE receipt_id=$1`, id, out.EventID); err != nil {
-		return EventReceipt{}, err
-	}
-	if err = tx.Commit(); err != nil {
 		return EventReceipt{}, err
 	}
 	return out, nil

@@ -34,8 +34,18 @@ func DecodeResidentCheckpoints(raw []byte) (ResidentCheckpoints, error) {
 // granting query, projection, ACK or trade authority. An error/budget on either
 // side cancels its peer; both finish checkpoint reporting before return.
 func FollowTestRawPair(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, options ResidentCaptureOptions, checkpoints ResidentCheckpoints, emit func(ResidentCaptureProgress) error) error {
+	return followTestPair(ctx, source, store, verifier, options, checkpoints, emit, false)
+}
+
+// FollowTestLocalEventPair additionally projects confirmed local order/fill and
+// cancel-rejection events. Queries and external events remain raw-only.
+func FollowTestLocalEventPair(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, options ResidentCaptureOptions, checkpoints ResidentCheckpoints, emit func(ResidentCaptureProgress) error) error {
+	return followTestPair(ctx, source, store, verifier, options, checkpoints, emit, true)
+}
+
+func followTestPair(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, options ResidentCaptureOptions, checkpoints ResidentCheckpoints, emit func(ResidentCaptureProgress) error, project bool) error {
 	deadline, bounded := ctx.Deadline()
-	if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || source == nil || store == nil || verifier == nil || emit == nil || options.validate() != nil || validateCaptureCheckpoint(checkpoints.Reply) != nil || validateCaptureCheckpoint(checkpoints.Event) != nil {
+	if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || source == nil || store == nil || verifier == nil || source.scope != verifier.scope || source.String() != verifier.target.SourceID || emit == nil || options.validate() != nil || validateCaptureCheckpoint(checkpoints.Reply) != nil || validateCaptureCheckpoint(checkpoints.Event) != nil {
 		return ErrStreamIdentity
 	}
 	// Check both expected positions before changing either owner. The existing
@@ -62,6 +72,14 @@ func FollowTestRawPair(ctx context.Context, source *TestStreamSource, store *Str
 		return err
 	}
 	defer health.close()
+	var projector *LocalEventProjector
+	if project {
+		projector, err = NewLocalEventProjector(checkCtx, store, source.scope, verifier.target)
+		if err != nil {
+			_ = health.stop()
+			return err
+		}
+	}
 	var output sync.Mutex
 	var heartbeat sync.Mutex
 	err = runCapturePair(ctx, func(run context.Context, role string) error {
@@ -73,14 +91,29 @@ func FollowTestRawPair(ctx context.Context, source *TestStreamSource, store *Str
 		result := followTestRawStream(run, source, store, verifier, o, func(p ResidentCaptureProgress) error {
 			output.Lock()
 			defer output.Unlock()
+			if project {
+				p.Mode = "test_resident_local_event_projection"
+			}
 			return emit(p)
-		}, func(check context.Context, p ResidentCaptureProgress) error {
+		}, func(check context.Context, h StreamHandle, p *ResidentCaptureProgress) error {
 			heartbeat.Lock()
 			defer heartbeat.Unlock()
 			if err := check.Err(); err != nil {
 				return err
 			}
-			return health.observe(check, p)
+			if projector != nil {
+				if role == "event" && h.owner != "" {
+					page, err := projector.Step(check, h, options.PageSize)
+					if err != nil {
+						return err
+					}
+					p.LocalProjection = &page
+					if page.Conflicts > 0 {
+						return ErrLocalProjectionConflict
+					}
+				}
+			}
+			return health.observe(check, *p)
 		})
 		// Close readiness as soon as one lane exits, before waiting for its
 		// peer's cleanup. Never let a successful late cycle reopen it.

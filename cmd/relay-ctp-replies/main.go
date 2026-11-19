@@ -64,11 +64,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	reviewFile := f.String("review-file", "", "independent request review, max 16 KiB")
 	evidenceFile := f.String("evidence-file", "", "original OC request evidence, max 256 KiB; no credentials")
 	capture := f.Bool("capture", false, "capture TEST reply originals only")
-	follow := f.Bool("follow", false, "keep raw capture running across idle periods; never apply business results")
+	follow := f.Bool("follow", false, "keep capture running across idle periods; raw-only unless project-local-events is explicit")
+	project := f.Bool("project-local-events", false, "both/follow only: explicitly apply confirmed local events to the TEST ledger; no external/query projection or trading")
 	maxRecords := f.Int("max-records", 50000, "follow-only record budget 1..50000; existing durable capacity also applies")
 	receive := f.Bool("receive-reviewed", false, "capture and apply independently reviewed query replies")
 	persist := f.Bool("persist-test-replies", false, "explicit permission to write dedicated TEST audit")
-	role := f.String("stream-role", "reply", "reply, event, or both; both requires follow or status and is raw-only")
+	role := f.String("stream-role", "reply", "reply, event, or both; both requires follow or status and defaults to raw-only")
 	checkpointsFile := f.String("checkpoints-file", "", "both-only explicit reply/event previous checkpoints JSON, max 4 KiB")
 	persistEvents := f.Bool("persist-test-events", false, "explicit permission to persist TEST event originals")
 	status := f.Bool("status", false, "read checkpoint only; no takeover or Redis connection")
@@ -87,6 +88,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	seen := map[string]bool{}
 	f.Visit(func(v *flag.Flag) { seen[v.Name] = true })
 	paired := *role == "both"
+	if *project && (!paired || !*follow || *status || *receive) {
+		return errors.New("local event projection requires paired follow capture, never status or query review")
+	}
 	var checkpoints futures.ResidentCheckpoints
 	if paired {
 		if (!*follow && !*status) || *receive || *reviewFile != "" || *evidenceFile != "" || seen["previous-owner"] || seen["cursor"] ||
@@ -112,7 +116,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	if (*follow && (*receive || *status || *reviewFile != "" || *evidenceFile != "" || seen["max-pages"])) ||
 		(!*follow && seen["max-records"]) || *maxRecords < 1 || *maxRecords > 50000 {
-		return errors.New("follow is raw-only, uses max-records instead of max-pages, and forbids status/review modes")
+		return errors.New("follow uses max-records instead of max-pages and forbids status/query-review modes")
 	}
 	writeAllowed := *persist
 	if *role == "event" {
@@ -159,7 +163,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 	}
 	check.Close()
 	if !*status && !*capture && !*receive {
-		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "stream_role": *role, "follow": *follow, "reviewed_request": len(review) > 0, "business_authorized": false})
+		return json.NewEncoder(out).Encode(map[string]any{"mode": "check_only_no_connections", "route": scope.Route, "database": *database, "stream_role": *role, "follow": *follow, "project_local_events": *project, "reviewed_request": len(review) > 0, "business_authorized": false})
 	}
 	dsn, url := getenv("RELAY_CTP_REPLY_DATABASE_URL"), getenv("RELAY_CTP_REPLY_REDIS_URL")
 	pg, err := pgx.ParseConfig(dsn)
@@ -217,7 +221,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		opts.PageSize, opts.MaxRecords = *pageSize, *maxRecords
 		emit := func(p futures.ResidentCaptureProgress) error { return json.NewEncoder(out).Encode(p) }
 		if paired {
-			err = futures.FollowTestRawPair(bounded, source, store, publisher, opts, checkpoints, emit)
+			if *project {
+				err = futures.FollowTestLocalEventPair(bounded, source, store, publisher, opts, checkpoints, emit)
+			} else {
+				err = futures.FollowTestRawPair(bounded, source, store, publisher, opts, checkpoints, emit)
+			}
 		} else {
 			opts.Role = *role
 			opts.Checkpoint = futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}
@@ -232,7 +240,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Role: *role, Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
 	}
 	if err != nil {
-		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrStreamHistory, futures.ErrResidentCaptureBudget, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
+		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrStreamHistory, futures.ErrResidentCaptureBudget, futures.ErrLocalProjectionConflict, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
 			if errors.Is(err, known) {
 				return fmt.Errorf("TEST reply receive stopped: %w; no command sent", known)
 			}

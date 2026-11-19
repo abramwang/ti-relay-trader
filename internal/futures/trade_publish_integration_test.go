@@ -110,7 +110,7 @@ func TestAssessmentConcurrentSinglePublication(t *testing.T) {
 	}
 }
 
-func assessmentOrderReceipt(t *testing.T, db *sql.DB, ctx context.Context, r CommandRegistration, target TestQueryTarget, change func(map[string]any)) int64 {
+func assessmentOrderBody(t *testing.T, r CommandRegistration, target TestQueryTarget, change func(map[string]any)) []byte {
 	t.Helper()
 	o := r.Original.Orders[0]
 	payload := editBody(t, tradeFixture(t, "order"), func(p map[string]any) {
@@ -125,6 +125,12 @@ func assessmentOrderReceipt(t *testing.T, db *sql.DB, ctx context.Context, r Com
 	if change != nil {
 		raw = editBody(t, raw, change)
 	}
+	return raw
+}
+
+func assessmentOrderReceipt(t *testing.T, db *sql.DB, ctx context.Context, r CommandRegistration, target TestQueryTarget, change func(map[string]any)) int64 {
+	t.Helper()
+	raw := assessmentOrderBody(t, r, target, change)
 	config := StreamConfig{Scope: r.Scope, Role: "event", SourceID: target.SourceID}
 	configRaw, _ := json.Marshal(config)
 	key := strings.TrimSuffix(queryReplyStream(r.Scope.Route), ":reply") + ":event"

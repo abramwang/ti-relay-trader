@@ -103,6 +103,7 @@ func TestResidentPairCLIIsolatedRedisAndPG(t *testing.T) {
 		residentAppend(t, ctx, source, key, "1-0", `{"synthetic":true,"role":"`+role+`"}`)
 	}
 	runArgs := []string{"--follow", "--capture", "--persist-test-replies", "--persist-test-events", "--checkpoints-file", cpPath}
+	expectedMode := "test_resident_raw_capture"
 	checkProgress := func(raw []byte) {
 		t.Helper()
 		d := json.NewDecoder(bytes.NewReader(raw))
@@ -113,7 +114,7 @@ func TestResidentPairCLIIsolatedRedisAndPG(t *testing.T) {
 			if err == io.EOF {
 				break
 			}
-			if err != nil || p.BusinessAuthorized || p.Mode != "test_resident_raw_capture" {
+			if err != nil || p.BusinessAuthorized || p.Mode != expectedMode {
 				t.Fatal("invalid or interleaved progress", string(raw), err)
 			}
 			if p.Phase == "stopped" {
@@ -164,6 +165,29 @@ func TestResidentPairCLIIsolatedRedisAndPG(t *testing.T) {
 	for _, suffix := range []string{"cmd.query", "cmd.trade"} {
 		if n, err := source.reader.client.XLen(ctx, verifier.prefix()+":"+suffix).Result(); err != nil || n != 0 {
 			t.Fatal("receiver sent commands", n, err)
+		}
+	}
+	// The same executable explicitly projects only a confirmed local event.
+	registration := residentProjectionCommand(t, ctx, db, scope, verifier.target)
+	key, _ := source.StreamConfig("event").stream()
+	residentAppend(t, ctx, source, key, "3-0", string(assessmentOrderBody(t, registration, verifier.target, nil)))
+	cp = got
+	writeCP()
+	expectedMode = "test_resident_local_event_projection"
+	out, err = call(append(runArgs, "--confirm-stopped", "--project-local-events")...)
+	if err != nil {
+		t.Fatal(string(out), err)
+	}
+	checkProgress(out)
+	if storedCount(t, db, "futures_order_states") != 1 {
+		t.Fatal("CLI failed to project local order", string(out))
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM futures_stream_inbox WHERE state='pending'`).Scan(&pending); err != nil || pending != 4 {
+		t.Fatal("unrelated raw records were claimed", pending, err)
+	}
+	for _, suffix := range []string{"cmd.query", "cmd.trade"} {
+		if n, err := source.reader.client.XLen(ctx, verifier.prefix()+":"+suffix).Result(); err != nil || n != 0 {
+			t.Fatal("projection sent command", n, err)
 		}
 	}
 }

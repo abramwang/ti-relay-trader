@@ -12,6 +12,20 @@
 
 ## Meridian定价分流已接线
 
+### 本地事件持续投影（11月19日增量）
+
+Relay现有双路收件入口增加显式`--project-local-events`，不是新服务或OC协议。只在`--stream-role both --follow --capture --persist-test-replies --persist-test-events`及原有TEST账户、独立数据库、target/checkpoints参数齐备时运行；不带capture仍仅离线预检，不读连接凭据。未提供新开关时行为仍是原文收件。沿用原迁移至000048，本轮不新增表、不部署或修改运行配置。
+
+本地订单/成交必须匹配已登记意图、原命令origin及**published**发布记录，发布目标必须与显式target的source/run_id/epoch/group/session/TradingDay/代次完全一致；事件还核对自身会话、日期、原生账户和委托字段，不从首条回报建立权限。新登记且确认发布的命令会在后续扫描中识别，无需为每笔更新文件。撤单拒绝复用既有独立尝试处理，不改原委托为cancelled，不自动再撤。真实事件wire未携带的字段不补造。
+
+复用EventStore/TradeStore并将原文`delivered`、事件接收和业务应用放入同一事务；处理失败回滚转交，原文仍pending，下次显式续接可再处理，不重发交易命令。重复消息/成交沿既有身份机制去重，成交先到保留成交事实而不补造订单。同消息矛盾或成交经济事实冲突留证并停止本轮、关闭收件健康；重启仍检查该日账本及已转交事件冲突，不靠重启消除。分页有界、延后项不阻挡后续行，完整循环后重扫；保留原容量上限，不宣称无限运行或自动跨日。
+
+外部订单、未登记/发布未知、其他会话、非法或意图不符回报继续保留原文pending，并输出本页deferred原因；不为清零强制ACK/delivered。查询reply仍只收原文，独立查询核验与完整分页规则不变，不将accepted回执改成订单终态。历史上已由其他处理器转交的业务pending仍归原流程，本入口不抢占。进度模式为`test_resident_local_event_projection`，`local_projection`给本页scanned/applied/conflicts/deferred/cycle_complete，`business_authorized=false`仍表示没有交易授权。
+
+正常停止、来源变化、事务错误和已认定冲突沿双路联动停收及HTTP健康门禁处理；只有显式确认旧收件器停止后才可用实际owner/cursor续接。换会话/交易日不自动更新target，不搬旧身份。无需OC新增动作或交付材料。终端现有本地订单原文视图保留，成交账本展示统一、查询/外部业务分发和线上常驻部署仍待完成，不把本轮记成完整账户快照或在线验收。
+
+验证：全量Go测试及vet、相关包race和隔离PG/Unix socket Redis回归通过，含CLI显式投影、重启不重复入账、成交先到、拒撤不改变委托、错误/冲突留证、事务回滚和收件健康关闭。`applied`是本页处理的回报条数，不是新增经济成交数；重复回报可被处理但不重复生成成交事实。测试只用本地临时服务和合成命令/回报，没有访问共享TEST柜台或发真实报撤。
+
 ### 收件健康与HTTP停发联动（11月19日增量）
 
 Relay双路收件器新增独立TEST PG健康记录，HTTP报单/撤单服务、SDK所用HTTP入口及终端权限展示共同核对。无需OC增加动作、心跳或授权层。本轮仅源码及隔离测试，未部署、迁移业务数据库、切环境或发送真实命令。

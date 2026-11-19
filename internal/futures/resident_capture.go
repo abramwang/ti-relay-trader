@@ -26,16 +26,17 @@ func DefaultResidentCaptureOptions() ResidentCaptureOptions {
 }
 
 type ResidentCaptureProgress struct {
-	Mode               string              `json:"mode"`
-	Phase              string              `json:"phase"`
-	At                 time.Time           `json:"at"`
-	Stream             string              `json:"stream"`
-	SourceID           string              `json:"source_id"`
-	Checkpoint         HeartbeatCheckpoint `json:"checkpoint"`
-	CheckpointVerified bool                `json:"checkpoint_verified"`
-	Captured           int                 `json:"captured"`
-	StopReason         string              `json:"stop_reason,omitempty"`
-	BusinessAuthorized bool                `json:"business_authorized"`
+	Mode               string               `json:"mode"`
+	Phase              string               `json:"phase"`
+	At                 time.Time            `json:"at"`
+	Stream             string               `json:"stream"`
+	SourceID           string               `json:"source_id"`
+	Checkpoint         HeartbeatCheckpoint  `json:"checkpoint"`
+	CheckpointVerified bool                 `json:"checkpoint_verified"`
+	Captured           int                  `json:"captured"`
+	StopReason         string               `json:"stop_reason,omitempty"`
+	BusinessAuthorized bool                 `json:"business_authorized"`
+	LocalProjection    *LocalProjectionPage `json:"local_projection,omitempty"`
 }
 
 func (o ResidentCaptureOptions) validate() error {
@@ -55,7 +56,7 @@ func FollowTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 	return followTestRawStream(ctx, source, store, verifier, o, emit, nil)
 }
 
-func followTestRawStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error, observe func(context.Context, ResidentCaptureProgress) error) (result error) {
+func followTestRawStream(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, o ResidentCaptureOptions, emit func(ResidentCaptureProgress) error, observe func(context.Context, StreamHandle, *ResidentCaptureProgress) error) (result error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > 24*time.Hour || o.validate() != nil ||
 		source == nil || store == nil || verifier == nil || emit == nil || source.scope != verifier.scope || source.scope.Route.Env != "test" || source.sourceID != verifier.target.SourceID {
@@ -200,13 +201,13 @@ func followTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 		if observe != nil {
 			p.Phase = phase
 			stepCtx, cancel := context.WithTimeout(ctx, o.StepTimeout)
-			err := observe(stepCtx, p)
+			err := observe(stepCtx, h, &p)
 			cancel()
 			if err != nil {
 				return err
 			}
 		}
-		if newRecords > 0 || time.Since(lastReport) >= o.ReportInterval {
+		if newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || time.Since(lastReport) >= o.ReportInterval {
 			if err := report(phase); err != nil {
 				return fmt.Errorf("resident capture output failed: %w", err)
 			}
@@ -214,7 +215,8 @@ func followTestRawStream(ctx context.Context, source *TestStreamSource, store *S
 		if p.Captured >= o.MaxRecords {
 			return ErrResidentCaptureBudget
 		}
-		delay = consumerDelay(delay, TestConsumerOptions{MinDelay: o.MinDelay, MaxDelay: o.MaxDelay}, newRecords > 0)
+		projectionProgress := p.LocalProjection != nil && (p.LocalProjection.Applied > 0 || (!p.LocalProjection.CycleComplete && p.LocalProjection.Scanned > 0))
+		delay = consumerDelay(delay, TestConsumerOptions{MinDelay: o.MinDelay, MaxDelay: o.MaxDelay}, newRecords > 0 || projectionProgress)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():

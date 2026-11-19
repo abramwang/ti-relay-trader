@@ -93,6 +93,15 @@ func TestPairedResidentOfflineAndPermissions(t *testing.T) {
 	if err := run(context.Background(), args, noEnv, &out, &out); err != nil || !strings.Contains(out.String(), `"stream_role":"both"`) || !strings.Contains(out.String(), `"business_authorized":false`) {
 		t.Fatal(out.String(), err)
 	}
+	out.Reset()
+	if err := run(context.Background(), append(append([]string{}, args...), "--project-local-events"), noEnv, &out, &out); err != nil || !strings.Contains(out.String(), `"project_local_events":true`) {
+		t.Fatal(out.String(), err)
+	}
+	for _, extra := range [][]string{{"--project-local-events"}, {"--project-local-events", "--follow"}, {"--project-local-events", "--stream-role", "event", "--follow"}, {"--project-local-events", "--stream-role", "both", "--status"}} {
+		if err := run(context.Background(), append(replyArgs(t), extra...), noEnv, &out, &out); err == nil {
+			t.Fatal("unsafe projection flags", extra)
+		}
+	}
 	for _, extra := range [][]string{
 		{"--capture"}, {"--capture", "--persist-test-replies"}, {"--capture", "--persist-test-events"},
 		{"--persist-test-replies", "--persist-test-events"}, {"--previous-owner", ""}, {"--cursor", "0-0"},
