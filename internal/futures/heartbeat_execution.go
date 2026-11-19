@@ -23,12 +23,15 @@ func (a *HeartbeatAssessment) decodeRelayExecution(raw rawObject, h Heartbeat) e
 	if err != nil || n == nil || *n < 0 || *n > 86400 {
 		return ErrQueryPublishGate
 	}
-	if !literal(raw["per_command_native_validation"], "true") {
+	// OC's historical quote check is diagnostic, not a Relay prerequisite.
+	if b, exists := raw["per_command_native_validation"]; exists && !literal(b, "true") && !literal(b, "false") {
 		return ErrQueryPublishGate
 	}
-	if json.Unmarshal(raw["constraint_symbol"], &a.ConstraintSymbol) != nil || literal(raw["constraint_symbol"], "null") ||
-		(a.ConstraintSymbol != "" && !native(a.ConstraintSymbol, 80, false)) {
-		return ErrQueryPublishGate
+	if b, exists := raw["constraint_symbol"]; exists {
+		if json.Unmarshal(b, &a.ConstraintSymbol) != nil || literal(b, "null") ||
+			(a.ConstraintSymbol != "" && !native(a.ConstraintSymbol, 80, false)) {
+			return ErrQueryPublishGate
+		}
 	}
 	for key, dst := range map[string]*bool{"trade_preparation_pending": &a.TradePreparationPending, "trade_response_pending": &a.TradeResponsePending} {
 		if !literal(raw[key], "true") && !literal(raw[key], "false") {

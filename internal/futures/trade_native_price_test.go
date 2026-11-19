@@ -146,6 +146,75 @@ func TestNativePriceExactTicks(t *testing.T) {
 	}
 }
 
+func TestNativePriceEmptyBidRetainsFact(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
+	v, _, target, a, _ := executionTradeFixture(t, now)
+	q, raw, mapping := nativePriceFixture(t, target, v.scope(), now)
+	raw = editBody(t, raw, func(m map[string]any) {
+		constraintsItem(m)["dynamic"].(map[string]any)["bid_price1"] = nil
+		constraintsItem(m)["unavailable_numeric_fields"] = []any{"BidPrice1"}
+		m["adapter_context"].(map[string]any)["numeric_source_binary64"].(map[string]any)["BidPrice1"] = "7fefffffffffffff"
+	})
+	p, err := nativePriceFromReply(q, target, 5, raw, mapping, now.Add(-time.Second), now)
+	if err != nil || p.SuggestedLimitPrice != "5218" || p.Market.BestBid != "" || p.Facts.Dynamic.BidPrice1 != nil || p.BusinessAuthorized {
+		t.Fatal(p, err)
+	}
+	e := registrationEvidence(t, v)
+	for key := range e.Mappings {
+		e.Mappings[key] = mapping
+	}
+	for _, price := range []string{"5218", "5219", "5217", "5218.5"} {
+		body := editBody(t, []byte(v.Raw), func(m map[string]any) {
+			fields := m["payload"].(map[string]any)
+			fields["symbol"] = "rb2701"
+			fields["limit_price"] = price
+		})
+		a.Market, a.CommandSHA256 = &p.Market, commandDigest(body)
+		_, err := ValidateTestTradePreparation(body, v.scope(), target, e, a)
+		if (err == nil) != (price == "5218") {
+			t.Fatal(price, err)
+		}
+	}
+	for _, mutate := range []func(map[string]any){
+		func(m map[string]any) {
+			constraintsItem(m)["dynamic"].(map[string]any)["ask_price1"] = nil
+			constraintsItem(m)["unavailable_numeric_fields"] = []any{"BidPrice1", "AskPrice1"}
+		},
+		func(m map[string]any) { constraintsItem(m)["dynamic"].(map[string]any)["ask_price1"] = "5218" },
+		func(m map[string]any) {
+			m["adapter_context"].(map[string]any)["numeric_source_binary64"].(map[string]any)["BidPrice1"] = "0000000000000000"
+		},
+	} {
+		if _, err := nativePriceFromReply(q, target, 5, editBody(t, raw, mutate), mapping, now.Add(-time.Second), now); err == nil {
+			t.Fatal("unsafe empty bid accepted")
+		}
+	}
+	if _, err := nativePriceFromReply(q, target, 5, raw, mapping, now.Add(-time.Second), now.Add(5*time.Second)); err == nil {
+		t.Fatal("expired empty bid accepted")
+	}
+}
+
+func TestNativePriceCaptureWithinRequest(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
+	v, _, target, _, _ := executionTradeFixture(t, now)
+	q, raw, mapping := nativePriceFixture(t, target, v.scope(), now)
+	for _, field := range []string{"static", "dynamic"} {
+		end := now.Add(-400 * time.Millisecond)
+		if field == "dynamic" {
+			end = now.Add(-100 * time.Millisecond)
+		}
+		for _, delta := range []time.Duration{-time.Millisecond, -101 * time.Millisecond, time.Millisecond} {
+			b := editBody(t, raw, func(m map[string]any) {
+				constraintsItem(m)[field].(map[string]any)["captured_at"] = assessmentTime(end.Add(delta))
+			})
+			_, err := nativePriceFromReply(q, target, 5, b, mapping, now.Add(-time.Second), now)
+			if (err == nil) != (delta == -time.Millisecond) {
+				t.Fatal(field, delta, err)
+			}
+		}
+	}
+}
+
 func TestNativePriceReferenceStrictAndCopied(t *testing.T) {
 	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
 	v, _, target, a, _ := executionTradeFixture(t, now)

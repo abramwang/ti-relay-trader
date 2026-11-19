@@ -144,7 +144,7 @@ func nativePriceFromReply(q CommandRegistration, target TestQueryTarget, receipt
 		return bad()
 	}
 	s, d := f.Static, f.Dynamic
-	if s.ProductClass != "1" || s.InstLifePhase != "1" || s.IsTrading != 1 || s.OpenDate > target.TradeDate || s.ExpireDate < target.TradeDate || s.PriceTick == nil || s.VolumeMultiple == nil || *s.VolumeMultiple <= 0 || s.MinLimitOrderVolume == nil || *s.MinLimitOrderVolume <= 0 || *s.MinLimitOrderVolume > 1 || s.MaxLimitOrderVolume == nil || *s.MaxLimitOrderVolume < 1 || d.LowerLimitPrice == nil || d.UpperLimitPrice == nil || d.BidPrice1 == nil {
+	if s.ProductClass != "1" || s.InstLifePhase != "1" || s.IsTrading != 1 || s.OpenDate > target.TradeDate || s.ExpireDate < target.TradeDate || s.PriceTick == nil || s.VolumeMultiple == nil || *s.VolumeMultiple <= 0 || s.MinLimitOrderVolume == nil || *s.MinLimitOrderVolume <= 0 || *s.MinLimitOrderVolume > 1 || s.MaxLimitOrderVolume == nil || *s.MaxLimitOrderVolume < 1 || d.LowerLimitPrice == nil || d.UpperLimitPrice == nil {
 		return bad()
 	}
 	o, _ := parseReply(raw)
@@ -156,6 +156,18 @@ func nativePriceFromReply(q CommandRegistration, target TestQueryTarget, receipt
 	}
 	if json.Unmarshal(o["adapter_context"], &adapter) != nil {
 		return bad()
+	}
+	// A TEST counter may have an empty bid book. Retain that fact and only
+	// allow a lower-limit resting buy when a valid ask is strictly above it.
+	if d.BidPrice1 == nil {
+		if adapter.Numeric["BidPrice1"] != "7fefffffffffffff" || d.AskPrice1 == nil || validateLimitOrderPrice(*d.AskPrice1, *s.PriceTick, *d.LowerLimitPrice, *d.UpperLimitPrice) != nil {
+			return bad()
+		}
+		ask, _ := checkedPositivePrice(*d.AskPrice1)
+		lower, _ := checkedPositivePrice(*d.LowerLimitPrice)
+		if ask.Cmp(lower) <= 0 {
+			return bad()
+		}
 	}
 	// Check the wire's binary64 provenance without using floating-point
 	// arithmetic for tick alignment or price selection.
@@ -170,7 +182,10 @@ func nativePriceFromReply(q CommandRegistration, target TestQueryTarget, receipt
 		}
 	}
 	ref := &TestNativeFactsReference{q.CommandID, receiptID, commandDigest(raw), adapter.Evidence["instrument"].Started, adapter.Evidence["depth"].Started}
-	m := TestTradeMarket{NativeFacts: ref, PriceSource: nativeFactsPriceSource, SecurityID: mapping.SecurityID, SourceInstrumentID: mapping.SourceInstrumentID, ExchangeID: mapping.ExchangeID, TradeDate: target.TradeDate, ObservedAt: d.CapturedAt, PublicationSnapshotID: mapping.PublicationSnapshotID, LogicalTableChecksum: mapping.LogicalTableChecksum, PriceTick: *s.PriceTick, BestBid: *d.BidPrice1, LowerLimit: *d.LowerLimitPrice, UpperLimit: *d.UpperLimitPrice}
+	m := TestTradeMarket{NativeFacts: ref, PriceSource: nativeFactsPriceSource, SecurityID: mapping.SecurityID, SourceInstrumentID: mapping.SourceInstrumentID, ExchangeID: mapping.ExchangeID, TradeDate: target.TradeDate, ObservedAt: d.CapturedAt, PublicationSnapshotID: mapping.PublicationSnapshotID, LogicalTableChecksum: mapping.LogicalTableChecksum, PriceTick: *s.PriceTick, LowerLimit: *d.LowerLimitPrice, UpperLimit: *d.UpperLimitPrice}
+	if d.BidPrice1 != nil {
+		m.BestBid = *d.BidPrice1
+	}
 	end, err := nativeFactsDeadline(m, now)
 	if err != nil {
 		return TestNativePricePreparation{}, err
@@ -189,7 +204,7 @@ func nativePriceFromReply(q CommandRegistration, target TestQueryTarget, receipt
 	if d.AskPrice1 != nil {
 		ask, ok := checkedPositivePrice(*d.AskPrice1)
 		bid, _ := checkedPositivePrice(m.BestBid)
-		if !ok || ask.Cmp(bid) < 0 || validateLimitOrderPrice(*d.AskPrice1, m.PriceTick, m.LowerLimit, m.UpperLimit) != nil {
+		if !ok || (bid != nil && ask.Cmp(bid) < 0) || validateLimitOrderPrice(*d.AskPrice1, m.PriceTick, m.LowerLimit, m.UpperLimit) != nil {
 			return bad()
 		}
 	}
@@ -218,6 +233,12 @@ func nativeFactsDeadline(m TestTradeMarket, now time.Time) (time.Time, error) {
 }
 
 func nativeTestBuyPrice(m TestTradeMarket) (Price, error) {
+	if m.BestBid == "" && m.PriceSource == nativeFactsPriceSource && m.NativeFacts != nil {
+		if err := validateLimitOrderPrice(m.LowerLimit, m.PriceTick, m.LowerLimit, m.UpperLimit); err != nil {
+			return "", err
+		}
+		return m.LowerLimit, nil
+	}
 	if err := validateLimitOrderPrice(m.BestBid, m.PriceTick, m.LowerLimit, m.UpperLimit); err != nil {
 		return "", err
 	}

@@ -53,6 +53,8 @@ func TestTerminalExecutionPolicy(t *testing.T) {
 				h.AuthorizationOwner = ""
 			case "missing_native":
 				h.NativeOrderSnapshotReady = nil
+				h.OrderSnapshotScope = ""
+				wantSubmit, wantCancel = true, true
 			case "recovery":
 				b = false
 			case "afternoon_break":

@@ -115,6 +115,56 @@ func TestRelayExecutionPermissionsAndFreshness(t *testing.T) {
 	}
 }
 
+func TestRelayExecutionWithoutOCBusinessGates(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
+	v, _, target, approval, row := executionTradeFixture(t, now)
+	for _, scenario := range []string{"quote_check_disabled", "quote_check_removed", "snapshot_not_ready", "snapshot_diagnostics_removed", "cancel_without_new_order_ref"} {
+		t.Run(scenario, func(t *testing.T) {
+			a := approval
+			raw := editBody(t, row.Raw, func(m map[string]any) {
+				p := m["payload"].(map[string]any)
+				adapter := m["adapter_context"].(map[string]any)
+				e := adapter["admission_evidence"].(map[string]any)
+				switch scenario {
+				case "quote_check_disabled":
+					e["per_command_native_validation"] = false
+				case "quote_check_removed":
+					delete(e, "per_command_native_validation")
+					delete(e, "constraint_symbol")
+				case "snapshot_not_ready", "snapshot_diagnostics_removed":
+					m["order_snapshot_ready"], p["order_snapshot_ready"] = false, false
+					e["native_order_snapshot_ready"], e["order_projection_ready"] = false, false
+					if scenario == "snapshot_diagnostics_removed" {
+						for _, key := range []string{"order_snapshot_scope", "native_order_snapshot_ready", "order_projection_ready", "local_orders_only"} {
+							delete(e, key)
+						}
+					}
+				case "cancel_without_new_order_ref":
+					e["order_ref_ready"] = false
+					m["accepting_trade_commands"], p["accepting_trade_commands"] = false, false
+					adapter["operation_reasons"].(map[string]any)["submit"] = "execution_busy"
+					a.CancelReceiptID, a.Market = 1, nil
+					a.ExecutionPermission = &TestExecutionPermission{Cancel: true}
+				}
+			})
+			h, err := DecodeHeartbeat(raw, v.scope().Route)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "snapshot_not_ready" && (h.OrderSnapshotReady || h.Assessment.NativeOrderSnapshotReady || h.Assessment.OrderProjectionReady) {
+				t.Fatal("missing snapshot was fabricated")
+			}
+			if _, err := testTradeHeartbeatProof(StreamInput{"1-0", raw}, v.scope().Route, target, a, now); err != nil {
+				t.Fatal("OC business diagnostic blocked Relay-authorized execution", err)
+			}
+			a.ExecutionPermission = &TestExecutionPermission{}
+			if _, err := testTradeHeartbeatProof(StreamInput{"1-0", raw}, v.scope().Route, target, a, now); err == nil {
+				t.Fatal("removing OC gate bypassed Relay permission")
+			}
+		})
+	}
+}
+
 func TestRelayExecutionStrictGrantAndCommandDeadline(t *testing.T) {
 	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
 	v, _, _, a, _ := executionTradeFixture(t, now)
@@ -144,6 +194,52 @@ func TestRelayExecutionStrictGrantAndCommandDeadline(t *testing.T) {
 	}
 	if _, err := relayExecutionCommandDeadline(append([]byte(v.Raw), ' '), a, now); err == nil {
 		t.Fatal("body changed")
+	}
+}
+
+func TestRelayExecutionCancelIndependentOfSubmitPreparation(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, "2026-11-17T13:40:00+08:00")
+	v, _, target, approval, row := executionTradeFixture(t, now)
+	approval.CancelReceiptID, approval.Market = 1, nil
+	approval.ExecutionPermission = &TestExecutionPermission{Cancel: true}
+	for _, field := range []string{"trade_preparation_pending", "trade_response_pending"} {
+		t.Run(field, func(t *testing.T) {
+			raw := editBody(t, row.Raw, func(m map[string]any) {
+				m["accepting_trade_commands"] = false
+				m["payload"].(map[string]any)["accepting_trade_commands"] = false
+				a := m["adapter_context"].(map[string]any)
+				a["admission_evidence"].(map[string]any)[field] = true
+				a["operation_reasons"].(map[string]any)["submit"] = "execution_busy"
+			})
+			if _, err := testTradeHeartbeatProof(StreamInput{"1-0", raw}, v.scope().Route, target, approval, now); err != nil {
+				t.Fatal("submit state blocked independently ready cancel", err)
+			}
+			for _, mutate := range []func(map[string]any){
+				func(m map[string]any) {
+					m["accepting_cancel_commands"] = false
+					m["payload"].(map[string]any)["accepting_cancel_commands"] = false
+					m["adapter_context"].(map[string]any)["operation_reasons"].(map[string]any)["cancel"] = "execution_busy"
+				},
+				func(m map[string]any) {
+					m["accepting_trade_commands"] = true
+					m["payload"].(map[string]any)["accepting_trade_commands"] = true
+					m["adapter_context"].(map[string]any)["operation_reasons"].(map[string]any)["submit"] = "ready"
+				},
+			} {
+				changed := editBody(t, raw, mutate)
+				if _, err := testTradeHeartbeatProof(StreamInput{"1-0", changed}, v.scope().Route, target, approval, now); err == nil {
+					t.Fatal("unavailable or contradictory execution accepted")
+				}
+			}
+			denied := approval
+			denied.ExecutionPermission = &TestExecutionPermission{Submit: true}
+			if _, err := testTradeHeartbeatProof(StreamInput{"1-0", raw}, v.scope().Route, target, denied, now); err == nil {
+				t.Fatal("OC capability replaced Relay cancel permission")
+			}
+			if _, err := testTradeHeartbeatProof(StreamInput{"1-0", raw}, v.scope().Route, target, approval, now.Add(5*time.Second)); err == nil {
+				t.Fatal("stale cancel capability accepted")
+			}
+		})
 	}
 }
 

@@ -57,11 +57,11 @@ func (p *TestTradePublisher) inspect(ctx context.Context) (queryPublishProof, er
 
 func testTradeHeartbeatProof(row StreamInput, route QueryRoute, target TestQueryTarget, a TestTradeApproval, now time.Time) (queryPublishProof, error) {
 	h, err := DecodeHeartbeat(row.Raw, route)
-	if err != nil || h.ReadOnly != nil || h.Recovery != nil || !h.RedisReady || !h.BrokerReady || !h.OrderSnapshotReady || h.CounterSessionID != target.CounterSessionID || h.TradeDate != target.TradeDate {
+	if err != nil || h.ReadOnly != nil || h.Recovery != nil || !h.RedisReady || !h.BrokerReady || h.CounterSessionID != target.CounterSessionID || h.TradeDate != target.TradeDate {
 		return queryPublishProof{}, ErrQueryPublishGate
 	}
 	execution := h.Assessment != nil && h.Assessment.relayExecution()
-	if execution != a.relayExecution() {
+	if execution != a.relayExecution() || (!execution && !h.OrderSnapshotReady) {
 		return queryPublishProof{}, ErrQueryPublishGate
 	}
 	var localEnd time.Time
@@ -187,9 +187,9 @@ func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
 	if c.Action == "order.cancel" {
 		return nil
 	}
-	// OC day mode validates this command's contract/limits before its SDK call.
-	// A cached constraint_symbol may describe a previous command, so it must
-	// not be substituted for the current command's authoritative constraints.
+	// Relay-owned execution uses the command's explicit market evidence.
+	// Historical OC constraint_symbol may describe a different command and
+	// must not impose an implicit quote query on this publication.
 	if a.PermissionProfile == "test_day_relay.v1" || a.relayExecution() {
 		if len(c.Orders) != 1 || c.Orders[0].Exchange != "SHFE" {
 			return ErrQueryPublishGate

@@ -100,9 +100,6 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 			return bad()
 		}
 	} else {
-		if a.relayExecution() {
-			return bad()
-		}
 		for _, key := range []string{"native_order_snapshot_ready", "order_projection_ready", "local_orders_only"} {
 			if _, present := raw[key]; present {
 				return bad()
@@ -204,8 +201,13 @@ func decodeAssessmentHeartbeat(fields rawObject, h Heartbeat, route QueryRoute) 
 	if a.relayExecution() {
 		// Capabilities describe execution, not Relay permission, position risk
 		// checks, market freshness or OC's historical submit/cancel counts.
-		executionReady := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && a.NativeOrderSnapshotReady && a.OrderRefReady && a.TransportRecoveryClear && a.callbacksAllowAssessment()
-		if (h.AcceptingTradeCommands || h.AcceptingCancelCommands) && (!executionReady || a.TradePreparationPending || a.TradeResponsePending) {
+		executionReady := h.RedisReady && h.BrokerReady && h.SettlementConfirmed && a.TransportRecoveryClear && a.callbacksAllowAssessment()
+		if (h.AcceptingTradeCommands || h.AcceptingCancelCommands) && !executionReady {
+			return bad()
+		}
+		// Submit preparation does not determine whether another order can be
+		// cancelled. The adapter reports cancel execution capability separately.
+		if h.AcceptingTradeCommands && (!a.OrderRefReady || a.TradePreparationPending || a.TradeResponsePending) {
 			return bad()
 		}
 	} else if a.PermissionProfile == "test_day_relay.v1" {

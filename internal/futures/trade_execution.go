@@ -19,7 +19,7 @@ func (a TestTradeApproval) executionActionAllowed(action string) bool {
 func relayExecutionTradeGate(route QueryRoute, target TestQueryTarget, a TestTradeApproval, h Heartbeat, now time.Time) (time.Time, error) {
 	bad := func() (time.Time, error) { return time.Time{}, ErrQueryPublishGate }
 	s := h.Assessment
-	if route.Env != "test" || route.BrokerID != "ctp_4900" || route.AccountID != "300052141" || s == nil || !s.relayExecution() || s.OrderSnapshotScope != "full_native_current_session" || !s.NativeOrderSnapshotReady || !s.LocalOrdersOnly {
+	if route.Env != "test" || route.BrokerID != "ctp_4900" || route.AccountID != "300052141" || s == nil || !s.relayExecution() {
 		return bad()
 	}
 	action := "order.submit"

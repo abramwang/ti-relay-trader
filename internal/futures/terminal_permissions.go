@@ -32,7 +32,7 @@ func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.T
 	}
 	h := account.Heartbeat
 	v.Reason = "broker_not_ready"
-	if account.ConnectionError != "" || account.LedgerError != "" || account.LocalOrderError != "" || account.ConnectionState != "execution" || h == nil || h.AuthorizationOwner != "relay" || h.SessionID == "" || h.TradeDate == nil || h.ConnectionGeneration == nil || *h.ConnectionGeneration < 1 || h.ProducedAt.After(now) || !now.Before(h.ProducedAt.Add(5*time.Second)) || !h.RedisReady || !h.BrokerReady || !h.SettlementConfirmed || h.RecoveryClear == nil || !*h.RecoveryClear || h.NativeOrderSnapshotReady == nil || !*h.NativeOrderSnapshotReady || h.OrderSnapshotScope != "full_native_current_session" || h.RuntimeBlockedReason != "" || h.StateText == "stopping" || h.State == "STOPPED" {
+	if account.ConnectionError != "" || account.LedgerError != "" || account.LocalOrderError != "" || account.ConnectionState != "execution" || h == nil || h.AuthorizationOwner != "relay" || h.SessionID == "" || h.TradeDate == nil || h.ConnectionGeneration == nil || *h.ConnectionGeneration < 1 || h.ProducedAt.After(now) || !now.Before(h.ProducedAt.Add(5*time.Second)) || !h.RedisReady || !h.BrokerReady || !h.SettlementConfirmed || h.RecoveryClear == nil || !*h.RecoveryClear || h.RuntimeBlockedReason != "" || h.StateText == "stopping" || h.State == "STOPPED" {
 		return v
 	}
 	v.TradeDate = *h.TradeDate

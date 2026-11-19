@@ -95,7 +95,10 @@ func (a *HeartbeatAssessment) decodeResidentDiagnostics(raw rawObject, h Heartbe
 		if literal(b, "null") || json.Unmarshal(b, &a.RuntimeBlockedReason) != nil || len(a.RuntimeBlockedReason) > 4096 {
 			return ErrQueryPublishGate
 		}
-		if a.RuntimeBlockedReason != "" && (!oneOf(h.StateText, "recovery_blocked", "stopping") || h.AcceptingTradeCommands || h.AcceptingCancelCommands || h.Operations.AcceptingQueryCommands) {
+		// This OC diagnostic permits observation of the new scope, never trading
+		// or a claim that the missing historical state has been recovered.
+		readOnlyHistory := a.RuntimeBlockedReason == "historical_state_missing_read_only" && !h.AcceptingTradeCommands && !h.AcceptingCancelCommands
+		if a.RuntimeBlockedReason != "" && !readOnlyHistory && (!oneOf(h.StateText, "recovery_blocked", "stopping") || h.AcceptingTradeCommands || h.AcceptingCancelCommands || h.Operations.AcceptingQueryCommands) {
 			return ErrQueryPublishGate
 		}
 	}

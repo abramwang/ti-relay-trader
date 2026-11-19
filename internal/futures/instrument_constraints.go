@@ -166,6 +166,7 @@ func decodeConstraintsPage(o rawObject, c QueryContext) (queryPage, error) {
 		return bad()
 	}
 	completedTimes := map[string]string{}
+	startedTimes := map[string]string{}
 	requestIDs := map[int64]bool{}
 	for _, name := range []string{"instrument", "depth"} {
 		// An unexecuted SDK leg has no request identity or completion evidence.
@@ -209,6 +210,7 @@ func decodeConstraintsPage(o rawObject, c QueryContext) (queryPage, error) {
 				return bad()
 			}
 			completedTimes[name] = textField(e, "completed_at")
+			startedTimes[name] = textField(e, "started_at")
 		}
 	}
 	page := queryPage{messageID: textField(o, "message_id"), code: textField(o, "code"), failed: failed}
@@ -229,8 +231,18 @@ func decodeConstraintsPage(o rawObject, c QueryContext) (queryPage, error) {
 		return bad()
 	}
 	items, err := decodeInstrumentConstraints(p["items"], c)
-	if err != nil || items[0].Static.CapturedAt != completedTimes["instrument"] || items[0].Dynamic.CapturedAt != completedTimes["depth"] {
+	if err != nil {
 		return bad()
+	}
+	// Row capture can precede the completed callback. It must belong to this
+	// request, rather than equal the later completion timestamp byte for byte.
+	for name, captured := range map[string]string{"instrument": items[0].Static.CapturedAt, "depth": items[0].Dynamic.CapturedAt} {
+		at, _ := time.Parse(time.RFC3339Nano, captured)
+		start, _ := time.Parse(time.RFC3339Nano, startedTimes[name])
+		end, _ := time.Parse(time.RFC3339Nano, completedTimes[name])
+		if at.Before(start) || at.After(end) {
+			return bad()
+		}
 	}
 	var numbers map[string]string
 	if json.Unmarshal(a["numeric_source_binary64"], &numbers) != nil {

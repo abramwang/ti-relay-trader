@@ -149,6 +149,33 @@ func TestResidentProgressBlockedHeartbeatIsNotRecovery(t *testing.T) {
 	}
 }
 
+func TestResidentHistoricalStateMissingIsReadOnly(t *testing.T) {
+	raw := editBody(t, syntheticResidentHeartbeat(t, 0, false), func(m map[string]any) {
+		m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)["runtime_blocked_reason"] = "historical_state_missing_read_only"
+	})
+	h, err := DecodeHeartbeat(raw, responsibilityRoute())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ready := h.queryCollection(); !ready || h.AcceptingTradeCommands || h.AcceptingCancelCommands || !bytes.Equal(raw, h.Raw) {
+		t.Fatal("read-only observation changed capabilities or original body")
+	}
+	for _, key := range []string{"accepting_trade_commands", "accepting_cancel_commands"} {
+		changed := editBody(t, raw, func(m map[string]any) {
+			m[key], m["payload"].(map[string]any)[key] = true, true
+		})
+		if _, err := DecodeHeartbeat(changed, responsibilityRoute()); err == nil {
+			t.Fatal("missing history permitted trading", key)
+		}
+	}
+	full := editBody(t, raw, func(m map[string]any) {
+		m["adapter_context"].(map[string]any)["admission_evidence"].(map[string]any)["resource_usage"] = syntheticResidentUsage(t, 10000)
+	})
+	if _, err := DecodeHeartbeat(full, responsibilityRoute()); err == nil {
+		t.Fatal("read-only exception bypassed exhausted capacity")
+	}
+}
+
 func TestResidentProgressMalformedDiagnostics(t *testing.T) {
 	base := syntheticResidentHeartbeat(t, 8000, false)
 	for name, mutate := range map[string]func(map[string]any){
