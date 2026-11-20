@@ -157,6 +157,9 @@ func Assemble(src ledger.CurrentBaselineSources, collectionID string, started ti
 	if err := mergeUnresolved(&c, src.UnresolvedOrders); err != nil {
 		return c, err
 	}
+	if err := appendCommandObservations(&c, src.TradeCommands, &budget); err != nil {
+		return c, err
+	}
 	if src.SourceHealth != nil {
 		for _, reason := range src.SourceHealth.Reasons {
 			c.Limitations = append(c.Limitations, ledger.CurrentBaselineLimitation{Code: reason, Resource: "account", RecordIDs: []string{}, Detail: "See local source observations; retained checkpoints are not a continuity or sampling-boundary proof."})

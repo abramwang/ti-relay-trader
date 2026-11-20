@@ -32,6 +32,7 @@ type CurrentBaselineSources struct {
 	ReadAt           time.Time
 	Queries          map[string]CurrentBaselineQuerySources
 	UnresolvedOrders []CurrentBaselineRecord
+	TradeCommands    *CurrentBaselineCommandSources
 	RevisionEvidence *CurrentBaselineRevisionEvidence
 	SourceHealth     *CurrentBaselineSourceHealth
 }
@@ -149,6 +150,10 @@ ORDER BY orders.order_pk LIMIT $2`, scope.AccountID, currentBaselineMaxRows+1)
 		return out, err
 	}
 	if err = rows.Close(); err != nil {
+		return out, err
+	}
+	out.TradeCommands, err = readCurrentBaselineCommands(ctx, tx, scope.AccountID, &budget)
+	if err != nil {
 		return out, err
 	}
 	if err = tx.Commit(); err != nil {

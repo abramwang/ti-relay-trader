@@ -157,12 +157,23 @@ func (s CurrentBaselineScope) validate() error {
 }
 
 func isBaselineResource(s string) bool {
+	if s == "commands" {
+		return true
+	}
 	for _, r := range currentBaselineResources {
 		if r == s {
 			return true
 		}
 	}
 	return false
+}
+
+// Commands are optional so existing publications retain their exact identity.
+func baselineResourceNames(resources map[string][]CurrentBaselineRecord) []string {
+	if _, ok := resources["commands"]; ok {
+		return []string{"positions", "orders", "fills", "commands"}
+	}
+	return currentBaselineResources
 }
 
 func baselineRowsJSON(rows []CurrentBaselineRecord) []byte {
@@ -243,7 +254,7 @@ func prepareCurrentBaseline(in CurrentBaselineCandidate) (CurrentBaselineCandida
 			return out, "", ErrCurrentBaselineInput
 		}
 	}
-	for _, resource := range currentBaselineResources {
+	for _, resource := range baselineResourceNames(in.Resources) {
 		rows := in.Resources[resource]
 		if len(rows) > currentBaselineMaxRows {
 			return out, "", ErrCurrentBaselineLimit
@@ -359,7 +370,7 @@ func (s *CurrentBaselineStore) PublishCandidate(ctx context.Context, in CurrentB
 		m.Completeness = "partial"
 	}
 	m.Limitations = append(m.Limitations, c.Limitations...)
-	for _, r := range currentBaselineResources {
+	for _, r := range baselineResourceNames(c.Resources) {
 		state := "unavailable"
 		if len(c.Resources[r]) > 0 {
 			state = "partial"
@@ -379,7 +390,7 @@ func (s *CurrentBaselineStore) PublishCandidate(ctx context.Context, in CurrentB
 	if err != nil {
 		return m, err
 	}
-	for _, r := range currentBaselineResources {
+	for _, r := range baselineResourceNames(c.Resources) {
 		for start := 0; start < len(c.Resources[r]); start += 500 {
 			end := start + 500
 			if end > len(c.Resources[r]) {
@@ -447,12 +458,16 @@ func readCurrentBaselineManifestForAccount(ctx context.Context, q currentBaselin
 	if m.SourceHealth != nil && (m.SourceHealth.ContinuityVerified || !m.SourceHealth.TrackingAvailable || m.RevisionEvidence == nil || !m.SourceHealth.ObservedAt.Equal(m.CompletedAt)) {
 		return CurrentBaselineManifest{}, ErrCurrentBaselineCorrupt
 	}
-	if m.SchemaVersion != "relay.account_baseline.v1" || m.MissingSecurityMeansZero || m.ValidUntil != nil || m.Consistency != (CurrentBaselineConsistency{Level: "relay_published_view"}) || (m.Completeness != "partial" && m.Completeness != "unavailable") || len(m.Resources) != 3 {
+	if m.SchemaVersion != "relay.account_baseline.v1" || m.MissingSecurityMeansZero || m.ValidUntil != nil || m.Consistency != (CurrentBaselineConsistency{Level: "relay_published_view"}) || (m.Completeness != "partial" && m.Completeness != "unavailable") || (len(m.Resources) != 3 && len(m.Resources) != 4) {
 		return CurrentBaselineManifest{}, ErrCurrentBaselineCorrupt
 	}
 	for _, r := range currentBaselineResources {
-		x, ok := m.Resources[r]
-		if !ok || x.TotalRows < 0 || x.TotalRows > currentBaselineMaxRows || len(x.ContentSHA256) != 64 || (x.Completeness != "partial" && x.Completeness != "unavailable") {
+		if _, ok := m.Resources[r]; !ok {
+			return CurrentBaselineManifest{}, ErrCurrentBaselineCorrupt
+		}
+	}
+	for r, x := range m.Resources {
+		if !isBaselineResource(r) || x.TotalRows < 0 || x.TotalRows > currentBaselineMaxRows || len(x.ContentSHA256) != 64 || (x.Completeness != "partial" && x.Completeness != "unavailable") {
 			return CurrentBaselineManifest{}, ErrCurrentBaselineCorrupt
 		}
 	}
@@ -518,7 +533,11 @@ func (s *CurrentBaselineStore) Page(ctx context.Context, scope CurrentBaselineSc
 	if err != nil {
 		return p, err
 	}
-	total := m.Resources[resource].TotalRows
+	summary, ok := m.Resources[resource]
+	if !ok {
+		return p, ErrCurrentBaselineUnavailable
+	}
+	total := summary.TotalRows
 	if offset > 0 && offset >= total {
 		return p, ErrCurrentBaselineInput
 	}

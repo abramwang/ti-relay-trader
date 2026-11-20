@@ -216,6 +216,8 @@ python3 scripts/check-readonly-release.py \
 
 2026-11-19当前证券基线：`TestCurrentAccountBaseline*`与`bash scripts/test-position-baseline-postgres.sh`覆盖ledger固定存储及accountbaseline原文组装。包括规范化/容量限制、501跨页时新版本发布、并发防重/代次、回滚/篡改；四查询原文→只读组装→固定发布、跨日/未发布/未知状态订单保留、相同意图观察合并/冲突、缺页/末页/字段/原文及错误作用域、十进制精度与未知冻结。脚本只启动Unix socket临时PG，在独立schema运行迁移及合成源表，拒绝非隔离数据源；旧close继续回归。归档终态一致不等于来源完整，候选始终partial/unavailable、覆盖/缺失为零标志false。无生产迁移或柜台查询。
 
+11-20命令观察：`TestCurrentAccountBaselineCommand*`及`IsolatedCommands`覆盖已归档却无订单行、批量部分有账本、撤单未闭合、跨日/旧gateway、索引与原文冲突/重复JSON键、重复命令/子单、精确金额与原文保留。临时PG执行迁移57、501命令固定分页、后来命令使旧修订失效、历史终态不加入未决orders、旧三资源读取commands为unavailable、空commands版本禁止破坏性降级。全部是合成数据，无Redis业务发布；命令观察不等于完整责任登记或交易授权。
+
 `TestCurrentAccountBaselineRevision*`使用真实000001至000053迁移，覆盖12张表的24个观察触发器、同事务提交/回滚、8路并发修订、账户隔离与归属变更、未归属收件/整表截断的全局失效、普通心跳排除；发布等待实际写事务后拒绝旧候选、幂等重试、原501行分页不变、改回原值不复活、scope变化、停用追踪及重装epoch。首轮重装用例暴露连接缓存函数OID问题，修正目录核验后整套PG race通过。`CheckValidity`为只读、只返回保守invalidated/unverifiable，尚无完整源覆盖、TTL或HTTP上线验收。
 
 2026-11-20 `TestCurrentAccountBaselineHealth*`在上述真实schema增加000054：检查五个健康观察触发器、54上/下迁移、正常心跳/位点前进不误失效、会话变化再恢复仍失效、源写入/修订一起回滚、错误恢复与历史错误分离、游标数值比较/回退/截断、原文与作用域/缺字段/镜像冲突、停用追踪、固定501行页不变。`TestCurrentAccountBaselineCheckpointIsNotCoverage`验证处理位点落后有独立诊断，追上也不升级来源完整；来源组装集成测试验证新诊断固化。仅隔离PG与合成输入，无Redis/柜台/生产访问；缺少源连续区间和采样边界时仍不发布current能力。

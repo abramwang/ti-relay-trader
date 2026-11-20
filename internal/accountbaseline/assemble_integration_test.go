@@ -53,7 +53,7 @@ func sourceSchemaDatabase(t *testing.T, receipts bool) (*sql.DB, context.Context
 			t.Fatal(err)
 		}
 		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), ".up.sql") || f.Name() > "000056_ledger_stream_handoffs.up.sql" {
+			if !strings.HasSuffix(f.Name(), ".up.sql") || f.Name() > "000057_account_baseline_commands.up.sql" {
 				continue
 			}
 			raw, err := os.ReadFile(filepath.Join("../../migrations/postgres", f.Name()))
@@ -94,7 +94,7 @@ order_qty bigint,cum_filled_qty bigint,leaves_qty bigint,status text,is_terminal
 	if _, err = db.ExecContext(ctx, string(raw)); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"000002_stream_checkpoints", "000054_account_baseline_source_health"} {
+	for _, name := range []string{"000002_stream_checkpoints", "000054_account_baseline_source_health", "000057_account_baseline_commands"} {
 		raw, err = os.ReadFile("../../migrations/postgres/" + name + ".up.sql")
 		if err != nil {
 			t.Fatal(err)
