@@ -101,7 +101,13 @@ func (s *TestOrderService) Cancel(ctx context.Context, request CancelExecutionRe
 	approval := TestTradeApproval{PermissionProfile: relayTestExecutionProfile,
 		ExecutionPermission: &TestExecutionPermission{Cancel: true}, AssessmentID: "relay-order-service-v1",
 		CommandSHA256: commandDigest(raw), ExpiresAt: timeutil.FormatRFC3339Nano(expires), CancelReceiptID: receipt}
-	if o := parent.Original.Orders[0]; o.Exchange == "CFFEX" {
+	if o := parent.Original.Orders[0]; a.Markets != nil {
+		approval.MarketPolicy = a.marketPolicy(o.Exchange)
+		if approval.MarketPolicy == nil {
+			return CancelExecutionResult{}, ErrOrderExecutionOff
+		}
+		// Cancel is independent of new-order quantity and close-model policy.
+	} else if o.Exchange == "CFFEX" {
 		if !cffexIndexSymbol.MatchString(o.Symbol) {
 			return CancelExecutionResult{}, ErrStreamIdentity
 		}

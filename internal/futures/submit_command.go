@@ -112,7 +112,7 @@ func decodeSubmitSyntax(raw []byte, account, expectedDay string) (SubmitCommand,
 		if err := json.Unmarshal(rawRow, &row); err != nil {
 			return SubmitCommand{}, err
 		}
-		if row.AccountID != account || !validDay(row.TradeDate) || (expectedDay != "" && row.TradeDate != expectedDay) || (len(result.Orders) > 0 && row.TradeDate != result.Orders[0].TradeDate) || !oneOf(row.Exchange, "SHFE", "CFFEX") || !native(row.Symbol, 80, false) || row.BusinessType != "F" || !oneOf(row.TradeSide, "B", "S") || !oneOf(row.OffsetType, "O", "C", "CT", "CY") || row.HedgeType != "speculation" || row.OrderQty <= 0 || equalDecimal(string(row.LimitPrice), "0") {
+		if row.AccountID != account || !validDay(row.TradeDate) || (expectedDay != "" && row.TradeDate != expectedDay) || (len(result.Orders) > 0 && row.TradeDate != result.Orders[0].TradeDate) || !validExchange(row.Exchange) || !native(row.Symbol, 80, false) || row.BusinessType != "F" || !oneOf(row.TradeSide, "B", "S") || !oneOf(row.OffsetType, "O", "C", "CT", "CY") || row.HedgeType != "speculation" || row.OrderQty <= 0 || equalDecimal(string(row.LimitPrice), "0") {
 			return bad()
 		}
 		if !validID(row.GatewayOrderID) || len(row.GatewayOrderID) > maxSubmitIDBytes || strings.HasPrefix(row.GatewayOrderID, "external-ctp-v1-") || !validID(row.ClientOrderID) || len(row.ClientOrderID) > maxSubmitIDBytes || gateways[row.GatewayOrderID] || clients[row.ClientOrderID] {

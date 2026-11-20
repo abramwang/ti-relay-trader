@@ -37,7 +37,7 @@ type ConstraintsTarget struct {
 }
 
 func (t ConstraintsTarget) valid() bool {
-	return native(t.Symbol, 80, false) && oneOf(t.Exchange, "SHFE", "CFFEX")
+	return native(t.Symbol, 80, false) && validExchange(t.Exchange)
 }
 
 type IntentField struct {

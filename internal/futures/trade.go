@@ -114,8 +114,8 @@ func nativeIdentity(kind string, s TradeScope, exchange, id string) string {
 	return prefix + hex.EncodeToString(digest[:])
 }
 
-// v2 is limited to SHFE/CFFEX by decodeTrade. Inputs have already passed native
-// normalization validation; framing never trims or rewrites source identifiers.
+// Inputs have passed native normalization validation; framing never trims or
+// rewrites source identifiers. Exchange is an identity component, not a filter.
 func nativeFillIdentityV2(s TradeScope, exchange, tradeID, orderSysID, side string) string {
 	parts := []string{s.Route.Env, s.Route.BrokerID, s.Route.AccountID, s.Route.GatewayID, s.TradeDate, exchange, tradeID, orderSysID, side}
 	var framed strings.Builder
@@ -159,7 +159,7 @@ func decodeTrade(raw []byte, scope TradeScope, kind string) (rawObject, error) {
 	}
 	if textField(obj, "account_id") != scope.Route.AccountID || textField(obj, "trade_date") != scope.TradeDate ||
 		!validID(textField(obj, "gateway_order_id")) || !validID(textField(obj, "counter_session_id")) ||
-		!native(textField(obj, "symbol"), 80, false) || !native(textField(obj, "exchange"), 8, false) ||
+		!native(textField(obj, "symbol"), 80, false) || !validExchange(textField(obj, "exchange")) ||
 		textField(obj, "business_type") != "F" || !oneOf(textField(obj, "trade_side"), "B", "S") ||
 		!oneOf(textField(obj, "offset_type"), "O", "C", "CT", "CY") || textField(obj, "hedge_type") != "speculation" {
 		return nil, fmt.Errorf("invalid trade scope, economics or enum")
@@ -214,9 +214,6 @@ func decodeTrade(raw []byte, scope TradeScope, kind string) (rawObject, error) {
 		fillID := textField(obj, "fill_id")
 		expectedID := nativeIdentity("fill", scope, textField(obj, "exchange"), textField(ids, "trade_id"))
 		if fillIdentityVersion(fillID) == "v2" {
-			if !oneOf(textField(obj, "exchange"), "SHFE", "CFFEX") {
-				return nil, fmt.Errorf("fill identity v2 requires SHFE or CFFEX")
-			}
 			expectedID = nativeFillIdentityV2(scope, textField(obj, "exchange"), textField(ids, "trade_id"), textField(ids, "order_sys_id"), textField(obj, "trade_side"))
 		}
 		if !native(textField(ids, "order_sys_id"), 20, false) || !native(textField(ids, "trade_id"), 20, false) || fillID != expectedID {

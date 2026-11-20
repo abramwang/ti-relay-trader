@@ -13,7 +13,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:19193")
     parser.add_argument("--output", default="outputs/recovery/futures-order-preview-20261118")
+    parser.add_argument("--security", default="RB2701.SHFE")
+    parser.add_argument("--native", default="rb2701")
     args = parser.parse_args()
+    symbol, exchange = args.security.split(".")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     errors, writes, results = [], [], []
@@ -59,9 +62,9 @@ def main():
                 elif path == "/v1/futures/terminal":
                     data = {"accounts": [{"account_id": "300052141", "alias": "东吴 TEST", "route": {"broker_id": "ctp_4900", "gateway_id": "synthetic"}, "connection_state": "assessment", "queries": []}]}
                 elif path == "/v1/meridian/futures/instruments":
-                    data = {"data": [{"security_id": "RB2701.SHFE", "source_instrument_id": "rb2701", "instrument_name": "螺纹钢", "exchange_id": "SHFE", "price_tick": 1, "volume_multiple": 10, "trading_status": "active"}], "meta": {}}
+                    data = {"data": [{"security_id": args.security, "source_instrument_id": args.native, "instrument_name": "合成测试合约", "exchange_id": exchange, "price_tick": 1, "volume_multiple": 10, "trading_status": "active"}], "meta": {}}
                 elif path == "/v1/meridian/futures/snapshots":
-                    data = {"data": [{"security_id": "RB2701.SHFE", "trading_day": 20261119, "last": 3000, "pre_settlement": 2990,
+                    data = {"data": [{"security_id": args.security, "trading_day": 20261119, "last": 3000, "pre_settlement": 2990,
                         "exchange_timestamp": "2026-11-19T09:05:00+08:00", "received_at": "2026-11-19T09:05:00+08:00",
                         "bids": [{"level": 1, "price": 2999, "volume": 2, "available": True}],
                         "asks": [{"level": 1, "price": 3000, "volume": 3, "available": True}]}], "meta": {"cache_status": "ready", "stale_data": False}}
@@ -72,15 +75,16 @@ def main():
             page.route("**/*", intercept)
             page.goto(args.base_url + "/trade", wait_until="domcontentloaded")
             page.locator("#futuresAccountEntry").wait_for(state="visible")
-            page.locator("#marketSelector").select_option("SHFE")
-            page.locator("#symbolInput").fill("RB")
-            page.locator("#symbolSuggest button").filter(has_text="RB2701.SHFE").click()
+            page.locator("#marketSelector").select_option(exchange)
+            page.locator("#symbolInput").fill(symbol)
+            page.locator("#symbolSuggest button").filter(has_text=args.security).click()
             page.wait_for_function("document.querySelector('#quoteLast').textContent === '3,000'")
             page.locator("#priceInput").fill("3000.000")
             page.locator("#futuresOrderPreviewButton").click()
             page.wait_for_function("document.querySelector('#futuresOrderPreviewResult').textContent.includes('价格档位通过')")
             assert previews[-1]["price"] == "3000.000"
             assert previews[-1]["trade_date"] == "20261119"
+            assert previews[-1]["security_id"] == args.security
             assert page.locator("#submitOrderButton").is_disabled()
             assert "Relay权限：未开放" in page.locator("#futuresOrderPreviewResult").inner_text()
             page.locator("#futuresOrderPreviewResult").scroll_into_view_if_needed()

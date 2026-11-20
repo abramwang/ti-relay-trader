@@ -34,11 +34,12 @@ type TerminalAccountConfig struct {
 // Optional server-side policy. Merely adding this to an observation manifest
 // does not enable an API or change the terminal's read-only controls.
 type TerminalExecutionConfig struct {
-	SubmitEnabled          bool                  `json:"submit_enabled"`
-	CancelEnabled          bool                  `json:"cancel_enabled"`
-	AuthorizationExpiresAt string                `json:"authorization_expires_at"`
-	CommandGroup           string                `json:"command_group"`
-	CFFEX                  *CFFEXExecutionPolicy `json:"cffex,omitempty"`
+	SubmitEnabled          bool                    `json:"submit_enabled"`
+	CancelEnabled          bool                    `json:"cancel_enabled"`
+	AuthorizationExpiresAt string                  `json:"authorization_expires_at"`
+	CommandGroup           string                  `json:"command_group"`
+	CFFEX                  *CFFEXExecutionPolicy   `json:"cffex,omitempty"`
+	Markets                []MarketExecutionPolicy `json:"markets,omitempty"`
 }
 
 type TerminalReview struct {

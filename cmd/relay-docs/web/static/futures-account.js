@@ -43,8 +43,14 @@
     el("futuresConnection").textContent=loadError?"页面读取失败":a?(connections[a.connection_state] || a.connection_state):"未配置期货账户";
     el("futuresHeartbeatTime").textContent=`心跳：${date(hb && hb.produced_at)}（东八区）`;
     el("futuresRouteIdentity").textContent=a?`${a.route.broker_id} / ${a.route.gateway_id}${a.connection_error?" · "+a.connection_error:""}`:"";
-    const fresh=a?.execution && Date.parse(a.execution.valid_until)>Date.now() && !loadError;
-    el("futuresExecutionPermission").textContent=`TEST 报单：${fresh && a.execution.submit_enabled?"已授权":"关闭"} · 撤单：${fresh && a.execution.cancel_enabled?"已授权":"关闭"}`;
+    const permissionText=(p,label)=>{
+      const fresh=p && Date.parse(p.valid_until)>Date.now() && !loadError;
+      return `${label} 报单：${fresh && p.submit_enabled?"已授权":"关闭"} · 撤单：${fresh && p.cancel_enabled?"已授权":"关闭"}`;
+    };
+    const markets=a?.execution?.markets;
+    el("futuresExecutionPermission").textContent=Array.isArray(markets)
+      ? markets.map(p=>permissionText(p,`TEST ${p.exchange}`)).join("；")
+      : permissionText(a?.execution,"TEST");
     for (const b of el("futuresQueryTabs").querySelectorAll("button")) {
       const query=a && a.queries.find(q=>q.action===b.dataset.futuresQuery);
       b.setAttribute("aria-selected", String(b.dataset.futuresQuery===action));

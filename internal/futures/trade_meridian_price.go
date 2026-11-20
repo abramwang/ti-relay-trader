@@ -38,7 +38,7 @@ func meridianPriceMarket(raw []byte, mapping CatalogBinding, tick Price, tradeDa
 	bad := func() (TestTradeMarket, error) {
 		return TestTradeMarket{}, priceAdmissionError("invalid_meridian_snapshot")
 	}
-	if len(raw) == 0 || len(raw) > maxMeridianPriceBody || !validDay(tradeDate) || !oneOf(mapping.ExchangeID, "SHFE", "CFFEX") || !validID(mapping.SecurityID) || !validID(mapping.SourceInstrumentID) || !validID(mapping.PublicationSnapshotID) || !validID(mapping.LogicalTableChecksum) {
+	if len(raw) == 0 || len(raw) > maxMeridianPriceBody || !validDay(tradeDate) || !validCatalogIdentity(mapping) || !validID(mapping.PublicationSnapshotID) || !validID(mapping.LogicalTableChecksum) {
 		return bad()
 	}
 	if _, ok := checkedPositivePrice(tick); !ok {

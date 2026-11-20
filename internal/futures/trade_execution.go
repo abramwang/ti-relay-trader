@@ -14,8 +14,8 @@ func (a TestTradeApproval) executionActionAllowed(action string) bool {
 	return action == "order.submit" && a.ExecutionPermission.Submit || action == "order.cancel" && a.ExecutionPermission.Cancel
 }
 
-// Relay's Dongwu TEST day policy: legacy SHFE assessment or explicit CFFEX
-// index opt-in. This is not a holiday calendar or an OC authorization window.
+// Relay's Dongwu TEST day policy: explicit market sessions or legacy policies.
+// This is not a holiday calendar or an OC authorization window.
 func relayExecutionTradeGate(route QueryRoute, target TestQueryTarget, a TestTradeApproval, h Heartbeat, now time.Time) (time.Time, error) {
 	bad := func() (time.Time, error) { return time.Time{}, ErrQueryPublishGate }
 	s := h.Assessment
@@ -30,6 +30,13 @@ func relayExecutionTradeGate(route QueryRoute, target TestQueryTarget, a TestTra
 		return bad()
 	}
 	local := now.In(timeutil.Location())
+	if a.MarketPolicy != nil {
+		end, open := a.MarketPolicy.sessionEnd(local)
+		if !open || local.Format("20060102") != target.TradeDate {
+			return bad()
+		}
+		return end, nil
+	}
 	if a.CFFEX != nil {
 		end, open := cffexIndexSessionEnd(local)
 		if a.CFFEX.validate() != nil || !open || local.Format("20060102") != target.TradeDate {

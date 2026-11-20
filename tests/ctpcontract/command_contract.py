@@ -1,6 +1,7 @@
 """Offline trading-command candidate; not an HTTP adapter or trading gate."""
 
 import copy
+import re
 from decimal import Decimal
 
 from query_contract import FORMATS, SCHEMA, StrictValidator, require
@@ -78,7 +79,7 @@ def validate_command(body, *, routing, trading_day=None, max_children=100):
     for row in rows:
         require(row["account_id"] == payload["account_id"], "cross-account batch child")
         require(row["trade_date"] == trading_day, "new order TradingDay mismatch")
-        require(row["exchange"] in {"SHFE", "CFFEX"}, "exchange not supported")
+        require(re.fullmatch(r"[A-Z][A-Z0-9]{0,7}", row["exchange"]) is not None, "invalid exchange encoding")
         canonical_price(row["limit_price"])
         for key, seen in (("gateway_order_id", gateway_ids), ("client_order_id", client_ids)):
             require(row[key] not in seen, f"duplicate batch {key}")

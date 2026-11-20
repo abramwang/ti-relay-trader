@@ -37,7 +37,7 @@ func ResolveMeridianPriceCatalog(raw []byte, securityID string) (CatalogBinding,
 	if !strings.HasSuffix(securityID, "."+b.ExchangeID) {
 		return bad()
 	}
-	if !oneOf(b.ExchangeID, "SHFE", "CFFEX") || !native(b.SourceInstrumentID, 30, false) || !validID(b.SecurityID) || len(b.SecurityID) > 128 || !validID(b.PublicationSnapshotID) || len(b.PublicationSnapshotID) > 128 || !validID(b.LogicalTableChecksum) || len(b.LogicalTableChecksum) > 128 {
+	if !validCatalogIdentity(b) || !validID(b.PublicationSnapshotID) || len(b.PublicationSnapshotID) > 128 || !validID(b.LogicalTableChecksum) || len(b.LogicalTableChecksum) > 128 {
 		return bad()
 	}
 	var coverage map[string]struct {

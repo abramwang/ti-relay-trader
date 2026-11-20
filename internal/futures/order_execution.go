@@ -16,7 +16,6 @@ var (
 	ErrOrderRequestMissing  = errors.New("futures order request not found")
 	ErrOrderExecutionOff    = errors.New("futures TEST order execution unavailable")
 	orderRequestKey         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
-	orderSecurityID         = regexp.MustCompile(`^[A-Z][A-Z0-9]{0,29}\.(SHFE|CFFEX)$`)
 )
 
 type OrderExecutionRequest struct {
@@ -37,7 +36,7 @@ func DecodeOrderExecutionRequest(raw []byte) (OrderExecutionRequest, error) {
 		return r, ErrStreamIdentity
 	}
 	r.Order, err = DecodeOrderPreview(fields["order"])
-	if err != nil || !orderSecurityID.MatchString(r.Order.SecurityID) {
+	if err != nil || !ValidFuturesSecurityID(r.Order.SecurityID) {
 		return r, ErrStreamIdentity
 	}
 	return r, nil
@@ -69,6 +68,7 @@ type TestOrderAccount struct {
 	CancelEnabled          bool
 	AuthorizationExpiresAt time.Time
 	CFFEX                  *CFFEXExecutionPolicy
+	Markets                []MarketExecutionPolicy
 }
 
 type TestOrderService struct {
@@ -97,6 +97,19 @@ func NewTestOrderService(store *CommandStore, accounts []TestOrderAccount, marke
 			return nil, ErrOrderExecutionOff
 		}
 		a.CFFEX = cloneCFFEXPolicy(a.CFFEX)
+		if a.Markets != nil {
+			if a.CFFEX != nil || len(a.Markets) == 0 || len(a.Markets) > 16 {
+				return nil, ErrOrderExecutionOff
+			}
+			seen := map[string]bool{}
+			for _, p := range a.Markets {
+				if p.validate() != nil || seen[p.Exchange] {
+					return nil, ErrOrderExecutionOff
+				}
+				seen[p.Exchange] = true
+			}
+		}
+		a.Markets = cloneMarketPolicies(a.Markets)
 		s.accounts[scope.Route.AccountID] = a
 	}
 	s.transport = func(c TestSourceConfig, t TestQueryTarget, a TestTradeApproval) (queryPublicationTransport, func(), error) {
@@ -180,7 +193,9 @@ func (s *TestOrderService) Submit(ctx context.Context, request OrderExecutionReq
 		ExecutionPermission: &TestExecutionPermission{Submit: true},
 		AssessmentID:        "relay-order-service-v1", CommandSHA256: commandDigest(raw),
 		ExpiresAt: timeutil.FormatRFC3339Nano(expires), Market: &prepared.Market}
-	if binding.ExchangeID == "CFFEX" {
+	if a.Markets != nil {
+		approval.MarketPolicy = a.marketPolicy(binding.ExchangeID)
+	} else if binding.ExchangeID == "CFFEX" {
 		approval.CFFEX = cloneCFFEXPolicy(a.CFFEX)
 	}
 	if _, err := ValidateTestTradePreparation(raw, a.Source.Scope, target, evidence, approval); err != nil {
@@ -194,7 +209,7 @@ func (s *TestOrderService) Submit(ctx context.Context, request OrderExecutionReq
 	transport = &captureGuardTransport{inner: transport, db: s.store.db, scope: a.Source.Scope, target: target}
 	// No network I/O under the registration lock. Competing requests can
 	// prepare independently but only the winner is allowed to attempt publish.
-	reg, err := s.registerOrder(ctx, a.Source.Scope, r, raw, evidence, target, binding.ExchangeID == "CFFEX" && r.Order.OffsetType == "C")
+	reg, err := s.registerOrder(ctx, a.Source.Scope, r, raw, evidence, target, r.Order.OffsetType == "C")
 	if err != nil {
 		return OrderExecutionResult{}, err
 	}

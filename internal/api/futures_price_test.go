@@ -19,7 +19,7 @@ import (
 )
 
 func TestFuturesPricePreview(t *testing.T) {
-	for _, scenario := range []string{"test", "production", "bad_query", "duplicate_selector", "bad_date", "bad_encoding", "raw_quote_injection", "source_override", "post", "catalog_unavailable", "catalog_invalid", "snapshot_html", "stale", "duplicate_contract"} {
+	for _, scenario := range []string{"test", "production", "dce", "bad_query", "duplicate_selector", "bad_date", "bad_encoding", "raw_quote_injection", "source_override", "post", "catalog_unavailable", "catalog_invalid", "snapshot_html", "stale", "duplicate_contract"} {
 		t.Run(scenario, func(t *testing.T) {
 			catalog, err := os.ReadFile("../../testdata/fixtures/meridian_futures_catalog.synthetic.json")
 			if err != nil {
@@ -34,6 +34,19 @@ func TestFuturesPricePreview(t *testing.T) {
 				t.Fatal("fixture")
 			}
 			row := payload["data"].([]any)[0].(map[string]any)
+			security := "RB2701.SHFE"
+			if scenario == "dce" {
+				security = "L2612F.DCE"
+				row["security_id"], row["source_instrument_id"], row["exchange_id"] = security, "l2612F", "DCE"
+				var c map[string]any
+				if err := json.Unmarshal(catalog, &c); err != nil {
+					t.Fatal(err)
+				}
+				item := c["data"].([]any)[0].(map[string]any)
+				item["security_id"], item["source_instrument_id"], item["exchange_id"], item["ctp_product_id"] = security, "l2612F", "DCE", nil
+				c["meta"].(map[string]any)["exchange_coverage"] = map[string]any{"DCE": map[string]any{"status": "production_ready"}}
+				catalog, _ = json.Marshal(c)
+			}
 			now := time.Now()
 			row["exchange_timestamp"] = now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
 			row["received_at"] = now.Format(time.RFC3339Nano)
@@ -48,7 +61,7 @@ func TestFuturesPricePreview(t *testing.T) {
 			var requests []string
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests = append(requests, r.URL.Path)
-				if r.URL.Query().Get("security_id") != "RB2701.SHFE" || r.URL.Query().Has("allow_stale") {
+				if r.URL.Query().Get("security_id") != security || r.URL.Query().Has("allow_stale") {
 					t.Error("unexpected upstream query", r.URL)
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -83,7 +96,7 @@ func TestFuturesPricePreview(t *testing.T) {
 				cfg.Service.Environment = config.EnvironmentProduction
 			}
 			handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{})
-			path := "/v1/futures/price-preview?security_id=RB2701.SHFE&trade_date=20261117"
+			path := "/v1/futures/price-preview?security_id=" + security + "&trade_date=20261117"
 			method := http.MethodGet
 			switch scenario {
 			case "bad_query":
@@ -106,7 +119,7 @@ func TestFuturesPricePreview(t *testing.T) {
 			if rec.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("preview cacheable")
 			}
-			if scenario != "test" && scenario != "production" {
+			if scenario != "test" && scenario != "production" && scenario != "dce" {
 				want := 503
 				if scenario == "post" {
 					want = 405

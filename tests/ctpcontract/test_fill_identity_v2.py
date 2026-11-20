@@ -56,11 +56,22 @@ class FillIdentityV2Test(unittest.TestCase):
             if change == "hash":
                 row["fill_id"] = "ctp-fill-v2-" + "0" * 64
             else:
-                row["exchange"] = "DCE"
+                row["exchange"] = "DCE "
                 self.set_id(row)
             self.page["payload"]["items"] = [row]
             with self.assertRaises((ValueError, ValidationError)):
                 validate_page(self.page)
+
+    def test_exchange_neutral_identity_keeps_venue_in_key(self):
+        ids = set()
+        for exchange in ("SHFE", "CFFEX", "DCE", "CZCE", "INE", "GFEX", "TESTEX"):
+            row = copy.deepcopy(self.new)
+            row["exchange"] = exchange
+            self.set_id(row)
+            self.page["payload"]["items"] = [row]
+            validate_page(self.page)
+            ids.add(row["fill_id"])
+        self.assertEqual(len(ids), 7)
 
 
 if __name__ == "__main__":

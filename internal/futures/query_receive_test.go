@@ -65,7 +65,7 @@ func TestConstraintsRequestReviewBindsExactTarget(t *testing.T) {
 		func(m map[string]any) { delete(m["query_context"].(map[string]any), "Constraints") },
 		func(m map[string]any) { m["query_context"].(map[string]any)["Constraints"] = nil },
 		func(m map[string]any) {
-			m["query_context"].(map[string]any)["Constraints"].(map[string]any)["exchange"] = "DCE"
+			m["query_context"].(map[string]any)["Constraints"].(map[string]any)["exchange"] = "DCE "
 		},
 		func(m map[string]any) {
 			m["query_context"].(map[string]any)["Constraints"].(map[string]any)["extra"] = true

@@ -24,24 +24,38 @@
     const day = r.kind === "cancel" ? r.body.trade_date : r.body.order.trade_date;
     return (a?.local_orders || []).find(o => o.gateway_order_id === id && o.trade_date === day);
   }
-  function permission(a, kind) {
+  function marketPermission(a, exchange) {
+    const p = a?.execution;
+    if (Array.isArray(p?.markets)) return p.markets.find(m => m.exchange === exchange);
+    if (exchange === "CFFEX") return p?.cffex;
+    return exchange === "SHFE" ? p : null;
+  }
+  function permission(a, kind, exchange) {
     if (storageError || unavailable || !window.crypto?.getRandomValues || !a || a.route?.env !== "test" || a.connection_error || a.ledger_error || a.local_order_error) return false;
-    const p = a.execution;
-    return Boolean(p && Date.parse(p.valid_until) > Date.now() && p[kind + "_enabled"] === true && (kind !== "submit" || p.price_source === "meridian_futures_snapshot.v1"));
+    const p = marketPermission(a, exchange);
+    return Boolean(p && Date.parse(p.valid_until) > Date.now() && p[kind + "_enabled"] === true && (kind !== "submit" || a.execution.price_source === "meridian_futures_snapshot.v1"));
+  }
+  function allowedIntent(a, intent, exchange) {
+    const p = marketPermission(a, exchange);
+    if (!p || !["B","S"].includes(intent.trade_side) || intent.hedge_type !== "speculation" || !Number.isSafeInteger(intent.qty) || intent.qty <= 0) return false;
+    if (Array.isArray(a.execution.markets)) return intent.qty <= p.max_order_qty && (intent.offset_type === "O" || intent.offset_type === "C" && p.close_model === "combined");
+    if (exchange === "CFFEX") return intent.qty <= p.max_order_qty && ["O","C"].includes(intent.offset_type) && p.products?.includes(intent.security_id.match(/^([A-Z]+)\d{4}\.CFFEX$/)?.[1]);
+    return intent.trade_side === "B" && intent.offset_type === "O" && intent.qty === 1;
   }
   function unresolved(a) {
     return activeRecords(a).some(r => r.kind === "submit" && !["rejected","not_published"].includes(r.state) && !observed(r,a));
   }
   function sync(intent) {
     const a = account();
-    const valid = intent && intent.account_id === selected && /^\d{8}$/.test(intent.trade_date) && intent.trade_date === a?.execution?.trade_date && /^[A-Z][A-Z0-9]*\.SHFE$/.test(intent.security_id) && intent.trade_side === "B" && intent.offset_type === "O" && intent.hedge_type === "speculation" && intent.qty === 1 && /^\d+(?:\.\d+)?$/.test(intent.price) && /[1-9]/.test(intent.price);
-    const enabled = !busy && records.length < 100 && permission(a,"submit") && valid && !unresolved(a);
-    const reason = storageError || (unresolved(a) ? "上一笔报单待核对" : !permission(a,"submit") ? "TEST 报单权限关闭或状态已过期" : !valid ? "当前仅支持 SHFE 买开投机 1 手" : busy ? "请求处理中" : records.length >= 100 ? "请求记录已满 · 待核对" : "TEST · Meridian 定价");
+    const exchange = intent?.security_id?.split(".")[1];
+    const valid = intent && intent.account_id === selected && /^\d{8}$/.test(intent.trade_date) && intent.trade_date === a?.execution?.trade_date && /^[A-Z][A-Z0-9]{0,79}\.[A-Z][A-Z0-9]{0,7}$/.test(intent.security_id) && allowedIntent(a,intent,exchange) && /^\d+(?:\.\d+)?$/.test(intent.price) && /[1-9]/.test(intent.price);
+    const enabled = !busy && records.length < 100 && permission(a,"submit",exchange) && valid && !unresolved(a);
+    const reason = storageError || (unresolved(a) ? "上一笔报单待核对" : !permission(a,"submit",exchange) ? "TEST 报单权限关闭或状态已过期" : !valid ? "超出账户市场配置或开平能力" : busy ? "请求处理中" : records.length >= 100 ? "请求记录已满 · 待核对" : "TEST · Meridian 定价");
     return {enabled,reason};
   }
   function canCancel(row) {
     const a=account();
-    return Boolean(!busy && records.length < 100 && permission(a,"cancel") && row && row.account_id === selected && row.trade_date === a.execution.trade_date && /^relay-web-order-/.test(row.gateway_order_id) && row.counter_session_id === a.heartbeat?.counter_session_id && ["accepted","working"].includes(row.gateway_status) && row.leaves_qty > 0 && (a.local_orders || []).some(o => o.gateway_order_id === row.gateway_order_id && o.trade_date === row.trade_date) && !activeRecords(a).some(r => r.kind === "cancel" && r.body.gateway_order_id === row.gateway_order_id && r.body.trade_date === row.trade_date));
+    return Boolean(!busy && records.length < 100 && permission(a,"cancel",row?.exchange) && row && row.account_id === selected && row.trade_date === a.execution.trade_date && /^relay-web-order-/.test(row.gateway_order_id) && row.counter_session_id === a.heartbeat?.counter_session_id && ["accepted","working"].includes(row.gateway_status) && row.leaves_qty > 0 && (a.local_orders || []).some(o => o.gateway_order_id === row.gateway_order_id && o.trade_date === row.trade_date) && !activeRecords(a).some(r => r.kind === "cancel" && r.body.gateway_order_id === row.gateway_order_id && r.body.trade_date === row.trade_date));
   }
   function notify() { window.dispatchEvent(new CustomEvent("relay-futures-execution-change")); }
   async function api(path, options = {}) {
@@ -81,7 +95,7 @@
   async function submit(intent) {
     if (!sync(intent).enabled) return;
     const a=account();
-    if (!window.confirm(`TEST ${a.alias || a.account_id} (${a.account_id})\n${intent.security_id} 买入开仓 · 投机\n${intent.price} × ${intent.qty} 手\n确认发送？`)) return;
+    if (!window.confirm(`TEST ${a.alias || a.account_id} (${a.account_id})\n${intent.security_id} ${intent.trade_side === "B" ? "买入" : "卖出"}${intent.offset_type === "O" ? "开仓" : "平仓"} · 投机\n${intent.price} × ${intent.qty} 手\n确认发送？`)) return;
     if (!sync(intent).enabled || a !== account()) return;
     await send("submit", {order:{...intent}}, a);
   }
@@ -118,6 +132,11 @@
   }
   window.RelayFuturesExecution = {
     sync,submit,cancel,canCancel,
+    offsets(exchange) {
+      const a=account(), p=marketPermission(a,exchange);
+      if (!Array.isArray(a?.execution?.markets)) return null;
+      return p ? (p.close_model === "combined" ? ["O","C"] : ["O"]) : [];
+    },
     update(accountsValue,selectedValue,failed) { accounts=accountsValue;selected=selectedValue;unavailable=Boolean(failed);render();notify(); },
   };
   window.setInterval(notify,1000);

@@ -64,6 +64,9 @@ func cffexIndexSessionEnd(now time.Time) (time.Time, bool) {
 }
 
 func serviceSubmitAllowed(a TestOrderAccount, o OrderPreviewRequest, b CatalogBinding) bool {
+	if a.Markets != nil {
+		return a.marketPolicy(b.ExchangeID).allows(b.ExchangeID, o.OffsetType, o.TradeSide, o.HedgeType, o.Qty)
+	}
 	if b.ExchangeID == "CFFEX" {
 		return a.CFFEX.allows(b.SourceInstrumentID, o.Qty) && oneOf(o.OffsetType, "O", "C") && oneOf(o.TradeSide, "B", "S") && o.HedgeType == "speculation"
 	}
@@ -93,7 +96,7 @@ func (s *TestOrderService) registerOrder(ctx context.Context, scope CommandScope
 			if err != nil {
 				return ErrCloseReservation
 			}
-			_, err = reserveCFFEXClose(ctx, tx, c, target, positionID)
+			_, err = reserveCombinedClose(ctx, tx, c, target, positionID)
 			return err
 		}
 	}

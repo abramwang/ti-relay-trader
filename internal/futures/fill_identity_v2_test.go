@@ -52,9 +52,9 @@ func TestFillV2StrictIdentity(t *testing.T) {
 			t.Fatal("identity mismatch accepted")
 		}
 	}
-	other := asV2Fill(t, editBody(t, base, func(m map[string]any) { m["exchange"] = "DCE" }))
+	other := asV2Fill(t, editBody(t, base, func(m map[string]any) { m["exchange"] = "DCE " }))
 	if _, err := DecodeFill(other, tradeScope()); err == nil {
-		t.Fatal("v2 enabled outside SHFE/CFFEX")
+		t.Fatal("noncanonical exchange accepted")
 	}
 	// Session/reception time do not change identity or count; raw source time does
 	// remain an immutable execution fact once known.

@@ -69,10 +69,8 @@ def main():
             page = browser.new_page(viewport={"width": width, "height": height})
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.add_init_script("""(() => {
-              const Native = window.EventSource;
               window.futuresSources = [];
               window.EventSource = function(url, options) {
-                if (!url.includes('/stream/futures/')) return new Native(url, options);
                 const source = new EventTarget();
                 source.url = url; source.closed = false;
                 source.close = () => { source.closed = true; };
@@ -83,13 +81,24 @@ def main():
 
             def route_api(route):
                 req = route.request
+                if not req.url.startswith(args.base_url):
+                    route.abort()
+                    return
+                if not urlparse(req.url).path.startswith("/v1/"):
+                    route.continue_()
+                    return
                 if req.method not in {"GET", "HEAD", "OPTIONS"}:
                     writes.append(req.url)
                     route.abort()
                     return
                 parsed = urlparse(req.url)
                 if "/meridian/futures/" not in parsed.path:
-                    route.continue_()
+                    data = {"data": [], "meta": {}, "accounts": [], "positions": [], "orders": [], "fills": []}
+                    if parsed.path == "/v1/accounts":
+                        data = {"accounts": [{"account_id": "990000000001", "alias": "合成证券账户", "enabled": True, "trading_enabled": False}]}
+                    elif parsed.path == "/v1/status":
+                        data = {"environment": "test", "status": "ok", "trading_day": {"date": "20261117", "trade_date": "20261117"}}
+                    route.fulfill(json={"ok": True, "data": data})
                     return
                 requests.append(req.url)
                 params = parse_qs(parsed.query)
@@ -123,7 +132,7 @@ def main():
                     meta = {"trade_date": "20261117", "count": len(rows), "next_cursor": "bars-page-2" if start == 0 else "", "schema_version": "futures_minute_bar.v1"}
                 route.fulfill(json={"ok": True, "data": {"data": rows, "meta": meta}})
 
-            page.route("**/v1/**", route_api)
+            page.route("**/*", route_api)
             page.goto(args.base_url + "/trade", wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#orderAccount').options.length > 0")
             page.wait_for_timeout(1500)

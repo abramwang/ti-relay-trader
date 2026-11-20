@@ -70,7 +70,7 @@ func (s *CommandStore) RegisterCFFEXClose(ctx context.Context, scope CommandScop
 		if target.Validate() != nil || target.TradeDate != o.TradeDate || positionID <= 0 {
 			return ErrCloseReservation
 		}
-		reservation, err = reserveCFFEXClose(ctx, tx, reg, target, positionID)
+		reservation, err = reserveCombinedClose(ctx, tx, reg, target, positionID)
 		return err
 	})
 	if err != nil {
@@ -79,8 +79,11 @@ func (s *CommandStore) RegisterCFFEXClose(ctx context.Context, scope CommandScop
 	return CloseRegistration{reg, reservation}, nil
 }
 
-func reserveCFFEXClose(ctx context.Context, tx *sql.Tx, reg CommandRegistration, target TestQueryTarget, positionID int64) (*CloseReservation, error) {
+func reserveCombinedClose(ctx context.Context, tx *sql.Tx, reg CommandRegistration, target TestQueryTarget, positionID int64) (*CloseReservation, error) {
 	scope, o := reg.Scope, reg.Original.Orders[0]
+	if !validExchange(o.Exchange) || o.OffsetType != "C" || o.HedgeType != "speculation" {
+		return nil, ErrCloseReservation
+	}
 	key, route := closeBucketKey(scope, o), string(commandRouteBytes(scope.Route))
 	// Cross-route contenders lock the native bucket before pinning a baseline.
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ctp.close.bucket/"+key); err != nil {
@@ -131,11 +134,11 @@ func reserveCFFEXClose(ctx context.Context, tx *sql.Tx, reg CommandRegistration,
 	if err != nil {
 		return nil, err
 	}
-	before, err := calculateCFFEXCloseCapacity(scope, target, reply, o.Symbol, o.TradeSide, commands, report, version.Absorbed)
+	before, err := calculateCombinedCloseCapacity(scope, target, reply, o.Exchange, o.Symbol, o.TradeSide, commands, report, version.Absorbed)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCloseReservation, err)
 	}
-	if _, err := calculateCFFEXCloseCapacity(scope, target, reply, o.Symbol, o.TradeSide, append(commands, reg), report, version.Absorbed); err != nil {
+	if _, err := calculateCombinedCloseCapacity(scope, target, reply, o.Exchange, o.Symbol, o.TradeSide, append(commands, reg), report, version.Absorbed); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCloseReservation, err)
 	}
 	out := &CloseReservation{reg.CommandID, positionID, scope, target, digest, int64(o.OrderQty), before}

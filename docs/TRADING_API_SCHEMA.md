@@ -102,13 +102,31 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 
 202返回原请求、稳定`message_id/cancel_id`及publication；状态表沿用上一节，`broker_state_known=false/retry_safe=false`，published不等于cancelled。GET参数为`account_id`和撤单的`idempotency_key`，只读原登记/发布状态，不能用它替代订单终态。SDK新增`cancel_futures_order`、`get_futures_cancel_command`，均只请求一次，不自动重试或轮询。
 
+### 交易所中立市场配置（11月20日源码增量，未部署）
+
+通用CTP解析及Meridian报价准备不再限制交易所名称为SHFE/CFFEX。标准ID为目录提供的`大写合约.EXCHANGE`，原生InstrumentID照目录保留，支持三位月份和字母后缀。真实合约、普通期货类型、正式覆盖、目录版本/tick、行情时效检查保持不变，语法通过不等于可交易。
+
+TEST账户manifest中的`execution`可配置下面的`markets`数组；此例仅为合成配置说明，不是实际账户授权或交易所规则证明。市场字段不能由HTTP报单方传入。
+
+```json
+{"markets":[{"exchange":"DCE","max_order_qty":2,"close_model":"none","day_sessions":[{"start":"09:00","end":"10:15"},{"start":"10:30","end":"11:30"},{"start":"13:30","end":"15:00"}]}]}
+```
+
+- 每市场唯一，必须给出日盘区间和手数上限；拒绝重叠/跨夜/空区间，当前限定08:00至16:00及工作日，并核对柜台TradingDay。不是完整节假日日历。`markets`与旧`cffex`不能并用；不填则保持旧配置，不隐式扩权。
+- `close_model=none`只允许开仓；`combined`允许普通C，但必须有当前完整单方向PositionDate=1的合并持仓、冻结与已登记责任核对，平仓数量在登记事务预留、发送前再次校验。CT/CY仍未实现分桶预留，不以交易所名称推断支持。
+- 终端`execution.markets[]`返回上述配置及该市场的`submit_enabled/cancel_enabled/valid_until`；有效期取心跳、收件健康、授权和时段的最早截止。市场模式下旧顶层布尔保持false，旧客户端不能误用其他市场许可；新控件必须精确选取交易所。旧`execution.cffex`兼容控件亦已接通，不等于线上启用。
+- 撤单按原委托交易所选择独立权限，不依赖新单手数上限/close_model或报价；市场仍须保留在配置中。仅降低手数/关闭新报单不会关闭合法原单撤单。
+- 预检不再硬编码SHFE买开1手，改用同一服务配置并返回`outside_account_market_policy`；预检仍`can_submit=false`，不登记、不发送或授权。未配置发送服务仍有`publication_not_connected`。
+
+底层仍限定TEST执行服务及已确认身份，不解除生产资金/保证金与跨会话未决责任边界，不新增wire/action/成交版本，不迁移历史数据。
+
 ### 期货TEST终端报撤联动（源码新增，待部署）
 
-终端复用上述两个POST及两个命令状态GET，股票表单不会接收期货委托。当前仍只支持Meridian来源、SHFE买开投机1手的TEST报单；撤单继承上一节边界。界面接线不等于启用，线上配置与服务未替换；东吴测评不同源报价不能直接用本页实盘价格测试，仍走显式原生CLI。
+终端复用上述两个POST及两个命令状态GET，股票表单不会接收期货委托。11月20日增量已按上一节接通市场策略；未配置`markets/cffex`的旧路径仍为SHFE买开投机1手。撤单继承上一节边界。界面接线不等于启用，线上配置与服务未替换；东吴测评不同源报价不能直接用本页实盘价格测试，仍走显式原生CLI。
 
 `GET /v1/futures/terminal`继续只读查询及本地订单回报，增加账户`execution`显示对象。只有TEST、发送总开关、已构建执行服务均满足时才返回该对象；生产不读取TEST账户。`submit_authorized/cancel_authorized`表示Relay配置及授权期限，`submit_enabled/cancel_enabled`还要求当前源绑定、心跳/恢复/结算和TEST日间时段。11月19日新版execution已删除全量原生订单快照的重复门禁。`valid_until`不晚于心跳产生后5秒、授权截止和时段结束；`trade_date`来自柜台，不从浏览器自然日推导。`price_source=meridian_futures_snapshot.v1`。这些仅用于按钮显示，不能作为可复用许可或替代发布前校验；资产scope仍未升级为已验证。
 
-配置CFFEX策略时，新增`execution.cffex={products,max_order_qty,submit_enabled,cancel_enabled,valid_until}`，单独表达CFFEX日盘显示状态，不套用SHFE的10:15休市或13:30开盘。旧顶层执行布尔/汇总mode保留原SHFE语义；CFFEX控件应使用子范围，不能仅用顶层布尔。此增量尚未修改前端控件，也不表示终端CFFEX报单已上线；子范围仅是显示提示，实际撤单仍按原单及独立权限重新核验。
+配置旧CFFEX策略时，`execution.cffex={products,max_order_qty,submit_enabled,cancel_enabled,valid_until}`单独表达CFFEX日盘显示状态，不套用SHFE的10:15休市或13:30开盘。旧顶层执行布尔/汇总mode保留原SHFE语义；11月20日前端已接通该子范围，不能仅用顶层布尔。新配置优先使用上一节markets，双方不得混配；源码接通不表示终端CFFEX报单已上线，实际报撤仍需发布前重新核验。
 
 11月19日持仓显示修复：`account.positions.query`的已发布命令，可直接展示经关联和完整性校验的OC持仓回包，不再要求运维先补一份人工SDK审计文件。自动校验原登记scope、来源、session/代次/交易日、命令关联、原文摘要、SDK返回/快照应用标志及完整分页；SDK ticket/request_id只用于回包间一致性，不宣称是独立请求审计。完整结果返回`state=response_ready`、`response_validated=true`、`positions`和`row_count`；`reviewed=false`、`business_published=false`保持不变，不修改收件状态、游标或正式业务快照。独立人工核验的原`ready/reviewed=true`路径仍可读取。未完成、失败、冲突及未知发布不展示部分持仓或伪造0；只有完整空结果才显示0。采样时间和历史会话照实显示，不从成交增量拼造完整当前持仓。页面刷新仍为GET已保存快照，不隐式发柜台查询；资金、订单和成交查询的独立核验规则此次未扩大。
 
@@ -122,7 +140,7 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 
 ### 期货只读报价准备（源码新增，待部署）
 
-`GET /v1/futures/price-preview?security_id=RB2701.SHFE&trade_date=20261119`，能力标识`futures.price_preview.v1`。只接受一个真实CFFEX/SHFE合约标准代码及明确的YYYYMMDD交易日，不从自然日期推导夜盘TradingDay；不接受账户权限、行情正文、原生来源、tick、URL或`allow_stale`覆盖参数。
+`GET /v1/futures/price-preview?security_id=RB2701.SHFE&trade_date=20261119`，能力标识`futures.price_preview.v1`。接受一个Meridian真实期货合约标准代码及明确的YYYYMMDD交易日，不从自然日期推导TradingDay；不接受账户权限、行情正文、原生来源、tick、URL或`allow_stale`覆盖参数。
 
 Relay从配置的Meridian依次读取唯一正式目录记录和当前快照，保留HTTP原始JSON字节及精确数值，复用现有报价核验函数。两次请求共用5秒超时，目录正文最多64KiB、快照最多32KiB；不重试、不跟随重定向、不使用陈旧缓存，不访问OC、Redis或交易数据库。目录publication/checksum、交易所coverage、真实期货类型和active状态均需有效；失败不继续查询快照。
 

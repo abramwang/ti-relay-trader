@@ -33,7 +33,7 @@ func (s *Server) handleFuturesOrderPreview(w http.ResponseWriter, r *http.Reques
 	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
 	intent, decodeErr := futures.DecodeOrderPreview(raw)
-	if err != nil || decodeErr != nil || r.URL.RawQuery != "" || !futuresPriceSecurityID.MatchString(intent.SecurityID) {
+	if err != nil || decodeErr != nil || r.URL.RawQuery != "" || !futures.ValidFuturesSecurityID(intent.SecurityID) {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "invalid futures preview intention", nil)
 		return
 	}
@@ -99,8 +99,10 @@ func (s *Server) handleFuturesOrderPreview(w http.ResponseWriter, r *http.Reques
 	if !result.PriceValid {
 		result.Blockers = append(result.Blockers, "price_off_tick")
 	}
-	if quote.Preparation.Market.ExchangeID != "SHFE" || intent.TradeSide != "B" || intent.OffsetType != "O" || intent.Qty != 1 {
-		result.Blockers = append(result.Blockers, "outside_current_test_scope")
+	if policy, ok := s.futuresOrders.(interface {
+		AllowsOrderIntent(futures.OrderPreviewRequest, futures.TestTradeMarket) bool
+	}); ok && !policy.AllowsOrderIntent(intent, quote.Preparation.Market) {
+		result.Blockers = append(result.Blockers, "outside_account_market_policy")
 	}
 	httpx.WriteOK(w, r, http.StatusOK, result)
 }

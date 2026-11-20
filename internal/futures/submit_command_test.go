@@ -120,7 +120,7 @@ func TestSubmitCommandStrictEnvelopeAndIntent(t *testing.T) {
 	for _, change := range []func(map[string]any){
 		func(p map[string]any) { p["account_id"] = "990000000002" },
 		func(p map[string]any) { p["trade_date"] = "20261103" },
-		func(p map[string]any) { p["exchange"] = "DCE" },
+		func(p map[string]any) { p["exchange"] = "DCE " },
 		func(p map[string]any) { p["gateway_order_id"] = "external-ctp-v1-test" },
 		func(p map[string]any) { p["product_type"] = nil },
 		func(p map[string]any) { delete(p, "client_order_id") },

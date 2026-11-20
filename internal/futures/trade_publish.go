@@ -24,6 +24,7 @@ type TestTradeApproval struct {
 	CancelReceiptID     int64                    `json:"cancel_receipt_id"`
 	Market              *TestTradeMarket         `json:"market"`
 	CFFEX               *CFFEXExecutionPolicy    `json:"cffex,omitempty"`
+	MarketPolicy        *MarketExecutionPolicy   `json:"market_policy,omitempty"`
 }
 
 // TestExecutionPermission is local, command-bound permission, never OC wire.
@@ -67,7 +68,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	if _, err := parseReply(raw); err != nil {
 		return a, err
 	}
-	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile", "execution_permission", "cffex"})
+	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile", "execution_permission", "cffex", "market_policy"})
 	if err != nil {
 		return a, err
 	}
@@ -112,6 +113,11 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	}
 	if cf, present := fields["cffex"]; present {
 		if _, err := shape(cf, []string{"products", "max_order_qty"}, nil); err != nil || !a.relayExecution() || a.CFFEX.validate() != nil {
+			return a, ErrStreamIdentity
+		}
+	}
+	if policy, present := fields["market_policy"]; present {
+		if _, err := shape(policy, []string{"exchange", "max_order_qty", "close_model", "day_sessions"}, nil); err != nil || !a.relayExecution() || a.CFFEX != nil || a.MarketPolicy.validate() != nil {
 			return a, ErrStreamIdentity
 		}
 	}
@@ -173,7 +179,11 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	if o.HedgeType != "speculation" || o.TradeDate != target.TradeDate || m.TradeDate != target.TradeDate || m.Stale || !validTime(m.ObservedAt) {
 		return ErrStreamIdentity
 	}
-	if o.Exchange == "CFFEX" {
+	if a.MarketPolicy != nil {
+		if !a.relayExecution() || !a.MarketPolicy.allows(o.Exchange, o.OffsetType, o.TradeSide, o.HedgeType, o.OrderQty) || m.PriceSource != meridianPriceSource {
+			return ErrStreamIdentity
+		}
+	} else if o.Exchange == "CFFEX" {
 		if !a.relayExecution() || !a.CFFEX.allows(o.Symbol, o.OrderQty) || !oneOf(o.OffsetType, "O", "C") || m.PriceSource != meridianPriceSource {
 			return ErrStreamIdentity
 		}
@@ -333,7 +343,11 @@ func verifyAssessmentCancel(ctx context.Context, tx *sql.Tx, assessment string, 
 		return ErrStreamIdentity
 	}
 	o := parent.Original.Orders[0]
-	if (o.Exchange == "CFFEX" && !a.CFFEX.allows(o.Symbol, o.OrderQty)) || (o.Exchange != "CFFEX" && a.CFFEX != nil) {
+	if a.MarketPolicy != nil {
+		if !a.relayExecution() || a.MarketPolicy.Exchange != o.Exchange {
+			return ErrStreamIdentity
+		}
+	} else if (o.Exchange == "CFFEX" && !a.CFFEX.allows(o.Symbol, o.OrderQty)) || (o.Exchange != "CFFEX" && a.CFFEX != nil) {
 		return ErrStreamIdentity
 	}
 	if c.Original.Cancel.GatewayOrderID != o.GatewayOrderID || c.Original.Cancel.TradeDate != o.TradeDate {

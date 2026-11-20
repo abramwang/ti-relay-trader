@@ -4,6 +4,7 @@ import datetime as dt
 from decimal import Decimal
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker, validators
@@ -70,11 +71,11 @@ def require(condition, message):
 
 
 def validate_fill_identity(row, scope_parts):
+    require(re.fullmatch(r"[A-Z][A-Z0-9]{0,7}", row["exchange"]) is not None, "invalid exchange encoding")
     ids = row["native_ids"]
     version = "v2" if row["fill_id"].startswith("ctp-fill-v2-") else "v1"
     parts = scope_parts + [ids["trade_id"]]
     if version == "v2":
-        require(row["exchange"] in {"SHFE", "CFFEX"}, "fill identity v2 requires SHFE or CFFEX")
         parts += [ids["order_sys_id"], row["trade_side"]]
     require(row["fill_id"] == f"ctp-fill-{version}-" + identity("fill", parts, version), "fill identity mismatch")
     return version

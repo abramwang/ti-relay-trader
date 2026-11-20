@@ -179,6 +179,10 @@ func TestCFFEXOrderServiceOptInOpenAndReplay(t *testing.T) {
 // A complete synthetic OC response is captured/projected through the normal
 // durable path. Neither a client-supplied position ID nor injected capacity is used.
 func seedCFFEXServicePosition(t *testing.T, s *TestOrderService, ctx context.Context) *replyFixture {
+	return seedMarketServicePosition(t, s, ctx, "CFFEX", "IF2701")
+}
+
+func seedMarketServicePosition(t *testing.T, s *TestOrderService, ctx context.Context, exchange, symbol string) *replyFixture {
 	t.Helper()
 	store, db := s.store, s.store.db
 	migrateFuturesTest(t, db, ctx, "000051_futures_close_reservations", "up")
@@ -192,6 +196,7 @@ func seedCFFEXServicePosition(t *testing.T, s *TestOrderService, ctx context.Con
 	}
 	seedPublishedReview(t, db, ctx, c, target)
 	p := newCloseCapacityFixture(t).reply.Snapshot.Positions[0]
+	p.Exchange, p.Symbol = exchange, symbol
 	p.AccountID, p.CapturedAt = scope.Route.AccountID, "2026-11-17T09:29:00+08:00"
 	raw = editBody(t, boundReply(t, raw, c), func(m map[string]any) {
 		m["routing"], m["produced_at"] = scope.Route, "2026-11-17T09:29:01+08:00"

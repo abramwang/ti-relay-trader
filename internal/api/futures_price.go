@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
-	"regexp"
 	"time"
 
 	"ti-relay-trader/internal/futures"
@@ -22,8 +21,6 @@ type futuresPricePreview struct {
 	Preparation          futures.MeridianPricePreparation `json:"preparation"`
 }
 
-var futuresPriceSecurityID = regexp.MustCompile(`^[A-Z]{1,3}[0-9]{4}\.(SHFE|CFFEX)$`)
-
 func (s *Server) handleFuturesPricePreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
@@ -38,8 +35,8 @@ func (s *Server) handleFuturesPricePreview(w http.ResponseWriter, r *http.Reques
 	}
 	securityID, day := q.Get("security_id"), q.Get("trade_date")
 	parsed, err := time.Parse("20060102", day)
-	if !futuresPriceSecurityID.MatchString(securityID) || err != nil || parsed.Format("20060102") != day {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "explicit CFFEX/SHFE contract and YYYYMMDD trade_date required", nil)
+	if !futures.ValidFuturesSecurityID(securityID) || err != nil || parsed.Format("20060102") != day {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "explicit futures security_id and YYYYMMDD trade_date required", nil)
 		return
 	}
 	preview, stage := s.prepareFuturesPrice(r.Context(), securityID, day)

@@ -89,8 +89,8 @@ test("unexpected permission or expired preview cannot look successful", async ()
 });
 test("SHFE and CFFEX security identities do not rewrite source instrument ids", () => {
   const ctx = context(["isFuturesSecurityID"]);
-  for (const id of ["AU2612.SHFE", "rb2701.shfe", "IF2612.CFFEX", "T2612.CFFEX"]) assert.ok(ctx.isFuturesSecurityID(id));
-  for (const id of ["600000.SH", "510300.SH", "AU.SHFE", "SC2612.INE", "IF2612.SH"]) assert.equal(ctx.isFuturesSecurityID(id), false);
+  for (const id of ["AU2612.SHFE", "rb2701.shfe", "IF2612.CFFEX", "T2612.CFFEX", "L2612F.DCE", "TA701.CZCE", "SC2612.INE", "SI2701.GFEX"]) assert.ok(ctx.isFuturesSecurityID(id));
+  for (const id of ["600000.SH", "510300.SH", "AU.SHFE", "IF2612.SH"]) assert.equal(ctx.isFuturesSecurityID(id), false);
 });
 test("price precision follows Meridian tick, including one-letter products", () => {
   const ctx = context(["isFuturesSecurityID", "priceDigitsForItem", "priceTickForItem"], {
@@ -116,7 +116,7 @@ test("SSE batches select newest observation and cannot regress after HTTP races"
 test("catalog uses authoritative instruments and follows pagination", async () => {
   const calls = [];
   const ctx = context(["loadFuturesInstruments", "isFuturesSecurityID"], {
-    state: { instrumentCache: new Map() }, currentBusinessDate: () => "20261116",
+    state: { instrumentCache: new Map() }, els: {}, currentBusinessDate: () => "20261116",
     splitSecurityID: (id) => { const [symbol, exchange] = id.split("."); return { symbol, exchange }; },
     futuresDisplayName: (item) => item.instrument_name, registerInstrument: () => {},
     request: async (url) => {
@@ -129,6 +129,7 @@ test("catalog uses authoritative instruments and follows pagination", async () =
   assert.equal(rows[0].name, "官方名称");
   assert.ok(calls.every((url) => url.startsWith("/v1/meridian/futures/instruments?")));
   assert.match(calls[0], /trading_statuses=active%2Cactive_observed/);
+  assert.doesNotMatch(calls[0], /exchange_ids=/);
   assert.match(calls[1], /cursor=p2/);
   await ctx.loadFuturesInstruments();
   assert.equal(calls.length, 2);

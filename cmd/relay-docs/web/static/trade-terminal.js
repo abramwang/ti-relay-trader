@@ -914,7 +914,7 @@
     if (raw === "CFFEX" || raw === "CCFX") {
       return "CFFEX";
     }
-    if (raw === "SHFE") return "SHFE";
+    if (/^[A-Z][A-Z0-9]{0,7}$/.test(raw)) return raw;
     return inferExchange(symbol || raw);
   }
 
@@ -939,7 +939,7 @@
   }
 
   function isFuturesSecurityID(value) {
-    return /^[A-Z]+\d{4}\.(CFFEX|SHFE)$/.test(String(value || "").trim().toUpperCase());
+    return /^[A-Z][A-Z0-9]*\d[A-Z0-9]*\.[A-Z][A-Z0-9]{0,7}$/.test(String(value || "").trim().toUpperCase()) && !/\.(SH|SZ|BJ)$/.test(String(value || "").trim().toUpperCase());
   }
 
   function futuresDisplayName(item) {
@@ -948,7 +948,7 @@
   }
 
   function futuresMarketSelected() {
-    return ["CFFEX", "SHFE"].includes(els.exchangeInput.value) || isFuturesSecurityID(currentSecurityID());
+    return !["", "SH", "SZ", "BJ"].includes(els.exchangeInput.value) || isFuturesSecurityID(currentSecurityID());
   }
 
   function latestFuturesSnapshot(rows, securityID, previous = null) {
@@ -985,8 +985,9 @@
     els.qtyInput.min = futures ? "1" : "100";
     if (changed) els.qtyInput.value = futures ? "1" : "100";
     els.orderAccount.disabled = futures;
+    const offsets = window.RelayFuturesExecution?.offsets(els.exchangeInput.value);
     for (const option of els.futuresOffset.options) {
-      option.disabled = els.exchangeInput.value === "CFFEX" && ["CT", "CY"].includes(option.value);
+      option.disabled = offsets ? !offsets.includes(option.value) : els.exchangeInput.value === "CFFEX" && ["CT", "CY"].includes(option.value);
     }
     if (els.futuresOffset.selectedOptions[0].disabled) els.futuresOffset.value = "O";
     if (!futures) return;
@@ -2617,7 +2618,8 @@
     if (state.instrumentCache.has(cacheKey)) {
       return state.instrumentCache.get(cacheKey);
     }
-    const params = new URLSearchParams({ exchange_ids: exchange || "CFFEX,SHFE", trading_statuses: "active,active_observed", limit: "1000" });
+    const params = new URLSearchParams({ trading_statuses: "active,active_observed", limit: "1000" });
+    if (exchange) params.set("exchange_ids", exchange);
     const items = [];
     const cursors = new Set();
     for (let page = 0; ; page += 1) {
@@ -2642,6 +2644,14 @@
         status: item.trading_status || ""
       };
       registerInstrument(instrument);
+      for (const select of [els.exchangeInput, els.marketSelector]) {
+        if (select && !Array.from(select.options).some(option => option.value === parsed.exchange)) {
+          const option = document.createElement("option");
+          option.value = parsed.exchange;
+          option.textContent = parsed.exchange;
+          select.append(option);
+        }
+      }
       return instrument;
     });
     state.instrumentCache.set(cacheKey, rows);
@@ -7408,7 +7418,7 @@
     if (futuresMarketSelected()) {
       const eligibility = window.RelayFuturesExecution?.sync(futuresPreviewIntent());
       els.submitOrderButton.disabled = !eligibility?.enabled;
-      els.submitOrderButton.textContent = eligibility?.enabled ? "TEST 买入开仓" : "期货报单不可用";
+      els.submitOrderButton.textContent = eligibility?.enabled ? "TEST 报单" : "期货报单不可用";
       els.submitOrderButton.title = eligibility?.reason || "期货交易未开放";
       els.riskAlert.textContent = eligibility?.reason || "只读行情 · 期货报撤单未开放";
       return;
@@ -7484,7 +7494,7 @@
       if (result.mode !== "order_preview_only" || result.command_published !== false || result.can_submit !== false || !result.intent || !Object.keys(intent).every(key => result.intent[key] === intent[key]) || !Array.isArray(result.blockers)) throw new Error("预检响应不匹配");
       const validUntil = Date.parse(result.quote?.preparation?.valid_until || "");
       if (!Number.isFinite(validUntil) || validUntil <= Date.now()) throw new Error("行情证据已过期");
-      const reasons = {publication_not_connected:"网页期货发送未启用",relay_account_read_only:"Relay账户只读",broker_not_ready:"OC未就绪或心跳过期",price_off_tick:"价格不符合最小价位",outside_current_test_scope:"超出当前TEST报单范围"};
+      const reasons = {publication_not_connected:"网页期货发送未启用",relay_account_read_only:"Relay账户只读",broker_not_ready:"OC未就绪或心跳过期",price_off_tick:"价格不符合最小价位",outside_account_market_policy:"超出账户市场配置或开平能力"};
       els.futuresOrderPreviewResult.textContent = [
         `${intent.security_id} · ${intent.price} × ${intent.qty}手`,
         `Meridian · 最小价位 ${result.quote.preparation.market.price_tick} · ${result.price_valid ? "价格档位通过" : "价格档位未通过"}`,

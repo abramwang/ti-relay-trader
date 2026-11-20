@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// CloseCapacity is a read-only calculation for one CFFEX speculative bucket.
+// CloseCapacity is a read-only calculation for one combined speculative bucket.
 // It is not a reservation, authorization or evidence of an atomic broker snapshot.
 // Today/YesterdayRemaining describe the baseline, not CT/CY admission limits.
 type CloseCapacity struct {
@@ -33,10 +33,16 @@ func CalculateCFFEXCloseCapacity(scope CommandScope, target TestQueryTarget, rep
 // absorbed is private, persisted coverage established by a quiescent rebase.
 // It is never accepted from an HTTP caller or inferred from a frozen total.
 func calculateCFFEXCloseCapacity(scope CommandScope, target TestQueryTarget, reply ReplyResult, symbol, closeSide string, commands []CommandRegistration, report TradeReport, absorbed map[int64]int64) (CloseCapacity, error) {
+	return calculateCombinedCloseCapacity(scope, target, reply, "CFFEX", symbol, closeSide, commands, report, absorbed)
+}
+
+// Combined means a single directional PositionDate=1 row whose Position includes
+// both remaining dates. Split-date rows are not silently summed into this model.
+func calculateCombinedCloseCapacity(scope CommandScope, target TestQueryTarget, reply ReplyResult, exchange, symbol, closeSide string, commands []CommandRegistration, report TradeReport, absorbed map[int64]int64) (CloseCapacity, error) {
 	bad := func(reason string) (CloseCapacity, error) {
-		return CloseCapacity{}, fmt.Errorf("CFFEX close capacity: %s", reason)
+		return CloseCapacity{}, fmt.Errorf("combined close capacity: %s", reason)
 	}
-	if scope.validate() != nil || target.Validate() != nil || !native(symbol, 80, false) || !oneOf(closeSide, "B", "S") {
+	if scope.validate() != nil || target.Validate() != nil || !validExchange(exchange) || !native(symbol, 80, false) || !oneOf(closeSide, "B", "S") {
 		return bad("invalid scope or close direction")
 	}
 	if reply.CommandID <= 0 || reply.Action != "account.positions.query" || reply.State != "ready" || !reply.ResponseValidated || reply.Snapshot == nil || !validTime(reply.ProducedAt) {
@@ -76,7 +82,7 @@ func calculateCFFEXCloseCapacity(scope CommandScope, target TestQueryTarget, rep
 			return bad("row captured after query completion")
 		}
 		p := row.Futures
-		if row.Exchange != "CFFEX" || row.Symbol != symbol {
+		if row.Exchange != exchange || row.Symbol != symbol {
 			continue
 		}
 		if p.PosiDirection == "1" {
@@ -107,7 +113,7 @@ func calculateCFFEXCloseCapacity(scope CommandScope, target TestQueryTarget, rep
 			return bad("invalid or duplicate close registration")
 		}
 		o := reg.Original.Orders[0]
-		if seenOrders[o.GatewayOrderID] || !validID(o.GatewayOrderID) || o.AccountID != scope.Route.AccountID || o.TradeDate != target.TradeDate || o.Symbol != symbol || o.Exchange != "CFFEX" || o.BusinessType != "F" || o.TradeSide != closeSide || o.HedgeType != "speculation" || o.OffsetType != "C" || o.OrderQty <= 0 {
+		if seenOrders[o.GatewayOrderID] || !validID(o.GatewayOrderID) || o.AccountID != scope.Route.AccountID || o.TradeDate != target.TradeDate || o.Symbol != symbol || o.Exchange != exchange || o.BusinessType != "F" || o.TradeSide != closeSide || o.HedgeType != "speculation" || o.OffsetType != "C" || o.OrderQty <= 0 {
 			return bad("close intention mismatch or unsupported offset")
 		}
 		// Commands already represented by the snapshot cannot be deducted twice.

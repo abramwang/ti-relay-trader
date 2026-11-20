@@ -79,7 +79,11 @@ func closeBaselineHead(ctx context.Context, tx *sql.Tx, scope CommandScope, targ
 // unpublished, unknown, changed-freeze and cross-session cases are NOT inferred.
 // Old reservations and reply bytes remain intact; no network or trading occurs.
 func (s *CommandStore) RebaseCFFEXClose(ctx context.Context, scope CommandScope, target TestQueryTarget, symbol, side string, positionID int64) (CloseBaseline, error) {
-	if scope.validate() != nil || scope.Route.Env != "test" || target.Validate() != nil || !native(symbol, 80, false) || !oneOf(side, "B", "S") || positionID <= 0 {
+	return s.RebaseCombinedClose(ctx, scope, target, "CFFEX", symbol, side, positionID)
+}
+
+func (s *CommandStore) RebaseCombinedClose(ctx context.Context, scope CommandScope, target TestQueryTarget, exchange, symbol, side string, positionID int64) (CloseBaseline, error) {
+	if scope.validate() != nil || scope.Route.Env != "test" || target.Validate() != nil || !validExchange(exchange) || !native(symbol, 80, false) || !oneOf(side, "B", "S") || positionID <= 0 {
 		return CloseBaseline{}, ErrCloseReservation
 	}
 	tx, err := beginFuturesTransaction(ctx, s.db)
@@ -93,7 +97,7 @@ func (s *CommandStore) RebaseCFFEXClose(ctx context.Context, scope CommandScope,
 	if err := tx.QueryRowContext(ctx, `SELECT route_key FROM futures_command_routes WHERE route_key=$1 FOR UPDATE`, string(commandRouteBytes(scope.Route))).Scan(&route); err != nil {
 		return CloseBaseline{}, err
 	}
-	o := SubmitIntent{TradeDate: target.TradeDate, Exchange: "CFFEX", Symbol: symbol, TradeSide: side, OffsetType: "C", HedgeType: "speculation"}
+	o := SubmitIntent{TradeDate: target.TradeDate, Exchange: exchange, Symbol: symbol, TradeSide: side, OffsetType: "C", HedgeType: "speculation"}
 	key := closeBucketKey(scope, o)
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ctp.close.bucket/"+key); err != nil {
 		return CloseBaseline{}, err
@@ -133,7 +137,7 @@ func (s *CommandStore) RebaseCFFEXClose(ctx context.Context, scope CommandScope,
 	if err != nil {
 		return CloseBaseline{}, err
 	}
-	before, err := calculateCFFEXCloseCapacity(scope, target, old, symbol, side, commands, report, head.Absorbed)
+	before, err := calculateCombinedCloseCapacity(scope, target, old, exchange, symbol, side, commands, report, head.Absorbed)
 	if err != nil || before.LocalReserved != 0 {
 		return CloseBaseline{}, fmt.Errorf("%w: old capacity unresolved", ErrCloseReservation)
 	}
@@ -182,7 +186,7 @@ func (s *CommandStore) RebaseCFFEXClose(ctx context.Context, scope CommandScope,
 		}
 		absorbed[c.CommandID] = filled
 	}
-	after, err := calculateCFFEXCloseCapacity(scope, target, next, symbol, side, commands, report, absorbed)
+	after, err := calculateCombinedCloseCapacity(scope, target, next, exchange, symbol, side, commands, report, absorbed)
 	if err != nil || after.Position != before.Position-before.ClosedSinceQuery || after.BrokerFrozen != before.BrokerFrozen || after.Today > before.Today || after.YesterdayRemaining > before.YesterdayRemaining {
 		return CloseBaseline{}, fmt.Errorf("%w: position or freeze coverage mismatch", ErrCloseReservation)
 	}
@@ -240,14 +244,14 @@ func checkLatestCloseBaseline(ctx context.Context, tx *sql.Tx, scope CommandScop
 func recheckClosePublication(ctx context.Context, tx *sql.Tx, c CommandRegistration, target TestQueryTarget) error {
 	if c.Original.Action != "order.submit" || len(c.Original.Orders) != 1 {
 		for _, o := range c.Original.Orders {
-			if o.Exchange == "CFFEX" && o.OffsetType != "O" {
+			if o.OffsetType != "O" {
 				return ErrCloseReservation
 			}
 		}
 		return nil
 	}
 	o := c.Original.Orders[0]
-	if o.Exchange != "CFFEX" || o.OffsetType == "O" {
+	if o.OffsetType == "O" {
 		return nil
 	}
 	if o.OffsetType != "C" {
@@ -288,7 +292,7 @@ func recheckClosePublication(ctx context.Context, tx *sql.Tx, c CommandRegistrat
 	if report.Orders[o.GatewayOrderID] != nil {
 		return fmt.Errorf("%w: execution already observed before first publication", ErrCloseReservation)
 	}
-	_, err = calculateCFFEXCloseCapacity(c.Scope, target, reply, o.Symbol, o.TradeSide, commands, report, head.Absorbed)
+	_, err = calculateCombinedCloseCapacity(c.Scope, target, reply, o.Exchange, o.Symbol, o.TradeSide, commands, report, head.Absorbed)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrCloseReservation, err)
 	}

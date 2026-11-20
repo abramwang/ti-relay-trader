@@ -175,9 +175,8 @@ func TestFuturesOrderPreview(t *testing.T) {
 			if v.AccountPermissionEnabled != wantPermission || v.BrokerAcceptingSubmit != wantBroker || v.PriceValid != (scenario != "off_tick") {
 				t.Fatal(w.Body.String())
 			}
-			if scenario == "outside_scope" && !slices.Contains(v.Blockers, "outside_current_test_scope") {
-				t.Fatal(w.Body.String())
-			}
+			// Quantity is governed by the configured execution service, not a
+			// hardcoded SHFE one-lot rule in this read-only price endpoint.
 			var original futures.OrderPreviewRequest
 			json.NewDecoder(strings.NewReader(body)).Decode(&original)
 			if v.Intent != original {

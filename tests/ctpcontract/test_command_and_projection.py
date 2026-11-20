@@ -94,7 +94,7 @@ class CommandContractTest(unittest.TestCase):
             self.validate(cancel)
 
     def test_exchange_account_and_explicit_offset(self):
-        for key, value in (("exchange", "DCE"), ("account_id", "990000000002"),
+        for key, value in (("exchange", "DCE "), ("account_id", "990000000002"),
                            ("offset_type", None), ("hedge_type", "hedge")):
             body = copy.deepcopy(self.commands["submit"])
             body["payload"][key] = value

@@ -92,7 +92,7 @@ func TestTradeTerminalFuturesUsesSeparatePermissionGuard(t *testing.T) {
 	}
 	text := string(script)
 	for _, required := range []string{
-		`/^[A-Z]+\d{4}\.(CFFEX|SHFE)$/`,
+		`/^[A-Z][A-Z0-9]*\d[A-Z0-9]*\.[A-Z][A-Z0-9]{0,7}$/`,
 		`/v1/meridian/futures/instruments?`,
 		`/v1/meridian/futures/snapshots?`,
 		`/v1/meridian/futures/bars?`,

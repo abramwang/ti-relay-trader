@@ -34,7 +34,33 @@ function response(url,opts) {
     broker_state_known:false,retry_safe:false,publication:{command_id:1,state:"published",command_published:true}}})};
 }
 function record(p) { return JSON.parse([...p.storage.values()][0])[0]; }
-function row(p) { return {account_id:p.a.account_id,trade_date:"20261119",counter_session_id:"new",gateway_order_id:"relay-web-order-original",symbol:"rb2701",gateway_status:"working",leaves_qty:1}; }
+function row(p) { return {account_id:p.a.account_id,trade_date:"20261119",counter_session_id:"new",gateway_order_id:"relay-web-order-original",symbol:"rb2701",exchange:"SHFE",gateway_status:"working",leaves_qty:1}; }
+
+test("configured markets select their own permission, quantity and close model",async()=>{
+  for (const [exchange,symbol] of [["DCE","L2612F"],["CZCE","TA701"],["INE","SC2701"],["GFEX","SI2701"]]) {
+    const p=fixture();
+    p.a.execution.markets=[{exchange,max_order_qty:3,close_model:"combined",submit_enabled:true,cancel_enabled:true,valid_until:p.a.execution.valid_until}];
+    Object.assign(p.intent,{security_id:symbol+"."+exchange,trade_side:"S",offset_type:"C",qty:3});
+    assert.equal(p.engine.sync(p.intent).enabled,true);
+    assert.equal(p.engine.sync({...p.intent,offset_type:"CT"}).enabled,false);
+    assert.equal(p.engine.sync({...p.intent,qty:4}).enabled,false);
+    assert.equal(p.engine.sync({...p.intent,security_id:"RB2701.SHFE"}).enabled,false);
+    await p.engine.submit(p.intent);
+    assert.equal(p.calls.length,1);assert.equal(record(p).body.order.security_id,symbol+"."+exchange);
+  }
+});
+test("market cancel ignores new-order cap but cannot borrow another market readiness",async()=>{
+  const p=fixture();
+  const policy={exchange:"DCE",max_order_qty:1,close_model:"none",submit_enabled:false,cancel_enabled:true,valid_until:p.a.execution.valid_until};
+  p.a.execution.markets=[policy];
+  p.a.local_orders=[{...row(p),exchange:"DCE",symbol:"m2701",leaves_qty:10}];
+  assert.equal(p.engine.canCancel(p.a.local_orders[0]),true);
+  policy.valid_until=new Date(0).toISOString();
+  assert.equal(p.engine.canCancel(p.a.local_orders[0]),false);
+  policy.valid_until=p.a.execution.valid_until;
+  assert.equal(p.engine.canCancel({...p.a.local_orders[0],exchange:"SHFE"}),false);
+  await p.engine.cancel(p.a.local_orders[0]);assert.equal(p.calls.length,1);
+});
 test("submit preserves intention and blocks another order until broker observation",async()=>{
   const p=fixture(); assert.equal(p.engine.sync(p.intent).enabled,true);
   await p.engine.submit(p.intent);await p.engine.submit(p.intent);
