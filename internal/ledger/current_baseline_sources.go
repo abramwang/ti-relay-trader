@@ -82,7 +82,7 @@ func (s *CurrentBaselineStore) ReadSources(ctx context.Context, deploymentEnviro
 		// Use that indexed identity, not a JSONB scan of the account's history.
 		rows, e := tx.QueryContext(ctx, `SELECT raw_message_pk::text,stream_key,stream_id,direction,stream_role,COALESCE(body_text,''),COALESCE(parse_error,''),received_at,COALESCE(body->>'message_id'=$2,false)
 FROM raw_stream_messages WHERE account_id=$1 AND origin_message_id=$2
-ORDER BY raw_message_pk LIMIT $3`, scope.AccountID, q.MessageID, currentBaselineMaxRows+1)
+ORDER BY raw_stream_messages.raw_message_pk LIMIT $3`, scope.AccountID, q.MessageID, currentBaselineMaxRows+1)
 		if e != nil {
 			return out, e
 		}
@@ -125,7 +125,7 @@ ORDER BY raw_message_pk LIMIT $3`, scope.AccountID, q.MessageID, currentBaseline
 'execution_state','reconciliation_required','source_updated_at',updated_at,
 'cash_freeze_inclusion','unknown','sellable_freeze_inclusion','unknown')::text
 FROM orders WHERE account_id=$1 AND (NOT is_terminal OR status NOT IN ('filled','cancelled','rejected'))
-ORDER BY order_pk LIMIT $2`, scope.AccountID, currentBaselineMaxRows+1)
+ORDER BY orders.order_pk LIMIT $2`, scope.AccountID, currentBaselineMaxRows+1)
 	if err != nil {
 		return out, err
 	}

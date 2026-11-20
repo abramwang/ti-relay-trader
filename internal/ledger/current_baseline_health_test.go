@@ -211,6 +211,24 @@ VALUES($1,$2,'out','hb',$3,$4::jsonb,$4,$5)`, prefix+":hb", id, scope.AccountID,
 	}
 }
 
+func TestCurrentAccountBaselineHealthNumericArchiveTieBreak(t *testing.T) {
+	db, ctx := healthDatabase(t)
+	scope := currentBaselineFixture(0).Scope
+	at := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
+	execRevision(t, ctx, db, `SELECT setval(pg_get_serial_sequence('raw_stream_messages','raw_message_pk'),9,false)`)
+	for i := 0; i < 2; i++ {
+		body := healthBody(t, scope, at, func(w map[string]any) {
+			w["payload"].(map[string]any)["broker_ready"] = i == 0
+		})
+		execRevision(t, ctx, db, `INSERT INTO raw_stream_messages(stream_key,stream_id,direction,stream_role,account_id,body,body_text,received_at)
+VALUES($1,$2,'out','hb',$3,$4::jsonb,$4,$5)`, currentBaselineStreamPrefix(scope)+":hb", fmt.Sprintf("%d-0", i+1), scope.AccountID, body, at)
+	}
+	h, err := readCurrentBaselineHealth(ctx, db, scope, time.Now().UTC())
+	if err != nil || h.Heartbeat == nil || h.Heartbeat.ArchiveID != "10" || !hasHealthReason(h, "heartbeat_broker_ready_false") {
+		t.Fatal("text alias selected older heartbeat", h, err)
+	}
+}
+
 func TestCurrentAccountBaselineHealthCheckpoints(t *testing.T) {
 	db, ctx := healthDatabase(t)
 	scope := currentBaselineFixture(0).Scope

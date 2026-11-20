@@ -93,7 +93,13 @@ func TestCurrentAccountBaselineIsolatedSourceAssembly(t *testing.T) {
 	start := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	delta := start.Sub(fixtureStart)
 	originalBodies := map[string]string{}
-	for kind, q := range s.Queries {
+	// Force position pages across 9/10: ordering a SELECT's text alias used
+	// to place the final page ahead of earlier pages, depending on map order.
+	if _, err = db.ExecContext(ctx, `SELECT setval(pg_get_serial_sequence('raw_stream_messages','raw_message_pk'),6,false)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"asset", "positions", "orders", "fills"} {
+		q := s.Queries[kind]
 		ids[kind] = q.MessageID
 		for _, list := range [][]ledger.CurrentBaselineArchive{q.Commands, q.Replies} {
 			for _, r := range list {
@@ -134,6 +140,9 @@ func TestCurrentAccountBaselineIsolatedSourceAssembly(t *testing.T) {
 	}
 	if len(read.UnresolvedOrders) != 3 {
 		t.Fatalf("cross-day/unsent/unknown lost or other account leaked: %+v", read.UnresolvedOrders)
+	}
+	if pages := read.Queries["positions"].Replies; len(pages) != 3 || pages[0].ArchiveID != "9" || pages[1].ArchiveID != "10" || pages[2].ArchiveID != "11" {
+		t.Fatal("archive sequence sorted as text", pages)
 	}
 	if read.SourceHealth == nil || !read.SourceHealth.TrackingAvailable || read.SourceHealth.ContinuityVerified || read.SourceHealth.Heartbeat != nil {
 		t.Fatal("missing source observations must not imply healthy/complete", read.SourceHealth)

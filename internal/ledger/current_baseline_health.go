@@ -137,7 +137,7 @@ func readCurrentBaselineHealth(ctx context.Context, q currentBaselineReader, sco
 CASE WHEN octet_length(body_text) <= 1048576 THEN body_text ELSE '' END,
 coalesce(parse_error,''),received_at,coalesce(octet_length(body_text),0)
 FROM raw_stream_messages WHERE stream_key=$1 AND stream_role='hb'
-ORDER BY received_at DESC,raw_message_pk DESC LIMIT 1`, prefix+":hb").Scan(&r.ArchiveID, &r.EntryID, &r.Direction, &account, &r.Body, &r.ParseError, &r.ReceivedAt, &size)
+ORDER BY received_at DESC,raw_stream_messages.raw_message_pk DESC LIMIT 1`, prefix+":hb").Scan(&r.ArchiveID, &r.EntryID, &r.Direction, &account, &r.Body, &r.ParseError, &r.ReceivedAt, &size)
 	if errors.Is(err, sql.ErrNoRows) {
 		h.reason("heartbeat_missing")
 	} else if err != nil {
