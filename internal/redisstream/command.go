@@ -43,11 +43,31 @@ type CommandPublishResult struct {
 }
 
 type RedisCommandPublisher struct {
-	client *redis.Client
+	client     *redis.Client
+	onceClient *redis.Client
 }
 
 func NewRedisCommandPublisher(client *redis.Client) *RedisCommandPublisher {
-	return &RedisCommandPublisher{client: client}
+	p := &RedisCommandPublisher{client: client}
+	if client != nil {
+		opts := *client.Options()
+		opts.MaxRetries = -1
+		p.onceClient = redis.NewClient(&opts)
+	}
+	return p
+}
+
+// PublishCommandBodyOnce sends the registered original bytes. A lost response
+// is unknown: neither the Redis client nor this method retries XADD.
+func (publisher *RedisCommandPublisher) PublishCommandBodyOnce(ctx context.Context, streamKey string, body []byte) (CommandPublishResult, error) {
+	if publisher == nil || publisher.onceClient == nil {
+		return CommandPublishResult{}, fmt.Errorf("single-attempt publisher unavailable")
+	}
+	id, err := publisher.onceClient.XAdd(ctx, &redis.XAddArgs{Stream: streamKey, Values: map[string]any{"body": string(body)}}).Result()
+	if err != nil {
+		return CommandPublishResult{}, err
+	}
+	return CommandPublishResult{StreamKey: streamKey, StreamID: id, BodyBytes: len(body)}, nil
 }
 
 func OpenRedisCommandPublisher(cfg config.RedisConfig) (*RedisCommandPublisher, error) {
@@ -107,7 +127,15 @@ func (publisher *RedisCommandPublisher) Close() error {
 	if publisher == nil || publisher.client == nil {
 		return nil
 	}
-	return publisher.client.Close()
+	var onceErr error
+	if publisher.onceClient != nil {
+		onceErr = publisher.onceClient.Close()
+	}
+	err := publisher.client.Close()
+	if err != nil {
+		return err
+	}
+	return onceErr
 }
 
 func (publisher *RedisCommandPublisher) Ping(ctx context.Context) error {

@@ -195,8 +195,40 @@ func appendCommandObservations(c *ledger.CurrentBaselineCandidate, src *ledger.C
 		}
 		c.Resources["commands"] = append(c.Resources["commands"], ledger.CurrentBaselineRecord{Key: o.RecordID, Document: doc})
 	}
+	if src.Registrations == nil {
+		c.Limitations = append(c.Limitations, ledger.CurrentBaselineLimitation{Code: "command_registration_unavailable", Resource: "commands", RecordIDs: []string{}, Detail: "Write-ahead command registration is not installed; absence of archives cannot prove absence of publication."})
+	} else {
+		if len(src.Registrations)+len(c.Resources["commands"]) > 100000 {
+			return ledger.ErrCurrentBaselineLimit
+		}
+		seen := map[string]bool{}
+		for _, r := range src.Registrations {
+			if r.AccountID != c.Scope.AccountID || r.Environment != c.Scope.Environment || r.ID == "" || seen[r.ID] {
+				return ledger.ErrCurrentBaselineInput
+			}
+			seen[r.ID] = true
+			key := "command-registration:" + r.ID
+			doc, err := json.Marshal(struct {
+				RecordID          string                         `json:"record_id"`
+				Source            string                         `json:"source"`
+				ObservationOnly   bool                           `json:"observation_only"`
+				QuantityAdditive  bool                           `json:"quantity_additive"`
+				ExecutionVerified bool                           `json:"execution_verified"`
+				Registration      ledger.SecuritiesCommandRecord `json:"registration"`
+			}{key, "durable_command_registration", true, false, false, r})
+			if err != nil {
+				return err
+			}
+			*budget += len(r.Body) + len(doc)
+			if *budget > 64<<20 {
+				return ledger.ErrCurrentBaselineLimit
+			}
+			c.Resources["commands"] = append(c.Resources["commands"], ledger.CurrentBaselineRecord{Key: key, Document: doc})
+		}
+		c.Limitations = append(c.Limitations, ledger.CurrentBaselineLimitation{Code: "registered_command_execution_unverified", Resource: "commands", RecordIDs: []string{}, Detail: "Registration and Redis publication evidence only; no broker acceptance, execution closure, history backfill or all-writer coverage proof. Archive and registration observations are non-additive."})
+	}
 	sort.Slice(c.Resources["commands"], func(i, j int) bool { return c.Resources["commands"][i].Key < c.Resources["commands"][j].Key })
-	c.Limitations = append(c.Limitations, ledger.CurrentBaselineLimitation{Code: "command_archive_coverage_unverified", Resource: "commands", RecordIDs: []string{}, Detail: "Bounded account cmd.trade archive observations only, not outstanding quantity. Securities publication precedes archival; unarchived or mis-scoped commands, replies, execution and cancel closure remain unverified. Ledger intent links are not execution proof."})
+	c.Limitations = append(c.Limitations, ledger.CurrentBaselineLimitation{Code: "command_archive_coverage_unverified", Resource: "commands", RecordIDs: []string{}, Detail: "Bounded account cmd.trade archive observations only, not outstanding quantity. Legacy securities publication precedes archival; unarchived or mis-scoped commands, replies, execution and cancel closure remain unverified. Ledger intent links are not execution proof."})
 	return nil
 }
 

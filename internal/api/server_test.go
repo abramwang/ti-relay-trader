@@ -2349,6 +2349,18 @@ func TestSubmitOrderIdempotencyConflict(t *testing.T) {
 	}
 }
 
+func TestSubmitOrderPublicationUnknown(t *testing.T) {
+	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
+		Orders: &fakeOrderSubmitter{err: ledger.ErrSecuritiesCommandUncertain},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{"account_id":"acct-1","symbol":"600000","exchange":"SH","trade_side":"B","business_type":"S","price":9.67,"qty":100,"idempotency_key":"idem-1"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"code":"CONFLICT"`) || !strings.Contains(rec.Body.String(), "do not resend") {
+		t.Fatalf("unknown publication must not invite a new order: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSubmitOrderUnsupportedBusinessType(t *testing.T) {
 	handler := NewWithDependencies(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{
 		Orders: &fakeOrderSubmitter{err: orderflow.ErrUnsupportedBusinessType},

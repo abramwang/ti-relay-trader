@@ -53,7 +53,7 @@ func sourceSchemaDatabase(t *testing.T, receipts bool) (*sql.DB, context.Context
 			t.Fatal(err)
 		}
 		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), ".up.sql") || f.Name() > "000057_account_baseline_commands.up.sql" {
+			if !strings.HasSuffix(f.Name(), ".up.sql") || f.Name() > "000058_securities_command_registration.up.sql" {
 				continue
 			}
 			raw, err := os.ReadFile(filepath.Join("../../migrations/postgres", f.Name()))

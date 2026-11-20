@@ -2,6 +2,22 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## 证券发送前登记
+
+`registration_integration_test.go`在隔离PG迁移至000058，验证并发登记/唯一发送尝试、报单/批量/撤单成功与丢响应、重建Service重试不重发、原意图冲突、关闭开关防旧路径绕行、缺schema拒发、归档失败事务回滚、原文字节及固定基线历史、不可变/修订/降级保护。`command_registration_test.go`覆盖TEST/数据库/发布器启用限制，HTTP回归检查未知发布返回409及不要重发提示。
+
+`command_once_test.go`以本地故障TCP服务读完XADD后关闭响应，检查配置过自动重试的原客户端不会使新路径重复XADD；另以独立Unix socket Redis核对实际原文及Stream ID。没有访问共享Redis或真实柜台，也未改变生产配置。
+
+```bash
+go test ./internal/orderflow ./internal/api ./internal/redisstream
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_BASELINE_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-position-baseline-postgres.sh
+```
+
+新发送路径默认关闭，仅TEST可启用。发布状态并非柜台执行/终态，旧发送者切换、原始回执/事件闭合及真实链路仍需后续验收。
+
 ## CFFEX服务开平仓接线
 
 `cffex_execution_test.go`使用合成Meridian目录/快照、真实隔离PG和假发布器，验证TEST服务默认关闭、IF/IH/IC/IM显式品种/手数策略、B/S及O/C原价不改、CT/CY拒绝、CFFEX连续日盘与SHFE分离、最新持久持仓自动选择、失败/未知不回退、并发超平拒绝及发布未知不释放/重发。`terminal_execution_test.go`验证策略配置和复制隔离，`terminal_permissions_test.go`验证分市场显示时段，HTTP测试拒绝客户端覆盖策略/持仓ID并区分缺基线503。多手撤单覆盖部分/重复/冲突/晚到成交、全成拒绝、报单权限关闭后独立撤单。

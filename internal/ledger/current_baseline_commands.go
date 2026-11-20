@@ -14,12 +14,43 @@ type CurrentBaselineCommandArchive struct {
 // Nil means not collected, not an empty or resolved command set. Archives are
 // post-publication observations, not a durable pre-send responsibility registry.
 type CurrentBaselineCommandSources struct {
-	Archives []CurrentBaselineCommandArchive
-	Orders   []CurrentBaselineRecord
+	Archives      []CurrentBaselineCommandArchive
+	Orders        []CurrentBaselineRecord
+	Registrations []SecuritiesCommandRecord
 }
 
-func readCurrentBaselineCommands(ctx context.Context, tx *sql.Tx, account string, budget *int) (*CurrentBaselineCommandSources, error) {
+func readCurrentBaselineCommands(ctx context.Context, tx *sql.Tx, scope CurrentBaselineScope, budget *int) (*CurrentBaselineCommandSources, error) {
 	out := &CurrentBaselineCommandSources{Archives: []CurrentBaselineCommandArchive{}, Orders: []CurrentBaselineRecord{}}
+	account := scope.AccountID
+	available, err := securitiesCommandTracking(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if available {
+		out.Registrations = []SecuritiesCommandRecord{}
+		rows, err := tx.QueryContext(ctx, securitiesCommandSelect+`WHERE i.environment=$1 AND i.account_id=$2 ORDER BY i.command_id LIMIT $3`, scope.Environment, account, currentBaselineMaxRows+1)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			r, e := scanSecuritiesCommand(rows)
+			if e != nil {
+				rows.Close()
+				return nil, e
+			}
+			*budget += len(r.Body)
+			if len(out.Registrations) >= currentBaselineMaxRows || *budget > currentBaselineMaxBytes {
+				rows.Close()
+				return nil, ErrCurrentBaselineLimit
+			}
+			out.Registrations = append(out.Registrations, r)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
 	// Account-indexed, bounded history, including old gateways and dates. Do not
 	// take only the newest N commands or infer completion from a successful reply.
 	rows, err := tx.QueryContext(ctx, `SELECT raw_message_pk::text,stream_key,stream_id,direction,stream_role,

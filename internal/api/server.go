@@ -5266,6 +5266,8 @@ func (s *Server) writeOrderError(w http.ResponseWriter, r *http.Request, err err
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "account is not enabled for trading", err.Error())
 	case errors.Is(err, orderflow.ErrMissingPublisher):
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.CodeUnavailable, "redis command publisher is unavailable", err.Error())
+	case errors.Is(err, ledger.ErrSecuritiesCommandUncertain):
+		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeConflict, "command publication is unconfirmed; reconcile the original identity and do not resend", err.Error())
 	case errors.Is(err, orderflow.ErrIdempotencyConflict):
 		httpx.WriteError(w, r, http.StatusConflict, httpx.CodeIdempotencyConflict, "idempotency key conflicts with an existing order", err.Error())
 	case errors.Is(err, orderflow.ErrDuplicateGatewayOrder):

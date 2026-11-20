@@ -48,14 +48,15 @@ type FuturesTerminalConfig struct {
 }
 
 type ServiceConfig struct {
-	PublicURL   string      `yaml:"public_url"`
-	DocsAddr    string      `yaml:"docs_addr"`
-	APIAddr     string      `yaml:"api_addr"`
-	Mode        Mode        `yaml:"mode"`
-	Environment Environment `yaml:"environment"`
-	Timezone    string      `yaml:"timezone"`
-	LogLevel    string      `yaml:"log_level"`
-	LogFormat   string      `yaml:"log_format"`
+	SecuritiesCommandRegistration bool        `yaml:"securities_command_registration"`
+	PublicURL                     string      `yaml:"public_url"`
+	DocsAddr                      string      `yaml:"docs_addr"`
+	APIAddr                       string      `yaml:"api_addr"`
+	Mode                          Mode        `yaml:"mode"`
+	Environment                   Environment `yaml:"environment"`
+	Timezone                      string      `yaml:"timezone"`
+	LogLevel                      string      `yaml:"log_level"`
+	LogFormat                     string      `yaml:"log_format"`
 }
 
 type Environment string
@@ -305,6 +306,9 @@ func (cfg *Config) ApplyDefaults() {
 }
 
 func (cfg Config) Validate() error {
+	if cfg.Service.SecuritiesCommandRegistration && (cfg.Service.Environment != EnvironmentTest || cfg.Redis.Env != "test" || !strings.HasSuffix(cfg.Database.ExpectedName, "_test")) {
+		return errors.New("securities command registration currently requires TEST and a named _test database")
+	}
 	if cfg.FuturesTerminal.ExecutionEnabled && (cfg.FuturesTerminal.ManifestFile == "" || !strings.HasSuffix(cfg.FuturesTerminal.Database.ExpectedName, "_test")) {
 		return errors.New("futures execution requires an explicit TEST manifest and an independent _test database")
 	}

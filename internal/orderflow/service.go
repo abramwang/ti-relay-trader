@@ -69,20 +69,22 @@ type Clock interface {
 }
 
 type Service struct {
-	cfg       config.Config
-	ledger    LedgerWriter
-	publisher CommandPublisher
-	ids       IDGenerator
-	clock     Clock
-	cancelMu  sync.Mutex
+	cfg            config.Config
+	ledger         LedgerWriter
+	publisher      CommandPublisher
+	ids            IDGenerator
+	clock          Clock
+	cancelMu       sync.Mutex
+	commandJournal SecuritiesCommandJournal
 }
 
 type Options struct {
-	Config    config.Config
-	Ledger    LedgerWriter
-	Publisher CommandPublisher
-	IDs       IDGenerator
-	Clock     Clock
+	Config         config.Config
+	Ledger         LedgerWriter
+	Publisher      CommandPublisher
+	IDs            IDGenerator
+	Clock          Clock
+	CommandJournal SecuritiesCommandJournal
 }
 
 type SubmitOptions struct {
@@ -202,12 +204,17 @@ func New(opts Options) (*Service, error) {
 	if opts.Clock == nil {
 		opts.Clock = systemClock{}
 	}
+	journal, err := configuredCommandJournal(opts)
+	if err != nil {
+		return nil, err
+	}
 	return &Service{
-		cfg:       opts.Config,
-		ledger:    opts.Ledger,
-		publisher: opts.Publisher,
-		ids:       opts.IDs,
-		clock:     opts.Clock,
+		cfg:            opts.Config,
+		ledger:         opts.Ledger,
+		publisher:      opts.Publisher,
+		ids:            opts.IDs,
+		clock:          opts.Clock,
+		commandJournal: journal,
 	}, nil
 }
 
@@ -297,11 +304,8 @@ func (service *Service) SubmitOrder(ctx context.Context, req trading.SubmitOrder
 		normalized,
 		now,
 	)
-	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	published, err := service.publishTradeCommand(ctx, streamKey, envelope, normalized.AccountID, normalized.GatewayOrderID)
 	if err != nil {
-		return SubmitOrderResult{}, err
-	}
-	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, normalized.GatewayOrderID); err != nil {
 		return SubmitOrderResult{}, err
 	}
 
@@ -396,6 +400,9 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 	}
 	if len(replayedOrders) > 0 {
 		if len(orders) == 0 {
+			if err := service.checkRegisteredBatch(ctx, normalized); err != nil {
+				return BatchSubmitOrderResult{}, err
+			}
 			return service.replayedBatchSubmitResult(ctx, normalized.AccountID, replayedOrders, normalized.IdempotencyKey, requestID)
 		}
 		return BatchSubmitOrderResult{}, fmt.Errorf("%w: batch contains both replayed and new gateway_order_id values", ErrDuplicateGatewayOrder)
@@ -439,11 +446,8 @@ func (service *Service) BatchSubmitOrders(ctx context.Context, req trading.Batch
 		normalized,
 		now,
 	)
-	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	published, err := service.publishTradeCommand(ctx, streamKey, envelope, normalized.AccountID, "")
 	if err != nil {
-		return BatchSubmitOrderResult{}, err
-	}
-	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, ""); err != nil {
 		return BatchSubmitOrderResult{}, err
 	}
 
@@ -482,6 +486,9 @@ func (service *Service) CancelOrder(ctx context.Context, req trading.CancelOrder
 
 	service.cancelMu.Lock()
 	defer service.cancelMu.Unlock()
+	if replay, found, err := service.registeredCancelReplay(ctx, normalized); err != nil || found {
+		return replay, err
+	}
 
 	archived, err := service.ledger.GetArchivedCommand(ctx, normalized.AccountID, redisstream.ActionOrderCancel, normalized.IdempotencyKey)
 	if err == nil {
@@ -545,11 +552,8 @@ func (service *Service) CancelOrder(ctx context.Context, req trading.CancelOrder
 		normalized,
 		now,
 	)
-	published, err := service.publisher.PublishCommand(ctx, streamKey, envelope)
+	published, err := service.publishTradeCommand(ctx, streamKey, envelope, normalized.AccountID, normalized.GatewayOrderID)
 	if err != nil {
-		return CancelOrderResult{}, err
-	}
-	if err := service.archiveCommand(ctx, published, envelope, redisstream.SuffixCmdTrade, normalized.AccountID, normalized.GatewayOrderID); err != nil {
 		return CancelOrderResult{}, err
 	}
 
@@ -770,6 +774,19 @@ func (service *Service) preflightSubmitOrder(ctx context.Context, req trading.Su
 }
 
 func (service *Service) sameOriginalSubmitOrder(ctx context.Context, order trading.Order, requested trading.SubmitOrderRequest) (bool, error) {
+	if service.commandJournal != nil && order.OriginMessageID != "" {
+		r, err := service.commandJournal.GetByMessage(ctx, order.AccountID, order.OriginMessageID)
+		if err == nil {
+			original, e := archivedSubmitOrderRequest(registeredRaw(r), requested.GatewayOrderID)
+			if e != nil {
+				return false, e
+			}
+			return sameSubmitOrderRequests(original, requested), nil
+		}
+		if !errors.Is(err, ledger.ErrSecuritiesCommandNotFound) {
+			return false, err
+		}
+	}
 	var archived ledger.RawStreamMessage
 	var err error
 	if strings.TrimSpace(order.OriginMessageID) != "" {
@@ -1040,8 +1057,20 @@ func (service *Service) replayedBatchSubmitResult(ctx context.Context, accountID
 }
 
 func (service *Service) replayedCommandMetadata(ctx context.Context, accountID string, action string, idempotencyKey string, fallbackRequestID string) (commandReceiptMetadata, error) {
+	if service.commandJournal != nil {
+		r, err := service.commandJournal.Get(ctx, accountID, action, idempotencyKey)
+		if err == nil {
+			return registeredCommandMetadata(r)
+		}
+		if !errors.Is(err, ledger.ErrSecuritiesCommandNotFound) {
+			return commandReceiptMetadata{}, err
+		}
+	}
 	archived, err := service.ledger.GetArchivedCommand(ctx, accountID, action, idempotencyKey)
 	if errors.Is(err, ledger.ErrArchivedCommandNotFound) {
+		if service.commandJournal != nil {
+			return commandReceiptMetadata{}, ledger.ErrSecuritiesCommandUncertain
+		}
 		return commandReceiptMetadata{IdempotencyKey: idempotencyKey, RequestID: fallbackRequestID}, nil
 	}
 	if err != nil {

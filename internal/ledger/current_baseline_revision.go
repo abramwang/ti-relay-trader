@@ -43,6 +43,9 @@ var currentBaselineRevisionTables = []string{"accounts", "account_gateway_routes
 
 func readCurrentBaselineRevision(ctx context.Context, q currentBaselineReader, account string) (CurrentBaselineRevisionEvidence, error) {
 	var r CurrentBaselineRevisionEvidence
+	if _, err := securitiesCommandTracking(ctx, q); err != nil {
+		return r, err
+	}
 	var observed int
 	err := q.QueryRowContext(ctx, `SELECT count(*) FROM unnest($1::text[]) AS names(name)
 JOIN pg_class c ON c.oid=to_regclass(names.name)

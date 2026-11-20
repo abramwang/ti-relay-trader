@@ -152,7 +152,7 @@ ORDER BY orders.order_pk LIMIT $2`, scope.AccountID, currentBaselineMaxRows+1)
 	if err = rows.Close(); err != nil {
 		return out, err
 	}
-	out.TradeCommands, err = readCurrentBaselineCommands(ctx, tx, scope.AccountID, &budget)
+	out.TradeCommands, err = readCurrentBaselineCommands(ctx, tx, scope, &budget)
 	if err != nil {
 		return out, err
 	}
