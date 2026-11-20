@@ -85,6 +85,8 @@ func (s *Server) handleFuturesOrderCommand(w http.ResponseWriter, r *http.Reques
 func (s *Server) writeFuturesExecutionError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, message := http.StatusServiceUnavailable, httpx.CodeUnavailable, "futures execution unavailable; query the same request key before taking further action"
 	switch {
+	case errors.Is(err, futures.ErrCloseReservation):
+		message = "futures close capacity or position baseline requires reconciliation; no new command was published"
 	case errors.Is(err, futures.ErrCaptureUnavailable):
 		message = "futures reply/event receiver is unavailable; retain the original request key for reconciliation"
 	case errors.Is(err, futures.ErrOrderRequestConflict):

@@ -23,6 +23,7 @@ type TestTradeApproval struct {
 	ExpiresAt           string                   `json:"expires_at"`
 	CancelReceiptID     int64                    `json:"cancel_receipt_id"`
 	Market              *TestTradeMarket         `json:"market"`
+	CFFEX               *CFFEXExecutionPolicy    `json:"cffex,omitempty"`
 }
 
 // TestExecutionPermission is local, command-bound permission, never OC wire.
@@ -66,7 +67,7 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	if _, err := parseReply(raw); err != nil {
 		return a, err
 	}
-	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile", "execution_permission"})
+	fields, err := shape(raw, []string{"assessment_id", "command_sha256", "expires_at", "cancel_receipt_id", "market"}, []string{"permission_profile", "execution_permission", "cffex"})
 	if err != nil {
 		return a, err
 	}
@@ -108,6 +109,11 @@ func DecodeTestTradeApproval(raw []byte) (TestTradeApproval, error) {
 	}
 	if !validID(a.AssessmentID) || len(a.AssessmentID) > 128 || len(a.CommandSHA256) != 64 || strings.Trim(a.CommandSHA256, "0123456789abcdef") != "" || !validTime(a.ExpiresAt) || a.CancelReceiptID < 0 {
 		return a, ErrStreamIdentity
+	}
+	if cf, present := fields["cffex"]; present {
+		if _, err := shape(cf, []string{"products", "max_order_qty"}, nil); err != nil || !a.relayExecution() || a.CFFEX.validate() != nil {
+			return a, ErrStreamIdentity
+		}
 	}
 	if a.Market != nil {
 		if a.Market.PriceSource == meridianPriceSource {
@@ -164,7 +170,14 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 		return ErrStreamIdentity
 	}
 	o, m := c.Original.Orders[0], a.Market
-	if o.OrderQty != 1 || o.TradeSide != "B" || o.OffsetType != "O" || o.HedgeType != "speculation" || o.Exchange != "SHFE" || o.TradeDate != target.TradeDate || m.TradeDate != target.TradeDate || m.Stale || !validTime(m.ObservedAt) {
+	if o.HedgeType != "speculation" || o.TradeDate != target.TradeDate || m.TradeDate != target.TradeDate || m.Stale || !validTime(m.ObservedAt) {
+		return ErrStreamIdentity
+	}
+	if o.Exchange == "CFFEX" {
+		if !a.relayExecution() || !a.CFFEX.allows(o.Symbol, o.OrderQty) || !oneOf(o.OffsetType, "O", "C") || m.PriceSource != meridianPriceSource {
+			return ErrStreamIdentity
+		}
+	} else if a.CFFEX != nil || o.Exchange != "SHFE" || o.OrderQty != 1 || o.TradeSide != "B" || o.OffsetType != "O" {
 		return ErrStreamIdentity
 	}
 	b := c.Evidence.Mappings[o.GatewayOrderID]
@@ -259,6 +272,11 @@ func (s *CommandStore) publishTestTrade(ctx context.Context, scope CommandScope,
 	assessment := string(framed("ctp.test.assessment.v1/", string(commandRouteBytes(scope.Route)), a.AssessmentID))
 	check := func(c CommandRegistration) error { return validateTestTrade(c, target, a) }
 	insert := func(ctx context.Context, tx *sql.Tx, c CommandRegistration, binding, proof []byte) error {
+		if a.relayExecution() && a.AssessmentID == "relay-order-service-v1" {
+			if _, _, err := readCaptureHealth(ctx, tx, scope, target); err != nil {
+				return err
+			}
+		}
 		if a.Market != nil && a.Market.PriceSource == nativeFactsPriceSource {
 			if err := verifyTestNativeMarket(ctx, tx, c, target, *a.Market); err != nil {
 				return err
@@ -315,10 +333,16 @@ func verifyAssessmentCancel(ctx context.Context, tx *sql.Tx, assessment string, 
 		return ErrStreamIdentity
 	}
 	o := parent.Original.Orders[0]
+	if (o.Exchange == "CFFEX" && !a.CFFEX.allows(o.Symbol, o.OrderQty)) || (o.Exchange != "CFFEX" && a.CFFEX != nil) {
+		return ErrStreamIdentity
+	}
 	if c.Original.Cancel.GatewayOrderID != o.GatewayOrderID || c.Original.Cancel.TradeDate != o.TradeDate {
 		return ErrStreamIdentity
 	}
 	if a.relayExecution() && a.AssessmentID == "relay-order-service-v1" {
+		if _, _, err := readCaptureHealth(ctx, tx, c.Scope, target); err != nil {
+			return err
+		}
 		latest, err := latestServiceCancelReceipt(ctx, tx, parent, target)
 		if err != nil || latest != a.CancelReceiptID {
 			return ErrQueryPublishGate
@@ -340,7 +364,8 @@ func verifyAssessmentCancel(ctx context.Context, tx *sql.Tx, assessment string, 
 		return ErrStreamIdentity
 	}
 	produced, err := time.Parse(time.RFC3339Nano, event.ProducedAt)
-	if err != nil || produced.After(time.Now().Add(2*time.Second)) || time.Since(produced) > time.Minute {
+	serviceCancel := a.relayExecution() && a.AssessmentID == "relay-order-service-v1"
+	if err != nil || produced.After(time.Now().Add(2*time.Second)) || (!serviceCancel && time.Since(produced) > time.Minute) {
 		return ErrStreamIdentity
 	}
 	return nil

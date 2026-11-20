@@ -101,6 +101,14 @@ func (s *TestOrderService) Cancel(ctx context.Context, request CancelExecutionRe
 	approval := TestTradeApproval{PermissionProfile: relayTestExecutionProfile,
 		ExecutionPermission: &TestExecutionPermission{Cancel: true}, AssessmentID: "relay-order-service-v1",
 		CommandSHA256: commandDigest(raw), ExpiresAt: timeutil.FormatRFC3339Nano(expires), CancelReceiptID: receipt}
+	if o := parent.Original.Orders[0]; o.Exchange == "CFFEX" {
+		if !cffexIndexSymbol.MatchString(o.Symbol) {
+			return CancelExecutionResult{}, ErrStreamIdentity
+		}
+		// Revoking new-order product/quantity permission must not disable an
+		// independently authorized cancel of an existing published local order.
+		approval.CFFEX = &CFFEXExecutionPolicy{[]string{o.Symbol[:2]}, o.OrderQty}
+	}
 	if _, err := ValidateTestTradePreparation(raw, a.Source.Scope, target, evidence, approval); err != nil {
 		return CancelExecutionResult{}, err
 	}

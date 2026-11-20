@@ -52,6 +52,19 @@ func TestOrderServiceTerminalDatabaseAndPolicy(t *testing.T) {
 	if err != nil || s.accounts["300052141"].SubmitEnabled || !s.accounts["300052141"].CancelEnabled {
 		t.Fatal("independent cancel policy lost", err)
 	}
+	r.manifest.Accounts[0].Execution.CFFEX = &CFFEXExecutionPolicy{[]string{"IF"}, 3}
+	s, err = r.NewOrderService(ctx, "unused", name, market)
+	if err != nil || !s.accounts["300052141"].CFFEX.allows("IF2701", 3) {
+		t.Fatal("explicit CFFEX policy lost", err)
+	}
+	r.manifest.Accounts[0].Execution.CFFEX.Products[0] = "T"
+	if !s.accounts["300052141"].CFFEX.allows("IF2701", 3) {
+		t.Fatal("manifest mutated live policy")
+	}
+	if _, err := r.NewOrderService(ctx, "unused", name, market); err == nil {
+		t.Fatal("unsupported policy accepted")
+	}
+	r.manifest.Accounts[0].Execution.CFFEX = &CFFEXExecutionPolicy{[]string{"IF"}, 3}
 	for _, expected := range []string{"", "postgres", "other_test"} {
 		if _, err := r.NewOrderService(ctx, "unused", expected, market); err == nil {
 			t.Fatal("wrong database identity accepted", expected)

@@ -191,6 +191,11 @@ func (s *CommandStore) publishTestRegistered(ctx context.Context, scope CommandS
 	if existing != nil {
 		return publicationOutcome(*existing)
 	}
+	if table == "futures_test_trade_publications" {
+		if err := recheckClosePublication(ctx, tx, command, target); err != nil {
+			return QueryPublication{}, err
+		}
+	}
 	if insert != nil {
 		err = insert(ctx, tx, command, targetRaw, proofRaw)
 	} else {

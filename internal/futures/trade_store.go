@@ -274,12 +274,18 @@ func insertTradeObservations(ctx context.Context, tx *sql.Tx, key string, items 
 // Read exposes quality alongside facts. Blocked reports must never be presented
 // as a complete trading ledger or used to enable trading/accounting readiness.
 func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, error) {
+	return readTradeReport(ctx, s.db, scope)
+}
+
+func readTradeReport(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, scope TradeScope) (TradeReport, error) {
 	if err := scope.validate(); err != nil {
 		return TradeReport{}, err
 	}
 	contextJSON, _ := json.Marshal(scope)
 	var raw, digest, invalid, events []byte
-	err := s.db.QueryRowContext(ctx, `SELECT report,report_sha256,
+	err := db.QueryRowContext(ctx, `SELECT report,report_sha256,
         COALESCE((SELECT jsonb_agg(a.batch_id ORDER BY a.batch_id) FROM futures_query_trade_applications a
         JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=s.scope_key AND b.state<>'ready'),'[]'::jsonb),
         COALESCE((SELECT jsonb_agg('event '||event_id||': '||state||' '||reason ORDER BY event_id)

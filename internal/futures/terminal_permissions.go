@@ -9,14 +9,25 @@ import (
 // Display-only eligibility, never a reusable command permission. Publication
 // still checks the current raw heartbeat, source binding and order evidence.
 type TerminalExecutionView struct {
-	SubmitAuthorized bool      `json:"submit_authorized"`
-	CancelAuthorized bool      `json:"cancel_authorized"`
-	SubmitEnabled    bool      `json:"submit_enabled"`
-	CancelEnabled    bool      `json:"cancel_enabled"`
-	ValidUntil       time.Time `json:"valid_until"`
-	TradeDate        string    `json:"trade_date"`
-	PriceSource      string    `json:"price_source"`
-	Reason           string    `json:"reason"`
+	SubmitAuthorized bool                `json:"submit_authorized"`
+	CancelAuthorized bool                `json:"cancel_authorized"`
+	SubmitEnabled    bool                `json:"submit_enabled"`
+	CancelEnabled    bool                `json:"cancel_enabled"`
+	ValidUntil       time.Time           `json:"valid_until"`
+	TradeDate        string              `json:"trade_date"`
+	PriceSource      string              `json:"price_source"`
+	Reason           string              `json:"reason"`
+	CFFEX            *CFFEXExecutionView `json:"cffex,omitempty"`
+}
+
+// Legacy top-level eligibility remains the SHFE assessment's day sessions.
+// Clients must use this separate scope when rendering a CFFEX order control.
+type CFFEXExecutionView struct {
+	Products      []string  `json:"products"`
+	MaxOrderQty   Count     `json:"max_order_qty"`
+	SubmitEnabled bool      `json:"submit_enabled"`
+	CancelEnabled bool      `json:"cancel_enabled"`
+	ValidUntil    time.Time `json:"valid_until"`
 }
 
 func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.Time) TerminalExecutionView {
@@ -26,6 +37,9 @@ func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.T
 		return v
 	}
 	v.SubmitAuthorized, v.CancelAuthorized = a.SubmitEnabled, a.CancelEnabled
+	if a.CFFEX != nil && a.CFFEX.validate() == nil {
+		v.CFFEX = &CFFEXExecutionView{Products: append([]string(nil), a.CFFEX.Products...), MaxOrderQty: a.CFFEX.MaxOrderQty}
+	}
 	if account.Capture == nil || !account.Capture.Ready || !account.Capture.ValidUntil.After(now) {
 		v.Reason = "relay_capture_unavailable"
 		return v
@@ -38,6 +52,18 @@ func (s *TestOrderService) TerminalExecution(account TerminalAccount, now time.T
 	v.TradeDate = *h.TradeDate
 	v.Reason = "outside_test_session"
 	local := now.In(timeutil.Location())
+	if v.CFFEX != nil && local.Format("20060102") == v.TradeDate {
+		if end, open := cffexIndexSessionEnd(local); open {
+			v.CFFEX.SubmitEnabled = a.SubmitEnabled && h.AcceptingTradeCommands
+			v.CFFEX.CancelEnabled = a.CancelEnabled && h.AcceptingCancelCommands
+			v.CFFEX.ValidUntil = h.ProducedAt.Add(5 * time.Second)
+			for _, limit := range []time.Time{a.AuthorizationExpiresAt, end, account.Capture.ValidUntil} {
+				if limit.Before(v.CFFEX.ValidUntil) {
+					v.CFFEX.ValidUntil = limit
+				}
+			}
+		}
+	}
 	segment := assessmentDaySegment(local)
 	if segment == 0 || local.Format("20060102") != v.TradeDate {
 		return v

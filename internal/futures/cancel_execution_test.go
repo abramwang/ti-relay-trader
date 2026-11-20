@@ -118,7 +118,7 @@ func appendCancelOrderObservation(t *testing.T, db *sql.DB, ctx context.Context,
 }
 
 func TestCancelServiceEvidenceRejection(t *testing.T) {
-	for _, scenario := range []string{"disabled", "expired", "missing_order", "wrong_day", "wrong_session", "unpublished", "missing_receipt", "corrupt", "quarantined", "filled", "cancelled_then_working", "stale", "source_changed", "wrong_origin", "missing_sysid", "changed_sysid", "key_conflict"} {
+	for _, scenario := range []string{"disabled", "expired", "missing_order", "wrong_day", "wrong_session", "unpublished", "missing_receipt", "corrupt", "quarantined", "filled", "cancelled_then_working", "future", "source_changed", "wrong_origin", "missing_sysid", "changed_sysid", "key_conflict"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, s, f, m, ctx, r, receipt := cancelServiceFixture(t)
 			a := s.accounts[r.AccountID]
@@ -163,8 +163,8 @@ func TestCancelServiceEvidenceRejection(t *testing.T) {
 						p["gateway_status"], p["cum_filled_qty"], p["leaves_qty"] = "filled", 1, 0
 					case "cancelled_then_working":
 						p["gateway_status"], p["leaves_qty"] = "cancelled", 0
-					case "stale":
-						m["produced_at"] = assessmentTime(time.Now().Add(-2 * time.Minute))
+					case "future":
+						m["produced_at"] = assessmentTime(time.Now().Add(2 * time.Minute))
 					case "wrong_origin":
 						m["origin_message_id"] = "different-command"
 					case "missing_sysid":
@@ -215,6 +215,73 @@ func TestCancelServiceConcurrentAndSecondAttempt(t *testing.T) {
 	}
 	if f.appends.Load() != 2 {
 		t.Fatal("automatic replacement cancel")
+	}
+}
+
+func TestCancelServiceOldWorkingNeedsCurrentCapture(t *testing.T) {
+	for _, state := range []string{"running", "stale", "stopped", "owner_changed"} {
+		t.Run(state, func(t *testing.T) {
+			db, s, f, m, ctx, r, receipt := cancelServiceFixture(t)
+			appendCancelOrderObservation(t, db, ctx, receipt, "2-0", func(m map[string]any) {
+				m["produced_at"] = assessmentTime(time.Now().Add(-2 * time.Hour))
+			})
+			var err error
+			switch state {
+			case "stale":
+				_, err = db.ExecContext(ctx, `UPDATE futures_capture_health SET event_checked_at=clock_timestamp()-interval '1 minute'`)
+			case "stopped":
+				_, err = db.ExecContext(ctx, `UPDATE futures_capture_health SET state='stopped'`)
+			case "owner_changed":
+				_, err = db.ExecContext(ctx, `UPDATE futures_stream_receivers SET owner_id='other-owner'`)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := m.calls.Load()
+			result, err := s.Cancel(ctx, r)
+			if state == "running" {
+				if err != nil || result.Publication.State != "published" || f.appends.Load() != 2 {
+					t.Fatal(result, err)
+				}
+			} else if !errors.Is(err, ErrCaptureUnavailable) || f.appends.Load() != 1 {
+				t.Fatal("old order bypassed receiver freshness", result, err)
+			}
+			if m.calls.Load() != before {
+				t.Fatal("cancel requested quote")
+			}
+		})
+	}
+}
+
+func TestCancelServicePublicationTransactionRequiresCapture(t *testing.T) {
+	db, s, _, _, ctx, r, receipt := cancelServiceFixture(t)
+	a := s.accounts[r.AccountID]
+	target, err := s.cancelTarget(ctx, a.Source.Scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, evidence := buildServiceCancel(a.Source.Scope, r, time.Now())
+	reg, err := s.store.Register(ctx, a.Source.Scope, "cmd.trade", raw, evidence)
+	if err != nil || reg.Outcome != "registered" {
+		t.Fatal(reg, err)
+	}
+	approval := TestTradeApproval{PermissionProfile: relayTestExecutionProfile, AssessmentID: "relay-order-service-v1", CancelReceiptID: receipt}
+	var assessment string
+	if err := db.QueryRowContext(ctx, `SELECT assessment_key FROM futures_test_trade_publications WHERE action='order.submit'`).Scan(&assessment); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE futures_capture_health SET state='stopped'`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := beginFuturesTransaction(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	// Even a caller bypassing the HTTP service and capture transport cannot
+	// borrow its assessment name to cancel against an unobserved order state.
+	if err := verifyAssessmentCancel(ctx, tx, assessment, reg, target, approval); !errors.Is(err, ErrCaptureUnavailable) {
+		t.Fatal("publication transaction skipped capture", err)
 	}
 }
 

@@ -77,3 +77,37 @@ func TestTerminalExecutionPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestCFFEXTerminalScopeSeparateFromSHFE(t *testing.T) {
+	for clock, enabled := range map[string]bool{"09:05:00": false, "09:30:00": true, "10:15:00": true, "13:00:00": true, "15:00:00": false} {
+		now, _ := time.Parse(time.RFC3339, "2026-11-19T"+clock+"+08:00")
+		b, generation, day := true, int64(1), "20261119"
+		scope := CommandScope{Route: QueryRoute{"test", "ctp_4900", "synthetic", "300052141"}}
+		p := TestOrderAccount{Source: TestSourceConfig{Scope: scope}, SubmitEnabled: true, CancelEnabled: true,
+			AuthorizationExpiresAt: now.Add(time.Hour), CFFEX: &CFFEXExecutionPolicy{[]string{"IF", "IM"}, 10}}
+		h := &AdvertisedHeartbeat{ProducedAt: now, SessionID: "test", TradeDate: &day, ConnectionGeneration: &generation,
+			AuthorizationOwner: "relay", RedisReady: true, BrokerReady: true, SettlementConfirmed: true, RecoveryClear: &b,
+			AcceptingTradeCommands: true, AcceptingCancelCommands: true}
+		a := TerminalAccount{AccountID: scope.Route.AccountID, Route: scope.Route, Heartbeat: h, ConnectionState: "execution",
+			Capture: &CaptureHealthView{Ready: true, ValidUntil: now.Add(time.Second)}}
+		s := &TestOrderService{accounts: map[string]TestOrderAccount{a.AccountID: p}}
+		v := s.TerminalExecution(a, now)
+		if v.CFFEX == nil || v.CFFEX.MaxOrderQty != 10 || v.CFFEX.SubmitEnabled != enabled || v.CFFEX.CancelEnabled != enabled {
+			t.Fatal(clock, v)
+		}
+		if enabled && !v.CFFEX.ValidUntil.Equal(a.Capture.ValidUntil) {
+			t.Fatal("scope outlived capture", v)
+		}
+		if clock == "09:05:00" && !v.SubmitEnabled || clock == "13:00:00" && v.SubmitEnabled {
+			t.Fatal("legacy SHFE sessions changed", v)
+		}
+		v.CFFEX.Products[0] = "T"
+		if !p.CFFEX.allows("IF2701", 1) {
+			t.Fatal("view mutates operator policy")
+		}
+		a.Capture.Ready = false
+		if got := s.TerminalExecution(a, now); got.CFFEX.SubmitEnabled || got.CFFEX.CancelEnabled {
+			t.Fatal("capture unavailable scope still ready", got)
+		}
+	}
+}

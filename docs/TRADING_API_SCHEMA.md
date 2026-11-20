@@ -58,7 +58,7 @@ POST要求`Content-Type: application/json`，拒绝跨Origin、query参数、重
 
 调用方只给意图及显式幂等键，不能传路由、session、权限、原始行情或command/order ID。price为正十进制字符串，委托原价不改；同一scope及key生成稳定的message/client/gateway身份，幂等域跨交易日保留。同键改价、改量、改方向/开平/日期/标的返回409；仅价格尾零不同视为同一数值并返回原始价格文本。路由变更不是幂等续接，仍须按既有责任核对流程处理，不能换gateway规避历史。
 
-新请求由服务端从已配置Meridian取得唯一正式目录/tick及当前原始快照，取得绑定路由的新鲜心跳session/代次/TradingDay，再构造短期Relay本地许可，登记后使用既有原子TEST发布器。总时限8秒，不自动重试、不改价、不发送OC行情查询、不静默回退原生报价。现有发布边界仍为东吴TEST `ctp_4900 / 300052141`、SHFE买开投机1手；不放宽成生产规则。**东吴测评行情与实盘不同，不能据此直接用Meridian实盘价启动测试**；需要原生定价时仍显式使用既有execution CLI，不能冒称本HTTP服务已支持原生来源。
+新请求由服务端从已配置Meridian取得唯一正式目录/tick及当前原始快照，取得绑定路由的新鲜心跳session/代次/TradingDay，再构造短期Relay本地许可，登记后使用既有原子TEST发布器。总时限8秒，不自动重试、不改价、不发送OC行情查询、不静默回退原生报价。现有身份边界仍为东吴TEST `ctp_4900 / 300052141`；默认仅SHFE买开投机1手，CFFEX需下述显式服务端配置，不放宽成生产规则。**东吴测评行情与实盘不同，不能据此直接用Meridian实盘价启动测试**；需要原生定价时仍显式使用既有execution CLI，不能冒称本HTTP服务已支持原生来源。
 
 幂等重试先读取已登记事实，不再要求行情/新会话或重新授权。并发请求在同一数据库路由锁下重查，只有新登记的请求可以尝试发布；其余返回原记录。不另造幂等表，不修改原始命令、目录证据及行情正文。进程中断后即使只有registered，也不自动续发；attempted/超时/发布确认未知继续待核。SDK不生成替代key、不重试、不轮询。
 
@@ -75,6 +75,12 @@ HTTP202只表示已取得持久登记身份，返回原始order、idempotency_ke
 
 运行配置分两层：`futures_terminal.execution_enabled`默认false；期货专用manifest账户可选`execution`包含`submit_enabled`、`cancel_enabled`（缺省false）、带时区的`authorization_expires_at`、既有`command_group`。这些均由服务端运维配置，不从心跳取得授权、不由请求覆盖。必须已有独立、名称以`_test`结尾的数据库且`current_database()`与ExpectedName一致；不自动建库/迁移/初始化Redis。启用仍需独立收件及可用撤单路径，不因编排已完成直接开放终端。
 
+11月19日普通CFFEX服务源码增量（未部署/未配置启用）：账户manifest的`execution`可附加`"cffex":{"products":["IF","IH","IC","IM"],"max_order_qty":3}`。其中3仅为配置示例，不是已授予的额度。只接受这四类股指期货的非空、无重复产品列表及正int32手数上限；缺省不开放CFFEX，不影响原SHFE测评限制。支持B/S、O/C、speculation，多手不超过配置值；CT/CY、国债和期权不支持。仍使用Meridian原价和tick，最终报价/账户检查由柜台执行，不据此宣称保证金风控已完成。
+
+CFFEX发布仅连续日盘09:30–11:30、13:00–15:00及非周末，并核对柜台TradingDay、新鲜行情/心跳和收件健康。此时段检查不是完整节假日日历；本阶段不支持夜盘、跨会话/跨日恢复。所有生产HTTP发送仍503。
+
+普通C平仓由服务端在登记事务选取同scope/target最新已尝试的`account.positions.query`，核验持久完整回包与原文后原子预留。请求不可指定`position_command_id`或可平量。失败/未知/缺页的新查询不能回退旧成功；已建立数量桶后，换基线必须显式核对，暂不自动承接活动订单。发布事务再检查预留/当前事实；缺基线或数量不足时未登记返回503及`position baseline requires reconciliation`说明。发布未知仍占量，同key重试只读原责任，不重新发单。需迁移000051（本轮只在隔离库验证），不自动迁移业务库。
+
 全局发送关闭时POST503；保留有效manifest/数据库配置后GET仍可查询原责任。账户submit关闭或期限已过时，新意图拒绝，同键已登记意图仍可读取。配置当前随服务启动加载，不声称已有动态热撤权；线上终端保持禁发，新增按钮接线见下方终端小节。源码SDK方法为`submit_futures_order`和`get_futures_order_command`；撤单编排见下一节，原生事实HTTP分流、动态停止及持续消费服务部署仍待后续接入，OC无需修改wire。
 
 ### 期货TEST撤单编排（源码新增，默认关闭）
@@ -89,7 +95,8 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 
 - Relay从持久原报单及event原文选择可撤证据，核对来源、scope、原命令关联、哈希、交易日/会话及原生SysID。按数值Stream ID选最新订单观察，不按数据库插入顺序或浏览器选中行猜测；发现终态、冲突/损坏/隔离记录或晚于最新订单的成交，拒绝发送。发布事务内再次核验，不能沿用已被更新的working回报。DB核对与柜台状态不构成跨系统原子快照，最终可撤性仍由柜台判断。
 - 账户`cancel_enabled`和OC `accepting_cancel_commands`独立检查，不依赖`submit_enabled`、OC新报单能力或Meridian行情；全局`execution_enabled=false`仍关闭两个POST，两个GET只读不受此开关影响。不能把“停止新报单”配置成关闭所有执行而期望撤单仍可发送。
-- 当前继承原TEST边界：仅本服务已确认发布的本地单、相同source/run/epoch/group/session/代次/交易日，订单为accepted/working且有剩余量；最新订单回报须在1分钟内。旧CLI单、外部单、跨会话/跨日、已发布但状态未知和长期无新回报的挂单均不在此增量范围；不能伪造新时间解除限制。
+- 当前继承原TEST身份边界：仅本服务已确认发布的本地单、相同source/run/epoch/group/session/代次/交易日，订单为accepted/working且有剩余量。11月19日增量取消1分钟订单年龄限制，改为核对新鲜持续收件，不伪造回报时间。旧CLI单、外部单、跨会话/跨日及已发布但状态未知仍不在范围。
+- CFFEX多手撤单按完整原始订单/唯一成交聚合，重复成交不重复计量；矛盾、已全成或最新工作态未覆盖成交时拒绝。关闭新报单或撤下CFFEX报单品种/手数策略不会关闭已发布原单的独立撤单能力；仍须账户撤单权限、原单CFFEX日盘及当前会话/收件就绪。无行情请求，不借新报单额度撤单。
 - 保留每单一次持久撤单发布尝试的保护；已有attempted/published/not_published不允许换key追加撤单。registered记录同键也不续发。明确拒撤后再次撤单尚待独立实现，不把该限制宣称为完整普通期货撤单能力。
 - 新登记方最多发布一次，重复请求只读取原记录，不重取心跳/行情、不另造cancel_id、不重发。授权到期或账户撤单关闭后，同键仍能读取原责任（全局POST关闭则使用GET）。发送前新到终态导致只登记未发送时，也保留原记录，不在重试时恢复发送。
 
@@ -100,6 +107,8 @@ POST只接受这四项，正文最多4KiB、JSON及同Origin规则与报单相�
 终端复用上述两个POST及两个命令状态GET，股票表单不会接收期货委托。当前仍只支持Meridian来源、SHFE买开投机1手的TEST报单；撤单继承上一节边界。界面接线不等于启用，线上配置与服务未替换；东吴测评不同源报价不能直接用本页实盘价格测试，仍走显式原生CLI。
 
 `GET /v1/futures/terminal`继续只读查询及本地订单回报，增加账户`execution`显示对象。只有TEST、发送总开关、已构建执行服务均满足时才返回该对象；生产不读取TEST账户。`submit_authorized/cancel_authorized`表示Relay配置及授权期限，`submit_enabled/cancel_enabled`还要求当前源绑定、心跳/恢复/结算和TEST日间时段。11月19日新版execution已删除全量原生订单快照的重复门禁。`valid_until`不晚于心跳产生后5秒、授权截止和时段结束；`trade_date`来自柜台，不从浏览器自然日推导。`price_source=meridian_futures_snapshot.v1`。这些仅用于按钮显示，不能作为可复用许可或替代发布前校验；资产scope仍未升级为已验证。
+
+配置CFFEX策略时，新增`execution.cffex={products,max_order_qty,submit_enabled,cancel_enabled,valid_until}`，单独表达CFFEX日盘显示状态，不套用SHFE的10:15休市或13:30开盘。旧顶层执行布尔/汇总mode保留原SHFE语义；CFFEX控件应使用子范围，不能仅用顶层布尔。此增量尚未修改前端控件，也不表示终端CFFEX报单已上线；子范围仅是显示提示，实际撤单仍按原单及独立权限重新核验。
 
 11月19日持仓显示修复：`account.positions.query`的已发布命令，可直接展示经关联和完整性校验的OC持仓回包，不再要求运维先补一份人工SDK审计文件。自动校验原登记scope、来源、session/代次/交易日、命令关联、原文摘要、SDK返回/快照应用标志及完整分页；SDK ticket/request_id只用于回包间一致性，不宣称是独立请求审计。完整结果返回`state=response_ready`、`response_validated=true`、`positions`和`row_count`；`reviewed=false`、`business_published=false`保持不变，不修改收件状态、游标或正式业务快照。独立人工核验的原`ready/reviewed=true`路径仍可读取。未完成、失败、冲突及未知发布不展示部分持仓或伪造0；只有完整空结果才显示0。采样时间和历史会话照实显示，不从成交增量拼造完整当前持仓。页面刷新仍为GET已保存快照，不隐式发柜台查询；资金、订单和成交查询的独立核验规则此次未扩大。
 
@@ -614,6 +623,8 @@ ETF 二级市场买卖按普通证券二级市场订单提交，使用 `business
 订单、成交、ETF 划转、当前持仓和历史持仓查询均支持 `limit` + `cursor` 翻页。第一版 cursor 采用 offset 语义，响应中如果存在 `next_cursor`，客户端可在下一次查询带上该值继续向后读取；如果 `next_cursor` 为空，表示当前条件已到末页。`/trade` 页面默认使用每页 50 条，通过 `next_cursor` 做服务端分页。
 
 完整历史账户数量基线使用独立 `/v1/accounts/{account_id}/positions/baseline` 契约和 `positions.close_baseline.v1` capability。显式指定 `trade_date`，仅支持 `close`；返回 `complete/partial/unavailable`，只有完整基线允许 `missing_security_means_zero=true`。逐页固定内容寻址 `baseline_id`、总数和摘要，重建后旧 ID/游标返回 409，不混合新旧行；GET 仅读归档，不刷新 OC 或回退当前持仓。单页 1..500、全基线上限 100000，超限明确失败。`page_complete` 仍不是全账户完成证明，历史可卖量也不等于当前交易授权。全部元数据、八项完成证明、摘要和 SDK 0.1.43 见 [P0 回执](CHRONOS_POSITION_BASELINE_RESPONSE_20261013.md)。
+
+当前证券账户完整基线是独立待实现能力，不能向上述历史接口传`current`获得。11-19[合同草案及实现顺序](CHRONOS_CURRENT_ACCOUNT_BASELINE_RESPONSE_20261119.md)定义固定发布ID、资金/持仓/在途/成交覆盖、事件修订和有效性；其中新路径及`accounts.current_baseline.v1`尚未上线或加入capabilities。现有SDK `reconcile_current_state()`仍只读四类独立资源，不保证同代际，不能证明缺失证券为零或用作完整冻结依据。
 
 `GET /v1/events/stream` 的账本事件使用 API Hub 生成的进程 epoch 单调游标，游标是 opaque string，客户端不得解析或自行构造。初次连接先收到无 SSE ID 的 `relay.connected`，其 data 包含 `resume_status=fresh`、`current_cursor`、`replay_capacity=2048` 和 `reconciliation_required=false`。恢复连接携带 `Last-Event-ID` 后，同一 API 进程且游标仍在窗口内时，服务端先返回 `resume_status=resumed`，再按原顺序发送游标之后且符合账户过滤的事件。
 

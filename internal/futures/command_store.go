@@ -101,6 +101,12 @@ func (s *CommandStore) Register(ctx context.Context, scope CommandScope, stream 
 // registration. A concurrent service retry must use the original bytes, not
 // manufacture another sent_at or replace its catalog evidence.
 func (s *CommandStore) register(ctx context.Context, scope CommandScope, stream string, raw []byte, e RegistrationEvidence, replay func(*sql.Tx) (*CommandRegistration, error)) (CommandRegistration, error) {
+	return s.registerAtomic(ctx, scope, stream, raw, e, replay, nil)
+}
+
+// Quantity reservations use the same route lock and commit as the intention,
+// identity aliases and audit. A failed reservation rolls all of them back.
+func (s *CommandStore) registerAtomic(ctx context.Context, scope CommandScope, stream string, raw []byte, e RegistrationEvidence, replay func(*sql.Tx) (*CommandRegistration, error), reserve func(*sql.Tx, CommandRegistration) error) (CommandRegistration, error) {
 	c, err := DecodeCommand(raw, scope, stream)
 	if err != nil {
 		return CommandRegistration{}, err
@@ -131,12 +137,22 @@ func (s *CommandStore) register(ctx context.Context, scope CommandScope, stream 
 			return CommandRegistration{}, err
 		}
 		if existing != nil {
+			if reserve != nil {
+				if err := reserve(tx, *existing); err != nil {
+					return CommandRegistration{}, err
+				}
+			}
 			return *existing, tx.Commit()
 		}
 	}
 	out, err := resolveCommand(ctx, tx, key, scope, stream, c, e, evidence)
 	if err != nil {
 		return CommandRegistration{}, err
+	}
+	if reserve != nil {
+		if err := reserve(tx, out); err != nil {
+			return CommandRegistration{}, err
+		}
 	}
 	bodyHash, intentHash, evidenceHash := commandDigest(raw), commandDigest(c.Intent), commandDigest(evidence)
 	var oldBody, oldIntent, oldEvidence []byte

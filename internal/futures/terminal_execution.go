@@ -37,6 +37,7 @@ func (r *TerminalReader) NewOrderService(ctx context.Context, redisURL, expected
 		accounts = append(accounts, TestOrderAccount{
 			Source:        TestSourceConfig{Scope: a.Scope, DeploymentID: a.DeploymentID, RedisURL: redisURL},
 			SubmitEnabled: a.Execution.SubmitEnabled, CancelEnabled: a.Execution.CancelEnabled, AuthorizationExpiresAt: end,
+			CFFEX: cloneCFFEXPolicy(a.Execution.CFFEX),
 		})
 	}
 	store, err := NewCommandStore(r.db)

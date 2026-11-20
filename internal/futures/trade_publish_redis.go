@@ -191,7 +191,7 @@ func assessmentNativePrice(raw []byte, scope CommandScope, h Heartbeat) error {
 	// Historical OC constraint_symbol may describe a different command and
 	// must not impose an implicit quote query on this publication.
 	if a.PermissionProfile == "test_day_relay.v1" || a.relayExecution() {
-		if len(c.Orders) != 1 || c.Orders[0].Exchange != "SHFE" {
+		if len(c.Orders) != 1 || (c.Orders[0].Exchange != "SHFE" && !(a.relayExecution() && c.Orders[0].Exchange == "CFFEX")) {
 			return ErrQueryPublishGate
 		}
 		return nil

@@ -37,6 +37,7 @@ func latestServiceCancelReceipt(ctx context.Context, tx *sql.Tx, parent CommandR
 	var produced time.Time
 	var systemID string
 	count, total := 0, 0
+	projection := newTradeProjection(TradeScope{parent.Scope.Route, parent.Scope.NativeBrokerID, parent.Scope.InvestorID, target.TradeDate})
 	for rows.Next() {
 		var id int64
 		var entry, state string
@@ -64,17 +65,15 @@ func latestServiceCancelReceipt(ctx context.Context, tx *sql.Tx, parent CommandR
 			if event.Fill.CounterSessionID != target.CounterSessionID || (event.Fill.NativeIDs.UserID != "" && event.Fill.NativeIDs.UserID != parent.Scope.UserID) {
 				return 0, ErrStreamIdentity
 			}
-			// This service currently submits exactly one lot. A full-size fill
-			// cannot be made cancellable by a later stale working observation.
-			if event.Fill.Qty >= o.OrderQty {
-				return 0, ErrQueryPublishGate
-			}
-			if cmp, _ := compareStreamID(entry, fillEntry); cmp > 0 {
+			fresh := projection.report.Executions[event.Fill.FillID] == nil
+			projection.fill(entry, *event.Fill)
+			if cmp, _ := compareStreamID(entry, fillEntry); fresh && cmp > 0 {
 				fillEntry = entry
 			}
 			continue
 		}
 		row := event.Order
+		projection.order(*row)
 		if row.CounterSessionID != target.CounterSessionID || (row.NativeIDs.UserID != "" && row.NativeIDs.UserID != parent.Scope.UserID) {
 			return 0, ErrStreamIdentity
 		}
@@ -98,8 +97,15 @@ func latestServiceCancelReceipt(ctx context.Context, tx *sql.Tx, parent CommandR
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	projection.reconcile()
+	filled, done, progressErr := closeOrderProgress(o, projection.report)
+	if progressErr != nil || done || filled >= int64(o.OrderQty) || len(projection.report.Conflicts) != 0 || projection.report.PendingCount != 0 || (latest != nil && filled > int64(latest.CumFilledQty)) {
+		return 0, ErrQueryPublishGate
+	}
 	cmp, _ := compareStreamID(fillEntry, latestEntry)
-	if latest == nil || cmp > 0 || !oneOf(latest.GatewayStatus, "accepted", "working") || latest.LeavesQty <= 0 || strings.TrimSpace(latest.NativeIDs.OrderSysID) == "" || produced.After(time.Now().Add(2*time.Second)) || time.Since(produced) > time.Minute {
+	// Order age is not receiver freshness. The service/publication paths check
+	// live capture health separately; a quiet working order can remain cancellable.
+	if latest == nil || cmp > 0 || !oneOf(latest.GatewayStatus, "accepted", "working") || latest.LeavesQty <= 0 || strings.TrimSpace(latest.NativeIDs.OrderSysID) == "" || produced.After(time.Now().Add(2*time.Second)) {
 		return 0, ErrQueryPublishGate
 	}
 	return latestID, nil

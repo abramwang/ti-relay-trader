@@ -142,7 +142,9 @@ func (w *captureHealthWriter) close() {
 	w.conn.Close()
 }
 
-func readCaptureHealth(ctx context.Context, db *sql.DB, scope CommandScope, target TestQueryTarget) (CaptureHealthView, string, error) {
+func readCaptureHealth(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, scope CommandScope, target TestQueryTarget) (CaptureHealthView, string, error) {
 	v := CaptureHealthView{State: "unavailable"}
 	if scope.Route.Env != "test" || target.Validate() != nil {
 		return v, "", ErrCaptureUnavailable

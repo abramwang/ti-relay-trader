@@ -207,7 +207,12 @@ func TestOrderServiceCaptureGateAndReplay(t *testing.T) {
 			}
 			want := "published"
 			if phase == "before_append" {
-				want = "not_published"
+				// The transaction-level check rejects before an attempt exists.
+				// Keep the registered intention, not a fabricated transport result.
+				want = "registered"
+				if !errors.Is(err, ErrCaptureUnavailable) || storedCount(t, db, "futures_test_trade_publications") != 0 {
+					t.Fatal("capture stop left a publication attempt", result, err)
+				}
 			}
 			if result.Publication.State != want || (err != nil) != (phase == "before_append") {
 				t.Fatal(result, err)
