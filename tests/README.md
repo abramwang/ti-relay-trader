@@ -2,6 +2,40 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## CFFEX服务开平仓接线
+
+`cffex_execution_test.go`使用合成Meridian目录/快照、真实隔离PG和假发布器，验证TEST服务默认关闭、IF/IH/IC/IM显式品种/手数策略、B/S及O/C原价不改、CT/CY拒绝、CFFEX连续日盘与SHFE分离、最新持久持仓自动选择、失败/未知不回退、并发超平拒绝及发布未知不释放/重发。`terminal_execution_test.go`验证策略配置和复制隔离，`terminal_permissions_test.go`验证分市场显示时段，HTTP测试拒绝客户端覆盖策略/持仓ID并区分缺基线503。多手撤单覆盖部分/重复/冲突/晚到成交、全成拒绝、报单权限关闭后独立撤单。
+
+```bash
+go test ./internal/futures ./internal/api -count=1
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'Test(CFFEX|CancelService|OrderService|RelayExecution|TradePublish|QueryPublication|Assessment|MeridianPrice|NativePrice|DayMultipleOrdersAndOwnCancelPostgres)' -timeout 4m
+```
+
+没有使用业务Redis/PG或真实柜台；假发布器不代替真实时段/Redis原子门禁验收，时段另以固定时间的心跳门禁单测覆盖。合成价格/数量不是账户授权或实际合约参数。首轮持仓样例误加payload会话字段被严格解析拒绝，改正样例后复跑；接收契约未放宽。迁移000051未部署，生产发送、真实CFFEX柜台和保证金风控仍未验收。
+
+最终全量Go、vet及交易CLI/worker构建通过；上述隔离race回归79.17秒通过，本地Unix socket Redis原生事实测试亦通过。`TestAssessmentRedisGateAndExactOnce`的12个共享TEST子项因未提供业务Redis配置而跳过，未接共享Redis；不将其记为线上通过。扩大回归曾发现收件停止在新增事务检查处更早被拒绝，旧断言期待`not_published`；按实际未生成发布尝试修正为`registered`并检查publication表为空，同键重试仍不发单，复跑通过。
+
+## CFFEX平仓数量与长期挂单撤单
+
+`close_capacity*_test.go`验证完整持仓基准、当前剩余昨仓、多空冻结和投资单元隔离、未确认意图占量、部分成交/撤成余量、重复/逆序及重新读取持久事实、冲突与整数边界。`close_reservation_integration_test.go`在独立schema显式迁移000051，使用真实CommandStore/收件/回复投影/TradeStore验证同事务命令及数量预留：并发超量、同单重试与别名、跨gateway竞争、部分成交撤成、仅撤单登记不释放、写盘回滚、未管理/损坏事实和降级防丢。
+
+`close_baseline_integration_test.go`补同会话已终态平仓的两轮快照吸收、原预留重读、更新快照拒用旧基线、登记竞争、事务回滚；工作态/未发布/发布未知、重叠采样、持仓/冻结变化及跨会话不猜测承接。共用发布事务用合成transport验证预留复核、迟到矛盾、已有执行事实、输入积压、结果未知及重启不重发。没有启用公开CFFEX发送策略，不接Redis/真实柜台，生产/CT/CY仍拒绝。`cancel_execution_test.go`新增旧工作态仍可撤、收件停止/陈旧/owner变化仍拒绝；未来时间、终态回退、重复撤单、成交竞态及发布前复核继续覆盖。
+
+```bash
+go test ./internal/futures ./internal/api -count=1
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'Test(CFFEXClose|CommandStore|TradeStore|ReplyProjection|CancelService|OrderService|CaptureHealth|.*ServiceCapture|DayMultipleOrdersAndOwnCancelPostgres)' -timeout 3m
+```
+
+只使用临时PG及Unix socket Redis和合成输入，不使用业务DSN、共享Redis或真实柜台。脚本默认`/usr/lib/postgresql/17/bin`在仅安装客户端的环境不可用，需要上面的本地工具路径；不为测试安装/启动系统数据库服务。
+
 ## CFFEX双包接收回归
 
 11-19新增`cffex_delivery_test.go`、`cffex_delivery_integration_test.go`及`test_cffex_delivery.py`。原样材料在`testdata/oc_ctp_cffex_{facts,execution}_review_20261119/`，13个清单文件全部校验；215条执行原输出、21条选取原文、32处成交v2及独立事实回复核对通过。Python独立重算九段身份，Go核对原命令关联及失败/空/部分语义；IF2701、101手和3500.21均为合成参数，不是实际合约规格或可发送订单。
@@ -179,6 +213,27 @@ python3 scripts/check-readonly-release.py \
 脚本默认禁用系统 HTTP 代理，避免本机 `127.0.0.1:9092` 被代理环境误转发；也可以通过 `--base-url http://relay-trader.quantstage.com` 对最终服务口径做同样检查。
 
 ## 研究成本只读页面
+
+2026-11-19当前证券基线：`TestCurrentAccountBaseline*`与`bash scripts/test-position-baseline-postgres.sh`覆盖ledger固定存储及accountbaseline原文组装。包括规范化/容量限制、501跨页时新版本发布、并发防重/代次、回滚/篡改；四查询原文→只读组装→固定发布、跨日/未发布/未知状态订单保留、相同意图观察合并/冲突、缺页/末页/字段/原文及错误作用域、十进制精度与未知冻结。脚本只启动Unix socket临时PG，在独立schema运行迁移及合成源表，拒绝非隔离数据源；旧close继续回归。归档终态一致不等于来源完整，候选始终partial/unavailable、覆盖/缺失为零标志false。无生产迁移或柜台查询。
+
+`TestCurrentAccountBaselineRevision*`使用真实000001至000053迁移，覆盖12张表的24个观察触发器、同事务提交/回滚、8路并发修订、账户隔离与归属变更、未归属收件/整表截断的全局失效、普通心跳排除；发布等待实际写事务后拒绝旧候选、幂等重试、原501行分页不变、改回原值不复活、scope变化、停用追踪及重装epoch。首轮重装用例暴露连接缓存函数OID问题，修正目录核验后整套PG race通过。`CheckValidity`为只读、只返回保守invalidated/unverifiable，尚无完整源覆盖、TTL或HTTP上线验收。
+
+2026-11-20 `TestCurrentAccountBaselineHealth*`在上述真实schema增加000054：检查五个健康观察触发器、54上/下迁移、正常心跳/位点前进不误失效、会话变化再恢复仍失效、源写入/修订一起回滚、错误恢复与历史错误分离、游标数值比较/回退/截断、原文与作用域/缺字段/镜像冲突、停用追踪、固定501行页不变。`TestCurrentAccountBaselineCheckpointIsNotCoverage`验证处理位点落后有独立诊断，追上也不升级来源完整；来源组装集成测试验证新诊断固化。仅隔离PG与合成输入，无Redis/柜台/生产访问；缺少源连续区间和采样边界时仍不发布current能力。
+
+同日`TestCurrentAccountBaselineReceipt*`增加000055和可选证券持久收件：原文BYTEA/SHA、同事务账本/checkpoint/cursor、部分处理savepoint回滚、SQL提交失败、同attempt八路并发/响应丢失后重复读取、owner接管/旧writer拒写、read失败保留并显式重读、同ID内容冲突、容量及健康观察、55上下迁移。实际应用复用现有ledger writer；缺少资金关键字段拒绝，显式零余额允许。旧`raw_stream_messages.body_text`仍去掉首尾空白，测试分别核对旧兼容行为与新receipt的逐字节保留，不混称原文证据。
+
+本地Redis回归需显式提供二进制；测试自行启动仅Unix socket的临时Redis，使用自己创建的合成流验证INFO/XINFO/XREAD/XRANGE、续接/空读和同run_id删流重建，结束停止该进程并清理临时目录。没有业务Redis配置，不接共享TEST/生产。示例（路径以本机实际安装为准）：
+
+```bash
+RELAY_TEST_PG_BIN="$PWD/.runtime/futures-pg/server/usr/lib/postgresql/17/bin" \
+RELAY_BASELINE_LOCAL_REDIS_SERVER="$PWD/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server" \
+LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu" \
+  bash scripts/test-position-baseline-postgres.sh
+```
+
+不设置Redis二进制时仅该本地Redis用例跳过，不能记为Redis验收通过；普通`go test ./...`缺少隔离PG环境时跳过数据库集成。首次接线回归暴露缺字段被旧解析器补零，已在新可选路径拦截；补齐本地Redis依赖路径并区分旧归档trim行为后重跑。新接收器仍无运行中worker启用、源epoch/无遗漏证明或HTTP/SDK发布，隔离成功不代表在线柜台采样覆盖。
+
+最终全量`go test ./...`、ledger/accountbaseline/redisstream的vet及上述三包隔离race通过；新增收件PG和独立Redis用例均实际执行。既有`TestPositionBaselineExistingHistoricalReadOnly`因未提供历史库连接跳过，不记为线上验收。最终日志`/tmp/relay-baseline-receipts-final-20261120.log`、`/tmp/relay-baseline-all-go-final-20261120.log`；临时PG/Redis进程已停止。没有重放业务命令、重算账表、业务库迁移或权限变更。
 
 2026-11-14历史查询证据：`go test ./cmd/relayctl -run 'TestResearch(QueryEvidence|SnapshotTiming)'`覆盖报告摘要截短但真实计数完整、空items末页、原命令/账户/环境/日期/时间窗错误、重复ID/双末页/缺末页/缺页/缺items/解析失败，以及只有实际盘前refresh计划不含费用时才标not_scheduled。快照时间诊断不覆盖原baseline，不把任意时间差当合法现金观察。生产只读23日/207查询实际结果见[核验记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#历史查询证据与基线时间差)；本轮未修改共享基线判定逻辑。
 
