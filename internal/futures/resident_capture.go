@@ -128,6 +128,7 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 	}
 	p.Checkpoint, p.CheckpointVerified = actual, true
 	delay := o.MinDelay
+	var backlog *streamBackpressure
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -167,14 +168,42 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 			if err := verifyResidentTail(stepCtx, source, store, h); err != nil {
 				return 0, false, err
 			}
+			if backlog != nil {
+				// Keep validating the source while paused, without repeatedly
+				// reading a page that cannot fit or retaining its body in memory.
+				info, err := source.reader.client.XInfoStream(stepCtx, key).Result()
+				if err != nil {
+					return 0, false, err
+				}
+				if err := checkStreamHistory(info, p.Checkpoint.Cursor); err != nil {
+					return 0, false, err
+				}
+				usage, err := store.Status(stepCtx, h)
+				if err != nil {
+					return 0, false, err
+				}
+				if usage.Cursor != p.Checkpoint.Cursor {
+					return 0, false, ErrStreamCursor
+				}
+				if err := usage.admitCapture(backlog.count, backlog.bytes); err != nil {
+					if errors.Is(err, ErrStreamBacklog) {
+						return 0, false, nil
+					}
+					return 0, false, err
+				}
+			}
 			limit := o.PageSize
 			if service == nil {
 				limit = min(limit, o.MaxRecords-p.Captured)
 			}
 			captured, err := source.ReadOnce(stepCtx, store, h, limit)
 			if err != nil {
+				if errors.As(err, &backlog) {
+					return 0, false, nil
+				}
 				return 0, false, err
 			}
+			backlog = nil
 			p.Captured += len(captured.ReceiptIDs)
 			p.Checkpoint.Cursor = captured.Cursor
 			if err := verifier.verifyTransportStream(stepCtx, suffix); err != nil {
@@ -201,13 +230,16 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 			return err
 		}
 		phase := "idle"
-		if waiting {
+		if backlog != nil {
+			phase = "backpressured"
+		} else if waiting {
 			phase = "waiting_stream"
 		} else if newRecords > 0 {
 			phase = "captured"
 		}
+		phaseChanged := p.Phase != phase
+		p.Phase = phase
 		if observe != nil {
-			p.Phase = phase
 			stepCtx, cancel := context.WithTimeout(ctx, o.StepTimeout)
 			err := observe(stepCtx, h, &p)
 			cancel()
@@ -215,7 +247,7 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 				return err
 			}
 		}
-		if newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || (p.ReplyProjection != nil && p.ReplyProjection.Delivered > 0) || time.Since(lastReport) >= o.ReportInterval {
+		if phaseChanged || newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || (p.ReplyProjection != nil && p.ReplyProjection.Delivered > 0) || time.Since(lastReport) >= o.ReportInterval {
 			if err := report(phase); err != nil {
 				return fmt.Errorf("resident capture output failed: %w", err)
 			}

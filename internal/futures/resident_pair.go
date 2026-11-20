@@ -138,6 +138,13 @@ func followTestPairMode(ctx context.Context, source *TestStreamSource, store *St
 			if err := check.Err(); err != nil {
 				return err
 			}
+			if p.Phase == "backpressured" {
+				// Close publication readiness before draining. Projection alone
+				// must not renew ingress health without a verified subsequent read.
+				if err := health.observe(check, *p); err != nil {
+					return err
+				}
+			}
 			if projector != nil {
 				if role == "event" && h.owner != "" {
 					page, err := projector.Step(check, h, options.PageSize)
@@ -156,6 +163,9 @@ func followTestPairMode(ctx context.Context, source *TestStreamSource, store *St
 					return err
 				}
 				p.ReplyProjection = &page
+			}
+			if p.Phase == "backpressured" {
+				return nil
 			}
 			return health.observe(check, *p)
 		}, managed)

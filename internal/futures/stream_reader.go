@@ -127,7 +127,15 @@ func (s *StreamStore) ReadOnce(ctx context.Context, h StreamHandle, client Strea
 	if err != nil || cmp > 0 {
 		return StreamCapture{}, ErrStreamHistory
 	}
-	return s.Capture(ctx, h, cursor, inputs)
+	result, err := s.Capture(ctx, h, cursor, inputs)
+	if errors.Is(err, ErrStreamBacklog) {
+		need := &streamBackpressure{count: int64(len(inputs))}
+		for _, in := range inputs {
+			need.bytes += int64(len(in.Raw))
+		}
+		return StreamCapture{}, need
+	}
+	return result, err
 }
 
 func decodeStreamRead(key, cursor string, limit int, response any) ([]StreamInput, error) {

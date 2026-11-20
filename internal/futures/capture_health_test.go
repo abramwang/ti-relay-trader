@@ -3,6 +3,7 @@ package futures
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -114,8 +115,68 @@ func TestCaptureHealthCancellationKeepsLeaseUntilStop(t *testing.T) {
 	}
 }
 
+func TestCaptureHealthBackpressureLanesAndMigration(t *testing.T) {
+	ctx, source, store, p, _ := residentFixture(t)
+	w, err := startCaptureHealth(ctx, store.db, source, p.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.close()
+	observe := func(role, phase string) {
+		t.Helper()
+		key, _ := source.StreamConfig(role).stream()
+		if err := w.observe(ctx, ResidentCaptureProgress{Stream: key, Phase: phase, CheckpointVerified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assert := func(state string, ready bool) {
+		t.Helper()
+		v, _, err := readCaptureHealth(ctx, store.db, source.scope, p.target)
+		if v.State != state || v.Ready != ready || (err == nil) != ready {
+			t.Fatal(v, err)
+		}
+	}
+	observe("reply", "waiting_stream")
+	observe("event", "waiting_stream")
+	assert("running", true)
+	for _, role := range []string{"reply", "event"} {
+		other := "event"
+		if role == "event" {
+			other = "reply"
+		}
+		observe(role, "backpressured")
+		observe(other, "idle")
+		assert("backpressured", false)
+		observe(other, "backpressured")
+		observe(role, "captured")
+		assert("backpressured", false)
+		observe(other, "captured")
+		assert("running", true)
+	}
+	// Downgrade must not erase an active backpressure diagnosis or reopen it.
+	observe("event", "backpressured")
+	raw, err := os.ReadFile("../../migrations/postgres/000060_futures_capture_backpressure.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.ExecContext(ctx, string(raw)); err == nil {
+		t.Fatal("downgraded an active worker")
+	}
+	assert("backpressured", false)
+	if err := w.stop(); err != nil {
+		t.Fatal(err)
+	}
+	migrateFuturesTest(t, store.db, ctx, "000060_futures_capture_backpressure", "down")
+	migrateFuturesTest(t, store.db, ctx, "000060_futures_capture_backpressure", "up")
+	assert("stopped", false)
+	key, _ := source.StreamConfig("reply").stream()
+	if err := w.observe(ctx, ResidentCaptureProgress{Stream: key, Phase: "backpressured", CheckpointVerified: true}); !errors.Is(err, ErrCaptureUnavailable) {
+		t.Fatal("late pressure observation revived stopped worker", err)
+	}
+}
+
 func TestCaptureGuardRejectsLostEvidence(t *testing.T) {
-	for _, scenario := range []string{"missing", "missing_table", "starting", "missing_lane", "stopped", "stale_reply", "stale_event", "future", "wrong_binding", "changed_owner", "receiver_takeover", "healthy"} {
+	for _, scenario := range []string{"missing", "missing_table", "starting", "backpressured", "missing_lane", "stopped", "stale_reply", "stale_event", "future", "wrong_binding", "changed_owner", "receiver_takeover", "healthy"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, s, ctx := assessmentDB(t)
 			v, _, target, _, _ := executionTradeFixture(t, time.Now())
@@ -134,6 +195,8 @@ func TestCaptureGuardRejectsLostEvidence(t *testing.T) {
 				q = `DROP TABLE futures_capture_health`
 			case "starting":
 				q = `UPDATE futures_capture_health SET state='starting'`
+			case "backpressured":
+				q = `UPDATE futures_capture_health SET state='backpressured',reply_backpressured=true,reply_checked_at=NULL`
 			case "missing_lane":
 				q = `UPDATE futures_capture_health SET event_checked_at=NULL`
 			case "stopped":

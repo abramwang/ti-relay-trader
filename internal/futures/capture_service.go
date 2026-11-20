@@ -53,7 +53,8 @@ func (c CaptureServiceConfig) Validate() error {
 // RunTestCaptureService uses the same bounded reads/transactions and health
 // lease as the operator CLI. Only the process deadline and per-run record
 // budget differ. Storage capacity and all source/identity checks remain.
-// Any failure stops both lanes; this entry does not reconnect/retry or publish.
+// Backlog pressure pauses reads while existing projections continue. Other
+// failures stop both lanes; this entry does not reconnect or publish commands.
 func RunTestCaptureService(ctx context.Context, source *TestStreamSource, store *StreamStore, verifier *TestQueryPublisher, config CaptureServiceConfig, emit func(ResidentCaptureProgress) error) error {
 	if config.Validate() != nil || ctx.Done() == nil || source == nil || verifier == nil ||
 		source.scope != config.Scope || verifier.target != config.Target {

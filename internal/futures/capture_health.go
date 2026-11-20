@@ -69,7 +69,7 @@ func startCaptureHealth(ctx context.Context, db *sql.DB, source *TestStreamSourc
 	for _, role := range []string{"reply", "event"} {
 		w.streams[role], _ = source.StreamConfig(role).stream()
 	}
-	_, err = conn.ExecContext(ctx, `INSERT INTO futures_capture_health(route_key,owner_id,binding_json,state) VALUES($1,$2,$3,'starting') ON CONFLICT(route_key) DO UPDATE SET owner_id=excluded.owner_id,binding_json=excluded.binding_json,state='starting',reply_checked_at=NULL,event_checked_at=NULL,reply_owner='',event_owner='',updated_at=clock_timestamp()`, key, w.owner, captureBinding(source.scope, target))
+	_, err = conn.ExecContext(ctx, `INSERT INTO futures_capture_health(route_key,owner_id,binding_json,state) VALUES($1,$2,$3,'starting') ON CONFLICT(route_key) DO UPDATE SET owner_id=excluded.owner_id,binding_json=excluded.binding_json,state='starting',reply_checked_at=NULL,event_checked_at=NULL,reply_owner='',event_owner='',reply_backpressured=false,event_backpressured=false,updated_at=clock_timestamp()`, key, w.owner, captureBinding(source.scope, target))
 	if err != nil {
 		w.close()
 		return nil, err
@@ -94,7 +94,7 @@ func (w *captureHealthWriter) observe(ctx context.Context, p ResidentCaptureProg
 			role = k
 		}
 	}
-	if role == "" || !p.CheckpointVerified || !oneOf(p.Phase, "captured", "idle", "waiting_stream") {
+	if role == "" || !p.CheckpointVerified || !oneOf(p.Phase, "captured", "idle", "waiting_stream", "backpressured") {
 		return ErrCaptureUnavailable
 	}
 	// Column names come from the two hard-coded roles, never input SQL.
@@ -106,7 +106,7 @@ func (w *captureHealthWriter) observe(ctx context.Context, p ResidentCaptureProg
 	// the middle of a health write, before the final stopped update can commit.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	result, err := w.conn.ExecContext(writeCtx, `UPDATE futures_capture_health SET `+role+`_checked_at=clock_timestamp(),`+role+`_owner=$3,state=CASE WHEN `+other+`_checked_at IS NULL THEN 'starting' ELSE 'running' END,updated_at=clock_timestamp() WHERE route_key=$1 AND owner_id=$2 AND state<>'stopped'`, w.key, w.owner, p.Checkpoint.Owner)
+	result, err := w.conn.ExecContext(writeCtx, `UPDATE futures_capture_health SET `+role+`_checked_at=CASE WHEN $4 THEN NULL ELSE clock_timestamp() END,`+role+`_owner=$3,`+role+`_backpressured=$4,state=CASE WHEN $4 OR `+other+`_backpressured THEN 'backpressured' WHEN `+other+`_checked_at IS NULL THEN 'starting' ELSE 'running' END,updated_at=clock_timestamp() WHERE route_key=$1 AND owner_id=$2 AND state<>'stopped'`, w.key, w.owner, p.Checkpoint.Owner, p.Phase == "backpressured")
 	if err != nil {
 		return err
 	}

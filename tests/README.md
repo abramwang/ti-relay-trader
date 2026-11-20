@@ -6,20 +6,24 @@
 
 `stream_usage*_test.go`在临时PG迁移至000059，区分历史总量与pending/quarantined积压。覆盖50,000条合成交接历史后继续收件、64MiB积压满时整页拒绝但可继续真实查询交接、隔离不释放、旧原文重投/重建读者、增量计数与实际正文一致、迁移不修补损坏及超旧上限降级拒绝。既有Stream/Heartbeat、回执/查询投影及并发事务回归一并运行。不存在自动清理、伪造delivered或向OC发消息的路径。
 
+11-21新增`resident_backpressure_test.go`及健康回归，测试schema至000060。以真实64MiB合成原文填满额度，验证worker继续处理已收回执/本地事件、原位点恢复、未释放前仅一次XREAD、隔离不释放、暂停期间源变化/已读与未读消息丢失/计数错误仍停、投影事务失败不部分交接、取消后显式续接不重算。逐通道健康、发布前关闭、另一通道不覆盖、停止后晚到观察不能重开及活跃状态降级拒绝均覆盖。
+
 ```bash
 go test ./...
 RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
 RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
 LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
   scripts/test-futures-postgres.sh \
-  -run 'Test(Stream|Heartbeat|Reply|Capture|Resident|CommandStore|CFFEX|CancelService|OrderService|QueryStoreIdentityIntegrityAndMigrationDown)' -timeout 5m
+  -run 'Test(Stream|Heartbeat|Reply|Capture|Resident|CommandStore|CFFEX|CancelService|OrderService|QueryStoreIdentityIntegrityAndMigrationDown)' -timeout 7m
 ```
 
-脚本自建仅Unix socket的PG及指定的本地Redis测试实例，不读取应用配置或业务DSN。需要`RELAY_FUTURES_TEST_REDIS_CONFIG`的旧共享Redis用例保持跳过，不计线上验收。000059须先停止相关writer再迁移；没有业务库迁移、OC重启或环境切换。worker满额自动排空/续读、磁盘预警及长期归档不属于本轮已完成范围。
+脚本自建仅Unix socket的PG及指定的本地Redis测试实例，不读取应用配置或业务DSN。需要`RELAY_FUTURES_TEST_REDIS_CONFIG`的旧共享Redis用例保持跳过，不计线上验收。000059/000060须先停止相关writer再迁移；没有业务库迁移、OC重启或环境切换。磁盘预警、长期归档及积压无法自动关联时的业务处置不属于已完成范围。
 
 扩大回归曾发现DELETE同步减少计数会掩盖原文丢失，触发器已限定为INSERT/状态交接，不对异常删除或正文改写重算计数；原`lost_stream_input`反例保留，新增缺失/篡改不能释放额度和不能降级隐藏的回归。常规Status是事务计数视图，不冒称逐条原文审计；发送前业务核验仍检测实际缺失。
 
 修正后上述临时PG/本地Redis专项race回归通过（139.555秒），全量Go及`go vet ./...`通过；旧共享Redis用例依前述条件跳过。未做线上迁移、真实磁盘耗尽或整日稳定性验收。
+
+11-21续读增量完成后，上述扩大回归`-race`通过（190.000秒），全量`go test ./...`、`go vet ./...`及CTP worker/capture构建通过；共享Redis用例仍跳过，所有容量/故障输入仅临时PG和本地Redis合成数据。
 
 ## 证券发送前登记
 

@@ -12,6 +12,15 @@ const (
 	maxStreamBacklogBytes = 64 * 1024 * 1024
 )
 
+// The rejected page was not committed. Keep only its capacity requirement,
+// not an in-memory replacement for the original Redis messages.
+type streamBackpressure struct {
+	count, bytes int64
+}
+
+func (*streamBackpressure) Error() string { return ErrStreamBacklog.Error() }
+func (*streamBackpressure) Unwrap() error { return ErrStreamBacklog }
+
 // Completed history is retained but does not consume processing capacity.
 // Quarantine remains unresolved; it is not an escape hatch for new ingestion.
 func (s StreamStatus) validateUsage() error {
