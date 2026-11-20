@@ -105,7 +105,13 @@ type LedgerReadReceipt struct {
 
 type LedgerReadApply func(context.Context, *Repository, []LedgerStreamInput) (json.RawMessage, error)
 
-type LedgerReceiptStore struct{ db *sql.DB }
+type ledgerReceiptDB interface {
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type LedgerReceiptStore struct{ db ledgerReceiptDB }
 
 func NewLedgerReceiptStore(db *sql.DB) (*LedgerReceiptStore, error) {
 	if db == nil {
@@ -144,7 +150,22 @@ func (s *LedgerReceiptStore) Open(ctx context.Context, b LedgerStreamBinding, in
 		return LedgerStreamHandle{}, err
 	}
 	raw, _ := json.Marshal(b)
-	r, err := s.db.ExecContext(ctx, `INSERT INTO ledger_stream_receivers(stream_key,account_id,binding,capture_epoch,owner_id,initial_cursor,cursor_id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return LedgerStreamHandle{}, err
+	}
+	defer tx.Rollback()
+	if err = lockLedgerStreamTransition(ctx, tx, key); err != nil {
+		return LedgerStreamHandle{}, err
+	}
+	boundary, err := reviewLedgerStreamBoundary(ctx, tx, key, b.Role, initial)
+	if err != nil {
+		return LedgerStreamHandle{}, err
+	}
+	if len(boundary) > 1<<20 {
+		return LedgerStreamHandle{}, ErrCurrentBaselineLimit
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO ledger_stream_receivers(stream_key,account_id,binding,capture_epoch,owner_id,initial_cursor,cursor_id)
 VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT DO NOTHING`, key, b.AccountID, raw, epoch, owner, initial)
 	if err != nil {
 		return LedgerStreamHandle{}, err
@@ -155,6 +176,18 @@ VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT DO NOTHING`, key, b.AccountID, raw, epo
 	}
 	if n != 1 {
 		return LedgerStreamHandle{}, ErrLedgerCaptureBinding
+	}
+	// Sequence zero records the explicit local boundary, not a Redis read or
+	// proof that the legacy worker completely processed its historical inputs.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO ledger_stream_read_batches(stream_key,attempt_id,batch_sequence,owner_id,start_cursor,end_cursor,input_sha256,evidence,evidence_sha256,application_report,application_report_sha256,outcome,error_code,entry_count)
+VALUES($1,'bootstrap-v1',0,$2,$3,$3,$4,$5,$4,'{}',$6,'applied','',0)`, key, owner, initial, baselineHash(boundary), string(boundary), baselineHash([]byte(`{}`))); err != nil {
+		return LedgerStreamHandle{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE ledger_stream_receivers SET evidence_bytes=$2 WHERE stream_key=$1`, key, len(boundary)+2); err != nil {
+		return LedgerStreamHandle{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return LedgerStreamHandle{}, err
 	}
 	return LedgerStreamHandle{b, key, owner}, nil
 }
@@ -172,6 +205,9 @@ func (s *LedgerReceiptStore) Resume(ctx context.Context, b LedgerStreamBinding, 
 		return h, err
 	}
 	defer tx.Rollback()
+	if err = lockLedgerStreamTransition(ctx, tx, key); err != nil {
+		return h, err
+	}
 	st, err := captureStatus(ctx, tx, h, true)
 	if err != nil {
 		return h, err
@@ -248,7 +284,7 @@ func copyLedgerStreamInputs(in []LedgerStreamInput) []LedgerStreamInput {
 func (s *LedgerReceiptStore) Record(ctx context.Context, h LedgerStreamHandle, attempt, start string, evidence json.RawMessage, inputs []LedgerStreamInput, readError string, apply LedgerReadApply) (LedgerReadReceipt, error) {
 	out := LedgerReadReceipt{AttemptID: attempt, StartCursor: start, EndCursor: start, Outcome: "applied", Evidence: bytes.Clone(evidence), ApplicationReport: json.RawMessage(`{}`), Entries: copyLedgerStreamInputs(inputs)}
 	inputs, evidence = out.Entries, out.Evidence
-	if !validBaselineText(attempt) || len(inputs) > 256 || len(evidence) > 1<<20 || len(readError) > 256 || ValidateCurrentBaselineSourceJSON(evidence) != nil {
+	if !validBaselineText(attempt) || attempt == "bootstrap-v1" || len(inputs) > 256 || len(evidence) > 1<<20 || len(readError) > 256 || ValidateCurrentBaselineSourceJSON(evidence) != nil {
 		return out, ErrInvalidLedgerInput
 	}
 	if _, err := CompareCurrentBaselineStreamIDs(start, "0-0"); err != nil {

@@ -93,11 +93,11 @@ func RunWithOptions(ctx context.Context, cfg config.Config, logger *slog.Logger,
 		)
 	}
 
-	if opts.OnReady != nil {
+	if cfg.Worker.LedgerReceiptManifest == "" && opts.OnReady != nil {
 		opts.OnReady()
 	}
 
-	err = redisstream.RunLedgerSyncLoop(ctx, cfg, repo, redisstream.LedgerSyncLoopOptions{
+	syncOpts := redisstream.LedgerSyncLoopOptions{
 		StartID:     "0",
 		Count:       200,
 		Block:       time.Second,
@@ -128,7 +128,12 @@ func RunWithOptions(ctx context.Context, cfg config.Config, logger *slog.Logger,
 				}
 			}
 		},
-	}, logger.With("component", "worker-ledger-sync"))
+	}
+	if cfg.Worker.LedgerReceiptManifest != "" {
+		err = redisstream.RunLedgerReceiptLoop(ctx, cfg, repo, syncOpts, logger.With("component", "worker-ledger-receipts"), opts.OnReady)
+	} else {
+		err = redisstream.RunLedgerSyncLoop(ctx, cfg, repo, syncOpts, logger.With("component", "worker-ledger-sync"))
+	}
 	if err != nil {
 		return err
 	}

@@ -62,7 +62,7 @@ func readCurrentBaselineReceipts(ctx context.Context, q currentBaselineReader, s
 		var at time.Time
 		err = q.QueryRowContext(ctx, `SELECT r.account_id,r.binding,r.capture_epoch,r.initial_cursor,r.cursor_id,r.blocked_reason,r.fault_count::text,r.batch_count::text,r.entry_count::text,r.updated_at,
 coalesce(b.outcome,''),coalesce(b.error_code,'') FROM ledger_stream_receivers r
-LEFT JOIN ledger_stream_read_batches b ON b.stream_key=r.stream_key AND b.batch_sequence=r.batch_count
+LEFT JOIN ledger_stream_read_batches b ON b.stream_key=r.stream_key AND b.batch_sequence=r.batch_count AND b.batch_sequence>0
 WHERE r.stream_key=$1`, r.Stream).Scan(&account, &binding, &r.CaptureEpoch, &r.InitialCursor, &r.Cursor, &r.BlockedReason, &faults, &batches, &entries, &at, &r.LatestOutcome, &r.LatestErrorCode)
 		if err == sql.ErrNoRows {
 			h.reason(role + "_durable_receipts_missing")

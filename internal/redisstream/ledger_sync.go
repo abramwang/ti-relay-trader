@@ -108,6 +108,9 @@ type LedgerProcessResult struct {
 const maxLedgerSkipReasons = 200
 
 func SyncLedger(ctx context.Context, cfg config.Config, writer LedgerWriter, opts LedgerSyncOptions) (LedgerSyncReport, error) {
+	if cfg.Worker.LedgerReceiptManifest != "" {
+		return LedgerSyncReport{}, errors.New("manual legacy sync refused while durable ledger receipts are configured")
+	}
 	if strings.TrimSpace(cfg.Redis.URL) == "" {
 		return LedgerSyncReport{}, errors.New("redis.url is required for ledger sync")
 	}
@@ -122,16 +125,21 @@ func SyncLedger(ctx context.Context, cfg config.Config, writer LedgerWriter, opt
 	client := redis.NewClient(redisOptions)
 	defer client.Close()
 
-	if err := client.Ping(ctx).Err(); err != nil {
-		return LedgerSyncReport{}, err
-	}
-
 	prefixes := opts.Prefixes
 	if len(prefixes) == 0 {
 		prefixes = PrefixesFromConfig(cfg)
 	}
 	if len(prefixes) == 0 {
 		return LedgerSyncReport{}, errors.New("no stream prefixes configured")
+	}
+	lease, err := acquireLegacyLedgerWriter(ctx, writer, prefixes, opts.Roles)
+	if err != nil {
+		return LedgerSyncReport{}, err
+	}
+	defer lease.Close()
+	writer = lease.Repository()
+	if err := client.Ping(ctx).Err(); err != nil {
+		return LedgerSyncReport{}, err
 	}
 
 	startID := strings.TrimSpace(opts.StartID)

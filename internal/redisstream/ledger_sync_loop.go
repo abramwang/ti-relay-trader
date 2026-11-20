@@ -63,6 +63,9 @@ type ledgerStreamCursor struct {
 }
 
 func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWriter, opts LedgerSyncLoopOptions, logger *slog.Logger) error {
+	if cfg.Worker.LedgerReceiptManifest != "" {
+		return errors.New("durable ledger receipts require the dedicated external worker; legacy sync refused")
+	}
 	if strings.TrimSpace(cfg.Redis.URL) == "" {
 		return errors.New("redis.url is required for ledger sync loop")
 	}
@@ -80,16 +83,24 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 	client := redis.NewClient(redisOptions)
 	defer client.Close()
 
-	if err := client.Ping(ctx).Err(); err != nil {
-		return err
-	}
-
 	prefixes := opts.Prefixes
 	if len(prefixes) == 0 {
 		prefixes = PrefixesFromConfig(cfg)
 	}
 	if len(prefixes) == 0 {
 		return errors.New("no stream prefixes configured")
+	}
+	lease, err := acquireLegacyLedgerWriter(ctx, writer, prefixes, opts.Roles)
+	if err != nil {
+		return err
+	}
+	defer lease.Close()
+	writer = lease.Repository()
+	if opts.Checkpoints != nil {
+		opts.Checkpoints = lease.Repository()
+	}
+	if err := client.Ping(ctx).Err(); err != nil {
+		return err
 	}
 
 	startID := strings.TrimSpace(opts.StartID)
@@ -146,6 +157,9 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 		"block", block.String(),
 	)
 	for ctx.Err() == nil {
+		if err := lease.Check(ctx); err != nil {
+			return err
+		}
 		reports, err := readAndProcessStreams(ctx, client, writer, cursors, count, block)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -169,7 +183,9 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 			if report.Totals.LastStreamID != "" {
 				cursors[i].lastID = report.Totals.LastStreamID
 			}
-			saveLedgerCheckpoint(ctx, opts.Checkpoints, cursors[i], report, logger)
+			if err := saveLedgerCheckpoint(ctx, opts.Checkpoints, cursors[i], report, logger); err != nil {
+				return err
+			}
 			if report.Count > 0 || len(report.Errors) > 0 {
 				logger.Info("relay_ledger_sync_stream_batch",
 					"stream", report.Name,
@@ -194,45 +210,49 @@ func RunLedgerSyncLoop(ctx context.Context, cfg config.Config, writer LedgerWrit
 					"processing_duration_ms", report.ProcessingDuration.Milliseconds(),
 				)
 			}
-			if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0) {
-				accountIDs := accountIDsFromLedgerResult(report.Totals)
-				if len(accountIDs) > 0 {
-					opts.OnTradeChange(ctx, LedgerTradeChange{
-						Stream:       report.Name,
-						Role:         report.Role,
-						AccountIDs:   accountIDs,
-						OrderEvents:  report.Totals.OrderEvents,
-						Fills:        report.Totals.Fills,
-						Transfers:    report.Totals.Transfers,
-						LastStreamID: report.Totals.LastStreamID,
-					})
-				}
-			}
-			if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.CancelAttempts > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
-				accountIDs := accountIDsFromLedgerResult(report.Totals)
-				if len(accountIDs) > 0 {
-					opts.OnLedgerChange(ctx, LedgerChange{
-						Stream:             report.Name,
-						Role:               report.Role,
-						AccountIDs:         accountIDs,
-						Orders:             report.Totals.Orders,
-						OrderEvents:        report.Totals.OrderEvents,
-						CancelAttempts:     report.Totals.CancelAttempts,
-						CancelFailures:     report.Totals.CancelFailures,
-						LastCancelAttempt:  report.Totals.LastCancelAttempt,
-						CancelFailureItems: report.Totals.CancelFailureItems,
-						Fills:              report.Totals.Fills,
-						Transfers:          report.Totals.Transfers,
-						Assets:             report.Totals.Assets,
-						Positions:          report.Totals.Positions,
-						LastStreamID:       report.Totals.LastStreamID,
-					})
-				}
-			}
+			notifyLedgerChanges(ctx, opts, report)
 		}
 	}
 	logger.Info("relay_ledger_sync_loop_stopped", "reason", ctx.Err())
 	return nil
+}
+
+func notifyLedgerChanges(ctx context.Context, opts LedgerSyncLoopOptions, report LedgerStreamReport) {
+	if opts.OnTradeChange != nil && (report.Totals.OrderEvents > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0) {
+		accountIDs := accountIDsFromLedgerResult(report.Totals)
+		if len(accountIDs) > 0 {
+			opts.OnTradeChange(ctx, LedgerTradeChange{
+				Stream:       report.Name,
+				Role:         report.Role,
+				AccountIDs:   accountIDs,
+				OrderEvents:  report.Totals.OrderEvents,
+				Fills:        report.Totals.Fills,
+				Transfers:    report.Totals.Transfers,
+				LastStreamID: report.Totals.LastStreamID,
+			})
+		}
+	}
+	if opts.OnLedgerChange != nil && (report.Totals.Orders > 0 || report.Totals.OrderEvents > 0 || report.Totals.CancelAttempts > 0 || report.Totals.Fills > 0 || report.Totals.Transfers > 0 || report.Totals.Assets > 0 || report.Totals.Positions > 0) {
+		accountIDs := accountIDsFromLedgerResult(report.Totals)
+		if len(accountIDs) > 0 {
+			opts.OnLedgerChange(ctx, LedgerChange{
+				Stream:             report.Name,
+				Role:               report.Role,
+				AccountIDs:         accountIDs,
+				Orders:             report.Totals.Orders,
+				OrderEvents:        report.Totals.OrderEvents,
+				CancelAttempts:     report.Totals.CancelAttempts,
+				CancelFailures:     report.Totals.CancelFailures,
+				LastCancelAttempt:  report.Totals.LastCancelAttempt,
+				CancelFailureItems: report.Totals.CancelFailureItems,
+				Fills:              report.Totals.Fills,
+				Transfers:          report.Totals.Transfers,
+				Assets:             report.Totals.Assets,
+				Positions:          report.Totals.Positions,
+				LastStreamID:       report.Totals.LastStreamID,
+			})
+		}
+	}
 }
 
 func readAndProcessStreams(

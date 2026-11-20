@@ -108,6 +108,9 @@ func TestDecodeAppliesDefaults(t *testing.T) {
 	if !cfg.EmbeddedLedgerSyncEnabled() {
 		t.Fatal("embedded ledger sync should remain enabled by default")
 	}
+	if cfg.Worker.LedgerReceiptManifest != "" {
+		t.Fatal("durable receipt worker must remain opt-in")
+	}
 	if cfg.Worker.HealthAddr != "127.0.0.1:19092" || cfg.Worker.HealthURL != "http://127.0.0.1:19092/readyz" {
 		t.Fatalf("worker defaults = %+v", cfg.Worker)
 	}
@@ -117,6 +120,7 @@ func TestDecodeCanSelectExternalWorker(t *testing.T) {
 	cfg, err := Decode(strings.NewReader(`
 worker:
   embedded_ledger_sync: false
+  ledger_receipt_manifest: "/private/receipt-manifest.json"
   health_addr: "127.0.0.1:19093"
   health_url: "http://127.0.0.1:19093/readyz"
 `))
@@ -125,6 +129,9 @@ worker:
 	}
 	if cfg.EmbeddedLedgerSyncEnabled() {
 		t.Fatal("embedded ledger sync should be disabled")
+	}
+	if cfg.Worker.LedgerReceiptManifest != "/private/receipt-manifest.json" {
+		t.Fatal("receipt manifest setting was lost")
 	}
 }
 

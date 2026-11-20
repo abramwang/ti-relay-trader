@@ -364,7 +364,7 @@ SSE gap/通知丢失；不同资源先后采样及事件包含关系未知；SDK
 ## 13. 显式来源绑定与持久收件
 
 2026-11-20接续增量：`internal/ledger/stream_receipts.go`、`internal/redisstream/ledger_receipts.go`及迁移`000055_ledger_stream_receipts`。
-这是复用既有证券解析器和Repository的可选内部路径，**未接入运行中worker、未迁移业务库、未重启或切环境**；没有柜台命令或生产Redis操作。
+这是复用既有证券解析器和Repository的可选内部路径，**未接入运行中worker、未迁移业务库、未重启或切环境**；没有柜台命令或生产Redis操作。第14节已补默认关闭的worker源码与更严格的首次交接条件，以下保留本节当时的实现边界。
 
 ### 已实现
 
@@ -387,3 +387,38 @@ SSE gap/通知丢失；不同资源先后采样及事件包含关系未知；SDK
 ### 隔离验证
 
 测试复用全部证券迁移及真实账本writer，覆盖同attempt并发/响应丢失重试、旧owner拒写、来源变更、二进制原文、读取失败后重读、部分应用回滚、SQL失败整体回滚、不可变记录、容量、健康诊断和55上下迁移。独立Unix socket Redis验证实际RESP收件、显式续接、空读及同run_id删除重建锚点变更；不连接共享TEST或生产Redis，不发送OC命令。复现命令与实际结果见`tests/README.md`当前基线段落。
+
+## 14. 单写者交接与可选worker接线
+
+2026-11-20后续源码增量。没有运行配置变更、服务重启、业务库迁移、环境切换或柜台命令。
+不要求OC增加协议或重复业务门禁；本轮工作属于Relay自身收件责任。
+
+### 交接与互斥
+
+- 独立worker、API内嵌同步和手工`SyncLedger`共用逐物理流的PostgreSQL session advisory lock。批量获取按排序进行，部分获取失败释放已持有锁。所有账表及checkpoint写入使用持锁的同一条固定数据库连接；连接失效不能改用连接池继续写入，避免锁已丢失但旧进程仍写账。
+- 首次登记`Open`与显式换owner的`Resume`取得同一锁域的事务锁；存在运行中的新版writer时拒绝接管。新收件登记后，即使新worker停止，旧同步入口也拒绝重新写该流。没有自动回退、删绑定或重扫历史。
+- 首次登记核对原checkpoint角色、精确位点、累计错误及当前错误；无checkpoint只能从`0-0`登记。已有归档但无checkpoint、归档最大位点超前、跳位点、回退或未核对错误均拒绝。归档落后不补造缺行，因此该检查不是历史完整性证明。
+- 在同一事务保存不可变`bootstrap-v1`本地边界记录，包含原checkpoint及归档尾位点；sequence=0，不计XREAD批次数、不作为来源健康成功观察。边界记录和receiver一起提交或回滚，不改旧checkpoint/归档。后续读取保留原owner/cursor；明确更换owner仍需原owner及精确cursor，新配置不得沿用陈旧owner。
+- **旧二进制没有上述锁，仍须操作员先明确停掉。** 不能只查advisory lock就认定旧进程已退出。上述互斥覆盖三个常规Stream写入入口，不约束DB管理员、历史修复脚本或所有直接Repository调用，不宣称已阻止任意外部写库。
+
+### 可选独立worker
+
+仅源码支持显式`worker.ledger_receipt_manifest`绝对路径，默认空值保持旧模式；首次只允许`service.environment=test`、`service.mode=worker`、`redis.env=test`及`worker.embedded_ledger_sync=false`。生产配置拒绝启用，API内嵌/手工同步不代替该入口。
+
+私有文件为`ledger.receipt-worker.v1`，结构为`version`及`streams`数组，每项包含已登记的`binding`和`owner`。binding沿用第13节环境/账户/broker/gateway/role/SourceID/run_id/DB字段；不包含Redis口令，不输出owner到基线或日志。必须完整、唯一覆盖当前配置的全部华鑫prefix及reply/event/hb/dlq四流，包括配置仍保留的停用账户来源；不能通过漏列流来伪装完整收件。所有流须与同一Redis来源/run_id/DB及明确账户映射一致。
+
+- manifest限64KiB、普通私有文件，拒绝组/其他用户权限、重复JSON键、未知字段、错误scope和不完整流集合；不从gateway猜逻辑账户。
+- 启动先取得全部writer锁，再核验持久owner、来源绑定和边界记录。不会自动`Open/Resume`、创建Stream/消费组、改源或重置cursor。旧版登记若缺`bootstrap-v1`不自动补证，需后续显式处理。
+- 接收复用第13节原文及账表事务，每流空读后等待5秒，有数据后250ms继续排空；互不因其他活跃流而提高空读频率。不承诺基线实时性或TTL，保留原累计容量限制。
+- 第一轮所有流实际收件成功后才调用worker就绪通知；业务通知及既有自动刷新回调只在本批COMMIT后调用。通知仍是提示，不是持久事件交付证明；提交后、通知前进程中断不会重放账本来补通知。
+- 读取/来源/容量或应用失败返回错误并停止本轮，不跳过、不清fault、不自动重试或退回legacy。失败应用持久阻断；读取失败可在明确核对后以原绑定重新启动，但历史错误继续保留。停止过程中若数据库事务未成功提交，不冒称已留下完整receipt。
+- 新模式需要额外一条长期固定DB连接，部署前给API/通知等其他工作保留连接容量；持锁连接须直连PG或使用session pooling，不能经transaction pooling把后端会话切换掉。并未调整现有生产连接数或启动新worker。
+
+### 验收与下一项
+
+隔离PG验证旧writer占用拒绝登记/接管、部分锁获取回滚、连接被终止后不能借池继续写、停新worker也不能降回旧同步；明确边界、未知旧错误、位点错配均保留失败。独立Redis验证完整四流worker两次启动使用同owner/游标、不重复应用，通知前已提交原文、空流不改消费组、失败阻断不报ready；严格manifest与旧三入口保护另有回归。
+
+补跑发现并修复同链路的既有排序缺陷：SQL选择`raw_message_pk::text`后以未限定的同名列排序，实际按文本将10排在9之前，可能使查询末页提前；同采集时刻的心跳也可能选到较旧记录。已明确按源表数字主键排序，未决订单源读取同样处理。回归固定分页ID为9/10/11，并验证同时间心跳取数字ID10而非9，不靠随机map遍历碰巧通过。
+
+本轮不提供自动启用或批量接管命令。下一步完善操作员预检/显式登记工具和失败处置，并关联原文receipt与查询组装；再落实来源连续性、采样边界及全部在途命令/成交覆盖。生产启用、真实负载及断连/故障修复仍需独立验收。
+`continuity_verified/coverage_verified/query_effects_reconciled/missing_security_means_zero`仍false，`valid_until=null`，HTTP/SDK完整基线能力尚未发布。固定候选不能据本轮worker接线变成交易授权。

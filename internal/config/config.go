@@ -107,9 +107,10 @@ type OperationsConfig struct {
 }
 
 type WorkerConfig struct {
-	EmbeddedLedgerSync *bool  `yaml:"embedded_ledger_sync"`
-	HealthAddr         string `yaml:"health_addr"`
-	HealthURL          string `yaml:"health_url"`
+	EmbeddedLedgerSync    *bool  `yaml:"embedded_ledger_sync"`
+	LedgerReceiptManifest string `yaml:"ledger_receipt_manifest"`
+	HealthAddr            string `yaml:"health_addr"`
+	HealthURL             string `yaml:"health_url"`
 }
 
 type AutoRefreshConfig struct {

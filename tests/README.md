@@ -235,6 +235,10 @@ LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-lin
 
 最终全量`go test ./...`、ledger/accountbaseline/redisstream的vet及上述三包隔离race通过；新增收件PG和独立Redis用例均实际执行。既有`TestPositionBaselineExistingHistoricalReadOnly`因未提供历史库连接跳过，不记为线上验收。最终日志`/tmp/relay-baseline-receipts-final-20261120.log`、`/tmp/relay-baseline-all-go-final-20261120.log`；临时PG/Redis进程已停止。没有重放业务命令、重算账表、业务库迁移或权限变更。
 
+11-20后续单写者/worker增量：`TestCurrentAccountBaselineWriter*`、`BootstrapBoundary`、`ReceiptManifest`、`LegacyEntrypointsGuarded`、`ReceiptWorkerLocalRedis`、`ReceiptLoopFailureStops`、`LegacyToReceiptHandoff`纳入同一隔离脚本。覆盖三个旧入口共用数据库锁、占用拒绝登记/接管、部分锁释放、终止持锁PG连接后禁止借池写账、精确旧checkpoint/归档交接及原错误保留；显式四流manifest、TEST/外部worker限制、私有文件/未知字段/重复键/错来源拒绝；实际四流两次启动不重复账表、COMMIT后通知、失败留证不报ready、不修改消费组。旧路径先实际应用再交接时，不从0重扫，不把旧trim归档补造成新receipt原文。
+
+该增量仍只改源码，新worker未部署；显式登记工具、失败处置、来源覆盖及生产启用未完成。首跑三个边界用例因测试归档方向误用`inbound`而非既有schema的`in`失败，修正测试输入后重跑，没有放宽数据库约束。后续补跑另复现既有源读取SQL按文本主键排序的问题：随机插入顺序使分页ID跨过9/10时末页提前。已按源表数字主键排序，并固定9/10/11分页、同时间心跳9/10回归；新增bootstrap证据超限时整笔登记回滚。最终验证日志：`/tmp/relay-baseline-handoff-verified-20261120.log`（临时PG/Redis race）、`/tmp/relay-writer-all-go-20261120.log`（全量Go）、`/tmp/relay-writer-vet-20261120.log`（相关包vet）。缺历史库连接的在线历史用例仍按设计跳过。
+
 2026-11-14历史查询证据：`go test ./cmd/relayctl -run 'TestResearch(QueryEvidence|SnapshotTiming)'`覆盖报告摘要截短但真实计数完整、空items末页、原命令/账户/环境/日期/时间窗错误、重复ID/双末页/缺末页/缺页/缺items/解析失败，以及只有实际盘前refresh计划不含费用时才标not_scheduled。快照时间诊断不覆盖原baseline，不把任意时间差当合法现金观察。生产只读23日/207查询实际结果见[核验记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#历史查询证据与基线时间差)；本轮未修改共享基线判定逻辑。
 
 2026-11-14后续基线修复：`TestPositionBaselineSeparateCashAndBatchClocks`、`TestPositionBaselineCashClockSkewUsesReceiveWindow`、`TestPositionBaselineRecoveryPublication`覆盖双时间证据、数据库六位精度、OC/Relay时钟微差、本机接收窗口、错误账户/代次/金额/数量、缺回包、失败/试算/不完整修复拒绝，且不能覆盖已有无效常规发布。`bash scripts/test-position-baseline-postgres.sh`启动仅Unix socket的临时PG，用TEMP表验证10001行分页、reconciliation_runs关联、失败发布和旧游标拒绝；无生产凭据、迁移或金融写入。本机服务器程序解包于`.runtime/futures-pg/server/usr/lib/postgresql/17/bin`，运行前用`RELAY_TEST_PG_BIN`显式指定该路径。在线GET验收沿用`sdk_position_baseline_live_smoke.py`，新审计字段保留在SDK的`baseline.raw`中。
