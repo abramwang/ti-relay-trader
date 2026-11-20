@@ -303,9 +303,9 @@ func waitForLedgerSyncRetry(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, cursor ledgerStreamCursor, report LedgerStreamReport, logger *slog.Logger) {
+func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, cursor ledgerStreamCursor, report LedgerStreamReport, logger *slog.Logger) error {
 	if store == nil || (report.Count == 0 && len(report.Errors) == 0) {
-		return
+		return nil
 	}
 	now := time.Now().UTC()
 	checkpoint := ledger.StreamCheckpoint{
@@ -361,7 +361,9 @@ func saveLedgerCheckpoint(ctx context.Context, store LedgerCheckpointStore, curs
 			"last_stream_id", cursor.lastID,
 			"error", err,
 		)
+		return err
 	}
+	return nil
 }
 
 func ledgerCheckpointError(errors []LedgerEntryError) string {

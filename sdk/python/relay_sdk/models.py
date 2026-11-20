@@ -995,6 +995,12 @@ class RelayEvent:
 
 @dataclass(frozen=True)
 class StreamReconciliation:
+    """Independent ledger reads, not a verified current account baseline.
+
+    Page exhaustion does not prove one generation across pages or resources.
+    Event IDs describe stream recovery, not a durable account-ledger watermark.
+    """
+
     account_id: str
     reason: str
     last_event_id: str = ""
@@ -1007,3 +1013,15 @@ class StreamReconciliation:
     order_pages: tuple[OrderPage, ...] = ()
     fill_pages: tuple[FillPage, ...] = ()
     trigger_event: RelayEvent | None = field(default=None, repr=False)
+
+    @property
+    def consistency_level(self) -> str:
+        return "independent_reads"
+
+    @property
+    def current_baseline_verified(self) -> bool:
+        return False
+
+    @property
+    def missing_security_means_zero(self) -> bool:
+        return False

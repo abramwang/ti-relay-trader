@@ -2067,7 +2067,13 @@ class RelayClient:
         page_size: int = 500,
         max_pages: int = 1000,
     ) -> StreamReconciliation:
-        """Read the complete current ledger after an event-stream discontinuity."""
+        """Read all available pages of four independent ledger resources.
+
+        This GET-only reconciliation does not refresh the counter or establish
+        a shared generation, current completeness, or a freeze/execution basis.
+        In particular, current_event_id is the triggering SSE cursor, not a
+        watermark proving that fills are already included in the positions.
+        """
 
         account_id = self._resolve_account(account_id)
         asset = self.get_asset_raw(account_id)

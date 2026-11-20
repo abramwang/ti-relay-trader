@@ -1787,7 +1787,7 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(event.event_type, "order.changed")
         self.assertEqual(RelayHandler.last_event_id, "evt-test-42")
 
-    def test_reconcile_current_state_reads_complete_ledger(self):
+    def test_reconcile_current_state_reads_independent_resources(self):
         snapshot = self.client.reconcile_current_state(reason="server_restart", last_event_id="evt-old-9")
         self.assertEqual(snapshot.account_id, "acct-1")
         self.assertEqual(snapshot.reason, "server_restart")
@@ -1796,6 +1796,9 @@ class RelayClientTest(unittest.TestCase):
         self.assertEqual(len(snapshot.positions), 1)
         self.assertEqual(len(snapshot.orders), 1)
         self.assertEqual(len(snapshot.fills), 1)
+        self.assertEqual(snapshot.consistency_level, "independent_reads")
+        self.assertFalse(snapshot.current_baseline_verified)
+        self.assertFalse(snapshot.missing_security_means_zero)
 
     def test_order_status_callback_fetches_orders_after_event(self):
         seen = []

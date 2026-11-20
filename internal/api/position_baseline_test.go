@@ -97,7 +97,7 @@ func TestPositionBaselineHTTPReadOnlyContract(t *testing.T) {
 	cfg.Accounts = []config.AccountRouteConfig{{AccountID: "a", BrokerID: "huaxin", GatewayID: "g", Enabled: false}}
 	store := &fakeBaselineProvider{fakeSettlementStore: &fakeSettlementStore{}}
 	handler := NewWithDependencies(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), Dependencies{Settlements: store})
-	for _, suffix := range []string{"", "?trade_date=20261009&limit=501", "?trade_date=20261009&snapshot_type=open", "?trade_date=20261009&symbol=600000", "?trade_date=20261009&limit=1&limit=2"} {
+	for _, suffix := range []string{"", "?trade_date=20261009&limit=501", "?trade_date=20261009&snapshot_type=open", "?trade_date=20261009&snapshot_type=current", "?trade_date=20261009&symbol=600000", "?trade_date=20261009&limit=1&limit=2"} {
 		store.called = false
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/accounts/a/positions/baseline"+suffix, nil))

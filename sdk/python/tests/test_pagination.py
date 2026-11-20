@@ -3,7 +3,17 @@ from __future__ import annotations
 import unittest
 from typing import Any, Mapping
 
-from relay_sdk import Asset, Fill, Order, Position, RelayClient, RelayConnectionError, RelayPaginationError
+from relay_sdk import (
+    Asset,
+    Fill,
+    Order,
+    Position,
+    RelayClient,
+    RelayConnectionError,
+    RelayEvent,
+    RelayPaginationError,
+    StreamReconciliation,
+)
 
 
 def order_row(index: int) -> dict[str, Any]:
@@ -140,6 +150,42 @@ class RelayPaginationTests(unittest.TestCase):
         self.assertEqual(snapshot.position_pages[-1].next_cursor, "")
         self.assertEqual(snapshot.order_pages[-1].request_id, "req-1000")
         self.assertTrue(snapshot.fill_pages[-1].is_complete)
+        self.assertEqual(snapshot.consistency_level, "independent_reads")
+        self.assertFalse(snapshot.current_baseline_verified)
+        self.assertFalse(snapshot.missing_security_means_zero)
+
+    def test_reconciliation_does_not_upgrade_empty_reads_or_sse_cursor_to_proof(self):
+        def respond(method, path, query):
+            self.assertEqual(method, "GET")
+            if path.endswith("/asset"):
+                return {"ok": True, "data": {"asset": {"account_id": "acct-1"}}}
+            item_key = {
+                "/v1/accounts/acct-1/positions": "positions",
+                "/v1/orders": "orders",
+                "/v1/fills": "fills",
+            }[path]
+            return paged_responder(item_key, [])(method, path, query)
+
+        client = ScriptedClient(respond)
+        event = RelayEvent(event_id="process-epoch:10", event_type="relay.gap")
+        snapshot = client.reconcile_current_state(trigger_event=event)
+
+        self.assertEqual(snapshot.current_event_id, event.event_id)
+        self.assertEqual((snapshot.positions, snapshot.orders, snapshot.fills), ((), (), ()))
+        self.assertEqual(len(client.calls), 4)
+        self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
+        self.assertFalse(snapshot.current_baseline_verified)
+        self.assertFalse(snapshot.missing_security_means_zero)
+        for field, value in (
+            ("consistency_level", "verified"),
+            ("current_baseline_verified", True),
+            ("missing_security_means_zero", True),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(AttributeError):
+                    setattr(snapshot, field, value)
+                with self.assertRaises(TypeError):
+                    StreamReconciliation(account_id="acct-1", reason="manual", **{field: value})
 
     def test_iter_fills_uses_history_route_and_typed_models(self):
         client = ScriptedClient(paged_responder("fills", [fill_row(i) for i in range(501)]))

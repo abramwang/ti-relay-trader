@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Clarify that `reconcile_current_state()` performs independent GET reads, not
+  a verified current-account snapshot. Its result exposes read-only
+  `consistency_level`, `current_baseline_verified`, and
+  `missing_security_means_zero` properties without changing request behavior.
+- Current-account baseline publication is still planned, not an advertised
+  capability. Historical close baselines and SDK 0.1.43 remain unchanged.
+
 ## 0.1.43 - 2026-10-13
 
 - Add GET-only historical close `get_position_baseline_page()` and

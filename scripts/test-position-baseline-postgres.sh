@@ -24,4 +24,4 @@ trap 'exit 143' TERM
 "${RUN[@]}" "$PG_BIN/pg_ctl" -D "$WORK/data" -l "$WORK/server.log" -o "-k $WORK/socket -h '' -p 15433" -w start
 cd "$ROOT"
 RELAY_POSITION_BASELINE_ISOLATED_DATABASE_URL="host=$WORK/socket port=15433 user=relay_baseline_test dbname=postgres sslmode=disable" \
-  go test -race ./internal/ledger -run TestPositionBaseline -count=1 -v
+  go test -race ./internal/ledger ./internal/accountbaseline ./internal/redisstream -run 'Test(PositionBaseline|CurrentAccountBaseline)' -count=1 -v

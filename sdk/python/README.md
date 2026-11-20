@@ -197,9 +197,20 @@ Relay replays events only within the current API process and its bounded replay
 window. Restarts, expired cursors, event-bridge reconnects, or subscriber
 overflow produce an explicit `relay.gap`; the SDK will not continue past a gap
 without completing `reconcile_current_state()` and invoking the callback.
-`StreamReconciliation` includes both the flattened four-ledger snapshot and
-all typed position/order/fill pages used to build it, including every page's
-audit envelope.
+`StreamReconciliation` includes the four independent ledger reads and all typed
+position/order/fill pages used to build them, including every page's audit
+envelope. Reading every page does **not** prove that the pages or resources share
+a generation. Neither event ID is a durable account-ledger watermark; do not
+apply the returned fills again to the returned positions.
+
+The model reports `consistency_level="independent_reads"`,
+`current_baseline_verified=False`, and `missing_security_means_zero=False`.
+These are read-only properties, not caller-supplied proofs. This helper remains
+GET-only: it neither refreshes OC nor authorizes a target freeze or new orders.
+The planned current-account contract is documented in
+[the Chronos response](../../docs/CHRONOS_CURRENT_ACCOUNT_BASELINE_RESPONSE_20261119.md);
+it is not yet an advertised capability or a replacement for the accepted
+historical close baseline.
 
 Refresh methods return a command receipt. Use its `message_id` to verify that
 OC produced one completed final query reply:
