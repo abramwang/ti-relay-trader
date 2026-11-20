@@ -38,7 +38,18 @@ JOIN pg_proc p ON p.oid=t.tgfoid AND p.pronamespace=c.relnamespace
 WHERE c.oid=to_regclass('ledger_stream_receivers') AND p.proname='observe_account_baseline_receiver' AND p.pronargs=0
 AND ((t.tgname='account_baseline_receiver_watch' AND t.tgtype=29) OR (t.tgname='account_baseline_receiver_truncate' AND t.tgtype=32))
 AND t.tgenabled IN ('O','A')`).Scan(&n)
-	return true, n == 2, err
+	if err != nil || n != 2 {
+		return true, false, err
+	}
+	// A receiver watcher alone cannot make mutable receipt rows trustworthy.
+	err = q.QueryRowContext(ctx, `SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+JOIN pg_proc p ON p.oid=t.tgfoid AND p.pronamespace=c.relnamespace
+WHERE p.proname='reject_account_baseline_mutation' AND p.pronargs=0 AND t.tgenabled IN ('O','A')
+AND ((c.oid=to_regclass('ledger_stream_read_batches') AND
+ ((t.tgname='ledger_read_batches_immutable' AND t.tgtype=27) OR (t.tgname='ledger_read_batches_no_truncate' AND t.tgtype=34)))
+ OR (c.oid=to_regclass('ledger_stream_read_entries') AND
+ ((t.tgname='ledger_read_entries_immutable' AND t.tgtype=27) OR (t.tgname='ledger_read_entries_no_truncate' AND t.tgtype=34))))`).Scan(&n)
+	return true, n == 4, err
 }
 
 func readCurrentBaselineReceipts(ctx context.Context, q currentBaselineReader, scope CurrentBaselineScope, h *CurrentBaselineSourceHealth) error {

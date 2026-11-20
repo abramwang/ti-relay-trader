@@ -243,6 +243,10 @@ LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-lin
 
 本轮全量Go、相关四包vet及临时PG/Redis race最终通过，日志分别为`/tmp/relay-handoff-operator-all-go-20261120.log`、`/tmp/relay-handoff-operator-vet-20261120.log`、`/tmp/relay-handoff-operator-final-pg-20261120.log`。历史库只读用例仍因未提供连接跳过，不能写成生产历史验收；迁移56仅执行在临时schema，未操作业务Redis或服务。操作方式与失败取回边界见当前基线回复第15节，不能用重复生成计划代替核对未确认提交。
 
+11-20逐页receipt关联：`TestCurrentAccountBaselineReceiptLinkedAssembly/FailureEvidence/ProtectionAndCorruption/ScopeAndMissing/LegacyBoundary`使用000001至56真实schema、既有收件/解析/账本处理器及合成Redis读接口，验证四查询与501行固定分页、原文字节/旧trim双摘要、失败后成功保留两观察、同条目不同内容、仅失败收件、旧归档实质变化、错账户/流/位点、保护停用及摘要损坏拒绝、交接前数据不补造收件证明。`ReceiptProjectionPolicy`覆盖各状态的组装策略和残缺关联拒绝。上述新增用例无真实柜台/共享Redis访问；既有本地Redis收件回归继续运行。所有覆盖字段仍不升级，当前完整基线未发布。
+
+本轮最终全量Go、相关四包vet及隔离PG/本地Redis race通过，日志分别为`/tmp/relay-receipt-links-final-all-go-20261120.log`、`/tmp/relay-receipt-links-vet-20261120.log`、`/tmp/relay-receipt-links-final-pg-20261120.log`。历史库只读测试仍因未提供连接跳过；测试结束由脚本停止临时PG/Redis，无业务库或配置变更。
+
 2026-11-14历史查询证据：`go test ./cmd/relayctl -run 'TestResearch(QueryEvidence|SnapshotTiming)'`覆盖报告摘要截短但真实计数完整、空items末页、原命令/账户/环境/日期/时间窗错误、重复ID/双末页/缺末页/缺页/缺items/解析失败，以及只有实际盘前refresh计划不含费用时才标not_scheduled。快照时间诊断不覆盖原baseline，不把任意时间差当合法现金观察。生产只读23日/207查询实际结果见[核验记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#历史查询证据与基线时间差)；本轮未修改共享基线判定逻辑。
 
 2026-11-14后续基线修复：`TestPositionBaselineSeparateCashAndBatchClocks`、`TestPositionBaselineCashClockSkewUsesReceiveWindow`、`TestPositionBaselineRecoveryPublication`覆盖双时间证据、数据库六位精度、OC/Relay时钟微差、本机接收窗口、错误账户/代次/金额/数量、缺回包、失败/试算/不完整修复拒绝，且不能覆盖已有无效常规发布。`bash scripts/test-position-baseline-postgres.sh`启动仅Unix socket的临时PG，用TEMP表验证10001行分页、reconciliation_runs关联、失败发布和旧游标拒绝；无生产凭据、迁移或金融写入。本机服务器程序解包于`.runtime/futures-pg/server/usr/lib/postgresql/17/bin`，运行前用`RELAY_TEST_PG_BIN`显式指定该路径。在线GET验收沿用`sdk_position_baseline_live_smoke.py`，新审计字段保留在SDK的`baseline.raw`中。

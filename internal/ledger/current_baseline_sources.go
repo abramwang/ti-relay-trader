@@ -8,16 +8,17 @@ import (
 	"time"
 )
 
-// Raw observations retain body_text, not a re-serialization of the JSONB column.
+// Body retains legacy body_text; Receipt separately identifies original bytes.
 type CurrentBaselineArchive struct {
-	ArchiveID  string    `json:"archive_id"`
-	Stream     string    `json:"stream"`
-	EntryID    string    `json:"entry_id"`
-	Direction  string    `json:"direction"`
-	Role       string    `json:"role"`
-	Body       string    `json:"-"`
-	ParseError string    `json:"parse_error"`
-	ReceivedAt time.Time `json:"received_at"`
+	ArchiveID  string                       `json:"archive_id"`
+	Stream     string                       `json:"stream"`
+	EntryID    string                       `json:"entry_id"`
+	Direction  string                       `json:"direction"`
+	Role       string                       `json:"role"`
+	Body       string                       `json:"-"`
+	ParseError string                       `json:"parse_error"`
+	ReceivedAt time.Time                    `json:"received_at"`
+	Receipt    *CurrentBaselineReplyReceipt `json:"receipt,omitempty"`
 }
 
 type CurrentBaselineQuerySources struct {
@@ -112,6 +113,9 @@ ORDER BY raw_stream_messages.raw_message_pk LIMIT $3`, scope.AccountID, q.Messag
 			return out, e
 		}
 		out.Queries[resource] = q
+	}
+	if err = linkCurrentBaselineReplyReceipts(ctx, tx, &out, &budget); err != nil {
+		return out, err
 	}
 	// No trade-date, gateway, or source filter: cross-day and not-yet-published
 	// local intents must survive a successful empty current-day broker query.

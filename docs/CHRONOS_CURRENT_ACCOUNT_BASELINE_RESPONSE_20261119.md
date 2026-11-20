@@ -480,5 +480,39 @@ relayctl ledger-receipts -mode apply -config /private/isolated-test.yaml \
 
 隔离回归覆盖四流全成全败、计划不写DB、计划过期状态/源变化、SQL末步失败回滚、响应丢失后幂等取回、旧owner隔离、与在途写入竞争、不可变操作记录、私有文件/参数及完整集合限制；真实本地Redis验证计划→登记→worker→接管→续读不重复业务、不改消费组。测试不接业务Redis，也不发送柜台命令。
 
-下一项是将不可变receipt与query组装证据关联，并明确失败分类和源采样覆盖；本工具没有消除来源连续性、经济一致性或当前有效期的缺证。
+本节之后的第16节已将不可变receipt与query组装证据关联；完整失败处置和源采样覆盖仍待完成。本工具没有消除来源连续性、经济一致性或当前有效期的缺证。
 候选继续partial/unavailable，所有覆盖标记保持false、`valid_until=null`。无需OC为此增加协议或审批，尚不可向Chronos宣称完整current能力已经交付。
+
+## 16. 查询页面与不可变收件关联
+
+2026-11-20源码增量，复用迁移55，无新业务协议或数据库迁移。保持当前生产环境、运行进程和权限；没有连接业务Redis、查询柜台或部署新路径。
+
+### 证据与组装
+
+- 四查询归档、逐页收件关联、receiver健康和未决订单来自同一只读repeatable-read快照。按精确物理`stream_key + entry_id`查已有索引，不按相同message_id、时间接近或金额推测关系，也不跨账户/路由匹配。
+- 每个关联批次只读取核验一次，验证原文BYTEA/SHA、批次证据与应用报告摘要、实际条目数量/ordinal/位点顺序、应用结果与结束位点；受原100000行及64MiB预算约束，超限明确拒绝，不截断成成功集合。引用保存attempt、批次序号、ordinal、原文字节数/摘要、起止位点、结果/错误、证据摘要和本地收件时间，不公开owner或完整body。
+- `matched`必须有且只有一次成功本地应用，所有保留观察对同一条目的原文一致。只接受旧`body_text`与原文精确相等，或恰好是旧链路`TrimSpace`结果。不存在JSON重排、数字舍入、业务字段修正等宽松等价规则。
+- 匹配后直接用receipt原文解析查询。证据的`body_source=durable_receipt`，`body_sha256`是本次解析字节摘要；`archive_body_sha256`独立保留旧归档摘要，`receipt.archive_match`区分`exact/legacy_trimmed`。旧路径仍标`body_source=legacy_archive`。两份摘要不混称原始Redis报文，缺旧原文也不从JSONB补造。
+- 失败后同内容重读成功可关联，但所有失败观察仍列在`receipt.observations`，额外保留`reply_receipt_prior_failure`和账户历史fault；不会把第一次失败改成成功，也不会重复累加一页的持仓数量。
+- `retained_pages_receipted=true`**只表示当前本地已经看到的各页都有上述关联**。它不是`archive_complete`，不证明未收到的页面不存在，也不证明整批查询成功、柜台采样原子性、命令/事件经济覆盖或交易准入。
+
+### 缺证与冲突
+
+| 逐页状态 | 当前处理 |
+| --- | --- |
+| `unavailable` / `receiver_missing` | 没有可用的新收件来源；保留旧归档参考组装和缺证标记，不宣称原文收件完整 |
+| `before_capture` | 物理位点在明确交接起点之前或等于起点；只能作为旧归档参考，不将bootstrap当成历史XREAD证明 |
+| `missing` | 登记起点之后没有对应receipt，拒绝该资源的成功组装，不用checkpoint追平替代 |
+| `not_applied` | 只有读取/应用失败收件；原文及失败保留，旧归档成功页不能覆盖此结论 |
+| `conflict` / `archive_mismatch` | 同条目原文不一致、重复成功应用或旧归档有实质变化；拒绝该资源组装，不取最后一条、不自动修账 |
+| `scope_mismatch` / `binding_mismatch` | 账户路由或物理流不匹配，拒绝，不跨源拼接 |
+| `protection_unavailable` | receiver观察或原文/批次不可变保护未启用，拒绝依赖该链路的组装 |
+
+收件内容或摘要损坏、批次结构不自洽会使整次来源读取明确失败。收件健康核验现在同时检查receiver观察触发器和四个不可变触发器；新候选发布前再次检查，停用保护不会被当作已验证原文。旧固定manifest/page仍保存当时的证据，不随归档改写而变化；没有因此复活失效版本。
+
+### 验证与后续
+
+隔离真实schema中经既有收件/解析/账本处理器采集合成四查询，再读取、组装和发布501行分页；覆盖双摘要、失败后成功两次观察、旧归档篡改、仅失败收件、同ID内容冲突、错物理流/账户绑定、登记后缺证、交接前历史、保护停用及原文损坏。Redis读接口在这些新增组装用例中为合成替身，不当作柜台回包；同一隔离脚本仍执行既有本地Redis真实收件回归。
+
+本轮只关联已归档页，没有扫描全流补出未归档查询、处理畸形原始RESP或自动修复failed批次。命令原文仍来自旧归档，没有借此升级命令投递完整性。下一步补失败处置及查询/事件采样覆盖核验，再接全部在途责任和有效期。
+所有完整性/经济覆盖承诺仍保持false，`valid_until=null`，候选继续partial/unavailable，HTTP/SDK current能力未发布；OC无需增加二次授权、账本或审批机制。

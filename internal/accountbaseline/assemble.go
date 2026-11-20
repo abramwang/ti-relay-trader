@@ -17,30 +17,34 @@ import (
 )
 
 type Evidence struct {
-	ArchiveID  string    `json:"archive_id"`
-	Stream     string    `json:"stream"`
-	EntryID    string    `json:"entry_id"`
-	BodySHA256 string    `json:"body_sha256"`
-	MessageID  string    `json:"message_id"`
-	Status     string    `json:"status"`
-	IsLast     *bool     `json:"is_last"`
-	ReceivedAt time.Time `json:"received_at"`
+	ArchiveID         string                              `json:"archive_id"`
+	Stream            string                              `json:"stream"`
+	EntryID           string                              `json:"entry_id"`
+	BodySHA256        string                              `json:"body_sha256"`
+	MessageID         string                              `json:"message_id"`
+	Status            string                              `json:"status"`
+	IsLast            *bool                               `json:"is_last"`
+	ReceivedAt        time.Time                           `json:"received_at"`
+	BodySource        string                              `json:"body_source"`
+	ArchiveBodySHA256 string                              `json:"archive_body_sha256"`
+	Receipt           *ledger.CurrentBaselineReplyReceipt `json:"receipt,omitempty"`
 }
 
 type QueryReport struct {
-	Resource              string     `json:"resource"`
-	Action                string     `json:"action"`
-	OriginMessageID       string     `json:"origin_message_id"`
-	RequestMatched        bool       `json:"request_matched"`
-	TerminalSequenceValid bool       `json:"terminal_sequence_valid"`
-	ContextMatched        bool       `json:"context_matched"`
-	ArchiveComplete       bool       `json:"archive_complete"`
-	ProjectionValid       bool       `json:"projection_valid"`
-	ProjectionError       string     `json:"projection_error,omitempty"`
-	ObservedRows          *int       `json:"observed_rows"`
-	Commands              []Evidence `json:"commands"`
-	Pages                 []Evidence `json:"pages"`
-	Flags                 []string   `json:"flags"`
+	Resource               string     `json:"resource"`
+	Action                 string     `json:"action"`
+	OriginMessageID        string     `json:"origin_message_id"`
+	RequestMatched         bool       `json:"request_matched"`
+	TerminalSequenceValid  bool       `json:"terminal_sequence_valid"`
+	ContextMatched         bool       `json:"context_matched"`
+	ArchiveComplete        bool       `json:"archive_complete"`
+	ProjectionValid        bool       `json:"projection_valid"`
+	RetainedPagesReceipted bool       `json:"retained_pages_receipted"`
+	ProjectionError        string     `json:"projection_error,omitempty"`
+	ObservedRows           *int       `json:"observed_rows"`
+	Commands               []Evidence `json:"commands"`
+	Pages                  []Evidence `json:"pages"`
+	Flags                  []string   `json:"flags"`
 }
 
 type wire struct {
@@ -100,6 +104,16 @@ func Assemble(src ledger.CurrentBaselineSources, collectionID string, started ti
 			}
 			for _, r := range list {
 				budget += len(r.Body)
+				if r.Receipt != nil {
+					raw, err := json.Marshal(r.Receipt)
+					if err != nil {
+						return c, err
+					}
+					budget += len(raw) + len(r.Receipt.OriginalBody)
+				}
+				if budget > 64<<20 {
+					return c, ledger.ErrCurrentBaselineLimit
+				}
 			}
 		}
 	}
@@ -159,15 +173,21 @@ func Assemble(src ledger.CurrentBaselineSources, collectionID string, started ti
 
 func decode(r ledger.CurrentBaselineArchive) (wire, error) {
 	var w wire
-	if r.ParseError != "" || r.Body == "" || ledger.ValidateCurrentBaselineSourceJSON([]byte(r.Body)) != nil {
+	body := querySourceBody(r)
+	if r.ParseError != "" || len(body) == 0 || ledger.ValidateCurrentBaselineSourceJSON(body) != nil {
 		return w, errors.New("invalid original archive")
 	}
-	err := json.Unmarshal([]byte(r.Body), &w)
+	err := json.Unmarshal(body, &w)
 	return w, err
 }
 
 func evidence(r ledger.CurrentBaselineArchive, w wire) Evidence {
-	return Evidence{r.ArchiveID, r.Stream, r.EntryID, digest([]byte(r.Body)), w.MessageID, w.Status, w.Chunk.IsLast, r.ReceivedAt}
+	source := "legacy_archive"
+	if r.Receipt != nil && r.Receipt.Status == "matched" {
+		source = "durable_receipt"
+	}
+	return Evidence{ArchiveID: r.ArchiveID, Stream: r.Stream, EntryID: r.EntryID, BodySHA256: digest(querySourceBody(r)), MessageID: w.MessageID, Status: w.Status, IsLast: w.Chunk.IsLast, ReceivedAt: r.ReceivedAt,
+		BodySource: source, ArchiveBodySHA256: digest([]byte(r.Body)), Receipt: r.Receipt}
 }
 
 func physicalID(id string) (uint64, uint64, bool) {
@@ -224,7 +244,11 @@ func review(src ledger.CurrentBaselineSources, started time.Time, resource strin
 	seen := map[string]string{}
 	var priorMS, priorSeq uint64
 	var envelopes []redisstream.EntryEnvelope
+	p.RetainedPagesReceipted = len(q.Replies) > 0
 	for i, r := range q.Replies {
+		linked, usable := reviewQueryReceipt(&p, r)
+		p.RetainedPagesReceipted = p.RetainedPagesReceipted && linked
+		valid = valid && usable
 		w, e := decode(r)
 		p.Pages = append(p.Pages, evidence(r, w))
 		ms, seq, ok := physicalID(r.EntryID)
@@ -273,7 +297,7 @@ func review(src ledger.CurrentBaselineSources, started time.Time, resource strin
 			valid = false
 			p.flag("query_context_conflict")
 		}
-		env, e := redisstream.DecodeEntry(r.Stream, r.EntryID, map[string]any{"body": r.Body})
+		env, e := redisstream.DecodeEntry(r.Stream, r.EntryID, map[string]any{"body": string(querySourceBody(r))})
 		if e != nil {
 			valid = false
 			p.flag("reply_decode_failed")

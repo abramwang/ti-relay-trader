@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,10 @@ import (
 )
 
 func sourceDatabase(t *testing.T) (*sql.DB, context.Context) {
+	return sourceSchemaDatabase(t, false)
+}
+
+func sourceSchemaDatabase(t *testing.T, receipts bool) (*sql.DB, context.Context) {
 	t.Helper()
 	dsn := os.Getenv("RELAY_POSITION_BASELINE_ISOLATED_DATABASE_URL")
 	if dsn == "" {
@@ -42,6 +47,25 @@ func sourceDatabase(t *testing.T) (*sql.DB, context.Context) {
 		admin.Close()
 		cancel()
 	})
+	if receipts {
+		files, err := os.ReadDir("../../migrations/postgres")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if !strings.HasSuffix(f.Name(), ".up.sql") || f.Name() > "000056_ledger_stream_handoffs.up.sql" {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join("../../migrations/postgres", f.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.ExecContext(ctx, string(raw)); err != nil {
+				t.Fatal(f.Name(), err)
+			}
+		}
+		return db, ctx
+	}
 	raw, err := os.ReadFile("../../migrations/postgres/000052_current_account_baselines.up.sql")
 	if err != nil {
 		t.Fatal(err)
