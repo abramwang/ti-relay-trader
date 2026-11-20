@@ -73,7 +73,7 @@ func (s *StreamStore) InspectDeliveryQuality(ctx context.Context, event, reply S
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(octet_length(body)),0),count(*) FILTER(WHERE state='pending'),count(*) FILTER(WHERE state='quarantined') FROM futures_stream_inbox WHERE stream_key=$1`, key).Scan(&actual, &actualBytes, &pending, &quarantined); err != nil {
 			return out, err
 		}
-		if count != actual || size != actualBytes || tradeCapacity(count, size, 0, 0) != nil {
+		if count < 0 || size < 0 || count != actual || size != actualBytes {
 			return out, fmt.Errorf("stream audit counters inconsistent")
 		}
 		out.TransportPending += pending

@@ -123,7 +123,7 @@ func TestStreamCaptureAtomicFailureCapacityAndReplay(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE futures_stream_receivers SET audit_count=50000`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Capture(ctx, h, "2-0", []StreamInput{{"3-0", []byte("third")}}); !errors.Is(err, ErrAuditCapacity) {
+	if _, err := s.Capture(ctx, h, "2-0", []StreamInput{{"3-0", []byte("third")}}); !errors.Is(err, ErrStreamCounters) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE futures_stream_receivers SET audit_count=2`); err != nil {

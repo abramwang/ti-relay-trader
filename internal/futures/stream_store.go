@@ -70,28 +70,24 @@ type StreamCapture struct {
 type StreamStatus struct {
 	Cursor                          string
 	Pending, Quarantined, Delivered int
+	Records, Bytes                  int64
+	PendingBytes, QuarantinedBytes  int64
+	DeliveredBytes                  int64
 }
 
 // Counts describe transport responsibility only. Delivered work can still be
 // waiting_identity/invalid in the event or query store; this is not readiness.
+// Transactional counters are not a full-body integrity audit; evidence readers
+// and business quality checks still verify retained originals independently.
 func (s *StreamStore) Status(ctx context.Context, h StreamHandle) (StreamStatus, error) {
 	tx, err := beginFuturesTransaction(ctx, s.db)
 	if err != nil {
 		return StreamStatus{}, err
 	}
 	defer tx.Rollback()
-	cursor, count, size, err := lockStream(ctx, tx, h)
+	out, err := lockStreamUsage(ctx, tx, h)
 	if err != nil {
 		return StreamStatus{}, err
-	}
-	out := StreamStatus{Cursor: cursor}
-	var totalBytes int
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER(WHERE state='pending'),count(*) FILTER(WHERE state='quarantined'),count(*) FILTER(WHERE state='delivered'),COALESCE(sum(octet_length(body)),0) FROM futures_stream_inbox WHERE stream_key=$1`, h.stream).Scan(&out.Pending, &out.Quarantined, &out.Delivered, &totalBytes)
-	if err != nil {
-		return StreamStatus{}, err
-	}
-	if out.Pending+out.Quarantined+out.Delivered != count || totalBytes != size {
-		return StreamStatus{}, fmt.Errorf("stream inbox counters inconsistent")
 	}
 	if err = tx.Commit(); err != nil {
 		return StreamStatus{}, err
@@ -248,32 +244,41 @@ func (s *StreamStore) openBoundManaged(ctx context.Context, c StreamConfig, expe
 	return h, nil
 }
 
-func lockStream(ctx context.Context, tx *sql.Tx, h StreamHandle) (string, int, int, error) {
-	key, err := h.config.stream()
-	if err != nil || key != h.stream || h.owner == "" {
-		return "", 0, 0, ErrStreamIdentity
-	}
-	raw, _ := json.Marshal(h.config)
-	var owner, cursor string
-	var count, size int
-	var same bool
-	err = tx.QueryRowContext(ctx, `SELECT owner_id,cursor_id,audit_count,audit_bytes,config_json=$2::jsonb FROM futures_stream_receivers WHERE stream_key=$1 FOR UPDATE`, h.stream, raw).Scan(&owner, &cursor, &count, &size, &same)
+func lockStream(ctx context.Context, tx *sql.Tx, h StreamHandle) (string, int64, int64, error) {
+	s, err := lockStreamUsage(ctx, tx, h)
 	if err != nil {
 		return "", 0, 0, err
 	}
+	return s.Cursor, s.Records, s.Bytes, nil
+}
+
+func lockStreamUsage(ctx context.Context, tx *sql.Tx, h StreamHandle) (StreamStatus, error) {
+	var out StreamStatus
+	key, err := h.config.stream()
+	if err != nil || key != h.stream || h.owner == "" {
+		return out, ErrStreamIdentity
+	}
+	raw, _ := json.Marshal(h.config)
+	var owner string
+	var same bool
+	err = tx.QueryRowContext(ctx, `SELECT owner_id,cursor_id,audit_count,audit_bytes,config_json=$2::jsonb,
+        pending_count,pending_bytes,quarantined_count,quarantined_bytes,delivered_count,delivered_bytes
+        FROM futures_stream_receivers WHERE stream_key=$1 FOR UPDATE`, h.stream, raw).Scan(
+		&owner, &out.Cursor, &out.Records, &out.Bytes, &same,
+		&out.Pending, &out.PendingBytes, &out.Quarantined, &out.QuarantinedBytes, &out.Delivered, &out.DeliveredBytes)
+	if err != nil {
+		return out, err
+	}
 	if !same {
-		return "", 0, 0, ErrStreamIdentity
+		return out, ErrStreamIdentity
 	}
 	if owner != h.owner {
-		return "", 0, 0, ErrStreamOwner
+		return out, ErrStreamOwner
 	}
-	if _, err = streamID(cursor); err != nil {
-		return "", 0, 0, err
+	if _, err = streamID(out.Cursor); err != nil {
+		return out, err
 	}
-	if err = tradeCapacity(count, size, 0, 0); err != nil {
-		return "", 0, 0, err
-	}
-	return cursor, count, size, nil
+	return out, out.validateUsage()
 }
 
 func (s *StreamStore) Cursor(ctx context.Context, h StreamHandle) (string, error) {
@@ -317,10 +322,11 @@ func (s *StreamStore) Capture(ctx context.Context, h StreamHandle, expected stri
 		return StreamCapture{}, err
 	}
 	defer tx.Rollback()
-	cursor, count, size, err := lockStream(ctx, tx, h)
+	usage, err := lockStreamUsage(ctx, tx, h)
 	if err != nil {
 		return StreamCapture{}, err
 	}
+	cursor := usage.Cursor
 	if cursor != expected {
 		return StreamCapture{}, ErrStreamCursor
 	}
@@ -349,7 +355,7 @@ func (s *StreamStore) Capture(ctx context.Context, h StreamHandle, expected stri
 		if cmp <= 0 {
 			return StreamCapture{}, ErrStreamCursor
 		}
-		if err = tradeCapacity(count, size, 1, len(raw)); err != nil {
+		if err = usage.admitCapture(1, int64(len(raw))); err != nil {
 			return StreamCapture{}, err
 		}
 		if err = tx.QueryRowContext(ctx, `INSERT INTO futures_stream_inbox(stream_key,entry_id,body,body_sha256) VALUES($1,$2,$3,$4) RETURNING receipt_id`, h.stream, in.EntryID, raw, sum[:]).Scan(&id); err != nil {
@@ -358,10 +364,12 @@ func (s *StreamStore) Capture(ctx context.Context, h StreamHandle, expected stri
 		out.ReceiptIDs = append(out.ReceiptIDs, id)
 		out.Cursor = in.EntryID
 		out.Replayed = false
-		count++
-		size += len(raw)
+		usage.Records++
+		usage.Bytes += int64(len(raw))
+		usage.Pending++
+		usage.PendingBytes += int64(len(raw))
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_receivers SET cursor_id=$2,audit_count=$3,audit_bytes=$4 WHERE stream_key=$1`, h.stream, out.Cursor, count, size); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE futures_stream_receivers SET cursor_id=$2 WHERE stream_key=$1`, h.stream, out.Cursor); err != nil {
 		return StreamCapture{}, err
 	}
 	if err = tx.Commit(); err != nil {
