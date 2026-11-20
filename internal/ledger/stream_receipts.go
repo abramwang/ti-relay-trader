@@ -165,31 +165,38 @@ func (s *LedgerReceiptStore) Open(ctx context.Context, b LedgerStreamBinding, in
 	if len(boundary) > 1<<20 {
 		return LedgerStreamHandle{}, ErrCurrentBaselineLimit
 	}
-	r, err := tx.ExecContext(ctx, `INSERT INTO ledger_stream_receivers(stream_key,account_id,binding,capture_epoch,owner_id,initial_cursor,cursor_id)
-VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT DO NOTHING`, key, b.AccountID, raw, epoch, owner, initial)
-	if err != nil {
-		return LedgerStreamHandle{}, err
-	}
-	n, err := r.RowsAffected()
-	if err != nil {
-		return LedgerStreamHandle{}, err
-	}
-	if n != 1 {
-		return LedgerStreamHandle{}, ErrLedgerCaptureBinding
-	}
-	// Sequence zero records the explicit local boundary, not a Redis read or
-	// proof that the legacy worker completely processed its historical inputs.
-	if _, err = tx.ExecContext(ctx, `INSERT INTO ledger_stream_read_batches(stream_key,attempt_id,batch_sequence,owner_id,start_cursor,end_cursor,input_sha256,evidence,evidence_sha256,application_report,application_report_sha256,outcome,error_code,entry_count)
-VALUES($1,'bootstrap-v1',0,$2,$3,$3,$4,$5,$4,'{}',$6,'applied','',0)`, key, owner, initial, baselineHash(boundary), string(boundary), baselineHash([]byte(`{}`))); err != nil {
-		return LedgerStreamHandle{}, err
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE ledger_stream_receivers SET evidence_bytes=$2 WHERE stream_key=$1`, key, len(boundary)+2); err != nil {
+	if err = insertLedgerStreamReceiver(ctx, tx, b, key, raw, epoch, owner, initial, boundary); err != nil {
 		return LedgerStreamHandle{}, err
 	}
 	if err = tx.Commit(); err != nil {
 		return LedgerStreamHandle{}, err
 	}
 	return LedgerStreamHandle{b, key, owner}, nil
+}
+
+func insertLedgerStreamReceiver(ctx context.Context, tx *sql.Tx, b LedgerStreamBinding, key string, raw []byte, epoch, owner, initial string, boundary json.RawMessage) error {
+	r, err := tx.ExecContext(ctx, `INSERT INTO ledger_stream_receivers(stream_key,account_id,binding,capture_epoch,owner_id,initial_cursor,cursor_id)
+VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT DO NOTHING`, key, b.AccountID, raw, epoch, owner, initial)
+	if err != nil {
+		return err
+	}
+	n, err := r.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrLedgerCaptureBinding
+	}
+	// Sequence zero records the explicit local boundary, not a Redis read or
+	// proof that the legacy worker completely processed its historical inputs.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO ledger_stream_read_batches(stream_key,attempt_id,batch_sequence,owner_id,start_cursor,end_cursor,input_sha256,evidence,evidence_sha256,application_report,application_report_sha256,outcome,error_code,entry_count)
+VALUES($1,'bootstrap-v1',0,$2,$3,$3,$4,$5,$4,'{}',$6,'applied','',0)`, key, owner, initial, baselineHash(boundary), string(boundary), baselineHash([]byte(`{}`))); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE ledger_stream_receivers SET evidence_bytes=$2 WHERE stream_key=$1`, key, len(boundary)+2); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Resume requires the exact previous owner/cursor after the old reader was

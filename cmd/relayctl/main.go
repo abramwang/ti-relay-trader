@@ -28,6 +28,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "ledger-receipts":
+		if err := runLedgerReceipts(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "performance-daily-cost-publish":
 		if err := runDailyCostPublish(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -695,6 +700,7 @@ func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, `relayctl commands:
   checkpoint-reconcile  Audit and recover a TEST reply checkpoint with four read-only queries
   ledger-sync    Archive Redis reply/event streams into PostgreSQL ledger
+  ledger-receipts  Plan or explicitly apply a TEST-only atomic receiver handoff
   ledger-replay  Rebuild order/fill/transfer ledgers from archived raw stream messages
   migrate        Run PostgreSQL migration status/up/down
   performance-rebuild  Rebuild trusted position costs and v2 economic NAVs

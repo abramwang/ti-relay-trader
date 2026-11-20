@@ -237,7 +237,11 @@ LD_LIBRARY_PATH="$PWD/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-lin
 
 11-20后续单写者/worker增量：`TestCurrentAccountBaselineWriter*`、`BootstrapBoundary`、`ReceiptManifest`、`LegacyEntrypointsGuarded`、`ReceiptWorkerLocalRedis`、`ReceiptLoopFailureStops`、`LegacyToReceiptHandoff`纳入同一隔离脚本。覆盖三个旧入口共用数据库锁、占用拒绝登记/接管、部分锁释放、终止持锁PG连接后禁止借池写账、精确旧checkpoint/归档交接及原错误保留；显式四流manifest、TEST/外部worker限制、私有文件/未知字段/重复键/错来源拒绝；实际四流两次启动不重复账表、COMMIT后通知、失败留证不报ready、不修改消费组。旧路径先实际应用再交接时，不从0重扫，不把旧trim归档补造成新receipt原文。
 
-该增量仍只改源码，新worker未部署；显式登记工具、失败处置、来源覆盖及生产启用未完成。首跑三个边界用例因测试归档方向误用`inbound`而非既有schema的`in`失败，修正测试输入后重跑，没有放宽数据库约束。后续补跑另复现既有源读取SQL按文本主键排序的问题：随机插入顺序使分页ID跨过9/10时末页提前。已按源表数字主键排序，并固定9/10/11分页、同时间心跳9/10回归；新增bootstrap证据超限时整笔登记回滚。最终验证日志：`/tmp/relay-baseline-handoff-verified-20261120.log`（临时PG/Redis race）、`/tmp/relay-writer-all-go-20261120.log`（全量Go）、`/tmp/relay-writer-vet-20261120.log`（相关包vet）。缺历史库连接的在线历史用例仍按设计跳过。
+该增量仍只改源码，新worker未部署；当时显式登记工具尚未完成，后续实现见下一段，失败处置、来源覆盖及生产启用仍未完成。首跑三个边界用例因测试归档方向误用`inbound`而非既有schema的`in`失败，修正测试输入后重跑，没有放宽数据库约束。后续补跑另复现既有源读取SQL按文本主键排序的问题：随机插入顺序使分页ID跨过9/10时末页提前。已按源表数字主键排序，并固定9/10/11分页、同时间心跳9/10回归；新增bootstrap证据超限时整笔登记回滚。最终验证日志：`/tmp/relay-baseline-handoff-verified-20261120.log`（临时PG/Redis race）、`/tmp/relay-writer-all-go-20261120.log`（全量Go）、`/tmp/relay-writer-vet-20261120.log`（相关包vet）。缺历史库连接的在线历史用例仍按设计跳过。
+
+11-20操作员入口：`TestCurrentAccountBaselineHandoff*`纳入同一隔离PG脚本及000056迁移，覆盖只读计划、四流原子登记/接管、旧状态及锚点变化、最后一步SQL失败整批回滚、原计划幂等取回、不可变操作记录、旧owner和在途写入隔离、blocked/fault保留。`HandoffLocalRedis`实际运行计划→登记→worker→接管→worker，核对两条原文只入账一次、消费组未改变、删除锚点和错run_id拒绝。CLI的`TestLedgerReceipt*`另覆盖TEST数据库/完整集合、显式提交参数、私有文件/符号链接/重复JSON/未知字段/大小和禁止覆盖；私有目录用例首跑发现TempDir权限不保证0700，已明确设置测试目录权限，没有放宽业务文件检查。
+
+本轮全量Go、相关四包vet及临时PG/Redis race最终通过，日志分别为`/tmp/relay-handoff-operator-all-go-20261120.log`、`/tmp/relay-handoff-operator-vet-20261120.log`、`/tmp/relay-handoff-operator-final-pg-20261120.log`。历史库只读用例仍因未提供连接跳过，不能写成生产历史验收；迁移56仅执行在临时schema，未操作业务Redis或服务。操作方式与失败取回边界见当前基线回复第15节，不能用重复生成计划代替核对未确认提交。
 
 2026-11-14历史查询证据：`go test ./cmd/relayctl -run 'TestResearch(QueryEvidence|SnapshotTiming)'`覆盖报告摘要截短但真实计数完整、空items末页、原命令/账户/环境/日期/时间窗错误、重复ID/双末页/缺末页/缺页/缺items/解析失败，以及只有实际盘前refresh计划不含费用时才标not_scheduled。快照时间诊断不覆盖原baseline，不把任意时间差当合法现金观察。生产只读23日/207查询实际结果见[核验记录](../docs/FUYING13_BROKER_ASSET_SCOPE_20261028.md#历史查询证据与基线时间差)；本轮未修改共享基线判定逻辑。
 

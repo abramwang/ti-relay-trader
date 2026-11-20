@@ -25,42 +25,54 @@ type LedgerReceiptManifest struct {
 	Streams []LedgerReceiptRegistration `json:"streams"`
 }
 
-type LedgerReceiptRegistration struct {
-	Binding ledger.LedgerStreamBinding `json:"binding"`
-	Owner   string                     `json:"owner"`
-}
+type LedgerReceiptRegistration = ledger.LedgerStreamRegistration
 
 func loadLedgerReceiptManifest(cfg config.Config) (LedgerReceiptManifest, error) {
 	var out LedgerReceiptManifest
-	path := cfg.Worker.LedgerReceiptManifest
+	if err := ReadLedgerReceiptDocument(cfg.Worker.LedgerReceiptManifest, 64<<10, &out); err != nil {
+		return out, err
+	}
+	return out, validateLedgerReceiptManifest(cfg, out)
+}
+
+// ReadLedgerReceiptDocument rejects ambiguous JSON and exposed local owners.
+func ReadLedgerReceiptDocument(path string, limit int64, out any) error {
 	if !filepath.IsAbs(path) {
-		return out, errors.New("absolute private ledger receipt manifest required")
+		return errors.New("absolute private ledger receipt document required")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("ledger receipt document must be a regular file, not a symlink")
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return out, err
+		return err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return out, err
+		return err
 	}
-	if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 || st.Size() > 64<<10 {
-		return out, errors.New("ledger receipt manifest must be a private regular file at most 64 KiB")
+	if !os.SameFile(info, st) || !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 || limit < 1 || limit > 4<<20 || st.Size() > limit {
+		return errors.New("ledger receipt document is exposed, changed, or exceeds the size limit")
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, (64<<10)+1))
+	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return out, err
+		return err
 	}
-	if len(raw) > 64<<10 || ledger.ValidateCurrentBaselineSourceJSON(raw) != nil {
-		return out, errors.New("invalid ledger receipt manifest JSON")
+	if int64(len(raw)) > limit || ledger.ValidateCurrentBaselineSourceJSON(raw) != nil {
+		return errors.New("invalid ledger receipt document JSON")
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
-	if err = d.Decode(&out); err != nil {
-		return out, err
-	}
-	return out, validateLedgerReceiptManifest(cfg, out)
+	return d.Decode(out)
+}
+
+func ValidateLedgerReceiptManifest(cfg config.Config, m LedgerReceiptManifest) error {
+	return validateLedgerReceiptManifest(cfg, m)
 }
 
 func validateLedgerReceiptManifest(cfg config.Config, m LedgerReceiptManifest) error {

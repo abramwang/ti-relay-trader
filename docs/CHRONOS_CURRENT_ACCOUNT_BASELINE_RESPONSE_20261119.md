@@ -420,5 +420,65 @@ SSE gap/通知丢失；不同资源先后采样及事件包含关系未知；SDK
 
 补跑发现并修复同链路的既有排序缺陷：SQL选择`raw_message_pk::text`后以未限定的同名列排序，实际按文本将10排在9之前，可能使查询末页提前；同采集时刻的心跳也可能选到较旧记录。已明确按源表数字主键排序，未决订单源读取同样处理。回归固定分页ID为9/10/11，并验证同时间心跳取数字ID10而非9，不靠随机map遍历碰巧通过。
 
-本轮不提供自动启用或批量接管命令。下一步完善操作员预检/显式登记工具和失败处置，并关联原文receipt与查询组装；再落实来源连续性、采样边界及全部在途命令/成交覆盖。生产启用、真实负载及断连/故障修复仍需独立验收。
+本节当时未提供自动启用或批量接管命令；后续第15节已补操作员预检/显式交接，仍不自动启用。下一步完善失败处置，并关联原文receipt与查询组装；再落实来源连续性、采样边界及全部在途命令/成交覆盖。生产启用、真实负载及断连/故障修复仍需独立验收。
 `continuity_verified/coverage_verified/query_effects_reconciled/missing_security_means_zero`仍false，`valid_until=null`，HTTP/SDK完整基线能力尚未发布。固定候选不能据本轮worker接线变成交易授权。
+
+## 15. 操作员计划与原子交接
+
+2026-11-20接续完成`relayctl ledger-receipts`及迁移`000056_ledger_stream_handoffs`。
+本轮只有源码、文档和隔离测试；没有业务库迁移、停止旧worker、启用新worker或连接业务Redis。
+仅接受明确的TEST配置和名称以`_test`结尾的数据库，拒绝生产。命令不读取环境变量替换数据库/Redis地址，不提供自动迁移或环境切换。
+
+### 两步执行
+
+1. `plan`为默认模式。使用数据库只读事务及只读Redis观察，核对完整配置的四流集合、来源/run_id/DB、原owner/精确cursor、checkpoint/归档边界和当前锚点，生成私有计划。不会登记receiver、更新checkpoint、创建Stream/消费组或取走业务消息。新版writer占用时拒绝；只读预检也不能证明未改造的旧二进制已停止。
+2. `apply`必须另行指定原计划摘要及`-legacy-writers-stopped`。这是操作员确认，不是程序自动停服。执行时重新核验数据库名/schema/本地revision epoch、全部旧状态及源观察，在同一PG事务登记或接管全部流；任一条不符合则全部回滚。不会清除blocked/fault、复用旧写入资格或更改已应用游标。
+
+计划的`handoff_id`和摘要随成功交接永久保存；新增表禁止更新、删除、截断。注册保留第14节`bootstrap-v1`，接管只换owner，旧原文/批次/历史错误不变。数据库epoch是本地修订身份，不是物理PG服务器或Redis命名空间连续性证明。
+
+输入使用`ledger.receipt-handoff-request.v1`，示意如下，四项都须填写实际已核对的binding，不能直接执行占位值：
+
+```json
+{
+  "version": "ledger.receipt-handoff-request.v1",
+  "action": "register",
+  "streams": [
+    {
+      "binding": {
+        "environment": "test", "account_id": "EXPLICIT_ACCOUNT",
+        "broker_id": "huaxin", "gateway_id": "EXPLICIT_GATEWAY",
+        "role": "reply", "source_id": "EXPLICIT_SOURCE",
+        "server_run_id": "ACTUAL_40_LOWERCASE_HEX", "redis_db": 0
+      },
+      "cursor": "0-0"
+    }
+  ]
+}
+```
+
+上例仅展示一项结构，实际必须完整列出配置中每个prefix的`reply/event/hb/dlq`，否则拒绝。首次登记`register`不得提供`previous_owner`；`0-0`只适用于没有旧checkpoint/归档的流，有历史时填写精确已处理位点。接管改用`takeover`，每项还须提供当前`previous_owner`和精确cursor，不能凭`$`、当前最大ID或计划时间猜测。整个请求不得混合首次登记和接管。
+
+配置必须显式关闭内嵌同步，包含明确账户映射；工具以外部worker身份验证全部流。提供直接PG连接或session pooling，不使用transaction pooling。输入文件0600、输出父目录0700，使用绝对路径；拒绝输入符号链接、重复/未知JSON字段和已有输出文件。请求/manifest最多64KiB、计划最多4MiB；owner只存私有文件和本地数据库，不作为公开基线字段输出。
+
+```bash
+relayctl ledger-receipts -config /private/isolated-test.yaml \
+  -input /private/receipt-request.json -output /private/receipt-plan.json
+
+relayctl ledger-receipts -mode apply -config /private/isolated-test.yaml \
+  -input /private/receipt-plan.json -plan-sha256 PLAN_DIGEST_FROM_PLAN_OUTPUT \
+  -legacy-writers-stopped -output /private/receipt-worker.json
+```
+
+`plan_sha256`是工具对解码后规范计划的摘要，不是格式化文件的`sha256sum`；不要手工改计划。预检和执行默认30秒，最多2分钟，不为慢查询无限占锁。成功导出manifest也不会启动服务或改运行配置；启用worker仍属另一次显式操作及验收。
+
+### 失败与取回结果
+
+- 提交前失败不产生部分登记或部分换owner；未确认提交结果时保留原计划，不清表、不新建计划绕过。
+- DB已提交但进程响应/manifest写盘失败时，使用**同一计划、同一摘要、新输出路径**再次`apply`。返回持久保存的同一组owner，不再次换owner、不重读Redis、不重放业务；仍核对当前DB及owner。已有writer占锁则拒绝，已被后续接管的旧owner也拒绝导出。
+- 文件写入使用排他创建并同步文件/目录；失败可能留下部分文件，不覆盖或把它当成功文件。取回结果不清除后来发生的阻断，worker启动仍独立检查当前状态。
+- 源消失/锚点变化、旧checkpoint错误、归档超前、receiver已存在、位点错配、责任阻断等均保持失败。本工具不是修复缺页、清理坏消息或绕过故障的入口。
+
+隔离回归覆盖四流全成全败、计划不写DB、计划过期状态/源变化、SQL末步失败回滚、响应丢失后幂等取回、旧owner隔离、与在途写入竞争、不可变操作记录、私有文件/参数及完整集合限制；真实本地Redis验证计划→登记→worker→接管→续读不重复业务、不改消费组。测试不接业务Redis，也不发送柜台命令。
+
+下一项是将不可变receipt与query组装证据关联，并明确失败分类和源采样覆盖；本工具没有消除来源连续性、经济一致性或当前有效期的缺证。
+候选继续partial/unavailable，所有覆盖标记保持false、`valid_until=null`。无需OC为此增加协议或审批，尚不可向Chronos宣称完整current能力已经交付。
