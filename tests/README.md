@@ -2,6 +2,22 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## 期货只读存储巡检
+
+`storage_inspection_test.go`与worker CLI测试覆盖80%/90%阈值、整数溢出、零上限、INFO缺失/重复、run_id不符、历史淘汰不当作当前速率、AOF失败、显式挂载点/inode不可用、错库/来源及缺schema不补零。临时PG和本地Redis验证实际CLI报告，并比较巡检前后数据库原文/计数/owner/cursor及Redis所有键内容，确保不抢占、不写业务数据、不创建receiver。已交接历史仍计保留量，不再计结果等待积压。
+
+```bash
+go test ./cmd/relay-ctp-worker ./internal/futures -run 'TestWorker|TestStorageInspection'
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh -run 'TestStorageInspection' -timeout 4m
+```
+
+未提供隔离环境时集成用例跳过，不算已验证。日账本预警采用显式合成计数，不冒充50,000笔实际柜台压力；该报告也不是原文完整性核验。没有实际共享Redis/业务PG查询、物理磁盘耗尽、线上告警或持续负载验收；无新迁移，实际使用需要已有000059至000061 schema。
+
+最终全量Go、vet、worker/capture构建通过；新巡检与既有CaptureService/积压续读隔离race回归通过（29.057秒）。统一`test-ctp-offline.sh`的本机Redis分组已纳入巡检，本轮没有重复执行该脚本的全部长测。
+
 ## 期货命令历史与结果积压
 
 `command_backlog_integration_test.go`及既有命令/发布/回执测试在临时PG使用000061：实际登记4096笔后新意图拒绝、别名和冲突仍留档，完整结果释放后并发仅一笔占用余量，晚到矛盾恢复积压；独立64MiB字节上限和超过旧64MiB拒绝审计历史继续登记。原命令、审计、别名和风险责任不删，不以回执accepted冒充订单终态。

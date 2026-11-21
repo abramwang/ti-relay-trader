@@ -38,14 +38,21 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 	path := flags.String("config", "", "explicit TEST capture service JSON; never uses active-config")
 	execute := flags.Bool("run", false, "capture retained OC output to TEST PostgreSQL until SIGTERM; no commands")
 	check := flags.Bool("check-config", false, "offline validation only (also the default)")
+	storage := flags.Bool("storage-check", false, "read-only TEST storage inspection; no capture, ownership changes or commands")
+	var storagePaths []string
+	flags.Func("storage-path", "explicit local mount to inspect, repeatable; only with --storage-check", func(path string) error {
+		storagePaths = append(storagePaths, path)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return errors.New("invalid worker arguments")
 	}
-	if *path == "" || flags.NArg() != 0 || (*execute && *check) {
-		return errors.New("explicit capture config required; --run and --check-config are exclusive")
+	if *path == "" || flags.NArg() != 0 || (*execute && *check) || (*storage && (*execute || *check)) ||
+		(len(storagePaths) > 0 && !*storage) || futures.ValidateStoragePaths(storagePaths) != nil {
+		return errors.New("explicit capture config required; run, config check and storage check are exclusive; storage paths must be distinct absolute local paths")
 	}
 	f, err := os.Open(*path)
 	if err != nil {
@@ -61,7 +68,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 		return errors.New("invalid TEST capture config")
 	}
 	encoder := json.NewEncoder(output)
-	if !*execute {
+	if !*execute && !*storage {
 		return encoder.Encode(map[string]any{"mode": "check_only_no_connections", "service_id": c.ServiceID,
 			"route": c.Scope.Route, "database": c.Database, "business_authorized": false})
 	}
@@ -88,6 +95,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, output,
 	db := stdlib.OpenDB(*pg)
 	db.SetMaxOpenConns(8)
 	defer db.Close()
+	if *storage {
+		report, err := futures.InspectTestStorage(ctx, db, source, c, storagePaths)
+		if err != nil {
+			return safeError(err)
+		}
+		return encoder.Encode(report)
+	}
 	store, err := futures.NewStreamStore(db)
 	if err != nil {
 		return safeError(err)

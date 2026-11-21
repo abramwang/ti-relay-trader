@@ -60,3 +60,20 @@ func TestWorkerSecretsAndShutdown(t *testing.T) {
 		t.Fatal("leaked error")
 	}
 }
+
+func TestWorkerStorageInspectionFlags(t *testing.T) {
+	for _, extra := range [][]string{
+		{"--storage-check", "--run"}, {"--storage-check", "--check-config"},
+		{"--storage-path", "/tmp"}, {"--storage-check", "--storage-path", "relative"},
+		{"--storage-check", "--storage-path", "/tmp", "--storage-path", "/tmp"},
+	} {
+		args := append([]string{"--config", "../../config/ctp-capture-service.example.json"}, extra...)
+		if err := run(context.Background(), args, func(string) string { t.Fatal("unsafe flags reached environment"); return "" }, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+			t.Fatal("accepted unsafe flags", args)
+		}
+	}
+	args := []string{"--config", "../../config/ctp-capture-service.example.json", "--storage-check"}
+	if err := run(context.Background(), args, func(string) string { return "" }, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "dedicated") {
+		t.Fatal("inspection silently fell back to active configuration", err)
+	}
+}

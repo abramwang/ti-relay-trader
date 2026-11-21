@@ -2,6 +2,31 @@
 
 日期：2026-11-18，Asia/Shanghai。发送方：Relay；接收方：OC。
 
+## 11月21日Relay只读存储巡检
+
+接续收件/命令积压改造，在现有`relay-ctp-worker`增加`--storage-check`。**无需OC新增协议、程序或材料；不把Relay历史存储工作转交OC。** 本轮没有启动业务巡检、部署、迁移、切环境或操作柜台。
+
+显式使用已核验的TEST capture配置及该工具专属Redis/PG环境变量，不读取active-config。与`--run`、`--check-config`互斥；默认仍是离线检查。以下为用法示意，不是已执行命令：
+
+```bash
+relay-ctp-worker --config /absolute/private/capture.json --storage-check
+# 可选：只填写操作者确认的本机挂载点，不填写网络挂载或假定的远端数据库目录。
+relay-ctp-worker --config /absolute/private/capture.json --storage-check \
+  --storage-path /explicit/local/data/mount
+```
+
+- 专属连接变量仍为`RELAY_CTP_CAPTURE_REDIS_URL`和`RELAY_CTP_CAPTURE_DATABASE_URL`，不在命令参数/报告输出凭据。核对TEST数据库名、配置来源指纹和Redis实际run_id；不建立或接管receiver，不修改owner/cursor/ACK、业务数据、Redis键或设置，也不登记/发布命令。
+- 输出JSON含采样起止、明确配置的交易日及各项`ok/warning/critical/unknown/not_observed`。退出0只表示报告成功输出，不等于所有项正常；调用方须读取状态。采集失败/缺schema为unknown，不补零；未建立的接收器/日账本为not_observed，不伪称空数据完整。跨Redis/PG/文件系统不是原子快照，也不是命令准入证明。
+- Redis INFO采集有3秒上下文限制，核对run_id后显示服务器级used_memory/maxmemory、RSS、淘汰策略、AOF最后写入状态、累计淘汰/过期次数。内存占比为运维参考，不冒充Redis排除复制/AOF缓冲后的精确淘汰计算；maxmemory=0表示未设上限，不代表无限物理余量。历史evicted_keys>0保留warning并明确是累计值，不宣称当前仍在淘汰；AOF正常不等于持久性验收。
+- PostgreSQL只读可重复读事务有5秒上下文、单语句1.5秒限制。显示数据库及选定账表/索引总体积，**不是磁盘可用空间**。按现有事务计数读取reply/event的pending+quarantined及保留历史，不扫全部原文；命令只扫部分索引前4097条，超过4096时明确标lower_bound。日账本只读取配置交易日，不用最新/历史其他日期替代，不证明正文完整性。
+- 容量使用率达到80%预警、90%严重，满额保护沿用现有写入路径；告警本身不改变授权、自动清理或重发。`--storage-path`最多8个显式本机路径，以Statfs的可用块和inode报告余量，20%/10%对应预警/严重；失败、溢出、未知inode不补零。文件系统调用依赖本地内核响应，不宣称可超时取消网络挂载。报告中的本机路径和远程Redis/PG存储始终分开，远端物理余量标unknown，须之后对接实际宿主机指标。
+
+**本轮完成的是可执行只读巡检，不是已上线的持续监控/告警通道。** 未加定时任务或常驻服务，不把慢统计放进收件热路径；完整磁盘耗尽、通知接入和生产持续负载尚未验收。
+
+日账本的下一项已定位：`TradeStore`当前每次写入读取并重放同scope全日原文，仍有50,000条/64MiB限制。先将正常投影改为有界增量并保留独立全量核验/重建，覆盖重复、逆序、冲突、成交先到与事务回滚，再处理日容量；不能只去掉上限造成每单成本随历史持续增长。长期保留和最小持久交接确认仍待，不要求OC新增恢复平台。
+
+验证范围与复现见[测试索引](../tests/README.md#期货只读存储巡检)。本轮核心源码和文档本地提交，不包含私有配置、原始材料或运行输出。
+
 ## 11月21日Relay命令结果积压
 
 接续上一轮收件容量改造，移除Relay自身按路由累计4096条/64MiB审计记录即停止登记的终身额度。**不新增OC动作、权限、清理要求或材料包**，仍使用现有命令登记、发布结果、查询及回执处理。
