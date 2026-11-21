@@ -90,10 +90,13 @@ func TestTradeCheckpointLegacyActivationAndRollback(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT body FROM futures_trade_observations`).Scan(&original); err != nil {
 		t.Fatal(err)
 	}
+	seedLegacyTradeCheckpoint(t, db, ctx, 1)
+	migrateFuturesTest(t, db, ctx, "000063_futures_trade_entities", "down")
 	migrateFuturesTest(t, db, ctx, "000062_futures_trade_checkpoint", "down")
 	migrateFuturesTest(t, db, ctx, "000062_futures_trade_checkpoint", "up")
+	migrateFuturesTest(t, db, ctx, "000063_futures_trade_entities", "up")
 	if _, err := db.ExecContext(ctx, `CREATE FUNCTION reject_checkpoint() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-        IF NEW.projection_version=1 THEN RAISE EXCEPTION 'synthetic checkpoint failure'; END IF; RETURN NEW; END $$;
+        IF NEW.projection_version=2 THEN RAISE EXCEPTION 'synthetic checkpoint failure'; END IF; RETURN NEW; END $$;
         CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON futures_trade_scopes FOR EACH ROW EXECUTE FUNCTION reject_checkpoint()`); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +137,7 @@ func TestTradeCheckpointCorruptionNeverFallsBack(t *testing.T) {
 		"missing_checkpoint": `UPDATE futures_trade_scopes SET projection_state=NULL`,
 		"damaged_checkpoint": `UPDATE futures_trade_scopes SET projection_state=projection_state||' '::bytea`,
 		"count":              `UPDATE futures_trade_scopes SET audit_count=audit_count+1`,
-		"report":             `UPDATE futures_trade_scopes SET report=report||' '::bytea`,
+		"report":             `UPDATE futures_trade_scopes SET summary=summary||' '::bytea`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			db, s, ctx := tradeTestDB(t)
@@ -165,7 +168,7 @@ func TestTradeCheckpointCorruptionNeverFallsBack(t *testing.T) {
 					t.Fatal("dirty ledger remained readable", err)
 				}
 			}
-			raw, err := os.ReadFile("../../migrations/postgres/000062_futures_trade_checkpoint.down.sql")
+			raw, err := os.ReadFile("../../migrations/postgres/000063_futures_trade_entities.down.sql")
 			if err != nil {
 				t.Fatal(err)
 			}

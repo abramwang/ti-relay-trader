@@ -85,7 +85,8 @@ func (s *StreamStore) InspectDeliveryQuality(ctx context.Context, event, reply S
 	}
 	var raw, digest []byte
 	var dirty bool
-	err = tx.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, key).Scan(&raw, &digest, &dirty)
+	err = tx.QueryRowContext(ctx, `SELECT CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, key).Scan(&raw, &digest, &dirty)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.LedgerMissing = true
 	} else if err != nil {

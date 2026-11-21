@@ -215,7 +215,7 @@ func inspectPostgresStorage(ctx context.Context, db *sql.DB, c CaptureServiceCon
 		return nil, ErrStreamIdentity
 	}
 	metrics := []StorageMetric{storageValue("postgres.database_bytes", size)}
-	for _, table := range []string{"futures_commands", "futures_command_work", "futures_stream_inbox", "futures_trade_observations", "futures_order_states", "futures_execution_facts"} {
+	for _, table := range []string{"futures_commands", "futures_command_work", "futures_stream_inbox", "futures_trade_observations", "futures_order_states", "futures_execution_facts", "futures_trade_aliases"} {
 		if err := tx.QueryRowContext(ctx, `SELECT pg_total_relation_size(to_regclass($1))`, table).Scan(&size); err != nil {
 			return nil, err
 		}

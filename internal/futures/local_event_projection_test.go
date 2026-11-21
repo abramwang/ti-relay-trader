@@ -110,7 +110,7 @@ func TestLocalProjectionRequiresPublishedIntent(t *testing.T) {
 			case "publication_target":
 				q = `UPDATE futures_test_trade_publications SET target_json=jsonb_set(target_json,'{target,source_id}','"other-source"')`
 			case "report_corruption":
-				q = `UPDATE futures_trade_scopes SET report=report||' '::bytea`
+				q = `UPDATE futures_trade_scopes SET summary=summary||' '::bytea`
 			case "binding":
 				q = `UPDATE futures_test_reply_sources SET transport_json='{}'`
 			case "owner":

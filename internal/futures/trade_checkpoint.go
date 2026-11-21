@@ -17,9 +17,8 @@ import (
 
 var ErrTradeCheckpoint = errors.New("trade checkpoint requires integrity review")
 
-// Report and indexes are still bounded whole-day snapshots. This first step
-// avoids replaying historical bodies and rewriting unrelated fact rows; it does
-// not remove the day capacity limit or claim constant-memory ingestion.
+// Legacy v1 is retained for verified activation and the full-replay oracle.
+// Active v2 writers use keyed entities and a compact day header instead.
 type tradeCheckpoint struct {
 	Version      int
 	AuditCount   int
@@ -53,24 +52,31 @@ func restoreTradeProjection(scope TradeScope, count, size int, report, reportHas
 		return nil, ErrTradeCheckpoint
 	}
 	p.aliases, p.ambiguous, p.eligible, p.totals, p.overfilled = cp.Aliases, cp.Ambiguous, cp.Eligible, cp.Totals, cp.Overfilled
+	if err := validateTradeIndexes(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func validateTradeIndexes(p *tradeProjection) error {
 	for _, reason := range p.report.Conflicts {
 		p.conflicts[reason] = true
 	}
 	for key, order := range p.report.Orders {
 		if order == nil || order.Order.GatewayOrderID != key {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
 	for alias, owner := range p.aliases {
 		order := p.report.Orders[owner]
 		if order == nil || alias == "" || p.alias(order.Order.TradeRow) != alias {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
 	pending := 0
 	for id, fill := range p.report.Executions {
 		if fill == nil || fill.Fill.FillID != id || !oneOf(fill.State, "pending", "linked", "conflict") {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 		alias := p.alias(fill.Fill.TradeRow)
 		if p.groups[alias] == nil {
@@ -82,7 +88,7 @@ func restoreTradeProjection(scope TradeScope, count, size int, report, reportHas
 		}
 	}
 	if pending != p.report.PendingCount || p.report.Blocked != (pending > 0 || len(p.report.Conflicts) > 0) {
-		return nil, ErrTradeCheckpoint
+		return ErrTradeCheckpoint
 	}
 	expectedEligible := map[string]string{}
 	expectedTotals := map[string]int64{}
@@ -97,37 +103,37 @@ func restoreTradeProjection(scope TradeScope, count, size int, report, reportHas
 		if valid {
 			qty := int64(fill.Fill.Qty)
 			if qty <= 0 || qty > math.MaxInt64-expectedTotals[alias] {
-				return nil, ErrTradeCheckpoint
+				return ErrTradeCheckpoint
 			}
 			expectedEligible[id] = owner
 			expectedTotals[alias] += qty
 		}
 	}
 	if !reflect.DeepEqual(expectedEligible, p.eligible) {
-		return nil, ErrTradeCheckpoint
+		return ErrTradeCheckpoint
 	}
 	for alias, total := range p.totals {
 		if total < 0 || total != expectedTotals[alias] {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
 	for alias, total := range expectedTotals {
 		if p.totals[alias] != total {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
 	for alias, over := range p.overfilled {
 		order := p.report.Orders[p.aliases[alias]]
 		if over != (order != nil && expectedTotals[alias] > int64(order.Order.OrderQty)) {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
 	for alias, total := range expectedTotals {
 		if total > int64(p.report.Orders[p.aliases[alias]].Order.OrderQty) && !p.overfilled[alias] {
-			return nil, ErrTradeCheckpoint
+			return ErrTradeCheckpoint
 		}
 	}
-	return p, nil
+	return nil
 }
 
 // Used only for legacy activation and explicit verification, not normal append.
@@ -190,7 +196,9 @@ func (s *TradeStore) Verify(ctx context.Context, scope TradeScope) (TradeReport,
 	var dirty bool
 	var report, digest, state, stateHash []byte
 	contextJSON, _ := json.Marshal(scope)
-	err = tx.QueryRowContext(ctx, `SELECT audit_count,audit_bytes,projection_version,projection_dirty,report,report_sha256,projection_state,projection_sha256
+	err = tx.QueryRowContext(ctx, `SELECT audit_count,audit_bytes,projection_version,projection_dirty,
+        CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,projection_state,projection_sha256
 		FROM futures_trade_scopes WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).
 		Scan(&count, &size, &version, &dirty, &report, &digest, &state, &stateHash)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -206,10 +214,28 @@ func (s *TradeStore) Verify(ctx context.Context, scope TradeScope) (TradeReport,
 	if err != nil {
 		return TradeReport{}, err
 	}
-	expected, _ := json.Marshal(p.report)
-	hash := sha256.Sum256(report)
-	if !bytes.Equal(hash[:], digest) || !bytes.Equal(expected, report) {
-		return TradeReport{}, ErrTradeCheckpoint
+	if version == 2 {
+		header, cp, err := decodeTradeEntityHeader(scope, count, size, report, digest, state, stateHash)
+		if err != nil {
+			return TradeReport{}, err
+		}
+		stored, err := loadTradeEntities(ctx, tx, header, nil, nil, nil, true)
+		if err != nil {
+			return TradeReport{}, err
+		}
+		want, _ := json.Marshal(p.report)
+		got, _ := json.Marshal(stored.report)
+		wi, _ := p.checkpoint(count, size, want)
+		gi, _ := stored.checkpoint(count, size, got)
+		if !bytes.Equal(want, got) || !bytes.Equal(wi, gi) || cp.Orders != len(p.report.Orders) || cp.Executions != len(p.report.Executions) || cp.Aliases != len(entityAliases(p)) || header.PendingCount != p.report.PendingCount {
+			return TradeReport{}, ErrTradeCheckpoint
+		}
+	} else {
+		expected, _ := json.Marshal(p.report)
+		hash := sha256.Sum256(report)
+		if !bytes.Equal(hash[:], digest) || !bytes.Equal(expected, report) {
+			return TradeReport{}, ErrTradeCheckpoint
+		}
 	}
 	if version == 1 {
 		restored, err := restoreTradeProjection(scope, count, size, report, digest, state, stateHash)
@@ -222,6 +248,17 @@ func (s *TradeStore) Verify(ctx context.Context, scope TradeScope) (TradeReport,
 			return TradeReport{}, ErrTradeCheckpoint
 		}
 	}
+	if err := verifyTradeFactRows(ctx, tx, scope, p); err != nil {
+		return TradeReport{}, err
+	}
+	out, err := readTradeReportSnapshot(ctx, tx, scope)
+	if err != nil {
+		return TradeReport{}, err
+	}
+	return out, tx.Commit()
+}
+
+func verifyTradeFactRows(ctx context.Context, tx *sql.Tx, scope TradeScope, p *tradeProjection) error {
 	for _, item := range []struct {
 		table string
 		want  any
@@ -235,7 +272,7 @@ func (s *TradeStore) Verify(ctx context.Context, scope TradeScope) (TradeReport,
 		var raw []byte
 		var same bool
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(jsonb_object_agg(`+column+`,record),'{}'::jsonb),COALESCE(bool_and(`+consistent+`),true) FROM `+item.table+` WHERE scope_key=$1`, tradeScopeKey(scope)).Scan(&raw, &same); err != nil {
-			return TradeReport{}, err
+			return err
 		}
 		var got, want any
 		encoded, _ := json.Marshal(item.want)
@@ -245,12 +282,8 @@ func (s *TradeStore) Verify(ctx context.Context, scope TradeScope) (TradeReport,
 			return d.Decode(value)
 		}
 		if !same || decode(raw, &got) != nil || decode(encoded, &want) != nil || !reflect.DeepEqual(got, want) {
-			return TradeReport{}, fmt.Errorf("trade fact rows differ from replay: %s", item.table)
+			return fmt.Errorf("%w: fact rows differ from replay: %s", ErrTradeCheckpoint, item.table)
 		}
 	}
-	out, err := readTradeReport(ctx, tx, scope)
-	if err != nil {
-		return TradeReport{}, err
-	}
-	return out, tx.Commit()
+	return nil
 }

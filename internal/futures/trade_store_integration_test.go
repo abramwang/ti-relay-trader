@@ -268,6 +268,8 @@ func TestTradeStoreMalformedAuditIntegrityAndDown(t *testing.T) {
 	if err := tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
+	seedLegacyTradeCheckpoint(t, db, ctx, 1)
+	migrateFuturesTest(t, db, ctx, "000063_futures_trade_entities", "down")
 	migrateFuturesTest(t, db, ctx, "000062_futures_trade_checkpoint", "down")
 	migrateFuturesTest(t, db, ctx, "000061_futures_command_backlog", "down")
 	migrateFuturesTest(t, db, ctx, "000050_futures_reply_results", "down")

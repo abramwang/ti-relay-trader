@@ -258,7 +258,7 @@ func TestStreamQualityRejectsStaleIncompleteAndCorruptEvidence(t *testing.T) {
 			case "snapshot_hash":
 				_, err = db.ExecContext(ctx, `UPDATE futures_query_snapshots SET candidate='corrupt'::bytea WHERE batch_id='asset'`)
 			case "ledger_hash":
-				_, err = db.ExecContext(ctx, `UPDATE futures_trade_scopes SET report='corrupt'::bytea`)
+				_, err = db.ExecContext(ctx, `UPDATE futures_trade_scopes SET summary='corrupt'::bytea`)
 			case "receiver":
 				_, err = s.Open(ctx, event.config)
 			case "source":

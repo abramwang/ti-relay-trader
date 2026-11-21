@@ -107,7 +107,9 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 	var authorized, dirty bool
 	var oldReport, oldReportHash, checkpoint, checkpointHash []byte
 	err := tx.QueryRowContext(ctx, `SELECT context_json=$2::jsonb,audit_count,audit_bytes,projection_version,projection_dirty,
-        report,report_sha256,projection_state,projection_sha256 FROM futures_trade_scopes WHERE scope_key=$1 FOR UPDATE`, key, contextJSON).
+        CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,
+        projection_state,projection_sha256 FROM futures_trade_scopes WHERE scope_key=$1 FOR UPDATE`, key, contextJSON).
 		Scan(&authorized, &count, &size, &version, &dirty, &oldReport, &oldReportHash, &checkpoint, &checkpointHash)
 	if err != nil {
 		return TradeIngestResult{}, err
@@ -119,8 +121,19 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 		return TradeIngestResult{}, ErrTradeCheckpoint
 	}
 	var p *tradeProjection
-	if version == 0 {
-		if checkpoint != nil || checkpointHash != nil || (count > 0 && oldReport == nil) {
+	var header TradeReport
+	var entityCheckpoint tradeEntityCheckpoint
+	if version == 0 || version == 1 {
+		if (version == 0 && (checkpoint != nil || checkpointHash != nil)) || (count > 0 && oldReport == nil) {
+			return TradeIngestResult{}, ErrTradeCheckpoint
+		}
+		var partial bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM futures_trade_aliases WHERE scope_key=$1)
+            OR EXISTS(SELECT 1 FROM futures_order_states WHERE scope_key=$1 AND (native_alias<>'' OR record_sha256 IS NOT NULL))
+            OR EXISTS(SELECT 1 FROM futures_execution_facts WHERE scope_key=$1 AND (native_alias<>'' OR record_sha256 IS NOT NULL OR eligible_gateway<>''))`, key).Scan(&partial); err != nil {
+			return TradeIngestResult{}, err
+		}
+		if partial {
 			return TradeIngestResult{}, ErrTradeCheckpoint
 		}
 		p, err = replayTradeEvidence(ctx, tx, scope, count, size)
@@ -131,14 +144,40 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 				err = ErrTradeCheckpoint
 			}
 		}
-	} else if version == 1 {
-		p, err = restoreTradeProjection(scope, count, size, oldReport, oldReportHash, checkpoint, checkpointHash)
+		if err == nil && version == 1 {
+			var restored *tradeProjection
+			restored, err = restoreTradeProjection(scope, count, size, oldReport, oldReportHash, checkpoint, checkpointHash)
+			if err == nil {
+				a, _ := p.checkpoint(count, size, oldReport)
+				b, _ := restored.checkpoint(count, size, oldReport)
+				if !bytes.Equal(a, b) {
+					err = ErrTradeCheckpoint
+				}
+			}
+		}
+		if err == nil {
+			err = verifyTradeFactRows(ctx, tx, scope, p)
+		}
+		if err == nil {
+			header = p.report
+			entityCheckpoint = tradeEntityCheckpoint{Orders: len(p.report.Orders), Executions: len(p.report.Executions), Aliases: len(entityAliases(p))}
+		}
+	} else if version == 2 {
+		header, entityCheckpoint, err = decodeTradeEntityHeader(scope, count, size, oldReport, oldReportHash, checkpoint, checkpointHash)
+		if err == nil {
+			var aliases, orders, fills []string
+			aliases, orders, fills, err = affectedTradeAliases(ctx, tx, scope, observations)
+			if err == nil {
+				p, err = loadTradeEntities(ctx, tx, header, aliases, orders, fills, false)
+			}
+		}
 	} else {
 		err = ErrTradeCheckpoint
 	}
 	if err != nil {
 		return TradeIngestResult{}, err
 	}
+	beforeOrders, beforeFills, beforeAliases, beforePending := len(p.report.Orders), len(p.report.Executions), len(entityAliases(p)), p.report.PendingCount
 	sources := make([]string, 0, len(observations))
 	for _, observation := range observations {
 		sources = append(sources, observation.sourceID)
@@ -200,38 +239,32 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
 		}
 	}
 	p.reconcile()
-	changedOrders := map[string]*OrderRecord{}
-	for id := range p.changedOrders {
-		changedOrders[id] = p.report.Orders[id]
-	}
-	changedFills := map[string]*ExecutionRecord{}
-	for id := range p.changedFills {
-		changedFills[id] = p.report.Executions[id]
-	}
-	orders, _ := json.Marshal(changedOrders)
-	executions, _ := json.Marshal(changedFills)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_order_states(scope_key,gateway_order_id,record,blocked)
-        SELECT $1,key,value,(value->>'Blocked')::boolean FROM jsonb_each($2::jsonb)
-        ON CONFLICT(scope_key,gateway_order_id) DO UPDATE SET record=EXCLUDED.record,blocked=EXCLUDED.blocked`, key, orders); err != nil {
+	if err := storeTradeEntities(ctx, tx, key, p); err != nil {
 		return TradeIngestResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO futures_execution_facts(scope_key,fill_id,record,link_status,linked_gateway)
-        SELECT $1,key,value,value->>'State',NULLIF(value->>'LinkedGateway','') FROM jsonb_each($2::jsonb)
-        ON CONFLICT(scope_key,fill_id) DO UPDATE SET record=EXCLUDED.record,link_status=EXCLUDED.link_status,linked_gateway=EXCLUDED.linked_gateway`, key, executions); err != nil {
-		return TradeIngestResult{}, err
-	}
-	report, err := json.Marshal(p.report)
+	entityCheckpoint.Version, entityCheckpoint.AuditCount, entityCheckpoint.AuditBytes = 2, count, size
+	entityCheckpoint.Orders += len(p.report.Orders) - beforeOrders
+	entityCheckpoint.Executions += len(p.report.Executions) - beforeFills
+	entityCheckpoint.Aliases += len(entityAliases(p)) - beforeAliases
+	header.PendingCount += p.report.PendingCount - beforePending
+	header.Conflicts, header.FillIdentityVersion = p.report.Conflicts, p.report.FillIdentityVersion
+	header.Blocked = header.PendingCount > 0 || len(header.Conflicts) > 0
+	header.Orders, header.Executions = map[string]*OrderRecord{}, map[string]*ExecutionRecord{}
+	report, err := json.Marshal(header)
 	if err != nil {
 		return TradeIngestResult{}, err
 	}
 	digest := sha256.Sum256(report)
-	checkpoint, err = p.checkpoint(count, size, report)
+	entityCheckpoint.ReportSHA256 = hex.EncodeToString(digest[:])
+	checkpoint, err = json.Marshal(entityCheckpoint)
 	if err != nil {
 		return TradeIngestResult{}, err
 	}
 	checkpointSum := sha256.Sum256(checkpoint)
-	if _, err := tx.ExecContext(ctx, `UPDATE futures_trade_scopes SET report=$2,report_sha256=$3,audit_count=$4,audit_bytes=$5,
-        projection_version=1,projection_state=$6,projection_sha256=$7,projection_dirty=false,updated_at=clock_timestamp() WHERE scope_key=$1`, key, report, digest[:], count, size, checkpoint, checkpointSum[:]); err != nil {
+	// Invalidate the legacy whole-report columns. Old readers must fail their
+	// checksum check, never mistake the compact summary for an empty ledger.
+	if _, err := tx.ExecContext(ctx, `UPDATE futures_trade_scopes SET report=NULL,report_sha256=NULL,summary=$2,summary_sha256=$3,audit_count=$4,audit_bytes=$5,
+        projection_version=2,projection_state=$6,projection_sha256=$7,projection_dirty=false,updated_at=clock_timestamp() WHERE scope_key=$1`, key, report, digest[:], count, size, checkpoint, checkpointSum[:]); err != nil {
 		return TradeIngestResult{}, err
 	}
 	var invalidApplication bool
@@ -240,7 +273,7 @@ func observeTradesTx(ctx context.Context, tx *sql.Tx, scope TradeScope, observat
         OR EXISTS(SELECT 1 FROM futures_event_inbox WHERE scope_key=$1 AND state<>'applied')`, key).Scan(&invalidApplication); err != nil {
 		return TradeIngestResult{}, err
 	}
-	return TradeIngestResult{Replayed: allReplayed, Blocked: p.report.Blocked || invalidApplication, PendingCount: p.report.PendingCount}, nil
+	return TradeIngestResult{Replayed: allReplayed, Blocked: header.Blocked || invalidApplication, PendingCount: header.PendingCount}, nil
 }
 
 type pendingTradeObservation struct {
@@ -315,24 +348,47 @@ func insertTradeObservations(ctx context.Context, tx *sql.Tx, key string, items 
 // Read exposes quality alongside facts. Blocked reports must never be presented
 // as a complete trading ledger or used to enable trading/accounting readiness.
 func (s *TradeStore) Read(ctx context.Context, scope TradeScope) (TradeReport, error) {
-	return readTradeReport(ctx, s.db, scope)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return TradeReport{}, err
+	}
+	defer tx.Rollback()
+	report, err := readTradeReportSnapshot(ctx, tx, scope)
+	if err != nil {
+		return TradeReport{}, err
+	}
+	return report, tx.Commit()
 }
 
-func readTradeReport(ctx context.Context, db interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, scope TradeScope) (TradeReport, error) {
+// The close-baseline writer uses READ COMMITTED; hold the scope across assembly.
+func readTradeReport(ctx context.Context, tx *sql.Tx, scope TradeScope) (TradeReport, error) {
+	var key string
+	err := tx.QueryRowContext(ctx, `SELECT scope_key FROM futures_trade_scopes WHERE scope_key=$1 FOR SHARE`, tradeScopeKey(scope)).Scan(&key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TradeReport{}, ErrNoSnapshot
+	}
+	if err != nil {
+		return TradeReport{}, err
+	}
+	return readTradeReportSnapshot(ctx, tx, scope)
+}
+
+func readTradeReportSnapshot(ctx context.Context, db *sql.Tx, scope TradeScope) (TradeReport, error) {
 	if err := scope.validate(); err != nil {
 		return TradeReport{}, err
 	}
 	contextJSON, _ := json.Marshal(scope)
-	var raw, digest, invalid, events []byte
+	var raw, digest, invalid, events, state, stateHash []byte
+	var version, count, size int
 	var dirty bool
-	err := db.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty,
+	err := db.QueryRowContext(ctx, `SELECT CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,projection_dirty,
         COALESCE((SELECT jsonb_agg(a.batch_id ORDER BY a.batch_id) FROM futures_query_trade_applications a
         JOIN futures_query_batches b USING(batch_id) WHERE a.scope_key=s.scope_key AND b.state<>'ready'),'[]'::jsonb),
         COALESCE((SELECT jsonb_agg('event '||event_id||': '||state||' '||reason ORDER BY event_id)
         FROM futures_event_inbox e WHERE e.scope_key=s.scope_key AND e.state<>'applied'),'[]'::jsonb)
-        FROM futures_trade_scopes s WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest, &dirty, &invalid, &events)
+        ,projection_version,audit_count,audit_bytes,projection_state,projection_sha256
+        FROM futures_trade_scopes s WHERE scope_key=$1 AND context_json=$2::jsonb`, tradeScopeKey(scope), contextJSON).Scan(&raw, &digest, &dirty, &invalid, &events, &version, &count, &size, &state, &stateHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TradeReport{}, ErrNoSnapshot
 	}
@@ -349,6 +405,20 @@ func readTradeReport(ctx context.Context, db interface {
 	var report TradeReport
 	if err := json.Unmarshal(raw, &report); err != nil {
 		return TradeReport{}, err
+	}
+	if version == 2 {
+		header, cp, err := decodeTradeEntityHeader(scope, count, size, raw, digest, state, stateHash)
+		if err != nil {
+			return TradeReport{}, err
+		}
+		p, err := loadTradeEntities(ctx, db, header, nil, nil, nil, true)
+		if err != nil {
+			return TradeReport{}, err
+		}
+		if len(p.report.Orders) != cp.Orders || len(p.report.Executions) != cp.Executions || len(entityAliases(p)) != cp.Aliases || p.report.PendingCount != header.PendingCount {
+			return TradeReport{}, ErrTradeCheckpoint
+		}
+		report = p.report
 	}
 	var invalidBatches []string
 	if err := json.Unmarshal(invalid, &invalidBatches); err != nil {

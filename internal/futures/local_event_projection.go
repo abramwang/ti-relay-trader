@@ -58,7 +58,9 @@ func (p *LocalEventProjector) Step(ctx context.Context, h StreamHandle, limit in
 	}
 	var conflict, dirty bool
 	var report, digest []byte
-	err := p.store.db.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty,EXISTS(SELECT 1 FROM futures_stream_inbox s JOIN futures_event_inbox e USING(event_id) WHERE s.stream_key=$1 AND s.state='delivered' AND e.scope_key=$2 AND e.state='conflict') FROM futures_trade_scopes WHERE scope_key=$2`, h.stream, p.key).Scan(&report, &digest, &dirty, &conflict)
+	err := p.store.db.QueryRowContext(ctx, `SELECT CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,projection_dirty,
+        EXISTS(SELECT 1 FROM futures_stream_inbox s JOIN futures_event_inbox e USING(event_id) WHERE s.stream_key=$1 AND s.state='delivered' AND e.scope_key=$2 AND e.state='conflict') FROM futures_trade_scopes WHERE scope_key=$2`, h.stream, p.key).Scan(&report, &digest, &dirty, &conflict)
 	if err != nil {
 		return out, err
 	}
@@ -147,7 +149,8 @@ func (p *LocalEventProjector) apply(ctx context.Context, h StreamHandle, id int6
 	}
 	var report, digest []byte
 	var dirty bool
-	if err := tx.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, p.key).Scan(&report, &digest, &dirty); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT CASE WHEN projection_version=2 THEN summary ELSE report END,
+        CASE WHEN projection_version=2 THEN summary_sha256 ELSE report_sha256 END,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, p.key).Scan(&report, &digest, &dirty); err != nil {
 		return "", "", err
 	}
 	if dirty {
