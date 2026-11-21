@@ -296,6 +296,7 @@ func TestCFFEXCloseReservationRejectsUnmanagedFactsAndIntentions(t *testing.T) {
 
 func TestCFFEXCloseReservationBaselineCannotBeReplaced(t *testing.T) {
 	f := newCloseReservationFixture(t)
+	migrateFuturesTest(t, f.db, f.ctx, "000046_futures_test_trade_publication", "up")
 	raw, e := f.intent("first", 8, "S")
 	if _, err := f.reserve(raw, e); err != nil {
 		t.Fatal(err)

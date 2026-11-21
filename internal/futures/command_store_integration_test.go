@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -234,22 +233,11 @@ func TestCommandStoreAuditFailureRollsBackEverything(t *testing.T) {
 	registerVector(t, s, ctx, v, registrationEvidence(t, v), "registered")
 }
 
-func TestCommandStoreCapacityAndCorruption(t *testing.T) {
+func TestCommandStoreCorruption(t *testing.T) {
 	db, s, ctx := commandTestDB(t)
 	v := intentVectors(t)["submit"]
 	first := registerVector(t, s, ctx, v, registrationEvidence(t, v), "registered")
 	registerVector(t, s, ctx, v, RegistrationEvidence{}, "replayed")
-	if _, err := db.ExecContext(ctx, `UPDATE futures_command_routes SET audit_count=4096`); err != nil {
-		t.Fatal(err)
-	}
-	registerVector(t, s, ctx, v, RegistrationEvidence{}, "replayed")
-	w := intentVectors(t)["same_intent_new_transport"]
-	if _, err := s.Register(ctx, w.scope(), w.Stream, []byte(w.Raw), RegistrationEvidence{}); !errors.Is(err, ErrAuditCapacity) {
-		t.Fatal(err)
-	}
-	if storedCount(t, db, "futures_command_messages") != 1 {
-		t.Fatal("capacity left alias behind")
-	}
 	if _, err := db.ExecContext(ctx, `UPDATE futures_commands SET body=body || ' '::bytea WHERE command_id=$1`, first.CommandID); err != nil {
 		t.Fatal(err)
 	}
@@ -262,6 +250,7 @@ func TestCommandStoreMigrationDown(t *testing.T) {
 	db, s, ctx := commandTestDB(t)
 	v := intentVectors(t)["submit"]
 	registerVector(t, s, ctx, v, registrationEvidence(t, v), "registered")
+	migrateFuturesTest(t, db, ctx, "000061_futures_command_backlog", "down")
 	migrateFuturesTest(t, db, ctx, "000050_futures_reply_results", "down")
 	migrateFuturesTest(t, db, ctx, "000047_futures_cancel_rejections", "down")
 	migrateFuturesTest(t, db, ctx, "000045_futures_query_reviews", "down")

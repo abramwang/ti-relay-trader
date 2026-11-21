@@ -84,6 +84,7 @@ func TestReplyProjectionQueriesPersistAndDisplay(t *testing.T) {
 			if stored == nil || stored.State != "ready" || stored.Snapshot == nil || stored.NativeAuditVerified {
 				t.Fatal(stored)
 			}
+			assertCommandPending(t, f.db, f.c.CommandID, false)
 			row, err := f.store.Record(f.ctx, f.h, id)
 			if err != nil || row.State != "delivered" || row.ReplyCommandID.Int64 != f.c.CommandID || row.BatchID.Valid || row.EventID.Valid {
 				t.Fatal(row, err)
@@ -132,6 +133,7 @@ func TestReplyProjectionRestartPartialAndLateConflict(t *testing.T) {
 	if got := f.result(t); got.State != "collecting" || got.Snapshot != nil {
 		t.Fatal(got)
 	}
+	assertCommandPending(t, f.db, f.c.CommandID, true)
 	cp, err := f.store.ReplyCheckpoint(f.ctx, f.h.config)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +155,7 @@ func TestReplyProjectionRestartPartialAndLateConflict(t *testing.T) {
 	if got := f.result(t); got.State != "ready" || len(got.Snapshot.Positions) != 1 {
 		t.Fatal(got)
 	}
+	assertCommandPending(t, f.db, f.c.CommandID, false)
 	bad := editBody(t, last, func(m map[string]any) { m["message"] = "same message changed" })
 	f.append(t, bad)
 	if page, err := f.p.Step(f.ctx, f.h, 32); err != nil || page.Invalid != 1 {
@@ -161,6 +164,7 @@ func TestReplyProjectionRestartPartialAndLateConflict(t *testing.T) {
 	if got := f.result(t); got.State != "invalid" || got.Snapshot != nil {
 		t.Fatal(got)
 	}
+	assertCommandPending(t, f.db, f.c.CommandID, true)
 	f.p, _ = NewReplyProjector(f.store, f.c.Scope, f.target)
 	f.append(t, first)
 	if _, err := f.p.Step(f.ctx, f.h, 32); err != nil {
@@ -315,6 +319,7 @@ func TestReplyProjectionTradeHistoryAndNoOrderMutation(t *testing.T) {
 			if item.Response == nil || item.Response.State != "accepted" || item.BrokerStateKnown || item.RetrySafe || item.Publication.BrokerAccepted || item.Response.OrderStateChanged {
 				t.Fatal(item)
 			}
+			assertCommandPending(t, db, r.CommandID, false)
 			if storedCount(t, db, "futures_order_states") != 0 || storedCount(t, db, "futures_execution_facts") != 0 || storedCount(t, db, "futures_event_inbox") != 0 {
 				t.Fatal("receipt became economic order state")
 			}

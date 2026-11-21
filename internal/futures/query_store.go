@@ -366,6 +366,11 @@ func (s *QueryStore) save(ctx context.Context, tx *sql.Tx, r *storedBatch) (bool
 	if err != nil {
 		return false, err
 	}
+	if c := r.batch.context.Command; c != nil {
+		if err := setCommandPending(ctx, tx, c.CommandID, r.batch.state != BatchReady && r.batch.state != BatchFailed); err != nil {
+			return false, err
+		}
+	}
 	if r.batch.state != BatchReady {
 		return false, nil
 	}

@@ -30,6 +30,7 @@ var futuresTestMigrations = []string{
 	"000050_futures_reply_results",
 	"000059_futures_stream_backlog",
 	"000060_futures_capture_backpressure",
+	"000061_futures_command_backlog",
 }
 
 func migrateFuturesTest(t *testing.T, db *sql.DB, ctx context.Context, name, direction string) {

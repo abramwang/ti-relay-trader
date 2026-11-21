@@ -2,6 +2,26 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## 期货命令历史与结果积压
+
+`command_backlog_integration_test.go`及既有命令/发布/回执测试在临时PG使用000061：实际登记4096笔后新意图拒绝、别名和冲突仍留档，完整结果释放后并发仅一笔占用余量，晚到矛盾恢复积压；独立64MiB字节上限和超过旧64MiB拒绝审计历史继续登记。原命令、审计、别名和风险责任不删，不以回执accepted冒充订单终态。
+
+覆盖升级后保守回填、原文和结果摘要重验、完整失败/空/部分/未知发布的区别、独立查询结果、有界扫描、缺失/损坏拒绝、回执交接或未发布结果写入失败的原子回滚、重建读者不重发、超旧上限拒绝降级。所有数据为合成输入，不接业务Redis/OC。
+
+```bash
+go test ./...
+go vet ./...
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'Test(Command|Reply|QueryPublication|Assessment|BoundQuery|QueryStore|Capture|Resident|CFFEX|CancelService|OrderService)' -timeout 10m
+```
+
+迁移和正常写入不得与旧版登记程序混跑；须先停相关writer再升级。实际磁盘预警/耗尽及长期归档未在本轮实现，不将局部SQL故障注入等同整盘故障验收。
+
+本轮全量Go、vet及worker/capture构建通过。4096笔并发边界、64MiB在途和超64MiB历史审计压力用例两轮通过；扩大PG/本地Redis回归发现旧平仓夹具漏建000046交易发布表，已补齐，未放宽运行校验。新增测试初次写错结果表名也已修正。最终命令登记、历史重验、发布、分页回执、平仓夹具及实际本地Redis投影专项`-race`全部通过（24.995秒）；扩大回归其余用例通过，共享Redis用例仍跳过。不把这些结果当线上稳定性验收。
+
 ## 期货收件历史与积压
 
 `stream_usage*_test.go`在临时PG迁移至000059，区分历史总量与pending/quarantined积压。覆盖50,000条合成交接历史后继续收件、64MiB积压满时整页拒绝但可继续真实查询交接、隔离不释放、旧原文重投/重建读者、增量计数与实际正文一致、迁移不修补损坏及超旧上限降级拒绝。既有Stream/Heartbeat、回执/查询投影及并发事务回归一并运行。不存在自动清理、伪造delivered或向OC发消息的路径。

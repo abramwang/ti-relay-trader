@@ -220,13 +220,28 @@ func (s *CommandStore) publishTestRegistered(ctx context.Context, scope CommandS
 	} else if _, e := streamID(entry); e != nil || entry == "0-0" {
 		return attempt, ErrQueryPublishUnknown
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET state=$2,entry_id=$3,reason=$4,finished_at=clock_timestamp() WHERE command_id=$1 AND state='attempted' AND target_json=$5::jsonb`, id, state, storedEntry, reason, targetRaw)
+	finish, err := beginFuturesTransaction(ctx, s.db)
+	if err != nil {
+		attempt.ObservedStreamID = entry
+		return attempt, ErrQueryPublishUnknown
+	}
+	defer finish.Rollback()
+	result, err := finish.ExecContext(ctx, `UPDATE `+table+` SET state=$2,entry_id=$3,reason=$4,finished_at=clock_timestamp() WHERE command_id=$1 AND state='attempted' AND target_json=$5::jsonb`, id, state, storedEntry, reason, targetRaw)
 	if err != nil {
 		attempt.ObservedStreamID = entry
 		return attempt, ErrQueryPublishUnknown
 	}
 	n, err := result.RowsAffected()
 	if err != nil || n != 1 {
+		attempt.ObservedStreamID = entry
+		return attempt, ErrQueryPublishUnknown
+	}
+	if rejected {
+		if err := setCommandPending(ctx, finish, id, false); err != nil {
+			return attempt, ErrQueryPublishUnknown
+		}
+	}
+	if err := finish.Commit(); err != nil {
 		attempt.ObservedStreamID = entry
 		return attempt, ErrQueryPublishUnknown
 	}

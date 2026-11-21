@@ -67,6 +67,7 @@ func TestQueryPublicationDurabilityAndNoResend(t *testing.T) {
 				}
 			}
 			result, err := s.publishTestQuery(ctx, v.scope(), r.CommandID, r.Original.MessageID, publicationTarget(), f)
+			assertCommandPending(t, db, r.CommandID, scenario != "atomic_gate")
 			switch scenario {
 			case "published":
 				if err != nil || result.Published == nil || !*result.Published || result.StreamID != "2-0" {

@@ -127,9 +127,12 @@ func (s *CommandStore) registerAtomic(ctx context.Context, scope CommandScope, s
 	if _, err = tx.ExecContext(ctx, `INSERT INTO futures_command_routes(route_key) VALUES($1) ON CONFLICT DO NOTHING`, key); err != nil {
 		return CommandRegistration{}, err
 	}
-	var count, total int
+	var count, total int64
 	if err = tx.QueryRowContext(ctx, `SELECT audit_count,audit_bytes FROM futures_command_routes WHERE route_key=$1 FOR UPDATE`, key).Scan(&count, &total); err != nil {
 		return CommandRegistration{}, err
+	}
+	if count < 0 || total < 0 {
+		return CommandRegistration{}, ErrCommandWork
 	}
 	if replay != nil {
 		existing, err := replay(tx)
@@ -149,6 +152,11 @@ func (s *CommandStore) registerAtomic(ctx context.Context, scope CommandScope, s
 	if err != nil {
 		return CommandRegistration{}, err
 	}
+	if out.Outcome == "registered" {
+		if err := checkCommandBacklog(ctx, tx, key); err != nil {
+			return CommandRegistration{}, err
+		}
+	}
 	if reserve != nil {
 		if err := reserve(tx, out); err != nil {
 			return CommandRegistration{}, err
@@ -162,18 +170,11 @@ func (s *CommandStore) registerAtomic(ctx context.Context, scope CommandScope, s
 			return CommandRegistration{}, fmt.Errorf("command audit integrity failure")
 		}
 	} else if errors.Is(err, sql.ErrNoRows) {
-		size := len(raw) + len(c.Intent) + len(evidence)
-		if count >= 4096 || size > 67108864-total {
-			return CommandRegistration{}, ErrAuditCapacity
-		}
 		var id any
 		if out.CommandID != 0 {
 			id = out.CommandID
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO futures_command_audit(route_key,message_id,body,body_sha256,intent,intent_sha256,evidence,evidence_sha256,outcome,reason,command_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, key, c.MessageID, raw, bodyHash, c.Intent, intentHash, evidence, evidenceHash, out.Outcome, out.Reason, id); err != nil {
-			return CommandRegistration{}, err
-		}
-		if _, err = tx.ExecContext(ctx, `UPDATE futures_command_routes SET audit_count=audit_count+1,audit_bytes=audit_bytes+$2 WHERE route_key=$1`, key, size); err != nil {
 			return CommandRegistration{}, err
 		}
 	} else {
@@ -260,9 +261,15 @@ func resolveCommand(ctx context.Context, tx *sql.Tx, key string, scope CommandSc
 func readRegisteredCommand(ctx context.Context, tx *sql.Tx, key string, id int64) (CommandRegistration, error) {
 	var raw, scopeRaw, intent, fieldsRaw, evidence []byte
 	var stream, rawHash, intentHash, evidenceHash, idem string
-	err := tx.QueryRowContext(ctx, `SELECT scope_json,stream_suffix,body,body_sha256,intent,intent_sha256,fields_json,evidence_json,idempotency_key,evidence_sha256 FROM futures_commands WHERE route_key=$1 AND command_id=$2`, key, id).Scan(&scopeRaw, &stream, &raw, &rawHash, &intent, &intentHash, &fieldsRaw, &evidence, &idem, &evidenceHash)
+	var workValid bool
+	err := tx.QueryRowContext(ctx, `SELECT c.scope_json,c.stream_suffix,c.body,c.body_sha256,c.intent,c.intent_sha256,c.fields_json,c.evidence_json,c.idempotency_key,c.evidence_sha256,
+        COALESCE(w.route_key=c.route_key AND w.work_bytes=octet_length(c.body)::bigint+octet_length(c.intent)+octet_length(c.evidence_json::text),false)
+        FROM futures_commands c LEFT JOIN futures_command_work w USING(command_id) WHERE c.route_key=$1 AND c.command_id=$2`, key, id).Scan(&scopeRaw, &stream, &raw, &rawHash, &intent, &intentHash, &fieldsRaw, &evidence, &idem, &evidenceHash, &workValid)
 	if err != nil {
 		return CommandRegistration{}, err
+	}
+	if !workValid {
+		return CommandRegistration{}, ErrCommandWork
 	}
 	var scope CommandScope
 	var fields []IntentField

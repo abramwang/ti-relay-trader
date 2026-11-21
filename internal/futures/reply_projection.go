@@ -13,18 +13,20 @@ import (
 // an unsolicited response. It records OC facts, not independently reviewed SDK
 // evidence or external order/fill economic entries.
 type ReplyProjector struct {
-	store  *StreamStore
-	scope  CommandScope
-	target TestQueryTarget
-	after  int64
+	store     *StreamStore
+	scope     CommandScope
+	target    TestQueryTarget
+	after     int64
+	workAfter int64
 }
 
 type ReplyProjectionPage struct {
-	Scanned       int             `json:"scanned"`
-	Delivered     int             `json:"delivered"`
-	Invalid       int             `json:"invalid"`
-	Deferred      []DispatchIssue `json:"deferred"`
-	CycleComplete bool            `json:"cycle_complete"`
+	Scanned             int             `json:"scanned"`
+	Delivered           int             `json:"delivered"`
+	Invalid             int             `json:"invalid"`
+	Deferred            []DispatchIssue `json:"deferred"`
+	CycleComplete       bool            `json:"cycle_complete"`
+	CommandWorkReleased int             `json:"command_work_released"`
 }
 
 func NewReplyProjector(store *StreamStore, scope CommandScope, target TestQueryTarget) (*ReplyProjector, error) {
@@ -38,6 +40,11 @@ func (p *ReplyProjector) Step(ctx context.Context, h StreamHandle, limit int) (R
 	out := ReplyProjectionPage{Deferred: []DispatchIssue{}}
 	if h.config.Role != "reply" || h.config.Scope != p.scope || h.config.SourceID != p.target.SourceID {
 		return out, ErrStreamIdentity
+	}
+	var err error
+	out.CommandWorkReleased, err = p.reconcileCommandWork(ctx, h, limit)
+	if err != nil {
+		return out, err
 	}
 	rows, err := p.store.Pending(ctx, h, p.after, limit)
 	if err != nil {
@@ -181,6 +188,9 @@ func (p *ReplyProjector) apply(ctx context.Context, h StreamHandle, id int64) (s
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE futures_stream_inbox SET state='delivered',reply_command_id=$2,delivered_at=clock_timestamp() WHERE receipt_id=$1`, id, commandID)
 	if err != nil {
+		return "", "", err
+	}
+	if err := setCommandPending(ctx, tx, commandID, pendingReplyResult(result)); err != nil {
 		return "", "", err
 	}
 	return result.State, "", tx.Commit()

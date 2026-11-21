@@ -247,7 +247,7 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 				return err
 			}
 		}
-		if phaseChanged || newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || (p.ReplyProjection != nil && p.ReplyProjection.Delivered > 0) || time.Since(lastReport) >= o.ReportInterval {
+		if phaseChanged || newRecords > 0 || (p.LocalProjection != nil && (p.LocalProjection.Applied+p.LocalProjection.Conflicts) > 0) || (p.ReplyProjection != nil && p.ReplyProjection.Delivered+p.ReplyProjection.CommandWorkReleased > 0) || time.Since(lastReport) >= o.ReportInterval {
 			if err := report(phase); err != nil {
 				return fmt.Errorf("resident capture output failed: %w", err)
 			}
@@ -256,7 +256,7 @@ func followTestStream(ctx context.Context, source *TestStreamSource, store *Stre
 			return ErrResidentCaptureBudget
 		}
 		projectionProgress := p.LocalProjection != nil && (p.LocalProjection.Applied > 0 || (!p.LocalProjection.CycleComplete && p.LocalProjection.Scanned > 0))
-		projectionProgress = projectionProgress || (p.ReplyProjection != nil && (p.ReplyProjection.Delivered > 0 || (!p.ReplyProjection.CycleComplete && p.ReplyProjection.Scanned > 0)))
+		projectionProgress = projectionProgress || (p.ReplyProjection != nil && (p.ReplyProjection.Delivered+p.ReplyProjection.CommandWorkReleased > 0 || (!p.ReplyProjection.CycleComplete && p.ReplyProjection.Scanned > 0)))
 		delay = consumerDelay(delay, TestConsumerOptions{MinDelay: o.MinDelay, MaxDelay: o.MaxDelay}, newRecords > 0 || projectionProgress)
 		timer := time.NewTimer(delay)
 		select {
