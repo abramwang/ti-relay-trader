@@ -134,7 +134,7 @@ func safeError(err error) error {
 		return nil
 	}
 	for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity,
-		futures.ErrStreamHistory, futures.ErrAuditCapacity, futures.ErrLocalProjectionConflict, futures.ErrCaptureUnavailable} {
+		futures.ErrStreamHistory, futures.ErrAuditCapacity, futures.ErrLocalProjectionConflict, futures.ErrTradeCheckpoint, futures.ErrCaptureUnavailable} {
 		if errors.Is(err, known) {
 			return known
 		}

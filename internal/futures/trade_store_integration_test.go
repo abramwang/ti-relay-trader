@@ -254,12 +254,21 @@ func TestTradeStoreMalformedAuditIntegrityAndDown(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT body FROM futures_trade_observations`).Scan(&saved); err != nil || !bytes.Equal(raw, saved) {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE futures_trade_observations SET body='broken'::bytea`); err != nil {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Observe(ctx, tradeScope(), "good", "fill", tradeFixture(t, "fill")); err == nil {
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE futures_trade_observations SET body='broken'::bytea`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := observeTradesTx(ctx, tx, tradeScope(), []tradeObservation{{"good", "fill", tradeFixture(t, "fill")}}); err == nil {
 		t.Fatal("corrupted audit ignored")
 	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	migrateFuturesTest(t, db, ctx, "000062_futures_trade_checkpoint", "down")
 	migrateFuturesTest(t, db, ctx, "000061_futures_command_backlog", "down")
 	migrateFuturesTest(t, db, ctx, "000050_futures_reply_results", "down")
 	migrateFuturesTest(t, db, ctx, "000049_futures_capture_services", "down")

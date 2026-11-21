@@ -240,7 +240,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, di
 		err = futures.ReceiveTestQueryReplies(bounded, source, store, publisher, futures.TestQueryReceiveOptions{Role: *role, Checkpoint: futures.HeartbeatCheckpoint{Owner: *owner, Cursor: *cursor}, PageSize: *pageSize, MaxPages: *maxPages, Review: review, Evidence: evidence}, func(p futures.QueryReceiveProgress) error { return json.NewEncoder(out).Encode(p) })
 	}
 	if err != nil {
-		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrStreamHistory, futures.ErrResidentCaptureBudget, futures.ErrLocalProjectionConflict, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
+		for _, known := range []error{futures.ErrStreamOwner, futures.ErrStreamCursor, futures.ErrStreamIdentity, futures.ErrStreamHistory, futures.ErrResidentCaptureBudget, futures.ErrLocalProjectionConflict, futures.ErrTradeCheckpoint, futures.ErrBatchIdentity, futures.ErrQueryPublishGate, context.Canceled, context.DeadlineExceeded} {
 			if errors.Is(err, known) {
 				return fmt.Errorf("TEST reply receive stopped: %w; no command sent", known)
 			}

@@ -2,6 +2,24 @@
 
 当前测试覆盖 Go 核心模块、Python SDK、交易日任务、临时 PostgreSQL migration/repository、9092 页面/API 轻量冒烟和关键运维页面 Playwright 交互。
 
+## 期货日账本增量检查点
+
+`trade_checkpoint*_test.go`在000062上验证检查点重开与原文全量重建等价：60组固定种子乱序，每次恢复后追加一条，逐步对比报告与私有索引，覆盖费用补充、成交先到、稀疏委托、别名冲突、超量、混合v1/v2和非法原文。PG逐次核验重复/source冲突，50组独立订单成交时单笔只写关联两行、重投写零事实行；旧日首次激活、末尾事务故障回滚、原文/事实修改删除TRUNCATE、检查点缺失/损坏/计数差及降级拒绝均隔离测试。
+
+```bash
+go test ./...
+go vet ./...
+RELAY_TEST_PG_BIN=/home/ti-relay-trader/.runtime/futures-pg/server/usr/lib/postgresql/17/bin \
+RELAY_FUTURES_LOCAL_REDIS_SERVER=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/bin/redis-server \
+LD_LIBRARY_PATH=/home/ti-relay-trader/.runtime/redis-isolated-tools/extracted/usr/lib/x86_64-linux-gnu \
+  scripts/test-futures-postgres.sh \
+  -run 'TestTrade|TestFillV2|TestLocalProjection|TestStreamDispatch|TestClose|TestCFFEX|TestCaptureService' -timeout 10m
+```
+
+检查点/整日报告仍整体保存，不是常数内存基准，日上限不变。无真实柜台/生产库连接、业务迁移或部署；临时PG故障注入不等于物理断电或整日生产验收。旧审计损坏测试在隔离事务内回滚，另有真实提交的损坏用例确认不能继续写入，不通过清空历史完成测试。
+
+11-21本轮验证：万笔订单加万笔成交、批量末尾故障回滚及检查点首轮PG/race回归295.058秒通过；随后完整性检查补充后的持续收件/平仓/分发/存储巡检/检查点/旧账本回归98.186秒通过。`go test ./...`、`go vet ./...`及worker/capture/replies构建通过；全库Go命令未注入数据库，PG用例由上述隔离脚本另跑。这些是合成样本回归耗时，不是线上吞吐或前后性能提升比例。
+
 ## 期货只读存储巡检
 
 `storage_inspection_test.go`与worker CLI测试覆盖80%/90%阈值、整数溢出、零上限、INFO缺失/重复、run_id不符、历史淘汰不当作当前速率、AOF失败、显式挂载点/inode不可用、错库/来源及缺schema不补零。临时PG和本地Redis验证实际CLI报告，并比较巡检前后数据库原文/计数/owner/cursor及Redis所有键内容，确保不抢占、不写业务数据、不创建receiver。已交接历史仍计保留量，不再计结果等待积压。

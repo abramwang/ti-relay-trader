@@ -56,11 +56,14 @@ func (p *LocalEventProjector) Step(ctx context.Context, h StreamHandle, limit in
 	if h.config.Role != "event" || h.config.Scope != p.scope || h.config.SourceID != p.target.SourceID {
 		return out, ErrStreamIdentity
 	}
-	var conflict bool
+	var conflict, dirty bool
 	var report, digest []byte
-	err := p.store.db.QueryRowContext(ctx, `SELECT report,report_sha256,EXISTS(SELECT 1 FROM futures_stream_inbox s JOIN futures_event_inbox e USING(event_id) WHERE s.stream_key=$1 AND s.state='delivered' AND e.scope_key=$2 AND e.state='conflict') FROM futures_trade_scopes WHERE scope_key=$2`, h.stream, p.key).Scan(&report, &digest, &conflict)
+	err := p.store.db.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty,EXISTS(SELECT 1 FROM futures_stream_inbox s JOIN futures_event_inbox e USING(event_id) WHERE s.stream_key=$1 AND s.state='delivered' AND e.scope_key=$2 AND e.state='conflict') FROM futures_trade_scopes WHERE scope_key=$2`, h.stream, p.key).Scan(&report, &digest, &dirty, &conflict)
 	if err != nil {
 		return out, err
+	}
+	if dirty {
+		return out, ErrTradeCheckpoint
 	}
 	ledgerConflict, err := localReportConflict(report, digest)
 	if err != nil {
@@ -143,8 +146,12 @@ func (p *LocalEventProjector) apply(ctx context.Context, h StreamHandle, id int6
 		return "", "business_identity_unresolved", nil // rollback the handoff too
 	}
 	var report, digest []byte
-	if err := tx.QueryRowContext(ctx, `SELECT report,report_sha256 FROM futures_trade_scopes WHERE scope_key=$1`, p.key).Scan(&report, &digest); err != nil {
+	var dirty bool
+	if err := tx.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, p.key).Scan(&report, &digest, &dirty); err != nil {
 		return "", "", err
+	}
+	if dirty {
+		return "", "", ErrTradeCheckpoint
 	}
 	conflict, err := localReportConflict(report, digest)
 	if err != nil {

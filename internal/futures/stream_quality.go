@@ -84,7 +84,8 @@ func (s *StreamStore) InspectDeliveryQuality(ctx context.Context, event, reply S
 		return out, err
 	}
 	var raw, digest []byte
-	err = tx.QueryRowContext(ctx, `SELECT report,report_sha256 FROM futures_trade_scopes WHERE scope_key=$1`, key).Scan(&raw, &digest)
+	var dirty bool
+	err = tx.QueryRowContext(ctx, `SELECT report,report_sha256,projection_dirty FROM futures_trade_scopes WHERE scope_key=$1`, key).Scan(&raw, &digest, &dirty)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.LedgerMissing = true
 	} else if err != nil {
@@ -92,7 +93,7 @@ func (s *StreamStore) InspectDeliveryQuality(ctx context.Context, event, reply S
 	} else {
 		sum := sha256.Sum256(raw)
 		var report TradeReport
-		if !bytes.Equal(sum[:], digest) || json.Unmarshal(raw, &report) != nil || report.Scope != expected.Scope {
+		if dirty || !bytes.Equal(sum[:], digest) || json.Unmarshal(raw, &report) != nil || report.Scope != expected.Scope {
 			return out, fmt.Errorf("trade projection integrity failure")
 		}
 		out.LedgerBlocked = report.Blocked || len(report.Conflicts) > 0

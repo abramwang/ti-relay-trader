@@ -38,8 +38,8 @@ type TradeReport struct {
 	Blocked             bool
 }
 
-// tradeProjection is rebuilt from durable observations. It is not a live event
-// consumer, does not infer external ownership and never fabricates missing orders.
+// tradeProjection can resume a verified checkpoint or rebuild from observations.
+// It never infers external ownership or fabricates missing orders.
 type tradeProjection struct {
 	report            TradeReport
 	aliases           map[string]string
@@ -51,11 +51,13 @@ type tradeProjection struct {
 	totals            map[string]int64
 	overfilled        map[string]bool
 	conflicts         map[string]bool
+	changedOrders     map[string]bool
+	changedFills      map[string]bool
 	reconciledRecords int
 }
 
 func newTradeProjection(scope TradeScope) *tradeProjection {
-	return &tradeProjection{report: TradeReport{Scope: scope, Orders: map[string]*OrderRecord{}, Executions: map[string]*ExecutionRecord{}, Conflicts: []string{}}, aliases: map[string]string{}, ambiguous: map[string]bool{}, groups: map[string]map[string]*ExecutionRecord{}, dirtyAliases: map[string]bool{}, dirtyFills: map[string]bool{}, eligible: map[string]string{}, totals: map[string]int64{}, overfilled: map[string]bool{}, conflicts: map[string]bool{}}
+	return &tradeProjection{report: TradeReport{Scope: scope, Orders: map[string]*OrderRecord{}, Executions: map[string]*ExecutionRecord{}, Conflicts: []string{}}, aliases: map[string]string{}, ambiguous: map[string]bool{}, groups: map[string]map[string]*ExecutionRecord{}, dirtyAliases: map[string]bool{}, dirtyFills: map[string]bool{}, eligible: map[string]string{}, totals: map[string]int64{}, overfilled: map[string]bool{}, conflicts: map[string]bool{}, changedOrders: map[string]bool{}, changedFills: map[string]bool{}}
 }
 
 func (p *tradeProjection) conflict(reason string) {
@@ -106,6 +108,7 @@ func terminal(status string) bool { return oneOf(status, "filled", "cancelled", 
 
 func (p *tradeProjection) order(row OrderRow) {
 	key := row.GatewayOrderID
+	p.changedOrders[key] = true
 	old := p.report.Orders[key]
 	// A sparse order may acquire SysID, or an existing owner may become blocked.
 	p.dirtyAliases[p.alias(row.TradeRow)] = true
@@ -141,6 +144,7 @@ func (p *tradeProjection) order(row OrderRow) {
 	alias := p.alias(old.Order.TradeRow)
 	if alias != "" {
 		if owner, ok := p.aliases[alias]; ok && owner != key {
+			p.changedOrders[owner] = true
 			p.ambiguous[alias] = true
 			p.report.Orders[owner].Blocked = true
 			old.Blocked = true
@@ -196,6 +200,7 @@ func (p *tradeProjection) fill(id string, row FillRow) bool {
 		return false
 	}
 	p.report.FillIdentityVersion = version
+	p.changedFills[row.FillID] = true
 	r := p.report.Executions[row.FillID]
 	if r == nil {
 		r = &ExecutionRecord{Fill: row, GatewayHints: []string{}, FeeEvidence: []FeeEvidence{}, State: "pending"}
@@ -263,6 +268,7 @@ func (p *tradeProjection) reconcile() {
 				if p.eligible[id] == "" {
 					continue
 				}
+				p.changedFills[id] = true
 				if over {
 					r.State = "conflict"
 					r.LinkedGateway = ""
@@ -281,6 +287,7 @@ func (p *tradeProjection) reconcile() {
 }
 
 func (p *tradeProjection) reconcileExecution(alias, id string, r *ExecutionRecord) {
+	p.changedFills[id] = true
 	p.reconciledRecords++
 	if r.State == "pending" {
 		p.report.PendingCount--
