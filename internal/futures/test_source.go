@@ -29,12 +29,15 @@ type TestStreamSource struct {
 }
 
 func NewTestStreamSource(c TestSourceConfig) (*TestStreamSource, error) {
-	if c.Scope.validate() != nil || c.Scope.Route.Env != "test" ||
-		!(c.Scope.Route.BrokerID == "ctp" || strings.HasPrefix(c.Scope.Route.BrokerID, "ctp_")) ||
-		!validID(c.DeploymentID) || len(c.DeploymentID) > 128 {
+	if !validTestCommandScope(c.Scope) || !validID(c.DeploymentID) || len(c.DeploymentID) > 128 {
 		return nil, ErrStreamIdentity
 	}
 	return newTestSource(c)
+}
+
+func validTestCommandScope(s CommandScope) bool {
+	return s.validate() == nil && s.Route.Env == "test" &&
+		(s.Route.BrokerID == "ctp" || strings.HasPrefix(s.Route.BrokerID, "ctp_"))
 }
 
 func emptyNativeScope(s CommandScope) bool {

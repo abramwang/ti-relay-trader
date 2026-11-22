@@ -87,7 +87,7 @@ func NewTestOrderService(store *CommandStore, accounts []TestOrderAccount, marke
 	s := &TestOrderService{store: store, accounts: map[string]TestOrderAccount{}, market: market, target: target, cancelTarget: target}
 	for _, a := range accounts {
 		scope := a.Source.Scope
-		if scope.validate() != nil || scope.Route.Env != "test" || scope.Route.BrokerID != "ctp_4900" || scope.Route.AccountID != "300052141" || scope.NativeBrokerID != "4900" || scope.UserID != "300052141" || scope.InvestorID != "300052141" {
+		if !validTestCommandScope(scope) || (a.Markets == nil && !legacyAssessmentAccount(scope)) {
 			return nil, ErrOrderExecutionOff
 		}
 		if _, exists := s.accounts[scope.Route.AccountID]; exists {

@@ -14,12 +14,21 @@ func (a TestTradeApproval) executionActionAllowed(action string) bool {
 	return action == "order.submit" && a.ExecutionPermission.Submit || action == "order.cancel" && a.ExecutionPermission.Cancel
 }
 
-// Relay's Dongwu TEST day policy: explicit market sessions or legacy policies.
+// The original assessment defaults must not become another account's policy.
+func legacyAssessmentAccount(scope CommandScope) bool {
+	return scope.Route.Env == "test" && scope.Route.BrokerID == "ctp_4900" && scope.Route.AccountID == "300052141" &&
+		scope.NativeBrokerID == "4900" && scope.UserID == "300052141" && scope.InvestorID == "300052141"
+}
+
+// Relay's configured TEST day policy: explicit markets or legacy assessment.
 // This is not a holiday calendar or an OC authorization window.
 func relayExecutionTradeGate(route QueryRoute, target TestQueryTarget, a TestTradeApproval, h Heartbeat, now time.Time) (time.Time, error) {
 	bad := func() (time.Time, error) { return time.Time{}, ErrQueryPublishGate }
 	s := h.Assessment
-	if route.Env != "test" || route.BrokerID != "ctp_4900" || route.AccountID != "300052141" || s == nil || !s.relayExecution() {
+	if _, err := (HeartbeatInspectionRequest{Route: route, After: "0-0", Limit: 1}).Stream(); err != nil || s == nil || !s.relayExecution() {
+		return bad()
+	}
+	if a.MarketPolicy == nil && (route.BrokerID != "ctp_4900" || route.AccountID != "300052141") {
 		return bad()
 	}
 	action := "order.submit"

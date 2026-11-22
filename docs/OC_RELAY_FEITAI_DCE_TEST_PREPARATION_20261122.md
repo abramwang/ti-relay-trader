@@ -5,6 +5,8 @@
 
 11-22补充：**价格参考优先复用 Meridian。其 DCE 目录和受管订阅实现已部署，真实 tick/SSE 仍待下一个交易日验证。** 不把“柜台没有行情”理解为 Relay 没有行情源，不要求 OC 增加 MdAPI 或跟 Meridian 对接；具体就绪状态见第4节。
 
+11-22后续：已收到OC `2fa9f34`实现说明，方向符合本稿；Relay显式TEST账户的市场策略路径已去除东吴身份限定。双方未在线联测，脱敏样例尚待本机材料；云宿主机可达的TEST Redis仍未确定。最新交接见第8节，不据发布包存在就宣称可以直接启动。
+
 ## 1. 新信息与环境边界
 
 **CFFEX 官方环境暂未提供，原因是期货公司审批未完成；当前新增前置测评为飞泰 CTP 的大商所测试。** 先用这套环境完成柜台要求及通用请求/回报联调，不将结果计为三个完整 CFFEX 日盘或生产资金/风控验收。原每日启停与生产差距安排继续有效，具体见[11-21协调回执](OC_RELAY_DAILY_LIFECYCLE_COORDINATION_20261121.md)。
@@ -41,17 +43,17 @@ OC command group candidate: oc-ctp-1022-600102001
 
 ## 3. Relay 实际缺口
 
-本轮已核对源码；**现有程序不能仅替换账号就直接完成这轮交易测试**：
+初版已核对以下缺口；11-22后续进度同步在表中。**线上程序不能仅替换账号就直接完成这轮交易测试**：
 
 | 部分 | 当前能力/缺口 | Relay 下一项 |
 | --- | --- | --- |
 | 收件、查询及标准编码 | `TestStreamSource`/查询发布已接受显式 `ctp_*` TEST 范围，通用命令/成交 v2 和 DCE 主数据映射已接 | 配置固定新范围、独立接收状态和原生身份，验证真实新 session/代次/TradingDay；不重做协议 |
-| 执行身份 | `NewTestOrderService`、`validateTestTrade`、`relayExecutionTradeGate` 仍限定原东吴账户 | 改成操作员显式 TEST 账户配置及精确身份绑定，不把字符串替换成新的硬编码账户；不允许 API 调用方指定来源或升级权限 |
+| 执行身份 | 已将上述三处的显式市场策略路径改为配置化TEST CTP范围，源码未部署 | 必须明确原生Broker/User/Investor、路由和市场策略；账户级报撤开关仍独立。旧东吴默认测评/原生定价不扩给新账户，不允许API调用方指定来源或升级权限 |
 | 时段与交易日 | `MarketExecutionPolicy` 只支持日盘和工作日，发布还核对自然日与目标 TradingDay | 增加仅显式测试配置的柜台场景/测试窗口；自然时刻、SDK TradingDay 分开记录。周末可测不能靠改日期或取消生产日历校验实现 |
 | 价格证据 | 已有 Meridian DCE 精确目录/快照定价及 SSE 代理；真实 tick/SSE 待交易日验收，原生定价仍是东吴 SHFE 特例 | 优先复用现有 Meridian 链路，不另建行情源或把手工限价当首要前置；非交易时段的显式测试参考与实时行情分开，见下节 |
 | 终端/SDK及风险 | 通用 DCE 目录和市场入口已有源码，但新账户交易配置、权限展示及真实回报未验 | 使用相同命令登记、发布、回执/事件和数量核对链路；未知发布不重发，测试成交与生产资产严格隔离 |
 
-对应定位：[order_execution.go](../internal/futures/order_execution.go)、[trade_publish.go](../internal/futures/trade_publish.go)、[trade_execution.go](../internal/futures/trade_execution.go)、[market_execution.go](../internal/futures/market_execution.go)、[test_source.go](../internal/futures/test_source.go)。这些改造本轮尚未实现或启用。
+对应定位：[order_execution.go](../internal/futures/order_execution.go)、[trade_publish.go](../internal/futures/trade_publish.go)、[trade_execution.go](../internal/futures/trade_execution.go)、[market_execution.go](../internal/futures/market_execution.go)、[test_source.go](../internal/futures/test_source.go)。仅表中明确的源码项已实现；飞泰在线配置、接收器及执行入口未启用，盘外测试例外未实现。
 
 ## 4. Meridian定价与验收边界
 
@@ -125,3 +127,27 @@ Meridian现有安排是11-23 08:30刷新目录、08:50受管启动；这是其�
 本轮文档链接及差异检查通过；现有市场策略、DCE等目录/命令/成交身份、平仓模型隔离和命令期限四项定向单测通过。未做网络、数据库或柜台联测，不能将这些测试写成飞泰新账户已接通。
 
 上述为初版准备记录；11-22补充已执行第4节列明的Meridian只读HTTP核对，并增加目录就绪不掩盖快照/SSE未就绪的合成回归。`internal/market`的`TestFutures`回归及`internal/futures`六项目录/定价/时效/市场策略回归均通过`-race`。未连接飞泰柜台、建立真实SSE订阅、切换环境、修改权限或部署，不将HTTP目录成功升级为实时或报撤验收。
+
+## 8. OC接线交付后的安排
+
+用户转交OC `2fa9f34`说明：显式TEST配置可使用生产API模式，SDK配套版本为`v6.7.13_20260225 14:16:30.12079`；普通execution不加次数/时段/隐式行情门禁，发布脚本去除东吴账户硬编码。**这些是OC实现与离线验证声明，不是Relay独立验收或白名单宿主机实测。** 脱敏`oc_ctp_feitai_review_20261122`目录尚未在Relay本机找到；不需要含私有凭据的发布包、源码或二进制。
+
+本轮没有原则性协议异议，不要求OC重做字段矩阵。继续使用第2节固定候选；OC拟议epoch为`feitai-test-12a8e30174034e609f08a1781939557c`、consumer为`oc-ctp-1022-600102001-owner1`。这仍不是占用检查、初始化或接收器就绪证明，原生UserID/InvestorID的实际关系须在登录/查询后核实。
+
+### Redis与接收器
+
+- Relay已有TEST记录为内网`192.168.3.100:6379 DB0`，不能由本机可达推断白名单云宿主机可达。用户需指定该主机可达的TEST入口及认证方式；本轮不创建隧道、开放公网端口或使用生产`18186`实例替代，也不把生产实例另选DB当作独立测试服务。
+- 凭据仅进入既有私有配置，不写本文、Git或公开命令。若是同一TEST部署的网络映射，核对后保持原SourceID及连续性；若是新部署，明确新的SourceID，不冒用`shared-test-redis`。run_id必须准备窗口实测，不复制旧观察值或占位零值。
+- 双方先核对新前缀完整占用、实际来源、持久配置和各自责任，OC再按首次初始化路径执行；占用、部分初始化或结果未知不能删键重试。Relay独立配置接收库与owner/cursor，实际开始持续收件后才标就绪，不为此停生产链路。
+
+### 已推进及下一项
+
+Relay源码现接受操作员显式配置的TEST CTP账户及`execution.markets`，不从`ctp_1022`字符串猜原生BrokerID，也不强制UserID/InvestorID与逻辑账号相等。公开请求只能选择已配置账户，不接受来源、会话或授权覆盖。无显式市场的新账户拒绝继承旧东吴默认值；生产环境、证券路由及缺原生身份继续拒绝。权限、同交易日、新鲜心跳和Meridian、单次发布与未知不重发规则保持，不扩大成全天测试授权。
+
+OC下一项以**补齐私有TEST Redis配置、目标机离线检查及准备真实联调**为主，不新增行情/审批/容量平台。收到脱敏材料后Relay独立核对摘要和实际编码，再完成新账户配置、持续接收及日盘窗口准备；真实行情验证按第4节推进。暂不重复同样的离线矩阵或要求新大包。
+
+`confirm_settlement_once=true`在本交付中表示每个柜台交易日先查状态、必要时最多一次，不是整个进程生命周期仅首次确认。本轮保持关闭；是否及哪些交易日允许确认由Relay/用户决定，不能因已部署或常驻而自动扩大为每天授权。已成功或结果未知仍不重复；不删按日记录。真实资金范围、部分查询和外部未关联原文保持质量标记。
+
+当前生产配置仍为活动配置，未切换；没有探测柜台、连接业务Redis、初始化路由、部署、确认结算或发单。新账户只有源码/离线进展，不标记为在线可交易。CFFEX三日验收与生产差距继续独立记账。
+
+Relay验证：期货、API、报撤CLI和worker四包回归及`go vet`通过；另用临时Unix socket PostgreSQL执行配置化账户、市场策略、报撤服务、终端权限和execution回归，`-race`通过。覆盖2/5/3/10/1原手数/原价、账户/会话隔离、重复及未知不重发、5手累计成交2手后的独立撤单发布；回包/行情/运输均为合成数据或替身，不是飞泰实际数量规则。测试服务端只解压在临时目录，临时库已退出，不安装常驻服务或连接生产库。

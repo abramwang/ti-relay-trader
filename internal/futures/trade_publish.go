@@ -160,7 +160,11 @@ func validateTestTrade(c CommandRegistration, target TestQueryTarget, a TestTrad
 	if c.Scope.Route.Env != "test" || commandDigest(c.Original.Raw) != a.CommandSHA256 {
 		return ErrStreamIdentity
 	}
-	if a.PermissionProfile != "" && (c.Scope.Route.BrokerID != "ctp_4900" || c.Scope.Route.AccountID != "300052141" || c.Scope.NativeBrokerID != "4900" || c.Scope.InvestorID != "300052141" || c.Scope.UserID != "300052141") {
+	if a.relayExecution() && a.MarketPolicy != nil {
+		if !validTestCommandScope(c.Scope) {
+			return ErrStreamIdentity
+		}
+	} else if a.PermissionProfile != "" && !legacyAssessmentAccount(c.Scope) {
 		return ErrStreamIdentity
 	}
 	if a.relayExecution() && !a.executionActionAllowed(c.Original.Action) {
