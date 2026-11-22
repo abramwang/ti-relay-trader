@@ -4,7 +4,7 @@
 
 ## 11月22日飞泰DCE测试安排
 
-OC `2fa9f34`接线交付已按说明复核，方向无新增原则问题；Relay已接显式市场策略的TEST账户配置化，未部署。最新Redis、接收器、按日结算边界和OC下一项见[统一交接第8节](OC_RELAY_FEITAI_DCE_TEST_PREPARATION_20261122.md#8-oc接线交付后的安排)。不要将包内占位Redis、候选epoch或离线矩阵视为宿主机就绪；脱敏材料尚待Relay本机核验。下一步是补配置/准备联调，不再扩OC职责。
+OC `2fa9f34`脱敏材料4/4摘要及7组合成场景已经Relay独立复验，原文解析、隔离PG正逆序和查询/事件去重通过；没有需OC修改的协议兼容项，不代表真实柜台通过。Relay已接显式市场策略的TEST账户配置化，未部署。最新Redis、接收器、按日结算边界和OC下一项见[统一交接第8节](OC_RELAY_FEITAI_DCE_TEST_PREPARATION_20261122.md#8-oc接线交付后的安排)。不要将包内占位Redis、候选epoch或离线矩阵视为宿主机就绪。下一步是补云宿主机可达TEST配置/准备联调，不重复发材料或扩OC职责。
 
 用户明确CFFEX官方环境在等待期货公司审批，新增飞泰原生BrokerID1022的DCE程序化测试。**本轮交接见[飞泰DCE测试准备及分工](OC_RELAY_FEITAI_DCE_TEST_PREPARATION_20261122.md)**；11-21每日启停与生产职责仍有效，DCE不替代三个完整CFFEX日盘。
 
