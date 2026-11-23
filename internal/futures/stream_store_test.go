@@ -2,6 +2,7 @@ package futures
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -108,5 +109,25 @@ func TestStreamHistoryLossFailsClosed(t *testing.T) {
 	base.EntriesAdded = 5
 	if err := checkStreamHistory(&base, "9-0"); err != nil {
 		t.Fatal("old trimmed history at/before cursor rejected", err)
+	}
+}
+
+func TestStreamHistoryLegacyMetadataIsNotContinuityEvidence(t *testing.T) {
+	// Redis before 7 omits entries-added and max-deleted-entry-id. The client's
+	// zero values are missing evidence, not proof that no history was deleted.
+	for name, info := range map[string]redis.XInfoStream{
+		"empty":    {Length: 0, LastGeneratedID: "0-0"},
+		"nonempty": {Length: 1, LastGeneratedID: "1-0", FirstEntry: redis.XMessage{ID: "1-0"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := checkStreamHistory(&info, "0-0"); !errors.Is(err, ErrStreamHistory) {
+				t.Fatalf("legacy metadata treated as safe history: %v", err)
+			}
+			info.EntriesAdded = info.Length
+			info.MaxDeletedEntryID = "0-0"
+			if err := checkStreamHistory(&info, "0-0"); err != nil {
+				t.Fatalf("complete synthetic metadata rejected: %v", err)
+			}
+		})
 	}
 }
